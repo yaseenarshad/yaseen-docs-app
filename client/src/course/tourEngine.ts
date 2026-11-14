@@ -150,8 +150,10 @@ const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.m
 /**
  * Where the coach card goes: near the target and never over it (below, above, right, left), or in a corner of the
  * window that it does not cover (bottom right first, as in the mockup). No target: bottom right.
+ * `avoid` (YAZ-5365): the docked course's box; the coach card never sits under it either.
  */
-export function coachPlace(target: Box | null, coach: { width: number; height: number }, view: { width: number; height: number }): { left: number; top: number } {
+export function coachPlace(target: Box | null, coach: { width: number; height: number }, view: { width: number; height: number }, avoid: Box | null = null): { left: number; top: number } {
+  const free = (p: { left: number; top: number }): boolean => avoid === null || !overlaps({ ...p, ...coach }, avoid)
   const corner = (): { left: number; top: number } => {
     const corners = [
       { left: view.width - coach.width - MARGIN, top: view.height - coach.height - MARGIN },
@@ -159,7 +161,7 @@ export function coachPlace(target: Box | null, coach: { width: number; height: n
       { left: view.width - coach.width - MARGIN, top: MARGIN },
       { left: MARGIN, top: MARGIN },
     ].map((c) => ({ left: Math.max(MARGIN, c.left), top: Math.max(MARGIN, c.top) }))
-    return corners.find((c) => target === null || !overlaps({ ...c, ...coach }, target)) ?? corners[0]
+    return corners.find((c) => (target === null || !overlaps({ ...c, ...coach }, target)) && free(c)) ?? corners.find((c) => target === null || !overlaps({ ...c, ...coach }, target)) ?? corners[0]
   }
   if (target === null) return corner()
   const t = target
@@ -173,5 +175,5 @@ export function coachPlace(target: Box | null, coach: { width: number; height: n
     { left: t.left + t.width + GAP, top: alongY },
     { left: t.left - GAP - coach.width, top: alongY },
   ]
-  return tries.find((p) => fitsX(p.left) && fitsY(p.top) && !overlaps({ ...p, ...coach }, t)) ?? corner()
+  return tries.find((p) => fitsX(p.left) && fitsY(p.top) && !overlaps({ ...p, ...coach }, t) && free(p)) ?? corner()
 }

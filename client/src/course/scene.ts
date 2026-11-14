@@ -20,6 +20,7 @@
 import type { ComponentType } from 'react'
 import type { CourseChapter, CourseClip } from './script'
 import type { CourseHost } from './courseHost'
+import type { CourseDockApi } from './dock'
 
 export interface SceneTime {
   /** Seconds into the clip, at 1×. */
@@ -48,6 +49,11 @@ export interface SceneProps {
   host: CourseHost
   /** Moves the course on exactly as its Next button does, without `done` (YAZ-5347: "Go on without it"). */
   next?: () => void
+  /**
+   * The player's size in the window (YAZ-5365), and the seam for phase 2: `dock.requestSize('side', reason)` asks for a
+   * size; the person's own choice wins until the next part. Absent outside the course layer (the preview, a test).
+   */
+  dock?: CourseDockApi
 }
 
 export type Scene = ComponentType<SceneProps>

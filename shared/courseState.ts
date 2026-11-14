@@ -17,11 +17,22 @@
  * - `toured`: the ids of the chapters whose guided tour ("Try it in the app", YAZ-5123) the person finished.
  * - `vault` (YAZ-5201): the vault the course is bound to, kept with the place. The course works in ONE vault for its whole
  *   run: the vault in front when it was opened, or, when it opens again at this place, this one. null: none yet.
+ * - `dock`, `dockCorner`, `dockSide` (YAZ-5365): the player's size inside the window as the person last chose it (full,
+ *   side or corner), the corner it sits in, and the side panel's width as a part of the window's width. Only the
+ *   person's own choices are kept; a size the course asks for (`requestSize`, phase 2) is not.
  */
 
 /** The player's speeds (YAZ-5059 suggestion 21). */
 export const COURSE_SPEEDS = [1, 1.25, 1.5] as const
 export type CourseSpeed = (typeof COURSE_SPEEDS)[number]
+
+/** The player's sizes inside the app window (YAZ-5365). */
+export const COURSE_DOCKS = ['full', 'side', 'corner'] as const
+export type CourseDock = (typeof COURSE_DOCKS)[number]
+export const COURSE_CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const
+export type CourseCorner = (typeof COURSE_CORNERS)[number]
+/** The side panel's width, as a part of the window's width: about a third by default, within these limits. */
+export const COURSE_SIDE = { min: 0.22, max: 0.5, start: 0.34 } as const
 
 /**
  * What the course made in one vault (YAZ-5124). Absolute paths. `folderId` (YAZ-5202): the ID in the course folder's
@@ -48,6 +59,9 @@ export interface CourseState {
   made: CourseMade[]
   toured: string[]
   vault: string | null
+  dock: CourseDock
+  dockCorner: CourseCorner
+  dockSide: number
 }
 
 /** One change to the course's state: only the fields it names. */
@@ -62,7 +76,7 @@ const MAX_MADE_CARDS = 256
 const MAX_PATH = 4096
 
 export function defaultCourseState(): CourseState {
-  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, made: [], toured: [], vault: null }
+  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, made: [], toured: [], vault: null, dock: 'full', dockCorner: 'bottom-right', dockSide: COURSE_SIDE.start }
 }
 
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length <= MAX_ID && /^[A-Za-z0-9_-]*$/.test(v)
@@ -78,6 +92,9 @@ function cleanMade(raw: unknown): CourseMade | null {
 }
 
 const isSpeed = (v: unknown): v is CourseSpeed => (COURSE_SPEEDS as readonly unknown[]).includes(v)
+const isDock = (v: unknown): v is CourseDock => (COURSE_DOCKS as readonly unknown[]).includes(v)
+const isCorner = (v: unknown): v is CourseCorner => (COURSE_CORNERS as readonly unknown[]).includes(v)
+const isSide = (v: unknown): v is number => typeof v === 'number' && v >= COURSE_SIDE.min && v <= COURSE_SIDE.max
 
 /**
  * Pure (the store's sanitizer, the bridge and the renderer's cache): `raw`'s valid fields over `base`. A field that is
@@ -101,6 +118,9 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
     made: Array.isArray(r.made) ? uniqueVaults(r.made.map(cleanMade).filter((m): m is CourseMade => m !== null)).slice(0, MAX_MADE_VAULTS) : base.made,
     toured: ids(r.toured, base.toured),
     vault: r.vault === null || isPath(r.vault) ? r.vault : base.vault,
+    dock: isDock(r.dock) ? r.dock : base.dock,
+    dockCorner: isCorner(r.dockCorner) ? r.dockCorner : base.dockCorner,
+    dockSide: isSide(r.dockSide) ? r.dockSide : base.dockSide,
   }
 }
 
@@ -113,7 +133,7 @@ export function sameCourseState(a: CourseState, b: CourseState): boolean {
     && a.finished.length === b.finished.length && a.finished.every((id, i) => id === b.finished[i])
     && JSON.stringify(a.made) === JSON.stringify(b.made)
     && a.toured.length === b.toured.length && a.toured.every((id, i) => id === b.toured[i])
-    && a.vault === b.vault
+    && a.vault === b.vault && a.dock === b.dock && a.dockCorner === b.dockCorner && a.dockSide === b.dockSide
 }
 
 /** Pure: `patch` applied to `state` by the rule of `cleanCourseState`; the same object when nothing changed. */

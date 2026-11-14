@@ -26,9 +26,15 @@
  * made from this file: run `UPDATE_COURSE_TRANSCRIPT=1 npx vitest run client/src/course/script.test.ts` after a change.
  */
 import type { TourStep } from './tour'
+import type { CourseDock } from '@shared/courseState'
 
 /** One spoken line: its clip, its caption, and the moments in it that a scene waits for. */
-export interface CourseClip { id: string; text: string; marks?: number[] }
+/**
+ * One clip. `dock` (YAZ-5365, the seam for phase 2): a clip that names a size starts a new PART of the course; the
+ * player asks for that size there (`requestSize`), and the person's own choice of the part before ends. No clip names
+ * one yet.
+ */
+export interface CourseClip { id: string; text: string; marks?: number[]; dock?: CourseDock }
 
 /** One chapter: what is shown, then the optional steps to try in the real app. */
 export interface CourseChapter { id: string; title: string; clips: CourseClip[]; tryIt?: TourStep[] }

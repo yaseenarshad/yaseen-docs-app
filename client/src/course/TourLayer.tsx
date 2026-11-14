@@ -14,6 +14,8 @@
  *   offers "Show me".
  * - A step that asks the person to type offers "Use an example" (YAZ-5125, `tourExample.ts`): the example goes into the
  *   real field through the app's own path for typing, and the step ends on the app's own event, as for typing.
+ * - A docked course (YAZ-5365, `dockArea.ts`) stays usable during the tour: the dim leaves its box out, the coach card
+ *   never sits under it, and the layer tells the course where the lit control is, so a corner moves away from it.
  * - Esc leaves the tour, unless a menu, a dialog, Explore or a text field wants it (the app's Esc order): in the card
  *   editor, Esc is the step's own Done.
  */
@@ -28,6 +30,7 @@ import { checkTour, inFolder, TARGET_HELP } from './tourHelp'
 import { COURSE_CARDS } from './courseCards'
 import { listenTour, setTourPlaces, showTourPlace } from './tourBus'
 import { canFillExample, fillExample, USE_AN_EXAMPLE } from './tourExample'
+import { courseArea, setLitBox } from './dockArea'
 import './tour.css'
 
 export interface TourLayerProps {
@@ -84,6 +87,8 @@ function useReducedMotion(): boolean {
 /** What the frame loop measured: the target's box (null: not on screen), the holes, the window, the coach's size. */
 interface Seen {
   target: Box | null
+  /** The docked course's box (YAZ-5365): not dimmed, and the coach stays off it. */
+  course: Box | null
   holes: Box[]
   view: { width: number; height: number }
   coach: { width: number; height: number }
@@ -91,7 +96,7 @@ interface Seen {
   showMe: boolean
   stuck: boolean
 }
-const NOTHING_SEEN: Seen = { target: null, holes: [], view: { width: 0, height: 0 }, coach: COACH_SIZE, hint: false, showMe: false, stuck: false }
+const NOTHING_SEEN: Seen = { target: null, course: null, holes: [], view: { width: 0, height: 0 }, coach: COACH_SIZE, hint: false, showMe: false, stuck: false }
 const sameSeen = (a: Seen, b: Seen): boolean => JSON.stringify(a) === JSON.stringify(b)
 const round = (b: Box): Box => ({ left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width), height: Math.round(b.height) })
 
@@ -201,12 +206,17 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
       }
       const popups = [...document.querySelectorAll<HTMLElement>(POPUPS)].filter((p) => !(layer.current?.contains(p) ?? false) && shows(p)).map((p) => round(holeOf(boxOf(p), view, 0)))
       const target = onScreen && box !== null ? round(holeOf(box, view)) : null
+      // The lit control, for a docked corner to move away from; the docked course, left out of the dim.
+      setLitBox(target)
+      const area = courseArea()
+      const course = area === null ? null : round(holeOf(area, view, 0))
       const help = step === null ? undefined : TARGET_HELP[step.target]
       const stuckEl = help?.stuck === undefined ? null : document.querySelector<HTMLElement>(help.stuck.selector)
       const measured = coach.current?.getBoundingClientRect()
       const next: Seen = {
         target,
-        holes: target === null ? popups : [target, ...popups],
+        course,
+        holes: [...(target === null ? [] : [target]), ...popups, ...(course === null ? [] : [course])],
         view,
         coach: measured !== undefined && measured.width > 0 ? { width: Math.round(measured.width), height: Math.round(measured.height) } : COACH_SIZE,
         hint: s.missingSince !== null && at - s.missingSince >= HINT_AFTER_MS,
@@ -216,7 +226,10 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
       setSeen((prev) => (sameSeen(prev, next) ? prev : next))
       raf = requestAnimationFrame(frame)
     })
-    return () => cancelAnimationFrame(raf)
+    return () => {
+      cancelAnimationFrame(raf)
+      setLitBox(null)
+    }
   }, [dispatch])
 
   // ---- the end ----
@@ -252,7 +265,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd }: TourLayerProps
   const canShow = step !== null && (help?.show !== undefined || findTarget(step.target, layer.current) !== null)
   const waitsForNext = step !== null && step.done !== 'click' && step.done.event === 'tour-next'
   const hint = step === null || !seen.hint ? null : seen.stuck && help?.stuck !== undefined ? help.stuck.say : help === undefined ? null : inFolder(help.where, folderTitle)
-  const place = coachPlace(seen.target, seen.coach, seen.view.width > 0 ? seen.view : { width: window.innerWidth, height: window.innerHeight })
+  const place = coachPlace(seen.target, seen.coach, seen.view.width > 0 ? seen.view : { width: window.innerWidth, height: window.innerHeight }, seen.course)
   const line =
     s.status === 'checking' ? 'Getting ready…'
     : s.status === 'blocked' ? (s.blocked ?? '')

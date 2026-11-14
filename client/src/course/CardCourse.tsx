@@ -12,10 +12,18 @@
  *   course (it is a dialog in the app's Esc order, step 2); Tab stays inside the layer; no key reaches the app under it.
  *   Closing gives the keyboard back to where it was.
  * - `prefers-reduced-motion`: the scenes and the layer cross-fade in place of movement (`course.css`, `reducedMotion`).
+ * - The size (YAZ-5365, `dock.ts`): full (as above), side (a panel on the right; the app moves to the left part and stays
+ *   live) or corner (picture in picture). The size switch in the head; the side panel's edge resizes it; the corner's
+ *   handle moves it to another corner. The person's last size, corner and width are kept (`AppState.course.dock…`).
+ *   Docked, the course is no dialog: the app under it takes its clicks, typing, menus and keys, and the course's own
+ *   keys (Space, the scrubber's arrows) act only while the keyboard is in the course. Esc closes the course from inside
+ *   it, or from the app when nothing nearer wants Esc (a menu, a dialog, Explore, text). The corner shows only Play /
+ *   Pause, Back, Next, the size switch and Close. Clips and scenes ask for a size with `requestSize` (`CourseDockApi`);
+ *   the person's choice wins until the next part.
  * - The seams: `scenes` (6C: `scenes/index.ts`; a span of clips keeps one scene mounted), `voice` (6D1: per chapter, downloaded when needed), `tour` (6E), `host` (6F). Each has a
  *   default: the course's scenes, silence, the real tour (`appTour`), and the host (the real one once App gives the vault's view, else one that makes nothing and says why).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { COURSE_SPEEDS, type CourseSpeed } from '@shared/courseState'
 import { storage } from '../lib/storage'
 import { COURSE, type CourseChapter, type CourseClip } from './script'
@@ -30,6 +38,11 @@ import { NO_VAULT, showOnlyHost, type CourseHost, type CourseVault } from './cou
 import { SHOW_ONLY, vaultCourseHost } from './courseCards'
 import { courseScenes } from './scenes'
 import { CourseEnd } from './scenes/finale'
+import { readEscapeFacts } from '../lib/escapeOrder'
+import { CourseDockContext, cornerAvoiding, dockBox, dockStep, startDock, type CourseDockApi, type DockAction, type DockCorner, type DockSize, type DockState, type SizeAnswer, type View } from './dock'
+import { onLitBox, setCourseArea } from './dockArea'
+import { CornerGrip, SideEdge, SizeSwitch } from './CourseDock'
+import type { Box } from './tourEngine'
 import type { SceneClock, SceneFor, SceneTime } from './scene'
 import './course.css'
 
@@ -77,6 +90,25 @@ const FIELD = 'input, textarea, select, [contenteditable="true"], [contenteditab
 const PRESSABLE = 'button, a[href], [role="button"], [role="tab"], [role="radio"], [role="checkbox"], summary'
 const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex="0"]'
 
+/** Docked, an Esc from the app closes the course only when nothing nearer wants it (the app's Esc order). */
+const NO_SIDEBAR = { aside: null, searchShown: false, canClose: false }
+/** The element App renders into: in the side size it gives the course its right part (the app moves over, live). */
+const APP_ROOT_ID = 'root'
+/** What a screen reader hears when the course itself changes its size (phase 2). */
+const SIZE_SAID: Record<DockSize, string> = { full: 'The course fills the window.', side: 'The course moved to the side.', corner: 'The course moved to the corner.' }
+
+let viewCache: View = { width: 0, height: 0 }
+const readView = (): View => {
+  if (viewCache.width !== window.innerWidth || viewCache.height !== window.innerHeight) viewCache = { width: window.innerWidth, height: window.innerHeight }
+  return viewCache
+}
+function useView(): View {
+  return useSyncExternalStore((fn) => {
+    window.addEventListener('resize', fn)
+    return () => window.removeEventListener('resize', fn)
+  }, readView)
+}
+
 const reducedMotionQuery = (): MediaQueryList | null => (typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null)
 function useReducedMotion(): boolean {
   return useSyncExternalStore(
@@ -110,8 +142,50 @@ function createClock(read: () => SceneTime) {
 export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, scenes = courseScenes, voice = SILENT_VOICE, tour: tourIn, host: hostIn, courseVault: courseVaultIn, lost }: CardCourseProps) {
   const reducedMotion = useReducedMotion()
 
+  // ---- the size (YAZ-5365): the course asks, the person chooses; the person's choice wins until the next part ----
+  const view = useView()
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const dockRef = useRef<DockState>(null as unknown as DockState)
+  if (dockRef.current === null) dockRef.current = startDock(storage.getCourse().dock)
+  const [dock, setDock] = useState(dockRef.current)
+  const [corner, setCorner] = useState<DockCorner>(() => storage.getCourse().dockCorner)
+  const [side, setSide] = useState(() => storage.getCourse().dockSide)
+  const [sizeSaid, setSizeSaid] = useState('')
+  const dockDispatch = useCallback((action: DockAction): SizeAnswer => {
+    const { state, answer } = dockStep(dockRef.current, action)
+    if (state !== dockRef.current) {
+      const before = dockRef.current.size
+      dockRef.current = state
+      setDock(state)
+      if (state.size !== before && action.type !== 'choose') setSizeSaid(SIZE_SAID[state.size])
+    }
+    return answer
+  }, [])
+  const chooseSize = useCallback(
+    (size: DockSize) => {
+      dockDispatch({ type: 'choose', size })
+      storage.setCourse({ dock: size })
+    },
+    [dockDispatch],
+  )
+  const dockApi = useMemo<CourseDockApi>(() => ({ size: dock.size, requestSize: (size, reason) => dockDispatch({ type: 'request', size, reason }) }), [dock.size, dockDispatch])
+  const size = dock.size
+  const docked = size !== 'full'
+  /** The control the tour lights (`dockArea`): the corner moves away from it. */
+  const [lit, setLit] = useState<Box | null>(null)
+  useEffect(() => onLitBox(setLit), [])
+  const shownCorner = size === 'corner' ? cornerAvoiding(corner, lit, view) : corner
+  /** The corner while it is dragged: its offset from its place. */
+  const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null)
+  const [sideDragging, setSideDragging] = useState(false)
+  const box = dockBox(size, shownCorner, side, view)
+  const boxRef = useRef(box)
+  boxRef.current = box
+
   // ---- the voice (6D1): each chapter's sound once it is here; the clip that plays keeps what it started with ----
   const sounds = useRef(new Map<string, ChapterSound>())
+  const clipById = useMemo(() => new Map(course.flatMap((ch) => ch.clips.map((c) => [c.id, c] as const))), [course])
   const chapterOfClip = useMemo(() => new Map(course.flatMap((ch) => ch.clips.map((c) => [c.id, ch.id] as const))), [course])
   const soundOf = useCallback(
     (clipId: string): ClipSound | null => {
@@ -136,6 +210,12 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   // The player: in a ref, so a frame changes no React state; `version` renders what the eye needs (not each frame).
   const player = useRef<PlayerState>(null as unknown as PlayerState)
   if (player.current === null) player.current = startState(ctx, storage.getCourse(), openAt)
+  // The clip the course opens at: when it names a size, its part starts now (before the first paint).
+  useLayoutEffect(() => {
+    const first = course[player.current.chapter].clips[player.current.clip]
+    if (first.dock !== undefined) dockDispatch({ type: 'part', part: first.id, size: first.dock, reason: `clip ${first.id}` })
+    // Only at the open: later clips start their parts on `enter`.
+  }, [])
   const enteredChapter = useRef(course[player.current.chapter].id)
   if (frozen.current.clip === '') frozen.current = { clip: course[player.current.chapter].clips[player.current.clip].id, sound: null }
   const [, setVersion] = useState(0)
@@ -346,6 +426,9 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       for (const e of events) {
         if (e.kind === 'mark') clockRef.current.mark(e.index)
         else if (e.kind === 'enter') {
+          // A clip that names a size starts a part (phase 2): the course asks for its size there.
+          const named = clipById.get(e.clip)?.dock
+          if (named !== undefined) dockDispatch({ type: 'part', part: e.clip, size: named, reason: `clip ${e.clip}` })
           const newChapter = e.chapter !== enteredChapter.current
           // Asked before the clip freezes its sound: a sound that is here already is used from the first word.
           if (newChapter) startChapter(e.chapter)
@@ -359,7 +442,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         else storage.setCourse({ done: true, ...placeOf(ctxRef.current, player.current) })
       }
     },
-    [soundOf, startChapter, startVoiceWait, endVoiceWait],
+    [soundOf, startChapter, startVoiceWait, endVoiceWait, clipById, dockDispatch],
   )
   const dispatch = useCallback(
     (action: PlayerAction) => {
@@ -386,7 +469,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
 
   // ---- the clock: one frame loop while it plays ----
   const s = player.current
-  const running = s.playing && s.phase === 'clip' && !touring
+  const running = s.playing && s.phase === 'clip' && !(touring && size === 'full')
   useEffect(() => {
     if (!running) {
       audio.current?.pause()
@@ -445,8 +528,8 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
     audio.current?.pause()
     onClose()
   }, [onClose])
-  const keys = useRef({ close, dispatch })
-  keys.current = { close, dispatch }
+  const keys = useRef({ close, dispatch, docked })
+  keys.current = { close, dispatch, docked }
   useEffect(() => {
     const opener = document.activeElement
     playButton.current?.focus()
@@ -458,13 +541,22 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
     if (touring) return
     const onKey = (e: KeyboardEvent): void => {
       const inside = e.target instanceof Node && layer.current?.contains(e.target) === true
+      const isDocked = keys.current.docked
       if (e.key === 'Escape') {
         if (e.isComposing) return
+        if (isDocked && !inside) {
+          // Docked, the app's own Esc comes first: a menu, a dialog, Explore, text. Then the course closes.
+          if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+          const facts = readEscapeFacts(e, NO_SIDEBAR)
+          if (facts.owner || facts.explore || facts.inText) return
+        }
         e.preventDefault()
         e.stopPropagation()
         keys.current.close()
         return
       }
+      // Docked, a key in the app is the app's: the course takes none of it.
+      if (!inside && isDocked) return
       if (!inside) {
         // A key aimed at the app under the course: swallowed, and the keyboard comes back into the course.
         e.preventDefault()
@@ -484,7 +576,8 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   const onLayerKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     // No key typed in the course travels on to the app (its Esc, its shortcuts).
     e.stopPropagation()
-    if (e.key !== 'Tab') return
+    // Docked, Tab goes on into the app: only the full layer keeps the keyboard inside.
+    if (e.key !== 'Tab' || keys.current.docked) return
     const all = [...(layer.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])]
     if (all.length === 0) return
     const i = all.indexOf(document.activeElement as HTMLElement)
@@ -527,9 +620,49 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       .catch(() => 'left' as const)
       .then(() => {
         setTouring(false)
-        requestAnimationFrame(() => playButton.current?.focus())
+        requestAnimationFrame(() => {
+          // Docked, the person may be working in the app: the keyboard comes back only from nowhere.
+          const active = document.activeElement
+          if (!keys.current.docked || active === null || active === document.body) playButton.current?.focus()
+        })
       })
   }, [tour])
+
+  // ---- the docked layer and the rest of the window ----
+  const shown = !(touring && size === 'full')
+  // The tour layer leaves the docked course out of its dim and puts its coach beside it (`dockArea`).
+  useEffect(() => {
+    setCourseArea(shown && box !== null ? box : null)
+  })
+  useEffect(() => () => setCourseArea(null), [])
+  // The side size: the app moves over to the left part of the window and stays live there.
+  const sideWidthPx = size === 'side' && box !== null ? box.width : 0
+  useEffect(() => {
+    const app = document.getElementById(APP_ROOT_ID)
+    if (app === null || sideWidthPx === 0 || layer.current === null) return
+    const before = app.style.marginRight
+    app.style.marginRight = `${sideWidthPx}px`
+    return () => {
+      app.style.marginRight = before
+    }
+  }, [sideWidthPx])
+  const keepSide = useCallback((part: number) => {
+    setSideDragging(false)
+    setSide(part)
+    storage.setCourse({ dockSide: part })
+  }, [])
+  const liveSide = useCallback((part: number) => {
+    setSideDragging(true)
+    setSide(part)
+  }, [])
+  const dropCorner = useCallback((next: DockCorner) => {
+    setDrag(null)
+    setCorner(next)
+    storage.setCourse({ dockCorner: next })
+  }, [])
+  const dragCorner = useCallback((dx: number, dy: number) => setDrag(dx === 0 && dy === 0 ? null : { dx, dy }), [])
+  const readBox = useCallback(() => boxRef.current, [])
+  const viewNow = useCallback(() => viewRef.current, [])
 
   // ---- what shows ----
   const chapter = ctx.course[s.chapter]
@@ -548,17 +681,28 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   )
 
   return (
+    <CourseDockContext.Provider value={dockApi}>
     <div
       ref={layer}
       className="course"
-      role="dialog"
-      aria-modal="true"
+      data-card-course=""
+      data-size={size}
+      data-corner={size === 'corner' ? shownCorner : undefined}
+      role={docked ? 'region' : 'dialog'}
+      aria-modal={docked ? undefined : 'true'}
       aria-label="Card course"
       tabIndex={-1}
-      hidden={touring}
+      hidden={!shown}
       data-reduced-motion={reducedMotion ? 'true' : undefined}
+      data-animate={docked && !reducedMotion && drag === null && !sideDragging ? 'true' : undefined}
+      style={box === null ? undefined : { left: box.left, top: box.top, width: box.width, height: box.height, ...(drag === null ? {} : { transform: `translate(${drag.dx}px, ${drag.dy}px)` }) }}
       onKeyDown={onLayerKey}
     >
+      <p className="course__vh" aria-live="polite">
+        {sizeSaid}
+      </p>
+      {size === 'side' && <SideEdge side={side} view={viewNow} onLive={liveSide} onEnd={keepSide} />}
+      {!docked && (
       <nav className="course__chapters" aria-label="Chapters">
         <p className="course__name">Card course</p>
         <ol className="course__list">
@@ -582,18 +726,21 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
           ))}
         </ol>
       </nav>
+      )}
       <div className="course__main">
         <div className="course__head">
+          {size === 'corner' && <CornerGrip corner={shownCorner} box={readBox} view={viewNow} onDrag={dragCorner} onDrop={dropCorner} />}
           <p className="course__where">
-            Chapter {s.chapter + 1} of {ctx.course.length} · {chapter.title}
+            {size === 'corner' ? `${s.chapter + 1}. ${chapter.title}` : `Chapter ${s.chapter + 1} of ${ctx.course.length} · ${chapter.title}`}
           </p>
+          <SizeSwitch size={size} onChoose={chooseSize} />
           <button type="button" className="course__btn course__btn--close" aria-label="Close the course" onClick={close}>
-            Close
+            {size === 'corner' ? '✕' : 'Close'}
           </button>
         </div>
         <div className="course__stage" role="region" aria-label="Lesson">
           {s.phase === 'clip' ? (
-            <Scene key={scenes.spanOf?.(clip.id) ?? `${chapter.id}/${clip.id}`} chapter={chapter} clip={clip} waits={waits} clock={clockRef.current.clock} done={done} reducedMotion={reducedMotion} host={host} next={goNext} />
+            <Scene key={scenes.spanOf?.(clip.id) ?? `${chapter.id}/${clip.id}`} chapter={chapter} clip={clip} waits={waits} clock={clockRef.current.clock} done={done} reducedMotion={reducedMotion} host={host} next={goNext} dock={dockApi} />
           ) : (
             <div className="course-scene course-scene--end">
               <p className="course-scene__words">{s.phase === 'course-end' ? "That's the whole course." : `Chapter ${s.chapter + 1} done.`}</p>
@@ -681,6 +828,8 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
           <button type="button" className="course__btn" aria-label="Next step" disabled={s.phase === 'course-end'} onClick={() => dispatch({ type: 'next' })}>
             Next
           </button>
+          {size !== 'corner' && (
+          <>
           <button type="button" className="course__btn" disabled={last} onClick={() => dispatch({ type: 'next-chapter' })}>
             Next chapter
           </button>
@@ -696,9 +845,12 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
             ))}
           </span>
           {s.phase === 'clip' && tourButton}
+          </>
+          )}
         </div>
       </div>
     </div>
+    </CourseDockContext.Provider>
   )
 }
 

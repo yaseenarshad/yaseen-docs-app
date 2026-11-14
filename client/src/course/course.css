@@ -434,3 +434,202 @@
     opacity: 0;
   }
 }
+
+/*
+ * THE DOCKED SIZES (YAZ-5365): side (a panel on the right, the app live on the left) and corner (picture in picture).
+ * The layer's box comes from `dock.ts` as inline left / top / width / height. Docked, it is over the app and its
+ * layers (Explore and Settings are 70) but under the notices (72) and the sheets (85).
+ */
+.course[data-size='side'],
+.course[data-size='corner'] {
+  right: auto;
+  bottom: auto;
+  z-index: 71;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.course[data-size='side'] {
+  border-left: 1px solid var(--border);
+  box-shadow: -10px 0 28px rgba(0, 0, 0, 0.08);
+}
+
+.course[data-size='corner'] {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.26);
+  font-size: 14px;
+}
+
+/* A size change, a corner change and a snap glide; never while dragging, never with reduced motion. */
+.course[data-animate='true'] {
+  transition: left 180ms ease, top 180ms ease, width 180ms ease, height 180ms ease;
+}
+
+.course[data-size='side'] .course__main {
+  padding: 12px 16px 14px;
+}
+
+.course[data-size='corner'] .course__main {
+  padding: 8px 10px 10px;
+}
+
+/* The head: where, the size switch, Close. In the corner, the move handle first. */
+.course__where {
+  flex: 1;
+}
+
+.course__sizes {
+  display: inline-flex;
+  flex: none;
+  gap: 2px;
+}
+
+.course__btn--size {
+  min-height: 28px;
+  padding: 4px 8px;
+}
+
+.course[data-size='corner'] .course__head {
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.course[data-size='corner'] .course__where {
+  font-size: 12px;
+}
+
+.course[data-size='corner'] .course__btn {
+  min-height: 28px;
+  padding: 3px 11px;
+  font-size: 13px;
+}
+
+.course[data-size='corner'] .course__btn--size {
+  padding: 3px 7px;
+}
+
+.course__grip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.course__grip:active {
+  cursor: grabbing;
+}
+
+.course__grip:hover {
+  background: var(--bg-hover);
+}
+
+.course__grip:focus-visible,
+.course__edge:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The side panel's edge: drag it to resize, within the limits. */
+.course__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  z-index: 2;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.course__edge::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 2px;
+  background: var(--accent);
+  opacity: 0;
+  content: '';
+}
+
+.course__edge:hover::after,
+.course__edge:focus-visible::after {
+  opacity: 1;
+}
+
+/* The stage scales with its box: the kit's scenes already size to their stage (`cqmin`); the frame's own words too. */
+.course[data-size='side'] .course__stage,
+.course[data-size='corner'] .course__stage {
+  container-type: size;
+  border-radius: 12px;
+}
+
+.course[data-size='side'] .course__stage {
+  min-height: 140px;
+}
+
+.course[data-size='corner'] .course__stage {
+  min-height: 72px;
+  border-radius: 10px;
+}
+
+.course[data-size='side'] .course-scene,
+.course[data-size='corner'] .course-scene {
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.course[data-size='side'] .course-scene__words,
+.course[data-size='corner'] .course-scene__words {
+  font-size: clamp(14px, 7cqmin, 26px);
+}
+
+/* The caption stays readable in every size: never under 13 px, never cut (it grows; the stage gives up the height). */
+.course[data-size='side'] .course__caption {
+  min-height: 46px;
+  margin: 10px auto 6px;
+  font-size: 15px;
+}
+
+.course[data-size='corner'] .course__caption {
+  min-height: 36px;
+  margin: 6px 0 2px;
+  max-width: none;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+
+.course[data-size='corner'] .course__note {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.course[data-size='side'] .course__controls {
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.course[data-size='corner'] .course__controls {
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.course[data-size='corner'] .course__btn--play {
+  min-width: 64px;
+}
+
+.course[data-size='corner'] .course__scrub {
+  padding: 6px 0;
+}

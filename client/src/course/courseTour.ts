@@ -35,7 +35,7 @@ export function appTour(host: CourseHost): CourseTour {
     start: (chapter, steps) =>
       new Promise<TourResult>((resolve) => {
         // The course layer, hidden while the tour runs: once it is gone, the tour has nothing to go back to.
-        const course = document.querySelector('.course[role="dialog"]')
+        const course = document.querySelector('.course[data-card-course]')
         const box = document.createElement('div')
         box.className = 'course-tour-root'
         document.body.appendChild(box)
