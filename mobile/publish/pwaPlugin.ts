@@ -52,6 +52,8 @@ export function notecardsPwa(): Plugin {
     async generateBundle(_options, bundle) {
       // The screenshot build (`--mode fixtures`) has no worker: `main.tsx` registers one in the real build only.
       if (mode === 'fixtures') return
+      // Only the app's own build: another build with this config (the phone wall tests build single files) has no page.
+      if (!('index.html' in bundle)) return
       const publicFiles = publicDir ? walk(publicDir).map((p) => relative(publicDir, p).replaceAll('\\', '/')) : []
       const files = shellFiles(Object.keys(bundle), publicFiles)
       const entryChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/index\.html$|\/src\/main\.tsx$/.test(o.facadeModuleId ?? ''))

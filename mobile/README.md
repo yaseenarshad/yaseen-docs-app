@@ -60,8 +60,10 @@ mobile/
     screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `ScanCode`, `Settings`, `FirstDownload`; the slots
                         `Friends`, `Review`, `Search` (4E, 4B, 4C) and `SyncStatus` (4D) are placeholders
     scan/               "Scan a code": the camera (`camera.ts`) and the reader (`qrDecode.ts`, the `qr` library, a lazy chunk)
+    pwa/                YAZ-5087: the service worker, the update and its safe moment, the friend landing page
     dev/                fakes for tests, and the screen fixtures of the `--mode fixtures` build (not in the real build)
     store/              ALL browser storage. Nothing else touches IndexedDB, localStorage or navigator.storage.
+                        (The one other case: the service worker's Cache Storage, `pwa/swCore.ts`, holds the app's own files.)
       vaultStore.ts     `VaultStore`: files, checkpoints, phone-only state, the format number, the clears
       backend.ts        the small table interface under it
       idbBackend.ts     IndexedDB: crash-safe writes, opens again after a lost connection
