@@ -1,5 +1,23 @@
 import { DESCRIPTIONS, INDEX_FILE, emptyNumbers, ensureFriendsFiles, findFriendsIndex, gistErrorCode, parseFriendsIndex, writeFriendsIndex, type GistsApi, type IndexHandle } from '@shared/friendGists'
-import { emptyBudget, type GistBudget } from '@shared/friendSend'
+import { emptyBudget, recordUpdate, type GistBudget } from '@shared/friendSend'
+import {
+  addMember,
+  createGroup,
+  deleteGroup,
+  joinGroup,
+  leaveGroup,
+  markJoined,
+  parseAnyLink,
+  readGroup,
+  readJoinRequest,
+  removeMember,
+  sweepOrphans,
+  type GroupChange,
+  type GroupView,
+  type JoinRequest,
+  type JoinResult,
+  type LeaveResult,
+} from '@shared/friendGroups'
 import {
   WHAT_FRIENDS_SEE,
   finishRemove,
@@ -69,6 +87,34 @@ export interface FriendsList {
   port: FriendsPort
   /** YAZ-5195: before "Sign out and erase this phone": aborts a running request; no friends call or write after it. */
   stop(): void
+  /** 4E3 (YAZ-5084): groups run by an admin. */
+  groups: FriendsGroups
+  /** One paste box for each kind of link: a friend link (`paste`), a group link (`groups.join`), a join request (`groups.request`). */
+  pasteAny(text: string): Promise<PasteResult | JoinResult | JoinRequest | Unavailable>
+}
+
+type LeaveOutcome = { kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'admin-cannot-leave' } | { kind: 'not-found' }
+
+/** 4E3 (YAZ-5084). The logic is `shared/friendGroups.ts`; each write counts on the sender's `gist_update` budget. */
+export interface FriendsGroups {
+  /** "New group": `link` for the share sheet (`navigator.share({ title, text, url: link })`). */
+  create(name: string): Promise<{ kind: 'ok'; group: string; link: string; title: string; text: string } | { kind: 'bad-name' } | Unavailable>
+  /** Join with a group link. After `joined`, send `sendToAdmin` to the admin. */
+  join(text: string): Promise<JoinResult | Unavailable>
+  /** The admin's view of a join link: who asks, for which group (before `add`). */
+  request(text: string): Promise<JoinRequest | Unavailable>
+  add(group: string, joinText: string): Promise<GroupChange | Unavailable>
+  remove(group: string, pointer: string): Promise<GroupChange | Unavailable>
+  leave(group: string): Promise<LeaveOutcome | Unavailable>
+  /** The admin's "Leave": the group file goes too. */
+  delete(group: string): Promise<LeaveOutcome | Unavailable>
+  /**
+   * One group as I see it (ETags: an unchanged group costs nothing). Round 14, by itself: the first `ok` marks "joined";
+   * `removed` and `gone` make the app leave (the view says so one time, for the message).
+   */
+  read(group: string): Promise<GroupView | Unavailable>
+  /** Each group of my list, read; also deletes gists that no list names (an hour after a stop). */
+  all(): Promise<GroupView[] | Unavailable>
 }
 
 export interface FriendsListOptions {
@@ -262,8 +308,159 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     },
   }
 
+  /** "Paste a friend's link" (4E2). */
+  async function pasteText(text: string): Promise<PasteResult | Unavailable> {
+    const link = parseFriendLink(text)
+    if (link.kind !== 'ok') return link
+    return withApi(async (api, login, vault) => {
+      const h = await list(api, login, true, vault)
+      if (h === 'broken') return { kind: 'needs-repair' as const }
+      if (h === null || h === 'newer') return { kind: 'newer-app' as const }
+      const result = await pasteLink(api, h, text, opts)
+      if (result.kind === 'refused') {
+        if (await guard.live()) await recordGistsRefused(store, vault)
+        return { kind: 'no-gists' as const }
+      }
+      if (result.kind === 'added') await remember(result.handle)
+      return result
+    })
+  }
+
+  /** The list, read again with its ETag just before a group action (another device may have changed it). */
+  async function current(api: GistsApi, login: string): Promise<IndexHandle | Unavailable> {
+    const h = await list(api, login, false)
+    if (h === 'broken') return { kind: 'needs-repair' }
+    if (h === 'newer') return { kind: 'newer-app' }
+    if (h === null) return { kind: 'failed' }
+    const r = await refreshed(api, h)
+    if (r === 'broken') return { kind: 'needs-repair' }
+    if (r === 'newer') return { kind: 'newer-app' }
+    return handle ?? r
+  }
+  const isHandle = (x: IndexHandle | Unavailable): x is IndexHandle => 'index' in x
+  /** One `gist_update` made by a group action: counted on the budget the sender keeps. */
+  async function counted(n = 1): Promise<void> {
+    let b = await budget()
+    for (let i = 0; i < n; i++) b = recordUpdate(b, now(), null)
+    await saveBudget(b)
+  }
+  const leaveOutcome = async (r: LeaveResult, vault: string): Promise<LeaveOutcome | Unavailable> =>
+    r.kind === 'admin-cannot-leave' ? r : r.kind === 'not-found' && !('handle' in r) ? { kind: 'not-found' } : mapRemove(r as RemoveResult, vault)
+  let swept = false
+
+  const groups: FriendsGroups = {
+    create: (name) =>
+      withApi(async (api, login, vault) => {
+        const h = await list(api, login, true, vault)
+        if (h === 'broken') return { kind: 'needs-repair' as const }
+        if (h === null || h === 'newer') return { kind: 'newer-app' as const }
+        const made = await createGroup(api, h, name, login, opts)
+        if (made.kind === 'refused') {
+          if (await guard.live()) await recordGistsRefused(store, vault)
+          return { kind: 'no-gists' as const }
+        }
+        if (made.kind !== 'ok') return made.kind === 'bad-name' ? made : { kind: made.kind === 'not-found' ? ('failed' as const) : made.kind }
+        await remember(made.handle)
+        await counted()
+        return { kind: 'ok' as const, group: made.group, link: made.link, title: 'Notecards group link', text: `Join my group ${made.handle.index.groups.find((g) => g.group === made.group)?.name ?? ''} on Notecards. Open this link, copy the code, then paste it in the app.` }
+      }),
+    join: (text) =>
+      withApi(async (api, login, vault) => {
+        const link = parseAnyLink(text)
+        if (link.kind === 'empty' || link.kind === 'other-app' || link.kind === 'not-a-link') return link
+        const h = await list(api, login, true, vault)
+        if (h === 'broken') return { kind: 'needs-repair' as const }
+        if (h === null || h === 'newer') return { kind: 'newer-app' as const }
+        const joined = await joinGroup(api, h, text, opts)
+        if (joined.kind === 'refused') {
+          if (await guard.live()) await recordGistsRefused(store, vault)
+          return { kind: 'no-gists' as const }
+        }
+        if (joined.kind === 'joined') {
+          await remember(joined.handle)
+          await counted()
+        }
+        return joined
+      }),
+    request: (text) =>
+      withApi(async (api, login) => {
+        const h = await current(api, login)
+        return isHandle(h) ? readJoinRequest(api, h, text) : h
+      }),
+    add: (group, joinText) =>
+      withApi(async (api, login) => {
+        const h = await current(api, login)
+        if (!isHandle(h)) return h
+        const r = await addMember(api, h, group, joinText, opts)
+        if (r.kind === 'done') await counted()
+        return r
+      }),
+    remove: (group, pointer) =>
+      withApi(async (api, login) => {
+        const h = await current(api, login)
+        if (!isHandle(h)) return h
+        const r = await removeMember(api, h, group, pointer, opts)
+        if (r.kind === 'done') await counted()
+        return r
+      }),
+    leave: (group) =>
+      withApi(async (api, login, vault) => {
+        const h = await current(api, login)
+        return isHandle(h) ? leaveOutcome(await leaveGroup(api, h, group, await budget(), opts), vault) : h
+      }),
+    delete: (group) =>
+      withApi(async (api, login, vault) => {
+        const h = await current(api, login)
+        return isHandle(h) ? leaveOutcome(await deleteGroup(api, h, group, await budget(), opts), vault) : h
+      }),
+    read: (group) => withApi(async (api, login, vault) => readOne(api, login, vault, group)),
+    all: () =>
+      withApi(async (api, login, vault) => {
+        const h = await current(api, login)
+        if (!isHandle(h)) return h.kind === 'failed' ? [] : h
+        if (!swept) {
+          swept = true
+          await sweepOrphans(api, h, now())
+        }
+        const out: GroupView[] = []
+        for (const g of h.index.groups) {
+          const view = await readOne(api, login, vault, g.group)
+          if ('group' in view || view.kind === 'not-found') out.push(view as GroupView)
+        }
+        return out
+      }),
+  }
+
+  /** Reads one group and does what round 14 says on the views `ok` (first time), `removed` and `gone`. */
+  async function readOne(api: GistsApi, login: string, vault: string, group: string): Promise<GroupView | Unavailable> {
+    const h = await current(api, login)
+    if (!isHandle(h)) return h
+    const view = await readGroup(api, h, group, cache, now())
+    if (view.kind === 'ok' && view.firstSeen) {
+      const marked = await markJoined(api, h, group, opts)
+      if ('index' in marked) {
+        await remember(marked)
+        await counted()
+      }
+    }
+    if (view.kind === 'removed' || view.kind === 'gone') await leaveOutcome(await leaveGroup(api, handle ?? h, group, await budget(), opts), vault)
+    return view
+  }
+
   return {
     port,
+    groups,
+    pasteAny: async (text) => {
+      const link = parseAnyLink(text)
+      if (link.kind === 'group') return groups.join(text)
+      if (link.kind === 'join') return groups.request(text)
+      if (link.kind === 'id') {
+        // A bare ID: a group file or a friend's pointer. The join path reads it and tells which.
+        const joined = await groups.join(text)
+        return joined.kind === 'is-friend-link' ? pasteText(text) : joined
+      }
+      return pasteText(text)
+    },
     stop: () => guard.stop(),
     share: () =>
       withApi(async (api, login, vault) => {
@@ -274,22 +471,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         await remember(shared.handle)
         return { kind: 'ok' as const, link: shared.link, ...shareText(shared.link), whatFriendsSee: WHAT_FRIENDS_SEE }
       }),
-    async paste(text) {
-      const link = parseFriendLink(text)
-      if (link.kind !== 'ok') return link
-      return withApi(async (api, login, vault) => {
-        const h = await list(api, login, true, vault)
-        if (h === 'broken') return { kind: 'needs-repair' as const }
-        if (h === null || h === 'newer') return { kind: 'newer-app' as const }
-        const result = await pasteLink(api, h, text, opts)
-        if (result.kind === 'refused') {
-          if (await guard.live()) await recordGistsRefused(store, vault)
-          return { kind: 'no-gists' as const }
-        }
-        if (result.kind === 'added') await remember(result.handle)
-        return result
-      })
-    },
+    paste: (text) => pasteText(text),
     remove: (mine) =>
       withApi(async (api, login, vault) => {
         const h = await list(api, login, false)
