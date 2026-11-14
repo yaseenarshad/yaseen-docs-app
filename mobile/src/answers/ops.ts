@@ -112,14 +112,16 @@ export class UnsentChangeError extends Error {
 /**
  * A change of card `id`'s line (the review host's `changeCardLine`, the ⋯ menu) as actions: each mark that changed,
  * then each review taken out, then each review added. Applied to `before`, they give `after`'s marks and reviews.
- * Any other change (the title, YAZ-5308; the title on the front, an ID, an unknown part) cannot be sent: it throws
- * `UnsentChangeError`, so nothing is half saved.
+ * Any other change (the title, YAZ-5308; a property, YAZ-5349; the title on the front, an ID, an unknown part) cannot
+ * be sent: it throws `UnsentChangeError`, so nothing is half saved.
  */
 export function opsBetween(id: string, before: CardLine, after: CardLine): CardOp[] {
   const rest = (line: CardLine) =>
     line.parts
       .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && p.kind !== 'fix')
-      .map((p) => (p.kind === 'id' ? `id:${p.id}` : p.kind === 'title' ? `title:${p.title}` : p.kind === 'other' ? `other:${p.text}` : p.kind))
+      .map((p) =>
+        p.kind === 'id' ? `id:${p.id}` : p.kind === 'title' ? `title:${p.title}` : p.kind === 'property' ? `property:${JSON.stringify([p.name, p.value])}` : p.kind === 'other' ? `other:${p.text}` : p.kind,
+      )
       .join(',')
   if (rest(before) !== rest(after)) throw new UnsentChangeError(id)
   const ops: CardOp[] = []

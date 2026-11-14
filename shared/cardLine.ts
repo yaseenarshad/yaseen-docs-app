@@ -75,7 +75,9 @@ export type CardPart =
  * What a card line holds. `parts` keeps every part in place; the getters below read it. A title part read off a line
  * in a form this app does not write (a bare `>`, extra spaces, a tab after `title`, an odd escape) keeps that part's
  * text as `raw`, so a write that does not change the title writes its bytes back (YAZ-5309: an answer on the phone
- * never changes a title); a new title (`withCardTitle`) is written in the app's own form.
+ * never changes a title); a new title (`withCardTitle`) is written in the app's own form. A title with a raw comma
+ * keeps no `raw`: a write encodes its commas (YAZ-5393), so an older build never splits it. A property part keeps its
+ * text as `raw` the same way (YAZ-5349: `tags  "a"`, `ratio 2.50`, `[ "a" ]`), until a write changes it.
  */
 export interface CardLine {
   parts: CardPart[]
@@ -119,8 +121,8 @@ export const cardTime = (ms: number): string => `${new Date(ms).toISOString().sl
 /** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteTitle`). */
 const TITLE_RE = /^title[ \t]+"((?:[^"\\]|\\.)*)"$/
 
-/** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle` or an ID. */
-const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || isNumberId(text)
+/** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
+const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || text === 'fix' || isNumberId(text)
 
 /**
  * The parts of a line's body, split on its commas: a comma inside a quoted text (a title, a property's value) splits
@@ -191,14 +193,14 @@ const titlePart = (title: string): string => `title ${quoteTitle(title)}`
 // read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
 
 /** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
-const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle'])
+const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix'])
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
 const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
 
 /**
  * Can `name` be a card property's name (YAZ-5379)? A property name (`isPropertyName`: not empty, no space at either
- * end, no line break) that is none of the card line's words (`title`, `off`, `next`, `notitle`), in any capitals.
+ * end, no line break) that is none of the card line's words (`title`, `off`, `next`, `notitle`, `fix`), in any capitals.
  */
 export function isCardPropertyName(name: unknown): name is string {
   return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name) && !CARD_LINE_WORDS.has(name.toLowerCase())
@@ -259,7 +261,9 @@ export function parseCardLine(value: string): CardLine | null {
     else if (title !== null && cleanCardTitle(unquoteTitle(title[1])) !== '') {
       titled = true
       const clean = cleanCardTitle(unquoteTitle(title[1]))
-      parts.push(text === titlePart(clean) ? { kind: 'title', title: clean } : { kind: 'title', title: clean, raw: text })
+      // Its own bytes are kept (`raw`) unless they are the app's form, or hold a raw comma: an older build splits there,
+      // so a write puts the title in the app's form, its commas `&#44;` (YAZ-5393).
+      parts.push(text === titlePart(clean) || text.includes(',') ? { kind: 'title', title: clean } : { kind: 'title', title: clean, raw: text })
     } else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
@@ -269,7 +273,8 @@ export function parseCardLine(value: string): CardLine | null {
       parts.push({ kind: 'id', id: canonicalPageId(text) })
     } else {
       const property = parseProperty(text)
-      parts.push(property === null ? { kind: 'other', text } : { kind: 'property', ...property })
+      // A property in a form this app does not write (`tags  "a"`, `ratio 2.50`, `[ "a" ]`) keeps its bytes (`raw`), as a title does.
+      parts.push(property === null ? { kind: 'other', text } : formatProperty(property.name, property.value) === text ? { kind: 'property', ...property } : { kind: 'property', ...property, raw: text })
     }
   }
   return { parts }
@@ -394,7 +399,7 @@ export function renameCardProperty(line: CardLine, from: string, to: string): Ca
   const held = line.parts[at]
   if (held?.kind !== 'property' || held.name === to) return line
   const fold = keyFold(to)
-  return { parts: line.parts.flatMap((p, i) => (i === at ? [{ ...held, name: to }] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
+  return { parts: line.parts.flatMap((p, i) => (i === at ? [{ kind: 'property', name: to, value: held.value }] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
 }
 
 /** The card without property `name`, in any spelling (YAZ-5379). A name it does not hold changes nothing. */

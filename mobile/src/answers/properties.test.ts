@@ -117,3 +117,13 @@ function isNoop(line: CardLine, op: CardOp): boolean {
   if (op.kind === 'fix') return line.parts.some((p) => p.kind === 'fix') === op.on
   return false
 }
+
+describe('an unswept vault (no property move yet, YAZ-5384; no title move, YAZ-5308): the phone reads it and never half-migrates it', () => {
+  const file = `---\nkind: card\ntitle: Old title\ntags: [europe, capitals]\nlevel: A2\n---\n\n\`\`\`card\nCapital of Spain\n\nWhat is it?\n---\nMadrid\n\`\`\`\n<!-- card: NC-1, ${R0} -->\n`
+  it('an answer, Fix later and Up next change only the card line: the front matter and the first line stay byte for byte, no property or title part is written', () => {
+    const out = applyOps(file, [{ kind: 'review', id: 'NC-1', review: R }, { kind: 'fix', id: 'NC-1', on: true }, { kind: 'next', id: 'NC-1', on: true }]).content
+    expect(out).toBe(file.replace(`<!-- card: NC-1, ${R0} -->`, `<!-- card: NC-1, next, fix, ${R0}, 2026-11-14T06:01Z good 9s -->`))
+    expect(cardPropertiesOf(pageCards(out)[0].line)).toEqual({})
+    expect(applyOps(out, [{ kind: 'unreview', id: 'NC-1', at: R.at, rating: R.rating }, { kind: 'fix', id: 'NC-1', on: false }, { kind: 'next', id: 'NC-1', on: false }]).content).toBe(file)
+  })
+})

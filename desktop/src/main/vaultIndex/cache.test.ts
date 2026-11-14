@@ -284,6 +284,15 @@ describe('index cache: a bad file never throws, only degrades', () => {
     }
   })
 
+  it('YAZ-5349: a snapshot of version 18 (the phone branch) holds no card `properties`, and one of 17 or 18 read `fix "x"` as a property → version-mismatch, so a card is never served with properties its card line does not hold', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(19)
+    for (const version of [17, 18]) {
+      const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Capital of Spain', fix: true }]
+      await writeFile(file, JSON.stringify({ version, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+      expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+    }
+  })
+
   it('YAZ-5308: a snapshot of version 16 read a card`s title off its first line or a card file`s `title` → version-mismatch, so a card is never served under a title its card line does not hold', async () => {
     expect(CACHE_VERSION).toBeGreaterThanOrEqual(17)
     const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [], title: 'Old first line' }]
@@ -337,12 +346,12 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
     '```card',
     'A card links [[Card Link]] and #card-tag',
     '```',
-    '<!-- card: CAN-3, title "Card, links", off, next, notitle, fix, 2026-11-12T14:05Z good, 2026-11-13T09:00Z again 13s -->',
+    '<!-- card: CAN-3, title "Card, links", tags "x" "y", level 2, off, next, notitle, fix, 2026-11-12T14:05Z good, 2026-11-13T09:00Z again 13s -->',
     '',
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 18,
+    cacheVersion: 19,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],
@@ -370,9 +379,10 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       links: ['Ref', 'Folder Ref', 'Page One', 'Page Two', 'Covid pages|COVID-19', 'chart.pdf', 'Card Link'],
       embeds: ['img.png', 'photo.png'],
       // A card's title (off its card line, YAZ-5308) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
+      // Its own properties too (YAZ-5349, CACHE_VERSION 19), off its card line.
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
       // Its `fix` (YAZ-5097) too: the To fix count reads no file. CACHE_VERSION 18 (YAZ-5309): the two version 17s met.
-      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true, fix: true }],
+      cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true, fix: true, properties: { tags: ['x', 'y'], level: 2 } }],
     },
     // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's (off its card line, YAZ-5308).
     cardFile: { kind: 'card', title: 'Capital of France?' },

@@ -1,4 +1,5 @@
 import { cardIdOf, cardReviewKey, cardReviewsOf, cardTitleOf, formatCardLine, formatCardReview, pageCards, rewritePageCards, withCardReviews, type CardBlock, type CardLine, type CardPart } from './cardLine'
+import { keyFold } from './propertyKeys'
 
 /**
  * THE CARD RULE OF SYNC (YAZ-5089, decision 5 on YAZ-5055). A card line is ONE line, so one card answered on two Macs
@@ -7,13 +8,17 @@ import { cardIdOf, cardReviewKey, cardReviewsOf, cardTitleOf, formatCardLine, fo
  *  - the reviews: the union of both sides' reviews (but a review in the base that one side removed and the other left
  *    as it was stays removed, YAZ-5155), each one ONE time, in time order (`withCardReviews`: of one review
  *    with and without seconds, the timed one);
- *  - the marks (`off`, `next`, `notitle`, and each part this app does not know yet, such as `fix`): a three-way result
+ *  - the marks (`off`, `next`, `notitle`, `fix`, and each part this app does not know yet): a three-way result
  *    against the base. A mark that one side changed takes that change; a mark both sides left alone stays as it was.
  *  - the title (YAZ-5308: the `title` part, YAZ-5309): a three-way result against the base, as a mark's, by its text. A
  *    title one side changed (a rename on the Mac, while the phone answers) takes that change; both sides changed it,
  *    each to a new title: theirs. A title neither side changed keeps its bytes;
+ *  - each property (YAZ-5349: `tags "a" "b"`, by its name in any capitals): a three-way result against the base, as the
+ *    title's, by its text. A property one side set, changed, renamed or removed takes that change (a property changed
+ *    on the Mac while the phone answers); both sides changed it, each in its own way: theirs. One neither side changed
+ *    keeps its bytes;
  *  - the ID and the order of the parts: theirs (it is already everywhere else); a mark that only mine adds goes after
- *    the part it follows in mine.
+ *    the part it follows in mine, and a property only mine sets goes after theirs' last property.
  * So the two card lines are now the same, and git's line merge sees no clash there. What the rule never does:
  *  - touch a card that only ONE side changed: git's merge takes that side's line, and a review that side removed (an
  *    undo, Reset history) stays removed;
@@ -62,9 +67,22 @@ function byId(cards: readonly CardBlock[]): Map<string, CardBlock> {
 
 const same = (a: CardLine, b: CardLine): boolean => formatCardLine(a) === formatCardLine(b)
 
-/** What a part is, for the three-way result: the ID, the title (`uniteTitle`), one review (its time and rating), or one mark by its text. */
+/**
+ * What a part is, for the three-way result: the ID, the title (`uniteTitle`), one property by its name (`uniteProperties`),
+ * one review (its time and rating), or one mark by its text.
+ */
 const keyOf = (p: CardPart): string =>
-  p.kind === 'id' ? 'id' : p.kind === 'title' ? 'title' : p.kind === 'review' ? `review ${cardReviewKey(p.review)}` : p.kind === 'other' ? `mark ${p.text}` : `mark ${p.kind}`
+  p.kind === 'id'
+    ? 'id'
+    : p.kind === 'title'
+      ? 'title'
+      : p.kind === 'property'
+        ? `property ${keyFold(p.name)}`
+        : p.kind === 'review'
+          ? `review ${cardReviewKey(p.review)}`
+          : p.kind === 'other'
+            ? `mark ${p.text}`
+            : `mark ${p.kind}`
 
 const marksOf = (line: CardLine | null): Set<string> => new Set((line?.parts ?? []).map(keyOf).filter((k) => k.startsWith('mark ')))
 
@@ -90,11 +108,77 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
         break
       }
     }
-    // The app's own marks keep its order: `off`, then `next`, then `notitle` (`withCardNext`, `withCardNoTitle`).
+    // The app's own marks go after the head (the ID, the title and the properties, YAZ-5349) and keep its order: `off`,
+    // then `next`, then `notitle`, then `fix` (`withCardOff`, `withCardNext`, `withCardNoTitle`, `withCardFix`).
+    if (rank(part) > 0) while (parts[at]?.kind === 'title' || parts[at]?.kind === 'property') at++
     while (rank(parts[at]) > 0 && rank(parts[at]) < rank(part)) at++
     parts = [...parts.slice(0, at), part, ...parts.slice(at)]
   }
-  return uniteTitle(base, theirs, mine, { parts })
+  return uniteProperties(base, theirs, mine, uniteTitle(base, theirs, mine, { parts }))
+}
+
+/** A line's properties by name (`keyFold`; the first of two spellings, as `cardPropertiesOf` reads them), each with its part. */
+function propertiesOf(line: CardLine | null): Map<string, CardPart> {
+  const out = new Map<string, CardPart>()
+  for (const p of line?.parts ?? []) if (p.kind === 'property' && !out.has(keyFold(p.name))) out.set(keyFold(p.name), p)
+  return out
+}
+
+/** A part's text as the line writes it (its own bytes when it keeps them). */
+const textOf = (p: CardPart | undefined): string | undefined => (p === undefined ? undefined : (formatCardLine({ parts: [p] }) ?? undefined))
+
+/**
+ * Each property three ways (YAZ-5349), by its name and its text: the side that changed it from the base (set, a new
+ * value, removed) wins; both changed it, each in its own way: theirs. With no base, theirs; a property only mine holds
+ * is kept. `line` holds theirs' properties; mine's part takes its place, or comes after the line's last property (else
+ * after the ID and the title), and one mine removed goes. A rename is a remove and a set: the new name lands where the
+ * old one was when theirs left that place alone.
+ */
+function uniteProperties(base: CardLine | null, theirs: CardLine, mine: CardLine, line: CardLine): CardLine {
+  const [b, t, m] = [propertiesOf(base), propertiesOf(theirs), propertiesOf(mine)]
+  const mineWins = (k: string): boolean => {
+    const [bv, tv, mv] = [textOf(b.get(k)), textOf(t.get(k)), textOf(m.get(k))]
+    if (tv === mv) return false
+    if (base === null) return tv === undefined
+    return tv === bv
+  }
+  const keys = [...new Set([...t.keys(), ...m.keys()])].filter(mineWins)
+  if (keys.length === 0) return line
+  let parts = line.parts
+  // Removes first, keeping the place of each (a rename puts its new name there).
+  const freed: number[] = []
+  for (const k of keys) {
+    if (m.has(k) || !t.has(k)) continue
+    const at = parts.findIndex((p) => keyOf(p) === `property ${k}`)
+    freed.push(at)
+    parts = parts.filter((p) => keyOf(p) !== `property ${k}`)
+  }
+  for (const k of keys) {
+    const own = m.get(k)
+    if (own === undefined) continue
+    const at = parts.findIndex((p) => keyOf(p) === `property ${k}`)
+    if (at !== -1) {
+      parts = parts.flatMap((p, i) => (i === at ? [own] : keyOf(p) === `property ${k}` ? [] : [p]))
+      continue
+    }
+    // A new name: where mine has it after another property of the line, after that one; else where a removed one was; else after the last property, else after the ID and the title.
+    const mineAt = mine.parts.indexOf(own)
+    let place = -1
+    for (let j = mineAt - 1; j >= 0 && place === -1; j--) {
+      const prev = mine.parts[j]
+      if (prev.kind !== 'property' && prev.kind !== 'title' && prev.kind !== 'id') break
+      const found = parts.findIndex((p) => keyOf(p) === keyOf(prev))
+      if (found !== -1) place = found + 1
+    }
+    if (place === -1 && freed.length > 0) place = Math.min(freed.shift()!, parts.length)
+    if (place === -1) {
+      const last = parts.map((p) => p.kind === 'property').lastIndexOf(true)
+      place = last !== -1 ? last + 1 : parts.findIndex((p) => p.kind === 'id') + 1
+      while (parts[place]?.kind === 'title') place++
+    }
+    parts = [...parts.slice(0, place), own, ...parts.slice(place)]
+  }
+  return { parts }
 }
 
 /**
@@ -137,4 +221,4 @@ function removedReviews(base: CardLine | null, theirs: CardLine, mine: CardLine)
   return gone
 }
 
-const rank = (p: CardPart | undefined): number => (p?.kind === 'off' ? 1 : p?.kind === 'next' ? 2 : p?.kind === 'notitle' ? 3 : 0)
+const rank = (p: CardPart | undefined): number => (p?.kind === 'off' ? 1 : p?.kind === 'next' ? 2 : p?.kind === 'notitle' ? 3 : p?.kind === 'fix' ? 4 : 0)

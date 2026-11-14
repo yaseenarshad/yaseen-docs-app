@@ -17,9 +17,11 @@ export const INDEX_STATE = 'index'
 /**
  * The rules the records are built by, as the Mac's `CACHE_VERSION` (`desktop/.../vaultIndex/cache.ts`). Raise it when
  * `indexRecord` reads a file in a new way. 2 (YAZ-5309): a card's title is its card line's `title` part (YAZ-5308),
- * never its first line nor a card file's `title` property. Absent (1): every index stored before it.
+ * never its first line nor a card file's `title` property. 3 (YAZ-5349): a card's own properties ride on its record
+ * (`CardRecord.properties`, off its card line), and `fix` is a card line word (no property is named so); the Mac's
+ * `CACHE_VERSION` 19. Absent (1): every index stored before it.
  */
-export const INDEX_RULES = 2
+export const INDEX_RULES = 3
 
 export interface PhoneIndex {
   /** The commit the records are of. */
