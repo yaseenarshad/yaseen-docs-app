@@ -4,13 +4,13 @@ The words of the card course.
 
 Say you learn something today. A week from now, your brain will have forgotten most of it.
 
-In the 1880s, a scientist named Hermann Ebbinghaus ran one of the first experiments on memory. He memorized lists of made-up syllables to see how quickly he forgot them. A day later, relearning a list took about two thirds as long as learning it the first time.
+In the 1880s, a scientist named Hermann Ebbinghaus ran one of the first experiments on memory. He memorized lists of made-up syllables to see how quickly he forgot them. A week later, he had forgotten 75% of what he had learned.
 
 In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.
 
 But review it again before you forget, and it sticks longer.
 
-Each time, the gap grows. A day. A week. A month.
+Each time you remember it, you can wait a little longer before the next review. A day, then a week, then a month. Over time, you review it less often and still remember it
 
 A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.
 
@@ -225,7 +225,7 @@ What you learn this way compounds. To compound is to grow on itself, like intere
 
 Each thing you keep gives the next thing something to hold on to.
 
-Say you make five cards a day. In a year, that is more than 1,800 small things you still know.
+Say you make five cards a day. In a year, that is more than 1,800 ideas and topics you still know.
 
 And known cards come back less often, so the daily review stays small as the pile grows.
 

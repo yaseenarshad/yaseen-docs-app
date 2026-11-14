@@ -2,18 +2,18 @@
  "version": 1,
  "chapters": {
   "why": {
-   "file": "why-b54db3a0.ydca",
-   "bytes": 1504813,
-   "sha256": "b54db3a060e4b7aa16b5f8a9e14d64f51f564108f81653983f43a4a1e9578ba7",
-   "seconds": 174.823,
+   "file": "why-0de6aa62.ydca",
+   "bytes": 1540404,
+   "sha256": "0de6aa627fba888804600114485bf966d1b544f45e203ed0e015a9399fa9d8aa",
+   "seconds": 179.073,
    "clips": {
     "c1-01": {
      "seconds": 5.55,
      "hash": "6211c6a08407aa9b"
     },
     "c1-02": {
-     "seconds": 18.181,
-     "hash": "dcebf11353589634"
+     "seconds": 17.067,
+     "hash": "27b24e4c4082964d"
     },
     "c1-22": {
      "seconds": 8.104,
@@ -24,8 +24,8 @@
      "hash": "73ff6ec75443b8d1"
     },
     "s2b": {
-     "seconds": 5.851,
-     "hash": "66c20304d0bcca05"
+     "seconds": 11.215,
+     "hash": "cf0b8dcc2543fdbc"
     },
     "c1-04": {
      "seconds": 8.731,
@@ -402,10 +402,10 @@
    }
   },
   "compound": {
-   "file": "compound-319b7ff6.ydca",
-   "bytes": 1932102,
-   "sha256": "319b7ff69dae42c939e511641d7470ee2e2f663a9d40e909d640b9c645995090",
-   "seconds": 225.371,
+   "file": "compound-a7bde425.ydca",
+   "bytes": 1939138,
+   "sha256": "a7bde4255380ae7645e3cf313ca924b96b3e5514d01ef24a268ea54cf30f9fee",
+   "seconds": 226.067,
    "clips": {
     "c5-01": {
      "seconds": 5.782,
@@ -420,8 +420,8 @@
      "hash": "ced3914986d7ac65"
     },
     "c5-04": {
-     "seconds": 7.872,
-     "hash": "9fd718cd4b4acb05"
+     "seconds": 8.568,
+     "hash": "a48425c7214a36a5"
     },
     "c5-05": {
      "seconds": 6.827,

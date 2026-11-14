@@ -107,23 +107,23 @@ function Forget(props: SceneProps) {
 }
 
 const SYLLABLES = ['DAX', 'BOK', 'YAT', 'ZUP', 'KEF', 'MIB', 'LOZ', 'TAV', 'WUJ', 'GIP', 'RUF', 'NEX']
-/** The syllables that stay after a day (the rest fade: most of the work is gone). */
+/** Illustrate the loss after roughly a week by fading nine of the twelve syllables. */
 const KEPT = new Set([1, 6, 10])
 
-/** c1-02: introduce the scientist, then show the list, the delay, and the shorter time to learn it again. */
+/** c1-02: introduce the scientist, then show the list, the week-long delay, and the time to relearn the list. */
 function Notebook(props: SceneProps) {
   const b = useBeat(props)
   const book = since(b, 0.02, 0.8)
   const scientist = since(b, cue(b, 0, 0.182), 0.65)
   const listAt = cue(b, 1, 0.414)
-  const dayAt = cue(b, 2, 0.613)
-  const dayLater = since(b, dayAt, 0.6)
-  const gone = between(b, dayAt, dayAt + 0.08)
-  const thirds = cue(b, 3, 0.735)
-  const bars = since(b, thirds - 0.1, 0.5)
-  const again = since(b, thirds - 0.02, 1.2)
+  const weekAt = cue(b, 2, 0.613)
+  const weekLater = since(b, weekAt, 0.6)
+  const gone = between(b, weekAt, weekAt + 0.08)
+  const relearnAt = cue(b, 3, 0.735)
+  const bars = since(b, relearnAt - 0.1, 0.5)
+  const again = since(b, relearnAt - 0.02, 1.2)
   return (
-    <Stage beat={b} label="Hermann Ebbinghaus's early memory experiment: a day later, relearning a list of syllables took two thirds of the original time">
+    <Stage beat={b} label="Hermann Ebbinghaus's early memory experiment: a day later, relearning a list of syllables took two relearnAt of the original time">
       <Layer place="top">
         <Words size="kicker" style={rise(b, book)}>Early experiments on memory</Words>
       </Layer>
@@ -147,8 +147,8 @@ function Notebook(props: SceneProps) {
                 </span>
               ))}
             </div>
-            <p className="kit-notebook__day" style={rise(b, dayLater, 6)}>
-              One day later
+            <p className="kit-notebook__day" style={rise(b, weekLater, 6)}>
+              About a week later
             </p>
           </div>
           <div className="kit-relearn" style={rise(b, bars, 10)}>
@@ -157,7 +157,7 @@ function Notebook(props: SceneProps) {
               <span className="kit-relearn__track">
                 <i
                   style={{
-                    width: `${(100 * moved(b, since(b, thirds - 0.1, 0.8), ease.out)).toFixed(1)}%`,
+                    width: `${(100 * moved(b, since(b, relearnAt - 0.1, 0.8), ease.out)).toFixed(1)}%`,
                   }}
                 />
               </span>
@@ -168,13 +168,13 @@ function Notebook(props: SceneProps) {
                 <i
                   className="is-accent"
                   style={{
-                    width: `${(66.7 * moved(b, again, ease.out)).toFixed(1)}%`,
+                    width: `${(75 * moved(b, again, ease.out)).toFixed(1)}%`,
                   }}
                 />
               </span>
             </p>
-            <Words size="title" tone="accent" style={rise(b, since(b, thirds + 0.03, 0.6))}>
-              ⅔ of the time
+            <Words size="title" tone="accent" style={rise(b, since(b, relearnAt + 0.03, 0.6))}>
+              About ¾ of the time
             </Words>
           </div>
         </div>
@@ -267,17 +267,17 @@ function Reviews(props: SceneProps) {
     if (slow > 0) cursor = 1 + moved(b, slow, ease.out)
     ghost = rewind
   } else {
-    const m = b.marks.length === 3 ? b.marks : [0.431, 0.608, 0.786]
-    stretch = moved(b, between(b, 0.04, 0.36))
+    const m = b.marks.length === 3 ? b.marks : [0.428, 0.531, 0.585]
+    stretch = moved(b, between(b, 0.168, 0.39))
     axis = { days: lerp(7, 45, stretch), warp: lerp(1, 0.55, stretch) }
     jumps[0] = 1
     jumps[1] = moved(b, since(b, m[0], 0.22), ease.out)
     jumps[2] = moved(b, since(b, m[1], 0.22), ease.out)
     jumps[3] = moved(b, since(b, m[2], 0.22), ease.out)
     cursor = 2
-    const a1 = between(b, m[0] + 0.04, m[1] - 0.005)
-    const a2 = between(b, m[1] + 0.04, m[2] - 0.005)
-    const a3 = between(b, m[2] + 0.04, 1)
+    const a1 = between(b, m[0], m[1])
+    const a2 = between(b, m[1], m[2])
+    const a3 = between(b, m[2] + 0.04, 0.78)
     if (a1 > 0) cursor = lerp(2, 9, moved(b, a1))
     if (a2 > 0) cursor = lerp(9, 39, moved(b, a2))
     if (a3 > 0) cursor = lerp(39, 45, moved(b, a3, ease.out))

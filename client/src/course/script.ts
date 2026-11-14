@@ -45,14 +45,14 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.', marks: [0.389, 0.757] },
       // Early memory research: Hermann Ebbinghaus, his notebook of made-up syllables, and the time it took to relearn them.
       // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
-      { id: 'c1-02', text: "In the 1880s, a scientist named Hermann Ebbinghaus ran one of the first experiments on memory. He memorized lists of made-up syllables to see how quickly he forgot them. A day later, relearning a list took about two thirds as long as learning it the first time.", marks: [0.136, 0.396, 0.667, 0.827] },
+      { id: 'c1-02', text: "In the 1880s, a scientist named Hermann Ebbinghaus ran one of the first experiments on memory. He memorized lists of made-up syllables to see how quickly he forgot them. A week later, he had forgotten 75% of what he had learned.", marks: [0.155, 0.422, 0.712, 0.83] },
       // The old curve from 1885 and a new one from 2015 slide over each other; they match.
       // SOURCE: Murre & Dros 2015, "Replication and Analysis of Ebbinghaus' Forgetting Curve", PLOS ONE 10(7): "We conclude that the Ebbinghaus forgetting curve has indeed been replicated."
       { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.', marks: [0.267, 0.503, 0.819] },
       // A review just before the curve drops; the curve lifts and falls slower.
       { id: 'c1-03', text: 'But review it again before you forget, and it sticks longer.' },
       // Three reviews; the gaps label "1 day", "1 week", "1 month" on the marks. (Approved sample, unchanged.)
-      { id: 's2b', text: 'Each time, the gap grows. A day. A week. A month.', marks: [0.431, 0.608, 0.786] },
+      { id: 's2b', text: "Each time you remember it, you can wait a little longer before the next review. A day, then a week, then a month. Over time, you review it less often and still remember it", marks: [0.428, 0.531, 0.585] },
       // A small glowing memory, faint at first, grows solid over time.
       // SOURCE: Squire, Genzel, Wixted & Morris 2015, "Memory Consolidation", Cold Spring Harb Perspect Biol.
       { id: 'c1-04', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
@@ -311,7 +311,7 @@ export const COURSE: CourseChapter[] = [
       // One card, then a new card that hooks onto it.
       { id: 'c5-03', text: 'Each thing you keep gives the next thing something to hold on to.', marks: [0.421, 0.679] },
       // A counter: 5 cards a day, the days of a year pass, "1,825".
-      { id: 'c5-04', text: 'Say you make five cards a day. In a year, that is more than 1,800 small things you still know.', marks: [0.112, 0.346, 0.534] },
+      { id: 'c5-04', text: "Say you make five cards a day. In a year, that is more than 1,800 ideas and topics you still know.", marks: [0.112, 0.327, 0.5] },
       // The pile grows tall; the daily stack beside it stays small.
       { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.', marks: [0.469, 0.773] },
       // One card on a time line; four marks appear: "a few days", "about 2 weeks", "about 6 weeks", "about 4 months". The gaps stretch across the stage.
