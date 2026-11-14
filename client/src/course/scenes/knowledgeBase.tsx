@@ -496,7 +496,7 @@ function CaptureLater(props: SceneProps) {
               </Words>
             </div>
             <div style={rise(b, since(b, chore - 0.04, 0.6), 12)}>
-              <AppWindow style={{ width: 'min(34cqw, 12em)', height: 'min(36cqh, 9em)' }} label="The Inbox, with a pile of cards due" sidebar={<SidebarPreview inbox={due} inboxGlow={since(b, chore, 0.6) * 0.6} rows={[{ name: 'Cards', kind: 'folder', open: true }]} />} />
+              <AppWindow label="The Inbox, with a pile of cards due" sidebar={<SidebarPreview inbox={due} inboxGlow={since(b, chore, 0.6) * 0.6} rows={[{ name: 'Cards', kind: 'folder', open: true }]} />} />
               <Words size="page" tone="danger">
                 Review: a chore
               </Words>

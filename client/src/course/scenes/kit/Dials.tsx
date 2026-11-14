@@ -22,7 +22,7 @@ export function Gauge({ beat, p, value, from = 0.5, swing, label, low = 'Low', h
   const v = lerp(from, value, s)
   const a = 180 + 180 * clamp(v, -0.05, 1.05)
   return (
-    <svg className="kit-gauge" viewBox="0 0 240 160" aria-hidden="true" style={{ opacity: clamp(p * 2) }}>
+    <svg className="kit-gauge" viewBox="0 0 240 190" aria-hidden="true" style={{ opacity: clamp(p * 2) }}>
       <path className="kit-gauge__track" d={arcPath(120, 120, 90, 180, 360)} />
       <path className="kit-gauge__low" d={arcPath(120, 120, 90, 180, 240)} />
       <line className="kit-gauge__needle" x1={120} y1={120} x2={120 + 78 * Math.cos(rad(a))} y2={120 + 78 * Math.sin(rad(a))} />
@@ -33,7 +33,7 @@ export function Gauge({ beat, p, value, from = 0.5, swing, label, low = 'Low', h
       <text className="kit-svg-page" x={210} y={146} textAnchor="middle">
         {high}
       </text>
-      <text className="kit-svg-label" x={120} y={156} textAnchor="middle">
+      <text className="kit-svg-label" x={120} y={182} textAnchor="middle">
         {label}
       </text>
     </svg>

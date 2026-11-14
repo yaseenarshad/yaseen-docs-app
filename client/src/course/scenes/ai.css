@@ -10,7 +10,7 @@
 }
 .ai-term--mini {
   width: min(28cqw, 11em);
-  font-size: 0.7em;
+  font-size: max(var(--kit-min-text), 0.7em);
 }
 .ai-term--mini .kit-term__body {
   min-height: 3em;
@@ -45,7 +45,7 @@
   border-bottom: 1px solid var(--border);
   background: var(--bg-side);
   color: var(--fg-muted);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
 }
 .ai-file__icon {
   width: 0.8em;
@@ -266,7 +266,7 @@
   border-radius: 50%;
   background: var(--ok);
   color: var(--bg);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
   font-weight: 800;
 }
 
@@ -338,7 +338,7 @@
   border-radius: 999px;
   background: var(--fg);
   color: var(--bg);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
   font-weight: 600;
 }
 
@@ -374,7 +374,7 @@
 .ai-loop__node--small {
   border-style: dashed;
   color: var(--fg-muted);
-  font-size: 0.85em;
+  font-size: max(var(--kit-min-text), 0.85em);
   font-weight: 500;
 }
 .ai-habits {

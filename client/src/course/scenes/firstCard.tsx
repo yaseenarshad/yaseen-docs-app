@@ -805,7 +805,22 @@ function InTheApp(props: SceneProps) {
   return (
     <Stage beat={b} label="In the app: make a card, hide a word, add a side and a section, save, rename, and the card's menu">
       <Layer>
-        <AppWindow sidebar={<SidebarPreview rows={rows} inbox={4} />} label={unit('The app, with made-up pages')}>
+        <AppWindow
+          sidebar={<SidebarPreview rows={rows} inbox={4} />}
+          label={unit('The app, with made-up pages')}
+          over={
+            <MenuPreview
+              beat={b}
+              x={16}
+              y={30}
+              p={menu}
+              items={NEW_MENU.map((label) => ({
+                label,
+                active: label === 'New card' ? since(b, 0.34, 0.2) : 0,
+              }))}
+            />
+          }
+        >
           <div className="kit-app__tabbar">{created && <span className="kit-app__tabname">{tabTitle}</span>}</div>
           {created && (
             <div className="kit-app__tab">
@@ -870,16 +885,6 @@ function InTheApp(props: SceneProps) {
               )}
             </div>
           )}
-          <MenuPreview
-            beat={b}
-            x={14}
-            y={22}
-            p={menu}
-            items={NEW_MENU.map((label) => ({
-              label,
-              active: label === 'New card' ? since(b, 0.34, 0.2) : 0,
-            }))}
-          />
           <ToolbarPreview
             beat={b}
             x={58}

@@ -41,7 +41,7 @@
   border-radius: 10px;
   background: var(--bg);
   box-shadow: var(--kit-shadow);
-  font-size: 0.82em;
+  font-size: max(var(--kit-min-text), 0.82em);
   line-height: 1.45;
   text-align: left;
   transform-origin: 50% 40%;
@@ -54,7 +54,7 @@
   gap: 0.6em;
   margin-bottom: 0.4em;
   color: var(--fg-muted);
-  font-size: 0.85em;
+  font-size: max(var(--kit-min-text), 0.85em);
 }
 .gc-wall__line {
   margin: 0;
@@ -67,9 +67,10 @@
 }
 .gc-wall__q {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  margin: -0.6em 0 0 -0.3em;
+  /* Beside the wall, at its top right: it never hides a word of it. */
+  top: -0.35em;
+  right: -0.55em;
+  margin: 0;
   color: var(--accent);
   font-size: 5em;
   font-weight: 800;
@@ -185,7 +186,7 @@
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--fg-muted);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
 }
 .gc-calendar span.is-past {
   background: var(--kit-faint);
@@ -218,7 +219,7 @@
 }
 .gc-two .kit-index-card {
   width: min(38cqw, 14em);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
 }
 .gc-two__side {
   width: min(40cqw, 16em);
@@ -263,7 +264,7 @@
 .gc-name-it__label small {
   color: var(--fg-muted);
   font-family: var(--font);
-  font-size: 0.6em;
+  font-size: max(var(--kit-min-text), 0.6em);
   font-style: normal;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -287,6 +288,11 @@
 }
 .gc-example {
   align-items: center;
+}
+/* The card and the terminal share the row: each may shrink, so neither runs off a narrow stage. */
+.gc-example > * {
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .gc-example__card {
   width: min(46cqw, 20em);
@@ -357,7 +363,7 @@ button.gc-pick__card:hover {
   background: var(--bg);
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
   color: var(--ok);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
   font-weight: 700;
   text-align: left;
 }
@@ -383,7 +389,7 @@ button.gc-pick__card:hover {
   border-radius: 999px;
   background: var(--bg);
   color: var(--fg-muted);
-  font-size: 0.78em;
+  font-size: max(var(--kit-min-text), 0.78em);
   white-space: nowrap;
 }
 .gc-check {
@@ -405,7 +411,7 @@ button.gc-pick__card:hover {
 }
 .gc-check__who {
   color: var(--fg-muted);
-  font-size: 0.85em;
+  font-size: max(var(--kit-min-text), 0.85em);
 }
 .gc-check__said {
   min-width: 4em;

@@ -153,7 +153,7 @@
 }
 .kit-paper--compact {
   width: min(92cqw, 24em);
-  font-size: 0.86em;
+  font-size: max(var(--kit-min-text), 0.86em);
 }
 .kit-paper__journal {
   display: flex;
@@ -163,7 +163,7 @@
   padding-bottom: 0.55em;
   border-bottom: 1px solid var(--border);
   color: var(--accent);
-  font-size: 0.72em;
+  font-size: max(var(--kit-min-text), 0.72em);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -181,7 +181,7 @@
 .kit-paper__authors {
   margin: 0 0 1em;
   color: var(--fg-muted);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
 }
 .kit-paper__text {
   display: grid;
@@ -213,7 +213,7 @@
 .kit-cite {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 0.78em;
+  font-size: max(var(--kit-min-text), 0.78em);
 }
 .kit-cite__journal {
   color: var(--accent);
@@ -291,13 +291,13 @@
 }
 .kit-bar__label {
   color: var(--fg);
-  font-size: 0.9em;
+  font-size: max(var(--kit-min-text), 0.9em);
   font-weight: 500;
   line-height: 1.25;
 }
 .kit-bar__note {
   color: var(--fg-muted);
-  font-size: 0.78em;
+  font-size: max(var(--kit-min-text), 0.78em);
 }
 
 /* TALLY */
@@ -605,7 +605,7 @@
 .kit-quiet-line {
   margin: 0.8em 0 0;
   color: var(--fg-muted);
-  font-size: 0.82em;
+  font-size: max(var(--kit-min-text), 0.82em);
   text-align: center;
 }
 
@@ -650,6 +650,12 @@
 }
 .kit-app--bare {
   grid-template-columns: minmax(0, 1fr);
+}
+.kit-app--sidebar {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(40cqw, 14em);
+  height: auto;
+  padding-bottom: 8px;
 }
 .kit-app__sidebar {
   min-width: 0;
@@ -891,7 +897,7 @@
   background: none;
   color: var(--accent);
   font: inherit;
-  font-size: 0.88em;
+  font-size: max(var(--kit-min-text), 0.88em);
   cursor: pointer;
 }
 .kit-link:hover {
@@ -957,7 +963,7 @@
 .kit-showonly {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 0.85em;
+  font-size: max(var(--kit-min-text), 0.85em);
 }
 
 /* Chapter lists, buttons and other small copies of the course's own frame */
@@ -969,7 +975,7 @@
   padding: 0;
   list-style: none;
   text-align: left;
-  font-size: 0.95em;
+  font-size: max(var(--kit-min-text), 0.95em);
 }
 .kit-chapters li {
   display: flex;
@@ -1004,7 +1010,7 @@
 }
 .kit-mini__title {
   overflow: hidden;
-  font-size: 0.78em;
+  font-size: max(var(--kit-min-text), 0.78em);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1275,6 +1281,28 @@
   color: var(--fg-muted);
   font-size: 11.5px;
 }
+/* The app's key row stays on one line (it clips); the course's copy wraps, so no key runs off a narrow stage. */
+.card .kit-editkeys {
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+}
+/* A narrow stage: the embed's head keeps its name ("Embedded from …"), and lets it wrap; the ID steps out. */
+@container (max-width: 560px) {
+  .kit-embed .card-embed__dot,
+  .kit-embed .card-embed__head .card__id {
+    display: none;
+  }
+  .kit-embed .card-embed__from {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+  }
+  .kit-embed .card-embed__head {
+    flex-wrap: wrap;
+    height: auto;
+  }
+}
 
 /* A JOURNAL'S ISSUE */
 .kit-journal {
@@ -1308,7 +1336,7 @@
   margin: 0.6em 0 0;
   padding-top: 0.4em;
   border-top: 1px solid rgba(244, 241, 234, 0.4);
-  font-size: 0.62em;
+  font-size: max(var(--kit-min-text), 0.62em);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -1548,7 +1576,7 @@
 }
 .kit-chat__line--you {
   font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.92em;
+  font-size: max(var(--kit-min-text), 0.92em);
 }
 .kit-chat__prompt {
   color: var(--accent);
@@ -1565,7 +1593,7 @@
   display: block;
   margin-top: 0.25em;
   color: var(--fg-muted);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
 }
 .kit-chat__step::before {
   content: '✓ ';
@@ -1600,7 +1628,7 @@
 }
 .kit-chat__btn {
   padding: 3px 12px;
-  font-size: 0.9em;
+  font-size: max(var(--kit-min-text), 0.9em);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--fg-muted);
@@ -1668,7 +1696,7 @@
 .kit-pill .wikilink__card-id {
   margin-left: 0.35em;
   color: var(--fg-muted);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
 }
 .kit-mentions {
   box-sizing: border-box;
@@ -1972,7 +2000,7 @@
   box-shadow: var(--kit-shadow);
   color: #d9dde3;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.82em;
+  font-size: max(var(--kit-min-text), 0.82em);
   text-align: left;
 }
 .kit-term__bar {
@@ -1982,7 +2010,7 @@
   padding: 7px 10px;
   background: #2a2d33;
   color: #9aa1ab;
-  font-size: 0.86em;
+  font-size: max(var(--kit-min-text), 0.86em);
 }
 .kit-term__bar i {
   width: 9px;
@@ -2076,7 +2104,7 @@
 }
 .kit-report__sub {
   color: var(--fg-muted);
-  font-size: 0.78em;
+  font-size: max(var(--kit-min-text), 0.78em);
 }
 .kit-report__rows {
   display: flex;
@@ -2090,7 +2118,7 @@
   padding: 0.22em 0.5em;
   border-bottom: 1px dashed var(--kit-line);
   border-radius: 4px;
-  font-size: 0.86em;
+  font-size: max(var(--kit-min-text), 0.86em);
   transform-origin: 30% 50%;
 }
 .kit-report__row:last-child {
@@ -2104,7 +2132,7 @@
   padding: 0.05em 0.5em;
   border: 2px solid currentColor;
   border-radius: 5px;
-  font-size: 0.82em;
+  font-size: max(var(--kit-min-text), 0.82em);
   font-weight: 800;
   letter-spacing: 0.06em;
   text-align: center;
@@ -2149,7 +2177,7 @@
 .kit-quote__by {
   margin-top: 0.9em;
   color: var(--fg-muted);
-  font-size: 0.95em;
+  font-size: max(var(--kit-min-text), 0.95em);
 }
 .kit-quote__by b {
   color: var(--fg);

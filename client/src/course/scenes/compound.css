@@ -320,7 +320,7 @@
 }
 .kit-life__word i {
   color: var(--accent);
-  font-size: 0.82em;
+  font-size: max(var(--kit-min-text), 0.82em);
   font-style: normal;
 }
 .kit-life__cycle {

@@ -254,7 +254,17 @@ function InAPage(props: SceneProps) {
     <Stage beat={b} label={unit('A card inside a page: beside the text, made with /card, with the same menu, history and Inbox')}>
       <Layer>
         <Fit min={0.8}>
-          <AppWindow sidebar={<SidebarPreview inbox={4} inboxGlow={inbox} rows={rows(FOOD, { [FOOD]: step === 3 ? showFor(since(b, right - 0.05, 0.3), since(b, 0.98, 0.3)) : 0 })} />} label={unit('A page with a card in it')}>
+          <AppWindow
+            sidebar={<SidebarPreview inbox={4} inboxGlow={inbox} rows={rows(FOOD, { [FOOD]: step === 3 ? showFor(since(b, right - 0.05, 0.3), since(b, 0.98, 0.3)) : 0 })} />}
+            label={unit('A page with a card in it')}
+            over={
+              <>
+                {/* The page's row in the sidebar: its right-click menu opens beside the row, over the sidebar. */}
+                <MenuPreview beat={b} x={16} y={34} p={pageMenu} items={[{ label: 'Open in new tab' }, { label: 'Add to favorites' }, { label: unit('Review this page'), active: since(b, review, 0.3), rule: true }, { label: 'Rename', rule: true }]} />
+                {step === 3 && <Pointer beat={b} from={[70, 80]} to={[14, 30]} move={between(b, 0.16, right)} click={since(b, right, 0.4)} show={showFor(since(b, 0.12, 0.3), since(b, 0.97, 0.3))} />}
+              </>
+            }
+          >
             <Tab name={FOOD}>
               <div className="kit-where__page">
                 <PageView title={FOOD}>
@@ -301,9 +311,7 @@ function InAPage(props: SceneProps) {
                 />
               </div>
             </Tab>
-            <MenuPreview beat={b} x={4} y={34} p={pageMenu} items={[{ label: 'Open in new tab' }, { label: 'Add to favorites' }, { label: unit('Review this page'), active: since(b, review, 0.3), rule: true }, { label: 'Rename', rule: true }]} />
             {step === 2 && <Pointer beat={b} from={[80, 90]} to={[92, 21]} move={between(b, 0.12, cue(b, 0, 0.336) - 0.02)} click={since(b, cue(b, 0, 0.336) - 0.02, 0.4)} show={showFor(since(b, 0.1, 0.3), since(b, 0.55, 0.3))} />}
-            {step === 3 && <Pointer beat={b} from={[60, 80]} to={[12, 27]} move={between(b, 0.16, right)} click={since(b, right, 0.4)} show={showFor(since(b, 0.12, 0.3), since(b, 0.97, 0.3))} />}
           </AppWindow>
         </Fit>
       </Layer>
@@ -330,7 +338,6 @@ function Embedded(props: SceneProps) {
   let embedGlow = 0
   let head = 0
   let name = 0
-  let zoom = 0
   let editing = false
   let edited = false
   let history = 0
@@ -372,7 +379,6 @@ function Embedded(props: SceneProps) {
   } else if (id === 'c4-10') {
     head = since(b, cue(b, 0, 0.446) - 0.03, 0.5)
     name = since(b, cue(b, 1, 0.802), 0.5)
-    zoom = since(b, 0.05, 0.9)
   } else {
     const real = cue(b, 0, 0.404)
     const stays = cue(b, 1, 0.659)
@@ -405,7 +411,7 @@ function Embedded(props: SceneProps) {
                     }
                   />
                 ) : (
-                  <div className="kit-where__page" style={zoom > 0 && !b.reduced ? { transform: `scale(${lerp(1, 1.22, ease.inOut(zoom)).toFixed(4)})`, transformOrigin: '0% 42%' } : undefined}>
+                  <div className="kit-where__page">
                     <PageView title={tab}>
                       <PageText beat={b}>{tab === FOOD ? P1 : 'Breakfast this week: eggs and toast. Here is why that works.'}</PageText>
                       {pill > 0 && (

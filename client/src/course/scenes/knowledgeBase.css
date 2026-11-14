@@ -104,7 +104,7 @@
 }
 .kb-tiny {
   position: relative;
-  font-size: 0.5em;
+  font-size: max(var(--kit-min-text), 0.5em);
 }
 .kb-tiny .kb-base {
   width: min(18cqw, 18cqh, 6em);
@@ -128,7 +128,7 @@
   background: var(--bg);
   box-shadow: var(--kit-shadow);
   color: var(--fg-muted);
-  font-size: 0.78em;
+  font-size: max(var(--kit-min-text), 0.78em);
   line-height: 1.5;
   text-align: left;
 }
@@ -195,7 +195,7 @@
   border-radius: 999px;
   background: var(--bg);
   color: var(--fg-muted);
-  font-size: 0.72em;
+  font-size: max(var(--kit-min-text), 0.72em);
   white-space: nowrap;
   transform: translate(-50%, -50%);
 }
@@ -301,7 +301,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--fg-muted);
-  font-size: 0.75em;
+  font-size: max(var(--kit-min-text), 0.75em);
 }
 
 /* Someone else's deck */
@@ -358,15 +358,15 @@
 .kb-phone__time {
   align-self: center;
   color: var(--fg-muted);
-  font-size: 0.7em;
+  font-size: max(var(--kit-min-text), 0.7em);
   font-weight: 600;
 }
 .kb-phone__head {
-  font-size: 0.78em;
+  font-size: max(var(--kit-min-text), 0.78em);
   font-weight: 700;
 }
 .kb-phone__line {
-  font-size: 0.82em;
+  font-size: max(var(--kit-min-text), 0.82em);
   line-height: 1.4;
 }
 .kb-talk {
@@ -407,7 +407,7 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   color: var(--fg);
   font-family: 'Bradley Hand', 'Segoe Print', 'Comic Sans MS', cursive;
-  font-size: 0.85em;
+  font-size: max(var(--kit-min-text), 0.85em);
   text-align: left;
 }
 .kb-messy--still {
@@ -484,7 +484,7 @@
   padding: 0.2em 0.55em;
   border-radius: 6px;
   color: var(--fg-muted);
-  font-size: 0.8em;
+  font-size: max(var(--kit-min-text), 0.8em);
 }
 .kb-week span.is-past {
   background: var(--kit-faint);

@@ -7,8 +7,9 @@
  */
 import { useUnit } from '../../vault/unitWord'
 import type { SceneProps } from '../scene'
+import { CARD_SKILL_MENU } from '../../sidebar/menuSections'
 import { InboxIcon, LockIcon } from '../../views/view/icons'
-import { AgentTerminal, AppWindow, Curve, Layer, MenuPreview, MiniCard, SAMPLE_REVIEWS, Stage, Tree, Words, between, clamp, cue, ease, hub, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, Habits, HabitGlyph, Garden, Seedling, Head, Web, type WebNode } from './kit'
+import { AgentTerminal, AppWindow, cardSkillMenuItems, Curve, Layer, MenuPreview, MiniCard, SAMPLE_REVIEWS, Stage, Tree, Words, between, clamp, cue, ease, hub, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, Habits, HabitGlyph, Garden, Seedling, Head, Web, type WebNode } from './kit'
 import { GARDEN } from './care'
 import type { ChapterScenes } from './registry'
 import './whereThingsAre.css'
@@ -101,7 +102,11 @@ function CardSkill(props: SceneProps) {
         <Habits beat={b} show={[1, 1, 1]} lit={[1, 1, 1]} />
       </Layer>
       <Layer style={{ opacity: app }}>
-        <AppWindow sidebar={<SkillSidebar rows={rows} skill={skill} />} label="The sidebar, with the card skill at the bottom">
+        <AppWindow
+          sidebar={<SkillSidebar rows={rows} skill={skill} />}
+          label="The sidebar, with the card skill at the bottom"
+          over={<MenuPreview beat={b} x={22} y={52} p={menu} items={cardSkillMenuItems('My vault', { [CARD_SKILL_MENU.duplicate('My vault')]: since(b, cue(b, 1, 0.44), 0.3) })} />}
+        >
           {open > 0 && (
             <div className="kit-app__tab later-skill" style={rise(b, open, 10)}>
               <p className="kit-app__bigtitle">Start here</p>
@@ -141,18 +146,6 @@ function CardSkill(props: SceneProps) {
               )}
             </div>
           )}
-          <MenuPreview
-            beat={b}
-            x={16}
-            y={46}
-            p={menu}
-            items={[
-              { label: 'Copy path' },
-              { label: 'Copy prompt for your agent', rule: true },
-              { label: 'Duplicate into My vault…', active: since(b, cue(b, 1, 0.44), 0.3) },
-              { label: 'Hide card skill', rule: true },
-            ]}
-          />
         </AppWindow>
       </Layer>
       <Layer place="bottom" style={{ opacity: week * 0.6 }}>

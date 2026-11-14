@@ -14,7 +14,7 @@ import { AgentStepPanel, type AgentStepEvent, type AgentStepPart } from '../Agen
 import { NO_CARDS_YET } from '../prompt'
 import { CARD_SKILL_MENU } from '../../sidebar/menuSections'
 import { InboxIcon } from '../../views/view/icons'
-import { AppWindow, CardView, Layer, MenuPreview, MiniCard, Pointer, SidebarPreview, Stage, Tally, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, AgentTerminal, type TermLine, Head, QuoteCard } from './kit'
+import { AppWindow, CardView, cardSkillMenuItems, Layer, MenuPreview, MiniCard, Pointer, SidebarPreview, Stage, Tally, Words, between, clamp, cue, ease, lerp, moved, pop, rise, showFor, since, useBeat, type Beat, AgentTerminal, type TermLine, Head, QuoteCard } from './kit'
 import { QUOTES } from './papers'
 import { sampleId } from './cards'
 import type { ChapterScenes } from './registry'
@@ -47,7 +47,7 @@ function ToolAndApp(props: SceneProps) {
             <AgentTerminal beat={b} lines={lines} className="ai-term" style={{ boxShadow: warn > 0 ? `0 0 0 2px color-mix(in srgb, var(--danger) ${(warn * 80).toFixed(0)}%, transparent)` : undefined }} />
           </div>
           <div style={rise(b, since(b, 0.08, 0.7), 14)}>
-            <AppWindow sidebar={appSidebar(made)} style={{ width: 'min(36cqw, 13em)', height: 'min(40cqh, 11em)' }} label="The app, with the Inbox and Course Cards" />
+            <AppWindow sidebar={appSidebar(made)} label="The app, with the Inbox and Course Cards" />
           </div>
         </div>
         <div className="kit-tags">
@@ -174,7 +174,7 @@ function NoCloud(props: SceneProps) {
             <span className="ai-arrow ai-arrow--up" style={{ opacity: since(b, sends - 0.05, 0.5) * (1 - cross * 0.6) }} aria-hidden="true">
               ↑
             </span>
-            <AppWindow sidebar={appSidebar(4)} style={{ width: 'min(36cqw, 13em)', height: 'min(40cqh, 11em)' }} label="The app" />
+            <AppWindow sidebar={appSidebar(4)} label="The app" />
             <span className="kit-chip" style={pop(b, since(b, noAi, 0.5))}>
               No AI inside
             </span>
@@ -275,7 +275,7 @@ function Flood(props: SceneProps) {
           </div>
           <div className="ai-darken">
             <div style={{ opacity: lerp(1, 0.4, dark), filter: dark > 0 ? `grayscale(${dark.toFixed(2)}) brightness(${lerp(1, 0.55, dark).toFixed(2)})` : undefined }}>
-              <AppWindow sidebar={<SidebarPreview inbox={due} rows={[{ name: 'Course Cards', kind: 'folder', open: true }, { name: 'Card 1912', kind: 'card', depth: 1 }, { name: 'Card 1913', kind: 'card', depth: 1 }]} />} style={{ width: 'min(36cqw, 13em)', height: 'min(40cqh, 11em)' }} label="The Inbox, with almost two thousand cards due" />
+              <AppWindow sidebar={<SidebarPreview inbox={due} rows={[{ name: 'Course Cards', kind: 'folder', open: true }, { name: 'Card 1912', kind: 'card', depth: 1 }, { name: 'Card 1913', kind: 'card', depth: 1 }]} />} label="The Inbox, with almost two thousand cards due" />
             </div>
             <Words size="label" tone="danger" style={rise(b, dark)}>
               Worthless
@@ -566,12 +566,7 @@ function RightClick(props: SceneProps) {
               x={18}
               y={28}
               p={menu * (1 - since(b, choose + 0.08, 0.3))}
-              items={[
-                { label: CARD_SKILL_MENU.copyPath },
-                { label: CARD_SKILL_MENU.prompt, active: since(b, choose - 0.06, 0.3) },
-                { label: CARD_SKILL_MENU.duplicate('My vault'), rule: true },
-                { label: CARD_SKILL_MENU.hide, rule: true },
-              ]}
+              items={cardSkillMenuItems('My vault', { [CARD_SKILL_MENU.prompt]: since(b, choose - 0.06, 0.3) })}
             />
             <span className="ai-copied" style={pop(b, copied)}>
               Copied

@@ -15,14 +15,20 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { InboxIcon } from '../../../views/view/icons'
 import { KeyCaps } from '../../../keys/KeyCaps'
+import { CARD_SKILL_MENU } from '../../../sidebar/menuSections'
 import { clamp, ease, lerp, pop, type Beat } from './beat'
 
-/** A cropped app window: a sidebar on the left (optional), the content on the right. */
-export function AppWindow({ sidebar, children, style, label }: { sidebar?: ReactNode; children?: ReactNode; style?: CSSProperties; label?: string }) {
+/**
+ * A cropped app window: a sidebar on the left (optional), the content on the right. A sidebar alone: a small window as
+ * tall as its rows. `over`: what opens over the whole window, placed in percent of it (a menu on a sidebar row).
+ */
+export function AppWindow({ sidebar, children, over, style, label }: { sidebar?: ReactNode; children?: ReactNode; over?: ReactNode; style?: CSSProperties; label?: string }) {
+  const look = sidebar === undefined ? ' kit-app--bare' : children === undefined ? ' kit-app--sidebar' : ''
   return (
-    <div className={`kit-app${sidebar === undefined ? ' kit-app--bare' : ''}`} style={style} role="img" aria-label={label}>
+    <div className={`kit-app${look}`} style={style} role="img" aria-label={label}>
       {sidebar}
-      <div className="kit-app__main">{children}</div>
+      {children !== undefined && <div className="kit-app__main">{children}</div>}
+      {over}
     </div>
   )
 }
@@ -103,6 +109,12 @@ export function cardMenuItems(where: 'page' | 'file', active: Readonly<Record<st
     where === 'page'
       ? [{ label: 'Open card' }, { label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Reset history' }, { label: 'Copy card ID', rule: true }]
       : [{ label: 'Preview', hint: 'P' }, { label: 'Put at top of Inbox', rule: true }, { label: 'Archive card' }, { label: 'Title on the front', hint: titleHint }, { label: 'Copy card ID', rule: true }, { label: 'Copy card link' }, { label: 'Turn into a page', rule: true }]
+  return rows.map((row) => (active[row.label] === undefined ? row : { ...row, active: active[row.label] }))
+}
+
+/** The card skill row's menu (`sidebar/menuSections.ts`, `CARD_SKILL_MENU`), in its three groups; `active` lights rows. */
+export function cardSkillMenuItems(vault: string, active: Readonly<Record<string, number>> = {}): MenuItem[] {
+  const rows: MenuItem[] = [{ label: CARD_SKILL_MENU.copyPath }, { label: CARD_SKILL_MENU.prompt }, { label: CARD_SKILL_MENU.duplicate(vault), rule: true }, { label: CARD_SKILL_MENU.hide, rule: true }]
   return rows.map((row) => (active[row.label] === undefined ? row : { ...row, active: active[row.label] }))
 }
 
