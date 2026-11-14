@@ -19,7 +19,10 @@ import { FRIEND_DAYS } from './friendStats'
 export const PUBLISH_EVERY_MS = 5 * 60_000
 /** While the Friends tab is open, read each friend's numbers this often. An unchanged answer is free (decision 14). */
 export const FRIENDS_POLL_MS = 60_000
-/** The background send does not wait the 5 minutes, but two background sends are at least this far apart. */
+/**
+ * Before YAZ-5192 the background send waited only this long. Now every send keeps `sendGap` (at least
+ * `PUBLISH_EVERY_MS`). Kept so older callers still build; no rule reads it.
+ */
 export const BACKGROUND_GAP_MS = 60_000
 /** GitHub's `gist_update` limit for the account (proof 1C). */
 export const GIST_UPDATES_PER_HOUR = 100
@@ -201,7 +204,9 @@ export function sendGate(input: GateInput): Gate {
     return { go: false, why: 'budget', retryAt: blocked }
   }
   if (input.lastSentAt !== null) {
-    const gap = input.reason === 'background' ? BACKGROUND_GAP_MS : sendGap(budget, now, reserve)
+    // YAZ-5192: the background send keeps the same gap (5 minutes, and longer near the limit). Leaving the app only
+    // sends at once when that gap is over; else the change waits for the timer, the next pass or the next leave.
+    const gap = sendGap(budget, now, reserve)
     if (now < input.lastSentAt + gap) return { go: false, why: 'wait', retryAt: input.lastSentAt + gap }
   }
   return { go: true }

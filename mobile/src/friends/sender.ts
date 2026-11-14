@@ -202,7 +202,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     const save = (patch: Partial<Saved>) => store.setState(PHONE, SEND_STATE, { ...saved, ...patch })
 
     // The cheap checks first: the 5-minute rule and the budget need no network and no count.
-    if (reason !== 'background' && saved.lastSentAt !== null) {
+    // YAZ-5192: also for a background send. `lastSentAt` is phone-only state, so the rule holds after a restart too.
+    if (saved.lastSentAt !== null) {
       const at = saved.lastSentAt + sendGap(saved.budget, now, reserveFor(saved.pointers))
       if (now < at) {
         schedule(at)

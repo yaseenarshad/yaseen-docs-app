@@ -3,7 +3,6 @@ import type { CardRecord } from '@shared/cardLine'
 import { NUMBERS_FILE, ensureFriendsFiles, makePointer, type WriteOptions } from '@shared/friendGists'
 import { fakeGistWorld } from '@shared/friendGistsFake'
 import {
-  BACKGROUND_GAP_MS,
   GIST_UPDATES_PER_HOUR,
   PUBLISH_EVERY_MS,
   budgetLeft,
@@ -198,11 +197,14 @@ describe('the send gate (decisions 14 and 22; round 12 item 3)', () => {
     expect(sendGate(base)).toEqual({ go: true })
   })
 
-  it('at most once each 5 minutes while reviewing; the background send does not wait the 5 minutes', () => {
+  it('at most once each 5 minutes, also for the background send (YAZ-5192)', () => {
     const sent = { ...base, lastSentAt: NOW - 60_000 }
     expect(sendGate(sent)).toEqual({ go: false, why: 'wait', retryAt: NOW - 60_000 + PUBLISH_EVERY_MS })
-    expect(sendGate({ ...sent, reason: 'background' })).toEqual({ go: true })
-    expect(sendGate({ ...sent, reason: 'background', lastSentAt: NOW - 10_000 })).toEqual({ go: false, why: 'wait', retryAt: NOW - 10_000 + BACKGROUND_GAP_MS })
+    expect(sendGate({ ...sent, reason: 'background' })).toEqual({ go: false, why: 'wait', retryAt: NOW - 60_000 + PUBLISH_EVERY_MS })
+    expect(sendGate({ ...sent, reason: 'background', lastSentAt: NOW - PUBLISH_EVERY_MS })).toEqual({ go: true })
+    // Near the limit the background send slows down too: 11 left, 7 reserved for 2 pointers → one each 15 minutes.
+    const low = noteUpdate(emptyBudget(), NOW - 60_000, { remaining: 11, limit: 100, resetAt: NOW - 60_000 + HOUR })
+    expect(sendGate({ ...sent, reason: 'background', lastSentAt: NOW - 6 * 60_000, budget: low })).toMatchObject({ go: false, why: 'wait' })
   })
 
   it('the budget comes first, also for the background send', () => {
