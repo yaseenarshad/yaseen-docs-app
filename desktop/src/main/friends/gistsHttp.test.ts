@@ -96,4 +96,35 @@ describe('macGistsApi (YAZ-5086)', () => {
     expect(await readProfile(TOKEN, wire.fetch)).toEqual({ login: 'yaseen', name: 'Yaseen', avatar: 'https://avatars.githubusercontent.com/u/1' })
     expect((await failure(readProfile(NOGISTS, wire.fetch))).code).toBe('UNAUTHORIZED')
   })
+
+  it('each request goes to the literal https://api.github.com/, with the token only in authorization (YAZ-5253)', async () => {
+    const seen: { url: string; init: Record<string, unknown> }[] = []
+    const fetch = async (url: string, init: Record<string, unknown> = {}) => {
+      seen.push({ url, init })
+      return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    const api = macGistsApi(TOKEN, fetch)
+    await api.list()
+    await readProfile(TOKEN, async (url, init) => (seen.push({ url, init: init ?? {} }), new Response('{"login":"a"}', { status: 200 })))
+    expect(seen.length).toBe(2)
+    for (const { url, init } of seen) {
+      expect(url.startsWith('https://api.github.com/')).toBe(true)
+      expect(new URL(url).host).toBe('api.github.com')
+      expect(url).not.toContain(TOKEN)
+      expect((init.headers as Record<string, string>).authorization).toBe(`Bearer ${TOKEN}`)
+      expect(JSON.stringify({ ...init, headers: { ...(init.headers as Record<string, string>), authorization: '' } })).not.toContain(TOKEN)
+    }
+  })
+
+  it('a redirect is never followed with the token: the request asks fetch not to follow, and a 3xx is a failure (YAZ-5253)', async () => {
+    const urls: string[] = []
+    const fetch = async (url: string, init: { redirect?: string } = {}) => {
+      urls.push(url)
+      expect(init.redirect).toBe('manual')
+      return new Response(null, { status: 302, headers: { location: 'https://evil.example/steal' } })
+    }
+    const err = await failure(macGistsApi(TOKEN, fetch).list())
+    expect(err.code).toBe('UNEXPECTED')
+    expect(urls).toEqual(['https://api.github.com/gists?per_page=100&page=1'])
+  })
 })

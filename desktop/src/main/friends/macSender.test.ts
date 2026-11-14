@@ -8,7 +8,7 @@ import type { CardRecord } from '@shared/cardLine'
 import { INDEX_FILE, NUMBERS_FILE, emptyNumbers, ensureFriendsFiles, findFriendsIndex, makePointer, writeFriendsIndex, type GistsApi, type WriteOptions } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { PUBLISH_EVERY_MS, reserveFor } from '@shared/friendSend'
-import type { FriendStats, FriendVault } from '@shared/friendStats'
+import { friendStats, type FriendStats, type FriendVault } from '@shared/friendStats'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { macGistsApi, readProfile } from './gistsHttp'
 import { createMacSender, type MacSendSaved, type MacSender } from './macSender'
@@ -114,7 +114,7 @@ describe('the Mac sends the numbers too (YAZ-5086, decision 16)', () => {
   })
 
   it('zero friends (no friends list): nothing is sent and no gist is made (decision 22)', async () => {
-    expect((await rig.sender.attempt('pass')).status).toBe('no-friends')
+    expect((await rig.sender.attempt('pass')).status).toBe('no-list')
     expect(rig.world.owned('yaseen')).toEqual([])
     expect(macWrites(rig)).toBe(0)
   })
@@ -230,8 +230,50 @@ describe('the Mac sends the numbers too (YAZ-5086, decision 16)', () => {
   it('a token of ANOTHER GitHub account finds no friends list: nothing is sent (round 13, item 4: one account)', async () => {
     await withFriends(rig, 1)
     rig.token.value = OTHER
-    expect((await rig.sender.attempt('pass')).status).toBe('no-friends')
+    expect((await rig.sender.attempt('pass')).status).toBe('no-list')
     expect(macWrites(rig)).toBe(0)
+  })
+})
+
+describe('the count runs at most once each 5 minutes (YAZ-5249)', () => {
+  it('numbers that do not change: at most one count each 5 minutes', async () => {
+    const count = vi.fn(async () => vaultWith(rig.cards.value))
+    rig.sender = createMacSender({ ...depsOf(rig), count })
+    await withFriends(rig, 1)
+    await rig.sender.attempt('pass') // sent
+    rig.world.advance(PUBLISH_EVERY_MS + 1)
+    count.mockClear()
+    for (let i = 0; i < 15; i++) {
+      await rig.sender.attempt('pass')
+      rig.world.advance(4_000)
+    }
+    expect(count.mock.calls.length).toBeLessThanOrEqual(1)
+  })
+
+  it('the same cards as at the last count, on the same day: no count at all, and no network', async () => {
+    const stats = vi.fn(async (vaults: FriendVault[], now: number) => friendStats(vaults, now))
+    rig.sender = createMacSender({ ...depsOf(rig), stats })
+    await withFriends(rig, 1)
+    await rig.sender.attempt('pass')
+    expect(stats).toHaveBeenCalledTimes(1)
+    rig.world.advance(PUBLISH_EVERY_MS + 1)
+    const calls = rig.wire.requests.length
+    expect((await rig.sender.attempt('pass')).status).toBe('unchanged')
+    expect(stats).toHaveBeenCalledTimes(1)
+    expect(rig.wire.requests.filter((q) => q.method !== 'GET').length).toBe(1)
+    expect(rig.wire.requests.length - calls).toBeLessThanOrEqual(1) // at most the list's free 304
+    rig.cards.value = answered(4)
+    rig.world.advance(PUBLISH_EVERY_MS + 1)
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    expect(stats).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('a token of another GitHub account (YAZ-5254)', () => {
+  it('no friends list on that account: the view names the account', async () => {
+    await withFriends(rig, 1)
+    rig.token.value = OTHER
+    expect(await rig.sender.attempt('pass')).toMatchObject({ status: 'no-list', login: 'someone' })
   })
 })
 

@@ -340,6 +340,16 @@ describe('main quit order: before-quit runs runQuitSequence with the live deps (
   })
 })
 
+describe('the phone code gate (YAZ-5247)', () => {
+  it('each new web contents is tracked for the phone code\'s gate', async () => {
+    const created = h.s.on.get('web-contents-created')
+    expect(created).toBeDefined()
+    const contents = { id: 4242, on: vi.fn(), once: vi.fn() }
+    created!({}, contents)
+    expect(contents.on).toHaveBeenCalledWith('input-event', expect.any(Function))
+  })
+})
+
 describe('the updater in index.ts (YAZ-2976)', () => {
   const invoke = (channel: string) => h.handles.get(channel)!({})
 

@@ -66,6 +66,9 @@ describe('Settings › Phone and friends › Friends (YAZ-5086)', () => {
 
   it.each<[Partial<FriendsSendView>, string]>([
     [{ status: 'no-friends', friends: 0, groups: 0 }, 'No friends yet, so nothing is sent'],
+    // YAZ-5254: no friends list on the token's account (round 13, item 4: one GitHub account for friends).
+    [{ status: 'no-list', login: 'other', friends: 0, groups: 0 }, 'No friends list on @other'],
+    [{ status: 'no-list', login: 'other', friends: 0, groups: 0 }, 'the GitHub account of the phone app'],
     [{ status: 'no-token' }, 'Save a GitHub token above first'],
     [{ status: 'missing-vaults', missing: 1 }, '1 vault that counts for friends is not open'],
     [{ status: 'phone-first' }, 'open the phone app once'],

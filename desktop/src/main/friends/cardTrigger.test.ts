@@ -94,4 +94,19 @@ describe('watchCardFiles (YAZ-5086)', () => {
     await settle()
     expect(fire).not.toHaveBeenCalled()
   })
+
+  it('a change each 2 seconds for 20 seconds: one try, 3 seconds after the last change (YAZ-5253)', async () => {
+    expect(CARD_CHANGE_QUIET_MS).toBe(3000)
+    const stop = start()
+    await vi.advanceTimersByTimeAsync(0)
+    for (let i = 0; i <= 10; i++) {
+      emit('/v', { type: 'change', path: '/v/cards.md', mtime: i })
+      await vi.advanceTimersByTimeAsync(2000)
+    }
+    expect(fire).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(fire).toHaveBeenCalledTimes(1)
+    stop()
+  })
 })
