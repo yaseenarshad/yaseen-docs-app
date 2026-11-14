@@ -1,5 +1,5 @@
 /**
- * The one door to the card course for any part of the app (YAZ-5120): Settings › Review, the notice, the empty Inbox,
+ * The one door to the card course for any part of the app (YAZ-5120): Settings › Cards, the notice, the empty Inbox,
  * and the format hint's "Learn the formats" (issue 4 opens one chapter: `requestCourseChapter`). App listens and opens the course layer.
  * A DOM event, as the card UI calls the app (`CARD_OPEN`): a caller needs no prop chain and no import of the
  * course itself, which loads only when it opens.

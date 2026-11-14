@@ -924,7 +924,7 @@ export function bootTabs(root: string | null): TabsState {
   // file, unless it was opened empty on purpose (YAZ-3343).
   const fallback = storage.getSettings().vaultOpensOn === 'last' && !storage.isEmptyByChoice() ? storage.getLastFile(root) : null
   const asked = hashFilePath(location.hash) ?? storage.getFile() ?? fallback
-  // A tab of the card skill (YAZ-5108; suggestion 7) does not come back while Settings › Review hides the skill.
+  // A tab of the card skill (YAZ-5108; suggestion 7) does not come back while Settings › Cards hides the skill.
   const skipped = (path: string): boolean => !storage.getSettings().cardSkillInSidebar && inAppVault(path)
   const active = asked !== null && skipped(asked) ? null : asked
   // The copies and display names come back with the window (YAZ-3057), and with a tab "Move to new window" brought (S19).

@@ -1,7 +1,7 @@
 /**
  * CHAPTER 12, "Where things are, and your first week" (YAZ-5121): the send-off. The card skill at the bottom of the
  * sidebar (read only: its lock; duplicate it to make it your own; the copy syncs, the built-in one updates with the
- * app); `yaseendocs card guide` in a terminal; Settings › Review; the first week as seven days; a seedling; and the
+ * app); `yaseendocs card guide` in a terminal; Settings › Cards; the first week as seven days; a seedling; and the
  * finale: the course's main pictures one last time (the curve, the hub, the tree, the garden), then a card that
  * settles into the person, and the end screen (`finale.tsx`). A quiet finish, not a firework.
  */
@@ -201,10 +201,11 @@ function Guide(props: SceneProps) {
   )
 }
 
-const NAV = ['General', 'Editor', 'Sidebar', 'Review', 'Sync']
+/** The Settings list as the app has it, short (YAZ-5271: the section is Cards, was Review, YAZ-5154). */
+const NAV = ['General', 'Editor', 'Sidebar', 'Cards', 'Sync']
 
-/** c12-07: Settings › Review: the card skill switch, and Open the course. */
-function SettingsReview(props: SceneProps) {
+/** c12-07: Settings › Cards: the card skill switch, and Open the course. */
+function SettingsCards(props: SceneProps) {
   const b = useBeat(props)
   const review = cue(b, 0, 0.16)
   const sw = cue(b, 1, 0.29)
@@ -216,13 +217,13 @@ function SettingsReview(props: SceneProps) {
         <div className="later-settings" style={rise(b, since(b, 0, 0.5), 10)}>
           <ul className="later-settings__nav">
             {NAV.map((n) => (
-              <li key={n} data-on={n === 'Review' && since(b, review, 0.3) > 0.5 ? 'true' : undefined}>
+              <li key={n} data-on={n === 'Cards' && since(b, review, 0.3) > 0.5 ? 'true' : undefined}>
                 {n}
               </li>
             ))}
           </ul>
           <div className="later-settings__page" style={{ opacity: lerp(0.35, 1, since(b, review, 0.4)) }}>
-            <p className="later-settings__title">Review</p>
+            <p className="later-settings__title">Cards</p>
             <div className="later-settings__row">
               <span>Use cards in this vault</span>
               <span className="later-seg">
@@ -481,7 +482,7 @@ export const WHERE_THINGS_ARE_SCENES: ChapterScenes = {
   entries: [
     { clips: ['c12-01', 'c12-02', 'c12-03', 'c12-04', 'c12-05'], scene: CardSkill },
     { clips: ['c12-06'], scene: Guide },
-    { clips: ['c12-07'], scene: SettingsReview },
+    { clips: ['c12-07'], scene: SettingsCards },
     { clips: ['c12-08', 'c12-09', 'c12-10', 'c12-11', 'c12-16', 'c12-12'], scene: FirstWeek },
     { clips: ['c12-13'], scene: Now },
     { clips: ['c12-14'], scene: Tomorrow },

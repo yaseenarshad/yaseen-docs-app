@@ -626,7 +626,7 @@ function Missed(props: SceneProps) {
   )
 }
 
-/** c3-19: at most ten new cards a day: Settings › Review › Daily limits › New cards a day. */
+/** c3-19: at most ten new cards a day: Settings › Cards › Daily limits › New cards a day. */
 function NewPerDay(props: SceneProps) {
   const b = useBeat(props)
   const ten = cue(b, 0, 0.399)

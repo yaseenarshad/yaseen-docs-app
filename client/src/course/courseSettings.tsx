@@ -1,5 +1,5 @@
 /**
- * Settings › Review › Card course (YAZ-5120; Yaseen: "the course can just be a button you click in the review panel
+ * Settings › Cards › Card course (YAZ-5120; Yaseen: "the course can just be a button you click in the review panel
  * in settings"): one row with "Open the course". Its own group under "Use cards in this vault" (Settings › Cards, was Review), after "Card skill in the sidebar" and before "Card tips", so it merges
  * cleanly beside the other Review rows of YAZ-5059. It always shows: the "Card tips" switch hides only the offers.
  * Small and in the startup bundle: it names the minutes from `courseFacts.ts`, never the script.

@@ -237,7 +237,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-17', text: 'You never set a date. The app works out each date from your answers.', marks: [0.183, 0.766] },
       // A few days pass on the calendar; the due cards wait in the Inbox.
       { id: 'c3-18', text: "Missed a day? That's fine. The cards that are due wait in the Inbox until you come back.", marks: [0.069, 0.664] },
-      // "New cards a day: 10" in Settings › Review.
+      // "New cards a day: 10" in Settings › Cards.
       { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.', marks: [0.399, 0.776] },
       // The done screen: "Inbox complete."
       { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today.", marks: [0.157, 0.451] },
@@ -675,7 +675,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c12-05', text: 'Your copy syncs with your vault. The built-in skill still gets each update of the app.', marks: [0.12, 0.44, 0.79] },
       // A terminal: `yaseendocs card guide` prints the skill's first page.
       { id: 'c12-06', text: 'Your agent can find it too. One command prints its first page.', marks: [0.47, 0.63] },
-      // Settings › Review: "Card skill in the sidebar" and "Open the course".
+      // Settings › Cards: "Card skill in the sidebar" and "Open the course".
       { id: 'c12-07', text: 'In Settings, under Review, one switch shows or hides the card skill. Open the course brings you back here.', marks: [0.16, 0.29, 0.69] },
       // A week of seven days appears.
       { id: 'c12-08', text: 'Now, your first week.', marks: [0.33] },

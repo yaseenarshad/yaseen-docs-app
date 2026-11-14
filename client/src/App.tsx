@@ -514,7 +514,7 @@ export function App() {
   /**
    * THE CARD SKILL (YAZ-5059 decision 2, YAZ-5108): the app's copy, `<userData>/card-skill`, as one more vault of the
    * window — its own scope, never in `roots`, never in a slot, never counted in MAX_WINDOW_ROOTS. It loads while
-   * Settings › Review › "Card skill in the sidebar" says Show; its row shows at the bottom of the sidebar while a vault of
+   * Settings › Cards › "Card skill in the sidebar" says Show; its row shows at the bottom of the sidebar while a vault of
    * the window also has reviews on. It ships with IDs off and read only on (`.yaseendocs/`), so its pages open read only
    * and the app writes nothing into it. Settings never shows it as "this vault": `active` is a vault of the person.
    */
@@ -1479,7 +1479,7 @@ export function App() {
   }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
 
-  // THE CARD COURSE (YAZ-5120): one layer over the window, opened only by a person's click (Settings › Review, the
+  // THE CARD COURSE (YAZ-5120): one layer over the window, opened only by a person's click (Settings › Cards, the
   // notice, the empty Inbox, `requestCourse` from any part). Settings closes first. `n` remounts it for a new request.
   // `vault`: the ONE vault of this run (YAZ-5201, `courseVaultAt`), kept with the place; `lost`: the kept one is not in the window.
   const [courseOpen, setCourseOpen] = useState<{ chapter?: string; n: number; vault: string | null; lost?: string } | null>(null)

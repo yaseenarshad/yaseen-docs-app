@@ -52,7 +52,7 @@ export const TARGET_HELP: Record<string, TargetHelp> = {
   'card-link-pill': { where: 'Save the card first: press Escape, or click Done.' },
   'inbox-filter': { where: 'Open the Inbox first.', show: (c) => (c.places.folder === null ? { kind: 'sidebar' } : { kind: 'inbox', path: c.places.folder }) },
   'inbox-unarchive': { where: 'In the All cards menu, choose Archived.' },
-  'card-skill-row': { where: 'The card skill is at the bottom of the sidebar. If it is not there, turn it on in Settings, under Review.', show: () => ({ kind: 'sidebar' }) },
+  'card-skill-row': { where: 'The card skill is at the bottom of the sidebar. If it is not there, turn it on in Settings, under Cards.', show: () => ({ kind: 'sidebar' }) },
   'settings-review': { where: 'Press Command comma to open Settings.', show: () => ({ kind: 'settings' }) },
   'settings-card-skill': { where: 'Open Settings, and click Cards.', show: () => ({ kind: 'settings', page: 'cards' }) },
   'settings-course': { where: 'Open Settings, and click Cards.', show: () => ({ kind: 'settings', page: 'cards' }) },

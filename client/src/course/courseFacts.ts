@@ -15,7 +15,7 @@ export const WORDS_PER_MINUTE = 145
  */
 export const COURSE_MINUTES = 29
 
-/** Settings › Review › Card course: the row's hint. */
+/** Settings › Cards › Card course: the row's hint. */
 export const COURSE_HINT = `About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`
 
 /** The one notice, the first time this Mac shows a person new to cards (`offerNotice`). */
