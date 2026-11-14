@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { act } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { loadAccount } from '../auth/account'
 import { formatScanCode } from '../auth/scanCode'
@@ -429,3 +430,45 @@ describe('home-screen basics (VoiceOver names)', () => {
     expect(h.host.querySelector('button[aria-label="More for yaseen/vault"]')).not.toBeNull()
   })
 })
+
+describe('checker round 1 (YAZ-5177, YAZ-5178)', () => {
+  it('no status code reaches the screen for an answer we did not expect', async () => {
+    h = await mount()
+    h.github.interrupt = (c) => (c.url.endsWith('/user') ? new Response('{}', { status: 418 }) : undefined)
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    expect(h.host.querySelector('[role="alert"]')?.textContent ?? '').not.toMatch(/\(\d{3}\)/)
+  })
+
+  it('a double tap on Connect vault runs ONE check', async () => {
+    h = await mount()
+    await h.type('Repo', 'yaseen/vault')
+    await h.type('Token', GOOD)
+    const btn = h.button('Connect vault')!
+    await act(async () => {
+      btn.click()
+      btn.click()
+    })
+    await h.settle()
+    expect(h.github.calls.filter((c) => c.url.endsWith('/user')).length).toBe(1)
+  })
+})
+
+describe('the erase waits for a running pass (YAZ-5175)', () => {
+  it('clears the phone only after the pass ends', async () => {
+    h = await mount()
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    let end!: () => void
+    h.sync.running = new Promise<void>((r) => (end = r))
+    await h.click('Settings')
+    await h.click('Sign out and erase this phone')
+    const erasing = h.click('Erase this phone')
+    await new Promise((r) => setTimeout(r, 20))
+    expect(await h.tokens.read('yaseen/vault@main')).toBe(GOOD)
+    end()
+    await erasing
+    await h.settle()
+    expect(await h.tokens.read('yaseen/vault@main')).toBeNull()
+    expect(h.button('Connect vault')).not.toBeNull()
+  })
+})
+

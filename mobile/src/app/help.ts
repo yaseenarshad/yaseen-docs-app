@@ -63,8 +63,10 @@ export function signInHelp(error: SignInError): Help {
     case 'offline':
     case 'github-down':
     case 'rate-limited':
-    case 'unexpected':
       return { message, forward: 'retry' }
+    case 'unexpected':
+      // No status code on a screen (YAZ-5076, YAZ-5177): 3E's words keep it for logs; the screen gets plain words.
+      return { message: 'GitHub gave an answer we did not expect. Try again in a few minutes.', forward: 'retry' }
   }
 }
 
