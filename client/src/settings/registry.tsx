@@ -28,7 +28,7 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -148,20 +148,21 @@ function PxSetting({ name, value, fallback, min, max, step, onSet }: { name: str
 
 /**
  * "Width" of every code block or every table (YAZ-4783 layer 3): Text column (`null`, the look before) or Pixels, with the
- * px typed beside it, kept on ⏎ or blur and clamped to `BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`. Pixels starts at `start`.
+ * px typed beside it, kept on ⏎ or blur and clamped to `min`–`max` (`BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`). Pixels starts
+ * at `start`. Card width (YAZ-5144 round 2) is the same control in its own words (`options`), with Reset to `start`.
  */
-function BlockWidthSetting({ name, value, start, onSet }: { name: string; value: number | null; start: number; onSet: (next: number | null) => void }) {
+function BlockWidthSetting({ name, value, start, onSet, options = BLOCK_WIDTH_OPTIONS, min = BLOCK_WIDTH_MIN, max = BLOCK_WIDTH_MAX, reset = false }: { name: string; value: number | null; start: number; onSet: (next: number | null) => void; options?: typeof BLOCK_WIDTH_OPTIONS; min?: number; max?: number; reset?: boolean }) {
   const [draft, setDraft] = useState(value === null ? '' : String(value))
   useEffect(() => setDraft(value === null ? '' : String(value)), [value])
   const keep = () => {
     const n = Number.parseInt(draft, 10)
-    const next = Number.isFinite(n) ? Math.min(BLOCK_WIDTH_MAX, Math.max(BLOCK_WIDTH_MIN, n)) : value
+    const next = Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : value
     setDraft(next === null ? '' : String(next))
     if (next !== value) onSet(next)
   }
   return (
     <>
-      <Segmented options={BLOCK_WIDTH_OPTIONS} value={value === null ? 'column' : 'px'} onChange={(mode) => onSet(mode === 'column' ? null : (value ?? start))} ariaLabel={name} />
+      <Segmented options={options} value={value === null ? 'column' : 'px'} onChange={(mode) => onSet(mode === 'column' ? null : (value ?? start))} ariaLabel={name} />
       {value !== null && (
         <span className="settings__percent">
           <input className="settings__input settings__input--number" aria-label={`${name} in px`} inputMode="numeric" value={draft} spellCheck={false}
@@ -171,6 +172,11 @@ function BlockWidthSetting({ name, value, start, onSet }: { name: string; value:
             }} />
           px
         </span>
+      )}
+      {reset && value !== null && value !== start && (
+        <button type="button" className="settings__option" onClick={() => onSet(start)}>
+          Reset
+        </button>
       )}
     </>
   )
@@ -2058,20 +2064,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // different one? kinda like we have for card spacing"): the app's settings, beside Card spacing, in its words.
             id: 'cardWidth',
             label: 'Card width',
-            hint: (ctx) => unit(ctx, "How wide a card's text reads in the Inbox, the card window and a card file. Same as pages follows Appearance › Content width."),
-            keywords: [...CARD_SPACING_KEYWORDS, 'width', 'content width', 'narrow', 'medium', 'full', 'line length', 'wide'],
+            hint: (ctx) => unit(ctx, "How wide a card's text reads in the Inbox, the card window and a card file. Same as pages follows Appearance › Content width. Custom is your own width in px."),
+            keywords: [...CARD_SPACING_KEYWORDS, 'width', 'content width', 'custom', 'px', 'pixels', 'line length', 'wide', 'narrow'],
             available: reviewOn,
+            // Round 2 (Yaseen: "same as pages then custom ... a px that you can adjust"): the code block's width control.
             render: (ctx) => (
-              <Segmented options={cardWidthOptions((text) => unit(ctx, text))} value={ctx.settings.cardWidth} onChange={(cardWidth) => ctx.onChange({ ...ctx.settings, cardWidth })} ariaLabel="Card width" />
+              <BlockWidthSetting name="Card width" value={isCardWidth(ctx.settings.cardWidth) ? ctx.settings.cardWidth : null} start={CARD_WIDTH_START} min={CARD_WIDTH_MIN} max={CARD_WIDTH_MAX} reset
+                options={cardWidthOptions((text) => unit(ctx, text))} onSet={(cardWidth) => ctx.onChange({ ...ctx.settings, cardWidth })} />
             ),
           },
           {
             // YAZ-5050 (Yaseen: "adjust that different from the default or return to the default"): the app's settings,
             // as Shown hidden words. Same as pages is the way back; Clean is Mochi's look in one click (round 4); Custom
-            // starts from Clean and shows the rows. YAZ-5144: Clean's short line is Card width Narrow, set by the click.
+            // starts from Clean and shows the rows. YAZ-5144: Clean's short line is Card width Custom 520 px (round 2), set by the click.
             id: 'cardSpacing',
             label: 'Card spacing',
-            hint: (ctx) => unit(ctx, 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, and Card width Narrow. Custom starts from Clean; you set its spacing.'),
+            hint: (ctx) => unit(ctx, "How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, and Mochi's line (Card width 520 px). Custom starts from Clean; you set its spacing."),
             keywords: CARD_SPACING_KEYWORDS,
             available: reviewOn,
             render: (ctx) => (
@@ -2081,7 +2089,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 onChange={(cardSpacing) =>
                   ctx.onChange(
                     cardSpacing === 'clean'
-                      ? { ...ctx.settings, cardSpacing, cardWidth: 'narrow' }
+                      ? { ...ctx.settings, cardSpacing, cardWidth: CARD_WIDTH_CLEAN }
                       : cardSpacing === 'custom' && ctx.settings.cardSpacing !== 'custom'
                         ? { ...ctx.settings, cardSpacing, ...CARD_SPACING_CLEAN }
                         : { ...ctx.settings, cardSpacing },
