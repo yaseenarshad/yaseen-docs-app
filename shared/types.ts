@@ -4257,6 +4257,13 @@ export interface PageView {
   selection?: { anchor: number; head: number }
   /** A drawing's pan and zoom (YAZ-3737 D13): the engine's `scrollX`, `scrollY` and `zoom.value`. Only a drawing has it. */
   canvas?: { scrollX: number; scrollY: number; zoom: number }
+  /**
+   * The place in the TEXT (YAZ-5164, `client/src/editor/pagePlace.ts`): the block at the scroller's top, by its document
+   * position, and how far below the top edge it starts, px (negative: above). Explore's reading layer gives it to its
+   * editor, another view with other things above the text, where `scrollTop` would land elsewhere. Given and drawn, it
+   * wins over `scrollTop`. A tab's own view has none: its copy is the same editor.
+   */
+  top?: { pos: number; offset: number }
 }
 
 /** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */

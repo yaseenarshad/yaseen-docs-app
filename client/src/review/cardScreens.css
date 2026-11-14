@@ -515,6 +515,42 @@
 .card-inbox__bar > .card-inbox__today + .card-inbox__place {
   margin-left: 12px;
 }
+/* The bar's own controls (YAZ-5372: the Inbox's zoom, the page zoom's pill), at its right end, after "3 of 12". Quiet:
+   faint until the bar is pointed at or a control has the keyboard. With no card (the done screen) it takes the push right. */
+.card-inbox__tools {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  opacity: 0.45;
+  transition: opacity 120ms ease-out;
+}
+.card-inbox__bar > :is(.card-inbox__today, .card-inbox__place) ~ .card-inbox__tools {
+  margin-left: 10px;
+}
+.card-inbox__bar:hover > .card-inbox__tools,
+.card-inbox__tools:focus-within,
+.card-inbox__tools:has(.document-zoom__trigger[aria-expanded='true']) {
+  opacity: 1;
+}
+.card-inbox__tools .document-zoom {
+  border-color: transparent;
+}
+.card-inbox__bar:hover .card-inbox__tools .document-zoom,
+.card-inbox__tools:focus-within .document-zoom {
+  border-color: var(--border);
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-inbox__tools {
+    transition: none;
+  }
+}
+/* The Inbox's zoom (YAZ-5372) on the card's text only, as a page's is on its content (app.css, YAZ-1710 D14): the
+   card's frame, its width and the rule between two sides stay in unzoomed px. */
+.card-inbox__card .card__side {
+  zoom: var(--inbox-zoom, 1);
+}
 /* The progress bar (YAZ-5020, as Mochi's): thin, under the row; a Remembered fills grey, a Forgot red. */
 .card-inbox__progress {
   display: flex;

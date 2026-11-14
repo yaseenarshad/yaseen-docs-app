@@ -47,7 +47,7 @@ describe('one Back list for the window (YAZ-3647 D1, D4)', () => {
 
   it('U1: every page that comes to the front is a step: a new tab, a tab click, ⌃Tab, the sidebar — Back goes to its tab, never into this one', () => {
     let s = run(onA(), { type: 'open-new', path: B })
-    s = run(s, { type: 'activate', id: idOf(s, A) }, { type: 'cycle', dir: 1 }, { type: 'open-current', path: C })
+    s = run(s, { type: 'activate', id: idOf(s, A) }, { type: 'activate', id: idOf(s, B) }, { type: 'open-current', path: C })
     expect(trail(s)).toBe('a b a b [c]')
     const back = run(s, { type: 'back' })
     expect([where(back), back.tabs.map((t) => name(t.path))]).toEqual(['b', ['a', 'b', 'c']])

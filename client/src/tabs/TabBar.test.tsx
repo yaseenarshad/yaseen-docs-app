@@ -16,6 +16,7 @@ import { setBoardHighlight } from './boardHighlight'
 import { holdOverStrip, releaseOverStrip } from './stripDrop'
 import { IconsContext } from '../sidebar/FileIcon'
 import { buildRowIcons, rowIcon } from '../sidebar/rowIcons'
+import { INBOX_TRAY_PATH } from '../views/view/icons'
 
 // The OS-action items call the bridge (YAZ-963): stub the verbs, keep BridgeRequestError real.
 vi.mock('../api', async (importOriginal) => ({
@@ -225,6 +226,16 @@ describe('TabBar', () => {
     // Behind a page tab: the page tab is the active one again.
     act(() => root?.render(<TabBar roots={['/v']} titles={new Map()} tabs={['/v/a.md', '/v/b.md']} active="/v/a.md" inbox={{ ...inbox, active: false }} {...noop} onActivate={onActivate} onClose={onClose} {...noNav} />))
     expect([...el.querySelectorAll('.tabbar [role="tab"]')].map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false'])
+  })
+
+  it('YAZ-5374: the Inbox tab wears the sidebar Inbox row\'s tray icon before its name, at the 14px of a page tab\'s icon', () => {
+    const el = mount({ tabs: ['/v/a.md'], active: '/v/a.md', inbox: { label: 'Inbox', active: false, onActivate: vi.fn(), onClose: vi.fn() }, ...noop, ...noNav })
+    const label = el.querySelector('.tabbar__tab--inbox .tabbar__label')!
+    const icon = label.firstElementChild!
+    expect(icon.matches('svg.tabbar__inbox-icon')).toBe(true)
+    expect([icon.getAttribute('width'), icon.getAttribute('height')]).toEqual(['14', '14'])
+    expect(icon.querySelector('path')?.getAttribute('d')).toBe(INBOX_TRAY_PATH)
+    expect(label.textContent).toBe('Inbox')
   })
 
   it('YAZ-5016: the Inbox tab\'s right-click menu has only the tab\'s own items, no file item; each asks App', () => {

@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { act, useEffect, useState, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, PageView } from '@shared/types'
 import { CrepeFeature } from '../editor/crepe'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { WatchSource } from '../hooks/useWatch'
@@ -27,6 +27,9 @@ import { watchCardLanding } from '../editor/card/cardOpen'
 import { tileCells } from './tile'
 import { TITLE_ROOM } from './ExploreHeadMore'
 import { ago } from './recentSections'
+import { readPagePlace, showPagePlace } from '../editor/pagePlace'
+import { registerPageView } from '../lib/pageView'
+import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -73,6 +76,8 @@ vi.mock('../editor/createCrepe', () => ({
   // The fold-all button reads the view: the stand-in's document, a state the fold stand-ins below ignore.
   editorViewOf: (crepe: Crepe) => ({ dom: crepe.opts.root.firstChild, state: {}, dispatch: folds.dispatch }),
 }))
+/** Where the reading layer stands (YAZ-5164): jsdom draws no boxes; the real reading is in pagePlace.test.ts. */
+vi.mock('../editor/pagePlace', () => ({ readPagePlace: vi.fn(() => null), showPagePlace: vi.fn(() => false) }))
 const folds = vi.hoisted(() => ({ dispatch: vi.fn(), next: 'collapse' as 'collapse' | 'expand' | 'none', runs: [] as boolean[] }))
 /** The table of contents' landing (YAZ-5164: a page opened at a card lands as a jump from the outline does), recorded. */
 const landed = vi.hoisted(() => vi.fn())
@@ -3241,5 +3246,181 @@ describe('YAZ-5164: cards inside pages in Explore', () => {
     expect(rows()).toEqual([])
     await typeQuery('geogr')
     expect(rows()).toEqual(['Geography'])
+  })
+})
+
+/**
+ * YAZ-5164 (Yaseen, 2026-11-14: "edit mode brings me back to the top of the page … it should keep me and maintain the
+ * scroll of where I am, so that way I can just start editing wherever I am"; a page in its own tab does not jump). The
+ * reading layer and its editor are two views, so the layer reads its place in the TEXT off the reading Crepe
+ * (`readPagePlace`) as it goes into edit, and the editor starts there: a page view, as a duplicated tab starts where its
+ * source stood, with the block at the top, the caret in view and the folds it showed. A card's Edit card while reading
+ * edits the layer (after "Allow edits?" in a Read only vault) and opens THAT card, kept where it was on screen.
+ */
+describe('YAZ-5164: the reading layer goes into edit where you are', () => {
+  const PAGE = '/v/cards.md'
+  const starts: Array<PageView | undefined> = []
+  const place = { pos: 120, offset: -30, caret: 141 }
+  const wait = async () => {
+    for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+  }
+  const readBody = () => top().querySelector<HTMLElement>('[data-explore-read]') as HTMLElement
+  const allow = () => act(() => [...top().querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Allow edits for 1 minute')!.click())
+  const vaultOf = (readOnly: boolean): ExploreStackProps['vaultOf'] => () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly })
+  /** The edit layer's page: two cards, as the card view draws them; `edits[i]` is card i's Edit card. */
+  const edits = [vi.fn(), vi.fn()]
+  beforeEach(() => {
+    starts.length = 0
+    edits.forEach((e) => e.mockReset())
+    vi.mocked(readPagePlace).mockReset().mockReturnValue(place)
+    props = {
+      ...props,
+      renderEditor: (path, _openLink, _unlocked, start): ReactNode => {
+        editors.push(path)
+        starts.push(start)
+        return (
+          <div className="editor" data-editor={path}>
+            {['WIKI-1', 'WIKI-2'].map((id, i) => (
+              <div key={id} className="card" data-page-card="" data-card-id={id} ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit: edits[i] }))} />
+            ))}
+          </div>
+        )
+      },
+    }
+    props.requestLayer = { kind: 'page', path: PAGE }
+  })
+
+  it.each([false, true])('E halfway down (read only %s: after "Allow edits?"): the editor starts at the block that was at the top, the caret there, with the folds the layer showed', async (readOnly) => {
+    props = { ...props, vaultOf: vaultOf(readOnly) }
+    await mount()
+    await flush()
+    const reading = crepes[crepes.length - 1]
+    const seen = reading.opts as unknown as { folding: { onCollapsedKeysChange: (k: string[]) => void }; headingFolding: { onCollapsedKeysChange: (k: string[]) => void } }
+    seen.folding.onCollapsedKeysChange(['abc:0'])
+    seen.headingFolding.onCollapsedKeysChange(['h:def:0'])
+    const body = readBody()
+    body.scrollTop = 600
+    key(body, { key: 'e' })
+    await flush()
+    if (readOnly) {
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      allow()
+      await flush()
+    }
+    expect(top().querySelector(`.explore__body--edit [data-editor="${PAGE}"]`)).not.toBeNull()
+    const [view, scroller, pinned] = vi.mocked(readPagePlace).mock.calls[0]
+    expect(view.dom).toBe(reading.opts.root.firstChild)
+    expect(scroller).toBe(body)
+    expect(pinned).toBeUndefined()
+    // Each render hands the editor the same start (it reads it once, as it mounts).
+    expect(new Set(starts).size).toBe(1)
+    expect(starts[0]).toEqual({ top: { pos: 120, offset: -30 }, selection: { anchor: 141, head: 141 }, scrollTop: 600, zoomKey: null, folds: ['abc:0', 'h:def:0'], magnification: 100 })
+    // No card asked: none opens in Edit card.
+    await wait()
+    edits.forEach((e) => expect(e).not.toHaveBeenCalled())
+  })
+
+  it('back to reading and E again: a new place, read then', async () => {
+    await mount()
+    await flush()
+    key(readBody(), { key: 'e' })
+    await flush()
+    key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
+    await flush()
+    await flush()
+    vi.mocked(readPagePlace).mockReturnValue({ pos: 7, offset: 0, caret: 8 })
+    key(readBody(), { key: 'e' })
+    await flush()
+    expect([...new Set(starts)].map((s) => s?.top)).toEqual([{ pos: 120, offset: -30 }, { pos: 7, offset: 0 }])
+  })
+
+  it('no place drawn (the page still loading): the editor starts as before, with no start view', async () => {
+    vi.mocked(readPagePlace).mockReturnValue(null)
+    await mount()
+    await flush()
+    key(readBody(), { key: 'e' })
+    await flush()
+    expect(starts.length).toBeGreaterThan(0)
+    expect(starts.every((s) => s === undefined)).toBe(true)
+  })
+
+  it.each([false, true])('Edit card on a card halfway down (read only %s: after "Allow edits?", no second press): the layer edits with THAT card kept where it is on screen, and it opens in Edit card', async (readOnly) => {
+    props = { ...props, vaultOf: vaultOf(readOnly) }
+    await mount()
+    await flush()
+    const [, second] = drawPageCards(crepes[crepes.length - 1].opts.root, ['WIKI-1', 'WIKI-2'])
+    act(() => tellReadOnlyEdit(second, 'card', () => {}))
+    await flush()
+    if (readOnly) {
+      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      allow()
+    }
+    await wait()
+    expect(vi.mocked(readPagePlace).mock.calls[0][2]).toBe(second)
+    expect(starts[0]?.top).toEqual({ pos: 120, offset: -30 })
+    expect(edits[1]).toHaveBeenCalledOnce()
+    expect(edits[0]).not.toHaveBeenCalled()
+  })
+
+  it('Edit card in a Read only vault, then Cancel: the layer reads on; a later E edits the page and opens no card', async () => {
+    props = { ...props, vaultOf: vaultOf(true) }
+    await mount()
+    await flush()
+    const [first] = drawPageCards(crepes[crepes.length - 1].opts.root, ['WIKI-1', 'WIKI-2'])
+    act(() => tellReadOnlyEdit(first, 'card', () => {}))
+    await flush()
+    act(() => [...top().querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Cancel')!.click())
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    key(readBody(), { key: 'e' })
+    await flush()
+    allow()
+    await wait()
+    expect(top().querySelector('.explore__body--edit')).not.toBeNull()
+    edits.forEach((e) => expect(e).not.toHaveBeenCalled())
+  })
+
+  it('an attempt that is not Edit card (typing, a title click inside a card) does not edit the layer', async () => {
+    await mount()
+    await flush()
+    const [card] = drawPageCards(crepes[crepes.length - 1].opts.root, ['WIKI-1'])
+    const title = card.appendChild(document.createElement('span'))
+    act(() => tellReadOnlyEdit(title, 'card', () => {}))
+    act(() => tellReadOnlyEdit(crepes[crepes.length - 1].opts.root, 'page'))
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+  })
+
+  it('Esc (or Done) back to reading: the reading layer opens at the block the editor had at its top, with the editor\'s folds', async () => {
+    props = {
+      ...props,
+      renderEditor: (path): ReactNode => (
+        <div className="editor" data-editor={path}>
+          <div
+            className="editor-host"
+            ref={(host) =>
+              void (host !== null && registerPageView(host, () => ({ scrollTop: 900, zoomKey: null, folds: ['lock:k:0', 'abc:0', 'h:def:0'], magnification: 100, top: { pos: 50, offset: -8 } })))
+            }
+          />
+        </div>
+      ),
+    }
+    vi.mocked(showPagePlace).mockClear()
+    await mount()
+    await flush()
+    key(readBody(), { key: 'e' })
+    await flush()
+    key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    const reading = crepes[crepes.length - 1]
+    const seeds = reading.opts as unknown as { folding: { seedCollapsedKeys: () => ReadonlySet<string> }; headingFolding: { seedCollapsedKeys: () => ReadonlySet<string> } }
+    expect([...seeds.folding.seedCollapsedKeys()]).toEqual(['abc:0'])
+    expect([...seeds.headingFolding.seedCollapsedKeys()]).toEqual(['h:def:0'])
+    const [view, scroller, place] = vi.mocked(showPagePlace).mock.calls[0]
+    expect(view.dom).toBe(reading.opts.root.firstChild)
+    expect(scroller).toBe(readBody())
+    expect(place).toEqual({ pos: 50, offset: -8 })
   })
 })
