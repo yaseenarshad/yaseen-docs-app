@@ -285,6 +285,15 @@ export interface ArchivedCard {
 }
 
 /**
+ * Whether any card of the vault is marked Up next (YAZ-5321: the line's `next`, on a card in review: an ID, not
+ * archived). With none, the Inbox offers no Up next: the cards menu has no Up next row, so it does not confuse
+ * someone who never uses it; one mark brings it back.
+ */
+export function anyUpNext(records: readonly CardPage[]): boolean {
+  return records.some((r) => r.cards !== undefined && r.cards.some((c) => c.next && !c.off && c.id !== null))
+}
+
+/**
  * The archived cards (YAZ-5046) of the vault, of `folder` (root-relative, and its subfolders) or of `page` (its
  * absolute path), by path and then in page order. Only a card with an ID: Unarchive finds it by its ID. A copy whose ID
  * a card before it on the same page holds is left out, as `cardPlan` leaves it out.
