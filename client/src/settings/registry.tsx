@@ -28,7 +28,7 @@ import { isIdLetters } from '@shared/noteId'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CUSTOM_START, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -2033,17 +2033,18 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           {
             // YAZ-5050 (Yaseen: "adjust that different from the default or return to the default"): the app's settings,
-            // as Shown hidden words. Same as pages is the way back; Custom starts at Mochi's clean values (round 3).
+            // as Shown hidden words. Same as pages is the way back; Clean is Mochi's look in one click (round 4); Custom
+            // starts from Clean and shows the rows.
             id: 'cardSpacing',
             label: 'Card spacing',
-            hint: "How a card reads in the Inbox, the card window and the page: the pages' spacing, or its own. Custom starts roomy, as in Mochi.",
+            hint: 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, shorter lines. Custom starts from Clean; you set its spacing.',
             keywords: CARD_SPACING_KEYWORDS,
             available: reviewOn,
             render: ({ settings, onChange }) => (
               <Segmented
                 options={CARD_SPACING_OPTIONS}
                 value={settings.cardSpacing}
-                onChange={(cardSpacing) => onChange(cardSpacing === 'custom' && settings.cardSpacing !== 'custom' ? { ...settings, cardSpacing, ...CARD_SPACING_CUSTOM_START } : { ...settings, cardSpacing })}
+                onChange={(cardSpacing) => onChange(cardSpacing === 'custom' && settings.cardSpacing !== 'custom' ? { ...settings, cardSpacing, ...CARD_SPACING_CLEAN } : { ...settings, cardSpacing })}
                 ariaLabel="Card spacing"
               />
             ),
@@ -2075,7 +2076,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: CARD_SPACING_KEYWORDS,
             available: cardSpacingCustom,
             render: ({ settings, onChange }) => (
-              <PxSetting name="Card bullet indent" value={settings.cardBulletIndent} fallback={CARD_SPACING_CUSTOM_START.cardBulletIndent}
+              <PxSetting name="Card bullet indent" value={settings.cardBulletIndent} fallback={CARD_SPACING_CLEAN.cardBulletIndent}
                 min={NOTE_BULLET_INDENT_MIN} max={NOTE_BULLET_INDENT_MAX} step={2} onSet={(cardBulletIndent) => onChange({ ...settings, cardBulletIndent })} />
             ),
           },
@@ -2086,7 +2087,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: CARD_SPACING_KEYWORDS,
             available: cardSpacingCustom,
             render: ({ settings, onChange }) => (
-              <PxSetting name="Card bullet gap" value={settings.cardBulletGap} fallback={CARD_SPACING_CUSTOM_START.cardBulletGap}
+              <PxSetting name="Card bullet gap" value={settings.cardBulletGap} fallback={CARD_SPACING_CLEAN.cardBulletGap}
                 min={NOTE_BULLET_GAP_MIN} max={NOTE_BULLET_GAP_MAX} step={1} onSet={(cardBulletGap) => onChange({ ...settings, cardBulletGap })} />
             ),
           },

@@ -335,6 +335,10 @@
 .note-card .note-card__body .note-card__sides .note-card__side li > p {
   padding: 0;
 }
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's softer text (#333 on white), the same step in dark. */
+[data-card-clean] .note-card__sides {
+  color: color-mix(in srgb, var(--fg) 90%, var(--bg));
+}
 /* A card's lists, read (YAZ-5026 round 2: "is this following the global settings?"): the page's look, from the same
    settings — Settings › Editor › Outline › Bullet indent and Bullet gap (`--note-bullet-indent`, `--note-bullet-gap` on
    `.app`, set only when changed) — in the page, the card window and the Inbox. The values are the page's

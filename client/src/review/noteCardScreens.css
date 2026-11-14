@@ -689,7 +689,16 @@ body.note-card-inbox--sizing {
 }
 .note-card-inbox__body {
   flex: none;
-  padding: 24px 28px 28px;
+  padding: 24px var(--inbox-card-pad, 28px) 28px;
+}
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card, and its line of about 62 letters,
+   centred in the card (a wider card, dragged, keeps the line and centres it). */
+[data-card-clean] {
+  --inbox-card-pad: 44px;
+}
+[data-card-clean] .note-card-inbox__card .note-card__side {
+  max-width: 31em;
+  margin-inline: auto;
 }
 /* The buttons and their line (YAZ-5049 round 2): at the bottom of the view while a long card scrolls under them, so
    an answer is always one click away; under a short card, where they always were. The page colour, fading in at the
@@ -724,7 +733,7 @@ body.note-card-inbox--sizing {
 }
 /* The line between two sides (YAZ-5051): across the whole card, edge to edge, as Mochi's, with room on each side. */
 .note-card-inbox__card .note-card__rule {
-  margin: 22px -28px;
+  margin: 22px calc(-1 * var(--inbox-card-pad, 28px));
 }
 /* The buttons row (YAZ-5004, as in Mochi): ← → on the left, the answers in the middle, ⋯ on the right. */
 .note-card-inbox__actions {

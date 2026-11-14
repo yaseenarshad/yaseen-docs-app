@@ -2161,7 +2161,8 @@ export interface SettingsState {
    * Settings › Review › Card spacing (YAZ-5050): how a note card reads in the Inbox, the card window and the page.
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
    * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
-   * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CUSTOM_START`).
+   * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CLEAN`). Round 4: `clean`
+   * uses them, with Mochi's softer text, Inbox padding and line length (`data-card-clean` on `.app`); Custom keeps that look.
    */
   cardSpacing: CardSpacing
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
@@ -2502,17 +2503,17 @@ export const SECTION_LINES: readonly SectionLines[] = ['always', 'hover']
 /** A shown hidden word's look (YAZ-5005); `box` (YAZ-5053) is Mochi's: a grey box while hidden, a light one when shown. */
 export type ShownHiddenWords = 'highlight' | 'underline' | 'box'
 export const SHOWN_HIDDEN_WORDS: readonly ShownHiddenWords[] = ['highlight', 'underline', 'box']
-/** Settings › Review › Card spacing (YAZ-5050). */
-export type CardSpacing = 'pages' | 'custom'
-export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'custom']
+/** Settings › Review › Card spacing (YAZ-5050); `clean` (round 4) is Mochi's look in one click. */
+export type CardSpacing = 'pages' | 'clean' | 'custom'
+export const CARD_SPACINGS: readonly CardSpacing[] = ['pages', 'clean', 'custom']
 /** A card's own space between blocks (YAZ-5050), px per side. */
 export const CARD_BLOCK_GAP_MAX = 24
 /**
- * Card spacing's Custom start (YAZ-5050 round 3, Yaseen: "if you put it to custom there are custom defaults and those
- * custom defaults are what mochies are"): measured on his Mochi screenshot — lines 1.5 apart, about 1em between
- * paragraphs (8 px a side), and no extra space between bullets. Separate from the pages' own defaults.
+ * Card spacing's Clean values (YAZ-5050 round 3 and 4, Yaseen: "custom defaults are what mochies are", "yes clean is
+ * good"): measured on his Mochi screenshot — lines 1.5 apart, about 1em between paragraphs (8 px a side), and no extra
+ * space between bullets. Clean uses them; Custom starts from them. Separate from the pages' own defaults.
  */
-export const CARD_SPACING_CUSTOM_START = { cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 } as const
+export const CARD_SPACING_CLEAN = { cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 } as const
 
 /** Guide lines (YAZ-4094 G2): when they show — `near` is while the mouse is over the note. */
 export type GuideLinesShow = 'always' | 'near'
@@ -2908,7 +2909,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   markNextHidden: true,
   nextHiddenColour: null,
   cardSpacing: 'pages',
-  ...CARD_SPACING_CUSTOM_START,
+  ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,
   tableOfContentsWidth: TOC_DEFAULT_W,

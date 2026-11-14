@@ -1503,10 +1503,22 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
   it('YAZ-5050 round 3: Card spacing is Same as pages by default, with no other row; Custom starts at Mochi\'s clean values (not the pages\'), and shows its rows', () => {
     const page = { ...DEFAULT_SETTINGS, lineSpacing: 1.15, blockGap: 2, noteBulletIndent: 40, noteBulletGap: 12, ...CUSTOM, cardSpacing: 'pages' as const }
     const { el, onChange } = mountOn('Review', page, undefined, S)
-    expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Custom', 'false']])
+    expect(rowButtons(el, 'cardSpacing').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Same as pages', 'true'], ['Clean', 'false'], ['Custom', 'false']])
     for (const id of CUSTOM_ROWS) expect(row(el, id)).toBeNull()
-    act(() => rowButtons(el, 'cardSpacing')[1].click())
+    act(() => rowButtons(el, 'cardSpacing')[2].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
+  })
+
+  it('YAZ-5050 round 4: Clean is one click, with no rows; Custom from Clean starts at Clean\'s values', () => {
+    const page = { ...DEFAULT_SETTINGS, ...CUSTOM, cardSpacing: 'pages' as const }
+    const { el, onChange } = mountOn('Review', page, undefined, S)
+    act(() => rowButtons(el, 'cardSpacing')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'clean' })
+    const clean = mountOn('Review', { ...page, cardSpacing: 'clean' }, undefined, S)
+    expect(rowButtons(clean.el, 'cardSpacing').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
+    for (const id of CUSTOM_ROWS) expect(row(clean.el, id)).toBeNull()
+    act(() => rowButtons(clean.el, 'cardSpacing')[2].click())
+    expect(clean.onChange).toHaveBeenLastCalledWith({ ...page, cardSpacing: 'custom', cardLineSpacing: 1.5, cardBlockGap: 8, cardBulletIndent: 34, cardBulletGap: 10, cardBulletSpace: 0 })
   })
 
   it('YAZ-5050: Custom card spacing: its rows under Card spacing, in the pages\' words; a change is an app setting; Reset goes to Custom\'s start; Same as pages goes back', () => {
@@ -1524,6 +1536,9 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardBulletGap: 10 })
     act(() => rowButtons(el, 'cardSpacing')[0].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'pages' })
+    // Clean keeps Custom's values for a later Custom; only the choice changes.
+    act(() => rowButtons(el, 'cardSpacing')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...custom, cardSpacing: 'clean' })
   })
 
   it('the switches save the whole object with one field changed — never onChange', () => {

@@ -113,9 +113,9 @@ it('YAZ-5051: the line between two sides is clear — dashed, across the card, d
   expect(rule.body).toMatch(/height:\s*0/)
   expect(rule.body).not.toMatch(/background:\s*var\(--border\)/)
   const screens = read('../../review/noteCardScreens.css')
-  expect(rules(screens, '.note-card-inbox__card .note-card__rule').some((r) => /margin:\s*22px -28px/.test(r.body))).toBe(true)
-  // The Inbox card's own padding is what the rule reaches past.
-  expect(rules(screens, '.note-card-inbox__body').some((r) => /padding:\s*24px 28px 28px/.test(r.body))).toBe(true)
+  expect(rules(screens, '.note-card-inbox__card .note-card__rule').some((r) => /margin:\s*22px calc\(-1 \* var\(--inbox-card-pad, 28px\)\)/.test(r.body))).toBe(true)
+  // The Inbox card's own padding is what the rule reaches past (28 px; Clean's 44, YAZ-5050 round 4).
+  expect(rules(screens, '.note-card-inbox__body').some((r) => /padding:\s*24px var\(--inbox-card-pad, 28px\) 28px/.test(r.body))).toBe(true)
 })
 
 it("YAZ-5050: a card's text reads with the pages' Line spacing and Space between blocks (or Card spacing's Custom values), in the page, the card window and the Inbox, over the page's own paragraph rule", () => {
@@ -203,4 +203,14 @@ it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes 
   expect(light).toBeDefined()
   expect(dark).toBeDefined()
   for (const status of ['#d64545', '#c98a1a', '#3a9d5d', '#5b6cff', '#e06c6c', '#d9a13c', '#4fb573', '#7c8aff']) expect([light, dark]).not.toContain(status)
+})
+
+it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s three looks: softer card text in light and dark, 44 px inside the Inbox card, and lines of about 62 letters there, centred', () => {
+  const text = rules(cardCss, '[data-card-clean] .note-card__sides')[0]!
+  expect(text.body).toMatch(/color:\s*color-mix\(in srgb, var\(--fg\) 90%, var\(--bg\)\)/)
+  const screens = read('../../review/noteCardScreens.css')
+  expect(rules(screens, '[data-card-clean]').some((r) => /--inbox-card-pad:\s*44px/.test(r.body))).toBe(true)
+  const side = rules(screens, '[data-card-clean] .note-card-inbox__card .note-card__side')[0]!
+  expect(side.body).toMatch(/max-width:\s*31em/)
+  expect(side.body).toMatch(/margin-inline:\s*auto/)
 })
