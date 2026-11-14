@@ -397,6 +397,20 @@ export function suggestedWord(words: readonly string[]): number {
   return best
 }
 
+/** What the person did in the first card, kept per host: a scrub or Back out of the span and in again shows it as it was. */
+interface KeptCard {
+  front: string
+  draft: string
+  hide: number
+  back: string | null
+  backDraft: string
+  reveal: number
+  answer: Answer | null
+  made: MadeCard | null
+}
+const NOTHING_KEPT: KeptCard = { front: '', draft: '', hide: -1, back: null, backDraft: '', reveal: 0, answer: null, made: null }
+const keptCards = new WeakMap<object, KeptCard>()
+
 /**
  * c2-06 to c2-13, one span: the person makes a first card. The steps that wait (c2-07, c2-08, c2-28, c2-10, c2-11)
  * hold until the person acts, then call `done()` once each. The answer makes the card file through `host` (6F).
@@ -405,14 +419,19 @@ function MakeCard(props: SceneProps) {
   const b = useBeat(props)
   const { clip, done, host, waits } = props
   const id = clip.id
-  const [front, setFront] = useState('')
-  const [draft, setDraft] = useState('')
-  const [hide, setHide] = useState(-1)
-  const [back, setBack] = useState<string | null>(null)
-  const [backDraft, setBackDraft] = useState('')
-  const [reveal, setReveal] = useState(0)
-  const [answer, setAnswer] = useState<Answer | null>(null)
-  const [made, setMade] = useState<MadeCard | null>(null)
+  // The scene may mount again (a scrub out of the span and back): it starts from what was kept, so the card is made once.
+  const [kept0] = useState(() => keptCards.get(host) ?? NOTHING_KEPT)
+  const [front, setFront] = useState(kept0.front)
+  const [draft, setDraft] = useState(kept0.draft)
+  const [hide, setHide] = useState(kept0.hide)
+  const [back, setBack] = useState<string | null>(kept0.back)
+  const [backDraft, setBackDraft] = useState(kept0.backDraft)
+  const [reveal, setReveal] = useState(kept0.reveal)
+  const [answer, setAnswer] = useState<Answer | null>(kept0.answer)
+  const [made, setMade] = useState<MadeCard | null>(kept0.made)
+  useEffect(() => {
+    keptCards.set(host, { front, draft, hide, back, backDraft, reveal, answer, made })
+  }, [host, front, draft, hide, back, backDraft, reveal, answer, made])
   /** Each clip that waits calls `done` once each time it is entered. */
   const doneFor = useRef(new Set<string>())
   const finish = (clipId: string): void => {

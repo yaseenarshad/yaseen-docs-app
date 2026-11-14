@@ -305,6 +305,73 @@ describe('the first card, made in the course (chapter 2, YAZ-5121)', () => {
   })
 })
 
+describe('a scrub back into a done step (YAZ-5120, the timeline)', () => {
+  const ch = COURSE.find((c) => c.id === 'first-card')!
+  const clip = (id: string) => ch.clips.find((c) => c.id === id)!
+  const press = (el: Element | null | undefined) => act(() => (el as HTMLElement).click())
+  const flushAll = () =>
+    act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+  it('chapter 2: the first card and its saved answer are made once; the scene, mounted again, shows them done', async () => {
+    const MakeCard = courseScenes('c2-07')
+    const host = memoryHost()
+    const { clock } = testClock(4)
+    const done = vi.fn()
+    const waits = (c: { id: string }) => WAITING_CLIPS.has(c.id)
+    const first = mountScene(MakeCard, ch, { clock, done, host, waits })
+    const byText = (t: string) => [...first.el.querySelectorAll('button')].find((b) => b.textContent === t)
+    first.render(clip('c2-07'))
+    press(byText('Use an example'))
+    first.render(clip('c2-08'))
+    press(byText('Use an example'))
+    first.render(clip('c2-28'))
+    act(() => first.el.querySelector<HTMLInputElement>('#kit-back')!.form!.requestSubmit())
+    first.render(clip('c2-10'))
+    press(first.el.querySelector('.kit-tap'))
+    press(first.el.querySelector('.kit-tap'))
+    first.render(clip('c2-11'))
+    press([...first.el.querySelectorAll('.card-inbox__answer')].find((b) => b.textContent?.includes('Remembered')))
+    await flushAll()
+    expect(host.made).toHaveLength(1)
+    // A scrub out of the span (the scene goes) and back into each waiting clip (the scene mounts again).
+    first.unmount()
+    const again = vi.fn()
+    const second = mountScene(MakeCard, ch, { clock, done: again, host, waits })
+    for (const id of ['c2-07', 'c2-08', 'c2-28', 'c2-10', 'c2-11']) second.render(clip(id))
+    expect(again).toHaveBeenCalledTimes(5)
+    press([...second.el.querySelectorAll('.card-inbox__answer')].find((b) => b.textContent?.includes('Forgot')))
+    await flushAll()
+    expect(host.made).toHaveLength(1)
+    second.render(clip('c2-07'))
+    expect(second.el.querySelector<HTMLTextAreaElement>('#kit-front')!.value).toBe('Your body builds and repairs with protein.')
+    second.unmount()
+  })
+
+  it('chapter 8: the AI step, mounted again on a done clip, says done at once and makes nothing again', async () => {
+    const ai = COURSE.find((c) => c.id === 'ai')!
+    const Step = courseScenes('c8-11')
+    const host = memoryHost()
+    const make = vi.spyOn(host.agentStep, 'makeExamples')
+    const { clock } = testClock(5)
+    const done = vi.fn()
+    const one = mountScene(Step, ai, { clock, done, host, waits: (c) => WAITING_CLIPS.has(c.id) })
+    one.render(ai.clips.find((c) => c.id === 'c8-11')!)
+    press([...one.el.querySelectorAll('button')].find((b) => b.textContent === 'Use the example'))
+    expect(done).toHaveBeenCalledTimes(1)
+    one.unmount()
+    const again = vi.fn()
+    const two = mountScene(Step, ai, { clock, done: again, host, waits: (c) => WAITING_CLIPS.has(c.id) })
+    two.render(ai.clips.find((c) => c.id === 'c8-11')!)
+    await flushAll()
+    expect(again).toHaveBeenCalledTimes(1)
+    expect(make).not.toHaveBeenCalled()
+    two.unmount()
+  })
+})
+
 describe('the first card file (YAZ-5121, the host seam for 6F)', () => {
   it('writes the front with the hidden word in braces, then the back on its own side', () => {
     expect(draftText(['The', 'sky', 'is', 'blue.'], 3, '')).toBe('The sky is {{blue}}.')

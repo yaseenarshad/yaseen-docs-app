@@ -16,6 +16,10 @@
  *    stops on the chapter's end screen ("Try it in the app", "Next chapter"). The last chapter's end is the course's end.
  *  - Next and Back move by one clip (Back first goes to the start of the clip, after its first `BACK_RESTART_SECONDS`);
  *    Next chapter skips the rest of a chapter without finishing it. The person can skip each step.
+ *  - Seek (the progress bar is a scrubber, YAZ-5120): a time in the chapter, in seconds at 1× from its start. The clip
+ *    under that time starts there (`enter` when the clip changes), with the marks before it counted and none fired. A
+ *    clip that waits and is not done holds at the end of its words, as always; its scene says again if it was done.
+ *    The chapter's end finishes the chapter, as its last clip's end does.
  */
 import type { CourseSpeed, CourseState } from '@shared/courseState'
 import type { CourseChapter, CourseClip } from './script'
@@ -74,6 +78,8 @@ export type PlayerAction =
   | { type: 'release' }
   | { type: 'speed'; speed: CourseSpeed }
   | { type: 'mute'; muted: boolean }
+  /** Go to `t` seconds (at 1×) from the start of this chapter: the scrubber. */
+  | { type: 'seek'; t: number }
 
 export type PlayerEvent =
   /** A clip starts (a new clip, or the same clip again): the place to keep, and the scene to show. */
@@ -154,6 +160,43 @@ function advanceTo(ctx: PlayerContext, s: PlayerState, to: number): StepResult {
   return { state: after.state, events: [...events, ...after.events] }
 }
 
+/** Pure: where each clip of the chapter starts (seconds at 1×, with the gaps), and the chapter's whole length. */
+export function chapterTimes(ctx: PlayerContext, chapter: number): { starts: number[]; lengths: number[]; total: number } {
+  const lengths = ctx.course[chapter].clips.map((c) => ctx.seconds(c) + GAP_SECONDS)
+  const starts: number[] = []
+  let total = 0
+  for (const length of lengths) {
+    starts.push(total)
+    total += length
+  }
+  return { starts, lengths, total }
+}
+
+/** Pure: the time in the chapter now (seconds at 1× from its start); an end screen is the chapter's end. */
+export function chapterTime(ctx: PlayerContext, s: PlayerState): number {
+  const { starts, lengths, total } = chapterTimes(ctx, s.chapter)
+  if (s.phase !== 'clip') return total
+  return starts[s.clip] + Math.min(s.t, lengths[s.clip])
+}
+
+/** The scrubber: the clip under `to` (chapter time), at its time there. */
+function seek(ctx: PlayerContext, s: PlayerState, to: number): StepResult {
+  if (!Number.isFinite(to)) return { state: s, events: [] }
+  const { starts, total } = chapterTimes(ctx, s.chapter)
+  if (to >= total) return s.phase === 'clip' ? endChapter(ctx, s) : { state: s, events: [] }
+  const at = Math.max(0, to)
+  let clip = starts.length - 1
+  while (clip > 0 && starts[clip] > at) clip -= 1
+  const entered = s.phase !== 'clip' || clip !== s.clip
+  const base = entered ? enter(ctx, s, s.chapter, clip) : { state: { ...s }, events: [] as PlayerEvent[] }
+  const c = ctx.course[s.chapter].clips[clip]
+  const length = ctx.seconds(c)
+  const holds = ctx.waits(c) && !base.state.released
+  const t = holds ? Math.min(at - starts[clip], length) : at - starts[clip]
+  const marks = (c.marks ?? []).filter((m) => m * length <= t).length
+  return { state: { ...base.state, t, marks }, events: base.events }
+}
+
 /** Pure: the player after one action, and what happened. */
 export function step(ctx: PlayerContext, s: PlayerState, action: PlayerAction): StepResult {
   const same: StepResult = { state: s, events: [] }
@@ -203,6 +246,8 @@ export function step(ctx: PlayerContext, s: PlayerState, action: PlayerAction): 
       return action.speed === s.speed ? same : { state: { ...s, speed: action.speed }, events: [] }
     case 'mute':
       return action.muted === s.muted ? same : { state: { ...s, muted: action.muted }, events: [] }
+    case 'seek':
+      return seek(ctx, s, action.t)
   }
 }
 

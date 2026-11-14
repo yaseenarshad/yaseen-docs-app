@@ -1,7 +1,7 @@
 /**
  * THE CARD COURSE (YAZ-5120, issue 6B of YAZ-5118): a full layer over the app window, loaded only when it opens
  * (`lazy` in App). Left: the chapter list, with a mark on each finished chapter. Right: the stage (the clip's scene),
- * the caption line (fixed height, always on screen), the progress bar, and the controls: Play / Pause, Back, Next,
+ * the caption line (fixed height, always on screen), the progress bar (a scrubber: `CourseScrubber.tsx`), and the controls: Play / Pause, Back, Next,
  * Next chapter, Mute, Speed (1×, 1.25×, 1.5×), "Try it in the app" (only on a chapter with `tryIt`), Close.
  *
  * - The player is pure (`player.ts`); this file is its clock and its sound. While it plays, each frame sends `clock`
@@ -21,9 +21,10 @@ import { storage } from '../lib/storage'
 import { COURSE, type CourseChapter, type CourseClip } from './script'
 import { clipSeconds } from './courseTime'
 import { WAITING_CLIPS } from './waits'
-import { chapterFraction, clipFraction, placeOf, startState, step, waitingForPerson, type PlayerAction, type PlayerContext, type PlayerEvent, type PlayerState } from './player'
+import { clipFraction, placeOf, startState, step, waitingForPerson, type PlayerAction, type PlayerContext, type PlayerEvent, type PlayerState } from './player'
 import { SILENT_VOICE, type ChapterSound, type ClipSound, type Voice } from './courseVoice'
 import { downloadedVoice } from './downloadedVoice'
+import { CourseScrubber, type CourseScrubberHandle } from './CourseScrubber'
 import { appTour, hasTour, type CourseTour } from './courseTour'
 import { NO_VAULT, showOnlyHost, type CourseHost, type CourseVault } from './courseHost'
 import { SHOW_ONLY, vaultCourseHost } from './courseCards'
@@ -239,11 +240,9 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       return { t: Math.min(s.t, length), length, fraction: clipFraction(c, s), playing: s.playing }
     })
   }
-  const barRef = useRef<HTMLSpanElement>(null)
-  const paintBar = useCallback(() => {
-    const fraction = chapterFraction(ctxRef.current, player.current)
-    if (barRef.current !== null) barRef.current.style.transform = `scaleX(${fraction.toFixed(4)})`
-  }, [])
+  const barRef = useRef<CourseScrubberHandle>(null)
+  const paintBar = useCallback(() => barRef.current?.paint(), [])
+  const readPlayer = useCallback(() => player.current, [])
 
   // ---- the sound ----
   const audio = useRef<HTMLAudioElement | null>(null)
@@ -351,8 +350,10 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       const moved = state.chapter !== before.chapter || state.clip !== before.clip || state.phase !== before.phase || events.some((e) => e.kind === 'enter')
       if (action.type === 'speed') storage.setCourse({ speed: state.speed })
       if (action.type === 'mute') storage.setCourse({ muted: state.muted })
-      if (moved || state.playing !== before.playing || state.speed !== before.speed || state.muted !== before.muted || state.released !== before.released) {
-        syncSound(moved)
+      // A seek moves the sound to the same moment (the sound's clock never goes back by itself).
+      const sought = action.type === 'seek'
+      if (moved || sought || state.playing !== before.playing || state.speed !== before.speed || state.muted !== before.muted || state.released !== before.released) {
+        syncSound(moved || sought)
         rerender()
       }
       if (waitingForPerson(ctxRef.current, state) !== waitingForPerson(ctxRef.current, before)) rerender()
@@ -635,9 +636,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
             </button>
           </p>
         )}
-        <div className="course__bar" aria-hidden="true">
-          <span ref={barRef} />
-        </div>
+        <CourseScrubber ref={barRef} ctx={ctx} read={readPlayer} dispatch={dispatch} />
         <div className="course__controls">
           <button ref={playButton} type="button" className="course__btn course__btn--play" aria-label={s.playing ? 'Pause' : 'Play'} onClick={() => dispatch({ type: 'toggle' })}>
             {s.playing ? 'Pause' : 'Play'}

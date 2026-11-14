@@ -311,11 +311,74 @@ describe('the course layer (YAZ-5120)', () => {
   })
 })
 
+describe('the timeline can be scrubbed (YAZ-5120)', () => {
+  const slider = () => document.querySelector<HTMLElement>('[role="slider"]')!
+  const pointer = (type: string, x: number) => {
+    const Ctor = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent
+    act(() => void slider().dispatchEvent(new Ctor(type, { bubbles: true, cancelable: true, clientX: x, button: 0 })))
+  }
+  const setBox = () => {
+    document.querySelector<HTMLElement>('.course__bar')!.getBoundingClientRect = () => ({ left: 0, top: 0, width: 100, height: 3, right: 100, bottom: 3, x: 0, y: 0, toJSON: () => ({}) })
+  }
+
+  it('is a named, focusable slider with a tick where each clip after the first starts, and says the time', () => {
+    mount()
+    expect(slider().getAttribute('aria-label')).toBe('Chapter progress')
+    expect(slider().tabIndex).toBe(0)
+    expect(document.querySelectorAll('.course__scrub-tick')).toHaveLength(1)
+    expect(slider().getAttribute('aria-valuetext')).toMatch(/^0:00 of \d:\d\d$/)
+  })
+
+  it('a drag: the stage and the caption follow, a tip shows the clip\'s caption and the time; on release it plays again', () => {
+    mount()
+    setBox()
+    act(() => button('Play')!.click())
+    pointer('pointerdown', 90)
+    expect(caption()).toBe('Four five six.')
+    expect(button('Play')).toBeDefined() // paused while dragging
+    expect(document.querySelector('.course__scrub-tip-text')?.textContent).toBe('Four five six.')
+    expect(document.querySelector('.course__scrub-tip-time')?.textContent).toMatch(/^\d:\d\d \/ \d:\d\d$/)
+    expect(saved.clip).toBe('a2')
+    pointer('pointermove', 5)
+    expect(caption()).toBe('One two three.')
+    pointer('pointerup', 5)
+    expect(document.querySelector('.course__scrub-tip')).toBeNull()
+    expect(button('Pause')).toBeDefined()
+    // The place kept is where the person stopped.
+    expect(saved.clip).toBe('a1')
+  })
+
+  it('keys: Shift + arrows one clip, Home and End, arrows 5 s; Space still plays; no key reaches the page', () => {
+    const appKeys = vi.fn()
+    window.addEventListener('keydown', appKeys)
+    mount()
+    act(() => slider().focus())
+    expect(press(slider(), 'ArrowRight').defaultPrevented).toBe(true)
+    press(slider(), 'Home')
+    expect(caption()).toBe('One two three.')
+    const shiftRight = new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true, bubbles: true, cancelable: true })
+    act(() => void slider().dispatchEvent(shiftRight))
+    expect(caption()).toBe('Four five six.')
+    const shiftLeft = new KeyboardEvent('keydown', { key: 'ArrowLeft', shiftKey: true, bubbles: true, cancelable: true })
+    act(() => void slider().dispatchEvent(shiftLeft))
+    expect(caption()).toBe('One two three.')
+    press(slider(), 'End')
+    expect(caption()).toBe('Chapter 1 done. Next: Second.')
+    expect(saved.finished).toEqual(['a'])
+    press(slider(), 'Home')
+    expect(caption()).toBe('One two three.')
+    press(slider(), ' ')
+    expect(button('Pause')).toBeDefined()
+    expect(appKeys).not.toHaveBeenCalled()
+    window.removeEventListener('keydown', appKeys)
+  })
+})
+
 describe('the voice starts with the first word (YAZ-5159)', () => {
   const A = { a1: { url: 'blob:a1', seconds: 3 }, a2: { url: 'blob:a2', seconds: 2 } }
   const B = { b1: { url: 'blob:b1', seconds: 2 }, 'c2-07': { url: 'blob:c2-07', seconds: 2 } }
   const playedSrc = () => (vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement | undefined)?.src
-  const notes = () => [...document.querySelectorAll('.course__note')].map((p) => p.textContent)
+  const pages = () => [...document.querySelectorAll('.course__note')].map((p) => p.textContent)
   const flush = () => act(async () => undefined)
 
   it('a chapter whose sound is here already starts with its sound at t = 0', async () => {
@@ -325,7 +388,7 @@ describe('the voice starts with the first word (YAZ-5159)', () => {
     act(() => button('Play')!.click())
     frames(1)
     expect(playedSrc()).toBe('blob:a1')
-    expect(notes()).toEqual([])
+    expect(pages()).toEqual([])
   })
 
   it('a sound that arrives after 300 ms: the first clip holds at its first frame, then starts with the sound from 0', async () => {
@@ -335,7 +398,7 @@ describe('the voice starts with the first word (YAZ-5159)', () => {
     act(() => button('Play')!.click())
     frames(3)
     expect(playedSrc()).toBeUndefined()
-    expect(notes()).toEqual([]) // no line before 0.5 s
+    expect(pages()).toEqual([]) // no line before 0.5 s
     await act(async () => v.arrive('a', A))
     expect(playedSrc()).toBe('blob:a1')
     expect(caption()).toBe('One two three.')
@@ -347,9 +410,9 @@ describe('the voice starts with the first word (YAZ-5159)', () => {
     await flush()
     act(() => button('Play')!.click())
     frames(6)
-    expect(notes()).toEqual([VOICE_LOADING_LINE])
+    expect(pages()).toEqual([VOICE_LOADING_LINE])
     frames(15)
-    expect(notes().some((n) => n?.includes(VOICE_LOADING_LINE))).toBe(false)
+    expect(pages().some((n) => n?.includes(VOICE_LOADING_LINE))).toBe(false)
     expect(button('Try again')).toBeDefined()
     frames(25)
     expect(caption()).toBe('Four five six.')
@@ -364,7 +427,7 @@ describe('the voice starts with the first word (YAZ-5159)', () => {
     act(() => button('Play')!.click())
     frames(25)
     expect(caption()).toBe('Four five six.')
-    expect(notes()).toEqual([])
+    expect(pages()).toEqual([])
   })
 
   it("the next chapter's sound is asked for once this chapter's is here; the next chapter then starts with its sound", async () => {

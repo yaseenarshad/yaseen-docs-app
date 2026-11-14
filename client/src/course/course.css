@@ -195,10 +195,105 @@
 }
 
 .course__bar {
+  position: relative;
   height: 3px;
   overflow: hidden;
   border-radius: 2px;
   background: var(--border);
+  transition: height 120ms ease;
+}
+
+/* The timeline (YAZ-5120): the bar is a slider for the chapter. A taller bar and a round handle on hover, focus and drag. */
+.course__scrub {
+  position: relative;
+  padding: 8px 0;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+}
+
+.course__scrub:hover .course__bar,
+.course__scrub:focus-visible .course__bar,
+.course__scrub[data-dragging='true'] .course__bar {
+  height: 6px;
+  border-radius: 3px;
+}
+
+.course__scrub:focus-visible .course__bar {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.course__scrub-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--bg);
+  opacity: 0.7;
+}
+
+.course__scrub-handle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.course__scrub:hover .course__scrub-handle,
+.course__scrub:focus-visible .course__scrub-handle,
+.course__scrub[data-dragging='true'] .course__scrub-handle {
+  opacity: 1;
+}
+
+.course__scrub-tip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: min(320px, 80%);
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.35;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.course__scrub-tip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.course__scrub-tip-time {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .course__bar,
+  .course__scrub-handle {
+    transition: none;
+  }
+}
+
+.course[data-reduced-motion='true'] .course__bar,
+.course[data-reduced-motion='true'] .course__scrub-handle {
+  transition: none;
 }
 
 .course__bar span {

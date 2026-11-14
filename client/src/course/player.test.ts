@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { defaultCourseState } from '@shared/courseState'
 import type { CourseChapter, CourseClip } from './script'
-import { BACK_RESTART_SECONDS, GAP_SECONDS, chapterFraction, placeOf, startState, step, waitingForPerson, type PlayerAction, type PlayerContext, type PlayerEvent, type PlayerState } from './player'
+import { BACK_RESTART_SECONDS, GAP_SECONDS, chapterFraction, chapterTime, chapterTimes, placeOf, startState, step, waitingForPerson, type PlayerAction, type PlayerContext, type PlayerEvent, type PlayerState } from './player'
 import { clipSeconds, estimateSeconds, MIN_CLIP_SECONDS } from './courseTime'
 
 /** A small made-up course: 3 chapters; clip `b2` waits; clip `a2` has marks; chapter `b` has a tour. */
@@ -172,3 +172,63 @@ describe('the clip`s length (YAZ-5120)', () => {
     expect(estimateSeconds('Hi.')).toBe(MIN_CLIP_SECONDS)
   })
 })
+
+describe('seek: the scrubber (YAZ-5120)', () => {
+  const G = GAP_SECONDS
+  it('the chapter\'s clip starts and length, and the time now', () => {
+    expect(chapterTimes(CTX, 0)).toEqual({ starts: [0, 4 + G], lengths: [4 + G, 4 + G], total: 8 + 2 * G })
+    const s = run(CTX, playing(), { type: 'tick', dt: 4 + G + 0.01 }, { type: 'tick', dt: 1 }).state
+    expect(chapterTime(CTX, s)).toBeCloseTo(4 + G + 1)
+    expect(chapterTime(CTX, run(CTX, s, { type: 'next' }).state)).toBe(8 + 2 * G)
+  })
+
+  it('into the middle of the clip it is in: the time moves (back too), no enter, and the marks before it count', () => {
+    const p = run(CTX, playing(), { type: 'next' }, { type: 'tick', dt: 3.5 }).state
+    expect(p.marks).toBe(3)
+    const r = step(CTX, p, { type: 'seek', t: 4 + G + 1.5 })
+    expect(r.events).toEqual([])
+    expect(r.state).toMatchObject({ clip: 1, t: 1.5, marks: 1, playing: true })
+  })
+
+  it('across clips: the clip under the time starts there, with its enter event; playing or paused stays as it was', () => {
+    const r = step(CTX, fresh(), { type: 'seek', t: 4 + G + 2.5 })
+    expect(r.events).toEqual([{ kind: 'enter', chapter: 'a', clip: 'a2' }])
+    expect(r.state).toMatchObject({ clip: 1, t: 2.5, marks: 2, playing: false })
+    const back = step(CTX, r.state, { type: 'seek', t: 1 })
+    expect(back.events).toEqual([{ kind: 'enter', chapter: 'a', clip: 'a1' }])
+    expect(back.state).toMatchObject({ clip: 0, t: 1 })
+  })
+
+  it('to the very start and the very end: the end finishes the chapter (its mark in the list), as its last clip does', () => {
+    const mid = run(CTX, playing(), { type: 'next' }, { type: 'tick', dt: 1 }).state
+    expect(step(CTX, mid, { type: 'seek', t: -3 }).state).toMatchObject({ clip: 0, t: 0 })
+    const end = step(CTX, mid, { type: 'seek', t: 99 })
+    expect(end.state).toMatchObject({ phase: 'chapter-end', playing: false, finished: ['a'] })
+    expect(end.events).toEqual([{ kind: 'chapter-end', chapter: 'a' }])
+    // From the end screen, back into the chapter.
+    expect(step(CTX, end.state, { type: 'seek', t: 2 }).state).toMatchObject({ phase: 'clip', clip: 0, t: 2 })
+    expect(step(CTX, end.state, { type: 'seek', t: 99 }).state).toBe(end.state)
+  })
+
+  it('a clip that waits: past it is allowed; back into it holds at its words\' end until its scene says done again', () => {
+    const inB = run(CTX, playing(), { type: 'chapter', index: 1 }).state
+    const past = step(CTX, inB, { type: 'seek', t: 4 + G + 4 + G - 0.1 })
+    expect(past.state).toMatchObject({ clip: 1, t: 4, released: false })
+    expect(waitingForPerson(CTX, past.state)).toBe(true)
+    // Done once, then away and back: it holds, and the scene's done (release) lets it go on.
+    const done = run(CTX, past.state, { type: 'release' }, { type: 'tick', dt: 1 }).state
+    expect(done.phase).toBe('chapter-end')
+    const again = step(CTX, done, { type: 'seek', t: 4 + G + 2 })
+    expect(again.state).toMatchObject({ clip: 1, t: 2, released: false })
+    const later = run(CTX, again.state, { type: 'play' }, { type: 'release' }, ...ticks(5, 1)).state
+    expect(later.phase).toBe('chapter-end')
+  })
+
+  it('with sound: the sound\'s seconds place the clips', () => {
+    const ctx = ctxWith({ a1: 9, a2: 1 })
+    expect(chapterTimes(ctx, 0).starts).toEqual([0, 9 + G])
+    expect(step(ctx, fresh(ctx), { type: 'seek', t: 8 }).state).toMatchObject({ clip: 0, t: 8 })
+    expect(step(ctx, fresh(ctx), { type: 'seek', t: 9 + G + 0.5 }).state).toMatchObject({ clip: 1, t: 0.5 })
+  })
+})
+
