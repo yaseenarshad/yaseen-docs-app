@@ -20,12 +20,13 @@ import type { FindChannel, FindController, FindResult } from './findChannel'
 export const CARD_FIND_READ = 'mdapp:card-find-read'
 
 /**
- * The card's text the reader sees: the title in a card's head (shown) or a card file tab's head, the sides of a card
- * that is not edited or folded, and the card editor's text while it is.
+ * The card's text the reader sees: the title in a card's band (shown) or a card file tab's band (YAZ-5392: `PageTitle`
+ * right in the band), the sides of a card that is not edited or folded, and the card editor's text while it is. The tab's
+ * selector starts at `.card-file__page`, inside the finder's root: jsdom's selector engine never matches the root itself.
  */
 export const CARD_FIND_REGIONS = [
   '.card__title:not([hidden]) .page-title__text',
-  '.card-file__head .page-title__text',
+  '.card-file__page .card-band > .page-title .page-title__text',
   '.card:not(.card--editing):not(.card-embed--folded) > .card__body',
   '.card--editing .card__editor .ProseMirror',
 ].join(', ')
