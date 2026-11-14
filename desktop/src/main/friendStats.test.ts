@@ -111,6 +111,13 @@ describe('friendStats (YAZ-5069)', () => {
     expect(s.totals).toMatchObject({ dueLeft: 0, streak: 13, bestStreak: 13 })
   })
 
+  it('no answer ever: no streak (checker, 2C1)', () => {
+    for (const s of [friendStats([], NOW), stats([card('GEO-1', []), card('GEO-2', [])])]) {
+      expect(s.totals.streak).toBe(0)
+      expect(s.totals.bestStreak).toBe(0)
+    }
+  })
+
   it('a missed day stops the streak', () => {
     // Learned on 9 November and due on 12 November (checked); not answered on the 12th, answered today.
     const reviews: R[] = [
