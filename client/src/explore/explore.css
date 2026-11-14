@@ -33,7 +33,7 @@
   overflow: hidden;
   outline: none;
 }
-.explore__layer--note,
+.explore__layer--page,
 .explore__layer--board {
   height: 80vh;
 }
