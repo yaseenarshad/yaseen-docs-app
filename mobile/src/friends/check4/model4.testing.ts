@@ -71,6 +71,7 @@ function fakeSync(now: () => number): FakeSync {
 export interface Stats4 {
   i2strict: string[]
   i4strict: string[]
+  i4strictOldGist: string[]
   i5: string[]
   i6: string[]
   i6parked: number
@@ -90,7 +91,7 @@ export interface Stats4 {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export class Model4 extends Model {
-  st4: Stats4 = { i2strict: [], i4strict: [], i5: [], i6: [], i6parked: 0, throws: [], c409: 0, c422: 0, sends: 0, sendsSent: 0, oldOps: 0, oldWrites: 0, oldBlocked: 0, oldHeadOverV2: 0, zoneLost: [], maxListFiles: 0, maxTombs: 0 }
+  st4: Stats4 = { i2strict: [], i4strict: [], i4strictOldGist: [], i5: [], i6: [], i6parked: 0, throws: [], c409: 0, c422: 0, sends: 0, sendsSent: 0, oldOps: 0, oldWrites: 0, oldBlocked: 0, oldHeadOverV2: 0, zoneLost: [], maxListFiles: 0, maxTombs: 0 }
   inflight = new Map<string, number>()
   inflightBy = new Map<string, Set<{ d: any }>>()
   /** A crashed app's request is over (it landed or not): it no longer counts as a write at this moment. */
@@ -204,6 +205,10 @@ export class Model4 extends Model {
   checkI4strict(d: any, id: string, init: RequestInit) {
     const g = this.gist(id)
     if (g === undefined || !(INDEX_FILE in g.files)) return
+    // BUILDER CHANGE (YAZ-5083): once the list moved into the vault repo, this gist is the note, not the list (see the
+    // check3 model's `i4oldGist`); its writes are counted apart.
+    const moving = typeof init.body === 'string' && /"v\\?":3[,}]/.test(JSON.stringify((JSON.parse(init.body) as { files?: Record<string, { content?: string } | null> }).files?.[INDEX_FILE]?.content ?? ''))
+    const moved = moving || g.revisions.some((r) => /"v":3[,}]/.test(r[INDEX_FILE] ?? ''))
     const body = typeof init.body === 'string' ? (JSON.parse(init.body) as { files?: Record<string, { content?: string } | null> }) : {}
     const after: Record<string, string> = { ...g.files }
     for (const [n, f] of Object.entries(body.files ?? {})) {
@@ -220,7 +225,7 @@ export class Model4 extends Model {
     const read = keys(this.lastGet.get(d))
     const next = keys(after)
     const lost = [...before].filter((k) => !read.has(k) && !next.has(k))
-    if (lost.length > 0) this.st4.i4strict.push(`seed ${this.seed} step ${this.step}: ${d.old ? 'OLD ' : ''}${d.actor}${d.n} write drops ${lost.join(',')} that it never GET-read`)
+    if (lost.length > 0) (moved ? this.st4.i4strictOldGist : this.st4.i4strict).push(`seed ${this.seed} step ${this.step}: ${d.old ? 'OLD ' : ''}${d.actor}${d.n} write drops ${lost.join(',')} that it never GET-read`)
     // The zone: a write that drops the home zone that another write set.
     const z = (files: Record<string, string>) => {
       try {
@@ -732,5 +737,7 @@ export const violations = (m: Model4): Record<string, string[]> => ({
   I6: m.st4.i6,
   I7: m.st.i7,
   wrongDelete: m.st.wrongDeletes,
+  /** Reported, not an invariant of the list (YAZ-5083): the old app's writes of its old gist after the move. */
+  oldGistAfterMove: [...m.st.i4oldGist, ...m.st4.i4strictOldGist],
   throws: m.st4.throws,
 })

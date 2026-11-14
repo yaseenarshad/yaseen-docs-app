@@ -71,6 +71,8 @@ export interface Stats {
   i3: string[]
   i3late: number
   i4: string[]
+  /** YAZ-5083: I4 on writes of an OLD list gist after the move (the old app's race with the note); not the list. */
+  i4oldGist: string[]
   /** YAZ-5083: two live entries for one friend (round 4's I5), after every step. */
   i5: string[]
   /** YAZ-5083: a list write that is not a fast forward of the list its writer read (a lost update). */
@@ -119,7 +121,7 @@ export class Model {
   skew: Record<string, number> = {}
   madeBy = new Map<string, Actor>()
   log: string[] = []
-  st: Stats = { steps: 0, removesStarted: 0, removesFinished: 0, i1: [], i2: [], i3: [], i3late: 0, i4: [], i5: [], i7: [], listWrites: 0, lostRemove: 0, doneButListed: 0, groupReach: 0, queuedSteps: 0, queuedBReadsCurrent: 0, queuedHonest: 0, stoppedRowsC: 0, crashes: 0, deletes: {}, wrongDeletes: [] }
+  st: Stats = { steps: 0, removesStarted: 0, removesFinished: 0, i1: [], i2: [], i3: [], i3late: 0, i4: [], i4oldGist: [], i5: [], i7: [], listWrites: 0, lostRemove: 0, doneButListed: 0, groupReach: 0, queuedSteps: 0, queuedBReadsCurrent: 0, queuedHonest: 0, stoppedRowsC: 0, crashes: 0, deletes: {}, wrongDeletes: [] }
   linksGivenToB = new Set<string>()
 
   constructor(public seed: number) {
@@ -242,7 +244,16 @@ export class Model {
         if (f === null) delete after[name]
         else if (typeof f.content === 'string') after[name] = f.content
       }
-      this.checkI4(d, before, after)
+      // BUILDER CHANGE (YAZ-5083): I4 is the rule of THE LIST. Once a device has moved the list into the vault repo, the
+      // gist holds the note; an older app may still write its old head back there, but that gist is not the list any
+      // more (the repo file is, and its writes are checked below). Those writes are counted apart (`i4oldGist`).
+      // The write that puts the note in (the move itself) is the end of the gist as the list, so it counts there too.
+      if (target.revisions.some((r) => /"v":3[,}]/.test(r[INDEX_FILE] ?? '')) || /"v":3[,}]/.test(after[INDEX_FILE] ?? '')) {
+        const saved = this.st.i4
+        this.st.i4 = this.st.i4oldGist
+        this.checkI4(d, before, after)
+        this.st.i4 = saved
+      } else this.checkI4(d, before, after)
     }
     if (method === 'DELETE' && id !== null && url.includes('/gists/')) this.auditDelete(d, id)
     // YAZ-5083: a move of the vault branch that writes the list: I4 (it drops nothing that it did not read) and I7 (it is

@@ -152,6 +152,38 @@ describe('make or find the files (one of each, on each device)', () => {
     expect(w.owned('yaseen').filter((g) => INDEX_FILE in g.files).map((g) => g.id)).toEqual([old.id])
   })
 
+  it('YAZ-5083: an old list moves into the vault repo once; a remove that an older app writes during the move is not lost', async () => {
+    const w = world()
+    const api = w.api(T1)
+    const statsId = w.seed('yaseen', { [NUMBERS_FILE]: JSON.stringify(STATS) })
+    const sam = 'aa11aa11aa11aa11aa11aa11aa11aa11'
+    const old = w.seed('yaseen', {
+      [INDEX_FILE]: JSON.stringify({ v: 2, nickname: 'Y', vaults: ['yaseen/vault'] }),
+      [`notecards-friends.n.0-${statsId}.json`]: JSON.stringify({ v: 1, stats: statsId, covers: [] }),
+      [`notecards-friends.d.${statsId}.json`]: '{"v":1}',
+      [`notecards-friends.f.${sam}.json`]: JSON.stringify({ v: 1, name: 'Sam', theirs: 'bb22bb22bb22bb22bb22bb22bb22bb22' }),
+    })
+    // The older app (on another phone) removes Sam at the moment of the move: its tombstone lands before the note.
+    const older = w.api(T2)
+    const racing: typeof api = {
+      ...api,
+      update: async (id, files) => {
+        if (id === old && readNote(files[INDEX_FILE] ?? null).kind === 'note') await older.update(old, { [`notecards-friends.x.${sam}-fr1.json`]: JSON.stringify({ v: 1, kinds: ['friend'], rekey: true, at: '' }) })
+        return api.update(id, files)
+      },
+    }
+    const moved = await ensureFriendsFiles(racing, seed, opts)
+    if (moved.kind !== 'ok') throw new Error(moved.kind)
+    expect(readNote(w.text(old, INDEX_FILE))).toEqual({ kind: 'note', home: 'yaseen/vault' })
+    const read = listIn(w)
+    expect(read.kind === 'ok' && read.value.friends).toEqual([])
+    expect(read.kind === 'ok' && read.list.pending.map((t) => t.mine)).toEqual([sam])
+    // Only the note is left in the old gist; a second open moves nothing again.
+    expect(Object.keys(w.owned('yaseen').find((g) => g.id === old)!.files)).toEqual([INDEX_FILE])
+    const again = await ensureFriendsFiles(api, seed, opts)
+    expect(again.kind === 'ok' && again.handle.index.nickname).toBe('Y')
+  })
+
   it('an index written by a newer app is not touched', async () => {
     const w = world()
     // YAZ-5083: v 3 is the note now; a newer app writes above it.

@@ -352,9 +352,33 @@ async function moveOldList(api: GistsApi, ports: readonly RepoPort[], old: NoteG
   if (target.kind !== 'ok') return target
   const port = target.handle.store!.port
   await api.update(old.id, { [INDEX_FILE]: noteText(port.repo) })
-  // Only the files this move READ leave the gist: a file an older app wrote a moment later is not deleted unread (I4).
-  await tidyOldGist(api, old.gist)
   let handle: IndexHandle = { ...target.handle, id: old.id, owner: old.owner, store: { port, note: old.id } }
+  // An older app may have written the old list between this move's read and the note (after the note it reads "a
+  // newer list" and stops). Its entry and tombstone FILES of that moment join the moved list: a tombstone above all,
+  // so a remove it began is finished here (never lost). What it wrote into an old head's arrays cannot be told apart.
+  const read = await gistNow(api, old.id)
+  if (read !== null) {
+    const late = Object.keys(read.files).filter((n) => n !== INDEX_FILE && isListFile(n) && old.gist.files[n] === undefined)
+    if (late.length > 0)
+      handle = await writeList(
+        handle,
+        (cur) => {
+          const patch: Record<string, string | null> = {}
+          for (const name of late) {
+            const text = read.files[name]?.content
+            if (typeof text !== 'string' || (cur.files ?? {})[name] !== undefined) continue
+            const m = /\.([fgs])\.([0-9a-f]+)\.json$/.exec(name)
+            // An entry that a tombstone of the list already ended is not brought back.
+            if (m !== null && (cur.state?.tombs ?? []).some((t) => t.mine === m[2])) continue
+            patch[name] = text
+          }
+          return Object.keys(patch).length === 0 ? null : patch
+        },
+        opts,
+      )
+    // Only the files this move READ (or joined just now) leave the gist; none is deleted unread.
+    await tidyOldGist(api, { ...old.gist, files: { ...old.gist.files, ...Object.fromEntries(late.map((n) => [n, read.files[n]])) } })
+  }
   // Old twin lists (two devices made one at the same moment, before): their entries join the moved list, their
   // pointers name the kept numbers gist, then their numbers gist and the twin go (as decision 15's rule did).
   for (const twin of twins) {
@@ -461,6 +485,16 @@ export async function movedFiles(api: GistsApi, h: IndexHandle, opts: WriteOptio
  * pointer IDs are in the vault now). Best effort: a refused write (GitHub's 409, a file deleted meanwhile, the hourly
  * limit) leaves them for the next open; the note alone already makes every app read the vault.
  */
+async function gistNow(api: GistsApi, id: string): Promise<GistDoc | null> {
+  try {
+    const g = await api.read(id)
+    return g === 'unchanged' || g.truncated === true ? null : g
+  } catch (err) {
+    if (gistErrorCode(err) === null) throw err
+    return null
+  }
+}
+
 async function tidyOldGist(api: GistsApi, read: GistDoc): Promise<void> {
   try {
     // The files of THIS read that the gist still has (a `null` for a file that is gone would refuse the whole write).
