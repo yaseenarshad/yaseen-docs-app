@@ -51,10 +51,11 @@ describe('YAZ-5308 decision D: the title is a part of the card line', () => {
     expect(cardTitleOf(parseCardLine('<!-- card: DEMO-196 -->')!)).toBe('')
   })
 
-  it('a comma in a title is no part break', () => {
+  it('a comma in a title is no part break: written `&#44;` (YAZ-5393), and a raw one (an older line) reads too', () => {
     const line = withCardTitle(parseCardLine('<!-- card: DEMO-1, 2026-11-12T14:05Z good -->')!, 'Paris, France')
     const text = formatCardLine(line)!
-    expect(text).toBe('<!-- card: DEMO-1, title "Paris, France", 2026-11-12T14:05Z good -->')
+    expect(text).toBe('<!-- card: DEMO-1, title "Paris&#44; France", 2026-11-12T14:05Z good -->')
+    expect(cardTitleOf(parseCardLine('<!-- card: DEMO-1, title "Paris, France", 2026-11-12T14:05Z good -->')!)).toBe('Paris, France')
     expect(cardTitleOf(parseCardLine(text)!)).toBe('Paris, France')
     expect(parseCardLine(text)!.parts.map((p) => p.kind)).toEqual(['id', 'title', 'review'])
   })
@@ -90,10 +91,11 @@ describe('YAZ-5308 decision D: the title is a part of the card line', () => {
     expect(formatCardLine(withCardNoTitle(withCardNext(withCardOff(line, true), true), true))).toBe('<!-- card: DEMO-1, title "Ser", off, next, notitle, 2026-11-12T14:05Z good -->')
   })
 
-  it('a quote never closed keeps the rest of the line as one unknown part, written back as it was', () => {
+  it('a quote never closed: no title, the review after it reads (YAZ-5394), and the line is written back as it was', () => {
     const text = '<!-- card: DEMO-1, title "open, 2026-11-12T14:05Z good -->'
     const line = parseCardLine(text)!
     expect(cardTitleOf(line)).toBe('')
+    expect(line.parts.map((p) => p.kind)).toEqual(['id', 'other', 'review'])
     expect(formatCardLine(line)).toBe(text)
   })
 })
