@@ -84,6 +84,7 @@ describe('make or find the files (one of each, on each device)', () => {
   })
 
   it('two devices that start at the same time end with ONE index and ONE numbers gist (the oldest wins)', async () => {
+    let twins = 0
     for (let round = 0; round < 6; round++) {
       const w = world()
       w.shuffle(round)
@@ -97,7 +98,10 @@ describe('make or find the files (one of each, on each device)', () => {
       expect(a.handle.index.stats).toBe(b.handle.index.stats)
       const index = parseFriendsIndex(w.text(a.handle.id, INDEX_FILE)!)
       expect(index.kind === 'ok' && index.value.stats).toBe(a.handle.index.stats)
+      if (w.calls.filter((c) => c.op === 'create').length === 4) twins++
     }
+    // The race is real in these rounds: both devices made a list and a numbers gist, and one pair was deleted.
+    expect(twins).toBeGreaterThan(0)
   })
 
   it('three devices at once also end with one of each', async () => {
@@ -111,6 +115,7 @@ describe('make or find the files (one of each, on each device)', () => {
     const w = world()
     const api = w.api(T1)
     const old = await api.create('x', { [INDEX_FILE]: JSON.stringify({ v: 1, nickname: null, vaults: ['a/b'], stats: null, friends: [{ name: 'Sam', theirs: 'a1', mine: 'b1' }], groups: [] }) })
+    w.advance(2000) // GitHub's created_at has whole seconds
     await api.create('x', { [INDEX_FILE]: JSON.stringify({ v: 1, nickname: 'Y', vaults: ['a/b'], stats: null, friends: [{ name: 'Ali', theirs: 'a2', mine: 'b2' }], groups: [{ name: 'G', group: 'c3', mine: 'b3', admin: false }] }) })
     const found = await findFriendsIndex(api, opts)
     expect(found.kind).toBe('ok')

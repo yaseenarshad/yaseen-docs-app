@@ -62,7 +62,7 @@ describe('never lower a day (round 12, item 2)', () => {
   })
 
   it('keeps the days only the gist holds (another device`s), adds new days, newest first, 90 at most', () => {
-    const remote = file([day('2026-11-12', 7), ...Array.from({ length: 89 }, (_, i) => day(`2026-08-${String((i % 28) + 1).padStart(2, '0')}`, 1))])
+    const remote = file([day('2026-11-12', 7), ...Array.from({ length: 89 }, (_, i) => day(new Date(Date.UTC(2026, 10, 11 - i)).toISOString().slice(0, 10), 1))])
     const fresh = file([day('2026-11-14', 3), day('2026-11-13', 2)])
     const { file: merged } = mergeNeverLower(remote, fresh)
     const days = merged.days as FriendDay[]

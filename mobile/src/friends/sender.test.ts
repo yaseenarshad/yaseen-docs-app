@@ -171,11 +171,14 @@ describe('createFriendsSender (YAZ-5082)', () => {
     const p = await phone(world, clock, PHONE_TOKEN)
     const n = patches(world).length
     await p.review(answered(1))
+    const calls = world.calls.length
     clock.advance(60_000)
     await p.review(answered(2, clock.now()))
     clock.advance(60_000)
     await p.review(answered(3, clock.now()))
     expect(patches(world).length - n).toBe(1)
+    // While it waits, it asks GitHub nothing and does not count (the count costs about 200 ms on a large vault).
+    expect(world.calls.length).toBe(calls)
     expect(p.sender.state()).toMatchObject({ status: 'waiting', retryAt: START + PUBLISH_EVERY_MS })
     clock.advance(PUBLISH_EVERY_MS - 2 * 60_000)
     await p.sender.idle()
@@ -233,6 +236,7 @@ describe('createFriendsSender (YAZ-5082)', () => {
     const used = world.updates('yaseen')
     for (let i = used; i < 80; i++) await mac.update(stats, { [NUMBERS_FILE]: world.text(stats, NUMBERS_FILE)! })
     const p = await phone(world, clock, PHONE_TOKEN)
+    const n = patches(world).length
     for (let t = 0; t < 3600_000 - 60_000; t += 20_000) {
       await p.review(answered(1 + t / 20_000, clock.now()))
       clock.advance(20_000)
@@ -240,7 +244,8 @@ describe('createFriendsSender (YAZ-5082)', () => {
     }
     // 20 were left; the reserve for 8 friends is 13. The phone used at most the 7 spare, spread over the hour.
     expect(world.updates('yaseen')).toBeLessThanOrEqual(100 - reserveFor(8))
-    const mine = patches(world).filter((c) => c.token === PHONE_TOKEN)
+    const mine = patches(world).slice(n).filter((c) => c.token === PHONE_TOKEN)
+    expect(mine.every((c) => c.id === stats)).toBe(true)
     expect(mine.length).toBeGreaterThanOrEqual(3)
     for (let i = 1; i < mine.length; i++) expect(mine[i].at - mine[i - 1].at).toBeGreaterThan(PUBLISH_EVERY_MS)
   })
