@@ -13,7 +13,7 @@
  *   Closing gives the keyboard back to where it was.
  * - `prefers-reduced-motion`: the scenes and the layer cross-fade in place of movement (`course.css`, `reducedMotion`).
  * - The seams: `scenes` (6C: `scenes/index.ts`; a span of clips keeps one scene mounted), `voice` (6D1: per chapter, downloaded when needed), `tour` (6E), `host` (6F). Each has a
- *   default: the course's scenes (the placeholder for a chapter not built yet), silence, "coming next", and a host that makes nothing.
+ *   default: the course's scenes (the placeholder for a chapter not built yet), silence, the real tour (`appTour`), and the host (the real one with a vault view, else one that makes nothing).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { COURSE_SPEEDS, type CourseSpeed } from '@shared/courseState'
@@ -24,7 +24,7 @@ import { WAITING_CLIPS } from './waits'
 import { chapterFraction, clipFraction, placeOf, startState, step, waitingForPerson, type PlayerAction, type PlayerContext, type PlayerEvent, type PlayerState } from './player'
 import { SILENT_VOICE, type ChapterSound, type ClipSound, type Voice } from './courseVoice'
 import { downloadedVoice } from './downloadedVoice'
-import { comingNextTour, hasTour, type CourseTour } from './courseTour'
+import { appTour, hasTour, type CourseTour } from './courseTour'
 import { showOnlyHost, type CourseHost, type CourseVault } from './courseHost'
 import { vaultCourseHost } from './courseCards'
 import { courseScenes } from './scenes'
@@ -374,10 +374,11 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   }
 
   // ---- the tour ----
-  const tour = useMemo(() => tourIn ?? comingNextTour((line) => setPage(line)), [tourIn])
   const host = useMemo(() => hostIn ?? (courseVault === undefined ? showOnlyHost(vault) : vaultCourseHost(courseVault)), [hostIn, vault, courseVault])
   // The AI step's watch and timer stop with the layer; its state stays for the next open (YAZ-5124).
   useEffect(() => () => host.agentStep.stop(), [host])
+  // The real tour over the app (YAZ-5123), with the same host as the scenes.
+  const tour = useMemo(() => tourIn ?? appTour(host), [tourIn, host])
   const tryIt = useCallback(() => {
     const chapter = ctxRef.current.course[player.current.chapter]
     if (!hasTour(chapter)) return

@@ -16,6 +16,7 @@ import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
 import { cardFileName } from '@shared/cardFileFormat'
+import { listenTour } from '../course/tourBus'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -327,6 +328,43 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
  * "Read only" chip while the vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page:
  * a time choice unlocks this tab (the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
  */
+describe('the guided tour hears the card file tab (YAZ-5123)', () => {
+  it('open, Edit card (click or E) and Done each fire their event once, with the path; the marks are on the real controls', async () => {
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
+    try {
+      await mount(FILE)
+      expect(heard).toEqual([['card-file-open', PATH]])
+      expect(editButton()!.dataset.tour).toBe('card-edit')
+      expect(el.querySelector('.card-file__more')!.getAttribute('data-tour')).toBe('card-menu')
+      act(() => editButton()!.click())
+      const dom = await cardEditor()
+      expect(el.querySelector('[data-explore-card-edit]')!.getAttribute('data-tour')).toBe('card-editor')
+      expect(el.querySelector<HTMLElement>('[data-explore-card-edit] .card__edit')!.dataset.tour).toBe('card-done')
+      expect(heard.map(([n]) => n)).toEqual(['card-file-open', 'card-edit-open'])
+      key(dom, { key: 'Enter', metaKey: true })
+      await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+      expect(heard).toEqual([['card-file-open', PATH], ['card-edit-open', PATH], ['card-edit-done', PATH]])
+      key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
+      expect(heard.at(-1)).toEqual(['card-edit-open', PATH])
+      expect(heard).toHaveLength(4)
+    } finally {
+      stop()
+    }
+  })
+
+  it('the ⋯ rows Copy card link, Archive card and Put at top of Inbox are marks of the tour', async () => {
+    await mount(FILE)
+    await menu()
+    const tours = [...document.querySelectorAll<HTMLElement>('[role="menuitem"][data-tour]')].map((item) => [item.textContent, item.dataset.tour])
+    expect(tours).toEqual([
+      ['Put at top of Inbox', 'card-menu-up-next'],
+      ['Archive card', 'card-menu-archive'],
+      ['Copy card link', 'card-copy-link'],
+    ])
+  })
+})
+
 describe('the top bar of a card file (YAZ-5102)', () => {
   const bar = () => el.querySelector<HTMLElement>('.status-chips')
   const chip = () => el.querySelector<HTMLButtonElement>('.read-only-chip__button')
@@ -406,8 +444,13 @@ describe('the top bar of a card file (YAZ-5102)', () => {
  */
 describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
   it('the typed name is `title`; the file is named after it; the card is empty and opens in Edit card; Done writes the card and renames nothing', async () => {
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
     const made = await createCardFile('/v/Geography', 'Capital of France')
+    stop()
     expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
+    // The guided tour (YAZ-5123) hears the new card file once, with its path.
+    expect(heard).toEqual([['card-file-created', made]])
     expect(disk.files.get(made)).toBe('---\nkind: card\ntitle: Capital of France\n---\n```card\n\n```\n<!-- card: WIKI-10 -->\n')
     const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())

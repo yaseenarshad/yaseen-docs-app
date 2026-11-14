@@ -345,6 +345,9 @@ export class CardBlockView implements NodeView {
     if (!this.editing) this.editButton.textContent = 'Edit card'
     else if (this.editButton.firstChild?.textContent !== 'Done') this.editButton.replaceChildren('Done', keyCapsDom('esc'), keyCapsDom('⌘↵'))
     this.editButton.setAttribute('aria-label', this.editing ? 'Done' : 'Edit card')
+    // Done is a target of the course's guided tour (YAZ-5123) while the card is edited.
+    if (this.editing) this.editButton.dataset.tour = 'card-done'
+    else delete this.editButton.dataset.tour
     this.dom.classList.toggle('card--editing', this.editing)
     this.drawReviews()
     if (this.editing || this.drawn === text) return

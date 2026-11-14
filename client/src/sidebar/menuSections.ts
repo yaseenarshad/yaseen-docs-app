@@ -41,6 +41,8 @@ interface MenuItemBase {
   /** Right-aligned shortcut hint (⌘X …), drawn from `data-hint` by CSS — never part of the label. */
   hint?: string
   danger?: boolean
+  /** The row's `data-tour` name: a target of the course's guided tour (YAZ-5123). */
+  tour?: string
 }
 
 /** A leaf: selecting it runs `onSelect`, then the whole menu closes. */
@@ -470,7 +472,7 @@ const createParent = (id: string, label: string, kind: CreateKind, sections: rea
  */
 const newCard: Leaf = (t, h) => {
   const dir = t.cardDir ?? null
-  return t.targetDir === null || dir === null ? null : { id: 'new-card', label: 'New card', icon: kindIcon('card'), onSelect: () => h.onNewCard(dir) }
+  return t.targetDir === null || dir === null ? null : { id: 'new-card', label: 'New card', icon: kindIcon('card'), tour: 'new-card', onSelect: () => h.onNewCard(dir) }
 }
 
 // The order is page, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing flyout keeps the two apps apart.
@@ -487,7 +489,7 @@ const newFolderMenu = createParent('new-folder-menu', 'New folder', 'dir', [[new
 const reviewFolder: Leaf = (t, h) => {
   const dir = t.reviewDir
   if (dir === null) return null
-  return { id: 'review-folder', label: 'Review this folder', onSelect: () => h.onReviewFolder(dir) }
+  return { id: 'review-folder', label: 'Review this folder', tour: 'review-folder', onSelect: () => h.onReviewFolder(dir) }
 }
 
 /**

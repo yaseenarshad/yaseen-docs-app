@@ -71,6 +71,7 @@ import { HoverPreviewHost, useHoverPreview } from './HoverPreviewHost'
 import type { PreviewPopup } from './previewPlacement'
 import { useShareBadges } from '../share/useShareBadges'
 import { pageHoldsKeys } from '../lib/readOnlyCaret'
+import { tourEvent } from '../course/tourBus'
 
 /** A board's Info popover body (YAZ-3028 D11), with its CSS: loaded on the first "Info". */
 const BoardInfo = lazy(() => import('./BoardInfo'))
@@ -1436,6 +1437,8 @@ export function Sidebar({
         : node === null ? { list: listLens, folder: shownAlone?.id ?? null, after: null }
         : node.type === 'file' && node.shortcutIn === undefined && node.pageOf === undefined && node.top === node.path ? { list: listLens, folder: listTab.folderOf(node.path)?.id ?? null, after: node.path }
         : null
+      // The course's guided tour (YAZ-5123): a folder's menu opened (the tour checks which folder).
+      if (node?.type === 'dir' && node.pageOf === undefined) tourEvent('folder-menu-open', node.path)
       setMenu({
         x,
         y,
@@ -1909,6 +1912,7 @@ export function Sidebar({
             key={vault.root}
             type="button"
             className={`sidebar__inbox${vault.reviewing ? ' sidebar__inbox--active' : ''}`}
+            data-tour="sidebar-inbox"
             aria-pressed={vault.reviewing}
             aria-label={vault.dueCount > 0 ? `${label}, ${vault.dueCount} due` : label}
             onClick={() => onInbox(vault.root)}

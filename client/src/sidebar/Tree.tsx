@@ -1,4 +1,4 @@
-import { Fragment, memo, type CSSProperties, type ReactElement } from 'react'
+import { Fragment, memo, useSyncExternalStore, type CSSProperties, type ReactElement } from 'react'
 import type { TabSort, TreeNode } from '@shared/types'
 import type { Needle } from '../links/completion'
 import { marked } from '../search/marked'
@@ -22,6 +22,7 @@ import { NO_APP_ROWS, appRowsLast, keepsOrder, shownLabel, sortLevel, timeOf } f
 import { shortRelativeTime } from '../lib/relativeTime'
 import { formatDateTime } from '../lib/format'
 import { newWindowClick } from '../lib/newWindowClick'
+import { subscribeTourPlaces, tourPlaces } from '../course/tourBus'
 
 /** Inline "New page" / "New folder" input pending inside the tree (GRO-2022). */
 export interface PendingCreate {
@@ -420,6 +421,8 @@ function TreeLevel({
   shift = 0,
 }: TreeProps) {
   const level = depth + shift
+  // The course's guided tour (YAZ-5123) marks its Course Cards folder and Course page; null outside a tour.
+  const tour = useSyncExternalStore(subscribeTourPlaces, tourPlaces)
   const recurse = { shift, vaultRows, appRows, expanded, copies, activeFile, activeTop, onToggle, onOpenFile, onKeepFile, onOpenFileBackground, onOpenDefault, onNodeContextMenu, pending, renaming, move, selection, shortcuts, pageRows, onOpenPage, titles, ids, marks, cardRows, onOpenCard, onHoverFile, tooLarge, shareBadges, icons, cardFiles, sort, dates, scores }
   /** A board or page row's hover handlers (YAZ-3028 D11, YAZ-3075 D4): pointer and focus alike, so the keyboard walk previews too. */
   const hoverOf = (path: string) =>
@@ -597,7 +600,7 @@ function TreeLevel({
                 data-fold={foldOf(node)}
                 data-kind={vaultRows.has(node.path) ? undefined : 'folder'}
                 // The card skill's row (YAZ-5108) is a target of the course's guided tour (YAZ-5059 decision 13).
-                data-tour={appRows.has(node.path) ? 'card-skill-row' : undefined}
+                data-tour={appRows.has(node.path) ? 'card-skill-row' : node.path === tour.folder ? 'sidebar-course-cards' : undefined}
                 {...iconProps(node, 8 + level * 14)}
                 // Shift is the SELECTION gesture everywhere (YAZ-1340) and a folder joins the
                 // selection like a file (YAZ-1578, 🔒 D1) — so shift toggles and never folds. A
@@ -729,6 +732,7 @@ function TreeLevel({
               onContextMenu={(e) => onNodeContextMenu(isShortcutRow(node) ? { type: 'file', path: node.path, shortcutIn: dirPath, top: topOf(node) } : { ...node, top: topOf(node) }, e)}
               title={node.path}
               data-path={node.path}
+              data-tour={node.path === tour.page ? 'course-page' : undefined}
               // The file's icon before the name (YAZ-3440 D4), which took the place of the diagram's mark after it: its
               // kind for the Line set (a file with no viewer in the app is `other`), its Material icon by name (`data-icon`
               // and the inline `--icon`). app.css draws the one the icon set asks for on the label: no node more.

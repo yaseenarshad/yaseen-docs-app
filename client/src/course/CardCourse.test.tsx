@@ -7,7 +7,6 @@ import type { CourseChapter } from './script'
 import { CardCourse, type CardCourseProps } from './CardCourse'
 import { memoryVoice } from './courseVoice'
 import type { CourseTour } from './courseTour'
-import { TOUR_COMING_NEXT } from './courseTour'
 import { useEscapeLast } from '../lib/escapeOrder'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import type { CourseHost, CourseVault } from './courseHost'
@@ -215,12 +214,44 @@ describe('the course layer (YAZ-5120)', () => {
     expect(caption()).toBe('Seven eight.')
   })
 
-  it('the frame`s tour says it is coming next', async () => {
+  it('the default tour is the real one over the app (YAZ-5123): Esc goes back to the course at the same place', async () => {
     mount()
     act(() => document.querySelectorAll<HTMLButtonElement>('.course__chapter')[1].click())
-    await act(async () => button('Try it in the app')!.click())
-    expect(document.querySelector('.course__note')?.textContent).toBe(TOUR_COMING_NEXT)
+    act(() => button('Next step')!.click())
+    expect(caption()).toBe('Type the short version.')
+    act(() => button('Try it in the app')!.click())
+    expect(layer().hidden).toBe(true)
+    await act(async () => undefined)
+    const coach = document.querySelector('.course-tour__coach')!
+    expect(coach.getAttribute('aria-label')).toBe('Try it in the app')
+    // Chapter `b` needs no folder: its one step shows at once.
+    expect(coach.querySelector('.course-tour__say')!.textContent).toBe('Click x.Step 1 of 1')
+    const esc = press(document.body, 'Escape')
+    expect(esc.defaultPrevented).toBe(true)
+    await act(async () => undefined)
+    expect(document.querySelector('.course-tour')).toBeNull()
     expect(layer().hidden).toBe(false)
+    expect(caption()).toBe('Type the short version.')
+    expect(saved.toured).toEqual([])
+  })
+
+  it('a finished tour marks its chapter as toured; the course comes back at the same place', async () => {
+    mount()
+    act(() => document.querySelectorAll<HTMLButtonElement>('.course__chapter')[1].click())
+    act(() => button('Try it in the app')!.click())
+    await act(async () => undefined)
+    const x = document.createElement('button')
+    x.dataset.tour = 'x'
+    x.getBoundingClientRect = () => ({ left: 10, top: 10, width: 50, height: 20, right: 60, bottom: 30, x: 10, y: 10, toJSON: () => null })
+    document.body.appendChild(x)
+    act(() => x.click())
+    frames(1)
+    expect(document.querySelector('.course-tour__say')!.textContent).toBe('Done. You did it in the real app.')
+    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.course-tour__coach button')].find((b) => b.textContent === 'Back to the course')!.click())
+    await act(async () => undefined)
+    expect(saved.toured).toEqual(['b'])
+    expect(layer().hidden).toBe(false)
+    expect(caption()).toBe('Seven eight.')
   })
 
   it('the voice: the chapter start is told; a sound that arrives mid-clip is used from the next clip; its seconds time the clip', async () => {

@@ -28,6 +28,7 @@ const mintPageId = vi.mocked(api.mintPageId)
 import { MAX_SUGGESTIONS, linkCandidates, nameCandidate } from '../../links/completion'
 import { folderLinkCandidates, linkResolver } from '../../links/folderLinks'
 import { resolverFor } from '../../views/engine'
+import { listenTour } from '../../course/tourBus'
 import { WIKILINK_CLASS, createWikilinkResolveSource, type WikilinkResolveSource } from './wikilinkPlugin'
 import {
   WIKILINK_PICKER_CLASS,
@@ -176,6 +177,30 @@ describe('wikilink picker: open / filter (GRO-2191)', () => {
     caret(crepe, posOf(crepe, 'and text', 'and text'.length))
     type(crepe, '[[')
     expect(rows()).toEqual(['Alpha'])
+  })
+})
+
+describe('wikilink picker: the guided tour hears it (YAZ-5123)', () => {
+  it('opening fires link-picker-open once; a card row fires card-link-added once; a page row fires none', async () => {
+    const heard: string[] = []
+    const stop = listenTour((name) => heard.push(name))
+    try {
+      const s = createWikilinkCandidateSource()
+      s.update([nameCandidate('Alpha'), { name: 'Estar', insert: 'DEMO-127', label: 'Estar', lower: 'estar', card: true }])
+      const { crepe } = await mount('X\n', s)
+      caret(crepe, posOf(crepe, 'X', 1))
+      type(crepe, '[[')
+      type(crepe, 'es')
+      expect(heard).toEqual(['link-picker-open'])
+      expect(popup()?.dataset.tour).toBe('link-picker')
+      expect(press(crepe, 'Enter')).toBe(true)
+      expect(heard).toEqual(['link-picker-open', 'card-link-added'])
+      type(crepe, ' [[alp')
+      press(crepe, 'Enter')
+      expect(heard).toEqual(['link-picker-open', 'card-link-added', 'link-picker-open'])
+    } finally {
+      stop()
+    }
   })
 })
 

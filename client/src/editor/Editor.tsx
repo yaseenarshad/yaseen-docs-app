@@ -1593,7 +1593,8 @@ function CrepeHost({
                 every folder's views. */}
             <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
           </div>
-          <div className="editor-mount" ref={hostRef} {...mountWidths} />
+          {/* A target of the course's guided tour (YAZ-5123): the page's text. */}
+          <div className="editor-mount" data-tour="page-editor" ref={hostRef} {...mountWidths} />
           {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
               writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
           <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />

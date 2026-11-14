@@ -14,6 +14,7 @@
  *   first card, the example cards) and its "Course page". A record, never the truth: each thing stays a plain file the
  *   person sees in the sidebar, and deleting any of it (the whole folder too) is safe; the course makes what a step
  *   needs again.
+ * - `toured`: the ids of the chapters whose guided tour ("Try it in the app", YAZ-5123) the person finished.
  */
 
 /** The player's speeds (YAZ-5059 suggestion 21). */
@@ -38,6 +39,7 @@ export interface CourseState {
   muted: boolean
   speed: CourseSpeed
   made: CourseMade[]
+  toured: string[]
 }
 
 /** One change to the course's state: only the fields it names. */
@@ -52,7 +54,7 @@ const MAX_MADE_CARDS = 256
 const MAX_PATH = 4096
 
 export function defaultCourseState(): CourseState {
-  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, made: [] }
+  return { chapter: '', clip: '', finished: [], done: false, dismissed: false, offered: false, muted: false, speed: 1, made: [], toured: [] }
 }
 
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length <= MAX_ID && /^[A-Za-z0-9_-]*$/.test(v)
@@ -76,7 +78,8 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return base
   const r = raw as Record<string, unknown>
   const bool = (k: 'done' | 'dismissed' | 'offered' | 'muted'): boolean => (typeof r[k] === 'boolean' ? (r[k] as boolean) : base[k])
-  const finished = Array.isArray(r.finished) ? [...new Set(r.finished.filter((id): id is string => isId(id) && id !== ''))].slice(0, MAX_FINISHED) : base.finished
+  const ids = (v: unknown, kept: string[]): string[] => (Array.isArray(v) ? [...new Set(v.filter((id): id is string => isId(id) && id !== ''))].slice(0, MAX_FINISHED) : kept)
+  const finished = ids(r.finished, base.finished)
   return {
     chapter: isId(r.chapter) ? r.chapter : base.chapter,
     clip: isId(r.clip) ? r.clip : base.clip,
@@ -87,6 +90,7 @@ export function cleanCourseState(raw: unknown, base: CourseState = defaultCourse
     muted: bool('muted'),
     speed: isSpeed(r.speed) ? r.speed : base.speed,
     made: Array.isArray(r.made) ? uniqueVaults(r.made.map(cleanMade).filter((m): m is CourseMade => m !== null)).slice(0, MAX_MADE_VAULTS) : base.made,
+    toured: ids(r.toured, base.toured),
   }
 }
 
@@ -98,6 +102,7 @@ export function sameCourseState(a: CourseState, b: CourseState): boolean {
   return a.chapter === b.chapter && a.clip === b.clip && a.done === b.done && a.dismissed === b.dismissed && a.offered === b.offered && a.muted === b.muted && a.speed === b.speed
     && a.finished.length === b.finished.length && a.finished.every((id, i) => id === b.finished[i])
     && JSON.stringify(a.made) === JSON.stringify(b.made)
+    && a.toured.length === b.toured.length && a.toured.every((id, i) => id === b.toured[i])
 }
 
 /** Pure: `patch` applied to `state` by the rule of `cleanCourseState`; the same object when nothing changed. */

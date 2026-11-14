@@ -16,7 +16,7 @@ export const COURSE_SETTINGS_GROUP: SettingsGroup = {
       keywords: ['review', 'cards', 'flashcards', 'inbox', 'fsrs', 'course', 'learn', 'tutorial', 'lesson', 'how to', 'spaced repetition', 'help'],
       render: ({ openCourse }) =>
         openCourse !== undefined && (
-          <button type="button" className="settings__option" onClick={openCourse}>
+          <button type="button" className="settings__option" data-tour="settings-course" onClick={openCourse}>
             Open the course
           </button>
         ),

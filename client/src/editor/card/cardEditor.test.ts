@@ -16,6 +16,7 @@ import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
 import { CARD_MIRROR_MS, cardBlockViewAt, setCardEditorKind, type CardBlockView } from './cardBlockView'
 import { joinCardParts, splitCardText } from './cardEditorText'
 import { SIDE_BREAK } from './cardEditor'
+import { listenTour } from '../../course/tourBus'
 
 // The page's editor is Edit card's default (YAZ-5026); the raw-text fallback is one switch away.
 beforeAll(() => setCardEditorKind('page'))
@@ -276,6 +277,32 @@ describe('sides in the card editor', () => {
     card.done()
     expect(cardText(view)).toBe('Question\n---\nAnswer\n---\nThird\n\n***')
     expect(cardSides(cardText(view))).toEqual(['Question', 'Answer', 'Third\n\n***'])
+  })
+})
+
+describe('the guided tour hears the card editor (YAZ-5123)', () => {
+  it('typing, Hide word and a new side each fire their event once; opening the editor and showing a word fire none', async () => {
+    const heard: string[] = []
+    const stop = listenTour((name) => heard.push(name))
+    try {
+      const { view } = await mount(page('Paris is in France.'))
+      const { card, inner } = await edit(view)
+      expect(heard).toEqual([])
+      caretAfter(inner, 'France.')
+      type(inner, 'x')
+      expect(heard).toEqual(['card-text-changed'])
+      inner.dispatch(inner.state.tr.setSelection(TextSelection.create(inner.state.doc, 1, 6)))
+      key(inner.dom, 'l', { metaKey: true })
+      expect(heard).toEqual(['card-text-changed', 'card-word-hidden'])
+      // ⌘L in the hidden word shows it again: that is no hidden word.
+      key(inner.dom, 'l', { metaKey: true })
+      caretAfter(inner, 'France.x')
+      key(inner.dom, 'Enter', { metaKey: true, shiftKey: true })
+      expect(heard).toEqual(['card-text-changed', 'card-word-hidden', 'card-side-added'])
+      card.done()
+    } finally {
+      stop()
+    }
   })
 })
 

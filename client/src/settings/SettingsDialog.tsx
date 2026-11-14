@@ -228,7 +228,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
             )}
           </div>
           {settingsPages.map((s) => (
-            <button key={s.id} type="button" className="settings-nav__item" aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
+            <button key={s.id} type="button" className="settings-nav__item" data-tour={s.id === 'review' ? 'settings-review' : undefined} aria-current={shown === s ? 'page' : undefined} onClick={() => showPage(s.id)}>
               {s.title}
             </button>
           ))}

@@ -11,6 +11,7 @@ import { NEW_CARD_TEXT, cardFileContent, cardFileName } from '@shared/cardFileFo
 import { EMPTY_CARD_LINE, withCardId } from '@shared/cardLine'
 import { api } from '../api'
 import { takePageId } from '../views/scaffold'
+import { tourEvent } from '../course/tourBus'
 
 /** The card files this window just made, whose tab has not opened yet. */
 const fresh = new Set<string>()
@@ -22,6 +23,7 @@ export async function createCardFile(dir: string, title = NEW_CARD_TEXT): Promis
   const path = `${dir}/${cardFileName(text, id)}`
   await api.createFile({ path, content: cardFileContent(text, '', withCardId(EMPTY_CARD_LINE, id)) })
   fresh.add(path)
+  tourEvent('card-file-created', path)
   return path
 }
 

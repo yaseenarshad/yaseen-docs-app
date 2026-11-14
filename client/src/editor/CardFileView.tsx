@@ -65,6 +65,7 @@ import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
 import { useUnit } from '../vault/unitWord'
+import { tourEvent } from '../course/tourBus'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -164,6 +165,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   // A card New card just made (YAZ-5037) opens in Edit card, one time only.
   const [fresh] = useState(() => isNewCard(path))
   useEffect(() => forgetNewCard(path), [path])
+  // The course's guided tour (YAZ-5123): a card file opened in a tab.
+  useEffect(() => tourEvent('card-file-open', path), [path])
   const [editing, setEditing] = useState(fresh)
   const editingRef = useRef(editing)
   editingRef.current = editing
@@ -222,6 +225,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       () => {
         setSave('saved')
         setEditing(false)
+        tourEvent('card-edit-done', path)
       },
       () => setSave('error'),
     )
@@ -231,6 +235,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     event.preventDefault()
     event.stopPropagation()
     setEditing(true)
+    tourEvent('card-edit-open', path)
   }
   const doors = {
     openLayer: (to: string) => (exploreOnClick?.() === true && onOpenExplore !== undefined ? onOpenExplore(to) : (onOpenLink ?? onOpenFile)(to)),
@@ -310,7 +315,17 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             <div className="card-file__title-row">
               <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
               {canEdit && !editing && (
-                <button type="button" className="card-file__button" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={() => setEditing(true)}>
+                <button
+                  type="button"
+                  className="card-file__button"
+                  data-card-file-edit
+                  data-tour="card-edit"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    setEditing(true)
+                    tourEvent('card-edit-open', path)
+                  }}
+                >
                   Edit card <kbd>E</kbd>
                 </button>
               )}
@@ -365,6 +380,7 @@ function CardFileMore({ sections }: { sections: () => MenuSection[] }) {
       <button
         type="button"
         className="card-file__button card-file__more"
+        data-tour="card-menu"
         aria-label="More actions"
         aria-haspopup="menu"
         aria-expanded={at !== null}
