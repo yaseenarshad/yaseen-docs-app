@@ -1202,3 +1202,85 @@ describe('daily and new (YAZ-4269)', () => {
     expect((await run(['new', path.join(root, 'gone'), '--title', 'X'])).err).toBe(`no folder ${path.join(root, 'gone')}\n`)
   })
 })
+
+describe('card guide (YAZ-5110)', () => {
+  /** The app's profile in the temp dir (S13): its copy of the card skill is `<profile>/card-skill`. */
+  let profile: string
+  let cwd: string
+  beforeEach(async () => {
+    profile = path.join(dir, 'profile')
+    await mkdir(profile)
+    vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', profile)
+    cwd = process.cwd()
+  })
+  afterEach(() => {
+    process.chdir(cwd)
+    vi.unstubAllEnvs()
+  })
+
+  /** The app's copy, as the app makes it at its start: the start page and the folder's two vault files. */
+  async function appCopy(start = '# Start here\n\nThe app copy.\n'): Promise<string> {
+    const copy = path.join(profile, 'card-skill')
+    await mkdir(path.join(copy, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(path.join(copy, 'Start here.md'), start)
+    await writeFile(path.join(copy, VAULT_CONFIG_DIR, IDS_FILE), '{"enabled":false}')
+    return copy
+  }
+
+  it("prints the app copy's start page outside a vault", async () => {
+    await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nThe app copy.\n', err: '' })
+  })
+
+  it('--path prints the folder in double quotes (the path has a space on macOS)', async () => {
+    const copy = await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide', '--path'])).toEqual({ code: 0, out: `"${copy}"\n`, err: '' })
+  })
+
+  it("inside a vault with a `Card skill` folder, the user's duplicate wins, from any folder of the vault", async () => {
+    await appCopy()
+    const root = await vault('v', { 'Card skill/Start here.md': '# Start here\n\nMy own version.\n', 'notes/deep/a.md': '' })
+    process.chdir(path.join(root, 'notes', 'deep'))
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nMy own version.\n', err: '' })
+    expect(await run(['card', 'guide', '--path'])).toEqual({ code: 0, out: `"${path.join(root, 'Card skill')}"\n`, err: '' })
+  })
+
+  it("inside a vault without a `Card skill` folder, the app's copy", async () => {
+    const copy = await appCopy()
+    const root = await vault('v', { 'a.md': '' })
+    process.chdir(root)
+    expect((await run(['card', 'guide', '--path'])).out).toBe(`"${copy}"\n`)
+  })
+
+  it('no copy yet (the app never started): one line, exit 1', async () => {
+    process.chdir(dir)
+    const copy = path.join(profile, 'card-skill')
+    for (const argv of [['card', 'guide'], ['card', 'guide', '--path']]) {
+      expect(await run(argv)).toEqual({ code: 1, out: '', err: `The card skill is not there yet: start Yaseen Docs once to make ${copy}\n` })
+    }
+  })
+
+  it('a folder with no start page is refused, exit 1', async () => {
+    const copy = await appCopy()
+    await rm(path.join(copy, 'Start here.md'))
+    process.chdir(dir)
+    expect(await run(['card', 'guide'])).toEqual({ code: 1, out: '', err: `no Start here.md in ${copy}\n` })
+  })
+
+  it('takes no other flag and no argument', async () => {
+    await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide', '--json'])).toEqual({ code: 2, out: '', err: `card guide does not take --json\n${USAGE}\n` })
+    expect(await run(['card', 'guide', 'x'])).toEqual({ code: 2, out: '', err: `card guide takes no argument\n${USAGE}\n` })
+  })
+
+  it('the help lists the verb and tells an agent to run it first', () => {
+    expect(USAGE).toContain('yaseendocs card guide [--path]')
+    expect(USAGE.indexOf('yaseendocs card guide')).toBe(USAGE.indexOf('\n', USAGE.indexOf('yaseendocs card next')) + 3)
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['Run `yaseendocs card guide` before you add or change a card.', '`--path`', 'Card skill']) expect(help).toContain(said)
+    expect(help).not.toMatch(/note card guide/)
+  })
+})

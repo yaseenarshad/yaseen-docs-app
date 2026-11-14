@@ -14,6 +14,7 @@
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
 import { execFile } from 'node:child_process'
+import { statSync } from 'node:fs'
 import { readFile as readRaw, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
@@ -42,12 +43,14 @@ import { lineKinds } from '@shared/fences'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardTitle } from '@shared/cardText'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
+import { CARD_SKILL_START_PAGE, cardSkillFolder } from '@shared/cardSkillFolder'
 import { makeCardResolver } from '@shared/cardLinks'
 import { isSkipped } from '@shared/fileKind'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { AGENT_HANDLE, VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type IndexRecord, type SettingsState } from '@shared/types'
 import { makeResolver } from '@shared/linkResolver'
 import { mentionsOf } from '@shared/mentions'
+import { CARD_SKILL_DIR } from '../main/cardSkill'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { createFile } from '../main/fs/create'
 import { readFile, writeFile } from '../main/fs/file'
@@ -83,6 +86,7 @@ export const USAGE = `usage:
   yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--json]
   yaseendocs card new <folder> --title <text> [--body <text | ->] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
+  yaseendocs card guide [--path]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
@@ -178,6 +182,13 @@ Inbox"). The card is found by its id in the vault of \`<folder>\` (the current f
 An archived card stays out of the Inbox. It prints \`<id> is up next (<page>)\` or \`<id> is not up
 next (<page>)\`; \`--json\` gives \`id\`, \`page\` and \`next\`.
 
+\`card guide\` prints the start page of the card skill: how to write a good card, the formats, and how to check
+one. Run \`yaseendocs card guide\` before you add or change a card. The skill is a folder of pages, and the start
+page names the others: \`--path\` prints the folder's path in double quotes (it has a space on macOS), so you can
+read them. Run inside a vault that has a \`Card skill\` folder at its top (the person's own copy of the skill), the
+command uses that folder; anywhere else, the app's copy, which the app makes at its start. Before the app has
+started once there is no copy, and the command says so (exit 1).
+
 \`vaults\` lists the vaults the app knows: the recent ones, last used first, then each other vault
 that is open or has a number. A line is the name, the folder, \`⌘<n>\` for number n, \`(open)\` for
 a window on it. \`--json\` gives \`path\`, \`name\` (display name, else folder name), \`key\` (1-9 or
@@ -226,7 +237,7 @@ Make a note card, and see what is due:
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
 const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path'])
 
 class Usage extends Error {}
 
@@ -682,6 +693,26 @@ async function cardNext(ref: string, from: string, flags: Map<string, string | t
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page: record.path, next: on }, null, 2)}\n` : `${id} is ${on ? '' : 'not '}up next (${record.path})\n`)
 }
 
+/**
+ * `card guide` (YAZ-5110, decision 6): the card skill's start page, or with `--path` its folder in double quotes. The
+ * vault is the one the current folder is in; its own `Card skill` folder wins over the app's copy (suggestion 18,
+ * `cardSkillFolder`). The app's copy is `<userData>/card-skill`, found as `vaults` finds the state file.
+ */
+async function cardGuide(args: readonly string[], flags: Map<string, string | true>, io: Io): Promise<void> {
+  onlyFlags('card guide', flags, ['--path'])
+  if (args.length > 0) throw new Usage('card guide takes no argument')
+  const appCopy = join(userDataDir(process.env, process.platform, homedir()), CARD_SKILL_DIR)
+  const folder = cardSkillFolder(await vaultRoot(process.cwd()), appCopy, (path) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true)
+  if (!(await stat(folder).catch(() => null))?.isDirectory()) throw new Error(`The card skill is not there yet: start Yaseen Docs once to make ${folder}`)
+  if (flags.has('--path')) {
+    io.stdout(`"${folder}"\n`)
+    return
+  }
+  const start = await readRaw(join(folder, CARD_SKILL_START_PAGE), 'utf8').catch(() => null)
+  if (start === null) throw new Error(`no ${CARD_SKILL_START_PAGE} in ${folder}`)
+  io.stdout(start.endsWith('\n') ? start : `${start}\n`)
+}
+
 async function run(argv: readonly string[], io: Io): Promise<void> {
   const { verb, args, flags } = parse(argv)
   if (verb === '' || verb === 'help' || flags.has('--help') || flags.has('-h')) {
@@ -707,7 +738,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       if (args[1] === undefined) throw new Usage('card new needs a folder')
       return cardNew(resolve(args[1]), flags, io)
     }
-    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new or next' : `unknown card command: ${args[0]}`)
+    if (args[0] === 'guide') return cardGuide(args.slice(1), flags, io)
+    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new, next or guide' : `unknown card command: ${args[0]}`)
     if (args[1] === undefined) throw new Usage('card add needs a page')
     const page = resolve(args[1])
     requireMarkdownFile(page)
