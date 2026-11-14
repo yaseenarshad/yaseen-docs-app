@@ -256,3 +256,22 @@ describe('3D, loaded with the engine (YAZ-5079)', () => {
     expect(media.urlNow?.('a.png')).toBe('blob:now')
   })
 })
+
+// YAZ-5200 (3D6): a screen that closes (or drops a picture) lets go of each URL it got, so 3D can revoke it.
+describe('watchMedia lets go of the URLs it used', () => {
+  it('500 pictures in view, then the view closes: each URL is let go once; a picture taken out of the page is let go at once', async () => {
+    const released: string[] = []
+    const media: VaultMedia = { ...fakeMedia(), releaseUrl: (path) => void released.push(path) }
+    const root = pictures(500)
+    const watch = watchMedia(root, media)
+    FakeObserver.all[0].show([...root.querySelectorAll('img')])
+    await settle()
+    const first = root.querySelector('img')!
+    first.remove()
+    await settle()
+    expect(released).toHaveLength(1)
+    watch.stop()
+    expect(released).toHaveLength(500)
+    expect(new Set(released).size).toBe(500)
+  })
+})

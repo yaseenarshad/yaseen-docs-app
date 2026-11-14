@@ -1,7 +1,7 @@
 import { cardDueAt } from '@shared/cardSchedule'
 import { cardTime } from '@shared/cardLine'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { budgetMs } from '../../../client/src/test-perf'
 import { GithubError, githubClient } from '../github/client'
 import { fakeGit, fakeGithub } from '../github/testing'
@@ -13,7 +13,7 @@ import { isEager } from '../sync/plan'
 import { createSyncEngine, type SyncEvent } from '../sync/engine'
 import { githubRemote, type GithubRemote } from '../sync/githubRemote'
 import { BRANCH, REPO, TOKEN, VAULT, fakeClock } from '../sync/testing'
-import { createMediaAhead, type MediaAhead } from './ahead'
+import { MEDIA_URL_IDLE_CAP, createMediaAhead, type MediaAhead } from './ahead'
 import { MEDIA_AHEAD_MAX_BYTES } from './plan'
 
 const START = Date.UTC(2026, 10, 14, 6, 0, 0)
@@ -79,6 +79,8 @@ interface Options {
   beforeBlob?: (sha: string, background: boolean) => Promise<void> | void
   store?: VaultStore
   parallel?: number
+  /** The browser's own `URL.createObjectURL` and `URL.revokeObjectURL` (3D6 counts them). */
+  realUrls?: boolean
 }
 
 async function setup(files: Record<string, string | Uint8Array>, options: Options = {}) {
@@ -147,12 +149,16 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
     clock,
     yieldToUi: async () => {},
     parallel: options.parallel,
-    makeUrl: (bytes, type) => {
-      const url = `blob:test/${urls.length}#${type}#${bytes.byteLength}`
-      urls.push(url)
-      return url
-    },
-    revokeUrl: () => {},
+    ...(options.realUrls === true
+      ? {}
+      : {
+          makeUrl: (bytes: Uint8Array, type: string) => {
+            const url = `blob:test/${urls.length}#${type}#${bytes.byteLength}`
+            urls.push(url)
+            return url
+          },
+          revokeUrl: () => {},
+        }),
   })
   if (options.runner === false) media.stop()
   const settle = async () => {
@@ -582,6 +588,38 @@ describe('3D: media ahead of time (decision 6)', () => {
 })
 
 describe('3D: "show this picture" (C1, N3), store first, then the network', () => {
+  // YAZ-5200 (3D6): each URL was kept until the vault closed: 500 pictures held 500 blobs.
+  it('500 pictures shown, then let go (`releaseUrl`): their object URLs are revoked, except a few recent ones; a URL in use stays', async () => {
+    const files: Record<string, string | Uint8Array> = { 'a.md': page('A', []) }
+    for (let i = 0; i < 500; i++) files[`p/${i}.png`] = png(i % 256, 32)
+    const t = await setup(files, { realUrls: true })
+    await t.open()
+    const made = vi.spyOn(URL, 'createObjectURL')
+    const revoked = vi.spyOn(URL, 'revokeObjectURL')
+    try {
+      const held = await t.media.show('p/0.png') // a picture still on the screen: never let go
+      expect(held.status).toBe('ready')
+      for (let i = 1; i < 500; i++) {
+        const shown = await t.media.show(`p/${i}.png`)
+        expect(shown.status).toBe('ready')
+        t.media.releaseUrl(`p/${i}.png`)
+      }
+      expect(made).toHaveBeenCalledTimes(500)
+      expect(made.mock.calls.length - revoked.mock.calls.length).toBeLessThanOrEqual(1 + MEDIA_URL_IDLE_CAP)
+      expect(revoked.mock.calls.map((c) => c[0])).not.toContain(held.status === 'ready' ? held.url : '')
+      expect(t.media.urlNow('p/0.png')).not.toBeNull()
+      // A recent one shows again with no new URL; an old one gets a new URL.
+      const recent = await t.media.show('p/499.png')
+      expect(made).toHaveBeenCalledTimes(500)
+      expect(recent.status).toBe('ready')
+      await t.media.show('p/1.png')
+      expect(made).toHaveBeenCalledTimes(501)
+    } finally {
+      made.mockRestore()
+      revoked.mockRestore()
+    }
+  })
+
   it('a stored file shows from storage with no network call, and counts as viewed', async () => {
     const t = await setup(DEMO)
     await t.open()
