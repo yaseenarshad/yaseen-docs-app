@@ -35,6 +35,8 @@ export interface ShellBuild {
 export const CACHE_PREFIX = 'notecards-shell-'
 export const META_CACHE = 'notecards-meta'
 const ACTIVE_KEY = '/__notecards/active'
+/** YAZ-5303: which version each open page runs ({ clientId: version }), kept across worker restarts and versions. */
+const PAGES_KEY = '/__notecards/pages'
 export const cacheName = (version: string) => `${CACHE_PREFIX}${version}`
 /** The message from the page: "take over now" (the page decided it is a safe moment). */
 export const SKIP_WAITING = 'notecards:skip-waiting'
@@ -59,6 +61,8 @@ interface ExtendableEventLike {
 }
 interface FetchEventLike extends ExtendableEventLike {
   request: RequestLike
+  /** The page that a page open makes (its client ID); empty for other requests. */
+  resultingClientId?: string
   respondWith(response: Promise<Response>): void
 }
 interface MessageEventLike extends ExtendableEventLike {
@@ -69,7 +73,7 @@ export interface SwScope {
   caches: CacheStorageLike
   fetch(input: string | RequestLike, init?: RequestInit): Promise<Response>
   skipWaiting(): Promise<void>
-  clients: { claim(): Promise<void>; matchAll?(options?: { type?: string }): Promise<{ url: string; navigate(url: string): Promise<unknown> }[]> }
+  clients: { claim(): Promise<void>; matchAll?(options?: { type?: string; includeUncontrolled?: boolean }): Promise<{ id?: string; url: string; navigate(url: string): Promise<unknown> }[]> }
   /** The worker's own registration (the kill switch unregisters it). */
   registration?: { unregister(): Promise<boolean> }
   addEventListener(type: 'install' | 'activate', fn: (event: ExtendableEventLike) => void): void
@@ -192,24 +196,65 @@ export async function install(scope: Pick<SwScope, 'caches' | 'fetch'>, build: S
   }
 }
 
-/** Activate: this version and the one it replaces stay; every older shell cache goes. */
-export async function activate(caches: CacheStorageLike, build: ShellBuild): Promise<void> {
-  const meta = await caches.open(META_CACHE)
-  const before = await (await meta.match(ACTIVE_KEY))?.text()
+async function readPages(caches: CacheStorageLike): Promise<Record<string, string>> {
+  try {
+    const stored = await (await caches.open(META_CACHE)).match(PAGES_KEY)
+    const pages = stored ? ((await stored.json()) as unknown) : {}
+    return typeof pages === 'object' && pages !== null ? (pages as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** YAZ-5303: a page open served by this version: that page runs this version. */
+export async function notePage(caches: CacheStorageLike, clientId: string, version: string): Promise<void> {
+  if (!clientId) return
+  const pages = await readPages(caches)
+  pages[clientId] = version
+  await (await caches.open(META_CACHE)).put(PAGES_KEY, new Response(JSON.stringify(pages)))
+}
+
+/**
+ * YAZ-5303: a version's cache goes only when no open page runs that version. Each page open notes the version that
+ * served it (`notePage`). A page that no worker noted (open since before this rule, or the note was lost) keeps EVERY
+ * stored version, because its version is not known. With no page open, only this version stays.
+ */
+export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: ShellBuild): Promise<void> {
+  const open = scope.clients.matchAll ? await scope.clients.matchAll({ type: 'window', includeUncontrolled: true }) : []
+  const pages = await readPages(scope.caches)
   const keep = new Set([cacheName(build.version)])
-  if (before && before !== build.version) keep.add(cacheName(before))
-  for (const name of await caches.keys()) if (name.startsWith(CACHE_PREFIX) && !keep.has(name)) await caches.delete(name)
-  await meta.put(ACTIVE_KEY, new Response(build.version))
+  const alive: Record<string, string> = {}
+  for (const page of open) {
+    const version = page.id ? pages[page.id] : undefined
+    if (version === undefined) return // a page of an unknown version: keep everything
+    keep.add(cacheName(version))
+    alive[page.id!] = version
+  }
+  for (const name of await scope.caches.keys()) if (name.startsWith(CACHE_PREFIX) && !keep.has(name)) await scope.caches.delete(name)
+  await (await scope.caches.open(META_CACHE)).put(PAGES_KEY, new Response(JSON.stringify(alive)))
+}
+
+/** Activate: notes this version as the active one. No cache goes here: `prune` removes a version when no page runs it. */
+export async function activate(caches: CacheStorageLike, build: ShellBuild): Promise<void> {
+  await (await caches.open(META_CACHE)).put(ACTIVE_KEY, new Response(build.version))
 }
 
 /** The worker: its four events. */
 export function wire(scope: SwScope, build: ShellBuild): void {
   scope.addEventListener('install', (event) => event.waitUntil(install(scope, build)))
-  scope.addEventListener('activate', (event) => event.waitUntil(activate(scope.caches, build).then(() => scope.clients.claim())))
+  scope.addEventListener('activate', (event) =>
+    event.waitUntil(
+      activate(scope.caches, build)
+        .then(() => scope.clients.claim())
+        .then(() => prune(scope, build)),
+    ),
+  )
   scope.addEventListener('fetch', (event) => {
     const r = route(event.request, scope.location.origin, build)
     if (r.kind === 'pass') return // not ours: the browser does the request as if there were no worker
     event.respondWith(respond(scope, build, r.key, event.request))
+    // A page open: the new page runs this version; then a version with no page left can go.
+    if (event.request.mode === 'navigate' && event.resultingClientId) event.waitUntil(notePage(scope.caches, event.resultingClientId, build.version).then(() => prune(scope, build)))
   })
   scope.addEventListener('message', (event) => {
     if (typeof event.data === 'object' && event.data !== null && (event.data as { type?: unknown }).type === SKIP_WAITING) event.waitUntil(scope.skipWaiting())

@@ -214,7 +214,10 @@ describe('a new version', () => {
   })
 
   it("after the update the OLD version's lazy chunks still load (a page that was open before), even when the host no longer has them", async () => {
-    const { sw, server } = await update(() => {})
+    const { sw, server, one } = await update(() => {})
+    // A page that v1 opened is still open (YAZ-5303: v1 stays while a page of it is open).
+    await one.sw.request(`${ORIGIN}/`, { mode: 'navigate', resultingClientId: 'A' })
+    sw.windows.push({ id: 'A', url: `${ORIGIN}/` })
     await sw.install()
     await sw.activate()
     const oldChunk = await sw.request(`${ORIGIN}/assets/engine-v1.js`)
@@ -222,10 +225,10 @@ describe('a new version', () => {
     expect(await oldChunk!.text()).toContain('v1')
   })
 
-  it('activate keeps this version and the one before; older ones go', async () => {
+  it('activate with no page open: only this version stays (YAZ-5303: a version goes when no page of it is left)', async () => {
     const caches = fakeCaches()
     for (const v of ['v1', 'v2', 'v3']) await installed(v, caches)
     const names = (await caches.keys()).filter((n) => n.startsWith(CACHE_PREFIX)).sort()
-    expect(names).toEqual([cacheName('v2'), cacheName('v3')])
+    expect(names).toEqual([cacheName('v3')])
   })
 })

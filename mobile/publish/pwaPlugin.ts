@@ -17,6 +17,12 @@ import type { ShellBuild } from '../src/pwa/swCore'
 const SERVED: Record<string, string> = { 'index.html': '/', 'friend.html': '/friend', 'group.html': '/group', 'join.html': '/join' }
 /** YAZ-5290: the landing page serves the three shared links; `group.html` and `join.html` are copies of `friend.html`. */
 const LANDING_COPIES = ['group.html', 'join.html']
+/**
+ * YAZ-5303: the worker's own code is part of the version. A change of the worker alone (no app file changed) is then a
+ * new version with its own cache; with the same version, a failed install would delete the cache that the running
+ * version uses.
+ */
+export const WORKER_SOURCES = ['../src/pwa/sw.ts', '../src/pwa/swCore.ts', '../src/pwa/swKill.ts', '../src/pwa/killSwitch.ts']
 
 /**
  * What the worker keeps: every build file (ALL chunks, the lazy ones too, so the sync engine and the QR reader work
@@ -78,6 +84,7 @@ export function notecardsPwa(): Plugin {
       const entryChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/index\.html$|\/src\/main\.tsx$/.test(o.facadeModuleId ?? ''))
       if (!entryChunk) this.error('notecards-pwa: no entry chunk for index.html')
       const hash = createHash('sha256')
+      for (const source of WORKER_SOURCES) hash.update(readFileSync(fileURLToPath(new URL(source, import.meta.url)))).update('\0')
       for (const path of files) {
         const name = Object.entries(SERVED).find(([, served]) => served === path)?.[0] ?? path.slice(1)
         const out = bundle[LANDING_COPIES.includes(name) ? 'friend.html' : name]

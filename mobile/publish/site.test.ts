@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { pngSize, SPLASH_SCREENS } from './images'
-import { shellFiles } from './pwaPlugin'
+import { WORKER_SOURCES, shellFiles } from './pwaPlugin'
 
 /** The home-screen app (YAZ-5087): the manifest, the icons, the iOS tags, the splash, the publish config. */
 
@@ -107,6 +107,13 @@ describe('the shell list the worker keeps', () => {
       '/join',
       '/manifest.webmanifest',
     ])
+  })
+})
+
+describe("the worker's version (YAZ-5303)", () => {
+  it("includes the worker's own code: a worker change alone is a new version, never the running version's cache", () => {
+    for (const f of ['sw.ts', 'swCore.ts', 'killSwitch.ts']) expect([f, WORKER_SOURCES.some((s) => s.endsWith(`/src/pwa/${f}`))]).toEqual([f, true])
+    for (const s of WORKER_SOURCES) expect([s, existsSync(new URL(s, new URL('./pwaPlugin.ts', import.meta.url)))]).toEqual([s, true])
   })
 })
 

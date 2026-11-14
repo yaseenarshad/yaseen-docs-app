@@ -135,7 +135,8 @@ Screenshots of the screens: `npm run build:fixtures -w mobile`, serve `mobile/di
   writes `dist/sw.js` with the build's file list. It keeps the app's own files only: the pages, ALL chunks (the lazy
   sync engine and QR reader too, so they work offline), the manifest, the icons (about 436 kB, 150 kB on the wire). It
   never touches a request to another origin (GitHub, avatars) or a write. A new version installs whole or not at all.
-  The version before stays kept, so an open page of the old version still loads its lazy chunks.
+  A version's cache stays while any open page runs that version (each page open notes its version; YAZ-5303), so an
+  open page of an old version still loads its lazy chunks; with no page of it left, the next open removes it.
 * **Updates** (`src/pwa/updates.ts`, `safeMoment.ts`, `UpdateLine.tsx`): a new version downloads in the background.
   It takes over at the next open, before the app runs (`main.tsx`), or after "A new version is ready." → Restart, or
   when the app comes back after 5 minutes away; never while answers wait to be sent, never on the Review tab or over
@@ -163,7 +164,9 @@ Publish only when Yaseen says so (round 15). From the repo root, signed in to Cl
 npm run mobile:publish:preview
 ```
 
-It builds `mobile/dist/` (with the build check), then runs `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc`.
+It builds `mobile/dist/` (with the build check), copies the live build's chunks that the new build does not have into
+`mobile/dist/assets/` (`npm run mobile:keep-previous`, read-only GETs of the live site; YAZ-5303: an open page of the old
+version can still ask the host for them during a swap), then runs `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc`.
 Wrangler is not a dependency of the repo; `npx` fetches that exact version. To see what it would send without
 sending it: `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc --dry-run`.
 
