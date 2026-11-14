@@ -24,6 +24,8 @@ const files = sourceFiles(SRC).map((path) => ({ path: relative(SRC, path), text:
 /** Tests and test helpers (`…/testing.ts`): they run in Node and are never bundled. */
 const isTest = (path: string) => /\.test\.tsx?$/.test(path) || /(^|\/)testing\.ts$/.test(path)
 
+/** The service worker's logic: its Cache Storage holds the app's own files (YAZ-5087). */
+const SW_CACHE = 'pwa/swCore.ts'
 const BROWSER_STORAGE = /\b(indexedDB|IDBFactory|IDBDatabase|localStorage|sessionStorage|caches\.open|navigator\.storage|document\.cookie|fake-indexeddb)\b/
 
 describe('the rules of mobile/', () => {
@@ -32,8 +34,16 @@ describe('the rules of mobile/', () => {
   })
 
   it('no code outside src/store/ touches browser storage', () => {
-    const outside = files.filter((f) => !f.path.startsWith('store/') && !isTest(f.path) && BROWSER_STORAGE.test(f.text))
+    const outside = files.filter((f) => !f.path.startsWith('store/') && !isTest(f.path) && f.path !== SW_CACHE && BROWSER_STORAGE.test(f.text))
     expect(outside.map((f) => f.path)).toEqual([])
+  })
+
+  // YAZ-5087: the service worker keeps the app's own files (the shell) in its Cache Storage. That is not the app's
+  // data: pages, cards, answers and media stay in `VaultStore`. Its one file may open caches, and nothing else.
+  it(`the service worker (${SW_CACHE}) opens its caches and touches no other storage`, () => {
+    const sw = files.find((f) => f.path === SW_CACHE)!
+    expect(sw.text).toMatch(/caches\.open/)
+    expect(BROWSER_STORAGE.test(sw.text.replaceAll('caches.open', ''))).toBe(false)
   })
 
   it('no app file imports Electron, Node, the desktop app or the drawing engine', () => {

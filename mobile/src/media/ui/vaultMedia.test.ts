@@ -261,7 +261,7 @@ describe('3D, loaded with the engine (YAZ-5079)', () => {
 describe('watchMedia lets go of the URLs it used', () => {
   it('500 pictures in view, then the view closes: each URL is let go once; a picture taken out of the page is let go at once', async () => {
     const released: string[] = []
-    const media: VaultMedia = { ...fakeMedia(), releaseUrl: (path) => void released.push(path) }
+    const media: VaultMedia = { ...fakeMedia(), releaseUrl: (path, url) => void released.push(`${path} ${url}`) }
     const root = pictures(500)
     const watch = watchMedia(root, media)
     FakeObserver.all[0].show([...root.querySelectorAll('img')])
@@ -273,5 +273,7 @@ describe('watchMedia lets go of the URLs it used', () => {
     watch.stop()
     expect(released).toHaveLength(500)
     expect(new Set(released).size).toBe(500)
+    // YAZ-5221: each let-go names the URL it used.
+    expect(released[0]).toBe('assets/p0.png blob:media/assets/p0.png')
   })
 })

@@ -129,6 +129,13 @@ export interface VaultStore {
   getState<T>(scope: string, name: string): Promise<T | undefined>
   setState(scope: string, name: string, value: unknown): Promise<void>
   removeState(scope: string, name: string): Promise<void>
+  /**
+   * Several state rows of one scope in ONE transaction (3D, YAZ-5223: the failure memory, one small row for each file).
+   * A value `undefined` removes that row.
+   */
+  setStates(scope: string, rows: Readonly<Record<string, unknown>>): Promise<void>
+  /** The state rows of `scope` whose name starts with `prefix`, by name. */
+  statesWith(scope: string, prefix: string): Promise<Record<string, unknown>>
 
   /**
    * The vault's generation (YAZ-5193): a count in `meta` that each clear of the vault raises (`resetCopy`,
@@ -378,6 +385,25 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     async removeState(scope, name) {
       notTheToken(name)
       await backend.apply([{ del: 'state', key: [scope, name] }])
+    },
+    async setStates(scope, rows) {
+      const ops: Op[] = []
+      for (const [name, value] of Object.entries(rows)) {
+        notTheToken(name)
+        ops.push(value === undefined ? { del: 'state', key: [scope, name] } : { put: 'state', key: [scope, name], value })
+      }
+      if (ops.length > 0) await applyMakingRoom(ops, { vault: scope, item: `state:${Object.keys(rows).length} rows` })
+    },
+    async statesWith(scope, prefix) {
+      if (TOKEN_STATE.startsWith(prefix)) throw new Error('The GitHub token is read and written through TokenStore only')
+      const keys = await backend.keys('state', scope)
+      const names = keys.map((key) => (Array.isArray(key) ? key[1] : key))
+      const out: Record<string, unknown> = {}
+      const values = await backend.all('state', scope)
+      // Both reads are in key order. A row written between them changes the count: then each row is read on its own.
+      if (values.length === keys.length) names.forEach((name, i) => name.startsWith(prefix) && (out[name] = values[i]))
+      else for (const name of names) if (name.startsWith(prefix)) out[name] = await backend.get('state', [scope, name])
+      return out
     },
 
     async session(scope) {
