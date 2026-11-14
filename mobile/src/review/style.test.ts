@@ -20,7 +20,7 @@ const blockAfter = (text: string, start: string) => {
 
 describe('the Review tab styles', () => {
   it('the dock with the answer buttons sticks to the bottom of the screen while a long card scrolls', () => {
-    expect(css).toMatch(/\.review__dock \{[^}]*position: sticky;[^}]*bottom: 0;/)
+    expect(css).toMatch(/\.review__dock \{[^}]*position: sticky;[^}]*bottom: -24px;/)
   })
 
   it('the answer buttons and ⋯ are big for a thumb (56 px; Apple asks 44 pt)', () => {

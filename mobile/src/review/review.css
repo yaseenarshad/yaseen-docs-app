@@ -17,8 +17,10 @@
 .review {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 100%;
 }
+
 
 .review--waiting,
 .review--off {
@@ -135,8 +137,8 @@
 /* ---- The card: a tap shows the next part. A long card scrolls with the screen; the buttons stay at the bottom. ---- */
 
 .review__card {
-  flex: 1 0 auto;
-  min-height: 180px;
+  min-width: 0;
+  min-height: 200px;
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -182,10 +184,12 @@
 /* ---- The buttons, in reach of the thumb ---- */
 
 .review__dock {
+  /* Short card: the buttons sit at the bottom of the screen. Long card: they stick there while it scrolls. The dock
+     covers the screen's bottom padding too (24 px), so no text shows under it. */
   position: sticky;
-  bottom: 0;
-  margin: 12px -16px -24px;
-  padding: 10px 16px 16px;
+  bottom: -24px;
+  margin: auto -16px -24px;
+  padding: 10px 16px 40px;
   background: var(--bg);
 }
 
@@ -238,6 +242,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  gap: 6px;
   min-height: var(--tap);
   font-size: 14px;
   color: var(--fg-muted);

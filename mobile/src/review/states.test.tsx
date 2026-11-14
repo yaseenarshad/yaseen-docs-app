@@ -28,7 +28,7 @@ describe('Review: done, and "Add more for today" (round 10, addition 2)', () => 
     expect(h.text()).toContain('3 new cards wait for another day.')
     await h.click('Add 2 new cards')
     expect(h.head()).toBe('Card 3? · NW-3 · in P')
-    expect(h.text()).toContain('Added 2 new cards for today · Undo')
+    expect(h.last()).toBe('Added 2 new cards for today·Undo')
     await h.click('Undo')
     expect(h.text()).toContain('Inbox complete')
     expect(h.button('Add 2 new cards')).not.toBeNull()
@@ -123,7 +123,7 @@ describe('Review: Undo after a send tried the answer (YAZ-5180)', () => {
     // The waiting count goes UP: the screen reads the list's own state, not its own sums.
     expect(h.answers.waiting().map((w) => w.op.kind)).toEqual(['review', 'unreview'])
     expect(h.answers.state().waiting).toBe(2)
-    expect(h.text()).not.toContain('Answered · Undo')
+    expect(h.last()).not.toContain('Answered')
     h.s.github.interrupt = null
     h.answers.online()
     await h.wait(0)
@@ -143,6 +143,18 @@ describe('Review: a lost answer (round 12, item 9)', () => {
     expect(h.text()).toContain('Remembered · Card 1?')
     await h.click('Discard: Remembered · Card 1?')
     expect(h.text()).not.toContain('could not be saved')
+    expect(h.answers.state().lost).toEqual([])
+  })
+
+  it('an answer to an Up next card is ONE row (its review and Up next off); Discard takes both', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Marked?\n---\n{{m}}', 'LS-1, next'), newCards(1)[0]) })
+    await h.click('Remembered')
+    await h.s.git.push({ 'p.md': page('P', newCards(1)[0]) })
+    await h.wait(5_000)
+    expect(h.answers.state().lost).toHaveLength(2)
+    expect(h.text()).toContain('1 answer could not be saved')
+    expect(h.text()).not.toContain('Remove from Up next')
+    await h.click('Discard: Remembered · Marked?')
     expect(h.answers.state().lost).toEqual([])
   })
 })

@@ -79,6 +79,8 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
     cardText,
     remoteLines,
     text: () => (host.textContent ?? '').replace(/\s+/g, ' '),
+    /** The line under the buttons. */
+    last: () => (host.querySelector('.review__last')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
     head: () => (host.querySelector('.review__head')?.textContent ?? '').replace(/\s+/g, ' ').trim(),
     async tap() {
       const card = host.querySelector<HTMLElement>('.review__card')

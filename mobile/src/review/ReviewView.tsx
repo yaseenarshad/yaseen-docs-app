@@ -381,7 +381,7 @@ function SessionScreen({
               <span>{shownLine.text}</span>
               {shownLine.undo && (
                 <>
-                  <span aria-hidden> · </span>
+                  <span aria-hidden>·</span>
                   <button type="button" className="link-btn review__undo" onClick={() => void review.undo()}>
                     Undo
                   </button>
@@ -423,7 +423,6 @@ function TodayLine({ session, mode: setting }: { session: CardReviewSession; mod
 }
 
 function DoneScreen({ review, session, addKinds }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[] }) {
-  const today = todayCards(session.today)
   const adds = addKinds.map((k) => (
     <button key={k} type="button" className="btn review__add" onClick={() => review.addCards(k)}>
       {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
@@ -442,7 +441,6 @@ function DoneScreen({ review, session, addKinds }: { review: CardReviewApi; sess
   return (
     <div className="review__done" role="status">
       <p className="review__done-title">Inbox complete</p>
-      {today !== '' && <p className="muted">{today}</p>}
       {addKinds.length > 0 ? (
         <>
           <p className="muted review__waits">{waitingLine(session.more, addKinds)}</p>
@@ -460,21 +458,34 @@ function DoneScreen({ review, session, addKinds }: { review: CardReviewApi; sess
   )
 }
 
-/** Round 12, item 9: answers whose card was gone when they were sent. Amber; each has Discard. */
+/**
+ * Round 12, item 9: answers whose card was gone when they were sent. Amber; each has Discard. An answer is two actions
+ * (its review, and Up next off when the card was up next): the second is part of the answer, so it is one row.
+ */
 function LostAnswers({ answers, link, settings }: { answers: AnswersState; link: ReviewLink; settings: CardReviewApi['settings'] }) {
+  const rows = lostRows(answers.lost)
   return (
     <div className="review__lost" role="alert">
-      <p className="review__lost-title">{lostTitle(answers.lost.length)}</p>
-      {answers.lost.map((l) => (
-        <div key={l.seq} className="review__lost-row">
-          <span className="review__lost-what">
-            {lostAction(l.op, settings)} · {l.title === '' ? l.op.id : l.title}
-          </span>
-          <button type="button" className="btn review__discard" aria-label={`Discard: ${lostAction(l.op, settings)} · ${l.title === '' ? l.op.id : l.title}`} onClick={() => void link.answers.discard(l.seq)}>
-            Discard
-          </button>
-        </div>
-      ))}
+      <p className="review__lost-title">{lostTitle(rows.length)}</p>
+      {rows.map(({ row, with: parts }) => {
+        const what = `${lostAction(row.op, settings)} · ${row.title === '' ? row.op.id : row.title}`
+        return (
+          <div key={row.seq} className="review__lost-row">
+            <span className="review__lost-what">{what}</span>
+            <button type="button" className="btn review__discard" aria-label={`Discard: ${what}`} onClick={() => void Promise.all(parts.map((l) => link.answers.discard(l.seq)))}>
+              Discard
+            </button>
+          </div>
+        )
+      })}
     </div>
   )
+}
+
+type Lost = AnswersState['lost'][number]
+
+/** The lost actions as the person made them: Up next off goes with the answer of the same card. */
+export function lostRows(lost: readonly Lost[]): { row: Lost; with: Lost[] }[] {
+  const answerOf = (l: Lost) => (l.op.kind === 'next' && !l.op.on ? lost.find((r) => r.op.kind === 'review' && r.op.id === l.op.id) : undefined)
+  return lost.filter((l) => answerOf(l) === undefined).map((row) => ({ row, with: [row, ...lost.filter((l) => answerOf(l) === row)] }))
 }

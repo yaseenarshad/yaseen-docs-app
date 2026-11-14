@@ -54,7 +54,12 @@ const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
   const files = name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const step = (n: string) => void (document.body.dataset.fixtureStep = n)
+  step('setup')
+  // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
+  Object.defineProperty(navigator, 'locks', { configurable: true, value: undefined })
   const t = await answersSetup({ files })
+  step('engine')
   if (name === 'review-offline') t.s.github.offline = true
   const media: CardMedia = {
     showLink: async (src) => (src.endsWith('.png') && name !== 'review-offline' ? { status: 'ready', url: ROBIN } : { status: 'missing', why: 'offline' }),
@@ -69,6 +74,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store, media })
   const services: AppServices = { store, tokens, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
   root.render(<App services={services} />)
+  step('render')
   await wait(400)
 
   switch (name) {
@@ -93,10 +99,8 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       press(/^All cards/)
       await wait(30)
       press(/^New cards/)
-      for (let i = 0; i < 2; i++) {
-        await wait(60)
-        press('Remembered')
-      }
+      await wait(60)
+      press('Remembered')
       await wait(60)
       tap()
       break
@@ -109,13 +113,12 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
         await wait(60)
         press('Remembered')
       }
-      if (name === 'review-offline') {
-        await wait(60)
-        press('Remembered')
-      }
       break
     case 'review-long':
-      for (let i = 0; i < 3; i++) {
+      press(/^All cards/)
+      await wait(30)
+      press(/^New cards/)
+      for (let i = 0; i < 6; i++) {
         await wait(60)
         press('Remembered')
       }

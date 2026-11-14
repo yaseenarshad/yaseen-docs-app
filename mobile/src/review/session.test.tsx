@@ -49,7 +49,7 @@ describe('Review: a full session (decision 11)', () => {
 
     await h.click('Remembered')
     expect(h.head()).toBe('Hola · DEMO-13 · in Spanish words')
-    expect(h.text()).toContain('Answered · Undo')
+    expect(h.last()).toBe('Answered·Undo')
     expect(ops()).toEqual(['review:DEMO-12:good'])
 
     await h.click('Forgot')
