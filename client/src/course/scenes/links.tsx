@@ -235,6 +235,123 @@ function FewFolders(props: SceneProps) {
   )
 }
 
+/** The ideas in the head of c10-31, in the head's own drawing: dots, and the lines between them. */
+const HEAD_IDEAS = [
+  [250, 110],
+  [320, 96],
+  [372, 140],
+  [300, 160],
+  [246, 196],
+  [350, 206],
+] as const
+const HEAD_LINKS = [
+  [0, 1],
+  [1, 2],
+  [1, 3],
+  [3, 4],
+  [3, 5],
+  [2, 5],
+  [0, 3],
+] as const
+
+/**
+ * c10-30 and c10-31, one span (YAZ-5329). c10-30: computers copied the paper office: a filing cabinet, one sheet into
+ * one drawer that shuts; beside it the same picture as computer folders. c10-31: but your brain does not work that way:
+ * the cabinet goes, and the head's ideas link to each other; the app's cards lie loose and linked, no folder required.
+ */
+function PaperOffice(props: SceneProps) {
+  const b = useBeat(props)
+  const id = props.clip.id
+  if (id === 'c10-31') {
+    const brain = cue(b, 0, 0.235)
+    const app = cue(b, 1, 0.542)
+    const way = cue(b, 2, 0.77)
+    const ideas = since(b, brain - 0.04, 0.9)
+    return (
+      <Stage beat={b} label="But that is not how your brain works: ideas link to ideas. And the app does not make you work that way: no folder required">
+        <Layer>
+          <div className="kit-row later-office">
+            <div className="later-office__side" style={rise(b, since(b, 0, 0.6), 10)}>
+              <Head beat={b} p={since(b, 0, 0.6)} glow={ideas * 0.4}>
+                {HEAD_LINKS.map(([f, t], i) => (
+                  <line key={i} className="later-headlink" x1={HEAD_IDEAS[f][0]} y1={HEAD_IDEAS[f][1]} x2={HEAD_IDEAS[t][0]} y2={HEAD_IDEAS[t][1]} opacity={clamp(ideas * 2 - 0.6 - i * 0.08)} />
+                ))}
+                {HEAD_IDEAS.map(([x, y], i) => (
+                  <circle key={i} className="later-headidea" cx={x} cy={y} r={9} opacity={clamp(ideas * 3 - i * 0.3)} />
+                ))}
+              </Head>
+              <Words size="label" style={rise(b, since(b, brain, 0.5))}>
+                Your brain: ideas link to ideas
+              </Words>
+            </div>
+            <div className="later-office__side later-office__app" style={rise(b, since(b, app - 0.04, 0.6), 10)}>
+              <Web beat={b} nodes={LOOSE.nodes} edges={LOOSE.edges} show={{ p: since(b, app, 0.4), m: since(b, app + 0.03, 0.4), c: since(b, app + 0.06, 0.4), s: since(b, app + 0.09, 0.4), 'p>m': since(b, app + 0.1, 0.6), 'p>c': since(b, app + 0.13, 0.6), 'm>s': since(b, app + 0.16, 0.6) }} />
+              <span className="kit-chip" style={pop(b, since(b, way, 0.5))}>
+                The app: no folder required
+              </span>
+            </div>
+          </div>
+        </Layer>
+      </Stage>
+    )
+  }
+  const copied = cue(b, 0, 0.14)
+  const office = cue(b, 1, 0.265)
+  const sheet = cue(b, 2, 0.53)
+  const drawer = cue(b, 3, 0.811)
+  const open = since(b, office + 0.05, 0.5) * (1 - since(b, drawer, 0.5))
+  const drop = moved(b, between(b, sheet - 0.04, drawer - 0.04))
+  const slide = moved(b, open) * 46
+  const file = moved(b, between(b, sheet, drawer))
+  return (
+    <Stage beat={b} label="Computers copied the paper office, where a sheet of paper sits in one drawer">
+      <Layer>
+        <svg className="kit-folders later-office__art" viewBox="0 0 600 300" aria-hidden="true">
+          <g opacity={since(b, 0, 0.5)}>
+            <rect className="later-cabinet" x={60} y={40} width={170} height={220} rx={8} />
+            {[0, 1, 2].map((k) => (
+              <g key={k} transform={`translate(${k === 1 ? slide.toFixed(2) : 0} 0)`}>
+                <rect className="later-cabinet__drawer" data-lit={k === 1 && drop > 0 ? 'true' : undefined} x={72} y={52 + k * 68} width={146} height={58} rx={5} />
+                <rect className="later-cabinet__handle" x={128} y={74 + k * 68} width={34} height={8} rx={4} />
+              </g>
+            ))}
+            <g transform={`translate(${(110 + slide).toFixed(2)} ${lerp(-20, 112, drop).toFixed(2)})`} opacity={clamp(since(b, sheet - 0.08, 0.3) * 3) * (1 - since(b, drawer + 0.02, 0.3))}>
+              <rect className="later-sheet" width={66} height={84} rx={3} />
+              <line className="later-sheet__line" x1={10} y1={18} x2={56} y2={18} />
+              <line className="later-sheet__line" x1={10} y1={30} x2={50} y2={30} />
+              <line className="later-sheet__line" x1={10} y1={42} x2={54} y2={42} />
+            </g>
+          </g>
+          <text className="kit-svg-label later-or" x={300} y={160} textAnchor="middle" opacity={since(b, copied, 0.5)}>
+            =
+          </text>
+          <g opacity={since(b, copied, 0.6)}>
+            <rect className="later-monitor" x={350} y={50} width={210} height={150} rx={10} />
+            <path className="later-monitor__stand" d="M430 200 L420 236 H490 L480 200" />
+            {[0, 1, 2].map((k) => (
+              <Folder key={k} beat={b} x={362 + k * 64} y={96} scale={0.36} label="" shut={k === 1 ? since(b, drawer, 0.5) : 0} glow={k === 1 ? showFor(since(b, sheet, 0.4), 0) : 0} />
+            ))}
+            <g transform={`translate(${(445 - 13).toFixed(2)} ${lerp(40, 112, file).toFixed(2)})`} opacity={clamp(since(b, sheet - 0.04, 0.3) * 3) * (1 - since(b, drawer + 0.02, 0.3))}>
+              <rect className="later-sheet" width={26} height={32} rx={2} />
+            </g>
+          </g>
+        </svg>
+        <div className="later-office__labels">
+          <Words size="kicker" style={{ opacity: since(b, office, 0.5) }}>
+            The paper office
+          </Words>
+          <Words size="kicker" style={{ opacity: since(b, copied, 0.5) }}>
+            The computer
+          </Words>
+        </div>
+        <span className="kit-chip" style={pop(b, since(b, drawer, 0.5))}>
+          One sheet, one drawer
+        </span>
+      </Layer>
+    </Stage>
+  )
+}
+
 /** c10-05: a line from one card to another, "a link points to another card"; the protein card and its umbrella. */
 function LinkHolds(props: SceneProps) {
   const b = useBeat(props)
@@ -312,12 +429,11 @@ const BIG_WEB: { nodes: WebNode[]; edges: WebEdge[] } = {
   ],
 }
 
-/** c10-06, c10-07 and c10-08, one span: the mind is not folders but a web; the paper; light spreads; a new idea that fits stays lit. */
+/** c10-06, c10-07 and c10-08, one span: the mind works by association, a web; the paper; light spreads; a new idea that fits stays lit. */
 function MindWeb(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
-  // c10-06: boxes in the head, struck out; then dots and lines; one idea calls up another.
-  const boxes = id === 'c10-06' ? showFor(since(b, 0.04, 0.5), since(b, cue(b, 0, 0.21) + 0.12, 0.5)) : 0
+  // c10-06: the head; dots and lines; one idea calls up another. (The boxes went to c10-31: "not how your brain works".)
   const assoc = id === 'c10-06' ? cue(b, 1, 0.57) : 0
   const head = id === 'c10-06' ? since(b, 0, 0.6) : 0
   const callsUp = id === 'c10-06' ? since(b, cue(b, 2, 0.7), 0.4) : 0
@@ -341,14 +457,7 @@ function MindWeb(props: SceneProps) {
       {id === 'c10-06' && (
         <>
           <Layer>
-            <Head beat={b} p={head} className="kit-head--large">
-              <g opacity={boxes}>
-                {[0, 1, 2, 3].map((i) => (
-                  <rect key={i} className="later-headbox" x={240 + (i % 2) * 64} y={100 + Math.floor(i / 2) * 56} width={52} height={40} rx={4} />
-                ))}
-                <line className="later-strike" x1={230} y1={210} x2={370} y2={92} opacity={since(b, cue(b, 0, 0.21), 0.4)} />
-              </g>
-            </Head>
+            <Head beat={b} p={head} className="kit-head--large" />
           </Layer>
           <Layer>
             <Web beat={b} nodes={HEAD_WEB.nodes} edges={HEAD_WEB.edges} all={between(b, assoc - 0.04, assoc + 0.12)} lit={{ m0: callsUp, m2: another, m5: since(b, cue(b, 3, 0.78) + 0.08, 0.5) }} />
@@ -914,7 +1023,9 @@ export const LINKS_SCENES: ChapterScenes = {
   chapter: 'links',
   entries: [
     { clips: ['c10-01'], scene: Connect },
-    { clips: ['c10-02', 'c10-03', 'c10-04'], scene: OnePlace },
+    { clips: ['c10-02', 'c10-03'], scene: OnePlace },
+    { clips: ['c10-30', 'c10-31'], scene: PaperOffice },
+    { clips: ['c10-04'], scene: OnePlace },
     { clips: ['c10-28', 'c10-29'], scene: FewFolders },
     { clips: ['c10-05'], scene: LinkHolds },
     { clips: ['c10-06', 'c10-07', 'c10-08'], scene: MindWeb },
