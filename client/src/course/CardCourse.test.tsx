@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { defaultCourseState, type CourseState } from '@shared/courseState'
 import { storage } from '../lib/storage'
@@ -9,6 +9,8 @@ import { memoryVoice } from './courseVoice'
 import type { CourseTour } from './courseTour'
 import { TOUR_COMING_NEXT } from './courseTour'
 import { useEscapeLast } from '../lib/escapeOrder'
+import { placeholderScenes } from './PlaceholderScene'
+import type { SceneProps } from './scene'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -64,7 +66,8 @@ afterEach(() => {
 })
 
 function mount(props: Partial<CardCourseProps> = {}): CardCourseProps {
-  const all: CardCourseProps = { vault: '/demo', onClose: vi.fn(), course: COURSE, ...props }
+  // The frame's own tests run on the frame's scenes (YAZ-5121: the course's real scenes are tested in `scenes/`).
+  const all: CardCourseProps = { vault: '/demo', onClose: vi.fn(), course: COURSE, scenes: placeholderScenes, ...props }
   act(() => root.render(<CardCourse {...all} />))
   return all
 }
@@ -238,5 +241,20 @@ describe('the course layer (YAZ-5120)', () => {
     expect(caption()).toBe('Chapter 1 done. Next: Second.')
     act(() => [...document.querySelectorAll<HTMLButtonElement>('.course__end-actions button')].find((b) => b.textContent === 'Next chapter')!.click())
     expect(v.started).toEqual(['a', 'b'])
+  })
+  it('keeps one scene mounted across the clips of a span, with each clip as its prop (YAZ-5121)', () => {
+    let mounts = 0
+    function Spanning({ clip }: SceneProps) {
+      useEffect(() => {
+        mounts += 1
+      }, [])
+      return <p className="span-clip">{clip.id}</p>
+    }
+    const scenes = Object.assign(() => Spanning, { spanOf: (id: string) => (id === 'a1' || id === 'a2' ? 'a1-a2' : undefined) })
+    mount({ scenes })
+    expect(document.querySelector('.span-clip')?.textContent).toBe('a1')
+    act(() => button('Next step')!.click())
+    expect(document.querySelector('.span-clip')?.textContent).toBe('a2')
+    expect(mounts).toBe(1)
   })
 })

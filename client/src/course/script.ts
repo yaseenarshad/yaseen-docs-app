@@ -42,13 +42,13 @@ export const COURSE: CourseChapter[] = [
     title: 'Why you forget, and the fix',
     clips: [
       // A fact glows on the stage; the forgetting curve starts to fall and the fact fades.
-      { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.' },
+      { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.', marks: [0.389, 0.757] },
       // An old notebook page of nonsense syllables ("DAX", "BOK", "YAT"); the year 1885.
       // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
-      { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself. One day after he learned a list, most of that work was gone. Learning it again took two thirds of the time.' },
+      { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself. One day after he learned a list, most of that work was gone. Learning it again took two thirds of the time.', marks: [0.378, 0.546, 0.816] },
       // The old curve from 1885 and a new one from 2015 slide over each other; they match.
       // SOURCE: Murre & Dros 2015, "Replication and Analysis of Ebbinghaus' Forgetting Curve", PLOS ONE 10(7): "We conclude that the Ebbinghaus forgetting curve has indeed been replicated."
-      { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.' },
+      { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.', marks: [0.267, 0.503, 0.819] },
       // A review just before the curve drops; the curve lifts and falls slower.
       { id: 'c1-03', text: 'But review it again before you forget, and it sticks longer.' },
       // Three reviews; the gaps label "1 day", "1 week", "1 month" on the marks. (Approved sample, unchanged.)
@@ -57,19 +57,19 @@ export const COURSE: CourseChapter[] = [
       // SOURCE: Squire, Genzel, Wixted & Morris 2015, "Memory Consolidation", Cold Spring Harb Perspect Biol.
       { id: 'c1-04', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
       // Each review mark pushes the memory deeper, from a "Short-term" band into a "Long-term" band.
-      { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.' },
+      { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.', marks: [0.161, 0.475, 0.704, 0.759] },
       // Two brain cells and the link between them; with each spaced pulse, a switch inside the cell turns on and the link grows stronger.
       // SOURCE: Naqib, Sossin & Farah 2012, "Molecular Determinants of the Spacing Effect", Neural Plasticity (CREB-dependent gene expression after spaced training, in Aplysia, Drosophila and rodents).
-      { id: 'c1-18', text: 'This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.' },
+      { id: 'c1-18', text: 'This is hard science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.', marks: [0.22, 0.515, 0.633, 0.73] },
       // A Nobel medal; "2000".
       // SOURCE: The Nobel Prize in Physiology or Medicine 2000 (Eric Kandel, with Carlsson and Greengard): how nerve cells change to store memory.
-      { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.' },
+      { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.', marks: [0.641] },
       // A wall of small study tiles fills in, "317 experiments"; spaced reviews beat reviews done all at once.
       // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
-      { id: 'c1-06', text: 'Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.' },
+      { id: 'c1-06', text: 'Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.', marks: [0.382, 0.547, 0.842] },
       // A ridge-shaped graph: memory kept, against the gap before the review; a peak in the middle, lower on both sides; "more than 1,350 people".
       // SOURCE: Cepeda, Vul, Rohrer, Wixted & Pashler 2008, "Spacing effects in learning: a temporal ridgeline of optimal retention", Psychological Science 19(11): more than 1,350 people; the best gap depends on how long the memory must last.
-      { id: 'c1-20', text: 'And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.' },
+      { id: 'c1-20', text: 'And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.', marks: [0.335, 0.428, 0.677, 0.774, 0.871] },
       // A paper index card drops onto the stage.
       { id: 'c1-07', text: 'So how do you store each thing you learn in the app? Answer: on a card.' },
       // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
@@ -90,9 +90,9 @@ export const COURSE: CourseChapter[] = [
       // A calendar; each card takes its own date.
       { id: 'c1-10', text: 'The app keeps a calendar for every card. On the day a card is due, it shows it to you.' },
       // The blank fills in; two buttons, Forgot and Remembered.
-      { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.' },
+      { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.', marks: [0.38, 0.674, 0.788] },
       // The chapter list lights up, 1 to 12.
-      { id: 'c1-13', text: 'This course takes about twenty-eight minutes, in twelve short chapters.' },
+      { id: 'c1-13', text: 'This course takes about twenty-eight minutes, in twelve short chapters.', marks: [0.266, 0.582] },
       // The "Try it in the app" button, with "Optional" beside it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
@@ -118,7 +118,7 @@ export const COURSE: CourseChapter[] = [
       //   "Protein builds and repairs. Carbs are quick energy. Fat is slow energy, stored."
       //   EXAMPLE: "An egg is mostly protein and fat. Bread is mostly carbs."
       //   MEMORY HOOK: "Protein is the bricks. Carbs are the kindling. Fat is the logs."
-      { id: 'c2-05', text: 'The back has the details: how it works, an example, a hook to remember it by.' },
+      { id: 'c2-05', text: 'The back has the details: how it works, an example, a hook to remember it by.', marks: [0.325, 0.493, 0.687] },
       // The bottom of the back: CONNECTIONS, with one link pill and a few grey words after it.
       { id: 'c2-22', text: 'And at the bottom, links to the cards it connects to. You will make those in chapter 10.' },
       // A SECOND REAL CARD, for a word. Title: "candid". The front lights up, two lines, the word a blank in both:
@@ -128,7 +128,7 @@ export const COURSE: CourseChapter[] = [
       // The word card turns to its back; its sections light up in turn:
       //   "Candid means open and honest, with nothing held back."
       //   PRONUNCIATION: "KAN-did". MEMORY HOOK: "A candid photo is one nobody posed for." EXAMPLES: two more sentences.
-      { id: 'c2-31', text: 'Its back has the details too: how to say it, where it comes from, more examples.' },
+      { id: 'c2-31', text: 'Its back has the details too: how to say it, where it comes from, more examples.', marks: [0.372, 0.53, 0.719] },
       // Three sizes side by side: one bare line, the real card, a full page of text. The real card gets the check; "Front: the short version", "Back: the details".
       { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. The short version on the front, the details on the back.' },
       // The name "Piotr Wozniak" and "1999"; on the real card, only the front's blanks glow.

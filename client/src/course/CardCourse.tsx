@@ -12,8 +12,8 @@
  *   course (it is a dialog in the app's Esc order, step 2); Tab stays inside the layer; no key reaches the app under it.
  *   Closing gives the keyboard back to where it was.
  * - `prefers-reduced-motion`: the scenes and the layer cross-fade in place of movement (`course.css`, `reducedMotion`).
- * - The seams: `scenes` (6C), `voice` (6D1: per chapter, downloaded when needed), `tour` (6E), `host` (6F). Each has a
- *   frame's default: the placeholder scene, silence, "coming next", and a host that makes nothing.
+ * - The seams: `scenes` (6C: `scenes/index.ts`; a span of clips keeps one scene mounted), `voice` (6D1: per chapter, downloaded when needed), `tour` (6E), `host` (6F). Each has a
+ *   default: the course's scenes (the placeholder for a chapter not built yet), silence, "coming next", and a host that makes nothing.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { COURSE_SPEEDS, type CourseSpeed } from '@shared/courseState'
@@ -25,7 +25,7 @@ import { chapterFraction, clipFraction, placeOf, startState, step, waitingForPer
 import { SILENT_VOICE, type ChapterSound, type ClipSound, type Voice } from './courseVoice'
 import { comingNextTour, hasTour, type CourseTour } from './courseTour'
 import { showOnlyHost, type CourseHost } from './courseHost'
-import { placeholderScenes } from './PlaceholderScene'
+import { courseScenes } from './scenes'
 import type { SceneClock, SceneFor, SceneTime } from './scene'
 import './course.css'
 
@@ -79,7 +79,7 @@ function createClock(read: () => SceneTime) {
   return { clock, frame: () => frames.forEach((fn) => fn()), mark: (index: number) => marks.forEach((fn) => fn(index)) }
 }
 
-export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, scenes = placeholderScenes, voice = SILENT_VOICE, tour: tourIn, host: hostIn }: CardCourseProps) {
+export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, scenes = courseScenes, voice = SILENT_VOICE, tour: tourIn, host: hostIn }: CardCourseProps) {
   const reducedMotion = useReducedMotion()
 
   // ---- the voice (6D1): each chapter's sound once it is here; the clip that plays keeps what it started with ----
@@ -433,7 +433,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
         </div>
         <div className="course__stage" role="region" aria-label="Lesson">
           {s.phase === 'clip' ? (
-            <Scene key={`${chapter.id}/${clip.id}`} chapter={chapter} clip={clip} waits={waits} clock={clockRef.current.clock} done={done} reducedMotion={reducedMotion} host={host} />
+            <Scene key={scenes.spanOf?.(clip.id) ?? `${chapter.id}/${clip.id}`} chapter={chapter} clip={clip} waits={waits} clock={clockRef.current.clock} done={done} reducedMotion={reducedMotion} host={host} />
           ) : (
             <div className="course-scene course-scene--end">
               <p className="course-scene__words">{s.phase === 'course-end' ? "That's the whole course." : `Chapter ${s.chapter + 1} done.`}</p>
