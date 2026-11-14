@@ -176,6 +176,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   const missing = new Set<string>()
   let sizesFromPass: { vault: string; commit: string; sizes: ReadonlyMap<string, number> } | null = null
   let resolver: { commit: string; resolve: (target: string, from?: string) => string | null } | null = null
+  let settingsOf: { text: string | null; settings: ReviewSettings } | null = null
   const urls = new Map<string, { sha: string | null; url: string }>()
   let timer: unknown = null
   let round: Promise<void> | null = null
@@ -272,16 +273,24 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     if (gen !== generation) return
 
     const slice = uiSlicer(options.yieldToUi ?? defaultYield)
+    await slice()
     if (plan?.key !== key) {
       if (plan?.commit !== checkpoint.commit) missing.clear()
       const sizes = await sizesAt(vault, checkpoint.commit)
-      let settings: ReviewSettings = DEFAULT_REVIEW_SETTINGS
-      let ids: unknown = {}
-      try {
-        if (reviewText !== null) settings = sanitizeReviewSettings(JSON.parse(reviewText))
-      } catch {
-        // A broken review.json reads as the defaults, as on the Mac.
+      await slice()
+      // The same settings object while `review.json` does not change: the shared due cache is keyed by it, so a new
+      // day or a new commit does not replay every card's reviews again.
+      if (settingsOf?.text !== reviewText) {
+        let settings: ReviewSettings = DEFAULT_REVIEW_SETTINGS
+        try {
+          if (reviewText !== null) settings = sanitizeReviewSettings(JSON.parse(reviewText))
+        } catch {
+          // A broken review.json reads as the defaults, as on the Mac.
+        }
+        settingsOf = { text: reviewText, settings }
       }
+      const settings = settingsOf.settings
+      let ids: unknown = {}
       try {
         if (idsText !== null) ids = JSON.parse(idsText)
       } catch {
@@ -307,6 +316,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     const current = plan
 
     const stored = new Set((await store.list(vault)).filter((e) => e.kind === 'media').map((e) => e.path))
+    await slice()
     if (gen !== generation) return
     const todo = current.wanted.filter((p) => !stored.has(p) && !missing.has(checkpoint.shas[p]))
     setState({ total: current.wanted.length, done: current.wanted.length - todo.length, tooLarge: current.tooLarge.length, running: todo.length > 0, waiting: null, retryAt: null })
@@ -318,7 +328,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     try {
       for (let at = 0; at < groups.length; at += chunkSize) {
         const chunk = groups.slice(at, at + chunkSize)
-        await engine.lane((remote) => fetchChunk(remote, vault, gen, chunk, slice))
+        await engine.lane((remote, _pass, laneVault) => fetchChunk(remote, laneVault, vault, gen, chunk, slice))
         if (gen !== generation) return
       }
     } catch (error) {
@@ -344,10 +354,12 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   }
 
   /** Inside the vault's lock: `parallel` downloads at a time. The checkpoint is read again: a file whose SHA moved is not written. */
-  async function fetchChunk(remote: GithubRemote, vault: string, gen: number, chunk: [string, string[]][], slice: () => Promise<void>) {
+  async function fetchChunk(remote: GithubRemote, laneVault: string, vault: string, gen: number, chunk: [string, string[]][], slice: () => Promise<void>) {
     const live = () => gen === generation && !stopped && engine.state().vault === vault
-    if (!live()) throw new Stop()
+    // The lane is for the vault that was open when it was asked for: another vault's remote never fetches these SHAs.
+    if (laneVault !== vault || !live()) throw new Stop()
     const checkpoint = await store.checkpoint(vault)
+    await slice()
     let next = 0
     let failure: { error: unknown } | null = null
     await Promise.all(
@@ -387,8 +399,8 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   function keep(vault: string, path: string, sha: string, bytes: Uint8Array): Promise<boolean> {
     if (kindOnPhone(path) !== 'media') return Promise.resolve(false)
     return engine
-      .lane(async () => {
-        if (stopped || engine.state().vault !== vault) return false
+      .lane(async (_remote, _pass, laneVault) => {
+        if (stopped || laneVault !== vault || engine.state().vault !== vault) return false
         if ((await store.checkpoint(vault))?.shas[path] !== sha) return false
         if ((await store.read(vault, path)) === null) await store.write(vault, path, bytes)
         return true

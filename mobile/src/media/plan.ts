@@ -104,8 +104,19 @@ export interface AheadPlan {
  * or a file not stored yet is skipped), its pictures and sounds (`cardMediaPaths`, from the holder's folder).
  */
 export async function aheadPlan(input: AheadInput): Promise<AheadPlan> {
+  // The due date of each card first, a file at a time with a slice after each: the shared due cache (keyed by the
+  // settings object and the review log) then answers `cardPlan` at once. Without this, `cardPlan` replayed 1,000
+  // cards' reviews in one go (measured: 20 to 27 ms on a Mac, more on a phone).
+  if (input.settings.enabled)
+    for (const r of Object.values(input.records)) {
+      if (r.cards === undefined || r.cards.length === 0) continue
+      for (const card of r.cards) if (card.reviews.length > 0) cardDueAt(card.reviews, input.settings)
+      await input.slice?.()
+    }
   const cards = cardsAhead(input.records, input.settings, input.now, input)
+  await input.slice?.()
   const resolve = makeAssetResolver([...input.sizes.keys()])
+  await input.slice?.()
   const maxBytes = input.maxBytes ?? MEDIA_AHEAD_MAX_BYTES
   const byHolder = new Map<string, AheadCard[]>()
   for (const c of cards) byHolder.set(c.path, [...(byHolder.get(c.path) ?? []), c])

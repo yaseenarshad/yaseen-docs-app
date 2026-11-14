@@ -184,6 +184,23 @@ export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
   return { parts: [...line.parts.slice(0, i), { kind: 'notitle' }, ...line.parts.slice(i)] }
 }
 
+/**
+ * The "Fix later" mark (YAZ-5097; round 10, addition 3 of YAZ-5055): the word `fix` on the card line. The phone writes
+ * it (YAZ-5073). Until YAZ-5097 gives it a part kind of its own, it is the unknown part `fix`, which every build of the
+ * app keeps as its text, in its place (the older-app rule, addition 17). YAZ-5097 changes these two functions only.
+ */
+export const CARD_FIX = 'fix'
+export const isCardFix = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'other' && p.text === CARD_FIX)
+
+/** Fix later on or off: `fix` goes after the ID and any `off` / `next` / `notitle` right after it, or first; off removes every `fix`. */
+export function withCardFix(line: CardLine, on: boolean): CardLine {
+  if (isCardFix(line) === on) return line
+  if (!on) return { parts: line.parts.filter((p) => !(p.kind === 'other' && p.text === CARD_FIX)) }
+  let i = line.parts.findIndex((p) => p.kind === 'id') + 1
+  while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next' || line.parts[i]?.kind === 'notitle') i++
+  return { parts: [...line.parts.slice(0, i), { kind: 'other', text: CARD_FIX }, ...line.parts.slice(i)] }
+}
+
 /** The place among the line's parts of its `next` part, or -1 when the card is not up next. */
 export const cardNextIndex = (line: CardLine): number => line.parts.findIndex((p) => p.kind === 'next')
 

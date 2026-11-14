@@ -32,6 +32,22 @@ export type GithubErrorCode = 'UNAUTHORIZED' | 'NO_ACCESS' | 'READ_ONLY' | 'NOT_
 
 /** GitHub's advice for its secondary limit when the answer has no `Retry-After`: wait at least one minute. */
 export const SECONDARY_LIMIT_WAIT_MS = 60_000
+/**
+ * The floor and the ceiling of every rate-limit wait (YAZ-5174, YAZ-5169). GitHub's headers can give 0 s, less than 0 s
+ * (`x-ratelimit-reset` is GitHub's clock; a fast phone clock puts it in the past) or years. Without a floor the app asks
+ * again at once, in a loop; over 2^31-1 ms a browser timer fires at once. The floor is GitHub's advice (1 minute); the
+ * ceiling is one hour, as GitHub's hourly limit resets within the hour.
+ */
+export const MIN_RATE_WAIT_MS = SECONDARY_LIMIT_WAIT_MS
+export const MAX_RATE_WAIT_MS = 60 * 60_000
+/** A request with no answer (no status, no error) stops after this (YAZ-5173), and reads as `OFFLINE`. */
+export const REQUEST_TIMEOUT_MS = 30_000
+
+/** When to try again: `until` (ms since 1970, or null: not said) held between the floor and the ceiling from `now`. */
+export function rateLimitedUntil(until: number | null, now: number): number {
+  const wait = until === null || !Number.isFinite(until) ? MIN_RATE_WAIT_MS : until - now
+  return now + Math.min(MAX_RATE_WAIT_MS, Math.max(MIN_RATE_WAIT_MS, wait))
+}
 
 /**
  * GitHub's count for one resource, from the `x-ratelimit-*` headers (all of them are visible to a web page).
@@ -107,6 +123,8 @@ export interface ClientOptions {
   fetch?: FetchLike
   /** The clock for `resetAt` from `Retry-After`. */
   now?: () => number
+  /** The time limit of one request, ms (default REQUEST_TIMEOUT_MS). */
+  timeoutMs?: number
 }
 
 /** A path on the API, never an address: it starts with one `/`, and has no host, no `..`, no `@`, no query. */
@@ -147,6 +165,8 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
           body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
           // No cookies. No browser cache: the ETag is ours (3B), and answers made with the token stay off the disk.
           credentials: 'omit',
+          // A request with no answer stops after REQUEST_TIMEOUT_MS (YAZ-5173). The abort reads as OFFLINE below.
+          signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(options.timeoutMs ?? REQUEST_TIMEOUT_MS) : undefined,
           cache: 'no-store',
           referrerPolicy: 'no-referrer',
         })
@@ -159,10 +179,10 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
       const rateLimit = readRateLimit(response.headers)
       if (response.status === 304) return { status: 304, headers: response.headers, etag, data: null, rateLimit }
       if (response.status >= 200 && response.status < 300) {
-        const data = opts.raw ? new Uint8Array(await response.arrayBuffer()) : await readJson(response)
+        const data = await offlineOnError(() => (opts.raw ? response.arrayBuffer().then((b) => new Uint8Array(b)) : readJson(response)))
         return { status: response.status, headers: response.headers, etag, data, rateLimit }
       }
-      const body = await readJson(response)
+      const body = await offlineOnError(() => readJson(response))
       const said = body !== null && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string' ? (body as { message: string }).message : ''
       const error = failure(response, method, scrub(said), now(), rateLimit)
       // A status in `allow` comes back as an answer (its JSON body in `data`), but a rate limit never does: a probe
@@ -171,6 +191,15 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
         return { status: response.status, headers: response.headers, etag, data: body, rateLimit }
       throw error
     },
+  }
+}
+
+/** A body that stops mid-way (no network, or the time limit's abort) is OFFLINE, as a request with no answer is. */
+async function offlineOnError<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read()
+  } catch {
+    throw new GithubError('OFFLINE', null, 'No connection to GitHub')
   }
 }
 
@@ -204,17 +233,19 @@ function failure(response: Response, method: Method, said: string, now: number, 
   const { status, headers } = response
   const message = `GitHub answered ${status}${said ? `: ${said}` : ''}`
   const make = (code: GithubErrorCode, resetAt: number | null = null) => new GithubError(code, status, message, resetAt, said, rateLimit)
-  const retryAfter = Number(headers.get('retry-after'))
-  if ((status === 403 || status === 429) && headers.get('retry-after') !== null && Number.isFinite(retryAfter))
-    return make('RATE_LIMITED', now + retryAfter * 1000)
+  // Each wait goes through `rateLimitedUntil`: never under 1 minute, never over 1 hour (YAZ-5174). An empty
+  // `retry-after` is no `retry-after` (`Number('')` is 0); an HTTP date is not a number and falls through.
+  const retryHeader = headers.get('retry-after')?.trim() ?? ''
+  const retryAfter = retryHeader === '' ? NaN : Number(retryHeader)
+  if ((status === 403 || status === 429) && Number.isFinite(retryAfter)) return make('RATE_LIMITED', rateLimitedUntil(now + retryAfter * 1000, now))
   if ((status === 403 || status === 429) && headers.get('x-ratelimit-remaining') === '0') {
     const reset = Number(headers.get('x-ratelimit-reset'))
-    return make('RATE_LIMITED', Number.isFinite(reset) && reset > 0 ? reset * 1000 : null)
+    return make('RATE_LIMITED', rateLimitedUntil(Number.isFinite(reset) && reset > 0 ? reset * 1000 : null, now))
   }
   // GitHub's secondary limit ("slow down", round 10 item 20) can come with no Retry-After and with requests left. It is
   // not a missing permission: wait one minute, as GitHub advises, instead of reading it as NO_ACCESS or READ_ONLY.
-  if ((status === 403 || status === 429) && /secondary rate limit|abuse detection/i.test(said)) return make('RATE_LIMITED', now + SECONDARY_LIMIT_WAIT_MS)
-  if (status === 429) return make('RATE_LIMITED', now + SECONDARY_LIMIT_WAIT_MS)
+  if ((status === 403 || status === 429) && /secondary rate limit|abuse detection/i.test(said)) return make('RATE_LIMITED', rateLimitedUntil(null, now))
+  if (status === 429) return make('RATE_LIMITED', rateLimitedUntil(null, now))
   if (status === 401) return make('UNAUTHORIZED')
   if (status === 403) return make(method === 'GET' ? 'NO_ACCESS' : 'READ_ONLY')
   if (status === 404) return make('NOT_FOUND')
