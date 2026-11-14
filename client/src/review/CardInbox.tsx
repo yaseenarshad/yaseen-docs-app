@@ -15,10 +15,12 @@
  *    (YAZ-5132: no "in <page>" here), whose page part opens it as O does; a card file (YAZ-5037): its title is the
  *    link, and it and O open it in Explore (YAZ-5145, "Open card"). Then the chip "Up next ×" for a card at the top of the Inbox (YAZ-4999 D3). A card of more than one
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
- *  - SCROLL (YAZ-5049): round 3 follows the NEXT blank (`data-next`, the one "Mark the next hidden word" colours) after
- *    each Space, a new side's first blank, and at the end (no blank left) brings the card's end — the Reviews strip — in
- *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 5: Space
- *    never shows a blank you cannot see — a marked blank not wholly between the top row and the buttons only glides in. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
+ *  - SCROLL (YAZ-5049): round 6 (Yaseen: "certain space clicks that are actually oriented towards just moving the
+ *    screen"): a Space that shows never scrolls, so the word just shown stays still to study. When what it would show is
+ *    out of view — the marked blank not wholly between the top row and the buttons (round 5), the next side's place
+ *    under the card low in the view, or at the end the card's end (the Reviews strip) — that Space only glides it in,
+ *    and the next Space shows (or, at the end, gives the answer buttons a soft ring). A click on a blank shows it, a
+ *    click on a shown word hides it again; a mouse never scrolls. Never centred. Round 2
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
@@ -228,7 +230,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   const steps = useCardSteps(text, cardKey, rootRef)
   const { counts, step, done, nextSide, onLastSide } = steps
   const bodyRef = useRef<HTMLDivElement>(null)
-  useStepScroll(steps, shown, bodyRef, rootRef)
+  useStepScroll(steps, shown, rootRef)
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
@@ -285,8 +287,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   // dropped Space, and one more Space moves nothing but gives the answer buttons one soft ring — where to go now.
   // A new value each time, so the ring plays again; none on the next card.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
-  // Round 4: `by` says what showed it — Space (a key) scrolls to follow the next blank, a mouse never moves the view.
-  // The steps are the shared card's (`useCardSteps`); at the end, a key rings the buttons.
+  // Round 4: `by` says what asked — a key may scroll instead of a step (round 6), a mouse never moves the view.
+  // The steps are the shared card's (`useCardSteps`); at the end, with the end in view, a key rings the buttons.
   const advance = useCallback((by: 'key' | 'mouse' = 'key') => {
     const { steps, card } = live.current
     if (card?.page == null || steps.stepOn(by) || by !== 'key') return
