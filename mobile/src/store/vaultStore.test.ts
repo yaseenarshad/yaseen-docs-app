@@ -394,3 +394,58 @@ describe('kindOnPhone: what storage may drop', () => {
     expect(kindOnPhone('docs/file.pdf')).toBe('media')
   })
 })
+
+// YAZ-5074 (3D), the coordinator's pick for the night (for Yaseen to confirm): a full phone may drop old pictures of
+// OTHER vaults, oldest first, but NEVER the open vault's media that the cards due in the window need. 3D names those
+// files with `protectMedia`; the order of 3A (own vault first, then the others, oldest view first) stays for the rest.
+describe.each(Object.keys(backends))('protected media (3D) on %s', (name) => {
+  const phone = () => backends[name]()
+
+  it('a write never drops a protected file; it drops the open vault`s unneeded media, then other vaults` media, oldest first', async () => {
+    const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+    await store.write(A, 'due.png', new Uint8Array(30)) // oldest of all, but a due card needs it
+    await store.write(B, 'b-old.png', new Uint8Array(20))
+    await store.write(A, 'not-needed.png', new Uint8Array(20))
+    await store.write(B, 'b-new.png', new Uint8Array(20))
+    store.protectMedia(A, ['due.png'])
+    const result = await store.write(A, 'new.png', new Uint8Array(45)) // 10 free: it needs 35 more
+    expect(result.dropped).toEqual([
+      { vault: A, path: 'not-needed.png' },
+      { vault: B, path: 'b-old.png' },
+    ])
+    expect(await store.read(A, 'due.png')).not.toBeNull()
+    expect(await store.read(B, 'b-new.png')).not.toBeNull()
+  })
+
+  it('when only protected media is left, the write fails and drops nothing (the due pictures stay)', async () => {
+    const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+    await store.write(A, 'due-1.png', new Uint8Array(40))
+    await store.write(A, 'due-2.png', new Uint8Array(40))
+    store.protectMedia(A, ['due-1.png', 'due-2.png'])
+    await expect(store.write(A, 'extra.png', new Uint8Array(30))).rejects.toBeInstanceOf(StorageFullError)
+    expect((await store.list(A)).map((f) => f.path)).toEqual(['due-1.png', 'due-2.png'])
+  })
+
+  it('the answer list of a full phone still drops unprotected media, never protected media', async () => {
+    const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+    await store.write(A, 'due.png', new Uint8Array(50))
+    await store.write(B, 'theirs.png', new Uint8Array(45))
+    store.protectMedia(A, ['due.png'])
+    await store.setState(A, 'answers', [{ id: 'card-1', grade: 'good' }])
+    expect(await store.read(B, 'theirs.png')).toBeNull()
+    expect(await store.read(A, 'due.png')).not.toBeNull()
+  })
+
+  it('only one vault is protected at a time (the open one); a new call replaces the set, and null clears it', async () => {
+    const store = await openVaultStore(limitedBackend(phone()(), 100), { now: clock() })
+    await store.write(A, 'a.png', new Uint8Array(40))
+    await store.write(B, 'b.png', new Uint8Array(40))
+    store.protectMedia(A, ['a.png'])
+    store.protectMedia(B, ['b.png']) // vault B opened: A's files are no longer protected
+    const result = await store.write(B, 'new.png', new Uint8Array(40))
+    expect(result.dropped).toEqual([{ vault: A, path: 'a.png' }])
+    store.protectMedia(null, [])
+    const again = await store.write(B, 'more.png', new Uint8Array(30))
+    expect(again.dropped).toEqual([{ vault: B, path: 'b.png' }])
+  })
+})

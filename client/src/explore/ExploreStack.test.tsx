@@ -2675,6 +2675,33 @@ describe('the card window (YAZ-4962)', () => {
     expect(top().querySelector('.explore__title')?.textContent).toBe('Capital of France')
   })
 
+  it('YAZ-5097: ⋯ Fix later writes `fix`; the head then says "To fix"; Remove Fix later takes it off', async () => {
+    files[PAGE] = page('<!-- card: WIKI-9 -->')
+    writeFile.mockImplementation(async ({ path, content }) => {
+      files[path] = content
+      return { path, mtime: 2, size: content.length }
+    })
+    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
+    await mount()
+    await flush()
+    const mark = () => top().querySelector('.explore__head .card__fix')
+    expect(mark()).toBeNull()
+    const pick = async (label: string) => {
+      act(() => top().querySelector<HTMLButtonElement>('.explore__more')!.click())
+      const item = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].find((b) => b.textContent === label)
+      expect(item, label).toBeDefined()
+      act(() => item!.click())
+      await flush()
+      await flush()
+    }
+    await pick('Fix later')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9, fix -->')
+    expect(mark()?.textContent).toBe('To fix')
+    await pick('Remove Fix later')
+    expect(files[PAGE]).toContain('<!-- card: WIKI-9 -->')
+    expect(mark()).toBeNull()
+  })
+
   it('stays live: a new version of the page in the index reads the card again (an answer in the Inbox shows here)', async () => {
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0 }
     await mount()

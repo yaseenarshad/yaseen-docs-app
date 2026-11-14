@@ -43,6 +43,8 @@ export interface ShellSync {
    * Absent (a fake sync): the Review tab waits.
    */
   review?(): Promise<ReviewLink | null>
+  /** Resolves when no pass runs, also a pass of a vault that was open before (YAZ-5175: the erase waits for it). */
+  idle(): Promise<void>
 }
 
 export const IDLE: ShellSyncState = Object.freeze({ status: 'idle', vault: null, problem: null, retryAt: null, progress: null, ready: false })

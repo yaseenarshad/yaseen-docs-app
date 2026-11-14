@@ -261,3 +261,63 @@ describe('the list survives a closed app', () => {
     expect(answers.state().waiting).toBe(0)
   })
 })
+
+describe('YAZ-5183: a branch that keeps moving', () => {
+  it('the branch moves before every ref move for 2 minutes: the waits between sends grow, never over 80 writes in a minute, and the review lands once', async () => {
+    let movesUntil = 0
+    let moves = 0
+    let clockNow = () => 0
+    const t = await answersSetup({
+      fetch: (s) => async (url, init) => {
+        if ((init.method ?? 'GET') === 'PATCH' && clockNow() < movesUntil) {
+          moves++
+          await s.git.push({ [`mac-${moves}.md`]: `# ${moves}\n` })
+        }
+        return s.github.fetch(url, init)
+      },
+    })
+    clockNow = () => t.clock.now()
+    movesUntil = t.clock.now() + 120_000
+    await t.add(answer('NC-2', 1))
+    const writes = () => t.s.github.calls.filter((c) => c.method !== 'GET').length
+    const samples: { at: number; writes: number }[] = []
+    const waits: number[] = []
+    for (let i = 0; i < 120; i++) {
+      await t.tick(5_000)
+      samples.push({ at: t.clock.now(), writes: writes() })
+      const { retryAt, problem } = t.answers.state()
+      if (problem === 'STALE_HEAD' && retryAt !== null && (waits.length === 0 || waits[waits.length - 1] !== retryAt)) waits.push(retryAt)
+    }
+    for (const a of samples) {
+      const inMinute = samples.filter((b) => b.at > a.at && b.at <= a.at + 60_000).map((b) => b.writes)
+      if (inMinute.length > 0) expect(Math.max(...inMinute) - a.writes).toBeLessThanOrEqual(80)
+    }
+    const gaps = waits.slice(1).map((w, i) => w - waits[i])
+    expect(gaps.length).toBeGreaterThan(0)
+    for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeGreaterThan(gaps[i - 1])
+    expect(await t.remoteReviews()).toEqual([at(1)])
+    expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null })
+  })
+})
+
+describe('YAZ-5073 checker gap 7: a send that needs the person does not repeat by itself', () => {
+  for (const [status, code] of [[401, 'UNAUTHORIZED'], [403, 'READ_ONLY']] as const) {
+    it(`${status} (${code}): the app hidden or the signal back does not send again; only sendNow does`, async () => {
+      let tries = 0
+      const t = await answersSetup({ fetch: (s) => async (url, init) => ((init.method ?? 'GET') !== 'GET' ? (tries++, new Response(JSON.stringify({ message: 'no' }), { status })) : s.github.fetch(url, init)) })
+      await t.add(answer('NC-2', 1))
+      await t.tick(SEND_AFTER_MS)
+      expect(t.answers.state().problem).toBe(code)
+      const writes = tries
+      expect(writes).toBe(1)
+      t.answers.online()
+      t.answers.setVisible(false)
+      t.answers.setVisible(true)
+      await t.answers.idle()
+      expect(tries).toBe(writes)
+      await t.answers.sendNow()
+      expect(tries).toBeGreaterThan(writes)
+    })
+  }
+})
+

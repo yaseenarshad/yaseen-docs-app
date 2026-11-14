@@ -79,6 +79,18 @@ export class StorageFullError extends Error {
 }
 
 /**
+ * A write for a vault that left the phone in this session ("Remove from this phone", "Sign out and erase this phone"),
+ * started before it left: a sync pass, a media download, an answer list write (YAZ-5175). The store refuses it, so no
+ * row of that vault comes back after the clear. `admit` lets the vault write again when it is signed in again.
+ */
+export class VaultClosedError extends Error {
+  constructor(readonly vault: string) {
+    super(`${vault} is not on this phone any more`)
+    this.name = 'VaultClosedError'
+  }
+}
+
+/**
  * The vaults on the phone (October design rule 1): each vault's files, its checkpoint and its phone-only state.
  * Opening, review and search read from here, not from the network. A vault is its id (`vaultId` in `vaults.ts`);
  * each id has its own files. Every write is committed when its promise resolves.
@@ -94,6 +106,12 @@ export interface VaultStore {
   list(vault: string): Promise<FileEntry[]>
   /** The file was shown now: its media is dropped later than media not shown since. */
   markViewed(vault: string, path: string): Promise<void>
+  /**
+   * 3D (YAZ-5074): the open vault's media that the cards due in the window need. Row P2 never drops these files; the
+   * other media goes as before. One vault at a time (the open one, decision 7): a call replaces the set, and `null`
+   * clears it. Held in memory only: the media runner sets it again at each start.
+   */
+  protectMedia(vault: string | null, paths: Iterable<string>): void
 
   checkpoint(vault: string): Promise<Checkpoint | null>
   setCheckpoint(vault: string, checkpoint: Checkpoint): Promise<void>
@@ -105,6 +123,12 @@ export interface VaultStore {
   getState<T>(scope: string, name: string): Promise<T | undefined>
   setState(scope: string, name: string, value: unknown): Promise<void>
   removeState(scope: string, name: string): Promise<void>
+
+  /**
+   * A vault comes onto the phone (sign-in, YAZ-5175): its writes are allowed again after `removeVault` or `eraseAll`.
+   * Until then, every write of a vault that left the phone in this session throws `VaultClosedError`.
+   */
+  admit(vault: string): void
 
   /** "Reset local copy" (row P5): the vault's files and checkpoint go, so it downloads again. Its state stays. */
   resetCopy(vault: string): Promise<void>
@@ -148,6 +172,24 @@ function notTheToken(name: string) {
 export async function openVaultStore(backend: Backend, options: OpenOptions = {}): Promise<VaultStore> {
   const format = options.format ?? STORE_FORMAT
   const now = options.now ?? Date.now
+  /** 3D: the open vault and its media that must stay (`protectMedia`). */
+  let kept: { vault: string; paths: ReadonlySet<string> } | null = null
+  const isKept = (e: FileRef) => kept !== null && e.vault === kept.vault && kept.paths.has(e.path)
+  /** YAZ-5175: the vaults that left the phone in this session, and whether ALL left ("erase"); `admit` brings one back. */
+  const closed = new Set<string>()
+  const admitted = new Set<string>()
+  let erased = false
+  const isClosed = (vault: string) => vault !== PHONE && (closed.has(vault) || (erased && !admitted.has(vault)))
+  const scopeOf = (op: Op): string | null => ('put' in op && op.put !== 'meta' ? (typeof op.key === 'string' ? op.key : op.key[0]) : null)
+  /** Every write that ADDS rows goes through here. The check and the transaction start in the same turn, so a clear
+   *  that runs first is always seen, and a write that started first lands before the clear (IndexedDB keeps the order). */
+  const apply = (ops: readonly Op[]): Promise<void> => {
+    for (const op of ops) {
+      const vault = scopeOf(op)
+      if (vault !== null && isClosed(vault)) return Promise.reject(new VaultClosedError(vault))
+    }
+    return backend.apply(ops)
+  }
   const stored = await backend.get('meta', 'format')
   const formatReset = stored !== undefined && stored !== format
   if (stored === undefined) await backend.apply([{ put: 'meta', key: 'format', value: format }])
@@ -156,11 +198,12 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
   /**
    * The media that may go for a write of `vault`, in the order it goes: that vault's own media first, oldest view first,
    * then the media of the other vaults, oldest view first (decision (coordinator, for Yaseen to confirm), YAZ-5071).
-   * Pages, card files, settings, checkpoints and phone-only state are never in it. `except` (the file being written) neither.
+   * Pages, card files, settings, checkpoints and phone-only state are never in it. `except` (the file being written) neither,
+   * nor the open vault's media that the cards due in the window need (`protectMedia`, 3D: the night pick of YAZ-5074).
    */
   async function mediaToDrop(vault: string, except: FileRef | undefined): Promise<FileEntry[]> {
     const entries = (await backend.all('entries')) as FileEntry[]
-    const media = entries.filter((e) => e.kind === 'media' && !(except && e.vault === except.vault && e.path === except.path))
+    const media = entries.filter((e) => e.kind === 'media' && !isKept(e) && !(except && e.vault === except.vault && e.path === except.path))
     const own = media.filter((e) => e.vault === vault)
     const others = media.filter((e) => e.vault !== vault)
     const byAge = (a: FileEntry, b: FileEntry) => a.viewedAt - b.viewedAt
@@ -187,7 +230,7 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
     const dropped: FileRef[] = []
     const tryApply = async (): Promise<boolean> => {
       try {
-        await backend.apply(ops)
+        await apply(ops)
         return true
       } catch (error) {
         if (!isQuotaError(error)) throw error
@@ -233,6 +276,10 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
 
     remove: (vault, path) => backend.apply(dropOps({ vault, path })),
 
+    protectMedia(vault, paths) {
+      kept = vault === null ? null : { vault, paths: new Set(paths) }
+    },
+
     async list(vault) {
       return (await backend.all('entries', vault)) as FileEntry[]
     },
@@ -262,9 +309,24 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
       await backend.apply([{ del: 'state', key: [scope, name] }])
     },
 
+    admit(vault) {
+      closed.delete(vault)
+      admitted.add(vault)
+    },
+
     resetCopy: (vault) => backend.apply(clearCopy(vault)),
-    removeVault: (vault) => backend.apply([...clearCopy(vault), { clear: 'state', scope: vault }]),
-    eraseAll: () => backend.apply([...clearCopy(), { clear: 'state' }, { clear: 'meta' }, { put: 'meta', key: 'format', value: format }]),
+    removeVault(vault) {
+      // Closed first, in the same turn as the clear starts: no write that comes after the clear can land (YAZ-5175).
+      closed.add(vault)
+      admitted.delete(vault)
+      return backend.apply([...clearCopy(vault), { clear: 'state', scope: vault }])
+    },
+    eraseAll() {
+      erased = true
+      closed.clear()
+      admitted.clear()
+      return backend.apply([...clearCopy(), { clear: 'state' }, { clear: 'meta' }, { put: 'meta', key: 'format', value: format }])
+    },
 
     close: () => backend.close(),
   }

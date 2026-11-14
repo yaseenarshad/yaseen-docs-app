@@ -51,21 +51,34 @@ export type SyncEvent =
    * The open vault's files or index changed. `diff` names the files (R2–R6); `settings` the settings files (R13).
    * `diff` is null when the engine only loaded the stored index (on open, or another tab synced): read it all again.
    */
-  | { type: 'changed'; vault: string; commit: string; diff: TreeDiff | null; settings: string[]; index: PhoneIndex }
+  | {
+      type: 'changed'
+      vault: string
+      commit: string
+      diff: TreeDiff | null
+      settings: string[]
+      index: PhoneIndex
+      /** From a pass: each file's size in bytes at `commit` (3D's size limit). Absent when only the stored index loaded. */
+      sizes?: ReadonlyMap<string, number>
+    }
 
 export interface SyncEngineOptions {
   store: VaultStore
   tokens: TokenStore
   clock?: Clock
   /** The remote for a vault and its token. Default: `githubRemote` on 3E's `githubClient`. */
-  makeRemote?: (vault: PhoneVault, token: string) => GithubRemote
+  /**
+   * `onActivity`: give it to the client (`ClientOptions.onActivity`), so the engine's silence limit sees the bytes of a
+   * slow download (YAZ-5184). Without it, only each call's end counts as activity.
+   */
+  makeRemote?: (vault: PhoneVault, token: string, onActivity?: () => void) => GithubRemote
   /**
    * Runs `fn` while this tab holds the named lock (row P4: one tab syncs at a time). Default: the Web Locks API
    * (`navigator.locks`), else no lock.
    */
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
   yieldToUi?: () => Promise<void>
-  /** 3D's hook, passed to each pass. */
+  /** Passed to each pass (`PassOptions.alsoEager`). 3D does not use it: its media downloads after the pass. */
   alsoEager?: (path: string) => boolean
 }
 
@@ -96,6 +109,11 @@ export interface SyncEngine {
    * engine does. `vault` is the id of the vault the lane is for (the open vault when `lane` was called).
    */
   lane<T>(fn: (remote: GithubRemote, pass: () => Promise<PassResult>, vault: string) => Promise<T>): Promise<T>
+  /**
+   * 3D (YAZ-5074): the open vault's remote for a READ at once, with no lock and no wait for a pass (a picture that a
+   * screen shows now). Null with no vault open or no token. A write to the store still goes through `lane`.
+   */
+  reader(): Promise<{ vault: string; remote: GithubRemote } | null>
   /** Stops the timers and the polling. */
   stop(): void
 }
@@ -124,7 +142,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const { store, tokens } = options
   const clock = options.clock ?? browserClock
   const lock = options.lock ?? webLock
-  const makeRemote = options.makeRemote ?? ((vault, token) => githubRemote(githubClient(token), vault.repo, vault.branch))
+  const makeRemote = options.makeRemote ?? ((vault, token, onActivity) => githubRemote(githubClient(token, { onActivity }), vault.repo, vault.branch))
   const listeners = new Set<(event: SyncEvent) => void>()
 
   let vault: PhoneVault | null = null
@@ -182,13 +200,18 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   /**
-   * Each GitHub call of the engine has a time limit on the engine's clock (YAZ-5173), next to the client's own abort.
-   * `lastAnswer` is when the open vault's pass last heard from GitHub: a pull to refresh after a long silence does not
-   * join a pass that hangs.
+   * Each GitHub call of the engine has a SILENCE limit on the engine's clock (YAZ-5173, YAZ-5184), next to the client's
+   * own silence limit for each request. `lastAnswer` is when the engine last heard from GitHub: an answer, or a part of
+   * a body (`heard`, through the client's `onActivity`). A call fails only when nothing came for the limit, so a slow
+   * but live download goes on to its end. A pull to refresh after a long silence does not join a pass that hangs.
    */
   const outstanding = new Set<(error: GithubError) => void>()
   let lastAnswer = clock.now()
   const tooLate = () => new GithubError('OFFLINE', null, 'GitHub did not answer in time')
+  const heard = () => {
+    lastAnswer = clock.now()
+  }
+  const remoteOf = (open: PhoneVault, token: string) => timed(makeRemote(open, token, heard))
   function timed(remote: GithubRemote): GithubRemote {
     const call = <T>(work: () => Promise<T>, limit = REQUEST_TIMEOUT_MS): Promise<T> =>
       new Promise<T>((resolve, reject) => {
@@ -203,7 +226,14 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
           reject(error)
         }
         outstanding.add(fail)
-        timer = clock.setTimeout(() => fail(tooLate()), limit)
+        const started = clock.now()
+        // Fails only after `limit` of silence: each time it fires, it waits again for what is left since the last sign.
+        const check = () => {
+          const quiet = clock.now() - Math.max(started, lastAnswer)
+          if (quiet >= limit) fail(tooLate())
+          else timer = clock.setTimeout(check, limit - quiet)
+        }
+        timer = clock.setTimeout(check, limit)
         work().then(
           (value) => {
             if (!outstanding.has(fail)) return
@@ -244,12 +274,12 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     if (result.kind === 'synced') {
       current = result.index
       setState({ ready: true })
-      emit({ type: 'changed', vault: id, commit: result.commit, diff: result.diff, settings: result.settings, index: result.index })
+      emit({ type: 'changed', vault: id, commit: result.commit, diff: result.diff, settings: result.settings, index: result.index, sizes: result.sizes })
     } else await loadIndex(id, gen) // another tab may have synced this vault (P4)
   }
 
   const passOptions = (open: PhoneVault, id: string, token: string, gen: number) => ({
-    remote: timed(makeRemote(open, token)),
+    remote: remoteOf(open, token),
     store,
     vault: id,
     now: clock.now,
@@ -373,7 +403,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       if (isEager(path)) return null
       const token = await tokens.read(id)
       if (token === null) return null
-      const remote = timed(makeRemote(open, token))
+      const remote = remoteOf(open, token)
       // The download runs with no lock (a pass need not wait for a slow picture). The WRITE runs under the vault's
       // lock, and only when the checkpoint still names the SHA that came down (YAZ-5172): a pass that changed the
       // picture meanwhile means "get the new one". So a stored file is always the checkpoint's version, and R7 holds.
@@ -407,7 +437,13 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         }
         return result
       }
-      return exclusive(id, () => lock(lockName(id), () => fn(timed(makeRemote(open, token)), pass, id)))
+      return exclusive(id, () => lock(lockName(id), () => fn(remoteOf(open, token), pass, id)))
+    },
+    async reader() {
+      if (vault === null) return null
+      const open = vault
+      const token = await tokens.read(vaultId(open))
+      return token === null ? null : { vault: vaultId(open), remote: remoteOf(open, token) }
     },
     stop() {
       generation++

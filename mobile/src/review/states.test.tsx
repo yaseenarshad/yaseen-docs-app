@@ -106,6 +106,32 @@ describe('Review: no signal (decision 2; Turn 3: "offline should work")', () => 
   })
 })
 
+describe('Review: Undo after a send tried the answer (YAZ-5180)', () => {
+  it('the card shows again; the list holds the answer AND its unreview; GitHub ends with no review', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...newCards(2)) })
+    await h.click('Remembered')
+    // The send makes its commit, then the connection drops on the move of the branch: GitHub may hold the answer.
+    h.s.github.interrupt = (call) => {
+      if (call.method === 'PATCH') throw new TypeError('Load failed')
+      return undefined
+    }
+    await h.wait(5_000)
+    expect(h.answers.waiting()).toHaveLength(1)
+    await h.click('Undo')
+    expect(h.head()).toBe('Card 1? · NW-1 · in P')
+    expect(h.cardText()).toBe('Card 1?')
+    // The waiting count goes UP: the screen reads the list's own state, not its own sums.
+    expect(h.answers.waiting().map((w) => w.op.kind)).toEqual(['review', 'unreview'])
+    expect(h.answers.state().waiting).toBe(2)
+    expect(h.text()).not.toContain('Answered · Undo')
+    h.s.github.interrupt = null
+    h.answers.online()
+    await h.wait(0)
+    expect(h.answers.waiting()).toEqual([])
+    expect((await h.remoteLines())['NW-1']).toBe('<!-- card: NW-1 -->')
+  })
+})
+
 describe('Review: a lost answer (round 12, item 9)', () => {
   it('the card was deleted on GitHub before the send: the amber line, the card and the answer, and Discard', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...newCards(2)) })

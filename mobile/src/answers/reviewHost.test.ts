@@ -61,7 +61,7 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     await t.tick(SEND_AFTER_MS)
     expect(await t.remoteReviews()).toEqual([R.at])
     await t.host.undoCardAnswer('a.md', 'NC-2', R.at, next)
-    expect(t.answers.waiting().map((w) => w.op)).toEqual([{ kind: 'unreview', id: 'NC-2', at: R.at }, { kind: 'next', id: 'NC-2', on: true }])
+    expect(t.answers.waiting().map((w) => w.op)).toEqual([{ kind: 'unreview', id: 'NC-2', at: R.at, rating: R.rating }, { kind: 'next', id: 'NC-2', on: true }])
     expect(await t.host.readCard('a.md', 'NC-2')).toMatchObject({ next: true, reviews: [] })
     await t.tick(SEND_AFTER_MS)
     expect((await t.s.git.filesAt(t.head()))['a.md']).toBe(FILES['a.md'])
