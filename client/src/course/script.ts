@@ -58,13 +58,13 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-04', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
       // Each review mark pushes the memory deeper, from a "Short-term" band into a "Long-term" band.
       { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.' },
-      // The words "Spaced repetition" settle under the curve. (Approved sample, unchanged.)
-      { id: 's3a', text: "That's all spaced repetition is." },
+      // Behind the curve, small gears turn; a date lights up on a calendar just before the curve drops. The words "Spaced repetition algorithm" settle under it. (Yaseen's line, from the doc YAS-2084.)
+      { id: 'c1-16', text: 'The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.' },
       // A wall of small study tiles fills in, "317 experiments"; spaced study beats crammed study.
       // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
       { id: 'c1-06', text: 'It is one of the most tested ideas about memory: one review of 317 experiments found that spacing beats cramming.' },
       // A paper index card drops onto the stage.
-      { id: 'c1-07', text: 'So where does each thing you learn go? Picture a paper index card, the kind people study with.' },
+      { id: 'c1-07', text: 'So how do you store each thing you learn in the app? Answer: on a card.' },
       // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
       // v3: "one small fact" became "one idea" (the node idea of chapter 7: a card can start as a light overview).
       { id: 'c1-08', text: 'That is a card: one idea, with part of it hidden.' },

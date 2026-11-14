@@ -8,10 +8,10 @@ import { courseTranscript, TRANSCRIPT_FIRST_LINE } from './transcript'
 const PAGE = resolve(__dirname, '../../../skills/card-skill/Course transcript.md')
 
 describe('the course script (YAZ-5119, version 2 YAZ-5147, version 3 YAZ-5148)', () => {
-  it('has the 12 chapters with unique ids, and chapter 1 keeps the two sample clips whose words did not change', () => {
+  it('has the 12 chapters with unique ids, and chapter 1 keeps the one sample clip whose words did not change', () => {
     expect(COURSE).toHaveLength(12)
     expect(new Set(COURSE.map((ch) => ch.id)).size).toBe(COURSE.length)
-    expect(COURSE[0].clips.filter((c) => /^s\d[ab]$/.test(c.id)).map((c) => c.id)).toEqual(['s2b', 's3a'])
+    expect(COURSE[0].clips.filter((c) => /^s\d[ab]$/.test(c.id)).map((c) => c.id)).toEqual(['s2b'])
   })
 
   it('gives each clip a unique id of the form c<chapter>-<nn>', () => {

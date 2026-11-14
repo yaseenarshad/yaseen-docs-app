@@ -14,11 +14,11 @@ A new memory starts out fragile. Over time, the brain makes it stable. Scientist
 
 Each review, near the point where you would forget, pushes the memory further into long-term memory.
 
-That's all spaced repetition is.
+The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.
 
 It is one of the most tested ideas about memory: one review of 317 experiments found that spacing beats cramming.
 
-So where does each thing you learn go? Picture a paper index card, the kind people study with.
+So how do you store each thing you learn in the app? Answer: on a card.
 
 That is a card: one idea, with part of it hidden.
 
