@@ -52,7 +52,15 @@ mobile/
   vitest.config.ts      the `mobile` test project (uses vite.config.ts)
   importRules.ts        what the phone never imports
   src/
-    main.tsx, App.tsx   the start; App is a bare placeholder until the screens (4A–4D)
+    main.tsx, App.tsx   the start: the real services, then the app (4A)
+    styles.css          the Mac's colour and font tokens; dark mode follows the iPhone
+    app/                4A: the app state and actions (`AppState.tsx`, `useApp()`), the tabs and routes (`nav.ts`),
+                        the words and ways forward (`help.ts`), the sync port and the lazy 3B engine (`syncPort.ts`,
+                        `lazySync.ts`), Friends' port (`friendsPort.ts`), the vault's word for page (`unitWord.ts`)
+    screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `ScanCode`, `Settings`, `FirstDownload`; the slots
+                        `Friends`, `Review`, `Search` (4E, 4B, 4C) and `SyncStatus` (4D) are placeholders
+    scan/               "Scan a code": the camera (`camera.ts`) and the reader (`qrDecode.ts`, the `qr` library, a lazy chunk)
+    dev/                fakes for tests, and the screen fixtures of the `--mode fixtures` build (not in the real build)
     store/              ALL browser storage. Nothing else touches IndexedDB, localStorage or navigator.storage.
       vaultStore.ts     `VaultStore`: files, checkpoints, phone-only state, the format number, the clears
       backend.ts        the small table interface under it
@@ -76,7 +84,10 @@ mobile/
       input.ts          the typed repo, token and branch, cleaned
 ```
 
-Where the next units go (from the issues): `src/sync/` (3B, 3C, 3D), `src/screens/` (4A–4E).
+Where the next units go (from the issues): `src/sync/` (3C, 3D), `src/screens/` (4B–4E: replace the slot files).
+
+Screenshots of the screens: `npm run build:fixtures -w mobile`, serve `mobile/dist-fixtures/`, open `#fixture=<name>`
+(`sign-in`, `sign-in-error`, `guide`, `scan`, `download`, `review`, `settings`, `erase`, `token-ended`).
 
 ## GitHub and the token, in short
 
