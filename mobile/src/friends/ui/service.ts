@@ -168,7 +168,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     const phone = await loadVaultList(store)
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
     const repos = phone.vaults.filter((v) => ids.includes(vaultId(v))).map((v) => v.repo.toLowerCase())
-    const counted = await own.counted(repos, now())
+    const counted = await own.counted(repos, now(), settings.zone) // YAZ-5251: the home time zone of the days
     const stats =
       counted === null
         ? null

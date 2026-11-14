@@ -10,6 +10,7 @@ import {
   replaceNumbersGist,
   type GistsApi,
   type IndexHandle,
+  writeFriendsIndex,
   type WriteOptions,
 } from '@shared/friendGists'
 import {
@@ -26,7 +27,7 @@ import {
   type GistBudget,
   type SendReason,
 } from '@shared/friendSend'
-import { friendStats } from '@shared/friendStats'
+import { deviceZone, friendStats } from '@shared/friendStats'
 import { finishRemove, pendingRemove } from '@shared/friendsList'
 import { recordGistsRefused } from '../auth/friends'
 import type { FetchLike } from '../github/client'
@@ -279,7 +280,17 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         handle = finished.handle
       }
       const pointers = pointersOf(handle.index).length
-      const kept = options.numbers === undefined ? undefined : await options.numbers.counted(handle.index.vaults, now)
+      // YAZ-5251: a list with no home time zone gets this phone's zone, one write, once (inside the budget, with the
+      // reserve for a remove kept). Until it is written, the count uses this phone's zone, as before.
+      const own = deviceZone()
+      if (handle.index.zone === undefined && own !== null && pointers > 0 && mayUpdate(saved.budget, now, 2, reserveFor(pointers))) {
+        handle = await writeFriendsIndex(api, handle, { ...handle.index, zone: own })
+        index = handle
+        saved.budget = recordUpdate(saved.budget, now, null)
+        await save({ budget: saved.budget })
+      }
+      const zone = handle.index.zone ?? null
+      const kept = options.numbers === undefined ? undefined : await options.numbers.counted(handle.index.vaults, now, zone)
       const vaults = kept === undefined ? await countedVaults(store, handle.index.vaults) : null
       const gate = sendGate({ pointers, passSeen, holdsAll: kept === undefined ? vaults !== null : kept !== null, lastSentAt: saved.lastSentAt, now, reason, budget: saved.budget })
       if (!gate.go) {
@@ -292,7 +303,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       }
 
       // The count: about 200 ms for a large vault (2C). It runs at most once each 5 minutes, and on a background send.
-      const fresh = numbersFor(kept ?? friendStats(vaults!, now), { login: account.login, name: account.name, avatar: account.avatarUrl, nickname: handle.index.nickname }, now)
+      const fresh = numbersFor(kept ?? friendStats(vaults!, now, zone), { login: account.login, name: account.name, avatar: account.avatarUrl, nickname: handle.index.nickname }, now)
       const key = numbersKey(fresh)
       if (key === saved.lastKey && handle.index.stats !== null) {
         dirty = false

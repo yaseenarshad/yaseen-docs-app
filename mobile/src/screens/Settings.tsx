@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useApp } from '../app/AppState'
+import { deviceZone, isTimeZone } from '@shared/friendStats'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { vaultId, type PhoneVault } from '../store'
@@ -133,8 +134,8 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
  */
 function FriendsPart() {
   const app = useApp()
-  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | null>(null)
-  const toggle = (part: 'account' | 'vaults' | 'name') => setEditing(editing === part ? null : part)
+  const [editing, setEditing] = useState<'account' | 'vaults' | 'name' | 'zone' | null>(null)
+  const toggle = (part: 'account' | 'vaults' | 'name' | 'zone') => setEditing(editing === part ? null : part)
   const fa = app.friendsAccount
   const alert = friendsMessage(fa)
   const choices = app.list.vaults.filter((v) => app.accounts[vaultId(v)]?.gists === 'yes')
@@ -145,6 +146,10 @@ function FriendsPart() {
   const counts = (id: string) => counting === null || counting.includes(id)
   const countLabel = counting === null ? 'All vaults' : app.list.vaults.filter((v) => counts(vaultId(v))).map((v) => v.repo.split('/')[1]).join(', ') || 'None'
   const [nickname, setNickname] = useState(app.friendsSettings.nickname ?? '')
+  // YAZ-5251: the home time zone of the numbers (every device counts the days in it). Not set yet: this phone's zone.
+  const phoneZone = deviceZone()
+  const homeZone = app.friendsSettings.zone ?? phoneZone
+  const zones = editing === 'zone' ? zoneChoices(homeZone) : []
 
   const setCounts = (id: string, on: boolean) => {
     const all = app.list.vaults.map(vaultId)
@@ -209,6 +214,32 @@ function FriendsPart() {
         </li>
         <li>
           <div className="row">
+            <button type="button" className="row__button" aria-expanded={editing === 'zone'} onClick={() => toggle('zone')}>
+              Home time zone
+            </button>
+            <span className="row__side">{homeZone ?? 'This phone'}</span>
+          </div>
+          {editing === 'zone' && (
+            <label className="field sheet">
+              <span className="field__label">Your days start at midnight in this zone, on each device. Days already sent stay as they are.</span>
+              <select
+                value={homeZone ?? ''}
+                onChange={(e) => {
+                  const zone = e.target.value
+                  if (isTimeZone(zone)) void app.saveFriendsSettings({ ...app.friendsSettings, zone }).then(() => setEditing(null))
+                }}
+              >
+                {zones.map((z) => (
+                  <option key={z} value={z}>
+                    {z === phoneZone ? `${z} (this phone)` : z}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </li>
+        <li>
+          <div className="row">
             <button type="button" className="row__button" aria-expanded={editing === 'name'} onClick={() => toggle('name')}>
               Name
             </button>
@@ -235,4 +266,10 @@ function FriendsPart() {
       </ul>
     </>
   )
+}
+
+/** YAZ-5251: the zones to choose from: the home zone, this phone's, then every zone the runtime knows. */
+function zoneChoices(home: string | null): string[] {
+  const all = (Intl as { supportedValuesOf?: (key: 'timeZone') => string[] }).supportedValuesOf?.('timeZone') ?? []
+  return [...new Set([home, deviceZone(), ...all].filter((z): z is string => isTimeZone(z)))]
 }

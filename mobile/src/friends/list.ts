@@ -1,5 +1,6 @@
 import { readListGist, DESCRIPTIONS, INDEX_FILE, emptyNumbers, pointersOf, ensureFriendsFiles, findFriendsIndex, gistErrorCode, parseFriendsIndex, writeFriendsIndex, type GistsApi, type IndexHandle } from '@shared/friendGists'
 import { emptyBudget, recordUpdate, type GistBudget } from '@shared/friendSend'
+import { deviceZone } from '@shared/friendStats'
 import {
   addMember,
   createGroup,
@@ -139,6 +140,8 @@ const COPY = 'friendsListCopy'
 interface ListCopy {
   vaults: string[]
   nickname: string | null
+  /** YAZ-5251: the home time zone of the list (absent: not set yet). */
+  zone?: string
 }
 
 function webLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
@@ -188,7 +191,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     if (h === null) return
     if (!(await guard.live())) return // YAZ-5195: nothing comes back after an erase
     await phoneStore.setState(PHONE, HAS, h.index.friends.length + h.index.groups.length > 0)
-    await phoneStore.setState(PHONE, COPY, { vaults: h.index.vaults, nickname: h.index.nickname } satisfies ListCopy)
+    await phoneStore.setState(PHONE, COPY, { vaults: h.index.vaults, nickname: h.index.nickname, ...(h.index.zone !== undefined && { zone: h.index.zone }) } satisfies ListCopy)
   }
 
   /** This session's copy of the list, read again with its ETag (a free 304 when nothing changed, also on another device). */
@@ -227,7 +230,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     // The first numbers file names the person at once (the sender fills the numbers after the next sync pass).
     const account = vault === '' ? undefined : await loadAccount(store, vault)
     const numbers = { ...emptyNumbers(now()), login, name: settings.nickname ?? account?.name ?? login, avatar: account?.avatarUrl ?? '' }
-    const made = await ensureFriendsFiles(api, { vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname, numbers }, opts)
+    // YAZ-5251: the first device writes the home time zone: the one chosen in Settings, or its own.
+    const made = await ensureFriendsFiles(api, { vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname, numbers, zone: settings.zone ?? deviceZone() }, opts)
     if (made.kind !== 'ok') return made.kind
     await remember(made.handle)
     return made.handle
@@ -297,7 +301,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     async settings(): Promise<FriendsSettings> {
       const copy = await store.getState<ListCopy>(PHONE, COPY)
       if (copy === undefined) return local.settings()
-      return { vaults: await reposToIds(copy.vaults), nickname: copy.nickname }
+      return { vaults: await reposToIds(copy.vaults), nickname: copy.nickname, zone: copy.zone ?? null }
     },
     async saveSettings(settings) {
       await local.saveSettings(settings)
@@ -315,7 +319,9 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const listed = fresh.index.vaults
         const vaults = [...listed.filter((v) => !onPhone.includes(v) || chosen.includes(v)), ...chosen.filter((v) => !listed.includes(v))]
         const nickname = settings.nickname === copy.nickname ? fresh.index.nickname : settings.nickname
-        const next = await writeFriendsIndex(api, fresh, { ...fresh.index, vaults, nickname })
+        // YAZ-5251: the home time zone changes only when the person changed it here.
+        const zone = settings.zone === undefined || settings.zone === null || settings.zone === (copy.zone ?? null) ? fresh.index.zone : settings.zone
+        const next = await writeFriendsIndex(api, fresh, { ...fresh.index, vaults, nickname, ...(zone !== undefined && { zone }) })
         await remember(next)
         return { kind: 'ok' as const }
       })

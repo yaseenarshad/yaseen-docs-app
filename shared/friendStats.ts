@@ -9,8 +9,9 @@ import type { ReviewSettings } from './reviews'
  * phone (4E1) and the Mac (4E5) send the result; the Friends screens (4E4) read its shape. The card lines sync, so each
  * device that holds the same vaults counts the same numbers. Pure: no Node import, no DOM.
  *
- * A day is the person's own LOCAL day (YAZ-5058), midnight to midnight on this device's clock, as `reviewedToday`
- * counts the Mac's "Today". "The daily" is the DUE cards only (round 8): a new card is never part of it.
+ * A day is the person's own day (YAZ-5058), midnight to midnight. YAZ-5251: in the person's HOME time zone, which their
+ * own friends list keeps (`FriendsIndex.zone`), so a phone and a Mac in two zones put each answer on the same day. With
+ * no zone, the device's own zone (as `reviewedToday` counts the Mac's "Today"). "The daily" is the DUE cards only (round 8): a new card is never part of it.
  */
 
 /** What a person shares with friends and groups: numbers only, never card text. ONE file in ONE secret gist for the person (round 16). */
@@ -101,6 +102,88 @@ const pad = (n: number): string => String(n).padStart(2, '0')
 /** The local date of `d`, `2026-11-13`. */
 const dayKey = (d: Date): string => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
+/**
+ * YAZ-5251: the days of one time zone. `date` gives the date of an instant there; `start` the instant its day starts
+ * (midnight, or the first instant of the day where a change of the clock skips midnight).
+ */
+interface Calendar {
+  date(ms: number): { y: number; m: number; d: number }
+  start(y: number, m: number, d: number): number
+}
+
+/** The device's own zone: JavaScript's local `Date`, the count as it was before YAZ-5251. */
+const deviceCalendar: Calendar = {
+  date: (ms) => {
+    const t = new Date(ms)
+    return { y: t.getFullYear(), m: t.getMonth() + 1, d: t.getDate() }
+  },
+  start: (y, m, d) => new Date(y, m - 1, d).getTime(),
+}
+
+/** An IANA time zone this runtime knows (`America/New_York`), or false. */
+export function isTimeZone(zone: unknown): zone is string {
+  if (typeof zone !== 'string' || zone.length === 0 || zone.length > 64) return false
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** The device's own IANA time zone, or null when the runtime does not say. */
+export function deviceZone(): string | null {
+  const zone = new Intl.DateTimeFormat().resolvedOptions().timeZone
+  return isTimeZone(zone) ? zone : null
+}
+
+const calendars = new Map<string, Calendar>()
+/** The calendar of `zone`; the device's own for no zone, or for a zone this runtime does not know. */
+function calendarOf(zone: string | null | undefined): Calendar {
+  if (zone === null || zone === undefined || !isTimeZone(zone)) return deviceCalendar
+  const known = calendars.get(zone)
+  if (known !== undefined) return known
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' })
+  const wall = (ms: number) => {
+    const o: Record<string, number> = {}
+    for (const p of parts.formatToParts(ms)) if (p.type !== 'literal') o[p.type] = Number(p.value)
+    return o
+  }
+  /** The zone's offset at `ms` (ms): its wall clock read as UTC, less `ms`. */
+  const offset = (ms: number) => {
+    const w = wall(ms)
+    return Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second) - Math.floor(ms / 1000) * 1000
+  }
+  const date = (ms: number) => {
+    const w = wall(ms)
+    return { y: w.year, m: w.month, d: w.day }
+  }
+  const cal: Calendar = {
+    date,
+    start(y, m, d) {
+      const utc = Date.UTC(y, m - 1, d)
+      let t = utc - offset(utc)
+      t = utc - offset(t)
+      // A clock change at midnight: midnight is not there, or is there twice. The day starts at its first instant.
+      const same = (x: number) => {
+        const a = date(x)
+        return a.y === y && a.m === m && a.d === d
+      }
+      while (!same(t)) t += 15 * 60_000
+      while (same(t - 15 * 60_000)) t -= 15 * 60_000
+      return t
+    },
+  }
+  calendars.set(zone, cal)
+  return cal
+}
+
+/** The date (`2026-11-13`) of the instant `ms` in `zone` (the device's own zone with none). */
+export function dayIn(ms: number, zone?: string | null): string {
+  const { y, m, d } = calendarOf(zone).date(ms)
+  return `${y}-${pad(m)}-${pad(d)}`
+}
+
 /** The reviews in time order (a hand edit can change the line's order). */
 const inOrder = (reviews: readonly CardReview[]): CardReview[] => [...reviews].sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
 
@@ -127,8 +210,8 @@ function dayOf(bounds: readonly string[], at: string): number {
  * of its steps. So a card that is new that day, or an Up next card that was not due, is never a due card of it. A copy
  * of an ID on the same page counts one time, as the Inbox shows it one time. A vault with review off has no due card.
  */
-export function friendStats(vaults: readonly FriendVault[], now: number): Omit<FriendStats, 'login' | 'name' | 'avatar'> {
-  const steps = friendStatsSteps(vaults, now)
+export function friendStats(vaults: readonly FriendVault[], now: number, zone?: string | null): Omit<FriendStats, 'login' | 'name' | 'avatar'> {
+  const steps = friendStatsSteps(vaults, now, zone)
   for (let step = steps.next(); ; step = steps.next()) if (step.done === true) return step.value
 }
 
@@ -136,8 +219,8 @@ export function friendStats(vaults: readonly FriendVault[], now: number): Omit<F
  * The same count as `friendStats`, in small steps (YAZ-5255): it waits for `slice()` after each card, so the phone
  * gives the UI thread back (`uiSlicer`) and no step comes near a long task (50 ms). Same numbers, same order.
  */
-export async function friendStatsSliced(vaults: readonly FriendVault[], now: number, slice: () => Promise<void>): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
-  const steps = friendStatsSteps(vaults, now)
+export async function friendStatsSliced(vaults: readonly FriendVault[], now: number, slice: () => Promise<void>, zone?: string | null): Promise<Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
+  const steps = friendStatsSteps(vaults, now, zone)
   for (let step = steps.next(); ; step = steps.next()) {
     if (step.done === true) return step.value
     await slice()
@@ -145,10 +228,16 @@ export async function friendStatsSliced(vaults: readonly FriendVault[], now: num
 }
 
 /** The count of `friendStats` as steps: it yields after each card (and after each page in the first scan). */
-function* friendStatsSteps(vaults: readonly FriendVault[], now: number): Generator<void, Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
-  const today = new Date(now)
-  today.setHours(0, 0, 0, 0)
-  const todayEnd = cardTime(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime())
+function* friendStatsSteps(vaults: readonly FriendVault[], now: number, zone?: string | null): Generator<void, Omit<FriendStats, 'login' | 'name' | 'avatar'>> {
+  const cal = calendarOf(zone)
+  /** The date `days` after `t` (pure date arithmetic, no clock). */
+  const plus = (t: { y: number; m: number; d: number }, days: number) => {
+    const u = new Date(Date.UTC(t.y, t.m - 1, t.d + days))
+    return { y: u.getUTCFullYear(), m: u.getUTCMonth() + 1, d: u.getUTCDate() }
+  }
+  const startOf = (t: { y: number; m: number; d: number }) => cal.start(t.y, t.m, t.d)
+  const today = cal.date(now)
+  const todayEnd = cardTime(startOf(plus(today, 1)))
   // The first answer across all vaults, before the end of today: the history starts on its local day.
   let firstAt: string | null = null
   for (const { pages } of vaults)
@@ -156,20 +245,20 @@ function* friendStatsSteps(vaults: readonly FriendVault[], now: number): Generat
       for (const card of page.cards ?? []) for (const r of card.reviews) if (r.at < todayEnd && (firstAt === null || r.at < firstAt)) firstAt = r.at
       yield
     }
-  const start = firstAt === null ? new Date(today) : new Date(Date.parse(firstAt))
-  start.setHours(0, 0, 0, 0)
-  if (start > today) start.setTime(today.getTime())
+  let start = firstAt === null ? today : cal.date(Date.parse(firstAt))
+  if (startOf(start) > startOf(today)) start = today
 
   // Each local day from the first one to today: its date, its start and end (ms), and its start as a card time.
   const keys: string[] = []
   const ends: number[] = []
   const bounds: string[] = []
   const weekStarts: boolean[] = []
-  for (let d = new Date(start); d <= today; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
-    keys.push(dayKey(d))
-    bounds.push(cardTime(d.getTime()))
-    ends.push(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime())
-    weekStarts.push(d.getDay() === 1)
+  const todayStart = startOf(today)
+  for (let d = start; startOf(d) <= todayStart; d = plus(d, 1)) {
+    keys.push(`${d.y}-${pad(d.m)}-${pad(d.d)}`)
+    bounds.push(cardTime(startOf(d)))
+    ends.push(startOf(plus(d, 1)))
+    weekStarts.push(new Date(Date.UTC(d.y, d.m - 1, d.d)).getUTCDay() === 1)
   }
   const n = keys.length
   const last = n - 1

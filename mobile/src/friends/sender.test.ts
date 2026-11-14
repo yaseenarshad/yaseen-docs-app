@@ -3,7 +3,7 @@ import type { CardRecord } from '@shared/cardLine'
 import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, makePointer, parseFriendsIndex, readListFiles, writeFriendsIndex, type WriteOptions } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { PUBLISH_EVERY_MS, reserveFor } from '@shared/friendSend'
-import type { FriendDay } from '@shared/friendStats'
+import { deviceZone, type FriendDay } from '@shared/friendStats'
 import type { IndexRecord } from '@shared/types'
 import { loadAccount, saveAccount } from '../auth/account'
 import { githubClient } from '../github/client'
@@ -96,9 +96,9 @@ async function phone(world: FakeGistWorld, clock: FakeClock, token: string, opti
 }
 
 /** The person's friends files on the fake GitHub: the index, the numbers gist, and `friends` pointers. */
-async function friendsOf(world: FakeGistWorld, token: string, friends: number, groups = 0, vaults = [REPO]) {
+async function friendsOf(world: FakeGistWorld, token: string, friends: number, groups = 0, vaults = [REPO], zone: string | null = deviceZone()) {
   const api = gistsApi(githubClient(token, { fetch: gistsFetch(world).fetch, now: world.now }))
-  const made = await ensureFriendsFiles(api, { vaults, nickname: null }, opts)
+  const made = await ensureFriendsFiles(api, { vaults, nickname: null, zone }, opts)
   if (made.kind !== 'ok') throw new Error('no index')
   const stats = made.handle.index.stats!
   const pointers: string[] = []
@@ -350,6 +350,31 @@ describe('createFriendsSender (YAZ-5082)', () => {
     await p.store.setState('yaseen/private@main', INDEX_STATE, { commit: 'c', records: { 'x.md': { cards: answered(50).map((c) => ({ ...c, id: `P${c.id}` })) } } })
     await p.review(answered(2))
     expect(numbers(world, stats)!.days[0].cards).toBe(6)
+  })
+
+  it('YAZ-5251: the phone counts the days in the HOME time zone of the list, not in its own', async () => {
+    const { clock, world } = setup()
+    const { stats } = await friendsOf(world, PHONE_TOKEN, 1, 0, [REPO], 'Asia/Tokyo')
+    const p = await phone(world, clock, PHONE_TOKEN)
+    // START is 00:00 on 15 November in Tokyo; the two answers are at 23:58 and 23:59 on 14 November there.
+    await p.review(answered(2))
+    const days = numbers(world, stats)!.days
+    expect(days[0]).toMatchObject({ day: '2026-11-15', cards: 0 })
+    expect(days.find((d) => d.day === '2026-11-14')).toMatchObject({ cards: 2 })
+  })
+
+  it('YAZ-5251: a list with no home time zone gets the phone`s own, in one write, once', async () => {
+    const { clock, world } = setup()
+    const { index } = await friendsOf(world, PHONE_TOKEN, 1, 0, [REPO], null)
+    const p = await phone(world, clock, PHONE_TOKEN)
+    const n = patches(world).length
+    await p.review(answered(2))
+    const read = readListFiles(world.owned('yaseen').find((g) => g.id === index)!.files)
+    expect(read.kind === 'ok' && read.value.zone).toBe(deviceZone())
+    expect(patches(world).filter((c) => c.id === index)).toHaveLength(patches(world).slice(0, n).filter((c) => c.id === index).length + 1)
+    clock.advance(PUBLISH_EVERY_MS + 1)
+    await p.review(answered(3))
+    expect(patches(world).filter((c) => c.id === index)).toHaveLength(patches(world).slice(0, n).filter((c) => c.id === index).length + 1)
   })
 
   it('the numbers gist was deleted on GitHub: a new one, each pointer and the index updated, then the send', async () => {

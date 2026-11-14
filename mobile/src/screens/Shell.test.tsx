@@ -347,6 +347,24 @@ describe('Settings: Friends (decision 22; round 13, item 4)', () => {
     expect(h.text()).toMatch(/Name\s*Yas/)
   })
 
+  it('YAZ-5251: "Home time zone" shows this phone`s zone until one is chosen, and a choice is saved', async () => {
+    h = await mount()
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    await h.click('Settings')
+    const own = new Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(h.text()).toContain(`Home time zone${own}`)
+    await h.click('Home time zone')
+    const select = h.host.querySelector('select')!
+    const { act } = await import('react')
+    await act(async () => {
+      select.value = 'Asia/Tokyo'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await h.settle()
+    expect((await h.services.friends.settings()).zone).toBe('Asia/Tokyo')
+    expect(h.text()).toContain('Home time zoneAsia/Tokyo')
+  })
+
   it('a token with no Gists permission: the alert of 3E, with the guide as the way forward', async () => {
     h = await mount()
     await signInWithForm(h, 'yaseen/vault', GOOD)

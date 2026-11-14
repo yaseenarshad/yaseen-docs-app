@@ -1,4 +1,4 @@
-import { parseFriendPointer, parseFriendStats, type FriendPointer, type FriendStats } from './friendStats'
+import { isTimeZone, parseFriendPointer, parseFriendStats, type FriendPointer, type FriendStats } from './friendStats'
 
 /**
  * THE FRIENDS GISTS (YAZ-5082, 4E1; decisions 14 as changed in round 16, 15, 16 and 17 on YAZ-5057). Pure logic that the
@@ -190,6 +190,11 @@ export interface FriendsIndex {
    * friend's link has not been pasted). Each is a pointer like `mine`, so a remove updates it too. Absent: none.
    */
   shared?: { mine: string; at: string }[]
+  /**
+   * YAZ-5251: the person's HOME time zone (IANA, `America/New_York`). Each device counts the days of the numbers in it,
+   * so one answer is on one day. Absent: not set yet (the first device that sends writes its own zone).
+   */
+  zone?: string
 }
 
 const MAX_NAME = 200
@@ -237,6 +242,8 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
         .filter(groupOk)
         .map((g) => ({ name: shownName(g.name), group: g.group as string, mine: g.mine as string, admin: g.admin === true, ...(g.joined === true && { joined: true as const }), ...(typeof g.asked === 'string' && g.asked.length <= 40 && { asked: g.asked }) })),
       ...(o.shared !== undefined && { shared: list(o.shared).filter(sharedOk).map((x) => ({ mine: x.mine as string, at: x.at as string })) }),
+      // A zone this runtime does not know reads as none; the file keeps its own (the head is written with its raw fields).
+      ...(isTimeZone(o.zone) && { zone: o.zone }),
     },
   }
 }
@@ -454,6 +461,7 @@ export function readListFiles(input: Record<string, string | null | undefined>):
     v: 1,
     nickname: legacy.value.nickname,
     vaults: legacy.value.vaults,
+    ...(legacy.value.zone !== undefined && { zone: legacy.value.zone }),
     stats,
     friends: [...friends.values()].filter((f) => !ended(f.mine, 'friend')),
     groups: [...groups.values()].filter((g) => !ended(g.mine, 'group')),
@@ -516,12 +524,12 @@ export function listPatch(handle: IndexHandle, next: FriendsIndex): Record<strin
   const legacyHead = headRaw.v === 1 || handle.files === undefined
   // The head: only when the name or the vaults change, or to move a version 1 head to version 2 (its arrays stay).
   const vaultsChanged = JSON.stringify(next.vaults) !== JSON.stringify(base.vaults)
-  if (legacyHead || next.nickname !== base.nickname || vaultsChanged) {
+  if (legacyHead || next.nickname !== base.nickname || vaultsChanged || next.zone !== base.zone) {
     const headParsed = parseJson(files[INDEX_FILE] ?? '{}')
     const rawHead = isObject(headParsed) ? headParsed : headRaw
     const nickname = next.nickname === shownNickname(rawHead.nickname) && rawHead.nickname !== undefined ? rawHead.nickname : next.nickname
     const keptVaults = (Array.isArray(rawHead.vaults) ? rawHead.vaults : []).filter((v) => typeof v !== 'string')
-    patch[INDEX_FILE] = JSON.stringify({ ...rawHead, v: LIST_VERSION, nickname, vaults: [...next.vaults, ...keptVaults] })
+    patch[INDEX_FILE] = JSON.stringify({ ...rawHead, v: LIST_VERSION, nickname, vaults: [...next.vaults, ...keptVaults], ...(next.zone !== undefined && next.zone !== base.zone && { zone: next.zone }) })
   }
   const endTomb = (mine: string, kinds: EntryKind[]) => {
     if ((handle.state?.tombs ?? []).some((t) => t.mine === mine && kinds.every((k) => t.kinds.includes(k)))) return
@@ -657,6 +665,7 @@ function joinIndex(keep: FriendsIndex, other: FriendsIndex): FriendsIndex {
     nickname: keep.nickname ?? other.nickname,
     vaults: [...new Set([...keep.vaults, ...other.vaults])],
     stats: keep.stats ?? other.stats,
+    ...((keep.zone ?? other.zone) !== undefined && { zone: keep.zone ?? other.zone }),
     friends: [...keep.friends, ...other.friends.filter((f) => !keep.friends.some((k) => k.mine === f.mine))],
     groups: [...keep.groups, ...other.groups.filter((g) => !keep.groups.some((k) => k.mine === g.mine))],
   }
@@ -729,7 +738,7 @@ export type EnsureResult = { kind: 'ok'; handle: IndexHandle } | { kind: 'newer'
  * friend is added; the sender only finds (it never makes files for a person with no friend, decision 22).
  * `seed` fills a NEW list only; a found list keeps its own vaults and nickname.
  */
-export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]; nickname: string | null; numbers?: FriendStats }, opts: WriteOptions): Promise<EnsureResult> {
+export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]; nickname: string | null; numbers?: FriendStats; zone?: string | null }, opts: WriteOptions): Promise<EnsureResult> {
   const now = opts.now ?? Date.now
   const write = writer(opts)
   const numbersText = JSON.stringify(seed.numbers ?? emptyNumbers(now()))
@@ -741,7 +750,7 @@ export async function ensureFriendsFiles(api: GistsApi, seed: { vaults: string[]
     const numbers = await write(() => api.create(opts.describe('numbers'), { [NUMBERS_FILE]: numbersText }))
     const made = await write(() =>
       api.create(opts.describe('index'), {
-        [INDEX_FILE]: JSON.stringify({ v: LIST_VERSION, nickname: seed.nickname, vaults: seed.vaults.map((v) => v.toLowerCase()) }),
+        [INDEX_FILE]: JSON.stringify({ v: LIST_VERSION, nickname: seed.nickname, vaults: seed.vaults.map((v) => v.toLowerCase()), ...(isTimeZone(seed.zone) && { zone: seed.zone }) }),
         [listFile.gen(0, numbers.id)]: JSON.stringify({ v: 1, stats: numbers.id, covers: [] }),
         [listFile.done(numbers.id)]: '{"v":1}',
       }),

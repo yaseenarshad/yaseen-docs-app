@@ -1,4 +1,4 @@
-import { friendStatsSliced, type FriendStats } from '@shared/friendStats'
+import { dayIn, friendStatsSliced, type FriendStats } from '@shared/friendStats'
 import type { VaultStore } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
 import type { SyncEvent } from '../sync/engine'
@@ -26,19 +26,17 @@ export interface HeldEngine {
 export type Counted = Omit<FriendStats, 'login' | 'name' | 'avatar'>
 
 export interface OwnNumbers {
-  /** The count for these vaults (`owner/name`, lower case), or null when the phone does not hold all of them. */
-  counted(repos: readonly string[], now: number): Promise<Counted | null>
+  /**
+   * The count for these vaults (`owner/name`, lower case), or null when the phone does not hold all of them. `zone`
+   * (YAZ-5251): the home time zone of the days; none is the phone's own zone.
+   */
+  counted(repos: readonly string[], now: number, zone?: string | null): Promise<Counted | null>
   /** The data changed: the next read counts again. */
   invalidate(): void
   /** Counts again after each sync change of the engine (3B). Returns the stop. */
   follow(engine: HeldEngine): () => void
 }
 
-const pad = (n: number) => String(n).padStart(2, '0')
-const localDay = (t: number) => {
-  const d = new Date(t)
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-}
 
 export function createOwnNumbers(store: VaultStore, options: { slicer?: () => () => Promise<void>; onCount?: () => void } = {}): OwnNumbers {
   let generation = 0
@@ -53,16 +51,17 @@ export function createOwnNumbers(store: VaultStore, options: { slicer?: () => ()
   const held = (vault: string) => (trustHeld && engine !== null && engine.state?.().vault === vault ? engine.index?.() ?? null : null)
   let kept: { key: string; value: Promise<Counted | null> } | null = null
   const own: OwnNumbers = {
-    counted(repos, now) {
+    counted(repos, now, zone) {
       // YAZ-5295: every input of the count is in the key: the vaults that count, the open vault and the version of its
       // index (the engine's), the local day AND the zone (a zone change moves the day borders on the same date), and
-      // the generation (each data change of any vault that counts: a `changed` event, a vault switch, and the end of
+      // the generation (YAZ-5251: the home zone and its day are in the key too) (each data change of any vault that counts: a `changed` event, a vault switch, and the end of
       // the pass of a vault that was open before).
       const open = engine?.state?.().vault ?? null
       const version = open === null ? '' : engine?.index?.()?.commit ?? ''
       const key = [
         generation,
-        localDay(now),
+        dayIn(now, zone),
+        zone ?? '',
         new Date(now).getTimezoneOffset(),
         open,
         version,
@@ -73,7 +72,7 @@ export function createOwnNumbers(store: VaultStore, options: { slicer?: () => ()
         const vaults = await countedVaults(store, repos, held)
         if (vaults === null) return null
         options.onCount?.()
-        return friendStatsSliced(vaults, now, (options.slicer ?? (() => uiSlicer()))())
+        return friendStatsSliced(vaults, now, (options.slicer ?? (() => uiSlicer()))(), zone)
       })()
       kept = { key, value }
       // A failed count is not kept: the next read tries again.

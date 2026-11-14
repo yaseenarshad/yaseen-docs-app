@@ -74,6 +74,17 @@ describe('my own numbers (YAZ-5255)', () => {
     expect(await own.counted(['other/vault'], NOW)).toBeNull()
   })
 
+  it('YAZ-5251: the home time zone is part of the kept count: another zone counts again, in that zone', async () => {
+    const { store } = await phone(records(2, 5, 3))
+    let counts = 0
+    const own = createOwnNumbers(store, { onCount: () => counts++ })
+    const ny = await own.counted(['demo/vault'], NOW, 'America/New_York')
+    expect(await own.counted(['demo/vault'], NOW, 'America/New_York')).toBe(ny)
+    const tokyo = await own.counted(['demo/vault'], NOW, 'Asia/Tokyo')
+    expect(counts).toBe(2)
+    expect(tokyo).toEqual(friendStats([{ pages: Object.values(records(2, 5, 3)) as FriendVault['pages'], settings: DEFAULT_REVIEW_SETTINGS }], NOW, 'Asia/Tokyo'))
+  })
+
   it('20,000 cards with 10 answers each: no step holds the UI thread for 50 ms; the same numbers as friendStats', async () => {
     const index = records(5000, 4, 10)
     const { store } = await phone(index)
