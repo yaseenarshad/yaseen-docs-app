@@ -14,7 +14,7 @@ A card lives in one of three places: **by itself** in a card file, **inside a pa
 
 ## How a card is written
 
-- The **first line** is the card's title. The Inbox, search and links show it.
+- The **first line** is the card's title. The Inbox, search and links show it. It is plain text: to keep it off the front, hide it as [[Titles]] says, never with `{{ }}`.
 - `{{word}}` hides a word or a phrase. A line with only `---` starts a new side. `***` divides sections on one side.
 - A picture is `![alt text](path)`. A link is `[[Name]]` or `[[ID]]`.
 
@@ -47,7 +47,7 @@ The app writes the line under the block, with the card's ID and its reviews. Nev
 - Check the cards of a page: `yaseendocs card check <page.md>`
 - Print this skill: `yaseendocs card guide`
 
-`--title` is the card's first line, and `--body` is the rest. `--body -` reads the body from standard input.
+`--title` is the card's first line, and `--body` is the rest. `--body -` reads the body from standard input. `--hide-title` hides the title on the front.
 
 ## The pages
 

@@ -27,14 +27,25 @@ A title is shown when it is a cue. It is hidden when it would give the answer aw
 - **Shown:** the title names the task, and the answer is something else. "HTTP" on an acronym card. "Force quit a frozen app" on a procedure card.
 - **Hidden:** the title is the answer. A vocabulary card titled "Terse" must not show "Terse" on the front.
 
-To hide a title, put the whole first line in one hidden word:
+The title is always a plain first line. Hiding it is an option of the card, not part of its text. Do not put the title in `{{ }}`.
 
-```markdown
-{{Compound interest}}
+How to hide it:
 
-Interest paid on both the original sum and the interest already earned is {{compound interest}}.
+- **With the command:** add `--hide-title` to `yaseendocs card add …` or `yaseendocs card new …`.
+- **In a file you write by hand:** put the line `<!-- card: notitle -->` directly below the card's closing fence. The app adds the ID and keeps the option.
+- **In the app:** the card's ⋯ menu › "Title on the front" › Hide.
+
+A card inside a page, written by hand, with its title hidden:
+
+````markdown
+```card
+Compound interest
+
+A savings account pays 5% a year and adds the interest to the balance. Next year, the 5% is paid on the larger sum. This is {{compound interest}}.
 ```
+<!-- card: notitle -->
+````
 
-The title then hides with the other answers and shows when you reveal them. Lists and links still show the plain name. In the app, the card's ⋯ menu › "Title on the front" › Hide also keeps a title off the front.
+In review, the front shows without the title. The title shows once the whole card is shown. Lists and links always show it.
 
 **Defaults:** shown for acronym and procedure. Hidden for concept, comparison, vocabulary, book, person, fact, quote, story, and script and sounds. Change the default when a card calls for it.

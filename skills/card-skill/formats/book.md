@@ -2,11 +2,11 @@ Placeholder text. Yaseen's version replaces this page.
 
 # Book
 
-Use it to recognize a book, recall who wrote it, and know why it matters. An idea from the book gets its own [[concept]] or [[quote]] card. **Title: hidden.** The title is the book's name, and the name is the answer.
+Use it to recognize a book, recall who wrote it, and know why it matters. An idea from the book gets its own [[concept]] or [[quote]] card. **Title: hidden.** The title is the book's name, and the name is the answer. Hide it with `--hide-title`, not with `{{ }}` (see [[Titles]]).
 
 ## Skeleton
 
-- Title: `<Title> by <Author> (Book)`, hidden.
+- Title: `<Title> by <Author> (Book)`. Hide it on the front.
 - Front: a question with one or two clear clues: the subject, the main argument or the form.
 - Back: the author and the subject, then a short "Why remember it" section.
 - To test the author instead, name the book in the question and hide the author.
@@ -14,7 +14,7 @@ Use it to recognize a book, recall who wrote it, and know why it matters. An ide
 ## Example
 
 ```markdown
-{{On the Origin of Species by Charles Darwin (Book)}}
+On the Origin of Species by Charles Darwin (Book)
 
 Which 1859 book argued that living things change over generations by natural selection?
 ---

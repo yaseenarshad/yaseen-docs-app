@@ -2,11 +2,11 @@ Placeholder text. Yaseen's version replaces this page.
 
 # Concept
 
-Use it to learn an idea, a principle, a term or a tool: what it is and how it is used. **Title: hidden.** The title is the term, and the term is the answer.
+Use it to learn an idea, a principle, a term or a tool: what it is and how it is used. **Title: hidden.** The title is the term, and the term is the answer. Hide it with `--hide-title`, not with `{{ }}` (see [[Titles]]).
 
 ## Skeleton
 
-- Title: the term, hidden.
+- Title: the term. Hide it on the front.
 - Front, part 1: a concrete situation that shows it in use, with the term hidden.
 - Front, part 2: a one-sentence definition, with the meaning visible and the term hidden again.
 - Back: the term visible and its core meaning hidden. Then notes, mechanisms or a picture as needed.
@@ -15,7 +15,7 @@ Use it to learn an idea, a principle, a term or a tool: what it is and how it is
 ## Example
 
 ```markdown
-{{Compound interest}}
+Compound interest
 
 A savings account pays 5% a year and adds the interest to the balance. Next year, the 5% is paid on the larger sum. This is {{compound interest}}.
 

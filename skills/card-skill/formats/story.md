@@ -2,7 +2,7 @@ Placeholder text. Yaseen's version replaces this page.
 
 # Story
 
-Use it to recall a story and tell it in your own words. A story has people, and something happens to them. An argument or a worked example is not a story. **Title: hidden.** The title is `Story: <Person> - <cue>`.
+Use it to recall a story and tell it in your own words. A story has people, and something happens to them. An argument or a worked example is not a story. **Title: hidden.** The title is `Story: <Person> - <cue>`. Hide it with `--hide-title`, not with `{{ }}` (see [[Titles]]).
 
 ## Skeleton
 
@@ -14,7 +14,7 @@ Use it to recall a story and tell it in your own words. A story has people, and 
 ## Example
 
 ```markdown
-{{Story: Archimedes - The crown and the bath}}
+Story: Archimedes - The crown and the bath
 
 A friend says their best ideas come when they stop working on the problem. Which story fits, about a gold crown?
 ---

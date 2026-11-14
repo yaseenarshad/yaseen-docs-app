@@ -2,7 +2,7 @@ Placeholder text. Yaseen's version replaces this page.
 
 # Script and sounds
 
-Use it to learn to read a new alphabet: the sound of a letter, two letters that look alike, or a word to read aloud. **Title: hidden.** The title names the letter, and the name is part of the answer.
+Use it to learn to read a new alphabet: the sound of a letter, two letters that look alike, or a word to read aloud. **Title: hidden.** The title names the letter, and the name is part of the answer. Hide it with `--hide-title`, not with `{{ }}` (see [[Titles]]).
 
 ## Skeleton
 
@@ -14,7 +14,7 @@ Use it to learn to read a new alphabet: the sound of a letter, two letters that 
 ## Example
 
 ```markdown
-{{Greek letter lambda}}
+Greek letter lambda
 
 The Greek letter λ makes the sound {{l}}, as in "lamp".
 ---

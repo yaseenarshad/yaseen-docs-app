@@ -2,7 +2,7 @@ Placeholder text. Yaseen's version replaces this page.
 
 # Fact
 
-Use it for an organization, a date, a place or another single fact. A person uses [[person]]; a book uses [[book]]. **Title: hidden** when the title would give the answer away. Shown when it is only a cue.
+Use it for an organization, a date, a place or another single fact. A person uses [[person]]; a book uses [[book]]. **Title: hidden** when the title would give the answer away. Shown when it is only a cue. Hide it with `--hide-title`, not with `{{ }}` (see [[Titles]]).
 
 ## Skeleton
 
@@ -14,7 +14,7 @@ Use it for an organization, a date, a place or another single fact. A person use
 ## Example
 
 ```markdown
-{{World Health Organization}}
+World Health Organization
 
 Which United Nations agency declared COVID-19 a pandemic in March 2020?
 
