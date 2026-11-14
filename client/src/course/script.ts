@@ -10,6 +10,13 @@
  * adds links and scheduled agents to the gardener (now 11). A clip whose words changed keeps its id; a new clip takes
  * the next free number. The gardener and the last chapter moved from 10 and 11 to 11 and 12, so their ids did too.
  *
+ * Version 3, round 2 (written by hand after Yaseen's notes on YAZ-5148): a card is the hub of one idea, not a line or two.
+ * Chapter 2 shows a real card and its parts (a small front to recall, a back with room to understand, links at the
+ * bottom). Chapter 7 teaches the umbrella card and its branches. Chapters 10 and 11 carry the same tree on: links join
+ * branches across trees, and the gardener grows and prunes them. One example runs through all four: protein, carbs and
+ * fat. The shape of the example card follows Yaseen's own cards (a front of a sentence or two with one or two hidden
+ * parts; a back in sections; each link with a few words on why).
+ *
  * Yaseen approves each chapter's words before its voice is made (issue 6D). `skills/card-skill/Course transcript.md` is
  * made from this file: run `UPDATE_COURSE_TRANSCRIPT=1 npx vitest run client/src/course/script.test.ts` after a change.
  */
@@ -66,38 +73,56 @@ export const COURSE: CourseChapter[] = [
       // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2); shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9.
       { id: 'c1-12', text: 'The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.' },
       // The chapter list lights up, 1 to 12.
-      { id: 'c1-13', text: 'This course takes about twenty-three minutes, in twelve short chapters.' },
+      { id: 'c1-13', text: 'This course takes about twenty-five minutes, in twelve short chapters.' },
       // The "Try it in the app" button, with "Optional" beside it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
-      { id: 'c1-15', text: 'Review just before you forget, and each memory lasts longer. Next: why a card is the right shape, and your first one.' },
+      { id: 'c1-15', text: 'Review just before you forget, and each memory lasts longer. Next: what a card really is, and your first one.' },
     ],
   },
   {
     id: 'first-card',
-    title: 'The card: one idea to recall',
+    title: 'The card: the hub of an idea',
     clips: [
       // The paper index card from chapter 1, and the calendar behind it.
-      { id: 'c2-01', text: 'Quick recap: each thing you learn goes on a card. Now, what a card holds, and how to make one.' },
-      // One card with one idea on it; later, a line or two more joins it, and it stays one card.
-      { id: 'c2-02', text: 'A good card holds one idea you want to recall. It can start light, and grow as you learn.' },
-      // Cards slide together in new groups, like pieces that fit many ways.
-      { id: 'c2-03', text: 'Cards like this can be mixed and matched, wherever you need them.' },
-      // The name "Piotr Wozniak" and "1999"; a cluttered card turns into a clear, simple one.
+      { id: 'c2-01', text: 'Quick recap: each thing you learn goes on a card. Now, what a card really is, and how to make one.' },
+      // The small paper index card with one short line of handwriting on it.
+      { id: 'c2-02', text: 'When most people hear "card", they picture a line or two on a small piece of paper.' },
+      // The paper card becomes a dot in the middle of the stage; short lines reach out from it, like spokes. The word "Hub".
+      { id: 'c2-03', text: 'Think of it another way. A card is the hub of one idea: the centre where what you know about it comes together.' },
+      // A REAL CARD fills the stage, in the app's own look. Title: "Protein, carbs and fat". The front lights up:
+      //   "The three things food is mostly made of are {{protein, carbs and fat}}."
+      //   "Your body builds and repairs with {{protein}}, and gets its quick energy from {{carbs}}."
+      // The hidden parts show as blanks.
+      { id: 'c2-04', text: 'Here is a real one. The front asks you to recall one thing, with the answer hidden.' },
+      // The same card turns to its back; three parts light up in turn, each under a thin line:
+      //   "Protein builds and repairs. Carbs are quick energy. Fat is slow energy, stored."
+      //   EXAMPLE: "An egg is mostly protein and fat. Bread is mostly carbs."
+      //   MEMORY HOOK: "Protein is the bricks. Carbs are the kindling. Fat is the logs."
+      { id: 'c2-05', text: 'The back is where you understand it: the idea in plain words, an example, a hook to remember it by.' },
+      // The bottom of the back: CONNECTIONS, with one link pill and a few grey words after it.
+      { id: 'c2-22', text: 'And at the bottom, links to the cards it connects to. You will make those in chapter 10.' },
+      // Three sizes side by side: one bare line, the real card, a full page of text. The real card gets the check.
+      { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. It is small to recall, with room to understand.' },
+      // The name "Piotr Wozniak" and "1999"; on the real card, only the front's blanks glow.
       // SOURCE: Wozniak 1999, "Effective learning: Twenty rules of formulating knowledge", rule 4, the minimum information principle (supermemo.com).
-      { id: 'c2-04', text: 'Piotr Wozniak, who built SuperMemo, made it a rule: keep each card simple. A simple card is easier to remember.' },
-      // All the cards together form one growing set, labelled "Card base".
-      { id: 'c2-05', text: 'All your cards together are your card base. It grows one card at a time.' },
+      { id: 'c2-24', text: 'Piotr Wozniak, who built SuperMemo, made it a rule: keep what you recall simple. A simple question is easier to remember.' },
+      // The real card with a short back; a second and a third part join the back over time. It stays one card.
+      { id: 'c2-25', text: 'A card is never finished. It starts light, and it grows as you learn more.' },
+      // All the cards together form one growing set, labelled "Card base"; cards slide together in new groups, like pieces that fit many ways.
+      { id: 'c2-26', text: 'All your cards together are your card base. Each card is one idea, so cards can be mixed and matched, wherever you need them.' },
       // A blank card in the middle of the stage.
-      { id: 'c2-06', text: 'Think of something you learned this week.' },
-      // An empty card with a blinking caret. WAITS: the person types a fact.
-      { id: 'c2-07', text: 'Type one thing you want to remember. One short sentence is best.' },
-      // The fact's words become buttons. WAITS: the person taps the word to hide.
+      { id: 'c2-06', text: 'Your turn. Think of something you learned this week.' },
+      // An empty card with a blinking caret. WAITS: the person types a sentence or two.
+      { id: 'c2-07', text: 'Type the one thing you want to recall about it, in a sentence or two.' },
+      // The words become buttons. WAITS: the person taps the word to hide.
       { id: 'c2-08', text: 'Now tap the word you want to hide.' },
-      // The word turns into a blank; the card takes its frame.
-      { id: 'c2-09', text: "That's a card. The hidden word is the part you will try to recall." },
-      // The card, front only. WAITS: the person taps the card to show the word.
-      { id: 'c2-10', text: 'Tap it to check yourself.' },
+      // The word turns into a blank; the card takes its frame; the label "Front".
+      { id: 'c2-09', text: "That's the front. The hidden word is the part you will try to recall." },
+      // A line labelled "Side 2" appears under the front, with a caret. WAITS: the person types a line (or skips).
+      { id: 'c2-28', text: 'Now the back. In your own words, add a line that explains it, or an example.' },
+      // The card, front only. WAITS: the person taps the card to show the word, then the back.
+      { id: 'c2-10', text: 'Tap the card to check yourself.' },
       // Forgot and Remembered under the card. WAITS: the person picks one.
       { id: 'c2-11', text: 'Did you remember it?' },
       // The answer's quiet line under the card.
@@ -106,13 +131,16 @@ export const COURSE: CourseChapter[] = [
       { id: 'c2-13', text: 'Your card is now a real file, in a folder called Course Cards, at the top of your vault.' },
       // A folder's right-click menu, "New card"; the name box in the sidebar; a title is typed, Enter; the card's tab opens in Edit card, empty.
       // APP: client/src/sidebar/menuSections.ts (`newCard`, "New card"), client/src/sidebar/CreateInline.tsx (Enter), client/src/review/newCardFile.ts (the typed name is the title; the tab opens in Edit card).
-      { id: 'c2-15', text: 'In the app, right-click a folder and choose New card. Type the title, press Enter, then the fact.' },
+      { id: 'c2-15', text: 'In the app, right-click a folder and choose New card. Type the title, press Enter, then the front.' },
       // A word is selected; the toolbar shows over it; the braces button "Hide word" is clicked; then the key row "Cmd + L hide word".
       // APP: client/src/editor/card/cardEditor.ts (`hideWordButton`: "Hide word", ⌘L, right after H1 H2 H3 T), client/src/editor/card/cardBlockView.ts (`CARD_EDIT_KEYS`, written "Cmd + L" by client/src/keys/keyWords.ts).
       { id: 'c2-16', text: 'To hide a word, select it, and click Hide word in the toolbar. The key is Command L.' },
       // "/" opens the menu; "New side" is chosen; a line labelled "Side 2" splits the card; then the key row "Cmd + Shift + Enter new side".
       // APP: client/src/editor/card/cardEditor.ts (`newSideSlashRow`: "New side", ⌘⇧↵), client/src/editor/card/card.css ("Side 2" label, YAZ-5103). The toolbar has no side button.
-      { id: 'c2-17', text: 'For a back side, type slash, and choose New side. The key is Command Shift Enter.' },
+      { id: 'c2-17', text: 'For the back, type slash, and choose New side. The key is Command Shift Enter.' },
+      // On the back, "***" is typed on an empty line; it turns into a thin line; "EXAMPLE" is typed under it.
+      // APP: client/src/editor/card/cardEditor.ts (`***` on an empty line stays a line, an hr; `---` is a new side).
+      { id: 'c2-29', text: 'To split the back into parts, type three stars on an empty line. They turn into a divider.' },
       // Esc, or the Done button in the card's head; the card shows again, saved.
       // APP: client/src/editor/card/cardBlockView.ts (the edit button reads "Done" while editing; "Cmd + Enter / Esc Done").
       { id: 'c2-20', text: 'Press Escape, or click Done, and the card saves.' },
@@ -124,15 +152,16 @@ export const COURSE: CourseChapter[] = [
       { id: 'c2-21', text: "If the title gives the answer away, set Title on the front to Hide, in the card's menu." },
       // The "Try it in the app" button and "Next chapter".
       { id: 'c2-18', text: 'To make one in the real app now, choose Try it in the app.' },
-      // The sidebar's Inbox row glows softly.
-      { id: 'c2-19', text: 'One card, one idea to recall. Next: the place your cards come back to, each day.' },
+      // The real card as a hub, with its spokes; then the sidebar's Inbox row glows softly.
+      { id: 'c2-19', text: 'A card is the hub of one idea: small to recall, with room to grow. Next: the place your cards come back to, each day.' },
     ],
     tryIt: [
       { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } },
       { target: 'new-card', say: 'Choose New card.', done: 'click' },
       { target: 'new-card-name', say: 'Type a title, and press Enter.', done: { event: 'card-file-created' } },
-      { target: 'card-editor', say: 'Now type one fact.', done: { event: 'card-text-changed' } },
+      { target: 'card-editor', say: 'Now type the front: the one thing you want to recall, in a sentence or two.', done: { event: 'card-text-changed' } },
       { target: 'card-editor', say: 'Select one word. In the toolbar above it, click Hide word.', done: { event: 'card-word-hidden' } },
+      { target: 'card-editor', say: 'Type slash, and choose New side. Then add a line that explains it.', done: { event: 'card-side-added' } },
       { target: 'card-done', say: 'Press Escape, or click Done, to save your card.', done: { event: 'card-edit-done' } },
     ],
   },
@@ -320,18 +349,26 @@ export const COURSE: CourseChapter[] = [
       { id: 'c7-02', text: 'Many people paste a whole page of text into one card. Then they review it, and nothing sticks.' },
       // The wall of text, with a question mark over it.
       { id: 'c7-03', text: 'A wall of text is not a card. It asks you to recall everything at once, so you recall nothing well.' },
+      // The other extreme: a card with one bare line and an empty back.
+      { id: 'c7-20', text: 'A single bare line is the other extreme. You may recall the words, and still not understand the idea.' },
       // One sentence in the wall lights up.
-      { id: 'c7-04', text: 'Before you make a card, ask one question. What is the one thing I want to recall?' },
-      // One card as a dot; thin lines grow from it to other dots: a small tree. The words "Node: a point others connect to".
-      { id: 'c7-05', text: 'Then think of your cards as nodes on a tree. A node is a point that others connect to.' },
-      // One card: "Protein, carbs and fat: how they differ", three short lines.
-      { id: 'c7-06', text: 'At the start, one light card is enough: say, how protein, carbs and fat differ.' },
-      // Later, a second card, "Protein", grows from the first; a line joins them.
-      { id: 'c7-07', text: 'As you learn more about protein, it gets its own card, linked back to the first.' },
-      // The first card stays at the top, the overview; the tree has one more branch.
-      { id: 'c7-18', text: 'The first card stays the overview. The tree grows as your understanding grows.' },
-      // A small tree, not a forest: one card, then a second when it is needed.
-      { id: 'c7-19', text: 'So start light. Add a card when you know enough to need one.' },
+      { id: 'c7-04', text: 'So before you make a card, ask one question. What is the one thing I want to recall?' },
+      // The lit sentence moves to a card's front and gets a blank; the lines that explain it move to the back.
+      { id: 'c7-21', text: 'That goes on the front, with the answer hidden. What helps you understand it goes on the back.' },
+      // The real card of chapter 2: the front glows with "Recall"; the back glows with "Read".
+      { id: 'c7-22', text: 'You recall the front, and you read the back. That is how a card stays small to recall, with room to understand.' },
+      // One card alone, with an umbrella drawn over it: "Protein, carbs and fat".
+      { id: 'c7-05', text: 'Now, how cards grow. Start with an umbrella: one card that covers a whole topic.' },
+      // The real card of chapter 2 again: "Protein, carbs and fat", light, three short lines on its back.
+      { id: 'c7-06', text: 'Say, how protein, carbs and fat differ. One light card is enough to start.' },
+      // Lines about protein pile up on the umbrella card's back until they no longer fit; they lift off into a new card, "Protein".
+      { id: 'c7-07', text: 'As you learn more about protein, it outgrows that card. So protein gets a card of its own.' },
+      // A line joins the two cards, with a pill at each end; the umbrella card keeps one line about protein.
+      { id: 'c7-18', text: 'The two link to each other. The umbrella stays the overview, and protein becomes a branch.' },
+      // More branches: "Carbs", then "Fibre" from it. A small tree, the umbrella at its root. The words "Node: a point where branches meet".
+      { id: 'c7-23', text: 'Over time you get a tree: the umbrella, its branches, and smaller branches from those. Each card is a node, a point where branches meet.' },
+      // The tree with only two cards on day one; more appear as a calendar runs.
+      { id: 'c7-19', text: 'The tree grows as your understanding grows. So start light, and do not build the whole tree on day one.' },
       // Card A: "What does {{DNS}} stand for?" Card B: "What does DNS stand for?" with the back "{{Domain Name System}}". WAITS: the person picks one.
       { id: 'c7-08', text: 'Your turn. Which of these two cards is better?' },
       // Card B gets the check; card A's blank shows it hides the subject.
@@ -351,8 +388,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c7-15', text: 'Name each card after the idea, not after where you found it.' },
       // Four small cards: a word, a person, a process, a quote; then the card skill's Formats folder.
       { id: 'c7-16', text: 'Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.' },
-      // The four small cards side by side; then a terminal window with an agent in it.
-      { id: 'c7-17', text: 'One thing to recall. Hide the answer, not the clue. Next, a tool that can help, and hurt.' },
+      // The small tree of cards; then a terminal window with an agent in it.
+      { id: 'c7-17', text: 'One thing to recall, room to understand, and a tree that grows with you. Next, a tool that can help, and hurt.' },
     ],
   },
   {
@@ -439,8 +476,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c10-03', text: 'So when you make a card, you ask: where does this go?' },
       // All the cards fall into one open box, "Cards"; nothing is sorted.
       { id: 'c10-04', text: 'Cards do not need that. They can all live in one place, or one folder at most.' },
-      // A line goes from one card to another; the words "Link: points to another card"; the protein card of chapter 7 and its line back.
-      { id: 'c10-05', text: 'Links hold them together. A link points to another card, like the protein card in chapter 7.' },
+      // A line goes from one card to another; the words "Link: points to another card"; the protein card of chapter 7 and its line back to the umbrella.
+      { id: 'c10-05', text: 'Links hold them together. You have seen one: the protein card, linked to its umbrella.' },
       // A head in profile; inside it, ideas as dots with lines between them, not boxes.
       { id: 'c10-06', text: 'Your mind does not work like folders. It works by association: one idea calls up another.' },
       // One dot lights up; the light spreads along its lines to the dots linked to it.
@@ -449,31 +486,37 @@ export const COURSE: CourseChapter[] = [
       // A new dot joins the web where it fits, next to dots already there; it stays lit.
       // SOURCE: van Kesteren, Ruiter, Fernández & Henson 2012, "How schema and novelty augment memory formation", Trends in Neurosciences 35(4); Brod, Werkle-Bergner & Shing 2013, "The influence of prior knowledge on memory", Frontiers in Behavioral Neuroscience 7.
       { id: 'c10-08', text: 'And researchers found that new facts are usually remembered better when they fit with something you already know.' },
-      // A card "Bees" goes into a folder "Animals".
-      { id: 'c10-09', text: 'An easy example. Your card on bees sits in a folder called Animals.' },
-      // A card "How flowers make seeds" goes into a folder "Plants".
-      { id: 'c10-10', text: 'Your card on how flowers make seeds sits in Plants.' },
-      // A bee flies from flower to flower with pollen on its legs.
-      { id: 'c10-11', text: 'They belong together: bees carry pollen from flower to flower, and many flowers need it for seeds.' },
-      // The two folders stay shut, each card inside its own; then a line runs from the bee card straight to the flower card.
+      // The food tree of chapter 7 on the left; a second small tree on the right, "Exercise". A dotted line wants to cross between them.
+      { id: 'c10-23', text: 'A tree has branches. But ideas also connect across trees, and a folder cannot show that.' },
+      // The card "Protein" goes into a folder "Food".
+      { id: 'c10-09', text: 'An easy example. Your protein card sits in a folder called Food.' },
+      // A card "How muscle grows" goes into a folder "Exercise".
+      { id: 'c10-10', text: 'Your card on how muscle grows sits in Exercise.' },
+      // An arm lifts a weight; small protein blocks move into the muscle.
+      { id: 'c10-11', text: 'They belong together: your body builds muscle out of protein.' },
+      // The two folders stay shut, each card inside its own; then a line runs from the protein card straight to the muscle card.
       { id: 'c10-12', text: 'Each card has one folder, so the folders keep them apart. A link joins them.' },
       // Two questions side by side: "Folders: where does this go?" and "Links: what does this connect to?"
       { id: 'c10-13', text: 'Folders ask: where does this go? Links ask: what does this connect to?' },
       // A card links to a card file, a card in a page, and a page.
       // APP: docs/CONTRACTS.md "Links to a card" (YAZ-5030); client/src/links/completion.ts (`cardLinkCandidates`: cards in files and in pages, after the pages).
       { id: 'c10-14', text: 'A card can link to any card, wherever it lives, and to any page.' },
-      // Edit card on a Course Card; the caret at the end of a line; "[[" and "bee" are typed; the list opens.
+      // Edit card on the protein card; the caret at the end of a line; "[[" and "mus" are typed; the list opens.
       // APP: client/src/editor/card/cardEditorFeatures.ts (pills and the `[[` picker are on in Edit card), client/src/editor/wikilink/wikilinkPicker.ts.
       { id: 'c10-15', text: "To link, edit the card. Type two square brackets, then a few letters of the other card's title." },
       // The list: pages, then cards with the card icon; the card row is clicked.
       // APP: client/src/links/completion.ts (card rows have the card icon and insert `[[ID]]`). Not on this branch: YAZ-5134's fix (2e1182e51), so a card file shows two rows here until it merges.
       { id: 'c10-16', text: 'A list shows what matches. Click the one with the card icon.' },
-      // `[[DEMO-12]]` turns into a pill: the card icon, "How flowers make seeds", and the ID small and grey.
+      // `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
       // APP: docs/CONTRACTS.md "Links to a card": the pill shows the title, then the ID small and grey, with the card icon (`wikilink--card`).
       { id: 'c10-17', text: "The link turns into a pill: the other card's title, with its ID small beside it." },
-      // A click on the pill; the flower card opens in the card window; under it, "Linked mentions (1)" lists the bee card.
+      // After the pill, a few words are typed: "muscle is built from protein". The pill and its reason sit on one line.
+      { id: 'c10-24', text: 'After the pill, add a few words on why the two connect. The reason is worth as much as the link.' },
+      // A click on the pill; the muscle card opens in the card window; under it, "Linked mentions (1)" lists the protein card.
       // APP: client/src/editor/createCrepe.ts (a card pill's plain click opens the card window), client/src/review/cardPane.tsx ("Linked mentions (n)"), shared/cardLinks.ts (`cardBacklinks`), shared/fences.ts (a card's text counts).
       { id: 'c10-18', text: 'Click the pill, and that card opens. Under it, Linked mentions lists what links to it.' },
+      // One card with many lines coming in to it, "Linked mentions (12)"; it glows as a hub, like the dot of chapter 2.
+      { id: 'c10-25', text: 'Some cards end up with many links pointing to them. Those are your hubs: the ideas the rest leans on.' },
       // In Edit card, the caret after the pill; Backspace; the pill goes.
       // APP: client/src/editor/wikilink/idLinkCaret.ts (Backspace removes the whole link), client/src/editor/linkMenu.ts ("Remove link" on a right-click).
       { id: 'c10-19', text: 'To remove a link, edit the card, and delete the pill like a word.' },
@@ -481,7 +524,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c10-20', text: 'Your card base is your knowledge base. Links make it a base, not a pile.' },
       // The "Try it in the app" button and "Next chapter".
       { id: 'c10-21', text: 'To link two of your Course Cards, choose Try it in the app.' },
-      // The bee card and the flower card with their line; then the garden from chapter 9.
+      // The protein card and the muscle card with their line; then the garden from chapter 9.
       { id: 'c10-22', text: 'Ask what a card connects to, not where it goes. Next: tending your cards and links.' },
     ],
     tryIt: [
@@ -489,6 +532,7 @@ export const COURSE: CourseChapter[] = [
       { target: 'card-edit', say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } },
       { target: 'card-editor', say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' } },
       { target: 'link-picker', say: 'Click the row with the card icon.', done: { event: 'card-link-added' } },
+      { target: 'card-editor', say: 'After the link, type a few words on why the two connect.', done: { event: 'card-text-changed' } },
       { target: 'card-done', say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } },
       { target: 'card-link-pill', say: 'Click the pill. The other card opens, and Linked mentions lists your first card.', done: 'click' },
     ],
@@ -497,8 +541,8 @@ export const COURSE: CourseChapter[] = [
     id: 'care',
     title: 'Be a gardener',
     clips: [
-      // The bee card and the flower card with their link; then the Inbox with a card, and the shears icon from chapter 9.
-      { id: 'c11-01', text: 'Your cards connect through links. Now, how to tend them as you review.' },
+      // The trees of cards with their links; then the Inbox with a card, and the shears icon from chapter 9.
+      { id: 'c11-01', text: 'Your cards form trees, joined by links. Now, how to tend them as you review.' },
       // A garden: a gardener clears weeds and prunes a branch; the garden fills out.
       { id: 'c11-02', text: 'Think of a gardener. A garden does well when someone clears it and prunes it.' },
       // A card is reworded; a small glow over it.
@@ -512,7 +556,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c11-06', text: 'Or, since each card is a file, tell your agent what to change, and keep reviewing.' },
       // A clock; an agent's window wakes on its own each morning and reads the card base. Not the app: the person's own agent tool.
       { id: 'c11-15', text: 'Some agent tools can run by themselves at set times: a scheduled agent.' },
-      // The agent writes a short list: "Make this clue clearer", "Link Bees to How flowers make seeds". Nothing in the card base changes.
+      // The agent writes a short list: "Make this clue clearer", "Link Protein to How muscle grows". Nothing in the card base changes.
       { id: 'c11-16', text: 'It can read your card base, and propose fixes, or new links.' },
       // The person reads the list, approves one change, and skips another. Only the approved one lands.
       { id: 'c11-17', text: 'But you approve each change by hand. An agent never changes your card base on its own.' },
@@ -522,8 +566,10 @@ export const COURSE: CourseChapter[] = [
       { id: 'c11-08', text: 'To stop reviewing a card, open its menu and choose Archive card. It keeps its history.' },
       // The Inbox's All cards menu, the Archived row, and Unarchive.
       { id: 'c11-09', text: 'Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.' },
+      // A card's back has grown long on one part; that part lifts off into its own card, and a line joins the two.
+      { id: 'c11-20', text: 'Growing is tending too. When one part of a card keeps growing, give it its own card, and link the two.' },
       // Two cards side by side; a line is drawn between them.
-      { id: 'c11-18', text: 'Tend the links too. When you notice two cards belong together, link them.' },
+      { id: 'c11-18', text: 'Tend the links as well. When you notice two cards belong together, link them.' },
       // A link between two cards that no longer fit is cut, as a branch is.
       { id: 'c11-19', text: 'When a link no longer helps, delete it like a word.' },
       // ⋯ › Put at top of Inbox; the chip "Up next".
@@ -537,7 +583,7 @@ export const COURSE: CourseChapter[] = [
       // The "Try it in the app" button and "Next chapter".
       { id: 'c11-13', text: 'To try Archive and Up next on your own card, choose Try it in the app.' },
       // The garden, full and tidy; then a calendar page for the week ahead.
-      { id: 'c11-14', text: 'Prune a little each day, and your card base stays true. Next: your first week.' },
+      { id: 'c11-14', text: 'Grow a branch here, prune one there, and your card base stays true. Next: your first week.' },
     ],
     tryIt: [
       { target: 'card-menu', say: 'Open the menu of one of your Course Cards.', done: 'click' },

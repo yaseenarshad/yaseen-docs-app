@@ -30,33 +30,45 @@ You try to recall the hidden part, then check. And you answer: forgot, or rememb
 
 The app sets each date with an open scheduling method called FSRS. It brings a card back when your chance of recalling it drops to about ninety percent.
 
-This course takes about twenty-three minutes, in twelve short chapters.
+This course takes about twenty-five minutes, in twelve short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
-Review just before you forget, and each memory lasts longer. Next: why a card is the right shape, and your first one.
+Review just before you forget, and each memory lasts longer. Next: what a card really is, and your first one.
 
-## Chapter 2. The card: one idea to recall
+## Chapter 2. The card: the hub of an idea
 
-Quick recap: each thing you learn goes on a card. Now, what a card holds, and how to make one.
+Quick recap: each thing you learn goes on a card. Now, what a card really is, and how to make one.
 
-A good card holds one idea you want to recall. It can start light, and grow as you learn.
+When most people hear "card", they picture a line or two on a small piece of paper.
 
-Cards like this can be mixed and matched, wherever you need them.
+Think of it another way. A card is the hub of one idea: the centre where what you know about it comes together.
 
-Piotr Wozniak, who built SuperMemo, made it a rule: keep each card simple. A simple card is easier to remember.
+Here is a real one. The front asks you to recall one thing, with the answer hidden.
 
-All your cards together are your card base. It grows one card at a time.
+The back is where you understand it: the idea in plain words, an example, a hook to remember it by.
 
-Think of something you learned this week.
+And at the bottom, links to the cards it connects to. You will make those in chapter 10.
 
-Type one thing you want to remember. One short sentence is best.
+So a card is more than one line, and far less than a page. It is small to recall, with room to understand.
+
+Piotr Wozniak, who built SuperMemo, made it a rule: keep what you recall simple. A simple question is easier to remember.
+
+A card is never finished. It starts light, and it grows as you learn more.
+
+All your cards together are your card base. Each card is one idea, so cards can be mixed and matched, wherever you need them.
+
+Your turn. Think of something you learned this week.
+
+Type the one thing you want to recall about it, in a sentence or two.
 
 Now tap the word you want to hide.
 
-That's a card. The hidden word is the part you will try to recall.
+That's the front. The hidden word is the part you will try to recall.
 
-Tap it to check yourself.
+Now the back. In your own words, add a line that explains it, or an example.
+
+Tap the card to check yourself.
 
 Did you remember it?
 
@@ -64,11 +76,13 @@ Either answer is fine. The app saves it with the card.
 
 Your card is now a real file, in a folder called Course Cards, at the top of your vault.
 
-In the app, right-click a folder and choose New card. Type the title, press Enter, then the fact.
+In the app, right-click a folder and choose New card. Type the title, press Enter, then the front.
 
 To hide a word, select it, and click Hide word in the toolbar. The key is Command L.
 
-For a back side, type slash, and choose New side. The key is Command Shift Enter.
+For the back, type slash, and choose New side. The key is Command Shift Enter.
+
+To split the back into parts, type three stars on an empty line. They turn into a divider.
 
 Press Escape, or click Done, and the card saves.
 
@@ -78,16 +92,17 @@ If the title gives the answer away, set Title on the front to Hide, in the card'
 
 To make one in the real app now, choose Try it in the app.
 
-One card, one idea to recall. Next: the place your cards come back to, each day.
+A card is the hub of one idea: small to recall, with room to grow. Next: the place your cards come back to, each day.
 
 ### Try it in the app
 
 1. Right-click the Course Cards folder in the sidebar.
 2. Choose New card.
 3. Type a title, and press Enter.
-4. Now type one fact.
+4. Now type the front: the one thing you want to recall, in a sentence or two.
 5. Select one word. In the toolbar above it, click Hide word.
-6. Press Escape, or click Done, to save your card.
+6. Type slash, and choose New side. Then add a line that explains it.
+7. Press Escape, or click Done, to save your card.
 
 ## Chapter 3. The Inbox, each day
 
@@ -250,17 +265,25 @@ Many people paste a whole page of text into one card. Then they review it, and n
 
 A wall of text is not a card. It asks you to recall everything at once, so you recall nothing well.
 
-Before you make a card, ask one question. What is the one thing I want to recall?
+A single bare line is the other extreme. You may recall the words, and still not understand the idea.
 
-Then think of your cards as nodes on a tree. A node is a point that others connect to.
+So before you make a card, ask one question. What is the one thing I want to recall?
 
-At the start, one light card is enough: say, how protein, carbs and fat differ.
+That goes on the front, with the answer hidden. What helps you understand it goes on the back.
 
-As you learn more about protein, it gets its own card, linked back to the first.
+You recall the front, and you read the back. That is how a card stays small to recall, with room to understand.
 
-The first card stays the overview. The tree grows as your understanding grows.
+Now, how cards grow. Start with an umbrella: one card that covers a whole topic.
 
-So start light. Add a card when you know enough to need one.
+Say, how protein, carbs and fat differ. One light card is enough to start.
+
+As you learn more about protein, it outgrows that card. So protein gets a card of its own.
+
+The two link to each other. The umbrella stays the overview, and protein becomes a branch.
+
+Over time you get a tree: the umbrella, its branches, and smaller branches from those. Each card is a node, a point where branches meet.
+
+The tree grows as your understanding grows. So start light, and do not build the whole tree on day one.
 
 Your turn. Which of these two cards is better?
 
@@ -280,7 +303,7 @@ Name each card after the idea, not after where you found it.
 
 Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.
 
-One thing to recall. Hide the answer, not the clue. Next, a tool that can help, and hurt.
+One thing to recall, room to understand, and a tree that grows with you. Next, a tool that can help, and hurt.
 
 ## Chapter 8. Make cards with your AI, without vibe writing
 
@@ -354,7 +377,7 @@ So when you make a card, you ask: where does this go?
 
 Cards do not need that. They can all live in one place, or one folder at most.
 
-Links hold them together. A link points to another card, like the protein card in chapter 7.
+Links hold them together. You have seen one: the protein card, linked to its umbrella.
 
 Your mind does not work like folders. It works by association: one idea calls up another.
 
@@ -362,11 +385,13 @@ Researchers describe memory as a web of linked ideas. Think of one, and the ones
 
 And researchers found that new facts are usually remembered better when they fit with something you already know.
 
-An easy example. Your card on bees sits in a folder called Animals.
+A tree has branches. But ideas also connect across trees, and a folder cannot show that.
 
-Your card on how flowers make seeds sits in Plants.
+An easy example. Your protein card sits in a folder called Food.
 
-They belong together: bees carry pollen from flower to flower, and many flowers need it for seeds.
+Your card on how muscle grows sits in Exercise.
+
+They belong together: your body builds muscle out of protein.
 
 Each card has one folder, so the folders keep them apart. A link joins them.
 
@@ -380,7 +405,11 @@ A list shows what matches. Click the one with the card icon.
 
 The link turns into a pill: the other card's title, with its ID small beside it.
 
+After the pill, add a few words on why the two connect. The reason is worth as much as the link.
+
 Click the pill, and that card opens. Under it, Linked mentions lists what links to it.
+
+Some cards end up with many links pointing to them. Those are your hubs: the ideas the rest leans on.
 
 To remove a link, edit the card, and delete the pill like a word.
 
@@ -396,12 +425,13 @@ Ask what a card connects to, not where it goes. Next: tending your cards and lin
 2. Click Edit card, or press E.
 3. At the end of a line, type two square brackets. Then a few letters of another card's title.
 4. Click the row with the card icon.
-5. Press Escape, or click Done. The link is now a pill.
-6. Click the pill. The other card opens, and Linked mentions lists your first card.
+5. After the link, type a few words on why the two connect.
+6. Press Escape, or click Done. The link is now a pill.
+7. Click the pill. The other card opens, and Linked mentions lists your first card.
 
 ## Chapter 11. Be a gardener
 
-Your cards connect through links. Now, how to tend them as you review.
+Your cards form trees, joined by links. Now, how to tend them as you review.
 
 Think of a gardener. A garden does well when someone clears it and prunes it.
 
@@ -425,7 +455,9 @@ To stop reviewing a card, open its menu and choose Archive card. It keeps its hi
 
 Archived cards are at the bottom of the All cards menu, in the Inbox. Unarchive brings one back.
 
-Tend the links too. When you notice two cards belong together, link them.
+Growing is tending too. When one part of a card keeps growing, give it its own card, and link the two.
+
+Tend the links as well. When you notice two cards belong together, link them.
 
 When a link no longer helps, delete it like a word.
 
@@ -437,7 +469,7 @@ Want more new cards today? Click their count in the All cards menu, and press En
 
 To try Archive and Up next on your own card, choose Try it in the app.
 
-Prune a little each day, and your card base stays true. Next: your first week.
+Grow a branch here, prune one there, and your card base stays true. Next: your first week.
 
 ### Try it in the app
 
