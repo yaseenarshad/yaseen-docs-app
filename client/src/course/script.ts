@@ -447,14 +447,14 @@ export const COURSE: CourseChapter[] = [
       { id: 'c8-10', text: 'The right way: bring ideas you have already digested. The agent shapes them into cards, and you read each one.' },
       // A text box with "Use the example" under it. WAITS: the person pastes text or picks the example.
       { id: 'c8-11', text: "Let's try it. Paste something you have digested, or use the example." },
-      // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards, the check. WAITS: the person clicks Copy.
+      // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards. WAITS: the person clicks Copy.
       { id: 'c8-12', text: 'Copy the prompt. It tells your agent to read the card skill, then make three cards in Course Cards.' },
       // The agent's window; a paste; card files appear in the course, one by one. WAITS: the agent writes card files in Course Cards.
       { id: 'c8-13', text: 'Paste it into your agent. The cards show up here as it writes them.' },
       // The quiet line "No new cards yet. Did you check with your agent?"
       { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.' },
-      // Each new card gets a check mark or "1 thing to check"; "3 cards. 2 pass the check."
-      { id: 'c8-15', text: 'Then the app checks each card, and shows what to fix.' },
+      // The three new cards open one by one; the person reads each; "Read" ticks beside it. The word "Handmade". (The card check was removed, YAZ-5060.)
+      { id: 'c8-15', text: 'Now read each one. That is the handmade part: nothing stays that you have not read.' },
       // Skip, then three ready example cards with "Make these cards".
       { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.' },
       // A person reads a card, rewrites a line, and deletes another card.
@@ -661,7 +661,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c12-13', text: 'The best time to start was years ago. The second best time is now.' },
       // One new card, then a calendar page turns to tomorrow and the Inbox lights up.
       { id: 'c12-14', text: "That's the whole course. Make one card today. Open the Inbox tomorrow." },
-      // The course's end screen: cards made, cards that pass the check, when they come back.
+      // The course's end screen: cards made, and when they come back.
       { id: 'c12-15', text: 'Your card base is your knowledge base. Build it a card at a time, and what you learn stays.' },
     ],
     tryIt: [

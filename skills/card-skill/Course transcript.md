@@ -349,7 +349,7 @@ Paste it into your agent. The cards show up here as it writes them.
 
 If nothing shows up after a minute, check with your agent.
 
-Then the app checks each card, and shows what to fix.
+Now read each one. That is the handmade part: nothing stays that you have not read.
 
 No agent? Skip this step. The course shows three example cards, and makes them only if you say so.
 
