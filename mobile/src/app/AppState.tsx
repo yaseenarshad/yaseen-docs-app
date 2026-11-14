@@ -141,7 +141,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
 
   /** Reads everything the screens show from the phone. No network call. `opening`: open the vault in the sync too. */
   const load = useCallback(
-    async (opening: boolean): Promise<Loaded> => {
+    async (opening: boolean, beforeShow?: (next: Loaded) => Promise<void>): Promise<Loaded> => {
       const start = await startState(store, tokens)
       const list = await loadVaultList(store)
       const accounts: Record<string, VaultAccount | undefined> = {}
@@ -161,6 +161,8 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       // Closing waits (nothing may poll a vault that leaves). Opening does not hold the screen: the sync's state
       // tells the shell when the vault is ready (3B's engine loads as a chunk of its own, `lazySync`).
       if (syncing === null) await sync.open(null)
+      // YAZ-5260: the opening tab is set BEFORE the tabs show, so the first screen is the right one (no jump).
+      await beforeShow?.(next)
       setLoaded(next)
       if (syncing) void sync.open(syncing).catch(() => undefined)
       return next
@@ -171,11 +173,13 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   useEffect(() => {
     let live = true
     void (async () => {
-      const first = await load(true)
-      if (live && first.phase === 'ready') {
-        const hasFriends = await friends.hasFriends()
+      // Decision 21: Friends with a friend, else Review. Asked while the phone loads; the tabs wait for the answer.
+      const asked = friends.hasFriends().catch(() => false)
+      await load(true, async (next) => {
+        if (next.phase !== 'ready') return
+        const hasFriends = await asked
         if (live) setNav({ tab: openingTab(hasFriends), stack: [] })
-      }
+      })
     })()
     return () => {
       live = false
