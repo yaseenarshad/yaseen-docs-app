@@ -205,18 +205,71 @@ const CONFIG = {
 }
 
 /**
- * YAZ-5318: the elements whose content the HTML parser reads as RAW TEXT, up to their end tag or to the end of the input.
- * A renderer of the app writes its own marks into the same HTML as the text's raw HTML, so one stray `<textarea>` would
- * read the rest of the page, marks and secret name included, as its text, and hide it.
+ * YAZ-5318, YAZ-5364: NO ONE ELEMENT OR COMMENT OF THE TEXT CAN SWALLOW THE REST. A renderer of the app writes its own
+ * HTML (its marks, under the secret name) into the same string as the text's raw HTML, so a construct of the text that
+ * changes how the parser reads what FOLLOWS it would take the app's HTML, the rest of the page and the secret with it.
+ * Before the parse, each such construct of the text becomes plain text (`&lt;`): it shows as written, and the parser
+ * reads every byte after it as before. They are, from the HTML parser's own rules:
+ *  - the elements whose content is raw text, up to their end tag or the end of the input (`RAW_TEXT`, YAZ-5318);
+ *  - the elements that move what follows out of the page: `template` (its own fragment), `svg` and `math` (foreign
+ *    content, where a `</math>` inside `<mtext>` is ignored), `select` (it drops the tags inside it), `frameset`;
+ *  - the elements that DOMPurify removes WITH their content (its `FORBID_CONTENTS`), which an unclosed one would hold:
+ *    `desc`, `foreignobject`, `annotation-xml`, `mi`, `mn`, `mo`, `ms`, `mtext`, `head`;
+ *  - a comment with no end (`<!--` and no `-->`), and the "bogus comments" `<!x`, `<?x` and `</ x`, which run to the next `>`;
+ *  - a tag with no `>` of its own, or with a `<` before its `>` (an open quote): it would take the next tag into its
+ *    attributes (a `title` could then show the app's HTML and its secret).
+ * The app's renderers write only allowed, complete tags with escaped values (anything else DOMPurify drops anyway), so
+ * only the text's constructs change. A complete comment and every other tag pass as before.
  */
-const RAW_TEXT = /<(\/?)(textarea|title|xmp|noembed|noframes|plaintext|iframe|noscript|style|script)(?=[\s/>]|$)/gi
+const SWALLOWS = new Set([
+  'textarea', 'title', 'xmp', 'noembed', 'noframes', 'plaintext', 'iframe', 'noscript', 'style', 'script',
+  'template', 'svg', 'math', 'select', 'frameset',
+  'desc', 'foreignobject', 'annotation-xml', 'mi', 'mn', 'mo', 'ms', 'mtext', 'head',
+])
 
-/**
- * Each raw-text tag of the input becomes plain text (`&lt;textarea>`), BEFORE the parse: no element of the text can
- * swallow what comes after it. The app's renderers never write these tags (their own text is escaped), so only the
- * text's tags change; they show as written, as any other text.
- */
-const plainRawText = (html: string): string => html.replace(RAW_TEXT, '&lt;$1$2')
+export function plainSwallowers(html: string): string {
+  let out = ''
+  let from = 0
+  let scan = 0
+  const plain = (at: number) => {
+    out += html.slice(from, at) + '&lt;'
+    from = at + 1
+  }
+  for (let at = html.indexOf('<'); at >= 0; at = html.indexOf('<', scan)) {
+    scan = at + 1
+    if (html.startsWith('<!--', at)) {
+      // `<!-->` and `<!--->` end at once (the parser's rule); else the comment ends at `-->` (or `--!>`).
+      if (/^<!---?>/.test(html.slice(at, at + 6))) continue
+      const end = html.slice(at + 4).search(/--!?>/)
+      if (end < 0) plain(at)
+      else scan = at + 4 + end + 3
+      continue
+    }
+    const tag = /^<(\/?)([a-zA-Z][^\s/>\0]*)/.exec(html.slice(at, at + 64))
+    if (tag === null) {
+      // `<!x`, `<?x`, `</ x`, `</>`: a bogus comment (or nothing) to the next `>`. A `<` before a space or a digit is text already.
+      if (/^<(!|\?|\/[^a-zA-Z])/.test(html.slice(at, at + 3))) plain(at)
+      continue
+    }
+    // The tag's own end: the first `>` outside quotes. A `<` before it, or no end at all: the tag is not whole.
+    let quote = ''
+    let end = -1
+    for (let i = at + tag[0].length; i < html.length; i++) {
+      const c = html[i]
+      if (c === '<') break
+      if (quote !== '') {
+        if (c === quote) quote = ''
+      } else if (c === '"' || c === "'") quote = c
+      else if (c === '>') {
+        end = i
+        break
+      }
+    }
+    if (end < 0 || SWALLOWS.has(tag[2].toLowerCase())) plain(at)
+    else scan = end + 1
+  }
+  return out + html.slice(from)
+}
 
 let purifier: ReturnType<typeof DOMPurify> | null = null
 
@@ -228,7 +281,7 @@ export function cleanLocal(html: string): DocumentFragment {
       if (node.nodeType === 1) keepLocal(node as Element)
     })
   }
-  const root = purifier.sanitize(plainRawText(html), CONFIG)
+  const root = purifier.sanitize(plainSwallowers(html), CONFIG)
   finish(root)
   restoreMarks(root)
   return root

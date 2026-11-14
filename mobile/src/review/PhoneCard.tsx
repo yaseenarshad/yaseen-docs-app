@@ -7,6 +7,8 @@ import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/w
 import '@client/editor/card/card.css'
 import '@client/editor/table/table.css'
 import '@client/review/cardScreens.css'
+// YAZ-5363: the media line ("Picture · … · Needs a connection") on a card, as on a page.
+import '../media/mediaLine.css'
 import { drawLocalCard } from '../media/ui/cardDraw'
 import { guardLink } from '../media/ui/safeLinks'
 import { watchMedia, type VaultMedia } from '../media/ui/vaultMedia'

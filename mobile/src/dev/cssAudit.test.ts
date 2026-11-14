@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest'
-import { audit, type Finding, type Theme } from './cssAudit'
+import { audit, resolveCalc, type Finding, type Theme } from './cssAudit'
 
 /**
  * The parts of the contrast engine, each with a known answer (YAZ-5341: a part that breaks must turn a test red):
@@ -59,5 +59,30 @@ describe('the contrast engine', () => {
     expect(one(fs, 'won')).toMatchObject({ fg: '#595959' })
     expect(fs.map((f) => f.text)).not.toContain('gone')
     expect(fs.map((f) => f.text)).not.toContain('sr')
+  })
+
+  it('YAZ-5359: calc() inside color-mix(): black at calc(6 * 1 * 1%) over white is #f0f0f0, as Chrome draws a table head', () => {
+    const f = one(run('<div class="head"><span>ser</span></div>', ':root { --s: 6; } .head { background: color-mix(in srgb, #000000 calc(var(--s) * var(--scale, 1) * 1%), transparent); }'), 'ser')
+    expect(f.bg).toBe('#f0f0f0')
+    expect(resolveCalc('calc(6 * 2.5 * 1%)')).toBe('15%')
+    expect(resolveCalc('calc((10px + 2px) / 2)')).toBe('6px')
+    expect(resolveCalc('calc(1px + 1%)')).toBe('calc(1px + 1%)')
+    // table.css's head ink: var() > color-mix() > calc() > var(), three brackets deep.
+    const ink = ':root { --m: 1; } .th { color: var(--ink, color-mix(in srgb, #595959 calc(var(--m, 0) * 100%), currentColor)); }'
+    expect(one(run('<p class="th">head</p>', ink), 'head')).toMatchObject({ fg: '#595959' })
+  })
+
+  it('YAZ-5359: a custom property set to initial takes the fallback of var()', () => {
+    expect(one(run('<span class="t">grey</span>', ':root { --hue: initial; } .t { color: var(--hue, #595959); }'), 'grey')).toMatchObject({ fg: '#595959' })
+  })
+
+  it('YAZ-5359: a colour the engine cannot read is reported, never guessed', () => {
+    const host = document.createElement('div')
+    host.innerHTML = '<p class="a">one</p><p class="b">two</p><input class="c" placeholder="x"><p class="d">ok</p>'
+    document.body.append(host)
+    const css = '.a { color: oklch(0.5 0.1 200); } .b { background: color-mix(in oklab, red 1%, blue); } .c::placeholder { color: hsl(0 0% 40%); } .c { border: 1px solid calc(1px + 1%); } .d { color: #000; background: url(x.png) }'
+    const out = audit(host, [{ file: 't.css', css }], { theme: 'light' })
+    expect(out.unresolved.map((u) => u.split(': ')[0]).sort()).toEqual(['background', 'border', 'color', 'color::placeholder'])
+    expect(out.unresolved.some((u) => u.includes('p.d'))).toBe(false)
   })
 })
