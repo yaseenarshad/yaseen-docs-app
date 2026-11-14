@@ -177,10 +177,8 @@ describe('checker round 2: "tried" marks', () => {
 })
 
 describe('checker round 2: a review is named by its minute and its rating', () => {
-  // STOPPED (YAZ-5198): the Mac's own merge rule (`uniteCardLines`, decision 5) keeps two reviews with one time and one
-  // rating as ONE when only one side holds both. So "two identical reviews are two" is a decision for Yaseen (note on
-  // YAZ-5057, "For Yaseen: two identical reviews in one minute"). Turn this test on when he decides.
-  it.skip('3C-D: two "again" answers to one card in one minute, Undo of the second after its send: GitHub must keep the first', async () => {
+  // YAZ-5198: the phone writes both reviews, as the Mac does (`nth` on `review`, YAZ-5078), and Undo removes one.
+  it('3C-D: two "again" answers to one card in one minute, Undo of the second after its send: GitHub must keep the first', async () => {
     const t = await answersSetup()
     const host = await hostOf(t)
     const A = { at: at(1), rating: 'again' as const }
@@ -191,6 +189,32 @@ describe('checker round 2: a review is named by its minute and its rating', () =
     await host.undoCardAnswer('a.md', 'NC-2', A.at, n2) // Undo of the SECOND answer only
     await t.tick(SEND_AFTER_MS)
     // Expected: the first answer stays (the person undid one answer of two).
+    expect({ github: await t.remoteReviews(), phone: (await host.readCard('a.md', 'NC-2'))!.reviews.length }).toEqual({ github: [at(1)], phone: 1 })
+  })
+
+  it('YAZ-5198: two identical reviews; Undo of the second after its send; the reply of the unreview send is LOST; sent again: ONE entry is left, not zero', async () => {
+    let loseNext = false
+    const t = await answersSetup({
+      fetch: (s) => async (url, init) => {
+        const res = await s.github.fetch(url, init)
+        if ((init.method ?? 'GET') === 'PATCH' && loseNext) {
+          loseNext = false
+          throw new TypeError('Load failed') // GitHub moved the ref; the phone never heard
+        }
+        return res
+      },
+    })
+    const host = await hostOf(t)
+    const A = { at: at(1), rating: 'again' as const }
+    await host.writeCardAnswer('a.md', 'NC-2', { ...A, seconds: 3 })
+    const n2 = await host.writeCardAnswer('a.md', 'NC-2', { ...A, seconds: 4 })
+    await t.tick(SEND_AFTER_MS)
+    expect(await t.remoteReviews()).toEqual([at(1), at(1)])
+    await host.undoCardAnswer('a.md', 'NC-2', A.at, n2)
+    loseNext = true
+    await t.tick(SEND_AFTER_MS) // the unreview reaches GitHub; its reply is lost
+    expect(t.answers.state()).toMatchObject({ problem: 'OFFLINE', waiting: 1 })
+    await t.answers.sendNow() // the same unreview again
     expect({ github: await t.remoteReviews(), phone: (await host.readCard('a.md', 'NC-2'))!.reviews.length }).toEqual({ github: [at(1)], phone: 1 })
   })
 

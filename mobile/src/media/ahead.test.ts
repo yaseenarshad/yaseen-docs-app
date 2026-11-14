@@ -13,7 +13,7 @@ import { isEager } from '../sync/plan'
 import { createSyncEngine, type SyncEvent } from '../sync/engine'
 import { githubRemote, type GithubRemote } from '../sync/githubRemote'
 import { BRANCH, REPO, TOKEN, VAULT, fakeClock } from '../sync/testing'
-import { MEDIA_URL_IDLE_CAP, createMediaAhead, type MediaAhead } from './ahead'
+import { MEDIA_FAILURE_PREFIX, MEDIA_URL_IDLE_CAP, createMediaAhead, type MediaAhead } from './ahead'
 import { MEDIA_AHEAD_MAX_BYTES } from './plan'
 
 const START = Date.UTC(2026, 10, 14, 6, 0, 0)
@@ -36,6 +36,13 @@ async function usage(backend: Backend): Promise<number> {
   for (const v of (await backend.all('files')) as { content: string | Uint8Array }[]) n += typeof v.content === 'string' ? new TextEncoder().encode(v.content).length : v.content.byteLength
   for (const table of ['state', 'checkpoints'] as const) for (const v of await backend.all(table)) n += JSON.stringify(v ?? null).length
   return n
+}
+
+/** The blob SHAs of a setup's eager files (pages and settings): the pass fetches these. */
+function eagerOf(t: { git: { trees: Map<string, Map<string, string>> } }): Set<string> {
+  const out = new Set<string>()
+  for (const tree of t.git.trees.values()) for (const [path, sha] of tree) if (isEager(path)) out.add(sha)
+  return out
 }
 
 const OTHER_REPO = 'yaseen/second-vault'
@@ -356,6 +363,63 @@ describe('3D: media ahead of time (decision 6)', () => {
     expect((await again.store.read(VAULT, 'two.png'))?.content).toEqual(png(20))
   })
 
+  // YAZ-5222 (3D8): a 404 gave up on the SHA for good; it is a give-up for THAT tree only.
+  it('a 404 that does not come again: the picture downloads ahead again later', async () => {
+    const files = { 'a.md': page('A', [block('NC-1', '![](x.png)', NEAR)]), 'x.png': png(9, 64) }
+    const t = await setup(files)
+    const sha = await t.shaOf('x.png')
+    let n = 0
+    t.github.interrupt = (call) =>
+      call.url.includes(`/git/blobs/${sha}`) && n++ < 1 ? new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 }) : undefined
+    await t.open()
+    expect(await t.has('x.png')).toBe(false)
+    await t.tick(POLL_MS)
+    expect(n).toBe(1) // the same tree: no new try
+    await t.git.push({ 'other.md': page('O', []) })
+    for (let i = 0; i < 4 * 240; i++) await t.tick(POLL_MS)
+    expect(await t.has('x.png')).toBe(true) // before the fix: false
+  })
+
+  // YAZ-5223 (3D9): the whole memory was written again after each group (5,000 give-ups: 96 MB in one round).
+  it('5,000 failed pictures: the failure memory is one small row for each file, and the bytes written stay near its size', async () => {
+    const files: Record<string, string | Uint8Array> = { '.yaseendocs/review.json': '{"newPerDay":null}' }
+    for (let p = 0; p < 500; p++) {
+      files[`pages/p${p}.md`] = page(`P${p}`, Array.from({ length: 10 }, (_, c) => block(`NC-${p * 10 + c + 1}`, `![](f/${p}-${c}.png)`, NEAR)))
+      for (let c = 0; c < 10; c++) files[`f/${p}-${c}.png`] = png((p * 10 + c) % 256, 8 + ((p * 10 + c) >> 8))
+    }
+    const t = await setup(files)
+    t.github.interrupt = (call) => {
+      const sha = call.url.split('/git/blobs/')[1]
+      return sha !== undefined && !eagerOf(t).has(sha) ? new Response(JSON.stringify({ message: 'Resource not accessible by personal access token' }), { status: 403, headers: { 'x-ratelimit-remaining': '4999' } }) : undefined
+    }
+    let written = 0
+    const raw = t.store.setStates.bind(t.store)
+    t.store.setStates = async (scope, rows) => {
+      for (const [name, value] of Object.entries(rows)) if (name.startsWith(MEDIA_FAILURE_PREFIX)) written += name.length + JSON.stringify(value ?? null).length
+      return raw(scope, rows)
+    }
+    await t.open()
+    const rows = await t.store.statesWith(VAULT, MEDIA_FAILURE_PREFIX)
+    const size = Object.entries(rows).reduce((n, [name, value]) => n + name.length + JSON.stringify(value).length, 0)
+    console.log(`[3D9] ${Object.keys(rows).length} failure rows, ${(size / 1024).toFixed(0)} KB; bytes written in the round: ${(written / 1024).toFixed(0)} KB`)
+    expect(Object.keys(rows)).toHaveLength(5000)
+    expect(written).toBeLessThan(3 * size)
+  }, 120_000)
+
+  // The checker's mutation (round 2): an unknown size read as 0 bytes again, and no test turned red.
+  it('an unknown size counts as too large: the file list fails after a restart, the blobs work, nothing large comes ahead', async () => {
+    const big = new Uint8Array(MEDIA_AHEAD_MAX_BYTES + 1)
+    const files = { 'a.md': page('A', [block('NC-1', '![[talk.mp3]]', NEAR)]), 'talk.mp3': big }
+    const t = await setup(files, { runner: false }) // the app closed before the media round kept the sizes
+    await t.open()
+    t.engine.stop()
+    const again = await setup(files, { store: t.store })
+    again.github.interrupt = (call) => (call.url.includes('/git/trees/') ? new Response(JSON.stringify({ message: 'Server Error' }), { status: 500 }) : undefined)
+    await again.open()
+    expect(await again.has('talk.mp3')).toBe(false)
+    expect(again.media.state().tooLarge).toBe(1)
+  })
+
   // YAZ-5187 (3D2)
   it('a file over 10 MB is never fetched ahead, also when the app closed before the media round kept the sizes', async () => {
     const big = new Uint8Array(MEDIA_AHEAD_MAX_BYTES + 1)
@@ -478,7 +542,7 @@ describe('3D: media ahead of time (decision 6)', () => {
     expect(await t.has('flags/far.png')).toBe(true)
   })
 
-  it('errors are quiet: a 404, GitHub`s "slow down" and no signal never change the sync dot; "slow down" waits, a 404 gives up until the file shows', async () => {
+  it('errors are quiet: a 404, GitHub`s "slow down" and no signal never change the sync dot; "slow down" waits, a 404 waits for a new head commit', async () => {
     const t = await setup(DEMO)
     const fr = await t.shaOf('flags/fr.png')
     const mp3 = await t.shaOf('fifth.mp3')
@@ -496,11 +560,11 @@ describe('3D: media ahead of time (decision 6)', () => {
 
     mode = 'slow'
     await t.store.remove(VAULT, 'fifth.mp3')
-    await t.git.push({ 'world.md': `${DEMO['world.md']}\n` }) // a new commit, but fr.png has the same SHA
+    await t.git.push({ 'world.md': `${DEMO['world.md']}\n` }) // a new commit; fr.png has the same SHA
     await t.tick(POLL_MS)
     expect(t.media.state()).toMatchObject({ waiting: 'slowed' })
     expect(t.media.state().retryAt).toBeGreaterThan(t.clock.now())
-    expect(await t.has('flags/fr.png')).toBe(false) // a 404 does not heal by waiting: given up on this SHA (YAZ-5186)
+    expect(await t.has('flags/fr.png')).toBe(true) // a 404 holds for its tree only: the new head tries again (YAZ-5222)
     expect(await t.has('fifth.mp3')).toBe(false)
     expect(t.events.filter((e) => e.type === 'state' && (e.state.status === 'slowed' || e.state.status === 'attention' || e.state.status === 'off'))).toEqual([])
     const blobsWhileWaiting = t.pictureBlobs()
@@ -600,6 +664,51 @@ describe('3D: media ahead of time (decision 6)', () => {
 })
 
 describe('3D: "show this picture" (C1, N3), store first, then the network', () => {
+  // YAZ-5221 (3D7): users were counted for each path, not for each URL.
+  it('a picture shown in two places while it changes on GitHub (R7): no URL that a screen shows is revoked', async () => {
+    const files: Record<string, string | Uint8Array> = { 'a.md': page('A', []), 'x.png': png(1) }
+    for (let i = 0; i < 30; i++) files[`p/${i}.png`] = png(i, 16)
+    const t = await setup(files, { realUrls: true })
+    await t.open()
+    const revoked = vi.spyOn(URL, 'revokeObjectURL')
+    try {
+      const a = await t.media.show('x.png')
+      await t.git.push({ 'x.png': png(2) })
+      await t.tick(POLL_MS)
+      const b = await t.media.show('x.png')
+      expect(revoked.mock.calls.map((c) => c[0])).not.toContain(a.status === 'ready' ? a.url : '') // before the fix: revoked
+      t.media.releaseUrl('x.png') // A leaves
+      expect(revoked.mock.calls.map((c) => c[0])).toContain(a.status === 'ready' ? a.url : '') // the old URL has no user now
+      for (let i = 0; i < 30; i++) {
+        await t.media.show(`p/${i}.png`)
+        t.media.releaseUrl(`p/${i}.png`)
+      }
+      expect(revoked.mock.calls.map((c) => c[0])).not.toContain(b.status === 'ready' ? b.url : '') // before the fix: revoked
+      expect(t.media.urlNow('x.png')).toBe(b.status === 'ready' ? b.url : null)
+    } finally {
+      revoked.mockRestore()
+    }
+  })
+
+  it('a screen that names the URL it lets go: B leaves first, A`s old URL stays while A shows it', async () => {
+    const t = await setup({ 'a.md': page('A', []), 'x.png': png(1) }, { realUrls: true })
+    await t.open()
+    const revoked = vi.spyOn(URL, 'revokeObjectURL')
+    try {
+      const a = await t.media.show('x.png')
+      await t.git.push({ 'x.png': png(2) })
+      await t.tick(POLL_MS)
+      const b = await t.media.show('x.png')
+      if (a.status !== 'ready' || b.status !== 'ready') throw new Error('not ready')
+      t.media.releaseUrl('x.png', b.url) // B leaves first
+      expect(revoked.mock.calls.map((c) => c[0])).not.toContain(a.url)
+      t.media.releaseUrl('x.png', a.url)
+      expect(revoked.mock.calls.map((c) => c[0])).toContain(a.url)
+    } finally {
+      revoked.mockRestore()
+    }
+  })
+
   // YAZ-5200 (3D6): each URL was kept until the vault closed: 500 pictures held 500 blobs.
   it('500 pictures shown, then let go (`releaseUrl`): their object URLs are revoked, except a few recent ones; a URL in use stays', async () => {
     const files: Record<string, string | Uint8Array> = { 'a.md': page('A', []) }

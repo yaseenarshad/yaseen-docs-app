@@ -117,6 +117,11 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     const w = [...answers.waiting()].reverse().find((w) => w.op.kind === 'review' && w.op.id === id && w.op.review.at === at)
     return w === undefined || w.op.kind !== 'review' ? null : { group: w.group, rating: w.op.review.rating }
   }
+  /** The `unreview` of the LAST copy of `review`'s name on `line`: it names that copy (`nth`, YAZ-5198). */
+  const unreviewOp = (id: string, line: CardLine, at: string, rating: CardReview['rating']): CardOp => {
+    const nth = cardReviewsOf(line).filter((r) => cardReviewKey(r) === cardReviewKey({ at, rating })).length
+    return nth > 1 ? { kind: 'unreview', id, at, rating, nth } : { kind: 'unreview', id, at, rating }
+  }
   /** The review `withoutCardReview(line, at)` would take: the last one at `at`. */
   const reviewAt = (line: CardLine, at: string): CardReview | undefined => cardReviewsOf(line).reverse().find((r) => r.at === at)
 
@@ -138,14 +143,14 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
       if (waiting !== null && (await answers.undo(waiting.group))) return
       const { line, title } = await current(path, id)
       const rating = waiting?.rating ?? reviewAt(line, at)?.rating
-      const ops: CardOp[] = [...(rating === undefined ? [] : [{ kind: 'unreview', id, at, rating } as const]), ...(next >= 0 ? [{ kind: 'next', id, on: true } as const] : [])]
+      const ops: CardOp[] = [...(rating === undefined ? [] : [unreviewOp(id, line, at, rating)]), ...(next >= 0 ? [{ kind: 'next', id, on: true } as const] : [])]
       if (ops.length > 0) await add(path, title, ops)
     },
     async deleteCardReview(path, id, at) {
       const { line, title } = await current(path, id)
       const place = cardReviewIndex(line, at)
       const review = reviewAt(line, at)
-      if (place >= 0 && review !== undefined) await add(path, title, [{ kind: 'unreview', id, at, rating: review.rating }])
+      if (place >= 0 && review !== undefined) await add(path, title, [unreviewOp(id, line, at, review.rating)])
       return place
     },
     async restoreCardReview(path, id, review, index) {
