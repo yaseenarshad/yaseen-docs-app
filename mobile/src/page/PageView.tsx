@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
 import { Frame, vaultName } from '../screens/Frame'
 import { setSearchNotice } from '../search/searchState'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
-import { storedMedia, type PageMedia } from './media'
-import { fillCardEmbeds, fillMedia, openFile, tapOf } from './pageDom'
+import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
+import { openFile } from '../media/ui/vaultMedia'
+import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { renderPage } from './pageRender'
 
 /**
  * A PAGE, READ ONLY (YAZ-5079, 4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
- * with no editor (`renderPage`), its cards and embedded cards in place, its pictures from storage (or 3D). No keyboard
+ * with no editor (`renderPage`), its cards and embedded cards in place, its pictures and sounds from 3D's media when they near the screen. No keyboard
  * opens here: there is nothing to edit in stage one.
  *
  * It follows the sync (3B's `changed` event, rows of the October record):
@@ -32,8 +33,9 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
   /** The page's first block is a heading with its title: the reader's own title is not drawn a second time. */
   const [sameTitle, setSameTitle] = useState(false)
   const host = useRef<HTMLDivElement>(null)
-  const media = useMemo<PageMedia & { release?: () => void }>(() => app.services.media ?? storedMedia(store, vault), [app.services.media, store, vault])
-  useEffect(() => () => (media as { release?: () => void }).release?.(), [media])
+  const media = useVaultMedia()
+  // Pictures and sounds come as they near the screen; a new piece or an embedded card is watched too.
+  useMediaWatch(host, media)
 
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
@@ -87,15 +89,13 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
       if (scroller !== null && !first) scroller.scrollTop = top
       if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
-      // The page's pictures and its embedded cards at once; then the pictures of those cards.
-      await Promise.all([fillMedia(el, media, () => live), fillCardEmbeds(el, data, store, app.go, () => live)])
-      if (live) await fillMedia(el, media, () => live)
+      await fillCardEmbeds(el, data, store, app.go, () => live)
     })()
     return () => {
       live = false
       drawn.current = null
     }
-  }, [text, data, path, at, store, media, app.go, title])
+  }, [text, data, path, at, store, app.go, title])
 
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
