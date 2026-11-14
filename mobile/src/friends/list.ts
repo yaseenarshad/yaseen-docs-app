@@ -21,6 +21,7 @@ import {
 import {
   WHAT_FRIENDS_SEE,
   dropHeldShares,
+  markPaired,
   finishRemove,
   newListCache,
   parseFriendLink,
@@ -44,7 +45,7 @@ import { PHONE, VaultClosedError, loadVaultList, vaultId, type TokenStore, type 
 import type { Clock } from '../sync/engine'
 import { openFriendsApi } from './friendsApi'
 import { friendsGuard } from './guard'
-import { drainQueue, enqueueRemove, queuedMines } from './removeQueue'
+import { dequeueRemove, drainQueue, enqueueRemove, queuedMines } from './removeQueue'
 import { SEND_STATE } from './sender'
 
 /**
@@ -336,6 +337,16 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         return { kind: 'no-gists' as const }
       }
       if (result.kind === 'added') await remember(result.handle)
+      // YAZ-5275: the person adds a friend whose remove still waits on the phone (its first write has not gone, so no
+      // re-key has happened): the add wins, and the waiting remove is taken back. A remove already in the list (its
+      // re-key started) finishes first; the paste then made a NEW pointer, which the re-key moves with the friends.
+      if (result.kind === 'added' || result.kind === 'already') {
+        const link = parseFriendLink(text)
+        const now = await list(api, login, false)
+        const index = result.kind === 'added' ? result.handle.index : now !== null && now !== 'newer' && now !== 'broken' ? now.index : null
+        const kept = index?.friends.find((f) => link.kind === 'ok' && f.theirs === link.id)?.mine
+        if (kept !== undefined) await dequeueRemove(phoneStore, kept)
+      }
       return result
     })
   }
@@ -510,7 +521,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (h === 'newer') return { kind: 'newer-app' as const }
         if (h === null) {
           if (await guard.live()) await phoneStore.setState(PHONE, HAS, false)
-          return { kind: 'ok' as const, rows: [], shared: [], repairs: [], held: [] }
+          return { kind: 'ok' as const, rows: [], shared: [], repairs: [], held: [], newlyPaired: [] }
         }
         // YAZ-5236: the removes that wait on the phone run first, then a remove that waits in the list.
         const drained = await drainQueue(api, h, phoneStore, await budget(), opts)
@@ -526,6 +537,11 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const read = await readFriends(api, h, cache, now())
         const queued = await queuedMines(phoneStore)
         for (const row of read.rows) if (queued.has(row.mine)) Object.assign(row, { state: 'removing' as const, label: 'Removing…', sendBack: null })
+        // YAZ-5274: a friend seen paired for the first time is marked in the list (one write, once).
+        if (read.newlyPaired.length > 0) {
+          h = await markPaired(api, h, read.newlyPaired, opts)
+          await remember(h)
+        }
         // YAZ-5235: my shared links that a friend holds but does not use are deleted.
         if (read.held.length > 0) {
           h = await dropHeldShares(api, h, read.held, opts)

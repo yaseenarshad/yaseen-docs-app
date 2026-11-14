@@ -44,5 +44,14 @@ export async function drainQueue(api: GistsApi, handle: IndexHandle, store: Vaul
   return result
 }
 
+/** YAZ-5275: takes a waiting remove back (the person added the same friend again before it ran). */
+export async function dequeueRemove(store: VaultStore, mine: string): Promise<void> {
+  const q = await loadQueue(store)
+  if (!q.some((x) => x.mine === mine)) return
+  const rest = q.filter((x) => x.mine !== mine)
+  if (rest.length === 0) await store.removeState(PHONE, REMOVE_QUEUE)
+  else await store.setState(PHONE, REMOVE_QUEUE, rest)
+}
+
 /** The pointers that wait in the queue (for the "Removing…" rows). */
 export const queuedMines = async (store: VaultStore): Promise<Set<string>> => new Set((await loadQueue(store)).map((x) => x.mine))

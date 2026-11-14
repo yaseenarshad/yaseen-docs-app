@@ -430,6 +430,27 @@ describe('YAZ-5239: the login of a join request is the one GitHub vouches for', 
     expect(JSON.parse(w.text(c.group, GROUP_FILE)!).members).toEqual(file.members)
   })
 
+  it('the duplicate check ignores letter case: a second GitHub login "BEA" is a duplicate of member "bea"', async () => {
+    const w = fakeGistWorld({ accounts: { ali: { login: 'ali' }, bea: { login: 'bea' }, bea2: { login: 'BEA' } }, start: NOW })
+    const c = await club(w, ['bea'])
+    const twin = w.api('bea2')
+    const made = await ensureFriendsFiles(twin, { vaults: [], nickname: null, numbers: stats('bea') }, opts(w))
+    if (made.kind !== 'ok') throw new Error(made.kind)
+    const joined = await joinGroup(twin, made.handle, c.link, opts(w))
+    if (joined.kind !== 'joined') throw new Error(joined.kind)
+    const aliH = await fresh(c.ali.api, w)
+    expect(await readJoinRequest(c.ali.api, aliH, joined.sendToAdmin)).toMatchObject({ kind: 'duplicate', login: 'BEA' })
+    expect(await addMember(c.ali.api, aliH, c.group, joined.sendToAdmin, opts(w))).toEqual({ kind: 'duplicate', login: 'BEA' })
+    const ownerAdmin = fakeGistWorld({ accounts: { ali: { login: 'ali' }, ali2: { login: 'ALI' } }, start: NOW })
+    const c2 = await club(ownerAdmin, [])
+    const twin2 = ownerAdmin.api('ali2')
+    const made2 = await ensureFriendsFiles(twin2, { vaults: [], nickname: null, numbers: stats('ali') }, opts(ownerAdmin))
+    if (made2.kind !== 'ok') throw new Error(made2.kind)
+    const j2 = await joinGroup(twin2, made2.handle, c2.link, opts(ownerAdmin))
+    if (j2.kind !== 'joined') throw new Error(j2.kind)
+    expect(await addMember(c2.ali.api, await fresh(c2.ali.api, ownerAdmin), c2.group, j2.sendToAdmin, opts(ownerAdmin))).toEqual({ kind: 'duplicate', login: 'ALI' })
+  })
+
   it('with no owner in GitHub`s answer (an adapter that does not give it), a request is "unverified" and Add refuses it', async () => {
     const w = people(['ali', 'bea'])
     const c = await club(w, [])

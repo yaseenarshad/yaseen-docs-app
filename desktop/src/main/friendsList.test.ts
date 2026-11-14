@@ -24,6 +24,8 @@ import {
   pasteMessage,
   pendingRemove,
   readFriends,
+  dropHeldShares,
+  markPaired,
   removeFriend,
   removeMany,
   repairPairs,
@@ -31,6 +33,7 @@ import {
   type ListOptions,
 } from '@shared/friendsList'
 import { emptyBudget, recordUpdate } from '@shared/friendSend'
+import { ORPHAN_AGE_MS, sweepOrphans } from '@shared/friendGroups'
 import type { FriendStats } from '@shared/friendStats'
 
 /**
@@ -144,7 +147,7 @@ describe('add a friend: share, then paste, on both sides (decision 20; round 12,
     const back = await pasteLink(ali.api, share.handle, pasted.sendBack!, opts(w))
     expect(back).toMatchObject({ kind: 'added', name: 'Bea', paired: true, sendBack: null })
     if (back.kind !== 'added') return
-    expect(back.handle.index.friends).toEqual([{ name: 'Bea', theirs: beaMine, mine: share.pointer }])
+    expect(back.handle.index.friends).toEqual([{ name: 'Bea', theirs: beaMine, mine: share.pointer, paired: true }])
     expect(back.handle.index.shared).toEqual([])
     expect(JSON.parse(w.text(share.pointer, POINTER_FILE)!)).toEqual({ v: 1, stats: ali.handle.index.stats, reads: beaMine })
 
@@ -265,6 +268,9 @@ async function paired(w: FakeGistWorld, more = 0) {
   if (b.kind !== 'added') throw new Error('not added')
   const a = await pasteLink(ali.api, share.handle, b.sendBack!, opts(w))
   if (a.kind !== 'added') throw new Error('not added')
+  // Bea's app reads her rows once and sees the pair (YAZ-5274: it marks "paired", as the phone's rows() does).
+  const bRows = await readFriends(bea.api, b.handle, newListCache(), w.now())
+  const bHandle = await markPaired(bea.api, b.handle, bRows.newlyPaired, opts(w))
   let handle = a.handle
   const extra: string[] = []
   for (let i = 0; i < more; i++) extra.push(await makePointer(ali.api, handle.index.stats!, opts(w)))
@@ -275,7 +281,7 @@ async function paired(w: FakeGistWorld, more = 0) {
     groups: [{ name: 'Club', group: 'def0', mine: group, admin: false }],
   })
   handle = (await shareLink(ali.api, handle, opts(w))).handle
-  return { ali: { ...ali, handle }, bea: { ...bea, handle: b.handle }, aliForBea: share.pointer, beaForAli: b.handle.index.friends[0].mine }
+  return { ali: { ...ali, handle }, bea: { ...bea, handle: bHandle }, aliForBea: share.pointer, beaForAli: b.handle.index.friends[0].mine }
 }
 
 describe('remove a friend (round 16)', () => {
@@ -313,6 +319,9 @@ describe('remove a friend (round 16)', () => {
       // The next start: a new app finds the list, sees the remove that waits, and finishes it.
       const handle = await fresh(w.api('ali'), w)
       const done = await finishRemove(w.api('ali'), handle, emptyBudget(), opts(w))
+      // YAZ-5276: a numbers gist made just before a stop is no longer found by its file name; the sweep takes it later.
+      w.advance(ORPHAN_AGE_MS + 1000)
+      await sweepOrphans(w.api('ali'), done.handle)
       expect(done.kind, `stop at write ${k}`).toBe('done')
       if (k === 1) {
         // The first write is the list itself: it failed, so the remove never started. Bea stays; nothing changed.
@@ -336,7 +345,8 @@ describe('remove a friend (round 16)', () => {
     const full = await removeFriend(ali.api, ali.handle, aliForBea, emptyBudget(), opts(w))
     expect(full.kind).toBe('done')
     // One update for each other pointer and three for the list: inside the reserve (32 + 5) the sender keeps.
-    expect(w.updates('ali') - before).toBe(31 + 3)
+    // YAZ-5274: the unused shared link is deleted, not moved: 29 friends and 1 group move, and 3 list writes.
+    expect(w.updates('ali') - before).toBe(30 + 3)
     expectClean(w, 'ali', full.handle)
 
     const w2 = people()
@@ -365,15 +375,18 @@ describe('remove a friend (round 16)', () => {
     expect(rows.find((r) => r.mine === aliForBea)).toMatchObject({ state: 'gone' })
     const removed = await removeFriend(ali.api, ali.handle, aliForBea, emptyBudget(), opts(w))
     expect(removed.kind).toBe('done')
-    const shared = removed.handle.index.shared![0].mine
-    const cancelled = await removeFriend(ali.api, removed.handle, shared, emptyBudget(), opts(w))
+    // YAZ-5274: the remove also stopped the unused shared link. A new one is cancelled with the same steps.
+    expect(removed.handle.index.shared).toEqual([])
+    const fresh2 = await shareLink(ali.api, removed.handle, opts(w))
+    const cancelled = await removeFriend(ali.api, fresh2.handle, fresh2.pointer, emptyBudget(), opts(w))
     expect(cancelled.kind).toBe('done')
     expect(cancelled.handle.index.shared).toEqual([])
+    expect(w.text(fresh2.pointer, POINTER_FILE)).toBeNull()
     expectClean(w, 'ali', cancelled.handle)
     expect((await removeFriend(ali.api, cancelled.handle, ID, emptyBudget(), opts(w))).kind).toBe('not-found')
   })
 
-  it('an orphan numbers gist from a stop between "make" and "write it in the list" is deleted when the remove finishes', async () => {
+  it('an orphan numbers gist from a stop between "make" and "write it in the list" is deleted by the sweep after the remove finishes', async () => {
     const w = people()
     const { ali, aliForBea } = await paired(w)
     // Stop right after the new numbers gist is made: the next write (the list) fails.
@@ -387,6 +400,9 @@ describe('remove a friend (round 16)', () => {
     expect(first.kind).toBe('paused')
     expect(w.owned('ali').filter((g) => NUMBERS_FILE in g.files)).toHaveLength(2)
     const done = await finishRemove(w.api('ali'), await fresh(w.api('ali'), w), emptyBudget(), opts(w))
+    // YAZ-5276: the remove deletes only the old numbers gist by its ID; the orphan goes with the sweep, an hour later.
+    w.advance(ORPHAN_AGE_MS + 1000)
+    await sweepOrphans(w.api('ali'), done.handle)
     expect(done.kind).toBe('done')
     expectClean(w, 'ali', done.handle)
   })
@@ -475,9 +491,154 @@ describe('YAZ-5236: a remove is kept until it is done', () => {
     expect(done.kind).toBe('done')
     expect(done.handle.index.friends.map((f) => f.mine)).not.toContain(mines[0])
     expect(done.handle.index.friends).toHaveLength(2)
-    // One re-key for four removes: the list 3 times, and each of the 4 other pointers (2 friends, 1 group, 1 shared link) once.
-    expect(w.updates('ali') - before).toBe(3 + 4)
+    // One re-key for four removes: the list 3 times, and each of the 3 other pointers (2 friends, 1 group) once.
+    expect(w.updates('ali') - before).toBe(3 + 3) // YAZ-5274: the unused shared link is deleted, not moved
     expect((await readFriends(ali.api, done.handle, newListCache(), w.now())).rows.every((r) => r.state !== 'removing')).toBe(true)
+  })
+})
+
+describe('YAZ-5274: a remove ends every link the removed person holds or could hold', () => {
+  it('order 2 before the heal: after Ali removes Bea, the link Bea pasted does not lead to Ali`s new numbers', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const bea = await person(w, 'bea')
+    const aShare = await shareLink(ali.api, ali.handle, opts(w))
+    const bShare = await shareLink(bea.api, bea.handle, opts(w))
+    await pasteLink(ali.api, await fresh(ali.api, w), bShare.link, opts(w))
+    await pasteLink(bea.api, await fresh(bea.api, w), aShare.link, opts(w))
+    const ah = await fresh(ali.api, w)
+    const r = await removeFriend(ali.api, ah, ah.index.friends[0].mine, emptyBudget(), opts(w))
+    if (r.kind !== 'done') throw new Error(r.kind)
+    expect(JSON.parse(w.text(aShare.pointer, POINTER_FILE) ?? '{}').stats).not.toBe(r.handle.index.stats) // now: equal
+    const rows = await readFriends(bea.api, await fresh(bea.api, w), newListCache(), w.now())
+    expect(rows.rows[0].state).not.toBe('waiting') // now: 'waiting', with Ali`s new numbers
+    expect(rows.rows[0]).toMatchObject({ state: 'stopped', label: 'This link stopped working. Share a new one.' })
+  })
+
+  it('path 2: Bea heals and removes Ali first; Ali removes Bea later: no ID Bea read leads to Ali`s new numbers', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const bea = await person(w, 'bea')
+    const aShare = await shareLink(ali.api, ali.handle, opts(w))
+    const bShare = await shareLink(bea.api, bea.handle, opts(w))
+    const a = await pasteLink(ali.api, await fresh(ali.api, w), bShare.link, opts(w))
+    await pasteLink(bea.api, await fresh(bea.api, w), aShare.link, opts(w))
+    if (a.kind !== 'added') throw new Error(a.kind)
+    expect(await pasteLink(bea.api, await fresh(bea.api, w), a.sendBack!, opts(w))).toMatchObject({ kind: 'added', paired: true })
+    const bh = await fresh(bea.api, w)
+    expect((await removeFriend(bea.api, bh, bh.index.friends[0].mine, emptyBudget(), opts(w))).kind).toBe('done')
+    const ah = await fresh(ali.api, w)
+    const r = await removeFriend(ali.api, ah, ah.index.friends[0].mine, emptyBudget(), opts(w))
+    if (r.kind !== 'done') throw new Error(r.kind)
+    const seen = new Set(w.calls.filter((c) => c.token === 'bea' && c.op === 'read' && c.id !== null).map((c) => c.id!))
+    expect([...seen].filter((id) => JSON.parse(w.text(id, POINTER_FILE) ?? '{}').stats === r.handle.index.stats)).toEqual([]) // now: [aShare.pointer]
+  })
+
+  it('a link sent and never pasted also stops at a remove (nobody can tell who holds it); a link made after the remove keeps working', async () => {
+    const w = people()
+    const { ali, aliForBea } = await paired(w)
+    const unused = ali.handle.index.shared![0].mine
+    const r = await removeFriend(ali.api, ali.handle, aliForBea, emptyBudget(), opts(w))
+    if (r.kind !== 'done') throw new Error(r.kind)
+    expect(w.text(unused, POINTER_FILE)).toBeNull()
+    expect(r.handle.index.shared).toEqual([])
+    const after = await shareLink(ali.api, r.handle, opts(w))
+    expect(JSON.parse(w.text(after.pointer, POINTER_FILE)!).stats).toBe(r.handle.index.stats)
+  })
+
+  it('property: random share / paste / send-back / rows on both sides, 1 to 3 devices each; after Ali removes Bea, no ID Bea ever read leads to Ali`s numbers', async () => {
+    let runs = 0
+    let removes = 0
+    const leaks: string[] = []
+    for (let seed = 1; seed <= 300; seed++) {
+      let x = seed * 7919
+      const rnd = (n: number) => {
+        // mulberry32: 32-bit, exact in JS numbers
+        x = (x + 0x6d2b79f5) | 0
+        let t = Math.imul(x ^ (x >>> 15), 1 | x)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) % n
+      }
+      const devs = { ali: ['ali', 'ali-mac', 'ali-ipad'].slice(0, 1 + rnd(3)), bea: ['bea', 'bea-mac', 'bea-ipad'].slice(0, 1 + rnd(3)) }
+      const w = fakeGistWorld({ accounts: Object.fromEntries([...devs.ali.map((t) => [t, { login: 'ali' }]), ...devs.bea.map((t) => [t, { login: 'bea' }])]), start: NOW })
+      await person(w, 'ali')
+      const b0 = w.api(devs.bea[0])
+      const made = await ensureFriendsFiles(b0, { vaults: ['bea/vault'], nickname: null, numbers: stats('Bea') }, opts(w))
+      if (made.kind !== 'ok') throw new Error('no list')
+      const links: Record<'ali' | 'bea', string[]> = { ali: [], bea: [] } // links each side SENT to the other
+      const steps = 4 + rnd(10)
+      for (let i = 0; i < steps; i++) {
+        const side = rnd(2) === 0 ? 'ali' : 'bea'
+        const other = side === 'ali' ? 'bea' : 'ali'
+        const api = w.api(devs[side][rnd(devs[side].length)])
+        const h = await fresh(api, w)
+        const op = rnd(3)
+        if (op === 0) links[side].push((await shareLink(api, h, opts(w))).link)
+        else if (op === 1 && links[other].length > 0) {
+          const r = await pasteLink(api, h, links[other][rnd(links[other].length)], opts(w))
+          if (r.kind === 'added' && r.sendBack !== null) links[side].push(r.sendBack)
+        } else {
+          const rows = await readFriends(api, h, newListCache(), w.now())
+          let next = h
+          if (rows.held.length > 0) next = await dropHeldShares(api, next, rows.held, opts(w))
+          if (rows.repairs.length > 0) await repairPairs(api, next, rows.repairs, opts(w))
+        }
+      }
+      runs++
+      const aliApi = w.api(devs.ali[rnd(devs.ali.length)])
+      const ah = await fresh(aliApi, w)
+      if (ah.index.friends.length === 0) continue
+      removes++
+      const r = await removeMany(aliApi, ah, ah.index.friends.map((f) => f.mine), emptyBudget(), opts(w))
+      if (r.kind !== 'done') throw new Error(`${seed}: ${r.kind}`)
+      // Bea's apps read their rows again after the remove (with her tokens).
+      for (const t of devs.bea) await readFriends(w.api(t), await fresh(w.api(t), w), newListCache(), w.now())
+      const seen = new Set(w.calls.filter((c) => devs.bea.includes(c.token ?? '') && c.op === 'read' && c.id !== null).map((c) => c.id!))
+      const numbers = r.handle.index.stats!
+      if (seen.has(numbers)) leaks.push(`${seed}: read the numbers gist`)
+      for (const id of seen) if (JSON.parse(w.text(id, POINTER_FILE) ?? '{}').stats === numbers) leaks.push(`${seed}: ${id}`)
+    }
+    expect(runs).toBe(300)
+    expect(removes).toBeGreaterThan(100)
+    expect(leaks).toEqual([])
+  })
+})
+
+describe('YAZ-5276: a remove deletes only the old numbers gist that the list names, and only when it is ours', () => {
+  it('a remove does not delete a gist of another tool that also holds a file named notecards-stats.json', async () => {
+    const w = people()
+    const ali = await person(w, 'ali')
+    const s = await shareLink(ali.api, ali.handle, opts(w))
+    const other = w.seed('ali', { [NUMBERS_FILE]: '{"my":"backup"}', 'README.md': 'my own copy' })
+    expect((await removeFriend(ali.api, await fresh(ali.api, w), s.pointer, emptyBudget(), opts(w))).kind).toBe('done')
+    expect(w.text(other, 'README.md')).not.toBeNull() // now: deleted
+  })
+
+  it('two devices finish the same waiting remove at once: the list ends on a numbers gist that exists, and only one stays', async () => {
+    const bad: number[] = []
+    for (let seed = 1; seed <= 10; seed++) {
+      const w = people()
+      const ali = await person(w, 'ali')
+      const bea = await person(w, 'bea')
+      const s1 = await shareLink(ali.api, ali.handle, opts(w))
+      const p = await pasteLink(bea.api, await fresh(bea.api, w), s1.link, opts(w))
+      if (p.kind !== 'added') throw new Error(p.kind)
+      await pasteLink(ali.api, await fresh(ali.api, w), p.sendBack!, opts(w))
+      const s2 = await shareLink(ali.api, await fresh(ali.api, w), opts(w))
+      w.failNext = (c) => (c.op === 'remove' ? 'OFFLINE' : undefined)
+      expect((await removeFriend(ali.api, await fresh(ali.api, w), s2.pointer, emptyBudget(), opts(w))).kind).toBe('paused')
+      w.shuffle(seed)
+      const mac = w.api('ali-mac')
+      await Promise.all([finishRemove(ali.api, await fresh(ali.api, w), emptyBudget(), opts(w)), finishRemove(mac, await fresh(mac, w), emptyBudget(), opts(w))])
+      const h = await fresh(ali.api, w)
+      if (w.text(h.index.stats!, NUMBERS_FILE) === null || pendingRemove(h) !== null) bad.push(seed)
+      else {
+        // The friend that stays (Bea) reads the numbers gist of the list.
+        for (const f of h.index.friends) expect(JSON.parse(w.text(f.mine, POINTER_FILE)!).stats, `seed ${seed}`).toBe(h.index.stats)
+        expect(w.owned('ali').filter((g) => NUMBERS_FILE in g.files && Object.keys(g.files).length === 1), `seed ${seed}`).toHaveLength(1)
+      }
+    }
+    expect(bad).toEqual([]) // now: [1, 2, 4, 5, 6, 7, 8, 9, 10]
   })
 })
 
