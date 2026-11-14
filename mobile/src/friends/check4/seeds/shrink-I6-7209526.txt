@@ -1,0 +1,56 @@
+seed 7209526 I6: 5 events, setup [3,1,2,false,false,false]
+  seed 7209526 step 19: after send A0, C (kept, paired) reads 4a6d4a via A's 500687; the send wrote e16e92
+  events [{"t":"rows","who":"B","dev":2},{"t":"share","who":"A","dev":0},{"t":"crash","who":"A","dev":2,"arg":12},{"t":"crash","who":"C","dev":2,"arg":60},{"t":"both","who":"A","dev":1}]
+  setup A3 B1 C2
+   1 rows B0 
+   2 share A0 -> 2c4e10
+   3 crash A2 #12 next action stops at call 11
+   4 crash C0 #60 next action stops at call 8
+   6 cancel A1 2c4e10:done
+   5 removeB A0 2c4e10:done 
+   5 both A1 removeB || cancel
+   7 rows A0 CEM:ok
+   8 rows A1 CEM:ok
+   9 rows A2 CEM:ok
+  10 rows B0 
+  11 rows C0 ALI:no-numbers
+  12 rows C1 ALI:no-numbers
+  13 rows A0 CEM:ok
+  14 rows A1 CEM:ok
+  15 rows A2 CEM:ok
+  16 rows B0 
+  17 rows C0 ALI:no-numbers
+  18 rows C1 ALI:no-numbers
+  19 send A0 sent
+  20 send A1 sent
+  21 send A2 sent
+
+seed 7201162 I6: 13 events, setup [2,1,1,false,false,false]
+  seed 7201162 step 23: after send A0, C (kept, paired) reads 4a6d4a via A's 500687; the send wrote e16e92
+  events [{"t":"share","who":"A","dev":1},{"t":"offline","who":"B","dev":1},{"t":"paste","who":"A","dev":0,"arg":0},{"t":"crash","who":"A","dev":1,"arg":12},{"t":"rows","who":"C","dev":0},{"t":"offline","who":"A","dev":0},{"t":"ratelimit","who":"A","dev":1},{"t":"crash","who":"A","dev":1,"arg":60},{"t":"crash","who":"B","dev":1,"arg":12},{"t":"offline","who":"A","dev":1},{"t":"send","who":"B","dev":1},{"t":"paste","who":"A","dev":1,"arg":1},{"t":"both","who":"A","dev":2}]
+  setup A2 B1 C1
+   1 share A1 -> 2c4e10
+   2 offline B0 until 4
+   3 paste A0 #0 43197a -> already
+   4 crash A1 #12 next action stops at call 4
+   5 rows C0 ALI:ok
+   6 offline A0 until 12
+   7 ratelimit A1 GitHub refuses PATCH until step 9
+   8 crash A1 #60 next action stops at call 52
+   9 crash B0 #12 next action stops at call 12
+  10 offline A1 until 12
+  11 send B0 no-friends
+  12 paste A1 #1 43197a -> already
+  14 cancel A1 2c4e10:done
+  13 cancel A0 2c4e10:done
+  13 both A0 cancel || cancel
+  15 rows A0 CEM:ok
+  16 rows A1 CEM:ok
+  17 rows B0 
+  18 rows C0 ALI:no-numbers
+  19 rows A0 CEM:ok
+  20 rows A1 CEM:ok
+  21 rows B0 
+  22 rows C0 ALI:no-numbers
+  23 send A0 sent
+  24 send A1 sent

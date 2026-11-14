@@ -1,4 +1,6 @@
 import { GistError, type GistDoc, type GistErrorCode, type GistListItem, type GistRate, type GistsApi } from './friendGists'
+import { parseListFile } from './friendListStore'
+import { fakeRepoWorld, type FakeRepoWorld } from './friendRepoFake'
 
 /**
  * TEST HELP ONLY (YAZ-5082): a fake GitHub gist API in memory, so no test calls the real one. The phone's tests put it
@@ -9,6 +11,15 @@ import { GistError, type GistDoc, type GistErrorCode, type GistListItem, type Gi
  * and a free 304; `PATCH` counts on `gist_update`, 100 an hour for the ACCOUNT (all its tokens); a list holds file names,
  * not file text. IDs are 32 hex characters, not in the order of creation (as on GitHub), and `created_at` has whole
  * seconds, so two gists made in one second tie on time.
+ *
+ * YAZ-5083: as STRICT as GitHub where the round 4 checker found it kinder (all proved live in round 4):
+ * - a `PATCH` that sets a file to `null` that the gist does not have is refused WHOLE with 422 (no file is written);
+ * - two `PATCH`es of one gist at the same moment: the second gets 409 "Gist cannot be updated." (`conflicts`);
+ * - a gist of more than 300 files reads (and lists) only its first 300, in name order, with `truncated: true`;
+ * - a file over 1 MB reads cut, with the file's `truncated: true`;
+ * - each version of a gist is kept (`revisions`): a reader with the ID can read every old one.
+ * With `repos`, the vault repos of the accounts answer at `/repos/…` (`shared/friendRepoFake.ts`), and `api(token)`
+ * gives the account's repos as the list's ports.
  */
 export interface FakeGistAccount {
   login: string
@@ -25,6 +36,8 @@ export interface FakeGist {
   createdAt: number
   updatedAt: number
   version: number
+  /** Every version's files, oldest first (GitHub keeps each revision; anyone with the ID reads it). */
+  revisions: Record<string, string>[]
 }
 
 export type FakeGistOp = 'list' | 'read' | 'create' | 'update' | 'remove'
@@ -69,16 +82,33 @@ export interface FakeGistWorld {
   setFiles(id: string, files: Record<string, string>): void
   /** Test only: a gist of `login`, made with no call. */
   seed(login: string, files: Record<string, string>, description?: string): string
-  /** One call as GitHub's HTTP API answers it. `undefined` for no answer (offline). */
-  http(method: string, path: string, query: URLSearchParams, token: string | null, body: unknown, etag: string | null): Promise<FakeHttpAnswer | undefined>
+  /** One call as GitHub's HTTP API answers it. `undefined` for no answer (offline). `accept`: the Accept header. */
+  http(method: string, path: string, query: URLSearchParams, token: string | null, body: unknown, etag: string | null, accept?: string | null): Promise<FakeHttpAnswer | undefined>
   /** The gist API for one token, in memory (as an adapter on a real client gives it). */
   api(token: string): GistsApi
+  /** YAZ-5083: the vault repos of the accounts (the friends list lives in one of them). */
+  repos: FakeRepoWorld | null
+  /** Two `PATCH`es of one gist at the same moment: the second gets 409 (GitHub, round 4). Default true. */
+  conflicts: boolean
+  /** Every `PATCH` that got 409 or 422, for the checkers' counts. */
+  refused: { status: number; id: string }[]
+  /**
+   * Test only (YAZ-5083): the person's list as version 2 files: the file of the vault the note names, or the files of
+   * an old gist list; null when there is none (or it cannot be read).
+   */
+  listFiles(login: string): Record<string, string> | null
 }
 
+const INDEX_NAME = 'notecards-friends.json'
+const LIST_PATH_NAME = '.yaseendocs/friends.json'
 export const FAKE_GIST_LIMIT = 100
 const HOUR = 3600_000
+/** GitHub gives at most this many files of a gist (round 4, live: 307 files gave 300 and `truncated: true`). */
+export const GIST_FILE_LIMIT = 300
+/** A file over this size reads cut (`truncated: true`). */
+const FILE_LIMIT = 1024 * 1024
 
-export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>; start?: number; now?: () => number }): FakeGistWorld {
+export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>; start?: number; now?: () => number; repos?: FakeRepoWorld | null }): FakeGistWorld {
   const accounts = new Map(Object.entries(setup.accounts))
   const gists = new Map<string, FakeGist>()
   const patchTimes = new Map<string, number[]>()
@@ -101,15 +131,40 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
   }
   const iso = (ms: number) => new Date(Math.floor(ms / 1000) * 1000).toISOString().replace('.000Z', 'Z')
   const etagOf = (g: FakeGist) => `W/"${g.id.slice(0, 8)}${g.version.toString(16).padStart(8, '0')}"`
-  const full = (g: FakeGist) => ({
-    id: g.id,
-    description: g.description,
-    public: g.public,
-    owner: { login: g.owner },
-    created_at: iso(g.createdAt),
-    updated_at: iso(g.updatedAt),
-    files: Object.fromEntries(Object.entries(g.files).map(([name, content]) => [name, { filename: name, size: content.length, truncated: false, content, raw_url: `https://gist.githubusercontent.com/${g.owner}/${g.id}/raw/${g.version}/${name}` }])),
-  })
+  const full = (g: FakeGist) => {
+    const names = Object.keys(g.files).sort()
+    const cut = names.length > GIST_FILE_LIMIT
+    return {
+      id: g.id,
+      description: g.description,
+      public: g.public,
+      owner: { login: g.owner },
+      created_at: iso(g.createdAt),
+      updated_at: iso(g.updatedAt),
+      ...(cut && { truncated: true }),
+      files: Object.fromEntries(
+        names.slice(0, GIST_FILE_LIMIT).map((name) => {
+          const content = g.files[name]
+          const big = content.length > FILE_LIMIT
+          return [name, { filename: name, size: content.length, truncated: big, content: big ? content.slice(0, FILE_LIMIT) : content, raw_url: `https://gist.githubusercontent.com/${g.owner}/${g.id}/raw/${g.version}/${name}` }]
+        }),
+      ),
+    }
+  }
+  function defaultRepos(): FakeRepoWorld {
+    const repos = fakeRepoWorld({ logins: (t) => accounts.get(t)?.login ?? null, now: () => now(), autoRepos: true })
+    // One repo for each login as written (a test may give two accounts "bea" and "BEA": two vaults, `bea/vault` and
+    // `BEA/vault2`).
+    const taken = new Set<string>()
+    for (const login of new Set([...accounts.values()].map((a) => a.login))) {
+      const name = taken.has(`${login.toLowerCase()}/vault`) ? `${login}/vault2` : `${login}/vault`
+      taken.add(name.toLowerCase())
+      repos.create(name, login, { 'a.md': '# A page\n' })
+    }
+    return repos
+  }
+  /** The gists with a PATCH in flight: a second one at the same moment gets 409. */
+  const writing = new Set<string>()
   const window = (login: string) => {
     const t = now()
     const times = (patchTimes.get(login) ?? []).filter((at) => at > t - HOUR)
@@ -159,6 +214,24 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
     calls: [],
     offline: false,
     failNext: null,
+    // YAZ-5083: by default each account has one vault repo, `<login>/vault` (branch `main`), for its friends list.
+    repos: setup.repos !== undefined ? setup.repos : defaultRepos(),
+    listFiles(login) {
+      const g = world.owned(login).find((x) => INDEX_NAME in x.files)
+      if (g === undefined) return null
+      let head: { v?: unknown; home?: unknown } = {}
+      try {
+        head = JSON.parse(g.files[INDEX_NAME]) as typeof head
+      } catch {
+        return null
+      }
+      if (head.v !== 3 || typeof head.home !== 'string') return { ...g.files }
+      const text = world.repos?.file(head.home, LIST_PATH_NAME) ?? null
+      const f = text === null ? null : parseListFile(text)
+      return f === null || f.kind !== 'ok' ? null : f.files
+    },
+    conflicts: true,
+    refused: [],
     shuffle(seed) {
       let s = seed * 9301 + 49297
       rng = () => {
@@ -175,13 +248,21 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
       if (!g) throw new Error('no such gist')
       g.files = { ...files }
       g.version++
+      g.revisions.push({ ...g.files })
     },
     seed(login, files, description = '') {
       const id = newId()
-      gists.set(id, { id, owner: login, description, public: false, files: { ...files }, createdAt: now(), updatedAt: now(), version: 1 })
+      gists.set(id, { id, owner: login, description, public: false, files: { ...files }, createdAt: now(), updatedAt: now(), version: 1, revisions: [{ ...files }] })
       return id
     },
-    async http(method, path, query, token, body, etag) {
+    async http(method, path, query, token, body, etag, accept = null) {
+      if (path.startsWith('/repos/') && world.repos !== null) {
+        if (world.offline) return undefined
+        const who = token === null ? undefined : accounts.get(token)
+        if (token !== null && who === undefined) return { status: 401, body: { message: 'Bad credentials' }, headers: { date: new Date(now()).toUTCString() } }
+        const a = await world.repos.http(method, path, query, token, body, etag, accept)
+        return a === undefined ? undefined : { status: a.status, body: a.raw ?? a.body, headers: { ...a.headers, ...(a.raw !== undefined && { 'x-raw': '1' }) } }
+      }
       if (rng !== null) await new Promise((done) => setTimeout(done, Math.floor(rng!() * 4)))
       else await Promise.resolve()
       const parts = path.split('/').filter(Boolean)
@@ -232,15 +313,17 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
         if (!(who.gists ?? true)) return done(refused())
         const files = Object.entries(b.files ?? {}).filter(([, f]) => f !== null && typeof f.content === 'string')
         if (files.length === 0) return done(answer(422, { message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] }))
+        const made = Object.fromEntries(files.map(([name, f]) => [name, f!.content as string]))
         const newOne: FakeGist = {
           id: newId(),
           owner: who.login,
           description: typeof b.description === 'string' ? b.description : '',
           public: b.public === true,
-          files: Object.fromEntries(files.map(([name, f]) => [name, f!.content as string])),
+          files: made,
           createdAt: now(),
           updatedAt: now(),
           version: 1,
+          revisions: [{ ...made }],
         }
         gists.set(newOne.id, newOne)
         return done(answer(201, full(newOne), { etag: etagOf(newOne) }))
@@ -254,18 +337,41 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
       }
       // PATCH: GitHub's own count, 100 an hour for the account.
       if (window(who.login).length >= FAKE_GIST_LIMIT) return done(failWith('RATE_LIMITED', who.login))
-      for (const [name, f] of Object.entries(b.files ?? {})) {
-        if (f === null) delete g.files[name]
-        else if (typeof f.content === 'string') g.files[name] = f.content
+      // Round 4, live: a second PATCH of the same gist at the same moment is refused whole with 409.
+      if (world.conflicts && writing.has(g.id)) {
+        world.refused.push({ status: 409, id: g.id })
+        return done(answer(409, { message: 'Gist cannot be updated.', status: '409' }))
       }
-      g.version++
-      g.updatedAt = now()
-      window(who.login).push(now())
-      patchCount.set(who.login, (patchCount.get(who.login) ?? 0) + 1)
-      return done(answer(200, full(g), { etag: etagOf(g), ...gistRate(who.login) }))
+      // Round 4, live: a `null` for a file the gist does not have refuses the WHOLE write with 422.
+      if (Object.entries(b.files ?? {}).some(([name, f]) => f === null && !(name in g.files))) {
+        world.refused.push({ status: 422, id: g.id })
+        return done(answer(422, { message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] }))
+      }
+      writing.add(g.id)
+      try {
+        // The write takes a moment: another PATCH of this gist in that moment meets the 409 above.
+        for (let i = 0; i < 3; i++) await Promise.resolve()
+        if (!gists.has(g.id)) return done(notFound())
+        for (const [name, f] of Object.entries(b.files ?? {})) {
+          if (f === null) delete g.files[name]
+          else if (typeof f.content === 'string') g.files[name] = f.content
+        }
+        g.version++
+        g.updatedAt = now()
+        g.revisions.push({ ...g.files })
+        window(who.login).push(now())
+        patchCount.set(who.login, (patchCount.get(who.login) ?? 0) + 1)
+        return done(answer(200, full(g), { etag: etagOf(g), ...gistRate(who.login) }))
+      } finally {
+        writing.delete(g.id)
+      }
     },
     api(token) {
-      return memoryApi(world, token)
+      const api = memoryApi(world, token)
+      const login = accounts.get(token)?.login
+      if (world.repos === null || login === undefined) return api
+      const repos = world.repos
+      return { ...api, repos: async () => repos.owned(login).map((full) => repos.port(token, full)), repo: async (full) => repos.port(token, full) }
     },
   }
   return world
@@ -286,6 +392,8 @@ function memoryApi(world: FakeGistWorld, token: string): GistsApi {
     if (a.status === 401) throw new GistError('UNAUTHORIZED', 'GitHub answered 401')
     if (a.status === 403) throw new GistError(method === 'GET' ? 'NO_ACCESS' : 'READ_ONLY', 'GitHub answered 403')
     if (a.status === 404) throw new GistError('NOT_FOUND', 'GitHub answered 404')
+    // GitHub's 409 "Gist cannot be updated" (a write of the same gist at that moment): quiet, try again later.
+    if (a.status === 409) throw new GistError('GITHUB_DOWN', 'GitHub answered 409')
     if (a.status >= 500) throw new GistError('GITHUB_DOWN', `GitHub answered ${a.status}`)
     throw new GistError('UNEXPECTED', `GitHub answered ${a.status}`)
   }
@@ -330,6 +438,7 @@ interface RawGist {
 }
 const listItem = (g: RawGist): GistListItem => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files), createdAt: g.created_at, updatedAt: g.updated_at })
 const doc = (g: RawGist, etag: string | null): GistDoc => ({
+  ...((g as { truncated?: unknown }).truncated === true && { truncated: true }),
   id: g.id,
   owner: g.owner?.login ?? null,
   description: g.description ?? '',

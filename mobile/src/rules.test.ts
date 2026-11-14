@@ -21,8 +21,11 @@ function sourceFiles(dir: string): string[] {
   })
 }
 const files = sourceFiles(SRC).map((path) => ({ path: relative(SRC, path), text: readFileSync(path, 'utf8') }))
-/** Tests and test helpers (`…/testing.ts`): they run in Node and are never bundled. */
-const isTest = (path: string) => /\.test\.tsx?$/.test(path) || /(^|\/)testing\.ts$/.test(path)
+/**
+ * Tests and test helpers (`…/testing.ts`, `….testing.ts`, and the OLD friends code that the round 4 model checker runs,
+ * `friends/check4/old/`): they run in Node and are never bundled.
+ */
+const isTest = (path: string) => /\.test\.tsx?$/.test(path) || /(^|\/|\.)testing\.ts$/.test(path) || /(^|\/)friends\/check4\/old\//.test(path)
 
 /** The service worker's logic: its Cache Storage holds the app's own files (YAZ-5087). */
 const SW_CACHE = 'pwa/swCore.ts'

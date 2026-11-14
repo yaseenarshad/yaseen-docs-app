@@ -1,0 +1,69 @@
+seed 7200932 I2strict: 35 events, setup [2,2,2,false,true,false]
+  seed 7200932 end: B reads A's kept pointer 0cdded (A's entry for B names B's 0c5971), which names nothing (deleted), not A's current 58c692
+  events [{"t":"offline","who":"B","dev":1},{"t":"both","who":"A","dev":0},{"t":"rows","who":"A","dev":1},{"t":"send","who":"B","dev":0},{"t":"paste","who":"A","dev":2,"arg":0},{"t":"offline","who":"C","dev":0},{"t":"rows","who":"A","dev":1},{"t":"budget","who":"A","dev":0,"arg":6},{"t":"both","who":"C","dev":0},{"t":"paste","who":"A","dev":1,"arg":0},{"t":"reshare","who":"A","dev":0},{"t":"send","who":"A","dev":0},{"t":"crash","who":"C","dev":0,"arg":60},{"t":"bothSend","who":"A","dev":0},{"t":"ratelimit","who":"C","dev":2},{"t":"crash","who":"A","dev":1,"arg":60},{"t":"send","who":"A","dev":1},{"t":"send","who":"B","dev":0},{"t":"share","who":"A","dev":0},{"t":"rows","who":"A","dev":2},{"t":"time","who":"A","dev":1,"arg":300000},{"t":"send","who":"A","dev":0},{"t":"bothSend","who":"A","dev":0},{"t":"rows","who":"B","dev":1},{"t":"send","who":"B","dev":1},{"t":"offline","who":"C","dev":2},{"t":"paste","who":"A","dev":0,"arg":0},{"t":"rows","who":"C","dev":0},{"t":"both","who":"A","dev":1},{"t":"share","who":"A","dev":0},{"t":"share","who":"B","dev":0},{"t":"both","who":"A","dev":1},{"t":"share","who":"A","dev":0},{"t":"paste","who":"B","dev":1,"arg":1},{"t":"both","who":"B","dev":1}]
+  setup A2 B2 C2 +bgroup
+   1 offline B1 until 3
+   2 removeB A0 
+   3 paste A1 43197a -> already
+   2 both A0 removeB || paste
+   4 rows A1 CEM:ok
+   5 send B0 sent
+   6 paste A0 #0 43197a -> already
+   7 offline C0 until 13
+   8 rows A1 CEM:ok
+   9 budget A0 #6 6 left on this device
+  10 removeB A0 
+  11 paste A1 43197a -> already
+  10 both C0 removeB || paste
+  12 paste A1 #0 43197a -> already
+  13 reshare A0 C: no stopped row
+  14 send A0 slowed
+  15 crash C0 #60 next action stops at call 27
+  16 cancel A1 
+  16 bothSend A0 send || cancel
+  17 ratelimit C0 GitHub refuses PATCH until step 22
+  18 crash A1 #60 next action stops at call 51
+  19 send A1 sent
+  20 send B0 waiting
+  21 share A0 -> d35c5c
+  22 rows A0 CEM:ok
+  23 time A1 #300000 
+  24 send A0 slowed
+  25 share A1 -> 2ee9ca
+  25 bothSend A0 send || share
+  26 rows B1 
+  27 send B1 unchanged
+  28 offline C0 until 29
+  29 paste A0 #0 43197a -> already
+  30 rows C0 ALI:ok
+    CRASH A1 at call 51 GET /gists/7867aabeb726cf5ca4ab8ce69a666c25 (after GitHub took it)
+    A1 remove: app closed; restarted
+  32 removeB A1 d35c5c:crash 2ee9ca:done 
+    (cut cleared: A shared a new link to B)
+  31 share A0 -> 7867aa
+  31 both A1 share || removeB
+  33 share A0 -> 9c7fd9
+  34 share B0 -> 5c8ea4
+  35 removeB A0 7867aa:done 9c7fd9:not-found 
+    (cut cleared: A pasted a B link)
+  36 paste A1 5c8ea4 -> added
+  35 both A1 removeB || paste
+  37 share A0 -> 0cdded
+  38 paste B1 #1 0cdded -> added sendBack 0c5971
+  39 cancel A0 0cdded:paused
+  40 paste A1 0c5971 -> failed
+  39 both B1 cancel || paste
+  41 rows A0 CEM:ok,BEA:ok
+  42 rows A1 CEM:ok,BEA:ok
+  43 rows B0 ALI:stopped
+  44 rows B1 ALI:stopped
+  45 rows C0 ALI:ok
+  46 rows C1 ALI:ok
+  47 rows A0 CEM:ok,BEA:ok
+  48 rows A1 CEM:ok,BEA:ok
+  49 rows B0 ALI:gone
+  50 rows B1 ALI:gone
+  51 rows C0 ALI:ok
+  52 rows C1 ALI:ok
+  53 send A0 sent
+  54 send A1 sent

@@ -30,8 +30,9 @@ export function worldFetch(world: FakeGistWorld, users: Record<string, { login: 
         const user = token === null ? undefined : users[token]
         return new Response(JSON.stringify(user ?? { message: 'Bad credentials' }), { status: user === undefined ? 401 : 200, headers: { 'content-type': 'application/json' } })
       }
-      const answer = await world.http(method, address.pathname, address.searchParams, token, body === null ? undefined : (JSON.parse(body) as unknown), headers.get('if-none-match'))
+      const answer = await world.http(method, address.pathname, address.searchParams, token, body === null ? undefined : (JSON.parse(body) as unknown), headers.get('if-none-match'), headers.get('accept'))
       if (answer === undefined) throw new TypeError('fetch failed')
+      if (answer.headers['x-raw'] === '1') return new Response(String(answer.body), { status: answer.status, headers: { 'content-type': 'application/vnd.github.raw+json' } })
       const noBody = answer.status === 204 || answer.status === 304
       return new Response(noBody ? null : JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json', ...answer.headers } })
     },

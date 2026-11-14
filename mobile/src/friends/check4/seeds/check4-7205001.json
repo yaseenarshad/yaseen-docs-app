@@ -1,0 +1,179 @@
+{
+ "from": 7205001,
+ "count": 2500,
+ "totals": {
+  "runs": 2500,
+  "events": 189697,
+  "crashes": 6024,
+  "c409": 3122,
+  "sends": 19823,
+  "sendsSent": 8599,
+  "oldRuns": 775,
+  "oldOps": 7659,
+  "oldWrites": 1699,
+  "oldBlocked": 6841,
+  "oldHeadOverV2": 5,
+  "removesStarted": 6234,
+  "removesFinished": 4794,
+  "groupRuns": 602,
+  "zoneLost": 1,
+  "i6parked": 0,
+  "maxListFiles": 34,
+  "maxTombs": 25,
+  "cutRuns": 0
+ },
+ "violations": {
+  "I5": 589,
+  "I4": 11,
+  "I4strict": 11,
+  "I2": 17,
+  "I2strict": 3,
+  "I6": 2
+ },
+ "seeds": {
+  "I5": [
+   7205003,
+   7205025,
+   7205068,
+   7205090,
+   7205116,
+   7205129,
+   7205144,
+   7205286,
+   7205299,
+   7205336,
+   7205443,
+   7205444,
+   7205595,
+   7205681,
+   7205710,
+   7205739,
+   7205823,
+   7205860,
+   7205878,
+   7205910,
+   7205920,
+   7206025,
+   7206299,
+   7206401,
+   7206418,
+   7206545,
+   7206621,
+   7206655,
+   7206736,
+   7206751,
+   7206788,
+   7206798,
+   7206818,
+   7206857,
+   7206911,
+   7206926,
+   7206953,
+   7206957,
+   7207027,
+   7207038,
+   7207057,
+   7207099,
+   7207152,
+   7207190,
+   7207230,
+   7207256,
+   7207300,
+   7207330,
+   7207339,
+   7207457,
+   7207473,
+   7207477
+  ],
+  "I4": [
+   7205163,
+   7205203,
+   7205351,
+   7205731,
+   7206516,
+   7206572,
+   7206604,
+   7206661,
+   7206826,
+   7207424,
+   7207441
+  ],
+  "I4strict": [
+   7205163,
+   7205203,
+   7205351,
+   7205731,
+   7206516,
+   7206572,
+   7206604,
+   7206661,
+   7206826,
+   7207424,
+   7207441
+  ],
+  "zoneLost": [
+   7205348
+  ],
+  "I2": [
+   7205742,
+   7206817,
+   7206855,
+   7207141,
+   7207402
+  ],
+  "I2strict": [
+   7206237,
+   7206956,
+   7207342
+  ],
+  "I6": [
+   7206817,
+   7206855
+  ]
+ },
+ "first": {
+  "I5": [
+   "seed 7205003 step 23 during: A's list holds 2 live entries for bea (mine 58c692,9b9efc)",
+   "seed 7205025 step 49 during: A's list holds 2 live entries for bea (mine 9b9efc,696b67)",
+   "seed 7205068 step 46 during: A's list holds 2 live entries for bea (mine 696b67,9b9efc)",
+   "seed 7205090 step 12 during: A's list holds 2 live entries for bea (mine 6e50ae,9c7fd9)",
+   "seed 7205116 step 71 during: A's list holds 2 live entries for bea (mine 30176d,55b330)",
+   "seed 7205129 step 43 during: A's list holds 2 live entries for bea (mine 6e50ae,9c7fd9)"
+  ],
+  "I4": [
+   "seed 7205163 step 5: A1 wrote the list without s:2c4e10db1da684949c101980d52f76f2 (added by another device after its read)",
+   "seed 7205203 step 7: A1 wrote the list without s:4a6d4a8743244fc1089b6addae518d10 (added by another device after its read)",
+   "seed 7205351 step 5: A1 wrote the list without s:2c4e10db1da684949c101980d52f76f2 (added by another device after its read)",
+   "seed 7205731 step 10: A0 wrote the list without s:2c4e10db1da684949c101980d52f76f2 (added by another device after its read)",
+   "seed 7206516 step 4: A1 wrote the list without s:2c4e10db1da684949c101980d52f76f2 (added by another device after its read)",
+   "seed 7206572 step 9: A0 wrote the list without s:2c4e10db1da684949c101980d52f76f2 (added by another device after its read)"
+  ],
+  "I4strict": [
+   "seed 7205163 step 5: A1 write drops s:2c4e10db1da684949c101980d52f76f2 that it never GET-read",
+   "seed 7205203 step 7: A1 write drops s:4a6d4a8743244fc1089b6addae518d10 that it never GET-read",
+   "seed 7205351 step 5: A1 write drops s:2c4e10db1da684949c101980d52f76f2 that it never GET-read",
+   "seed 7205731 step 10: A0 write drops s:2c4e10db1da684949c101980d52f76f2 that it never GET-read",
+   "seed 7206516 step 4: A1 write drops s:2c4e10db1da684949c101980d52f76f2 that it never GET-read",
+   "seed 7206572 step 9: A0 write drops s:2c4e10db1da684949c101980d52f76f2 that it never GET-read"
+  ],
+  "zoneLost": [
+   "seed 7205348 step 4: A1 head write drops zone America/Phoenix"
+  ],
+  "I2": [
+   "seed 7205742 step 31: [OTHER] C (paired, in A's list) does not reach A's current numbers; C reads 500687; A's mine for C 500687",
+   "seed 7206817 step 38: [OTHER] C (paired, in A's list) does not reach A's current numbers; C reads 500687; A's mine for C 500687",
+   "seed 7206855 step 17: [OTHER] C (paired, in A's list) does not reach A's current numbers; C reads 500687; A's mine for C 500687",
+   "seed 7207141 step 9: [OTHER] C (paired, in A's list) does not reach A's current numbers; C reads 500687; A's mine for C 500687",
+   "seed 7207402 step 7: [OTHER] C (paired, in A's list) does not reach A's current numbers; C reads 500687; A's mine for C 500687"
+  ],
+  "I2strict": [
+   "seed 7206237 end: C reads A's kept pointer 5c8ea4 (A's entry for C names C's 43197a), which names 7867aa, not A's current aba906",
+   "seed 7206956 end: C is not in A's list any more (A never removed C)",
+   "seed 7207342 end: C is not in A's list any more (A never removed C)"
+  ],
+  "I6": [
+   "seed 7206817 step 43: after send A0, C (kept, paired) reads e44ade via A's 500687; the send wrote 922e43",
+   "seed 7206855 step 20: after send A0, C (kept, paired) reads 4a6d4a via A's 500687; the send wrote e16e92"
+  ]
+ }
+}

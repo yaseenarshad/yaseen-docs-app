@@ -18,7 +18,8 @@ const appSources = (dir: string): string[] =>
   readdirSync(dir).flatMap((name) => {
     const path = join(dir, name)
     if (statSync(path).isDirectory()) return name === 'dev' ? [] : appSources(path)
-    return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) && name !== 'testing.ts' ? [path] : []
+    // Tests and test helpers (`testing.ts`, `*.testing.ts`, the old friends code of the round 4 checker) are never bundled.
+    return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) && name !== 'testing.ts' && !name.endsWith('.testing.ts') && !/\/friends\/check4\/old\//.test(path) ? [path] : []
   })
 
 /** Every https origin written in the app's code (not its tests, not the dev fixtures). */

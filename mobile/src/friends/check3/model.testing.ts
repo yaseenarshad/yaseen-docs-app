@@ -4,6 +4,7 @@
  * It records every gist ID each actor ever SAW (every answer body, every link handed over), and checks I1..I4.
  */
 import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, isListFile, readListFiles, type FriendsIndex } from '@shared/friendGists'
+import { LIST_PATH, parseListFile } from '@shared/friendListStore'
 import { fakeGistWorld, type FakeGistWorld, type FakeGist } from '@shared/friendGistsFake'
 import { GROUP_FILE } from '@shared/friendGroups'
 import { emptyBudget } from '@shared/friendSend'
@@ -53,6 +54,12 @@ interface Device {
    * of the head file). Version 2 keeps the list in the head file and one file for each entry.
    */
   lastList: Record<string, string> | null
+  /**
+   * YAZ-5083 (the list in the vault repo): the list as this device last read it (`contents` at a commit) or wrote it (its
+   * own ref move), and that commit. I4 and I7 compare each list write with it.
+   */
+  repoList: Record<string, string> | null
+  repoSha: string | null
 }
 
 export interface Stats {
@@ -64,6 +71,11 @@ export interface Stats {
   i3: string[]
   i3late: number
   i4: string[]
+  /** YAZ-5083: two live entries for one friend (round 4's I5), after every step. */
+  i5: string[]
+  /** YAZ-5083: a list write that is not a fast forward of the list its writer read (a lost update). */
+  i7: string[]
+  listWrites: number
   lostRemove: number
   doneButListed: number
   groupReach: number
@@ -107,7 +119,7 @@ export class Model {
   skew: Record<string, number> = {}
   madeBy = new Map<string, Actor>()
   log: string[] = []
-  st: Stats = { steps: 0, removesStarted: 0, removesFinished: 0, i1: [], i2: [], i3: [], i3late: 0, i4: [], lostRemove: 0, doneButListed: 0, groupReach: 0, queuedSteps: 0, queuedBReadsCurrent: 0, queuedHonest: 0, stoppedRowsC: 0, crashes: 0, deletes: {}, wrongDeletes: [] }
+  st: Stats = { steps: 0, removesStarted: 0, removesFinished: 0, i1: [], i2: [], i3: [], i3late: 0, i4: [], i5: [], i7: [], listWrites: 0, lostRemove: 0, doneButListed: 0, groupReach: 0, queuedSteps: 0, queuedBReadsCurrent: 0, queuedHonest: 0, stoppedRowsC: 0, crashes: 0, deletes: {}, wrongDeletes: [] }
   linksGivenToB = new Set<string>()
 
   constructor(public seed: number) {
@@ -131,11 +143,22 @@ export class Model {
     return Object.values(LOGIN).flatMap((l) => this.world.owned(l))
   }
   listOf(a: Actor): { id: string; index: FriendsIndex; raw: Record<string, unknown> } | null {
-    const g = this.world.owned(LOGIN[a]).find((x) => INDEX_FILE in x.files)
-    if (!g) return null
-    // BUILDER CHANGE (YAZ-5312): the list is the whole gist (the head and each entry file), not the head file alone.
-    const r = readListFiles(g.files)
-    return r.kind === 'ok' ? { id: g.id, index: r.value, raw: r.raw } : null
+    // BUILDER CHANGE (YAZ-5083): the list is the file `.yaseendocs/friends.json` of the actor's vault repo; the gist
+    // `notecards-friends.json` is the note that names that vault (its ID is the list's `id`).
+    const files = this.repoFiles(LOGIN[a], null)
+    if (files === null) return null
+    const r = readListFiles(files)
+    const note = this.world.owned(LOGIN[a]).find((x) => INDEX_FILE in x.files)
+    return r.kind === 'ok' ? { id: note?.id ?? '', index: r.value, raw: r.raw } : null
+  }
+  /** The list files of a login's vault at a commit (null: the branch head), or null when there is no list file. */
+  repoFiles(login: string, commit: string | null): Record<string, string> | null {
+    const repos = this.world.repos!
+    const full = `${login}/vault`
+    const text = commit === null ? repos.file(full, LIST_PATH) : repos.fileAt(full, commit, LIST_PATH)
+    if (text === null) return null
+    const f = parseListFile(text)
+    return f.kind === 'ok' ? f.files : null
   }
   /** Gist IDs inside group files, and the group files: what a group exposes (a known, recorded fact). */
   groupIds(): Set<string> {
@@ -157,7 +180,7 @@ export class Model {
     await tokens.write(vaultId(v), tok(actor))
     await saveAccount(store, vaultId(v), { login: LOGIN[actor], name: LOGIN[actor].toUpperCase(), avatarUrl: '', gists: 'yes', expiresAt: null, checkedAt: START })
     await store.setState(vaultId(v), INDEX_STATE, { commit: 'c', records: { 'a.md': { cards: [] } as unknown as IndexRecord } })
-    const d = { actor, n, store, tokens, offlineUntil: -1, crashAt: null, calls: 0, dead: false, lastList: null } as unknown as Device
+    const d = { actor, n, store, tokens, offlineUntil: -1, crashAt: null, calls: 0, dead: false, lastList: null, repoList: null, repoSha: null } as unknown as Device
     this.arm(d)
     d.list = this.newList(d)
     return d
@@ -194,7 +217,8 @@ export class Model {
         d.fireCrash()
         return hang()
       }
-      if (method === 'PATCH' && (m.rateBlock[LOGIN[d.actor]] ?? -1) > m.step) {
+      // GitHub's `gist_update` limit holds for a gist PATCH only (a ref PATCH of the vault repo counts on `core`).
+      if (method === 'PATCH' && path.startsWith('/gists/') && (m.rateBlock[LOGIN[d.actor]] ?? -1) > m.step) {
         return new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
           status: 403,
           headers: { 'content-type': 'application/json', 'x-ratelimit-resource': 'gist_update', 'x-ratelimit-remaining': '0', 'x-ratelimit-limit': '100', 'x-ratelimit-reset': String(Math.ceil((m.clock.now() + 600_000) / 1000)), date: new Date(m.clock.now()).toUTCString() },
@@ -220,8 +244,37 @@ export class Model {
       }
       this.checkI4(d, before, after)
     }
-    if (method === 'DELETE' && id !== null) this.auditDelete(d, id)
+    if (method === 'DELETE' && id !== null && url.includes('/gists/')) this.auditDelete(d, id)
+    // YAZ-5083: a move of the vault branch that writes the list: I4 (it drops nothing that it did not read) and I7 (it is
+    // a fast forward of the list its writer read: the new commit's parent is the commit of that read).
+    const refMove = method === 'PATCH' ? /^\/repos\/([^/]+)\/([^/]+)\/git\/refs\/heads\//.exec(new URL(url).pathname) : null
+    const refBody = refMove !== null && typeof init.body === 'string' ? (JSON.parse(init.body) as { sha?: string }) : null
+    const login = refMove?.[1] ?? ''
+    const before = refMove === null ? null : this.repoFiles(login, null)
+    const head = refMove === null ? null : this.world.repos!.head(`${login}/vault`)
     const res = await inner(url, init as never)
+    if (refMove !== null && res.status === 200 && refBody?.sha !== undefined) {
+      const after = this.repoFiles(login, refBody.sha)
+      if (JSON.stringify(before) !== JSON.stringify(after)) {
+        this.st.listWrites++
+        const parent = this.world.repos!.parents(`${login}/vault`, refBody.sha)[0] ?? ''
+        if (parent !== head) this.st.i7.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n}'s list write is not a fast forward of the head`)
+        if (d.repoSha !== parent) this.st.i7.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n} wrote the list on ${parent.slice(0, 6)}, but last read it at ${d.repoSha?.slice(0, 6) ?? 'nothing'} (a lost update)`)
+        const saved = d.lastList
+        d.lastList = d.repoList
+        this.checkI4(d, before ?? {}, after ?? {})
+        d.lastList = saved
+      }
+      d.repoList = after
+      d.repoSha = refBody.sha
+    }
+    if (method === 'GET' && /\/contents\/\.yaseendocs\/friends\.json$/.test(new URL(url).pathname)) {
+      const ref = new URL(url).searchParams.get('ref')
+      if (res.status === 200 || res.status === 404) {
+        d.repoSha = ref
+        d.repoList = res.status === 200 ? this.repoFiles(LOGIN[d.actor], ref) : null
+      }
+    }
     const text = await res.clone().text()
     if (res.status >= 200 && res.status < 300) {
       const groupish = this.groupIds()
@@ -241,8 +294,9 @@ export class Model {
           /* no body */
         }
       }
-      // BUILDER CHANGE (YAZ-5312): the list as last read or written is the files of the list gist in the answer.
-      if (id !== null || method === 'POST') {
+      // BUILDER CHANGE (YAZ-5312): the list as last read or written is the files of the list gist in the answer (an old
+      // gist list only; YAZ-5083: the list in the vault repo is tracked in `repoList`).
+      if ((id !== null || method === 'POST') && url.includes('/gists')) {
         try {
           const doc = JSON.parse(text) as { files?: Record<string, { content?: string }> }
           if (doc.files !== undefined && INDEX_FILE in doc.files && (method === 'GET' || method === 'PATCH' || method === 'POST'))
@@ -296,6 +350,8 @@ export class Model {
       d.crashAt = null
       d.calls = 0
       d.lastList = null
+      d.repoList = null
+      d.repoSha = null
       this.arm(d)
       d.list = this.newList(d)
       this.log.push(`  ${d.actor}${d.n} ${name}: app closed; restarted`)
@@ -374,7 +430,9 @@ export class Model {
     if (ev.par !== undefined) {
       this.step--
       this.st.steps--
+      this.parallelSteps++
       await Promise.all(ev.par.map((e) => this.run(e)))
+      this.parallelSteps--
       return
     }
     switch (ev.t) {
@@ -505,7 +563,9 @@ export class Model {
         out = `${o1} || ${o2}`
         this.step--
         this.st.steps--
+        this.parallelSteps++
         await Promise.all([this.run({ t: o1, who: 'A', dev: d1.n }), this.run({ t: o2, who: 'A', dev: d2.n })])
+        this.parallelSteps--
         break
       }
     }
@@ -526,8 +586,25 @@ export class Model {
   }
 
   queued: string[] = []
+  /** Round 4's I5: no list holds two live entries for one friend (live: the friend's pointer still exists). */
+  checkI5base(tag: string) {
+    for (const a of ['A', 'B', 'C'] as Actor[]) {
+      const l = this.listOf(a)
+      if (l === null) continue
+      const owners = new Map<string, string[]>()
+      for (const f of l.index.friends) {
+        const g = this.gist(f.theirs)
+        if (g === undefined) continue
+        owners.set(g.owner, [...(owners.get(g.owner) ?? []), f.mine.slice(0, 6)])
+      }
+      for (const [o, mines] of owners) if (mines.length > 1) this.st.i5.push(`seed ${this.seed} step ${this.step} ${tag}: ${a}'s list holds ${mines.length} live entries for ${o} (mine ${mines.join(',')})`)
+    }
+  }
+  /** Steps that run devices at the same moment: I5 is checked once they all end. */
+  parallelSteps = 0
   async check() {
     this.queued = await this.queues()
+    if (this.parallelSteps === 0) this.checkI5base('during')
     const l = this.listOf('A')
     for (const x of l?.index.shared ?? []) this.everShared.add(x.mine)
     if (l === null || !this.cut) return

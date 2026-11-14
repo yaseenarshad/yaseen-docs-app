@@ -1,4 +1,4 @@
-import { it } from 'vitest'
+import { expect, it } from 'vitest'
 import { POINTER_FILE } from '@shared/friendGists'
 import { runScript, type Ev, type Model } from './model.testing'
 
@@ -65,10 +65,15 @@ function finalState(m: Model): string {
   return `${bState}; A numbers gists: ${nNumbers}; rekey: ${l.raw.rekey ? 'waiting' : 'none'}`
 }
 
+const allBad = (m: Model) => [...m.st.i1, ...m.st.i2, ...m.st.i3, ...m.st.i4, ...m.st.i5, ...m.st.i7, ...m.st.wrongDeletes]
+
+// YAZ-5083: every order, every crash run and every cell of the matrix ASSERTS (I1 to I5, I7, wrong deletes: 0).
 it('check3: the 20 nastiest orders, then a crash at every call of a remove and of a paste-back', async () => {
   const out: string[] = []
+  const bad: string[] = []
   for (const o of ORDERS) {
     const m = await runScript(7, o.setup ?? [1, 1, 1, false], o.evs)
+    for (const v of allBad(m).slice(0, 1)) bad.push(`order ${o.name}: ${v}`)
     const pastes = m.log.filter((x) => / paste A/.test(x)).map((x) => x.replace(/^\s*\d+ paste /, '')).join(' | ')
     out.push(`${o.name}\n   I1 ${m.st.i1.length}  I2 ${m.st.i2.length}  I3 ${m.st.i3.length}  I4 ${m.st.i4.length}  done-but-listed ${m.st.doneButListed}  | end: ${finalState(m)}${pastes ? `\n   A pastes: ${pastes}` : ''}${m.st.i1[0] ? `\n   ${m.st.i1[0]}` : ''}${m.st.i2[0] ? `\n   ${m.st.i2[0]}` : ''}`)
   }
@@ -77,6 +82,7 @@ it('check3: the 20 nastiest orders, then a crash at every call of a remove and o
   for (let k = 1; k <= 45; k++) {
     for (const after of [false, true]) {
       const m = await runScript(100 + k * 2 + (after ? 1 : 0), [1, 1, 1, true], [...PAIR, E.shareAC(), E.crashAt('A', k), E.removeB(), E.removeB(), ...END])
+      for (const v of allBad(m).slice(0, 1)) bad.push(`crash in remove at call ${k}: ${v}`)
       if (m.st.i1.length) crashes.i1.push(k)
       if (m.st.i2.length) crashes.i2.push(k)
       if (m.st.i3.length) crashes.i3.push(k)
@@ -87,15 +93,20 @@ it('check3: the 20 nastiest orders, then a crash at every call of a remove and o
   const pb: Record<string, number[]> = { i1: [], i2: [], oldForever: [] }
   for (let k = 1; k <= 30; k++) {
     const m = await runScript(500 + k, [1, 1, 1, false], [...PAIR, E.budget(1), E.removeB(), E.shareB(), E.crashAt('A', k), E.paste('A', newest('A', 'B')), ...END])
+    for (const v of allBad(m).slice(0, 1)) bad.push(`crash in paste-back at call ${k}: ${v}`)
     if (m.st.i1.length) pb.i1.push(k)
     if (m.st.i2.length) pb.i2.push(k)
     if (finalState(m).includes('names OLD') || finalState(m).includes('GONE')) pb.oldForever.push(k)
   }
   console.log(out.join('\n') + `\nCRASH IN REMOVE (k = call number, 90 runs): ${JSON.stringify(crashes)}\nCRASH IN PASTE-BACK (30 runs): ${JSON.stringify(pb)}`)
+  expect(bad).toEqual([])
+  // A remove that the person asked for ends with B out of the list, after every crash point.
+  expect(crashes.notRemoved).toEqual([])
 }, 600000)
 
 it('check3: YAZ-5275 matrix: [queued | half done | done] x [old link | new link] x [online | offline | restarted]', async () => {
   const lines: string[] = []
+  const bad: string[] = []
   const stage: Record<string, Ev[]> = {
     queued: [E.offline('A'), E.removeB(), E.online('A')],
     half: [E.budget(1), E.removeB()],
@@ -109,7 +120,10 @@ it('check3: YAZ-5275 matrix: [queued | half done | done] x [old link | new link]
         const paste = m.log.filter((x) => / paste A/.test(x)).at(-1)?.replace(/^\s*\d+ paste /, '') ?? ''
         const end = finalState(m)
         const ok = end.startsWith('B removed') ? !/-> (added|already)/.test(paste) : !end.includes('OLD') && !end.includes('GONE')
+        for (const v of allBad(m).slice(0, 1)) bad.push(`matrix ${sn} ${link} ${net}: ${v}`)
+        if (!ok) bad.push(`matrix ${sn} ${link} ${net}: ${end}`)
         lines.push(`${ok ? 'ok ' : 'BAD'} ${sn.padEnd(6)} ${link} ${net.padEnd(9)} paste: ${paste.padEnd(40)} end: ${end}  I1 ${m.st.i1.length}`)
       }
   console.log(lines.join('\n'))
+  expect(bad).toEqual([])
 }, 600000)

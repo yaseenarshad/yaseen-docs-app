@@ -19,7 +19,13 @@ export default defineConfig({
     // Store tests run in plain Node with fake-indexeddb; a file that draws React says `@vitest-environment jsdom`.
     environment: 'node',
     include: ['src/**/*.test.{ts,tsx}', 'publish/**/*.test.ts', '*.test.ts'],
-    // The friends model checker's full runs take minutes: only with CHECK3_FULL=1 (src/friends/check3/run.ts).
-    exclude: [...configDefaults.exclude, ...(process.env.CHECK3_FULL === '1' ? [] : ['src/friends/check3/{seeds,mine}-*.test.ts', 'src/friends/check3/show.test.ts'])],
+    // The friends model checkers' full runs take minutes: only with CHECK3_FULL=1 (src/friends/check3/run.ts,
+    // src/friends/check4/run4.ts). The round 4 checker's own tools (one seed, shrink, its first attack runner) need their
+    // own settings: only with CHECK4_TOOLS=1.
+    exclude: [
+      ...configDefaults.exclude,
+      ...(process.env.CHECK3_FULL === '1' ? [] : ['src/friends/check3/{seeds,mine}-*.test.ts', 'src/friends/check3/show.test.ts', 'src/friends/check4/{full4,mine4}-*.test.ts']),
+      ...(process.env.CHECK4_TOOLS === '1' ? [] : ['src/friends/check4/{attack,classify,msgs,one,scanold,shrink}.test.ts']),
+    ],
   },
 })
