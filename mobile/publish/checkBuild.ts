@@ -34,7 +34,7 @@ export function checkDist(files: DistFile[]): string[] {
 }
 
 /** The files the publish needs. */
-export const PARTS = ['index.html', 'friend.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png']
+export const PARTS = ['index.html', 'friend.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
 export const missingParts = (paths: string[]) => PARTS.filter((p) => !paths.includes(p))
 
 const TEXT = /\.(html|js|css|webmanifest|json|svg|txt)$|^_headers$/
@@ -76,6 +76,7 @@ export function main() {
     console.error(`\nThe build check FAILED:\n${problems.map((p) => `  - ${p}`).join('\n')}`)
     process.exit(1)
   }
+  console.log(`  version.txt ${readFileSync(join(dist, 'version.txt'), 'utf8').trim().replace('\n', ' (worker ')})`)
   console.log('  check: no fixtures, no localhost, no source maps, no token; all publish parts present\n')
 }
 
