@@ -1,4 +1,5 @@
 import {
+  DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FOLD_KEYS_PER_FILE,
@@ -97,6 +98,16 @@ function send(what: string, call: () => Promise<void>): void {
   }
 }
 
+/**
+ * YAZ-5053 round 4 (Yaseen: "clicking these options on or off doesnt stick… it doesnt select"): a main process older
+ * than a settings field (the app not restarted after an update) sends settings without it, and drops it from each save.
+ * Each missing field reads its default here, the value the app uses, so its row always shows the choice in use.
+ */
+function withSettingsDefaults(s: AppState): AppState {
+  const missing = (Object.keys(DEFAULT_SETTINGS) as (keyof SettingsState)[]).some((k) => s.settings[k] === undefined)
+  return missing ? { ...s, settings: { ...DEFAULT_SETTINGS, ...s.settings } } : s
+}
+
 function folderOf(root: string): FolderState {
   return state.folders[root] ?? defaultFolderState()
 }
@@ -109,7 +120,7 @@ export const storage = {
   /** Load the state + identity and start following changes; call once before the first render. */
   async init(): Promise<void> {
     const [s, id] = await Promise.all([api.state.get(), api.window.identity()])
-    state = s
+    state = withSettingsDefaults(s)
     identity = id
     unsubscribe?.()
     unsubscribe = api.state.onChange((next) => {
@@ -117,7 +128,7 @@ export const storage = {
       // while they hold the same paths (YAZ-2631 D1, YAZ-2702 Decision 3): each is a
       // `useSyncExternalStore` snapshot, so what reads it draws again only when the order changed.
       const held = state
-      state = next
+      state = withSettingsDefaults(next)
       for (const key of ORDER_KEYS) {
         if (held[key].length === next[key].length && held[key].every((path, at) => path === next[key][at])) state = { ...state, [key]: held[key] }
       }
@@ -422,7 +433,18 @@ export const storage = {
   getSettings: (): SettingsState => state.settings,
   setSettings(settings: SettingsState): void {
     state = { ...state, settings }
-    send('state.setSettings', () => api.state.setSettings(settings))
+    // YAZ-5053 round 4: a save that main refuses takes main's settings back, and the listeners wake, so no row shows a
+    // choice that was not saved. A later save or a broadcast since then is newer, and stays.
+    send('state.setSettings', () =>
+      api.state.setSettings(settings).catch(async (err: unknown) => {
+        const main = await api.state.get()
+        if (state.settings === settings) {
+          state = { ...state, settings: withSettingsDefaults(main).settings }
+          listeners.forEach((l) => l())
+        }
+        throw err
+      }),
+    )
   },
   /**
    * A few fields from a place that has no settings prop (the Add panel's filters and pins, YAZ-4360 / YAZ-4361): laid
