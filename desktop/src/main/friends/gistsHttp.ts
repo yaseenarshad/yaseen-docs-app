@@ -1,7 +1,8 @@
 /**
  * THE MAC'S GIST CALLS (YAZ-5086, 4E5), in the MAIN process: the `GistsApi` of `shared/friendGists.ts` on Node's
  * `fetch`, with the GitHub token from the app's one secrets store. The shared send rules run on it unchanged.
- * - The token goes in the Authorization header only, to `api.github.com` only. No renderer ever sees it.
+ * - The token goes in the Authorization header only, to `api.github.com` only, and never along a redirect. No renderer
+ *   ever sees it.
  * - Each failure is a `GistError` with the codes of the phone's client (3E): `READ_ONLY` for a write with no Gists
  *   permission, `RATE_LIMITED` with `resetAt`, `OFFLINE`, `GITHUB_DOWN`, `UNAUTHORIZED`, `NOT_FOUND`, `NO_ACCESS`.
  * - A message holds the status only: never the token, a gist ID or an address.
@@ -17,7 +18,7 @@ const MAX_RATE_WAIT_MS = 60 * 60_000
 const PAGE = 100
 const MAX_PAGES = 10
 
-export type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal }) => Promise<Response>
+export type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: 'manual' }) => Promise<Response>
 
 interface RawGist {
   id: string
@@ -102,7 +103,8 @@ async function call(token: string, fetch: FetchLike, now: () => number, path: st
   if (init.etag) headers['if-none-match'] = init.etag
   let response: Response
   try {
-    response = await fetch(`${GITHUB_API}${path}`, { method, headers, body: init.body === undefined ? undefined : JSON.stringify(init.body), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+    // `manual`: a redirect is never followed, so the token never goes to another address (YAZ-5253). A 3xx is a failure.
+    response = await fetch(`${GITHUB_API}${path}`, { method, headers, body: init.body === undefined ? undefined : JSON.stringify(init.body), signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), redirect: 'manual' })
   } catch {
     throw new GistError('OFFLINE', 'No connection to GitHub')
   }
