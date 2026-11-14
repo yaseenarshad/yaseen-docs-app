@@ -17,7 +17,8 @@
  *    side says "Side 1 of 2" on the row's right (YAZ-5048), and the key row's Space says "Next side" when the next Space shows a side.
  *  - SCROLL (YAZ-5049): round 3 follows the NEXT blank (`data-next`, the one "Mark the next hidden word" colours) after
  *    each Space, a new side's first blank, and at the end (no blank left) brings the card's end — the Reviews strip — in
- *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
+ *    as far as the last word stays in sight; one more Space there gives the answer buttons a soft ring. Round 5: Space
+ *    never shows a blank you cannot see — a marked blank not wholly between the top row and the buttons only glides in. Round 1: the word a Space shows, or the side it adds, comes into view, gliding; never centred. Round 2
  *    (as Mochi): the card is one long page — no scroll bar of its own; the Inbox's view scrolls, the top row stays on
  *    top and the buttons at the bottom — and a word that reaches the view's lower third comes up to its upper third,
  *    so what comes next shows (`inboxScroll.ts`).
@@ -107,8 +108,7 @@ import { AddMoreField } from './AddMoreField'
 import { useAnswerTimer } from './answerTimer'
 import { TodayWork } from './TodayWork'
 import { todayCards } from './reviewTime'
-import { cssZoom } from '../lib/cssZoom'
-import { inboxRoom, readingScroll } from './inboxScroll'
+import { glideView, inRoom, inboxRoom, readingScroll } from './inboxScroll'
 import { START, markOf, reveal, shownParts, type Reveal } from './cardSteps'
 import { SHOW_GAP, leastScroll } from '../editor/find/leastScroll'
 import '../explore/explore.css'
@@ -313,11 +313,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
       const n = next.getBoundingClientRect()
       dy = readingScroll({ start: n.top, end: n.bottom }, room)
     } else dy = readingScroll(shownSpan, room)
-    if (dy === 0) return
-    const top = view.scrollTop + dy / cssZoom(view)
-    const smooth = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== true
-    if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
-    else view.scrollTop = top
+    if (dy !== 0) glideView(view, dy)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `done` follows the step: it changes only with it
   }, [step.key, step.sides, step.open.length, shown])
 
@@ -383,6 +379,16 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
     if (done || card?.page == null) return
     const upTo = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
     const mark = markOf(step, upTo)
+    // Round 5 (Yaseen: "Yes, build it"): Space never shows a blank you cannot see. The marked blank not wholly in view
+    // (a scroll by hand, a click that moved the mark, a blank under the buttons or the top row): this Space only brings
+    // it in, a third of the way down, and the next Space shows it. A click shows its word as before (round 4).
+    const view = rootRef.current
+    const blank = by === 'key' && mark !== null && view !== null ? view.querySelector(`[data-hidden="${mark}"]`) : null
+    if (blank !== null && view !== null) {
+      const r = blank.getBoundingClientRect()
+      const room = inboxRoom(view)
+      if (!inRoom({ start: r.top, end: r.bottom }, room)) return glideView(view, readingScroll({ start: r.top, end: r.bottom }, room))
+    }
     setStep(mark !== null ? { ...reveal(step, mark, upTo, by), key: step.key } : { ...step, sides: step.sides + 1, next: null, last: null, by })
   }, [])
   /** A click on a blank (round 4): THAT word shows, and the view stays put. A word that shows already: nothing new. */
