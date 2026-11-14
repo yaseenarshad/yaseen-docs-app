@@ -42,8 +42,8 @@ import { cardBlock, cardIdOf, changeCard, pageCards, withCardNext, withCardNoTit
 import { checkCard, type CardFault } from '@shared/cardCheck'
 import { lineKinds } from '@shared/fences'
 import { cardQueue, cardState } from '@shared/cardSchedule'
-import { cardTitle } from '@shared/cardText'
-import { cardFileTitle } from '@shared/cardConvert'
+import { cardTitle, cardWithTitle } from '@shared/cardText'
+import { cardFileTitle, hasTitleProperty } from '@shared/cardConvert'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
 import { CARD_SKILL_START_PAGE, cardSkillFolder } from '@shared/cardSkillFolder'
 import { makeCardResolver } from '@shared/cardLinks'
@@ -658,7 +658,13 @@ function checkNewCard(text: string, flags: Map<string, string | true>, io: Io): 
 async function cardCheck(page: string, flags: Map<string, string | true>, io: Io): Promise<boolean> {
   onlyFlags('card check', flags, ['--json'])
   await cardVault(dirname(page), page)
-  const rows = pageCards((await readFile(page)).content).map((card) => ({ id: cardIdOf(card.line), title: cardTitle(card.text), faults: checkCard(card.text) }))
+  const content = (await readFile(page)).content
+  // A card file's title is its `title` (YAZ-5044): the check reads the card as Review does, the title as its first line.
+  const titled = isCardFileContent(content) && hasTitleProperty(content) ? cardFileTitle(content) : null
+  const rows = pageCards(content).map((card, i) => {
+    const text = titled !== null && i === 0 ? cardWithTitle(titled, card.text) : card.text
+    return { id: cardIdOf(card.line), title: cardTitle(text), faults: checkCard(text) }
+  })
   if (flags.has('--json')) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
   else
     io.stdout(

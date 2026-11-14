@@ -1343,6 +1343,18 @@ describe('card check, and the check in card add and card new (YAZ-5116)', () => 
     expect(JSON.parse(r.out)).toEqual([{ id: 'YAZ-8', title: 'NASA', faults: [{ kind: 'hidden-subject', side: 0, text: 'The question hides its own subject.' }] }])
   })
 
+  it('card check reads a card file\'s title from `title` (YAZ-5044), as Review does', async () => {
+    const root = await vault('cards', {
+      'nasa-yaz-9.md': `---\nkind: card\ntitle: NASA\n---\n${card('What does {{NASA}} stand for?\n---\nNational Aeronautics and Space Administration', 'YAZ-9')}`,
+      'placeholder-yaz-10.md': `---\nkind: card\ntitle: Title\n---\n${card('{{Paris}}', 'YAZ-10')}`,
+    })
+    const r = await run(['card', 'check', path.join(root, 'nasa-yaz-9.md'), '--json'])
+    expect(JSON.parse(r.out)).toEqual([{ id: 'YAZ-9', title: 'NASA', faults: [{ kind: 'hidden-subject', side: 0, text: 'The question hides its own subject.' }] }])
+    const p = JSON.parse((await run(['card', 'check', path.join(root, 'placeholder-yaz-10.md'), '--json'])).out)
+    expect(p[0].title).toBe('Title')
+    expect(p[0].faults.map((f: { kind: string }) => f.kind)).toContain('title-placeholder')
+  })
+
   it('card check is refused in a vault without IDs, and takes no other flag', async () => {
     const plain = await vault('plain', { 'a.md': 'Text.\n' }, false)
     expect((await run(['card', 'check', path.join(plain, 'a.md')])).err).toMatch(/does not give its pages IDs/)
