@@ -173,8 +173,8 @@ const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)|&#(44|38)
 // A card's own properties are parts of its card line, after its ID and title: a name, then one or more values.
 //   <!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", count 3, done true -->
 // Text is quoted, with the title's escapes plus `\n` for a line break; a number or a checkbox is bare. Two or more
-// values are a list; one value reads as that value, as YAML's `tags: europe` does on a page (the vault's
-// `properties.json` kind decides how a panel row or a column shows it). An empty value is `""`. A name is bare when it
+// values are a list; one value reads as that value, as YAML's `tags: europe` does on a page. A list of one or none is
+// written in brackets, `tags ["europe"]`, `tags []`, so it reads back as a list. An empty text is `""`. A name is bare when it
 // starts with a letter or `_` and holds no space, quote, comma, `\` or `>`; any other name is quoted:
 // `"Due Date" "2026-11-20"`. The card line's own words are never a name (`isCardPropertyName`). A part that does not
 // read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
@@ -198,10 +198,10 @@ const unquoteValue = (quoted: string): string => quoted.slice(1, -1).replace(/\\
 const formatScalar = (v: CardPropertyScalar): string => (typeof v === 'string' ? quoteValue(v) : String(v))
 const formatName = (name: string): string => (BARE_NAME_RE.test(name) ? name : quoteValue(name))
 
-/** A property part as the line writes it. */
+/** A property part as the line writes it: a list of none or one in brackets, so it reads back as a list. */
 const formatProperty = (name: string, value: CardPropertyValue): string => {
-  const values = Array.isArray(value) ? value : [value]
-  return `${formatName(name)} ${values.length === 0 ? '""' : values.map(formatScalar).join(' ')}`
+  if (!Array.isArray(value)) return `${formatName(name)} ${formatScalar(value)}`
+  return `${formatName(name)} ${value.length < 2 ? `[${value.map(formatScalar).join(' ')}]` : value.map(formatScalar).join(' ')}`
 }
 
 /** The property a part's text holds, or null when it holds none. */
@@ -211,7 +211,14 @@ function parseProperty(text: string): { name: string; value: CardPropertyValue }
   let m: RegExpExecArray | null
   while (TOKEN_RE.lastIndex < text.length && (m = TOKEN_RE.exec(text)) !== null) tokens.push(m[1])
   if (TOKEN_RE.lastIndex < text.trimEnd().length || tokens.length < 2) return null
-  const [head, ...rest] = tokens
+  const [head, ...all] = tokens
+  // A list in brackets (`["europe"]`, `[]`, `[ "a" "b" ]`): always a list, of any length.
+  const open = all[0]?.startsWith('[') === true
+  const close = all.at(-1)?.endsWith(']') === true
+  if (open !== close) return null
+  const inner = open ? [all[0].slice(1), ...all.slice(1)] : all
+  if (open) inner[inner.length - 1] = inner[inner.length - 1].slice(0, -1)
+  const rest = inner.filter((t) => t !== '')
   const name = head.startsWith('"') ? unquoteValue(head) : BARE_NAME_RE.test(head) ? head : null
   if (name === null || !isCardPropertyName(name)) return null
   const values: CardPropertyScalar[] = []
@@ -221,7 +228,7 @@ function parseProperty(text: string): { name: string; value: CardPropertyValue }
     else if (t === 'true' || t === 'false') values.push(t === 'true')
     else return null
   }
-  return { name, value: values.length === 1 ? values[0] : values }
+  return { name, value: open ? values : values.length === 1 ? values[0] : values }
 }
 
 /** The card line `value` holds (one line, trimmed or not), or null when it is no card line. */
@@ -351,6 +358,19 @@ export function withCardProperty(line: CardLine, name: string, value: unknown): 
   const last = line.parts.map((p) => p.kind === 'property').lastIndexOf(true)
   if (last !== -1) i = last + 1
   return { parts: [...line.parts.slice(0, i), part, ...line.parts.slice(i)] }
+}
+
+/**
+ * Property `from` renamed `to` (YAZ-5383: the Properties part's Rename…), its value and its place kept; the other
+ * spellings of `to` go. Throws for a name the line cannot hold. A name the card does not hold changes nothing.
+ */
+export function renameCardProperty(line: CardLine, from: string, to: string): CardLine {
+  if (!isCardPropertyName(to)) throw new Error(`${JSON.stringify(to)} cannot be a card property's name`)
+  const at = line.parts.findIndex((p) => p.kind === 'property' && keyFold(p.name) === keyFold(from))
+  const held = line.parts[at]
+  if (held?.kind !== 'property' || held.name === to) return line
+  const fold = keyFold(to)
+  return { parts: line.parts.flatMap((p, i) => (i === at ? [{ ...held, name: to }] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
 }
 
 /** The card without property `name`, in any spelling (YAZ-5379). A name it does not hold changes nothing. */

@@ -52,7 +52,8 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
-import { CardBand, cardFacts, cardNextReview, CardId, CardNextChip } from '../review/cardParts'
+import { CardBand, cardFacts, cardNextReview, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
+import { PropertiesIcon } from '../views/view/icons'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { usePathTitles } from '../lib/pageLabel'
@@ -221,6 +222,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }, [present])
   /** The chip's "Allow edits?" box is open; gone once Read only is. */
   const [asking, setAsking] = useState(false)
+  /** The strip's open part (YAZ-5383): the top-right properties button opens Properties. */
+  const [stripPart, setStripPart] = useState<CardStripPart | null>(null)
   useEffect(() => {
     if (!lockedBase) setAsking(false)
   }, [lockedBase])
@@ -326,10 +329,29 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         onReturn: giveKeysBack,
       }
   const cardText = card?.text ?? ''
+  const propertyCount = Object.keys(card?.properties ?? {}).length
+  const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
 
   return (
     <>
       <StatusChips zoom={zoom} onZoom={setZoom} readOnly={readOnlyChip} sync={sync} onSyncNow={onSyncNow} save={save}>
+        {/* YAZ-5383 (Q45): the properties button, where a page has it, opens the card's strip on Properties: one place for them. */}
+        {card !== null && reviewOn && (
+          <button
+            type="button"
+            className="frontmatter-panel__header card-file__properties"
+            aria-expanded={stripPart === 'properties'}
+            aria-label={propertiesLabel}
+            title={propertiesLabel}
+            onClick={() => {
+              setStripPart((part) => (part === 'properties' ? null : 'properties'))
+              requestAnimationFrame(() => bodyRef.current?.querySelector('.card-reviews--strip')?.scrollIntoView({ block: 'nearest' }))
+            }}
+          >
+            <PropertiesIcon />
+            {propertyCount > 0 && <span className="frontmatter-panel__count">{propertyCount}</span>}
+          </button>
+        )}
         <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText} />
       </StatusChips>
       <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
@@ -356,6 +378,10 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               onOpenPage={onOpenFile}
               reviews={reviewOn ? settings : undefined}
               onDeleteReview={writes.deleteReview}
+              onChangeLine={writes.changeLine}
+              onNotice={onNotice}
+              stripOpen={stripPart}
+              onStripToggle={(part) => setStripPart((open) => (open === part ? null : part))}
               embeds
               titleField="show"
               head={

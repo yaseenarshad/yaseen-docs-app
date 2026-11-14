@@ -345,7 +345,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       cardReviews:
         doors.current.review === undefined
           ? undefined
-          : { settings: () => doors.current.review?.settings ?? DEFAULT_REVIEW_SETTINGS, deleteReview: (p, id, r) => doors.current.review?.deleteReview(p, id, r) ?? Promise.resolve() },
+          : { settings: () => doors.current.review?.settings ?? DEFAULT_REVIEW_SETTINGS, deleteReview: (p, id, r) => doors.current.review?.deleteReview(p, id, r) ?? Promise.resolve(), vault: () => ({ root, wikilinks }) },
       // The folds, kept for a read again of this page (YAZ-4990).
       folding: { seedCollapsedKeys: () => folds.current.outline, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, outline: new Set(keys) }) },
       headingFolding: { seedCollapsedKeys: () => folds.current.heading, onCollapsedKeysChange: (keys) => (folds.current = { ...folds.current, heading: new Set(keys) }) },

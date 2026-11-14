@@ -2,7 +2,7 @@
  * The card block in the page (YAZ-4961), against a real editor (`createCrepe`): the slash row and its ID, the card
  * line's round trip, the ⋯ menu, the pills, the outside write of the sweep, and the one render function the Inbox reuses.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
@@ -549,6 +549,8 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
   const LINE = '<!-- card: WIKI-7, 2026-11-01T09:00Z good, 2026-11-05T09:00Z again 13s, 2026-11-06T09:00Z good 64s -->'
   const PAGE = `# Page\n\n${CARD}${LINE}\n\nAfter.\n`
   const settings = () => DEFAULT_REVIEW_SETTINGS
+  // The strip's chunk (React and the properties panel's rows, YAZ-5383) loads once here, not inside the first waitFor.
+  beforeAll(async () => void (await import('../../review/cardParts')), 60_000)
   const header = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.card .card-reviews .backlinks__header')
   // YAZ-5105 round 4: the strip is the Inbox's own `CardReviews` (a React root): a click toggles it, as there.
   const press = (el: Element) => (el as HTMLElement).click()
@@ -623,15 +625,54 @@ describe('"Reviews (n)" under the card in the page (YAZ-5000)', () => {
     press(part('reviews')!)
     await vi.waitFor(() => expect(root.querySelector('.card-reviews__table')).not.toBeNull())
     press(part('properties')!)
-    await vi.waitFor(() => expect(root.querySelector('.card-strip__props')).not.toBeNull())
+    await vi.waitFor(() => expect(root.querySelector('.card-strip__part .frontmatter-panel__row')).not.toBeNull())
     expect(root.querySelector('.card-reviews__table')).toBeNull()
     expect([part('reviews'), part('properties')].map((b) => b?.getAttribute('aria-expanded'))).toEqual(['false', 'true'])
-    expect([...root.querySelectorAll('.card-strip__prop')].map((li) => li.textContent)).toEqual(['tagseurope, capitals', 'levelA2'])
+    expect([...root.querySelectorAll<HTMLElement>('.card-strip__part .frontmatter-panel__row')].map((li) => li.dataset.key)).toEqual(['tags', 'level'])
     press(part('properties')!)
     await vi.waitFor(() => expect(root.querySelector('.card-strip__part')).toBeNull())
     expect(view.state.doc).toBe(doc)
     expect(undoDepth(view.state)).toBe(0)
     expect(getMarkdownForSave(crepe)).toBe(page)
+  })
+
+  it('YAZ-5383: the Properties part is the page panel`s own rows; an edit, an add and a rename write the card line (one undo step each); a card line word is refused', async () => {
+    const page = `# Page\n\n${CARD}<!-- card: WIKI-7, title "Capital", tags "europe" "capitals", level "A2", 2026-11-12T14:05Z good -->\n`
+    const { crepe, root, view } = await mount(page, { cards: { path: '/v/Page-props.md' }, cardReviews: { settings, deleteReview: vi.fn(), vault: () => ({ root: null }) } })
+    const part = (name: string) => root.querySelector<HTMLButtonElement>(`.card .card-reviews__toggle[data-part="${name}"]`)
+    await vi.waitFor(() => expect(part('properties')).not.toBeNull())
+    press(part('properties')!)
+    const panel = () => root.querySelector<HTMLElement>('.card-strip__part .frontmatter-panel--card')!
+    const row = (key: string) => panel().querySelector<HTMLElement>(`.frontmatter-panel__row[data-key="${key}"]`)!
+    await vi.waitFor(() => expect(row('level')).not.toBeNull())
+    // The panel's rows, open: no header of its own (the strip's part is the toggle), no "Edit as YAML".
+    expect(panel().querySelector('.frontmatter-panel__header')).toBeNull()
+    expect([...panel().querySelectorAll('button')].some((b) => b.textContent === 'Edit as YAML')).toBe(false)
+    const typeIn = (input: HTMLInputElement, value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const enter = (el: Element) => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    // An edit: the value in place, Enter keeps it.
+    ;(row('level').querySelector('[data-edit]') as HTMLElement).click()
+    await vi.waitFor(() => expect(row('level').querySelector('input')).not.toBeNull())
+    typeIn(row('level').querySelector('input')!, 'B1')
+    enter(row('level').querySelector('input')!)
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('<!-- card: WIKI-7, title "Capital", tags "europe" "capitals", level "B1", 2026-11-12T14:05Z good -->'))
+    expect(undoDepth(view.state)).toBe(1)
+    await vi.waitFor(() => expect(part('properties')?.textContent).toBe('Properties2'))
+    // + Add property: a name, Enter; a card line word is refused, with the panel's words.
+    const addButton = () => [...panel().querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Add property')!
+    addButton().click()
+    await vi.waitFor(() => expect(panel().querySelector('.frontmatter-add__name')).not.toBeNull())
+    typeIn(panel().querySelector<HTMLInputElement>('.frontmatter-add__name')!, 'next')
+    enter(panel().querySelector('.frontmatter-add__name')!)
+    await vi.waitFor(() => expect(panel().querySelector('.frontmatter-panel__error')?.textContent).toBe('"next" is a word the card line uses — choose another name'))
+    typeIn(panel().querySelector<HTMLInputElement>('.frontmatter-add__name')!, 'source')
+    enter(panel().querySelector('.frontmatter-add__name')!)
+    await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toContain('level "B1", source "", 2026-11-12T14:05Z good -->'))
+    // The page's own properties never move: the page has none, and still has none.
+    expect(getMarkdownForSave(crepe).startsWith('# Page')).toBe(true)
   })
 
   it('works read only: × deletes through the vault`s door (the file), the open table follows the new line, and Undo puts the file back byte for byte', async () => {

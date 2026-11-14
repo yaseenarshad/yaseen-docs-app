@@ -18,7 +18,8 @@
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { AttrStep, Step, StepMap, StepResult, type Mappable } from '@milkdown/kit/prose/transform'
-import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, cardTitleOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, parseCardLine, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, type CardLine, type CardPart, type CardReview } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, cardIdOf, cardNextIndex, cardReviewsOf, cardTitleOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, parseCardLine, renameCardProperty, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardProperty, withCardTitle, withoutCardProperty, type CardLine, type CardPart, type CardPropertyValue, type CardReview } from '@shared/cardLine'
+import { keyFold } from '@shared/propertyKeys'
 import type { Code, RootContent } from 'mdast'
 
 /** The language of a card's fence. */
@@ -87,7 +88,9 @@ function withReviewInOrder(line: CardLine, review: CardReview, place: number): C
 
 /**
  * The line `now` with the change from `before` to `after` laid on it: the ID, the title (YAZ-5308), `off`, `next` and
- * `notitle` (YAZ-5030) as `after` has them where they differ, each review `after` gained added, each review it lost removed. Everything else of `now` stays.
+ * `notitle` (YAZ-5030) as `after` has them where they differ, each review `after` gained added, each review it lost
+ * removed, and each property (YAZ-5379) that `after` set, removed or renamed (YAZ-5383: a rename keeps its place).
+ * Everything else of `now` stays.
  */
 export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine): CardLine {
   let line = now
@@ -97,6 +100,7 @@ export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine)
   if (isCardOff(after) !== isCardOff(before)) line = withCardOff(line, isCardOff(after))
   if (isCardNext(after) !== isCardNext(before)) line = withCardNext(line, isCardNext(after), isCardNext(after) ? cardNextIndex(after) : undefined)
   if (isCardNoTitle(after) !== isCardNoTitle(before)) line = withCardNoTitle(line, isCardNoTitle(after))
+  line = withPropertyChange(line, before, after)
   for (const gone of lessReviews(cardReviewsOf(before), cardReviewsOf(after))) {
     const i = line.parts.findIndex((p) => p.kind === 'review' && sameReview(p.review, gone))
     if (i !== -1) line = { parts: line.parts.filter((_, j) => j !== i) }
@@ -113,6 +117,31 @@ export function rebaseCardLine(now: CardLine, before: CardLine, after: CardLine)
     if (i !== -1) line = { parts: line.parts.map((p, j): CardPart => (j === i ? { kind: 'review', review: { ...timed } } : p)) }
   }
   return line
+}
+
+/** The properties of a line, in its order: name and value. */
+const propertiesIn = (line: CardLine): { name: string; value: CardPropertyValue }[] => line.parts.flatMap((p) => (p.kind === 'property' ? [{ name: p.name, value: p.value }] : []))
+
+/**
+ * `line` with the property change from `before` to `after` (YAZ-5383): a property gone from `after` with a new name in
+ * its place is a rename (`renameCardProperty`, the place kept); one gone with none is removed; each of `after` that
+ * differs (its value, or its spelling) is set.
+ */
+function withPropertyChange(line: CardLine, before: CardLine, after: CardLine): CardLine {
+  const was = propertiesIn(before)
+  const is = propertiesIn(after)
+  const has = (list: { name: string }[], name: string) => list.some((p) => keyFold(p.name) === keyFold(name))
+  let next = line
+  was.forEach((p, i) => {
+    if (has(is, p.name)) return
+    const renamed = is[i] !== undefined && !has(was, is[i].name) ? is[i] : undefined
+    next = renamed === undefined ? withoutCardProperty(next, p.name) : renameCardProperty(next, p.name, renamed.name)
+  })
+  for (const p of is) {
+    const old = was.find((q) => keyFold(q.name) === keyFold(p.name))
+    if (old === undefined || old.name !== p.name || JSON.stringify(old.value) !== JSON.stringify(p.value)) next = withCardProperty(next, p.name, p.value)
+  }
+  return next
 }
 
 const lineOf = (text: string | null): CardLine => (text === null ? null : parseCardLine(text)) ?? EMPTY_CARD_LINE
