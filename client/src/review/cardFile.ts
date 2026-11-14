@@ -9,6 +9,7 @@ import {
   cardReviewIndex,
   changeCard,
   changeCardText,
+  withCardFix,
   withCardNext,
   withCardReview,
   withCardReviewAt,
@@ -66,9 +67,15 @@ export const changeCardLine = (path: string, id: string, change: (line: CardLine
 /**
  * Card `id`'s TEXT replaced by `text` (YAZ-5003, Edit card in the card window): ONE `transformFile`, as the app's own
  * write, so a page open in a tab takes it quietly. With no ID, the card at `index`. Throws `CardNotFoundError`.
+ * `fixed` (YAZ-5097): the edit is the fix, so the line's `fix` goes in the same write.
  */
-export const changeCardTextIn = (path: string, id: string | null, text: string, index: number): Promise<unknown> =>
-  announcedWrite(path, () => transformFile(path, (c) => changeCardText(c, id, text, index)))
+export const changeCardTextIn = (path: string, id: string | null, text: string, index: number, fixed = false): Promise<unknown> =>
+  announcedWrite(path, () =>
+    transformFile(path, (c) => {
+      const next = changeCardText(c, id, text, index)
+      return fixed && id !== null ? changeCard(next, id, (l) => withCardFix(l, false), index) : next
+    }),
+  )
 
 /** Writes `review` to card `id`'s line: the answer the hover showed, as it showed it (D13). Throws `CardNotFoundError`. */
 export const writeCardReview = (path: string, id: string, review: CardReview): Promise<unknown> => changeCardLine(path, id, (l) => withCardReview(l, review))

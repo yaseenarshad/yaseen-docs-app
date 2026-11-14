@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardNoTitle, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { cardBlock, EMPTY_CARD_LINE, withCardFix, withCardNext, withCardNoTitle, withCardOff, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -54,11 +54,15 @@ export type CardLineChange = Parameters<typeof changeCardLine>[2]
 export function cardWrites(path: string, card: CardAtPage | null, read: () => void, onNotice: (message: string) => void, review?: ExploreVault['review']) {
   const failed = (what: string) => (err: unknown) => onNotice(`Can't ${what}: ${err instanceof Error ? err.message : String(err)}`)
   return {
-    /** Edit card's Done (YAZ-5003): the card's text by its ID, the rest of the file as it is on disk now. `onFail` after the notice (a card file tab's "Save failed", YAZ-5102). */
+    /**
+     * Edit card's Done (YAZ-5003): the card's text by its ID, the rest of the file as it is on disk now. `onFail` after
+     * the notice (a card file tab's "Save failed", YAZ-5102). A changed card marked Fix later loses the mark in the
+     * same write (YAZ-5097: the edit is the fix; it asks nothing). No change: the mark stays.
+     */
     editDone(text: string, after: () => void, onFail?: () => void) {
       if (card === null) return
       if (text.replace(/\n+$/, '') === card.text) return after()
-      changeCardTextIn(path, card.id, text, card.index).then(
+      changeCardTextIn(path, card.id, text, card.index, card.fix === true).then(
         () => {
           read()
           after()
@@ -85,7 +89,7 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
 }
 
 /**
- * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Title on the front,
+ * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Fix later (YAZ-5097), Title on the front,
  * Reset history; then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037). None of them for a card with
  * no ID yet, but its copy rows once it has one.
  */
@@ -95,6 +99,7 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
     rows.push([
       ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
       { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+      { id: 'fix', label: card.fix === true ? 'Remove Fix later' : 'Fix later', onSelect: () => changeLine((l) => withCardFix(l, card.fix !== true)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
       { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
       ...(card.reviews.length === 0 ? [] : [{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => changeLine(withoutCardReviews) }]),
