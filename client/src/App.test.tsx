@@ -30,6 +30,8 @@ interface SidebarStubProps {
   vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null; app?: true }[]
   /** "Hide card skill" on the card skill's row (YAZ-5108). */
   onHideCardSkill?: () => void
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109). */
+  onDuplicateCardSkill?: (vault: string) => void
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
@@ -583,6 +585,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     },
     // No `review.json` (YAZ-4967), so card review has its defaults: each vault owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    // "Duplicate into <vault>…" (YAZ-5109): main copies the card skill into the vault as `Card skill`.
+    cardSkill: { duplicate: vi.fn(async (vault: string, _again: boolean): Promise<{ made: string } | { exists: string }> => ({ made: `${vault}/Card skill` })) },
     // A vault's IDs (YAZ-2677): main saves the answer and runs the duplicate check.
     ids: {
       set: vi.fn(async (_root?: string, _enabled?: boolean, _letters?: string): Promise<void> => undefined),
@@ -7706,5 +7710,29 @@ describe('App: the card skill in the sidebar (YAZ-5108)', () => {
     })
     expect(allowed).toBe(false)
     expect(el.querySelector('.link-notice__text')?.textContent).toBe('The card skill is read only. Duplicate it into your vault to change it.')
+  })
+
+  it('YAZ-5109: "Duplicate into <vault>…" asks main to copy into that vault and says where it landed', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/v', false)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill". You can change it there.')
+  })
+
+  it('YAZ-5109: with `Card skill` in the vault already, one sheet asks before a second copy; Cancel makes nothing, the other button makes `Card skill 2`', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, (b) => {
+      reviews(true)(b)
+      b.bridge.cardSkill.duplicate.mockImplementation(async (vault: string, again: boolean) => (again ? { made: `${vault}/Card skill 2` } : { exists: `${vault}/Card skill` }))
+    })
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(el.querySelector('#confirm-card-skill-again-text')?.textContent).toBe('Card skill is already in v. Make a second copy? The app keeps using the first one.')
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+    await act(async () => button('Cancel')?.click())
+    expect(el.querySelector('#confirm-card-skill-again-text')).toBeNull()
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledTimes(1)
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    await act(async () => button('Make a second copy')?.click())
+    expect(bridge.cardSkill.duplicate).toHaveBeenLastCalledWith('/v', true)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill 2". You can change it there.')
   })
 })

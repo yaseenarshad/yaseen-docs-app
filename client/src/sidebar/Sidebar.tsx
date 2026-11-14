@@ -34,6 +34,8 @@ import { oneRule, rowIcon, ruleFor, withRule } from './rowIcons'
 import { IconsContext } from './FileIcon'
 import { PICKER_W, suggestIcons } from './iconSuggestions'
 import { appRowsLast, keepsOrder, shownLabel, sortLevel, sortSections } from './treeSort'
+import { cardSkillFolder } from '@shared/cardSkillFolder'
+import { cardSkillPrompt } from '../vault/cardSkill'
 import { ACTIVE_TAB_SELECTOR, SidebarTabs } from './SidebarTabs'
 import { folderShortcuts } from './folderShortcuts'
 import { folderPageRows, showFolderPageFiles } from './folderPageRows'
@@ -139,6 +141,8 @@ interface SidebarProps {
   onReorderVaults: (next: string[]) => void
   /** "Hide card skill" on the card skill's row (YAZ-5108): App sets the switch to Hide, closes its tabs and says where the switch is. */
   onHideCardSkill?: () => void
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109): App copies the skill into that vault, and asks first when `Card skill` is there. */
+  onDuplicateCardSkill?: (vault: string) => void
   /** The width in px (YAZ-738), set on this aside alone (YAZ-2194). */
   width: number
   /** This aside, for App's resize drag, which writes the live width to it between renders (YAZ-2239). */
@@ -578,6 +582,10 @@ export interface MenuTargets {
    * Hide card skill, none of a vault's rows. Null or absent on every other row.
    */
   cardSkill?: string | null
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109): the vault it copies into, and its name. */
+  cardSkillInto?: { root: string; name: string } | null
+  /** "Copy prompt for your agent" on the card skill's row (YAZ-5109): the sentence, with the path of the skill that vault uses. */
+  cardSkillPrompt?: string | null
   /** A row of the new tab page's "Recently closed" (YAZ-3487 D14): its path, for "Remove from" and "Clear Recently closed". */
   forgetClosed: string | null
   /**
@@ -689,6 +697,7 @@ export function Sidebar({
   onRemoveVault,
   onReorderVaults,
   onHideCardSkill,
+  onDuplicateCardSkill,
   activeFile,
   onOpenFile,
   onKeepFile,
@@ -783,6 +792,12 @@ export function Sidebar({
   const root = roots[0]
   /** The person's own vaults: every vault of the window but the app's own (the card skill, YAZ-5108), which is last. */
   const ownRoots = useSameList(roots.filter((vault) => !appRoots.includes(vault)))
+  const ownRootsRef = useRef(ownRoots)
+  ownRootsRef.current = ownRoots
+  const treesRef = useRef(trees)
+  treesRef.current = trees
+  const activeRef = useRef(activeFile)
+  activeRef.current = activeFile
   /** The app's own vault rows (YAZ-5108), as `Tree` reads them: one Set while the vaults stay. */
   const appRows = useMemo<ReadonlySet<string>>(() => new Set(appRoots.map(stripSlash)), [appRoots])
   const places = useSameList(ownRoots.map((vault, i) => vaults[i]?.folder ?? vault))
@@ -1352,6 +1367,20 @@ export function Sidebar({
   // ago is in the menu, and the callback stays the same — the tree's rows do not draw again on each list change.
   const listsNow = useRef(lists)
   listsNow.current = lists
+  /**
+   * The card skill's row (YAZ-5109): the vault "Duplicate into" copies into — the vault of the page on show, else the
+   * window's first — and the prompt with the path of the skill that vault uses: its own `Card skill` folder when its tree
+   * holds one at the top (`cardSkillFolder`), else the app's copy. Read at the right-click.
+   */
+  const cardSkillTargets = useCallback((skill: string): { cardSkillInto: { root: string; name: string } | null; cardSkillPrompt: string } => {
+    const own = ownRootsRef.current
+    const front = activeRef.current === null ? null : rootOf(activeRef.current)
+    const into = front !== null && own.includes(front) ? front : (own[0] ?? null)
+    const top = into === null ? [] : (treesRef.current.get(into)?.tree ?? [])
+    const folder = cardSkillFolder(into, stripSlash(skill), (path) => top.some((node) => node.type === 'dir' && node.path === path))
+    const name = into === null ? '' : (vaultsRef.current.find((vault) => vault.root === into)?.name || storage.vaultName(into))
+    return { cardSkillInto: into === null ? null : { root: into, name }, cardSkillPrompt: cardSkillPrompt(folder) }
+  }, [rootOf])
   const openMenuAt = useCallback(
     (node: MenuRow | null, x: number, y: number, outside = false, closed = false) => {
       const filePath = node?.type === 'file' ? node.path : null
@@ -1476,10 +1505,10 @@ export function Sidebar({
         infoPath: plural === null && shortcutIn === null && filePath !== null && isBoard(filePath) ? filePath : null,
         folderPaths: node === null ? [] : (plural ?? [node.path]).filter((path) => (path === node.path ? node.type === 'dir' : dirs.includes(path))),
         ...(node?.pageOf !== undefined ? PAGE_ROW_MENU : {}),
-        ...(skillRow !== null ? { cardSkill: skillRow } : inSkill ? READ_ONLY_APP_ROW : {}),
+        ...(skillRow !== null ? { cardSkill: skillRow, ...cardSkillTargets(skillRow) } : inSkill ? READ_ONLY_APP_ROW : {}),
       })
     },
-    [root, roots, appRoots, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly],
+    [root, roots, appRoots, cardSkillTargets, multi, vaultRows, rootOf, vaultOf, selectedPaths, selection, orderedSelectedPaths, lens, searching, searchCursor, focusList, favoritesByRoot, dirs, iconTargets, focusOnly],
   )
   // A right-click on a Recents row (YAZ-3235 D7, S20): the one-row file menu, "Show in sidebar" first,
   // as a row of the new tab page. Through a ref, so the memo list does not draw again on each selection.
@@ -2436,6 +2465,7 @@ export function Sidebar({
               onHistory: (path) => onHistoryFile?.(path),
               onShare: (path) => onShareFile?.(path),
               onHideCardSkill,
+              onDuplicateCardSkill,
             },
           )}
           onClose={() => setMenu(null)}

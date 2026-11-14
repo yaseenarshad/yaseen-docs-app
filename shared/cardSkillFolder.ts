@@ -20,3 +20,9 @@ export function cardSkillFolder(vault: string | null, appCopy: string, isFolder:
   const own = `${vault.endsWith(sep) ? vault.slice(0, -1) : vault}${sep}${CARD_SKILL_FOLDER_NAME}`
   return isFolder(own) ? own : appCopy
 }
+
+/**
+ * What "Duplicate into <vault>…" did (YAZ-5109): `made`, the folder it made; or `exists`, the `Card skill` already in
+ * the vault, and nothing was made (the caller asks before a second copy).
+ */
+export type CardSkillDuplicate = { made: string } | { exists: string }

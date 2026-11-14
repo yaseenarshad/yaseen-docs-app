@@ -8,6 +8,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { cardSkillPrompt } from '../vault/cardSkill'
+import { AGENT_PROMPT } from '../course/script'
 import { buildMenuSections, CARD_SKILL_MENU, type MenuAction, type MenuHandlers, type MenuParent, type MenuSection, type MenuSectionTargets, scopeGroup, SCOPE_TIPS } from './menuSections'
 
 const targets = (over: Partial<MenuSectionTargets> = {}): MenuSectionTargets => ({
@@ -967,7 +969,7 @@ describe('the card skill\'s row (YAZ-5108)', () => {
   it('has its own menu: Copy path, then Hide card skill — none of a vault\'s rows', () => {
     const sections = build(SKILL_ROW, { onHideCardSkill: vi.fn() })
     expect(groupsOf(sections)).toEqual([[CARD_SKILL_MENU.copyPath], [CARD_SKILL_MENU.hide]])
-    expect(CARD_SKILL_MENU).toEqual({ copyPath: 'Copy path', hide: 'Hide card skill' })
+    expect([CARD_SKILL_MENU.copyPath, CARD_SKILL_MENU.prompt, CARD_SKILL_MENU.duplicate('My vault'), CARD_SKILL_MENU.hide]).toEqual(['Copy path', 'Copy prompt for your agent', 'Duplicate into My vault…', 'Hide card skill'])
     for (const label of ['Rename', 'Remove from this window', 'Open by itself', 'Set shortcut', 'New page', 'Paste', 'Open folder page']) expect(allLabelsOf(sections)).not.toContain(label)
   })
 
@@ -982,6 +984,23 @@ describe('the card skill\'s row (YAZ-5108)', () => {
     expect(onNotice).toHaveBeenCalledWith('Copied path', 'info', 'clipboard')
     select(sections, 'Hide card skill')
     expect(onHideCardSkill).toHaveBeenCalledOnce()
+  })
+
+  it('YAZ-5109: with a vault to copy into and the prompt, the rows are Copy path, Copy prompt for your agent · Duplicate into <vault>… · Hide card skill', async () => {
+    const prompt = cardSkillPrompt('/Users/demo/Demo vault/Card skill')
+    expect(prompt).toBe('Read the card skill at "/Users/demo/Demo vault/Card skill" before you make or change cards in this vault.')
+    expect(prompt).toBe(AGENT_PROMPT.replace('{path}', '/Users/demo/Demo vault/Card skill'))
+    const onDuplicateCardSkill = vi.fn()
+    const onNotice = vi.fn()
+    const sections = build({ ...SKILL_ROW, cardSkillInto: { root: '/Users/demo/Demo vault', name: 'Demo vault' }, cardSkillPrompt: prompt }, { onHideCardSkill: vi.fn(), onDuplicateCardSkill, onNotice })
+    expect(groupsOf(sections)).toEqual([['Copy path', 'Copy prompt for your agent'], ['Duplicate into Demo vault…'], ['Hide card skill']])
+    const writeText = installClipboard()
+    select(sections, 'Copy prompt for your agent')
+    await Promise.resolve()
+    expect(writeText).toHaveBeenCalledExactlyOnceWith(prompt)
+    expect(onNotice).toHaveBeenCalledWith('Copied the prompt for your agent', 'info', 'clipboard')
+    select(sections, 'Duplicate into Demo vault…')
+    expect(onDuplicateCardSkill).toHaveBeenCalledExactlyOnceWith('/Users/demo/Demo vault')
   })
 
   it('a row that is not the skill\'s keeps the menu it had', () => {

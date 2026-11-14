@@ -11,6 +11,7 @@ import { readComments } from '@shared/comments'
 import { IDS_FILE, isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { createStore } from '../main/store'
+import { duplicateCardSkill } from '../main/cardSkillDuplicate'
 import { sweepIds } from '../main/vaultIndex/idSweep'
 import { macId } from '../main/vaultIndex/mint'
 import { scanFile } from '../main/vaultIndex/scan'
@@ -1261,6 +1262,16 @@ describe('card guide (YAZ-5110)', () => {
     process.chdir(path.join(root, 'pages', 'deep'))
     expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nMy own version.\n', err: '' })
     expect(await run(['card', 'guide', '--path'])).toEqual({ code: 0, out: `"${path.join(root, 'Card skill')}"\n`, err: '' })
+  })
+
+  it('YAZ-5109 done when: after "Duplicate into <vault>…" and an edit of a page, `card guide` prints the edited text', async () => {
+    const copy = await appCopy()
+    const root = await vault('v', { 'a.md': '' })
+    const { made } = (await duplicateCardSkill(copy, root)) as { made: string }
+    await writeFile(path.join(made, 'Start here.md'), '# Start here\n\nMy edit.\n')
+    process.chdir(root)
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nMy edit.\n', err: '' })
+    expect(await readFile(path.join(copy, 'Start here.md'), 'utf8')).toBe('# Start here\n\nThe app copy.\n')
   })
 
   it("inside a vault without a `Card skill` folder, the app's copy", async () => {

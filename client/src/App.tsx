@@ -109,7 +109,7 @@ import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWo
 import { folderHome } from './vault/folderHome'
 import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
-import { CARD_SKILL_HIDDEN, CARD_SKILL_NAME, CARD_SKILL_READ_ONLY } from './vault/cardSkill'
+import { CARD_SKILL_HIDDEN, CARD_SKILL_NAME, CARD_SKILL_READ_ONLY, cardSkillAgain, cardSkillDuplicated } from './vault/cardSkill'
 import { inAppVault, isAppVault } from '@shared/appVaults'
 import { FILE_ACTIONS_ALLOW, READ_ONLY_VAULT_FILE, sanitizeReadOnlyVault, type FileActionsFor } from './vault/readOnlyVault'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
@@ -3416,6 +3416,22 @@ export function App() {
     changeSettings({ ...storage.getSettings(), cardSkillInSidebar: false })
     notify(CARD_SKILL_HIDDEN, 'info', undefined, { label: 'Open Settings', run: openReviewSettings })
   }, [changeSettings, notify, openReviewSettings])
+  /**
+   * "Duplicate into <vault>…" (YAZ-5109; decision 5): main copies the app's skill into the top of the vault as `Card
+   * skill`, writable, and from then on `cardSkillFolder` picks it (the command, the format hint, the prompt). With
+   * `Card skill` there already, one sheet asks before a second copy (`Card skill 2`); nothing is ever written over.
+   */
+  const [skillAgain, setSkillAgain] = useState<string | null>(null)
+  const duplicateCardSkill = useCallback((vault: string, again = false) => {
+    const name = live.current.vaults[live.current.roots.indexOf(vault)]?.name ?? storage.vaultName(vault)
+    api.cardSkill.duplicate(vault, again).then(
+      (out) => {
+        if ('exists' in out) return setSkillAgain(vault)
+        notify(cardSkillDuplicated(name, out.made.slice(out.made.lastIndexOf('/') + 1)))
+      },
+      (err: unknown) => notify(`Can't duplicate the card skill: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    )
+  }, [notify])
 
   /**
    * A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order. Each vault keeps
@@ -3824,6 +3840,7 @@ export function App() {
           onRemoveVault={removeVault}
           onReorderVaults={reorderVaults}
           onHideCardSkill={hideCardSkill}
+          onDuplicateCardSkill={duplicateCardSkill}
           // Under the blank tab no row is the open one (YAZ-2655): every row opens, the one of the tab that was active too.
           activeFile={pageOnShow}
           // A Files window's rows open in a full window (YAZ-3357 D2): its own doors, never this window's tabs.
@@ -4116,6 +4133,19 @@ export function App() {
         />
       )}
       {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once" (or the choice ↓ ↑ moved to), Esc is Cancel. */}
+      {skillAgain !== null && (
+        <ConfirmSheet
+          labelId="confirm-card-skill-again-text"
+          text={cardSkillAgain(live.current.vaults[live.current.roots.indexOf(skillAgain)]?.name ?? storage.vaultName(skillAgain))}
+          confirmLabel="Make a second copy"
+          onConfirm={() => {
+            const vault = skillAgain
+            setSkillAgain(null)
+            duplicateCardSkill(vault, true)
+          }}
+          onCancel={() => setSkillAgain(null)}
+        />
+      )}
       {readOnlyAsk !== null && (
         <ConfirmSheet
           labelId="confirm-read-only-vault-text"

@@ -12377,9 +12377,33 @@ describe('the card skill in the sidebar (YAZ-5108)', () => {
     const onHideCardSkill = vi.fn()
     const { el } = await mountWith([vault('/cs4/pages', 'Pages'), skill()], { onHideCardSkill })
     rightClick(rowByPath(el, SKILL))
-    expect(topItems(el)).toEqual(['Copy path', 'Hide card skill'])
+    expect(topItems(el)).toEqual(['Copy path', 'Copy prompt for your agent', 'Hide card skill'])
     act(() => itemByLabel(el, 'Hide card skill')?.click())
     expect(onHideCardSkill).toHaveBeenCalledOnce()
+  })
+
+  it('YAZ-5109: Duplicate goes to the vault of the page on show; Copy prompt names the app\'s copy, or the vault\'s own `Card skill` once it has one', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const onDuplicateCardSkill = vi.fn()
+    const pages = '/cs6/pages'
+    const work = '/cs6/work'
+    const { el, bridge, rerender } = await mountWith([vault(pages, 'Pages'), vault(work, 'Work'), skill()], { onDuplicateCardSkill, onHideCardSkill: vi.fn(), activeFile: `${work}/a.md` })
+    rightClick(rowByPath(el, SKILL))
+    expect(topItems(el)).toEqual(['Copy path', 'Copy prompt for your agent', 'Duplicate into Work…', 'Hide card skill'])
+    await act(async () => itemByLabel(el, 'Copy prompt for your agent')?.click())
+    expect(writeText).toHaveBeenLastCalledWith(`Read the card skill at "${SKILL}" before you make or change cards in this vault.`)
+    rightClick(rowByPath(el, SKILL))
+    act(() => itemByLabel(el, 'Duplicate into Work…')?.click())
+    expect(onDuplicateCardSkill).toHaveBeenCalledExactlyOnceWith(work)
+    // The vault has its own `Card skill` now (the watcher's walk): the prompt names it.
+    bridge.tree.mockImplementation(async (root: string) => ({ root, tree: root === SKILL ? SKILL_TREE : root === work ? [...pagesTree(root), { type: 'dir', name: 'Card skill', path: `${work}/Card skill`, children: [] }] : pagesTree(root), generatedAt: 1 }))
+    const { fetchTree } = await import('../lib/treeFeed')
+    await act(async () => void (await fetchTree(work)))
+    await rerender({ activeFile: `${work}/a.md` })
+    rightClick(rowByPath(el, SKILL))
+    await act(async () => itemByLabel(el, 'Copy prompt for your agent')?.click())
+    expect(writeText).toHaveBeenLastCalledWith(`Read the card skill at "${work}/Card skill" before you make or change cards in this vault.`)
   })
 
   it('a page inside it reads only: no rename, delete, create, focus or favorite', async () => {
