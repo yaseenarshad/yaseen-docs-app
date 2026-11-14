@@ -16,13 +16,11 @@ import { FOLDER_SETTINGS_FILE, folderSettingsPath, inFolder, isFolderSettingsPat
 import { absFrom, basename, dirname, relTo } from '../lib/paths'
 import { takePageId } from '../views/scaffold'
 import { transformFile } from '../views/writeProperty'
-import { folderRecord, folderTitle } from './folderTitle'
+import { folderRecord, folderTitle, foldersByDir } from './folderTitle'
 
 // A folder's title moved to its own file (YAZ-5161), so the review hook loads with no bridge; its names stay here too.
-export { folderRecord, folderTitle }
-
-/** The settings records by the directory each is the folder of. */
-export const foldersByDir = (folders: readonly IndexRecord[]): Map<string, IndexRecord> => new Map(folders.map((r) => [dirname(r.path), r]))
+// `foldersByDir` moved there too (YAZ-5079), so the phone's search builds its rows with no bridge.
+export { folderRecord, folderTitle, foldersByDir }
 
 /** How a folder's name reads where a page's could stand: the `[[` picker's row, an id link's menu. */
 export const folderLabel = (name: string): string => `${name} (folder)`

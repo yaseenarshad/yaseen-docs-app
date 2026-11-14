@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { SAME_WORD } from '@client/vault/unitWordText'
 import { answersSetup } from '../answers/testing'
 import { BRANCH, VAULT } from '../sync/testing'
-import type { CardMedia, ReviewLink } from './link'
+import type { VaultMedia } from '../media/ui/vaultMedia'
+import type { ReviewLink } from './link'
 import type { CardLinkOpen } from './PhoneCard'
 import { ReviewView } from './ReviewView'
 
@@ -26,12 +27,12 @@ export const cardFile = (title: string, block: string, extra = '') => `---\nkind
 
 const named = (el: Element) => (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim()
 
-export async function reviewSetup(files: Record<string, string>, options: { media?: CardMedia } = {}) {
+export async function reviewSetup(files: Record<string, string>, options: { media?: VaultMedia } = {}) {
   return mountReview(await answersSetup({ files }), options)
 }
 
 /** The screen on a vault that is set up already (the 3,000-card test measures the screen alone). */
-export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, options: { media?: CardMedia } = {}) {
+export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, options: { media?: VaultMedia } = {}) {
   const link: ReviewLink = { engine: t.engine, answers: t.answers, store: t.store, media: options.media }
   const opened: CardLinkOpen[] = []
   const host = document.createElement('div')

@@ -5,6 +5,7 @@ import { saveAccount, type VaultAccount } from '../auth/account'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
 import { fakeFriends, fakeScanner, fakeSync } from './fakes'
+import { isReaderFixture, mountReaderFixture } from './readerFixtures'
 
 /**
  * The screen fixtures: each screen of 4A with made-up data, for the screenshots (`#fixture=settings`). Only a
@@ -40,6 +41,10 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     return (await import('../review/fixtures')).mountReviewFixture(root, name).catch((err: unknown) => {
       document.body.dataset.fixtureError = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
     })
+  // The status dot's own fixtures (4D, YAZ-5080).
+  if (name.startsWith('dot')) return (await import('../status/fixtures')).mountDotFixture(root, name)
+  // 4C (YAZ-5079): Search, a page and a card, on a made-up vault (`readerFixtures.tsx`).
+  if (isReaderFixture(name)) return mountReaderFixture(root, name)
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)

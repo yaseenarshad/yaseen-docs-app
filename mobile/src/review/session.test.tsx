@@ -80,10 +80,10 @@ describe('Review: a full session (decision 11)', () => {
     expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true', 'fix:DEMO-13:true', 'off:DEMO-13:true'])
     expect(h.head()).toBe('What does git pull do? · DEMO-38 · in Git cheat sheet')
 
-    // ⋯ › Open page: 4C's read-only page, by its path in the repo.
+    // ⋯ › Open page: 4C's read-only page, by its path in the repo, at this card.
     await h.click('More card actions')
     await h.click('Open page')
-    expect(h.opened).toEqual([{ kind: 'page', path: 'git.md' }])
+    expect(h.opened).toEqual([{ kind: 'page', path: 'git.md', at: 'DEMO-38' }])
 
     // Decision 4: 5 s after the last action, ONE commit with every action.
     expect(h.commits()).toBe(0)

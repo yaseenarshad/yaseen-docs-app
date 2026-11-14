@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { cardLook } from '@client/editor/card/cardLook'
-import { CARD_AUDIO_ATTR, CARD_MEDIA, CARD_OPENS, stopCardAudio } from '@client/editor/card/cardMedia'
+import { CARD_MEDIA, CARD_OPENS } from '@client/editor/card/cardMedia'
 import { CARD_LINK_ATTR, renderCard, type CardShow } from '@client/editor/card/cardRender'
 import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 // `cardRender.ts` draws the card but brings no styles (YAZ-5153): the phone loads the Mac's card, table and card-screen
@@ -8,77 +8,90 @@ import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/w
 import '@client/editor/card/card.css'
 import '@client/editor/table/table.css'
 import '@client/review/cardScreens.css'
-import type { CardMedia, CardMediaShow } from './link'
-import { mediaWords } from './words'
+import { makeAssetResolver } from '@shared/assetLookup'
+import { vaultMediaPath, vaultMediaUrl, watchMedia, type VaultMedia } from '../media/ui/vaultMedia'
 
 /** Where a tap on a pill goes: a card alone, or a page (4C's read-only views). */
-export type CardLinkOpen = { kind: 'card'; path: string; id: string } | { kind: 'page'; path: string }
+export type CardLinkOpen = { kind: 'card'; path: string; id: string } | { kind: 'page'; path: string; at?: string }
 
-/**
- * The URL a picture or a sound has while its bytes are not here yet: a `data:` URL, so nothing is fetched and the page's
- * CSP (decision 8) allows it. The card swaps each one for a calm line before it shows.
- */
-const WAIT = 'data:,notecards-media-'
-const keyOf = (holder: string, src: string) => `${holder}\n${src}`
-const EMPTY: ReadonlyMap<string, CardMediaShow> = new Map()
+const resolvers = new WeakMap<readonly string[], (target: string, from?: string) => string | null>()
+/** The vault path a picture or sound `src` written in `holder` names, by the Mac's asset rule (2B), or null. */
+export function mediaPath(files: readonly string[], holder: string, src: string): string | null {
+  if (src === '' || /^[a-z][a-z0-9+.-]*:/i.test(src)) return null
+  let resolve = resolvers.get(files)
+  if (resolve === undefined) resolvers.set(files, (resolve = makeAssetResolver(files)))
+  const fromRoot = src.startsWith('/')
+  const target = src
+    .replace(/^\/+/, '')
+    .split('/')
+    .map((part) => {
+      try {
+        return decodeURIComponent(part)
+      } catch {
+        return part
+      }
+    })
+    .join('/')
+  return resolve(target, fromRoot ? undefined : holder.slice(0, Math.max(0, holder.lastIndexOf('/'))))
+}
 
 /**
  * THE CARD on the phone: the Mac's own drawing (`renderCard`, `cardLook`; decision 3, no second renderer), read only,
  * drawn again when the text or the step changes, never on each render (as the Mac's `CardBody`, which is desktop-only).
  *
- *  - Pictures and sounds come from 3D (`media.showLink`) as object URLs, resolved from `holder`, the file that HOLDS the
- *    card. Until a URL is here, and when there is none (no signal, round 12: N3), a calm line stands in its place; the
- *    text shows. A sound plays from the tap on its own button (`play()` inside the tap, proof 1D).
+ *  - Pictures and sounds: the ONE way of 4C and 3D (`watchMedia`, `media/ui/vaultMedia.ts`). A picture is drawn with
+ *    no address and gets its bytes from 3D when it comes near the screen; with no signal, the calm line ("Needs a
+ *    connection"), the text shows. A sound plays from the tap on its own button (`play()` in the tap, proof 1D); the
+ *    sound stops when the card goes. The path resolves from `holder`, the file that HOLDS the card (2B's asset rule).
  *  - A pill opens its card or its page (`onOpen`). A link to an address opens as the browser opens it.
  *  - A board embed shows its text (the phone draws no board in stage one).
  */
-export function PhoneCard({ text, holder, show, links, media, onOpen }: { text: string; holder: string; show: CardShow; links: WikilinkResolveSource; media: CardMedia | undefined; onOpen: (to: CardLinkOpen) => void }) {
+export function PhoneCard({ text, holder, show, links, files, media, retry, onOpen }: { text: string; holder: string; show: CardShow; links: WikilinkResolveSource; files: readonly string[]; media: VaultMedia; retry?: (fn: () => void) => () => void; onOpen: (to: CardLinkOpen) => void }) {
   const box = useRef<HTMLDivElement>(null)
-  const [shows, setShows] = useState(EMPTY)
-  const asked = useRef(new Set<string>())
   // The pills follow the index: a new snapshot draws the card again.
   const snapshot = useSyncExternalStore(links.subscribe, () => links.records)
   const { sides, shown } = show
 
+  // One watch for the life of the card: each drawing's new pictures are watched too; the card's sound stops at the end.
   useEffect(() => {
     const el = box.current
     if (el === null) return
-    const wanted: string[] = []
+    const watch = watchMedia(el, media)
+    const off = retry?.(() => watch.retry())
+    return () => {
+      off?.()
+      watch.stop()
+    }
+  }, [media, holder, text, retry])
+
+  useEffect(() => {
+    const el = box.current
+    if (el === null) return
     const look = cardLook(links, undefined, {
       root: '',
-      pagePath: holder,
+      pagePath: `/${holder}`,
       src: (_root, _dir, src) => {
-        const got = shows.get(keyOf(holder, src))
-        if (got?.status === 'ready') return got.url
-        wanted.push(src)
-        return `${WAIT}${encodeURIComponent(src)}`
+        const path = mediaPath(files, holder, src)
+        return path === null ? src : vaultMediaUrl(path)
       },
     })
     const drawn = renderCard(text, { sides, shown }, look)
-    const why = (src: string): string | null => {
-      const got = shows.get(keyOf(holder, src))
-      return media === undefined ? 'no-media' : got?.status === 'missing' ? got.why : null
-    }
-    for (const img of drawn.querySelectorAll('img')) {
+    // A picture has no address until its bytes come; one that is not in the vault is a calm line (as 4C's card).
+    for (const img of drawn.querySelectorAll<HTMLImageElement>('img')) {
       const src = img.getAttribute('src') ?? ''
-      if (src.startsWith(WAIT)) img.replaceWith(mediaLine('picture', why(decodeURIComponent(src.slice(WAIT.length)))))
-    }
-    for (const player of drawn.querySelectorAll<HTMLElement>(`[${CARD_AUDIO_ATTR}]`)) {
-      const src = player.getAttribute(CARD_AUDIO_ATTR) ?? ''
-      if (src.startsWith(WAIT)) player.replaceWith(mediaLine('sound', why(decodeURIComponent(src.slice(WAIT.length)))))
+      const path = vaultMediaPath(src)
+      if (path !== null) {
+        img.removeAttribute('src')
+        img.dataset.vaultSrc = path
+      } else if (!/^(data|blob):/i.test(src)) {
+        const line = document.createElement('span')
+        line.className = 'page-media page-media--missing'
+        line.textContent = `Missing picture · ${src}`
+        img.replaceWith(line)
+      }
     }
     el.replaceChildren(drawn)
-    if (media === undefined) return
-    for (const src of wanted) {
-      const key = keyOf(holder, src)
-      if (asked.current.has(key)) continue
-      asked.current.add(key)
-      void media.showLink(src, holder).then((got) => setShows((m) => new Map(m).set(key, got)))
-    }
-  }, [text, holder, sides, shown, links, snapshot, shows, media])
-
-  // The card's sound never outlives it: the next card stops it.
-  useEffect(() => stopCardAudio, [holder, text])
+  }, [text, holder, sides, shown, links, snapshot, files])
 
   const onClick = (event: React.MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null
@@ -95,14 +108,4 @@ export function PhoneCard({ text, holder, show, links, media, onOpen }: { text: 
   }
 
   return <div ref={box} className="phone-card__body" onClick={onClick} />
-}
-
-/** The calm line in a picture's or a sound's place. Waiting for its bytes: an empty line of the same height. */
-function mediaLine(kind: 'picture' | 'sound', why: string | null): HTMLElement {
-  const line = document.createElement('span')
-  line.className = 'phone-card__media'
-  line.dataset.media = why ?? 'waiting'
-  line.textContent = why === null ? '' : mediaWords(kind, why)
-  if (why === null) line.setAttribute('aria-busy', 'true')
-  return line
 }

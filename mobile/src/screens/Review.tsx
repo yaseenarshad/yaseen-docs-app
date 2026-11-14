@@ -7,7 +7,7 @@ import { vaultName } from './Frame'
  * The review screen is a chunk of its own: the card drawing (`marked`, DOMPurify), the scheduler (`ts-fsrs`) and the
  * shared parsers are not in the first load. It loads with the engine, when a vault opens.
  */
-const ReviewView = lazy(() => import('../review/ReviewView').then((m) => ({ default: m.ReviewView })))
+const ReviewView = lazy(() => import('../review/ReviewTab').then((m) => ({ default: m.ReviewTab })))
 
 const waiting = (
   <div className="review review--waiting" aria-busy="true">
@@ -26,7 +26,8 @@ export function Review() {
   const [link, setLink] = useState<ReviewLink | null>(null)
   useEffect(() => {
     let live = true
-    void sync.review?.().then((l) => live && setLink(l))
+    // A link that is not whole (a fake of another screen's test) waits, as no link does.
+    void sync.review?.().then((l) => live && setLink(l !== null && l.engine !== undefined && l.store !== undefined ? l : null))
     return () => {
       live = false
     }

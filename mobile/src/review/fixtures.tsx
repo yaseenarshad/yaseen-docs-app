@@ -5,7 +5,7 @@ import type { AppServices } from '../app/AppState'
 import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
-import type { CardMedia } from './link'
+import type { VaultMedia } from '../media/ui/vaultMedia'
 
 /**
  * The Review tab's screen fixtures (4B), for the screenshots: `#fixture=review-…`. Made-up data only: the REAL engine
@@ -30,6 +30,8 @@ const FILES: Record<string, string> = {
   ),
   'cards/speed-of-light.md': `---\nkind: card\ntitle: Speed of light\n---\n\n${block('How fast is light?\n---\nAbout {{300,000 km}} each second.', 'DEMO-40')}\n`,
   'birds.md': page('Birds', block('Which bird is this?\n\n![a robin](robin.png)\n---\nA {{robin}}.', 'DEMO-41'), block('Which bird sings this?\n\n![[blackbird.mp3]]\n---\nA {{blackbird}}.', 'DEMO-42')),
+  'robin.png': 'made-up picture bytes',
+  'blackbird.mp3': 'made-up sound bytes',
   'history.md': page(
     'History',
     block(
@@ -61,8 +63,8 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   const t = await answersSetup({ files })
   step('engine')
   if (name === 'review-offline') t.s.github.offline = true
-  const media: CardMedia = {
-    showLink: async (src) => (src.endsWith('.png') && name !== 'review-offline' ? { status: 'ready', url: ROBIN } : { status: 'missing', why: 'offline' }),
+  const media: VaultMedia = {
+    show: async (path) => (path.endsWith('.png') && name !== 'review-offline' ? { status: 'ready', path, url: ROBIN, type: 'image/svg+xml' } : { status: 'missing', path, why: 'offline' }),
   }
   const backend = memoryBackend()
   const store = await openVaultStore(backend)

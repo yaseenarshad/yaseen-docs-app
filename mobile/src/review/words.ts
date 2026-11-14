@@ -41,16 +41,5 @@ export function lostAction(op: CardOp, s: ReviewSettings): string {
   }
 }
 
-/**
- * The calm line in place of a picture or a sound that is not here (round 12: N3). `why` is 3D's reason, or
- * `no-media` while 3D is not wired.
- */
-export function mediaWords(kind: 'picture' | 'sound', why: string): string {
-  const thing = kind === 'picture' ? 'This picture' : 'This sound'
-  if (why === 'offline' || why === 'slowed') return `${thing} needs a connection.`
-  if (why === 'gone' || why === 'not-in-vault') return `${thing} is not in the vault.`
-  return `${thing} cannot show on the phone yet.`
-}
-
 /** Round 15, item 3: a card file that is not valid (no card, two or more, text outside the card). */
 export const NEEDS_FIX = 'This card file needs a fix on the Mac.'

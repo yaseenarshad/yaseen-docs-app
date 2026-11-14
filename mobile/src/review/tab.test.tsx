@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { answersSetup } from '../answers/testing'
-import { GOOD, mount, signInWithForm, type Harness } from '../screens/testing'
-import { NOW, cardBlock, page } from './testing'
+import { mount, type Harness } from '../screens/testing'
+import { saveVaultList } from '../store'
+import { BRANCH, REPO, VAULT } from '../sync/testing'
+import { NOW, cardBlock, cardFile, page } from './testing'
 
-/** 4B in the app: the Review tab replaces 4A's placeholder; "Open page" opens 4C's slot over the tabs; Back comes back. */
+/**
+ * 4B in the app: the Review tab replaces 4A's placeholder; "Open page" lands in 4C's read-only page (at the card) and
+ * "Open card" in 4C's card view, through 4A's navigation; Back comes back to the card.
+ */
 let h: Harness
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -15,26 +20,49 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+const FILES = {
+  '.yaseendocs/review.json': '{}',
+  'spanish.md': page('Spanish words', 'Words for a trip to Madrid.', cardBlock('Hola?\n---\n{{Hello}}', 'TB-1')),
+  'cards/light.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{very}}', 'TB-2')),
+}
+
+async function app() {
+  const t = await answersSetup({ files: FILES })
+  await saveVaultList(t.store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 0 }], open: VAULT })
+  h = await mount({ phone: { store: t.store, tokens: t.s.tokens } })
+  await h.syncSet({ status: 'synced', vault: VAULT, ready: true })
+  expect(h.text()).toContain('Reading your cards…') // a sync with no `review()` (4A's fake): the tab waits
+  h.sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
+  await h.click('Search')
+  await h.click('Review')
+  for (let i = 0; i < 8 && !h.text().includes('TB-'); i++) await h.settle()
+  return t
+}
+
 describe('the Review tab in the app shell', () => {
-  it('waits for the engine calmly; then reviews; ⋯ › Open page opens the read-only slot; Back comes back to the card', async () => {
-    h = await mount()
-    await signInWithForm(h, 'yaseen/vault', GOOD)
-    expect(h.text()).toContain('Reading your cards…') // a sync with no `review()` (4A's fake): the tab waits
-    expect(h.text()).not.toContain('next build')
-
-    const t = await answersSetup({ files: { '.yaseendocs/review.json': '{}', 'spanish.md': page('Spanish words', cardBlock('Hola?\n---\n{{Hello}}', 'TB-1')) } })
-    h.sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
-    await h.click('Search')
-    await h.click('Review')
-    for (let i = 0; i < 5 && !h.text().includes('TB-1'); i++) await h.settle()
+  it('reviews; ⋯ › Open page opens 4C\'s page at the card; Back comes back to the card', async () => {
+    await app()
     expect(h.text()).toContain('Hola? · TB-1 · in Spanish words')
-
     await h.click('More card actions')
     await h.click('Open page')
-    expect(h.text()).toContain('The page opens here in the next build.')
-    expect(h.text()).toContain('spanish')
+    for (let i = 0; i < 8 && !h.text().includes('Madrid'); i++) await h.settle()
+    expect(h.text()).toContain('Words for a trip to Madrid.')
+    expect(h.host.querySelector('[data-card-id="TB-1"]')).not.toBeNull()
+    expect(h.button('Remembered')).toBeNull()
     await h.click('‹ Back')
-    for (let i = 0; i < 5 && !h.text().includes('TB-1'); i++) await h.settle()
+    for (let i = 0; i < 8 && !h.text().includes('TB-1'); i++) await h.settle()
     expect(h.text()).toContain('Hola? · TB-1 · in Spanish words')
+  })
+
+  it('a card file\'s ⋯ › Open card opens 4C\'s card view', async () => {
+    await app()
+    await h.click('Remembered') // TB-1 comes back later; TB-2 shows
+    for (let i = 0; i < 8 && !h.text().includes('TB-2'); i++) await h.settle()
+    expect(h.text()).toContain('Speed of light · TB-2')
+    await h.click('More card actions')
+    await h.click('Open card')
+    for (let i = 0; i < 8 && !h.text().includes('How fast?'); i++) await h.settle()
+    expect(h.text()).toContain('How fast?')
+    expect(h.button('Remembered')).toBeNull()
   })
 })

@@ -28,6 +28,8 @@ export interface ReviewSource {
   readonly letters: readonly string[] | undefined
   readonly settings: ReviewSettings
   readonly ready: boolean
+  /** Every file of the vault (the checkpoint's list): where a card's picture or sound resolves. */
+  readonly files: readonly string[]
   readonly links: WikilinkResolveSource
   subscribe(listener: () => void): () => void
   /** Reads the index and the list again (the screen calls it after a ⋯ write the hook does not read back). */
@@ -56,6 +58,7 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
   let letters: readonly string[] | undefined
   let settings: ReviewSettings = DEFAULT_REVIEW_SETTINGS
   let ready = false
+  let files: readonly string[] = []
   let stopped = false
   let shown: PhoneIndex | null = null
   let running: Promise<void> | null = null
@@ -83,6 +86,9 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
     if (index === null || engine.state().vault !== vault) return
     const view = await answers.view(index)
     if (stopped) return
+    const checkpoint = await store.checkpoint(vault)
+    const list = Object.keys(checkpoint?.shas ?? {})
+    if (list.length !== files.length || list.some((f, i) => f !== files[i])) files = list
     const prev = new Map((shown === null ? [] : Object.values(shown.records)).map((r) => [r.path, r]))
     const all = Object.values(view.records)
     const same = shown !== null && all.length === prev.size && all.every((r) => prev.get(r.path) === r)
@@ -149,6 +155,9 @@ export function createReviewSource(link: ReviewLink, vault: string, vaultName: s
     },
     get ready() {
       return ready
+    },
+    get files() {
+      return files
     },
     links,
     subscribe(listener) {

@@ -14,6 +14,7 @@ import type { ReviewHost } from '@client/review/reviewHost'
 import { openPhoneDays, phoneReviewHost } from '../answers/reviewHost'
 import type { AnswersState } from '../answers/answers'
 import type { ReviewLink } from './link'
+import { storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { PhoneCard, type CardLinkOpen } from './PhoneCard'
 import { createReviewSource, type ReviewSource } from './source'
 import { useWakeLock } from './wakeLock'
@@ -49,31 +50,38 @@ export interface ReviewViewProps {
   unit: UnitText
   /** "Open page" and "Open card", and a tap on a pill: 4C's read-only views. */
   open: (to: CardLinkOpen) => void
+  /** The app's media (`useVaultMedia`). Absent: `link.media`, else the store alone. */
+  media?: VaultMedia
 }
 
 interface Setup {
   host: ReviewHost
   source: ReviewSource
+  media: VaultMedia
 }
 
 /** ONE source and ONE host for the life of the vault (the hook follows their identity). */
 export function ReviewView(props: ReviewViewProps) {
   const { link, vault, vaultName } = props
+  const given = props.media ?? link.media
   const [setup, setSetup] = useState<Setup | null>(null)
   useEffect(() => {
     let live = true
     const source = createReviewSource(link, vault, vaultName)
+    const own = given === undefined ? storedMedia(link.store, vault) : null
+    const media = given ?? own!
     void openPhoneDays(link.store, vault).then((days) => {
-      if (live) setSetup({ source, host: phoneReviewHost({ answers: link.answers, days, vaultName: () => vaultName }) })
+      if (live) setSetup({ source, media, host: phoneReviewHost({ answers: link.answers, days, vaultName: () => vaultName }) })
     })
     return () => {
       live = false
       source.stop()
+      own?.release()
       setSetup(null)
     }
-  }, [link, vault, vaultName])
+  }, [link, vault, vaultName, given])
   if (setup === null) return <Waiting />
-  return <ReviewSession {...props} source={setup.source} host={setup.host} />
+  return <ReviewSession {...props} source={setup.source} host={setup.host} media={setup.media} />
 }
 
 function Waiting() {
@@ -111,7 +119,7 @@ interface Step {
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 type Line = { kind: 'answer'; count: number } | { kind: 'mark'; text: string; key: string | null }
 
-function ReviewSession({ link, vault, vaultName, unit, open, source, host }: ReviewViewProps & Setup) {
+function ReviewSession({ link, vault, vaultName, unit, open, source, host, media }: ReviewViewProps & Setup) {
   const { ready, settings } = useSourceState(source)
   const [notice, setNotice] = useState<string | null>(null)
   const onNotice = useCallback((text: string) => setNotice(text), [])
@@ -125,6 +133,9 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host }: Rev
   }, [ready, settings.enabled, session, start])
 
   const answers = useAnswersState(link)
+  // A pass that ends well asks again for each picture that waited for a signal.
+  const { engine } = link
+  const retry = useCallback((fn: () => void) => engine.subscribe((e) => void (e.type === 'state' && e.state.status === 'synced' && fn())), [engine])
   useWakeLock(session?.card != null)
 
   if (!ready) return <Waiting />
@@ -135,7 +146,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host }: Rev
       </div>
     )
   if (session === null) return <Waiting />
-  return <SessionScreen {...{ link, unit, open, source, host, review, session, answers, notice, setNotice }} />
+  return <SessionScreen {...{ link, unit, open, source, host, media, retry, review, session, answers, notice, setNotice }} />
 }
 
 function SessionScreen({
@@ -144,6 +155,8 @@ function SessionScreen({
   open,
   source,
   host,
+  media,
+  retry,
   review,
   session,
   answers,
@@ -155,6 +168,8 @@ function SessionScreen({
   open: (to: CardLinkOpen) => void
   source: ReviewSource
   host: ReviewHost
+  media: VaultMedia
+  retry: (fn: () => void) => () => void
   review: CardReviewApi
   session: CardReviewSession
   answers: AnswersState
@@ -320,7 +335,7 @@ function SessionScreen({
               advance()
             }}
           >
-            {text !== null && page !== null ? <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, shown: step.shown }} links={source.links} media={link.media} onOpen={open} /> : <div className="review__card-wait" aria-busy="true" />}
+            {text !== null && page !== null ? <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, shown: step.shown }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} /> : <div className="review__card-wait" aria-busy="true" />}
           </div>
           {counts.length > 1 && <p className="review__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</p>}
         </>
@@ -368,7 +383,7 @@ function SessionScreen({
               className="review__menu-row"
               onClick={() => {
                 setMenu(null)
-                open(cardFile ? { kind: 'card', path: card.path, id: card.id } : { kind: 'page', path: card.path })
+                open(cardFile ? { kind: 'card', path: card.path, id: card.id } : { kind: 'page', path: card.path, at: card.id })
               }}
             >
               {cardFile ? 'Open card' : unit('Open page')}

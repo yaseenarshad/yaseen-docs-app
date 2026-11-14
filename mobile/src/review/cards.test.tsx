@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CardMedia } from './link'
+import type { VaultMedia } from '../media/ui/vaultMedia'
 import { NOW, cardBlock, cardFile, page, reviewSetup, type ReviewHarness } from './testing'
 
 /** 4B: each kind of card draws with the Mac's own `renderCard`, and a tap steps through it. */
@@ -74,22 +74,22 @@ describe('Review: the kinds of card', () => {
 
   it('a picture: from 3D as a URL, resolved from the file that holds the card', async () => {
     const asked: string[] = []
-    const media: CardMedia = { showLink: async (src, holder) => (asked.push(`${holder}:${src}`), { status: 'ready', url: 'blob:fake-1' }) }
-    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'cards/p.md': page('P', cardBlock('What is this?\n\n![a cat](img/cat.png)', 'QA-1')) }, { media })
-    expect(asked).toEqual(['cards/p.md:img/cat.png'])
+    const media: VaultMedia = { show: async (path) => (asked.push(path), { status: 'ready', path, url: 'blob:fake-1', type: 'image/png' }) }
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'cards/img/cat.png': 'made-up bytes', 'cards/p.md': page('P', cardBlock('What is this?\n\n![a cat](img/cat.png)', 'QA-1')) }, { media })
+    expect(asked).toEqual(['cards/img/cat.png'])
     expect(h.host.querySelector('.review__card img')?.getAttribute('src')).toBe('blob:fake-1')
   })
 
   it('a picture that is not here with no signal: a calm line in its place, and the text shows (round 12: N3)', async () => {
-    const media: CardMedia = { showLink: async () => ({ status: 'missing', why: 'offline' }) }
-    h = await reviewSetup(one('What is this?\n\n![a cat](cat.png)\n\nA cat.'), { media })
-    expect(h.host.querySelector('.review__card img')).toBeNull()
-    expect(h.cardText()).toBe('What is this? This picture needs a connection. A cat.')
+    const media: VaultMedia = { show: async (path) => ({ status: 'missing', path, why: 'offline' }) }
+    h = await reviewSetup(one('What is this?\n\n![a cat](cat.png)\n\nA cat.', { 'cat.png': 'made-up bytes' }), { media })
+    expect((h.host.querySelector('.review__card img') as HTMLElement | null)?.hidden).toBe(true)
+    expect(h.cardText()).toBe('What is this? Picture · cat.png · Needs a connection A cat.')
   })
 
   it('a sound: the player, which plays from its own tap (no step)', async () => {
-    const media: CardMedia = { showLink: async () => ({ status: 'ready', url: 'blob:fake-sound' }) }
-    h = await reviewSetup(one('Listen\n\n![[hola.mp3]]\n---\n{{Hello}}'), { media })
+    const media: VaultMedia = { show: async (path) => ({ status: 'ready', path, url: 'blob:fake-sound', type: 'audio/mpeg' }) }
+    h = await reviewSetup(one('Listen\n\n![[hola.mp3]]\n---\n{{Hello}}', { 'hola.mp3': 'made-up bytes' }), { media })
     expect(h.host.querySelector('.card__audio')?.getAttribute('data-card-audio')).toBe('blob:fake-sound')
   })
 

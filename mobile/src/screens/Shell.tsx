@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { useApp } from '../app/AppState'
 import { syncHelp } from '../app/help'
 import { topRoute, type Route, type Tab } from '../app/nav'
@@ -5,12 +6,15 @@ import { FirstDownload } from './FirstDownload'
 import { ForwardButton, Frame, vaultName } from './Frame'
 import { Friends } from './Friends'
 import { Review } from './Review'
-import { ReadOnlySlot } from '../review/ReadOnlySlot'
 import { ScanCode } from './ScanCode'
 import { Search } from './Search'
 import { Settings } from './Settings'
 import { SetupGuide } from './SetupGuide'
 import { SignIn } from './SignIn'
+
+/** The reader (4C, YAZ-5079): a chunk of its own, with the Markdown renderer, so the tabs do not load it. */
+const PageView = lazy(() => import('../page/PageView'))
+const CardView = lazy(() => import('../page/CardView'))
 
 /** Each tab draws one component from its own file; 4B, 4C and 4E replace the placeholders (decision 21). */
 const TAB_SCREENS: Record<Tab, () => React.JSX.Element> = { friends: Friends, review: Review, search: Search }
@@ -65,9 +69,17 @@ function RouteScreen({ route }: { route: Route }) {
       return <SetupGuide />
     case 'scan':
       return <ScanCode vault={route.vault} />
-    // WIRE 4C (YAZ-5079): draw the read-only page view and the card view here.
     case 'page':
+      return (
+        <Suspense fallback={<div className="app" aria-busy="true" />}>
+          <PageView key={route.path} path={route.path} at={route.at} />
+        </Suspense>
+      )
     case 'card':
-      return <ReadOnlySlot route={route} />
+      return (
+        <Suspense fallback={<div className="app" aria-busy="true" />}>
+          <CardView key={`${route.path}#${route.id}`} path={route.path} id={route.id} />
+        </Suspense>
+      )
   }
 }

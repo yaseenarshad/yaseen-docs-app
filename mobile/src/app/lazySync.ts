@@ -22,10 +22,18 @@ export const engineFits = (engine: SyncEngine): ShellSync => engine
  * wait for it. A vault whose copy is whole on the phone (a checkpoint) is ready at once, also while the engine loads
  * or reads its stored index, so a returning person sees the tabs, and only a first open sees the download view.
  */
-export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Promise<EngineModule> = loadEngine): ShellSync {
+/**
+ * The shell's sync, and (4C, YAZ-5079) `loaded()`: 3B's engine once it has loaded (a vault opened). It never loads the
+ * engine itself. 3D's media is made with it (`lazyMedia`, `main.tsx`).
+ */
+export type LazySync = ShellSync & { loaded(): Promise<SyncEngine> }
+
+export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Promise<EngineModule> = loadEngine): LazySync {
   let engine: SyncEngine | null = null
   let answers: Answers | null = null
   let loading: Promise<SyncEngine> | null = null
+  let isLoaded!: (engine: SyncEngine) => void
+  const loaded = new Promise<SyncEngine>((resolve) => (isLoaded = resolve))
   let state: ShellSyncState = IDLE
   const listeners = new Set<(event: ShellSyncEvent) => void>()
   /** The vault id whose copy is whole on the phone (a checkpoint exists: 3B writes it last). */
@@ -51,10 +59,12 @@ export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Prom
       }
       e.subscribe(emit)
       engine = e
+      isLoaded(e)
       return e
     }))
 
   return {
+    loaded: () => loaded,
     state: () => state,
     subscribe(listener) {
       listeners.add(listener)
