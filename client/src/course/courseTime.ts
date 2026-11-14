@@ -3,7 +3,9 @@
  * manifest gives it. Without one, it runs on a reading-time estimate, so the course works silent, with captions.
  */
 import type { CourseChapter, CourseClip } from './script'
-import { WORDS_PER_MINUTE } from './courseFacts'
+
+/** The speaking rate of the reading-time estimate, for a clip with no sound (the voice's rate, about 145 words a minute). */
+const WORDS_PER_MINUTE = 145
 
 /** A clip never runs shorter than this on the estimate: a caption of two words still has time to be read. */
 export const MIN_CLIP_SECONDS = 1.5
@@ -17,10 +19,4 @@ export const estimateSeconds = (text: string): number => Math.max(MIN_CLIP_SECON
 /** Pure: the clip's length — the sound's, when the voice has one (a positive, finite number), else the estimate. */
 export function clipSeconds(clip: CourseClip, soundSeconds: number | null): number {
   return soundSeconds !== null && Number.isFinite(soundSeconds) && soundSeconds > 0 ? soundSeconds : estimateSeconds(clip.text)
-}
-
-/** Pure: the course's minutes, rounded, from its words (what `COURSE_MINUTES` must say). */
-export function courseMinutes(course: readonly CourseChapter[]): number {
-  const words = course.reduce((n, chapter) => n + chapter.clips.reduce((m, clip) => m + wordCount(clip.text), 0), 0)
-  return Math.round(words / WORDS_PER_MINUTE)
 }

@@ -3,16 +3,17 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { defaultCourseState } from '@shared/courseState'
 import { DEFAULT_SETTINGS } from '@shared/types'
+import manifest from '../../../desktop/src/main/courseAudio/course-audio.json'
 import { COURSE } from './script'
-import { courseMinutes } from './courseTime'
 import { COURSE_HINT, COURSE_MINUTES, COURSE_NOTICE, newToCards, offerInInbox, offerNotice, type OfferVault } from './courseFacts'
 import { WAITING_CLIPS } from './waits'
 
 describe('the course facts the app has before the course loads (YAZ-5120)', () => {
-  it('COURSE_MINUTES is the script`s minutes (its words at 145 a minute); the hint and the notice say it', () => {
-    expect(COURSE_MINUTES, 'script.ts changed its length: set COURSE_MINUTES in courseFacts.ts').toBe(courseMinutes(COURSE))
-    expect(COURSE_HINT).toBe(`About ${courseMinutes(COURSE)} minutes. Learn how cards work, and make your first ones.`)
-    expect(COURSE_NOTICE).toBe(`New to cards? Take the ${courseMinutes(COURSE)}-minute course`)
+  it('COURSE_MINUTES is the voice`s length (the manifest`s seconds, summed and rounded); the hint and the notice say it', () => {
+    const seconds = Object.values(manifest.chapters as Record<string, { seconds: number }>).reduce((n, chapter) => n + chapter.seconds, 0)
+    expect(COURSE_MINUTES, 'the voice changed its length: set COURSE_MINUTES in courseFacts.ts').toBe(Math.round(seconds / 60))
+    expect(COURSE_HINT).toBe(`About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`)
+    expect(COURSE_NOTICE).toBe(`New to cards? Take the ${COURSE_MINUTES}-minute course`)
   })
 
   // YAZ-5272: both offers are for a person new to cards: the vault has cards on and holds no card yet.

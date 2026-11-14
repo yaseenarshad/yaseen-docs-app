@@ -4,8 +4,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { SettingsDialog } from '../settings/SettingsDialog'
-import { COURSE } from './script'
-import { courseMinutes } from './courseTime'
+import { COURSE_MINUTES } from './courseFacts'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -27,12 +26,12 @@ function mount(enabled: boolean, settings = { ...DEFAULT_SETTINGS }) {
   return { openCourse, row: el.querySelector<HTMLElement>('[data-setting="cardCourse"]') }
 }
 
-describe('Settings › Review › Card course (YAZ-5120)', () => {
-  it('has "Open the course", which opens it; its hint says the script`s minutes', () => {
+describe('Settings › Cards › Card course (YAZ-5120)', () => {
+  it('has "Open the course", which opens it; its hint says the course`s minutes', () => {
     const { openCourse, row } = mount(true)
     expect(row).not.toBeNull()
     expect(row!.textContent).toContain('Card course')
-    expect(row!.textContent).toContain(`About ${courseMinutes(COURSE)} minutes.`)
+    expect(row!.textContent).toContain(`About ${COURSE_MINUTES} minutes.`)
     const open = [...row!.querySelectorAll('button')].find((b) => b.textContent === 'Open the course')!
     act(() => open.click())
     expect(openCourse).toHaveBeenCalledOnce()

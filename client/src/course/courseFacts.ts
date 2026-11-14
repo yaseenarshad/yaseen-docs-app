@@ -6,14 +6,12 @@
 import type { CourseState } from '@shared/courseState'
 import type { SettingsState } from '@shared/types'
 
-/** The speaking rate of the reading-time estimate (YAZ-5119: the script's minutes are words at 145 a minute). */
-export const WORDS_PER_MINUTE = 145
-
 /**
- * The course's length in minutes, from the script's words at `WORDS_PER_MINUTE`. A test (`courseFacts.test.ts`)
- * computes it from `COURSE` and fails when the script changed and this number did not.
+ * The course's length in minutes: the voice's, the sum of the chapters' `seconds` in the voice manifest that ships in
+ * the app (`desktop/src/main/courseAudio/course-audio.json`), rounded. A literal, because this file is in the startup
+ * bundle; a test (`courseFacts.test.ts`) sums the manifest and fails when the two differ.
  */
-export const COURSE_MINUTES = 29
+export const COURSE_MINUTES = 27
 
 /** Settings › Cards › Card course: the row's hint. */
 export const COURSE_HINT = `About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`

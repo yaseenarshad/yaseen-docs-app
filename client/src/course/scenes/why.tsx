@@ -6,6 +6,7 @@
 import type { SceneProps } from '../scene'
 import { COURSE } from '../script'
 import { PAPERS } from './papers'
+import { COURSE_MINUTES } from '../courseFacts'
 import { CANBERRA, MANY_TITLES } from './cards'
 import {
   Answers,
@@ -723,20 +724,20 @@ function Due(props: SceneProps) {
   )
 }
 
-/** c1-13: about 28 minutes; the twelve chapters light up. */
+/** c1-13: the course's minutes (`COURSE_MINUTES`, the voice's length); the twelve chapters light up. */
 function Chapters(props: SceneProps) {
   const b = useBeat(props)
   const twelve = cue(b, 1, 0.582)
   const up = moved(b, since(b, twelve - 0.08, 0.6))
   return (
-    <Stage beat={b} label="About 28 minutes, in 12 short chapters">
+    <Stage beat={b} label={`About ${COURSE_MINUTES} minutes, in 12 short chapters`}>
       <Layer
         place="top"
         style={{
           transform: b.reduced ? undefined : `translateY(${lerp(28, 0, up).toFixed(2)}%) scale(${lerp(1, 0.5, up).toFixed(3)})`,
         }}
       >
-        <BigNumber beat={b} p={since(b, cue(b, 0, 0.266) - 0.02, 0.8)} value={28} label="minutes" />
+        <BigNumber beat={b} p={since(b, cue(b, 0, 0.266) - 0.02, 0.8)} value={COURSE_MINUTES} label="minutes" />
       </Layer>
       <Layer style={{ paddingTop: '20%', opacity: since(b, 0.52, 0.5) }}>
         <ol className="kit-chapters">
