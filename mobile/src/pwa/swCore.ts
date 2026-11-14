@@ -37,9 +37,16 @@ export const META_CACHE = 'notecards-meta'
 const ACTIVE_KEY = '/__notecards/active'
 /** YAZ-5303: which version each open page runs ({ clientId: version }), kept across worker restarts and versions. */
 const PAGES_KEY = '/__notecards/pages'
+/** YAZ-5303: every version that was ever the active one: only such a version's cache may go (never a newer one). */
+const RETIRED_KEY = '/__notecards/were-active'
 export const cacheName = (version: string) => `${CACHE_PREFIX}${version}`
 /** The message from the page: "take over now" (the page decided it is a safe moment). */
 export const SKIP_WAITING = 'notecards:skip-waiting'
+/**
+ * YAZ-5303: the message of a page that has started: the page it replaced (in the same tab) is gone now, so a version
+ * that no open page runs any more can go. At the page open itself, the replaced page is often still there.
+ */
+export const PAGE_READY = 'notecards:page-ready'
 
 export interface CacheLike {
   match(key: string): Promise<Response | undefined>
@@ -220,6 +227,11 @@ export async function notePage(caches: CacheStorageLike, clientId: string, versi
  * stored version, because its version is not known. With no page open, only this version stays.
  */
 export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: ShellBuild): Promise<void> {
+  // Only the ACTIVE version prunes. An older worker that still gets a message must never touch the cache of a newer
+  // version (it does not know it), and a waiting version has not taken over yet.
+  const meta = await scope.caches.open(META_CACHE)
+  if ((await (await meta.match(ACTIVE_KEY))?.text()) !== build.version) return
+  const wereActive = new Set<string>(JSON.parse((await (await meta.match(RETIRED_KEY))?.text()) ?? '[]') as string[])
   const open = scope.clients.matchAll ? await scope.clients.matchAll({ type: 'window', includeUncontrolled: true }) : []
   const pages = await readPages(scope.caches)
   const keep = new Set([cacheName(build.version)])
@@ -230,13 +242,26 @@ export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: S
     keep.add(cacheName(version))
     alive[page.id!] = version
   }
-  for (const name of await scope.caches.keys()) if (name.startsWith(CACHE_PREFIX) && !keep.has(name)) await scope.caches.delete(name)
-  await (await scope.caches.open(META_CACHE)).put(PAGES_KEY, new Response(JSON.stringify(alive)))
+  // Only a version that was active before goes: a newer one (installed, waiting) is never removed here.
+  for (const name of await scope.caches.keys()) {
+    if (!name.startsWith(CACHE_PREFIX) || keep.has(name) || !wereActive.has(name.slice(CACHE_PREFIX.length))) continue
+    await scope.caches.delete(name)
+  }
+  await meta.put(PAGES_KEY, new Response(JSON.stringify(alive)))
 }
 
 /** Activate: notes this version as the active one. No cache goes here: `prune` removes a version when no page runs it. */
 export async function activate(caches: CacheStorageLike, build: ShellBuild): Promise<void> {
-  await (await caches.open(META_CACHE)).put(ACTIVE_KEY, new Response(build.version))
+  const meta = await caches.open(META_CACHE)
+  const before = await (await meta.match(ACTIVE_KEY))?.text()
+  const noted = await (await meta.match(RETIRED_KEY))?.text()
+  const wereActive = new Set<string>(JSON.parse(noted ?? '[]') as string[])
+  if (before) wereActive.add(before)
+  // The first activation under this rule (no note yet): each version stored now was active before.
+  if (noted === undefined) for (const name of await caches.keys()) if (name.startsWith(CACHE_PREFIX) && name !== cacheName(build.version)) wereActive.add(name.slice(CACHE_PREFIX.length))
+  wereActive.add(build.version)
+  await meta.put(RETIRED_KEY, new Response(JSON.stringify([...wereActive])))
+  await meta.put(ACTIVE_KEY, new Response(build.version))
 }
 
 /** The worker: its four events. */
@@ -257,6 +282,8 @@ export function wire(scope: SwScope, build: ShellBuild): void {
     if (event.request.mode === 'navigate' && event.resultingClientId) event.waitUntil(notePage(scope.caches, event.resultingClientId, build.version).then(() => prune(scope, build)))
   })
   scope.addEventListener('message', (event) => {
-    if (typeof event.data === 'object' && event.data !== null && (event.data as { type?: unknown }).type === SKIP_WAITING) event.waitUntil(scope.skipWaiting())
+    const type = typeof event.data === 'object' && event.data !== null ? (event.data as { type?: unknown }).type : undefined
+    if (type === SKIP_WAITING) event.waitUntil(scope.skipWaiting())
+    if (type === PAGE_READY) event.waitUntil(prune(scope, build))
   })
 }

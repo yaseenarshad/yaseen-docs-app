@@ -308,21 +308,20 @@ try {
   if (process.env.PROOF_TRACE) console.log('versions:', [...new Set(versions)].slice(-10).join(' '))
   record('4a the new version installs in the background; the open page stays on the old one', waits && stillOld)
   // The next open: the app asks the waiting version to take over before it starts. Chrome activates a new worker only
-  // when the old one is idle: in these runs 1 to 31 s after a page load (31 s: the old worker's idle stop); the app does not wait that long (3 s), so it starts the
-  // old version, and the new one takes over in the background. The open after that runs it.
+  // when the old one is idle (1 to 34 s in these runs); the app waits 3 s, then starts the old version, and the new one
+  // takes over in the background. The open after that runs it. (An old page that stays open during a takeover keeps its
+  // chunks: `src/pwa/update.test.ts`, and the slow swap of YAZ-5303 with two real builds.)
   const t0 = Date.now()
   await open(`${ORIGIN}/`)
-  if (process.env.PROOF_TRACE) console.log('4b versions:', versions.slice(-8).join(' '))
   const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && r.active.state === 'activated')`, 60_000)
   const tookMs = Date.now() - t0
   await open(`${ORIGIN}/`)
   const swapped = await until(`!!document.querySelector('meta[name=proof]') && document.body.innerText.includes('Connect vault')`, 10_000)
   record('4b the new version takes over by itself, and the next open runs it', took && swapped, `took over ${(tookMs / 1000).toFixed(1)} s after the open`)
-  record('4c the old version is kept beside the new one (its lazy chunks still load)', (await evaluate(shellCaches)).length === 2, JSON.stringify(await evaluate(shellCaches)))
-
-  const old = await evaluate(`import('/assets/${qrChunk}').then(() => 'loaded', e => String(e))`)
-  const hostHasIt = await fetch(`${ORIGIN}/assets/${qrChunk}`).then((r) => r.headers.get('content-type') ?? '')
-  record("4d after the deploy, a lazy chunk of the OLD version still loads (the host no longer has it)", old === 'loaded' && !/javascript/.test(hostHasIt), `${old}; the host answers ${hostHasIt || 'nothing'}`)
+  // 4c (YAZ-5303): no page of the old version is left now: the new page's "page ready" removes the old cache.
+  await until(`caches.keys().then(ks => ks.filter(k => k.startsWith('notecards-shell-')).length === 1)`, 10_000)
+  const left = await evaluate(shellCaches)
+  record('4c with no page of the old version left, only the new version stays', left.length === 1 && left[0].endsWith('v2-proof'), JSON.stringify(left))
 
   // 5. A broken deploy.
   await host(v3)

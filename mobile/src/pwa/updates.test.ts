@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SKIP_WAITING } from './swCore'
+import { PAGE_READY, SKIP_WAITING } from './swCore'
 import { CHECK_EVERY_MS, SW_URL, createUpdates, swapAtStart, type SwContainerLike, type SwRegistrationLike, type SwWorkerLike } from './updates'
 
 /** The page side of the update (YAZ-5087): the worker is registered, a new version is noticed, and it takes over only when the page says so. */
@@ -90,6 +90,14 @@ describe('while the app runs', () => {
     const c = container()
     await createUpdates({ container: c, reload: () => {}, now: () => 0 }).start()
     expect(c.registered).toEqual([{ url: '/sw.js', options: { scope: '/', updateViaCache: 'none' } }])
+  })
+
+  it('YAZ-5303: a started page tells its worker so (the page it replaced is gone)', async () => {
+    const c = container()
+    const sent: unknown[] = []
+    c.controller = { postMessage: (m: unknown) => void sent.push(m) }
+    await createUpdates({ container: c, reload: () => {}, now: () => 0 }).start()
+    expect(sent).toEqual([{ type: PAGE_READY }])
   })
 
   it('a new version is ready only when it is whole (installed) and an old one runs the page', async () => {

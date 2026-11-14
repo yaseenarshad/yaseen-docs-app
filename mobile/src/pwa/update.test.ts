@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CACHE_PREFIX, cacheName, wire, type ShellBuild } from './swCore'
+import { CACHE_PREFIX, PAGE_READY, cacheName, wire, type ShellBuild } from './swCore'
 import { fakeCaches, fakeScope, fakeServer, type FakeFile, type FakeWindow } from './testing'
 
 /**
@@ -76,5 +76,41 @@ describe('an old page during an update (YAZ-5303)', () => {
     const caches = fakeCaches()
     for (const v of ['v1', 'v2', 'v3']) await deploy(v, caches, [])
     expect(await shells(caches)).toEqual([cacheName('v3')])
+  })
+
+  it('the replaced page is often still there at the page open: the new page\'s "page ready" message removes its version then', async () => {
+    const caches = fakeCaches()
+    const windows: FakeWindow[] = []
+    const sw1 = await deploy('v1', caches, windows)
+    windows.push({ id: 'A', url: `${ORIGIN}/` })
+    await sw1.request(`${ORIGIN}/`, { mode: 'navigate', resultingClientId: 'A' })
+    const sw2 = await deploy('v2', caches, windows)
+    // The tab opens the app again: at the page open, the old page A is still listed beside the new page B.
+    windows.push({ id: 'B', url: `${ORIGIN}/` })
+    await sw2.request(`${ORIGIN}/`, { mode: 'navigate', resultingClientId: 'B' })
+    expect(await shells(caches)).toEqual([cacheName('v1'), cacheName('v2')])
+    // Page B has started; A is gone.
+    windows.splice(0, 1)
+    await sw2.message({ type: PAGE_READY })
+    expect(await shells(caches)).toEqual([cacheName('v2')])
+  })
+
+  it("an OLD worker that still gets a message never removes the cache of a newer version (installed, waiting)", async () => {
+    const caches = fakeCaches()
+    const windows: FakeWindow[] = []
+    const sw1 = await deploy('v1', caches, windows)
+    windows.push({ id: 'A', url: `${ORIGIN}/` })
+    await sw1.request(`${ORIGIN}/`, { mode: 'navigate', resultingClientId: 'A' })
+    // v2 installs and waits (not active yet).
+    const { files, build } = site('v2')
+    const sw2 = fakeScope(fakeServer(files, ORIGIN), caches, windows)
+    wire(sw2.scope, build)
+    await sw2.install()
+    // The old page tells its (old) worker that it started.
+    await sw1.message({ type: PAGE_READY })
+    expect(await shells(caches)).toEqual([cacheName('v1'), cacheName('v2')])
+    // v2 takes over; A still open: both stay.
+    await sw2.activate()
+    expect(await shells(caches)).toEqual([cacheName('v1'), cacheName('v2')])
   })
 })
