@@ -169,6 +169,42 @@
 .card-reviews__toggle .backlinks__title {
   font-weight: 500;
 }
+/* YAZ-5380: each part's toggle is one of the bar's parts; its count quiet beside its words. A part with 0 is dimmed
+   and still opens. */
+.card-reviews .card-reviews__toggle[data-empty] {
+  opacity: 0.6;
+}
+.card-reviews .card-reviews__toggle[data-empty][aria-expanded='true'] {
+  opacity: 1;
+}
+.card-strip__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.card-strip__part {
+  padding: 2px 4px 12px;
+  user-select: text;
+}
+.card-strip__none {
+  margin: 4px 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.card-strip__props {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.card-strip__prop {
+  display: grid;
+  grid-template-columns: minmax(80px, 30%) 1fr;
+  gap: 12px;
+  padding: 5px 8px;
+}
+.card-strip__prop-name {
+  color: var(--fg-muted);
+}
 /* The card's facts on the strip's right (a page's card, an embed): when they do not fit beside "4 Reviews", they take
    their own line under it, on the right, so their parts never break in the middle. */
 .card-reviews__bar .card-reviews__facts {
