@@ -427,6 +427,10 @@ Most of us keep things in files and folders. Computers taught us: one thing, one
 
 So when you make a card, you ask: where does this go?
 
+Computers copied the paper office, where a sheet of paper sits in one drawer.
+
+But that is not how your brain works. And the app does not make you work that way.
+
 That is why the app does not require folders. It leaves the choice to you.
 
 But with great power comes great responsibility. Our advice: keep folders few, and rely on links.
@@ -435,7 +439,7 @@ Make a folder only when you truly need one.
 
 Links hold them together. You have seen one: the protein card, linked to its umbrella.
 
-Your mind does not work like folders. It works by association: one idea calls up another.
+Your mind works by association: one idea calls up another.
 
 Researchers describe memory as a web of linked ideas. Think of one, and the ones linked to it come to mind more easily.
 
@@ -548,6 +552,16 @@ Your agent can find it too. One command prints its first page.
 
 In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.
 
+Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.
+
+You can change how hidden words look, how wide a card is, and how tables show on a card.
+
+You can set how many new cards come each day, and whether the oldest or the newest come first or select which folder you want your new cards to be selected from.
+
+Each one starts at what we recommend. If you know what you want, change it. If not, keep the defaults.
+
+One warning: be careful with the scheduling settings. They decide when each card comes back.
+
 Now, your first week.
 
 Today, make one card, from something you already understand well.
@@ -570,7 +584,8 @@ Your card base is your knowledge base. Build it one card at a time, and what you
 
 1. This is the card skill. Click it to open it.
 2. Now press Command comma to open Settings, and click Cards.
-3. This switch shows or hides the card skill in the sidebar.
-4. And this button brings you back to the course, at any time.
+3. Look around. Hidden words, card width, tables and new cards a day are all here.
+4. This switch shows or hides the card skill in the sidebar.
+5. And this button brings you back to the course, at any time.
 
 <!-- rename-note-to-page: skip-file -->
