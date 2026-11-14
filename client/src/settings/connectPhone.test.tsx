@@ -136,6 +136,8 @@ async function mountReview(reviewOn = true) {
   const review = { settings: { ...DEFAULT_REVIEW_SETTINGS, enabled: reviewOn }, save: vi.fn() }
   act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, review, vaultRoot: ROOT }} onClose={vi.fn()} />))
   act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Review')?.click())
+  // The two rows are lazy chunks (the first load stays the same).
+  await act(async () => void (await Promise.all([import('./GithubTokenControl'), import('./ConnectPhoneControl')])))
   await flush()
 }
 const row = (id: string) => el.querySelector<HTMLElement>(`[data-setting="${id}"]`)
@@ -314,7 +316,12 @@ describe('Connect your phone: the code (YAZ-5098)', () => {
     expect([...contexts.values()].every((c) => c.squares.length === 0)).toBe(true)
   })
 
-  it('the dialog is its own chunk: Settings loads it with import() when you click Show code', () => {
+  it('the rows and the dialog are chunks of their own: Settings loads the rows with import(), and the dialog on Show code', () => {
+    const registry = readFileSync(join(__dirname, 'registry.tsx'), 'utf8')
+    for (const file of ['GithubTokenControl', 'ConnectPhoneControl']) {
+      expect(registry).toContain(`import('./${file}')`)
+      expect(registry).not.toMatch(new RegExp(`^import .*'\\./${file}'`, 'm'))
+    }
     const source = readFileSync(join(__dirname, 'ConnectPhoneControl.tsx'), 'utf8')
     expect(source).toMatch(/import\('\.\/ConnectPhoneSheet'\)/)
     expect(source).not.toMatch(/^import .*ConnectPhoneSheet'/m)
