@@ -24,6 +24,10 @@ export type ExploreLayer =
       leaveAsk?: number
       /** The card to land on when the page opens (YAZ-4962): its place among the page's cards. */
       card?: number
+      /** The Inbox's E on a card in a page (YAZ-5145): once the layer edits, that card (`card`) opens in Edit card. */
+      editCard?: boolean
+      /** Opened from the Inbox (YAZ-5009, YAZ-5145): ⌘↵ while reading goes back to the Inbox, not to a tab. */
+      fromInbox?: boolean
     }
   | {
       id: number
@@ -34,10 +38,6 @@ export type ExploreLayer =
       cardId: string | null
       /** Its place among the page's cards (`pageCards` order). */
       index: number
-      /** Opened in Edit card (the Inbox's E, YAZ-5003; also in a read-only vault, YAZ-5009): Done goes back to reading. */
-      edit?: boolean
-      /** Opened from the Inbox (YAZ-5009): ⌘↵ while reading goes back to the Inbox, not to a tab. */
-      fromInbox?: boolean
     }
   | {
       id: number
@@ -75,8 +75,13 @@ export function pushLayer(layers: readonly ExploreLayer[], layer: ExploreLayer):
 /** A layer that shows a file: a page, a board, or a card of a page (its page is the file). */
 export type FileLayer = Extract<ExploreLayer, { kind: 'page' | 'board' | 'card' }>
 
-/** What App asks the stack to open (YAZ-4962): a page (landing on a card, or in edit mode), or a card window. */
-export type ExploreRequest = { kind: 'page'; path: string; card?: number; edit?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number; edit?: boolean; fromInbox?: boolean }
+/**
+ * What App asks the stack to open (YAZ-4962): a page (landing on a card), or a card window (a page card's Open card).
+ * The Inbox's O and E (YAZ-5145) ask for the page layer Explore itself opens: `edit` asks it to edit as Explore's own E
+ * does (a Read only vault asks "Allow edits?" first), `editCard` then opens the landed card's Edit card, and
+ * `fromInbox` makes ⌘↵ while reading go back to the Inbox.
+ */
+export type ExploreRequest = { kind: 'page'; path: string; card?: number; edit?: boolean; editCard?: boolean; fromInbox?: boolean } | { kind: 'card'; path: string; cardId: string | null; index: number }
 
 /** The page, board or card layer nearest the top, or null: what ⌘↵ opens in a tab (a card's page). */
 export function topPage(layers: readonly ExploreLayer[]): FileLayer | null {

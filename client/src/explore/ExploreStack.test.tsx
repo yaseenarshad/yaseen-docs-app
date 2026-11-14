@@ -40,6 +40,12 @@ const { readFile, writeFile, index, openLink, crepes } = vi.hoisted(() => ({
 }))
 
 vi.mock('../api', () => ({ api: { readFile, writeFile, index, shell: { openLink } } }))
+/** Card views the tests stand in for (YAZ-5145: the Inbox's E opens the landed card's Edit card). */
+const fakeCards = vi.hoisted(() => new WeakMap<Element, { view: { editable: boolean }; edit: () => void }>())
+vi.mock('../editor/card/cardBlockView', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../editor/card/cardBlockView')>()
+  return { ...real, cardBlockViewOfDom: (dom: Element | null) => (dom !== null && fakeCards.get(dom)) || real.cardBlockViewOfDom(dom) }
+})
 vi.mock('../editor/createCrepe', () => ({
   createCrepe: vi.fn((opts: Crepe['opts']) => {
     const inst: Crepe = { opts, create: vi.fn(async () => {}), setReadonly: vi.fn(), destroy: vi.fn() }
@@ -2710,29 +2716,76 @@ describe('the card window (YAZ-4962)', () => {
     expect(props.openInTab).toHaveBeenCalledExactlyOnceWith(PAGE)
   })
 
-  it('YAZ-5009: a card window from the Inbox, reading: ⌘↵ goes back to the Inbox (the stack closes), no tab', async () => {
-    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0, fromInbox: true }
-    await mount()
-    await flush()
-    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
-    expect(props.onClose).toHaveBeenCalledOnce()
-    expect(props.openInTab).not.toHaveBeenCalled()
-  })
-
-  it('YAZ-5009: Esc on a card window from the Inbox, reading, goes back to the Inbox too', async () => {
-    props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-9', index: 0, fromInbox: true }
-    await mount()
-    await flush()
-    escape()
-    expect(props.onClose).toHaveBeenCalledOnce()
-    expect(props.openInTab).not.toHaveBeenCalled()
-  })
-
   it('a card that is gone says so', async () => {
     props.requestLayer = { kind: 'card', path: PAGE, cardId: 'WIKI-404', index: 0 }
     await mount()
     await flush()
     expect(top().querySelector('.editor-msg')?.textContent).toBe('This card is no longer there')
+  })
+})
+
+describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => {
+  const PAGE = '/v/cards.md'
+  it('O: the page layer, reading (no card window); ⌘↵ while reading goes back to the Inbox (YAZ-5009), and Esc does too', async () => {
+    props.requestLayer = { kind: 'page', path: PAGE, fromInbox: true }
+    await mount()
+    await flush()
+    expect(layers().map((l) => l.dataset.kind)).toEqual(['page'])
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.onClose).toHaveBeenCalledOnce()
+    expect(props.openInTab).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    root = null
+    el.remove()
+    vi.mocked(props.onClose).mockClear()
+    await mount()
+    await flush()
+    escape()
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('E: the same layer in edit at once, as Explore\'s own E; Esc goes back to reading, then ⌘↵ back to the Inbox', async () => {
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, fromInbox: true }
+    await mount()
+    await flush()
+    expect(top().querySelector(`.explore__body--edit [data-editor="${PAGE}"]`)).not.toBeNull()
+    key(top().querySelector('[data-editor]') as Element, { key: 'Escape' })
+    await flush()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    key(document.activeElement ?? top(), { key: 'Enter', metaKey: true })
+    expect(props.onClose).toHaveBeenCalledOnce()
+  })
+
+  it('E in a Read only vault: the layer reads and asks "Allow edits?", as Explore\'s own E there; a choice edits', async () => {
+    props = { ...props, vaultOf: () => ({ root: '/v', wikilinks, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly, readOnly: true }) }
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, fromInbox: true }
+    await mount()
+    await flush()
+    expect(top().querySelector('.explore__body--edit')).toBeNull()
+    const ask = top().querySelector('.read-only-chip__ask')
+    expect(ask?.querySelector('p')?.textContent).toBe('Allow edits?')
+    act(() => [...ask!.querySelectorAll('button')].find((b) => b.textContent === 'Allow edits for 1 minute')!.click())
+    await flush()
+    expect(top().querySelector(`.explore__body--edit [data-editor="${PAGE}"]`)).not.toBeNull()
+  })
+
+  it('E on a card in a page: the layer edits, landed on the card, and that card opens in Edit card (one time)', async () => {
+    const edit = vi.fn()
+    props = {
+      ...props,
+      renderEditor: (path): ReactNode => (
+        <div className="editor" data-editor={path}>
+          <div className="card" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit: () => {} }))} />
+          <div className="card" ref={(c) => void (c !== null && fakeCards.set(c, { view: { editable: true }, edit }))} />
+        </div>
+      ),
+    }
+    props.requestLayer = { kind: 'page', path: PAGE, edit: true, card: 1, editCard: true, fromInbox: true }
+    await mount()
+    for (let i = 0; i < 3; i++) await act(async () => await new Promise((r) => setTimeout(r, 20)))
+    expect(edit).toHaveBeenCalledOnce()
   })
 })
 
