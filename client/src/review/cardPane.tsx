@@ -151,12 +151,14 @@ interface CardPaneProps {
   embeds?: boolean
   /** Edit card's Title field (`CardTitleField`): absent → `edit`. */
   titleField?: CardTitleField
-  /** Read, the card's title band at its top (YAZ-5308 A3, `CardBand`); absent: none (a card file's tab has its big title). */
+  /** Read, the card's title band at its top (YAZ-5308 A3, `CardBand`); absent: none (the card window). */
   band?: ReactNode
+  /** Read, the card's top bar above the band (YAZ-5392: a card file's tab, as a card in a page has it); absent: none. */
+  head?: ReactNode
 }
 
 /** The card's body: the card or its editor, its Reviews strip, the facts strip, "Linked mentions" and, in a tab, "Embedded in". */
-export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band }: CardPaneProps) {
+export function CardPane({ card, path, vault, editing, onEditDone, select, doors, onOpenPage, strip, reviews, onDeleteReview, embeds = false, titleField = 'edit', band, head }: CardPaneProps) {
   // The band shows the title (off the card line); the card is its text, its sides only (YAZ-5308).
   return (
     <>
@@ -164,6 +166,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
         <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleField={titleField} />
       ) : (
         <div className="card card-screen">
+          {head}
           {band}
           <CardBody text={card.text} path={path} vault={vault} doors={doors} />
         </div>

@@ -1,7 +1,7 @@
 /*
  * A card file's tab (YAZ-5037, `CardFileView.tsx`): the card in a page-wide column, as a page's text sits — the
- * folder path small and muted, the title at a page title's size, the ID and the state under it, then the card, its
- * Reviews, "Linked mentions" and "Embedded in". Quiet: one emphasis (the title). Light and dark from the app's tokens.
+ * folder path small and muted, then the card as a page shows it (YAZ-5392: its top bar, its title band, its sides;
+ * `card.css`), its Reviews, "Linked mentions" and "Embedded in". Light and dark from the app's tokens.
  */
 .card-file {
   flex: 1;
@@ -17,42 +17,7 @@
   padding: 8px 48px 64px;
 }
 .card-file__path {
-  font-size: 12px;
-  color: var(--fg-muted);
-}
-.card-file__title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-/* The big title is the page's own (YAZ-5104, `PageTitle`): it fills the row at a page title's size, and a click edits it. */
-.card-file__title-row .page-title {
-  flex: 1;
-  min-width: 0;
-  margin-top: 2px;
-  font-size: 16px;
-  overflow-wrap: anywhere;
-}
-.card-file__button {
-  flex: none;
-  padding: 3px 9px;
-  font: inherit;
-  font-size: 12px;
-  color: var(--fg);
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  cursor: pointer;
-}
-.card-file__button:hover {
-  background: var(--bg-hover);
-}
-.card-file__facts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 10px;
-  margin: 4px 0 16px;
+  margin: 0 0 8px;
   font-size: 12px;
   color: var(--fg-muted);
 }
