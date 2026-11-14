@@ -72,7 +72,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
   }
 
   const ready = app.phase === 'ready'
-  const title = mode.kind === 'first' ? 'Notecards' : mode.kind === 'add' ? 'Add a vault' : 'Sign in again'
+  const title = mode.kind === 'first' ? 'Notecard' : mode.kind === 'add' ? 'Add a vault' : 'Sign in again'
   return (
     <Frame title={title} back={mode.kind === 'first' || (mode.kind === 'again' && !ready) ? undefined : () => app.go({ type: 'back' })}>
       <form className="stack" onSubmit={submit} noValidate>

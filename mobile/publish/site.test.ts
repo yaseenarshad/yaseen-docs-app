@@ -16,10 +16,19 @@ const token = (block: 'light' | 'dark', name: string) => {
 const manifest = JSON.parse(read('public/manifest.webmanifest'))
 const html = read('index.html')
 
+describe("the app's name (Yaseen, 2026-11-14: \"it should just be notecard without an S\")", () => {
+  it('"Notecard" in each place iOS and the browser read it: the manifest name and short name, the page title, the Home Screen title', () => {
+    const NAME = 'Notecard'
+    expect([manifest.name, manifest.short_name]).toEqual([NAME, NAME])
+    expect(html).toContain(`<title>${NAME}</title>`)
+    expect(html).toContain(`<meta name="apple-mobile-web-app-title" content="${NAME}" />`)
+  })
+})
+
 describe('the web app manifest', () => {
-  it('"Notecards" (round 10, item 11), standalone, the whole site', () => {
-    expect(manifest.name).toBe('Notecards')
-    expect(manifest.short_name).toBe('Notecards')
+  it('"Notecard" (round 10 item 11, renamed by Yaseen), standalone, the whole site', () => {
+    expect(manifest.name).toBe('Notecard')
+    expect(manifest.short_name).toBe('Notecard')
     expect(manifest.display).toBe('standalone')
     expect(manifest.start_url).toBe('/')
     expect(manifest.scope).toBe('/')
@@ -47,7 +56,7 @@ describe('the web app manifest', () => {
 
 describe('the page head for iOS', () => {
   it('the Home Screen tags: the name, the 180 px icon, standalone, the status bar', () => {
-    expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Notecards" />')
+    expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Notecard" />')
     expect(html).toContain('<meta name="apple-mobile-web-app-capable" content="yes" />')
     expect(html).toContain('<meta name="mobile-web-app-capable" content="yes" />')
     expect(html).toContain('<meta name="apple-mobile-web-app-status-bar-style" content="default" />')
@@ -126,11 +135,11 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
     expect(config.account_id).toBe('06ed69083fae875c626d37f9c05405a3')
     expect(config.workers_dev).toBe(false)
     expect(config.preview_urls).toBe(false)
-    expect(config.routes).toEqual([{ pattern: 'preview.notecards.yaseenarshad.com', custom_domain: true }])
+    expect(config.routes).toEqual([{ pattern: 'preview.notecard.yaseenarshad.com', custom_domain: true }])
     expect(config.assets).toEqual({ directory: './dist', not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
     expect(config.main).toBeUndefined()
     expect(config.assets.binding).toBeUndefined()
-    expect(JSON.stringify(config)).not.toMatch(/"notecards\.yaseenarshad\.com"|yaseen-notecards"/)
+    expect(JSON.stringify(config)).not.toMatch(/"notecards?\.yaseenarshad\.com"|yaseen-notecards"/)
   })
 
   it('one script builds, then publishes the preview', () => {

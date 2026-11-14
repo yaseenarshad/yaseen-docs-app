@@ -12,8 +12,8 @@ const ID = 'aa5a315d61ae9438b18d'
 
 describe('the friend link', () => {
   it('is the site, /friend, and the ID after #', () => {
-    expect(friendLink('https://preview.notecards.yaseenarshad.com', ID)).toBe(`https://preview.notecards.yaseenarshad.com${FRIEND_PATH}#${ID}`)
-    expect(friendLink('https://notecards.yaseenarshad.com/', ID)).toBe(`https://notecards.yaseenarshad.com/friend#${ID}`)
+    expect(friendLink('https://preview.notecard.yaseenarshad.com', ID)).toBe(`https://preview.notecard.yaseenarshad.com${FRIEND_PATH}#${ID}`)
+    expect(friendLink('https://notecard.yaseenarshad.com/', ID)).toBe(`https://notecard.yaseenarshad.com/friend#${ID}`)
   })
 
   it('refuses an ID that is not a gist ID', () => {
@@ -25,13 +25,13 @@ describe('reading a pasted code or link', () => {
   it('the code alone, the link, and both with spaces or a new line around them', () => {
     expect(friendCodeFrom(ID)).toBe(ID)
     expect(friendCodeFrom(`  ${ID}\n`)).toBe(ID)
-    expect(friendCodeFrom(`https://notecards.yaseenarshad.com/friend#${ID}`)).toBe(ID)
-    expect(friendCodeFrom(`https://preview.notecards.yaseenarshad.com/friend/#${ID}`)).toBe(ID)
-    expect(friendCodeFrom(`Add me on Notecards: https://notecards.yaseenarshad.com/friend#${ID.toUpperCase()}`)).toBe(ID.toUpperCase())
+    expect(friendCodeFrom(`https://notecard.yaseenarshad.com/friend#${ID}`)).toBe(ID)
+    expect(friendCodeFrom(`https://preview.notecard.yaseenarshad.com/friend/#${ID}`)).toBe(ID)
+    expect(friendCodeFrom(`Add me on Notecard: https://notecard.yaseenarshad.com/friend#${ID.toUpperCase()}`)).toBe(ID.toUpperCase())
   })
 
   it('nothing else', () => {
-    for (const text of ['', 'hello', 'https://notecards.yaseenarshad.com/', 'https://notecards.yaseenarshad.com/friend#', `https://evil.example/x#${ID}z`, 'g'.repeat(20), 'a'.repeat(65)]) {
+    for (const text of ['', 'hello', 'https://notecard.yaseenarshad.com/', 'https://notecard.yaseenarshad.com/friend#', `https://evil.example/x#${ID}z`, 'g'.repeat(20), 'a'.repeat(65)]) {
       expect([text, friendCodeFrom(text)]).toEqual([text, null])
     }
   })
@@ -65,7 +65,7 @@ describe('the landing page sends the ID nowhere', () => {
 })
 
 describe('YAZ-5290: the three kinds of link, each on the site the app runs on', () => {
-  const site = 'https://preview.notecards.yaseenarshad.com'
+  const site = 'https://preview.notecard.yaseenarshad.com'
   it('makes /group#<id> and /join#<group>-<pointer>', () => {
     expect(groupLinkFor(site, ID)).toBe(`${site}/group#${ID}`)
     expect(joinLinkFor(site, ID, ID)).toBe(`${site}/join#${ID}-${ID}`)

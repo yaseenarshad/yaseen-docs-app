@@ -50,9 +50,14 @@ import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
  */
 
 /** The friend link: the landing page of the app's site (5-) with the pointer ID after `#`, which no server log sees. */
-export const FRIEND_LINK_BASE = 'https://notecards.yaseenarshad.com/friend'
-/** The site and its preview (round 12, item 14). A link from another host is "a link of another app". */
-const SITE = 'notecards.yaseenarshad.com'
+export const FRIEND_LINK_BASE = 'https://notecard.yaseenarshad.com/friend'
+/**
+ * The site and its preview (round 12, item 14). A link from another host is "a link of another app".
+ * The app's sites (the stable one and its preview). Yaseen, 2026-11-14: the address is `notecard.yaseenarshad.com`. A
+ * link shared before that names `notecards.yaseenarshad.com`; the paste box still reads it (it carries the same code).
+ */
+const SITES = ['notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
+const isOurSite = (host: string) => SITES.some((site) => host === site || host.endsWith(`.${site}`))
 /** A gist ID: 20 (old gists) or 32 hex characters. */
 const LINK_ID = /^[0-9a-f]{20,40}$/i
 
@@ -60,8 +65,8 @@ export const friendLink = (pointer: string, base = FRIEND_LINK_BASE): string => 
 
 /** The text of the iOS share sheet ("Share my link"). */
 export const shareText = (link: string): { title: string; text: string; url: string } => ({
-  title: 'Notecards friend link',
-  text: 'Add me as a friend on Notecards. Open this link, copy the code, then paste it in the app.',
+  title: 'Notecard friend link',
+  text: 'Add me as a friend on Notecard. Open this link, copy the code, then paste it in the app.',
   url: link,
 })
 
@@ -95,7 +100,7 @@ export function parseFriendLink(text: string): LinkRead {
     const host = url.hostname.toLowerCase()
     const parts = url.pathname.split('/').filter(Boolean)
     let id: string | null = null
-    if (host === SITE || host.endsWith(`.${SITE}`)) {
+    if (isOurSite(host)) {
       id = url.hash.replace(/^#/, '').replace(/\/+$/, '') || url.searchParams.get('id') || (parts[0] === 'friend' ? (parts[1] ?? null) : null)
       if (id !== null && LINK_ID.test(id)) return { kind: 'ok', id: id.toLowerCase() }
       continue
@@ -260,15 +265,15 @@ export function pasteMessage(result: PasteResult): string {
       return 'Paste the link that your friend sent you.'
     case 'not-a-link':
     case 'not-a-friend-link':
-      return 'That is not a Notecards friend link. Ask your friend to tap Share my link and send it again.'
+      return 'That is not a Notecard friend link. Ask your friend to tap Share my link and send it again.'
     case 'other-app':
-      return "That link is from another app. Paste the link from your friend's Notecards."
+      return "That link is from another app. Paste the link from your friend's Notecard."
     case 'own-link':
       return 'That is your own link. Send it to a friend, and paste the link they send you.'
     case 'not-found':
       return 'That link does not work any more. Ask your friend for a new one.'
     case 'newer-app':
-      return 'Your friend has a newer Notecards. Update this app, then paste the link again.'
+      return 'Your friend has a newer Notecard. Update this app, then paste the link again.'
     case 'offline':
       return 'No connection. Try again when you are online.'
     case 'rate-limited':

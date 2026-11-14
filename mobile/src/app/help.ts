@@ -29,7 +29,7 @@ export interface Help {
 }
 
 /** A failure that is not a sign-in result: the phone could not store the vault. */
-export const SAVE_FAILED: Help = { message: 'Notecards could not save on this phone. Free some space, then try again.', forward: 'retry' }
+export const SAVE_FAILED: Help = { message: 'Notecard could not save on this phone. Free some space, then try again.', forward: 'retry' }
 
 export const FORWARD_LABEL: Record<Forward, string> = {
   'token-guide': 'How to make a token',

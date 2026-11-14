@@ -1,4 +1,4 @@
-# The headers of Notecards on Cloudflare static assets (YAZ-5087). The Worker serves these files and nothing else:
+# The headers of Notecard on Cloudflare static assets (YAZ-5087). The Worker serves these files and nothing else:
 # no script, no logs of addresses. `publish/headers.test.ts` checks this file against the calls the code makes.
 #
 # The page may call GitHub's API only (decision 8). Pictures: this site, blob:, data: and GitHub's avatar host

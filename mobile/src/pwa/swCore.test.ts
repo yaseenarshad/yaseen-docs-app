@@ -24,7 +24,7 @@ function site(v: string, extra: Record<string, FakeFile> = {}) {
     [`/assets/engine-${v}.js`]: { body: `export const engine = '${v}'` },
     '/assets/qrDecode-same.js': { body: 'export const qr = 1' },
     [`/assets/index-${v}.css`]: { body: 'body{}' },
-    '/manifest.webmanifest': { body: '{"name":"Notecards"}' },
+    '/manifest.webmanifest': { body: '{"name":"Notecard"}' },
     '/icons/icon-192.png': { body: 'png' },
     ...extra,
   }

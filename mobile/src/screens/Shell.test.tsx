@@ -154,7 +154,7 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     h = await mount()
     await h.click('Scan a code')
     await h.scan('https://example.com/menu')
-    expect(h.text()).toContain('This is not a Notecards code.')
+    expect(h.text()).toContain('This is not a Notecard code.')
     expect(h.scanner.on).toBe(true)
     await h.scan(code())
     expect(tabs(h)).toEqual(['Friends', 'Review*', 'Search'])
@@ -175,7 +175,7 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     h = await mount()
     h.scanner.failWith = 'denied'
     await h.click('Scan a code')
-    expect(h.text()).toContain('Notecards may not use the camera.')
+    expect(h.text()).toContain('Notecard may not use the camera.')
     await h.click('Type the repo and token')
     expect(h.button('Connect vault')).not.toBeNull()
   })

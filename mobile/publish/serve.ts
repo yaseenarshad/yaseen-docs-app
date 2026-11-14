@@ -54,5 +54,5 @@ export function serveDist(dir: string, port: number, delayMs = Number(process.en
 if (process.env.NOTECARDS_SERVE !== 'no') {
   const dir = process.env.NOTECARDS_DIST ?? new URL('../dist/', import.meta.url).pathname
   const port = Number(process.env.PORT ?? 8790)
-  void serveDist(dir, port).then(() => console.log(`Notecards build at http://localhost:${port} (from ${dir})`))
+  void serveDist(dir, port).then(() => console.log(`Notecard build at http://localhost:${port} (from ${dir})`))
 }

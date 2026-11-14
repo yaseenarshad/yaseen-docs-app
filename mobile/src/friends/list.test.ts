@@ -67,7 +67,7 @@ describe('createFriendsList (YAZ-5083)', () => {
     expect(world.owned('ali')).toHaveLength(0) // nothing made before the first share (decision 22)
 
     const share = await ali.list.share()
-    expect(share).toMatchObject({ kind: 'ok', link: expect.stringContaining(`${FRIEND_LINK_BASE}#`), text: expect.stringContaining('Notecards'), whatFriendsSee: WHAT_FRIENDS_SEE })
+    expect(share).toMatchObject({ kind: 'ok', link: expect.stringContaining(`${FRIEND_LINK_BASE}#`), text: expect.stringContaining('Notecard'), whatFriendsSee: WHAT_FRIENDS_SEE })
     const index = indexOf(world, 'ali')
     // 4A's "every vault" (null) becomes the phone's vaults on the friends account, as `owner/name` in lower case.
     expect(index).toMatchObject({ nickname: 'Al', vaults: ['ali/vault', 'ali/second'], friends: [], shared: [{ mine: expect.any(String) }] })

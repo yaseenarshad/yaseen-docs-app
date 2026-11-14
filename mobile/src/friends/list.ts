@@ -387,7 +387,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (made.kind !== 'ok') return made.kind === 'bad-name' ? made : { kind: made.kind === 'not-found' ? ('failed' as const) : made.kind }
         await remember(made.handle)
         await counted()
-        return { kind: 'ok' as const, group: made.group, link: made.link, title: 'Notecards group link', text: `Join my group ${made.handle.index.groups.find((g) => g.group === made.group)?.name ?? ''} on Notecards. Open this link, copy the code, then paste it in the app.` }
+        return { kind: 'ok' as const, group: made.group, link: made.link, title: 'Notecard group link', text: `Join my group ${made.handle.index.groups.find((g) => g.group === made.group)?.name ?? ''} on Notecard. Open this link, copy the code, then paste it in the app.` }
       }),
     join: (text) =>
       withApi(async (api, login, vault) => {

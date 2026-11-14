@@ -484,7 +484,7 @@ const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) =>
 const ConnectPhoneControl = lazy(() => import('./ConnectPhoneControl').then((m) => ({ default: m.ConnectPhoneControl })))
 const FriendsSendControl = lazy(() => import('./FriendsSendControl').then((m) => ({ default: m.FriendsSendControl })))
 /** "Phone and friends" (YAZ-5098): the phone app reviews the cards, so the Review words find these rows too. */
-const PHONE_KEYWORDS = [...REVIEW_KEYWORDS, 'phone', 'iphone', 'mobile', 'notecards', 'connect', 'qr', 'code', 'scan', 'github', 'token', 'friends', 'secret']
+const PHONE_KEYWORDS = [...REVIEW_KEYWORDS, 'phone', 'iphone', 'mobile', 'notecard', 'notecards', 'connect', 'qr', 'code', 'scan', 'github', 'token', 'friends', 'secret']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 

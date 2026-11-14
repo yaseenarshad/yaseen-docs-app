@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Notecards: the phone web app (Vite + React). It never imports Electron or Node; see README.md",
+  "description": "Notecard: the phone web app (Vite + React). It never imports Electron or Node; see README.md",
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite-node publish/checkBuildCli.ts",

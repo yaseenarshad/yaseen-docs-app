@@ -109,7 +109,7 @@ export function notecardsPwa(): Plugin {
       // `/version.txt`: which build runs (the commit, "-dirty" with uncommitted changes, and the worker version). Not a
       // secret; it tells Yaseen which build his phone runs.
       this.emitFile({ type: 'asset', fileName: 'version.txt', source: `${commitOf()}\n${kill ? 'kill-switch' : shell.version}\n` })
-      this.emitFile({ type: 'asset', fileName: 'sw.js', source: `// Notecards service worker, ${kill ? 'THE KILL SWITCH (YAZ-5285)' : `version ${shell.version} (YAZ-5087)`}\n${result.outputFiles[0].text}` })
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: `// Notecard service worker, ${kill ? 'THE KILL SWITCH (YAZ-5285)' : `version ${shell.version} (YAZ-5087)`}\n${result.outputFiles[0].text}` })
     },
   }
 }

@@ -81,7 +81,7 @@ function Unreadable({ board, refresh }: { board: Unavailable; refresh: () => Pro
     case 'needs-repair':
       return <Problem message={LIST_NEEDS_REPAIR} action="Try again" onAction={() => void refresh()} />
     case 'newer-app':
-      return <Problem message="Your friends list was written by a newer Notecards. Update this app to see your friends." />
+      return <Problem message="Your friends list was written by a newer Notecard. Update this app to see your friends." />
     case 'unauthorized':
       return (
         <Problem
@@ -528,7 +528,7 @@ const UNAVAILABLE_WORDS: Record<Unavailable['kind'], string> = {
   offline: 'No connection. Try again when you are online.',
   'rate-limited': 'GitHub asks the app to wait. Try again in a few minutes.',
   unauthorized: 'Sign in again, then try again.',
-  'newer-app': 'Your friends list was written by a newer Notecards. Update this app.',
+  'newer-app': 'Your friends list was written by a newer Notecard. Update this app.',
   'needs-repair': LIST_NEEDS_REPAIR,
   failed: 'Something went wrong. Try again.',
 }
@@ -676,8 +676,8 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
               answer?.kind === 'joined'
                 ? joinShareText(gistText(answer.name, 30), ownSiteLink(sendBack))
                 : {
-                    title: 'Notecards friend link',
-                    text: 'Add me as a friend on Notecards. Open this link, copy the code, then paste it in the app.',
+                    title: 'Notecard friend link',
+                    text: 'Add me as a friend on Notecard. Open this link, copy the code, then paste it in the app.',
                     url: ownSiteLink(sendBack),
                   },
             ).then((how) => {

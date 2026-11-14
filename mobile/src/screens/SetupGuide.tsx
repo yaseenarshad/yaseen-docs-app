@@ -13,7 +13,7 @@ export function SetupGuide() {
   const app = useApp()
   return (
     <Frame title="Set up your phone" back={() => app.go({ type: 'back' })}>
-      <p className="lead">Notecards works with one GitHub account and one token. Give the token two permissions: Contents and Gists.</p>
+      <p className="lead">Notecard works with one GitHub account and one token. Give the token two permissions: Contents and Gists.</p>
 
       <h2 className="section">1. The repo</h2>
       <ol className="guide-steps">
@@ -29,19 +29,19 @@ export function SetupGuide() {
             Open this page on GitHub
           </a>
         </li>
-        <li>Name: Notecards. Expiration: your choice.</li>
+        <li>Name: Notecard. Expiration: your choice.</li>
         <li>Repository access: Only select repositories, then your vault repo.</li>
         <li>Repository permissions › Contents: Read and write.</li>
         <li>Account permissions › Gists: Read and write. Friends needs it. Review works without it.</li>
-        <li>Generate the token and copy it. Paste it in Notecards with the repo name.</li>
+        <li>Generate the token and copy it. Paste it in Notecard with the repo name.</li>
       </ol>
       <p className="muted">Or, on your Mac, open Settings › Review › Connect your phone, and tap Scan a code here.</p>
 
       <h2 className="section">3. The Home Screen</h2>
       <ol className="guide-steps">
-        <li>Open Notecards in Safari.</li>
+        <li>Open Notecard in Safari.</li>
         <li>Tap Share, then Add to Home Screen.</li>
-        <li>Open Notecards from the Home Screen, and connect your vault there. Safari and the Home Screen app do not share what they keep.</li>
+        <li>Open Notecard from the Home Screen, and connect your vault there. Safari and the Home Screen app do not share what they keep.</li>
       </ol>
     </Frame>
   )

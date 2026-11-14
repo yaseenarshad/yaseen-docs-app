@@ -83,7 +83,7 @@ function expectClean(w: FakeGistWorld, login: string, handle: IndexHandle) {
 describe('the friend link (decision 20; round 10, addition 7)', () => {
   it('is the address of the landing page with the pointer ID after #: the ID never reaches a server log', () => {
     expect(friendLink(ID)).toBe(`${FRIEND_LINK_BASE}#${ID}`)
-    expect(FRIEND_LINK_BASE).toBe('https://notecards.yaseenarshad.com/friend')
+    expect(FRIEND_LINK_BASE).toBe('https://notecard.yaseenarshad.com/friend')
   })
 
   it('reads a pasted text in any shape', () => {
@@ -91,12 +91,12 @@ describe('the friend link (decision 20; round 10, addition 7)', () => {
       friendLink(ID),
       `  ${friendLink(ID)}  `,
       `${friendLink(ID)}/`,
-      `Add me on Notecards: ${friendLink(ID)} see you`,
-      `https://preview.notecards.yaseenarshad.com/friend#${ID}`,
-      `https://notecards.yaseenarshad.com/friend/${ID}`,
-      `https://notecards.yaseenarshad.com/friend/${ID}/`,
-      `https://notecards.yaseenarshad.com/friend?id=${ID}`,
-      `notecards.yaseenarshad.com/friend#${ID}`,
+      `Add me on Notecard: ${friendLink(ID)} see you`,
+      `https://preview.notecard.yaseenarshad.com/friend#${ID}`,
+      `https://notecard.yaseenarshad.com/friend/${ID}`,
+      `https://notecard.yaseenarshad.com/friend/${ID}/`,
+      `https://notecard.yaseenarshad.com/friend?id=${ID}`,
+      `notecard.yaseenarshad.com/friend#${ID}`,
       ID,
       ` ${ID.toUpperCase()}\n`,
       `${ID}/`,
@@ -109,8 +109,8 @@ describe('the friend link (decision 20; round 10, addition 7)', () => {
   it('refuses a link of another app, a text with no link, and an empty paste, each with plain words', () => {
     expect(parseFriendLink('https://stepup.app/invite/12345')).toEqual({ kind: 'other-app' })
     expect(parseFriendLink(`https://evil.example/friend#${ID}`)).toEqual({ kind: 'other-app' })
-    expect(parseFriendLink(`https://notecards.yaseenarshad.com.evil.example/friend#${ID}`)).toEqual({ kind: 'other-app' })
-    expect(parseFriendLink('https://notecards.yaseenarshad.com/friend#nothex!')).toEqual({ kind: 'not-a-link' })
+    expect(parseFriendLink(`https://notecard.yaseenarshad.com.evil.example/friend#${ID}`)).toEqual({ kind: 'other-app' })
+    expect(parseFriendLink('https://notecard.yaseenarshad.com/friend#nothex!')).toEqual({ kind: 'not-a-link' })
     expect(parseFriendLink('hello there')).toEqual({ kind: 'not-a-link' })
     expect(parseFriendLink('12345')).toEqual({ kind: 'not-a-link' })
     expect(parseFriendLink('   ')).toEqual({ kind: 'empty' })

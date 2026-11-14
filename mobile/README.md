@@ -1,4 +1,4 @@
-# mobile/ — Notecards, the phone web app
+# mobile/ — Notecard, the phone web app
 
 A plain Vite + React + TypeScript web app (YAZ-5055; this workspace is YAZ-5071). It runs in Safari and as a Home
 Screen web app. It keeps each vault on the phone, in IndexedDB, and talks only to GitHub. There is no server.
@@ -136,7 +136,7 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
 
 ## The home-screen app (YAZ-5087)
 
-* **Manifest and head:** `public/manifest.webmanifest` ("Notecards", `standalone`, start and scope `/`) and the iOS tags in
+* **Manifest and head:** `public/manifest.webmanifest` ("Notecard", `standalone`, start and scope `/`) and the iOS tags in
   `index.html` (the 180 px icon, the status bar, `viewport-fit=cover`, `theme-color` for light and dark,
   `color-scheme`, a splash picture for each iPhone size in light and dark). `publish/site.test.ts` checks them.
 * **Icons and splash pictures:** made from ONE drawing (`iconSvg` in `publish/images.ts`) by
@@ -168,7 +168,7 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
 
 ## How to publish
 
-The preview site is `https://preview.notecards.yaseenarshad.com` (Worker `yaseen-notecards-preview`, `wrangler.jsonc`).
+The preview site is `https://preview.notecard.yaseenarshad.com` (Worker `yaseen-notecards-preview`, `wrangler.jsonc`).
 Publish only when Yaseen says so (round 15). From the repo root, signed in to Cloudflare (`npx wrangler whoami`):
 
 ```
@@ -182,7 +182,7 @@ Wrangler is not a dependency of the repo; `npx` fetches that exact version. To s
 sending it: `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc --dry-run`.
 
 The Worker has no script: Cloudflare serves the files of `dist/` and applies `_headers`. No request reaches code of
-ours, so nothing logs an address. The stable site `notecards.yaseenarshad.com` is NOT in this config: it publishes on
+ours, so nothing logs an address. The stable site `notecard.yaseenarshad.com` is NOT in this config: it publishes on
 a version tag, when Yaseen says (decision 8, round 10 item 16).
 
 ## If a bad version ships
@@ -211,6 +211,6 @@ deletes only this app's shell caches (`notecards-shell-*`, `notecards-meta`), un
 page again one time. It never touches IndexedDB: the token, the vault copy and the waiting answers stay. Then fix the
 bug and run `npm run mobile:publish:preview`. The app registers its normal worker again at the next open.
 
-**On a broken phone:** close Notecards in the app switcher (swipe it up), then open it again; do it two times. A new
+**On a broken phone:** close Notecard in the app switcher (swipe it up), then open it again; do it two times. A new
 worker takes over when no page of the old one is open. Do NOT remove the site's data in Settings (Safari › Advanced ›
 Website Data): that deletes IndexedDB, with the token and the answers that wait to be sent.

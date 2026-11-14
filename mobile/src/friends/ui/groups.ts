@@ -24,9 +24,9 @@ export function adminWords(result: JoinRequest | GroupChange): string {
     case 'duplicate':
       return `${result.login} is already in the group.`
     case 'unverified':
-      return 'The app cannot check who sent this join link. Ask them to send it again from their Notecards.'
+      return 'The app cannot check who sent this join link. Ask them to send it again from their Notecard.'
     case 'not-a-join-link':
-      return 'That is not a Notecards join link. Ask the person to send it again.'
+      return 'That is not a Notecard join link. Ask the person to send it again.'
     case 'done':
       return 'Done.'
     case 'not-admin':
@@ -38,7 +38,7 @@ export function adminWords(result: JoinRequest | GroupChange): string {
     case 'needs-repair':
       return "The group's file cannot be read. Nothing was changed."
     case 'newer-app':
-      return 'This needs a newer Notecards. Update this app.'
+      return 'This needs a newer Notecard. Update this app.'
     case 'offline':
       return 'No connection. Try again when you are online.'
     case 'rate-limited':

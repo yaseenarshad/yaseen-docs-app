@@ -46,8 +46,8 @@ import type { FriendDay, FriendStats } from './friendStats'
  */
 
 export const GROUP_FILE = 'notecards-group.json'
-export const GROUP_LINK_BASE = 'https://notecards.yaseenarshad.com/group'
-export const JOIN_LINK_BASE = 'https://notecards.yaseenarshad.com/join'
+export const GROUP_LINK_BASE = 'https://notecard.yaseenarshad.com/group'
+export const JOIN_LINK_BASE = 'https://notecard.yaseenarshad.com/join'
 /** The longest group name the admin can type (one line). */
 export const GROUP_NAME_MAX = 60
 /** A text read from a gist is cut to this for the screens (the file keeps it whole). */
@@ -55,7 +55,12 @@ const SHOWN_MAX = 100
 /** A gist that no list names is deleted by `sweepOrphans` only when it is older than this: another device may be at work. */
 export const ORPHAN_AGE_MS = 60 * 60_000
 
-const SITE = 'notecards.yaseenarshad.com'
+/**
+ * The app's sites (the stable one and its preview). Yaseen, 2026-11-14: the address is `notecard.yaseenarshad.com`. A
+ * link shared before that names `notecards.yaseenarshad.com`; the paste box still reads it (it carries the same code).
+ */
+const SITES = ['notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
+const isOurSite = (host: string) => SITES.some((site) => host === site || host.endsWith(`.${site}`))
 const LINK_ID = /^[0-9a-f]{20,40}$/i
 
 export interface GroupMember {
@@ -129,7 +134,7 @@ export function parseAnyLink(text: string): AnyLink {
     }
     const host = url.hostname.toLowerCase()
     const parts = url.pathname.split('/').filter(Boolean)
-    if (host === SITE || host.endsWith(`.${SITE}`)) {
+    if (isOurSite(host)) {
       const kind = parts[0]
       const raw = (url.hash.replace(/^#/, '') || url.searchParams.get('id') || parts[1] || '').replace(/\/+$/, '')
       if (kind === 'join') {
@@ -387,15 +392,15 @@ export function joinMessage(result: JoinResult): string {
       return 'That group is gone, or the link is wrong. Ask the admin for the link again.'
     case 'not-a-group-link':
     case 'not-a-link':
-      return 'That is not a Notecards group link. Ask the admin to send it again.'
+      return 'That is not a Notecard group link. Ask the admin to send it again.'
     case 'other-app':
-      return "That link is from another app. Paste the link from the admin's Notecards."
+      return "That link is from another app. Paste the link from the admin's Notecard."
     case 'empty':
       return 'Paste the group link that the admin sent you.'
     case 'needs-repair':
       return "That group's file cannot be read. Ask the admin to fix it."
     case 'newer-app':
-      return 'The admin has a newer Notecards. Update this app, then paste the link again.'
+      return 'The admin has a newer Notecard. Update this app, then paste the link again.'
     case 'offline':
       return 'No connection. Try again when you are online.'
     case 'rate-limited':
@@ -743,7 +748,7 @@ export function groupViewMessage(view: GroupView): string | null {
     case 'needs-repair':
       return "This group's file cannot be read. Ask the admin to fix it."
     case 'newer-app':
-      return 'This group needs a newer app. Update Notecards.'
+      return 'This group needs a newer app. Update Notecard.'
     case 'offline':
       return 'No connection.'
     case 'removing':

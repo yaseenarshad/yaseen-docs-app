@@ -186,7 +186,7 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
         demoFriend(NOW, 'Ana', {
           state: 'waiting',
           label: 'Waiting for Ana to add you',
-          sendBack: 'https://notecards.yaseenarshad.com/friend#' + 'c'.repeat(32),
+          sendBack: 'https://notecard.yaseenarshad.com/friend#' + 'c'.repeat(32),
         }),
         demoFriend(NOW, 'Ben', {
           state: 'gone',
@@ -317,8 +317,8 @@ describe('"+ Add" (decision 20)', () => {
     expect(s.calls.share).toBe(1)
     expect(shared).toEqual([
       {
-        title: 'Notecards friend link',
-        text: 'Add me as a friend on Notecards.',
+        title: 'Notecard friend link',
+        text: 'Add me as a friend on Notecard.',
         url: s.shareAnswer.kind === 'ok' ? s.shareAnswer.link : '',
       },
     ])
@@ -349,7 +349,7 @@ describe('"+ Add" (decision 20)', () => {
     })
     await act(async () => ([...h!.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement).click())
     await h.settle()
-    expect((h.host.querySelector('.fr-panel input') as HTMLInputElement).value).toContain('notecards.yaseenarshad.com/friend#')
+    expect((h.host.querySelector('.fr-panel input') as HTMLInputElement).value).toContain('notecard.yaseenarshad.com/friend#')
   })
 
   it('Paste: the clipboard is refused, so the field takes the link; after an add that is not paired, "Send my link back"', async () => {
@@ -367,7 +367,7 @@ describe('"+ Add" (decision 20)', () => {
     await tap(h, 'Paste from the clipboard')
     expect(statusText(h)).toContain('Paste the link in the field below.')
     expect(document.activeElement?.getAttribute('name')).toBe('friend-link')
-    const back = 'https://notecards.yaseenarshad.com/friend#' + 'd'.repeat(32)
+    const back = 'https://notecard.yaseenarshad.com/friend#' + 'd'.repeat(32)
     s.pasteAnswer = {
       kind: 'added',
       name: 'Sam',
@@ -375,7 +375,7 @@ describe('"+ Add" (decision 20)', () => {
       sendBack: back,
       handle: null as never,
     }
-    await h.type('Or paste the link here', 'https://notecards.yaseenarshad.com/friend#' + 'e'.repeat(32))
+    await h.type('Or paste the link here', 'https://notecard.yaseenarshad.com/friend#' + 'e'.repeat(32))
     await tap(h, 'Add')
     expect(statusText(h)).toContain('Sam is added. Send them your link, so they can add you too.')
     await tap(h, 'Send my link back')
@@ -391,11 +391,11 @@ describe('"+ Add" (decision 20)', () => {
       kind: 'joined' as const,
       name: 'Study group',
       group: 'a'.repeat(32),
-      sendToAdmin: 'https://notecards.yaseenarshad.com/join#x',
+      sendToAdmin: 'https://notecard.yaseenarshad.com/join#x',
       handle: null as never,
     }
     s.pasteAnswer = joined
-    await h.type('Or paste the link here', 'https://notecards.yaseenarshad.com/group#' + 'a'.repeat(32))
+    await h.type('Or paste the link here', 'https://notecard.yaseenarshad.com/group#' + 'a'.repeat(32))
     await tap(h, 'Add')
     expect(statusText(h)).toContain(joinMessage(joined))
     expect(btn(h, 'Send my join link to the admin')).not.toBeNull()
@@ -482,7 +482,7 @@ describe('groups (decision 18; round 10, item 13; round 14)', () => {
         kind: 'waiting' as const,
         group: id(1),
         name: 'G1',
-        sendToAdmin: 'https://notecards.yaseenarshad.com/join#x',
+        sendToAdmin: 'https://notecard.yaseenarshad.com/join#x',
       },
       { kind: 'removed' as const, group: id(2), name: 'G2' },
       { kind: 'gone' as const, group: id(3), name: 'G3' },
@@ -711,7 +711,7 @@ describe('an action that cannot finish now says so (YAZ-5257)', () => {
     await tap(h, 'Add a friend or a group')
     await tap(h, "Paste a friend's link")
     s.pasteAnswer = { kind: 'request', group: 'a'.repeat(32), groupName: 'Study group', pointer: 'b'.repeat(32), login: 'zed', name: 'Zed' }
-    await h.type('Or paste the link here', 'https://notecards.yaseenarshad.com/join#x')
+    await h.type('Or paste the link here', 'https://notecard.yaseenarshad.com/join#x')
     await tap(h, 'Add')
     const add = btn(h, 'Add Zed')!
     await act(async () => {

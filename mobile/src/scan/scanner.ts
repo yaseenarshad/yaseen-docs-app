@@ -36,9 +36,9 @@ export class ScanError extends Error {
 export function scanProblemMessage(problem: ScanProblem): string {
   switch (problem) {
     case 'denied':
-      return 'Notecards may not use the camera. Allow the camera for this app in the iPhone Settings, or type the repo and the token.'
+      return 'Notecard may not use the camera. Allow the camera for this app in the iPhone Settings, or type the repo and the token.'
     case 'no-camera':
-      return 'This phone gives Notecards no camera. Type the repo and the token.'
+      return 'This phone gives Notecard no camera. Type the repo and the token.'
     case 'reader-failed':
       return 'The code reader did not load. Connect to the internet and try again, or type the repo and the token.'
   }

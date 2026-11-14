@@ -755,7 +755,7 @@ A card can be its own file, next to pages, drawings and diagrams. **The format**
 
 Files: `shared/cardFileFormat.ts`, `shared/cardConvert.ts`, `shared/syncConflict.ts`, `shared/cardLinks.ts`, `shared/cardSchedule.ts`, `desktop/src/main/vaultIndex/scan.ts`, `idSweep.ts`, `reletter.ts`, `desktop/src/main/fs/retitle.ts`, `create.ts`, `desktop/src/cli/cli.ts`, `client/src/editor/CardFileView.tsx`, `CardFileNotice.tsx`, `client/src/review/cardPane.tsx`, `cardConvert.ts`, `newCardFile.ts`, `client/src/editor/card/cardEmbed.ts`, `embedCard.ts`, `client/src/sidebar/cardFiles.ts`, `client/src/search/searchFilter.ts`, `client/src/review/CardInbox.tsx`, `client/src/views/expr/methods.ts`.
 
-## The phone: Notecards (YAZ-5055 — decisions on the working log YAZ-5057; `mobile/README.md` has the app's layout)
+## The phone: Notecard (YAZ-5055 — decisions on the working log YAZ-5057; `mobile/README.md` has the app's layout)
 
 The phone app (`mobile/`) keeps a copy of each vault in the browser and talks only to `api.github.com`. This section is what it reads and writes in a vault and in the friends gists. The code is the spec: each item names its file.
 
@@ -780,7 +780,7 @@ The phone app (`mobile/`) keeps a copy of each vault in the browser and talks on
 
 A reader takes a whole-number `v` above 1 as `newer` ("needs a newer app") and writes nothing to that file; a file that is not a JSON object with `v: 1` is unreadable, and the app does not write the friends list then (`LIST_NEEDS_REPAIR`). GitHub allows 100 gist updates an hour for the account (`GIST_UPDATES_PER_HOUR`, `shared/friendSend.ts`), shared by the phone, the Mac, cheers and nudges. A send keeps a reserve of one update for each pointer plus `MARK_HEADROOM` (5) (`reserveFor`), so a remove can always rewrite the pointers. The numbers go at most every `PUBLISH_EVERY_MS` (5 minutes) while the person reviews; the Friends tab reads friends every `FRIENDS_POLL_MS` (1 minute).
 
-**The QR code** (round 11, `shared/scanCode.ts`): the Mac's "Connect your phone" (`desktop/src/main/phoneCode.ts`) shows JSON, not an address, so the token never lands in Safari's history: `{"app":"notecards","v":1,"repo":"owner/name","branch":"main","token":"github_pat_…","expires":"…"}` (`expires` optional; the Mac writes none today; 2,000 characters at most). The phone refuses another `app` and a `v` above 1 ("from a newer Notecards"), then runs the same sign-in check as typed values.
+**The QR code** (round 11, `shared/scanCode.ts`): the Mac's "Connect your phone" (`desktop/src/main/phoneCode.ts`) shows JSON, not an address, so the token never lands in Safari's history: `{"app":"notecards","v":1,"repo":"owner/name","branch":"main","token":"github_pat_…","expires":"…"}` (`expires` optional; the Mac writes none today; 2,000 characters at most). The phone refuses another `app` and a `v` above 1 ("from a newer Notecard"), then runs the same sign-in check as typed values.
 
 Files: `mobile/src/sync/` (`plan.ts`, `pass.ts`, `githubRemote.ts`, `cadence.ts`), `mobile/src/answers/` (`ops.ts`, `send.ts`, `answers.ts`, `reviewHost.ts`), `mobile/src/auth/check.ts`, `mobile/src/media/ahead.ts`, `shared/cardLine.ts`, `shared/friendStats.ts`, `shared/friendGists.ts`, `shared/friendGroups.ts`, `shared/friendSend.ts`, `shared/scanCode.ts`, `desktop/src/main/phoneCode.ts`.
 

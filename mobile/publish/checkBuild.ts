@@ -63,7 +63,7 @@ export function main() {
   const fileOf = (served: string) => (served === '/' ? 'index.html' : /^\/(friend|group|join)$/.test(served) ? `${served.slice(1)}.html` : served.slice(1))
   const sum = (list: string[]) => list.map(size).reduce((a, b) => ({ raw: a.raw + b.raw, gz: a.gz + b.gz }), { raw: 0, gz: 0 })
 
-  console.log('\nNotecards build (YAZ-5087)')
+  console.log('\nNotecard build (YAZ-5087)')
   for (const p of first) console.log(`  first load  ${p.padEnd(34)} ${kb(size(p).raw).padStart(10)}  gzip ${kb(size(p).gz)}`)
   const f = sum(first)
   console.log(`  first load  total ${''.padEnd(28)} ${kb(f.raw).padStart(10)}  gzip ${kb(f.gz)}`)

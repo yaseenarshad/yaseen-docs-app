@@ -24,7 +24,7 @@ import { cleanToken, isBranchName, parseRepo } from './input'
  */
 
 /** The write probe's blob: always these bytes, so GitHub keeps one copy for each repo. */
-export const WRITE_PROBE = 'Notecards checks that this token may write to this repo. This blob is in no commit.\n'
+export const WRITE_PROBE = 'Notecard checks that this token may write to this repo. This blob is in no commit.\n'
 
 export interface SignInInput {
   /** `owner/name`, or the repo's GitHub address. */

@@ -1,13 +1,13 @@
-// The PREVIEW site of Notecards (YAZ-5087; decision 8, round 10 item 16, round 12 item 14): Cloudflare Workers static
+// The PREVIEW site of Notecard (YAZ-5087; decision 8, round 10 item 16, round 12 item 14): Cloudflare Workers static
 // assets, published by hand with `npm run mobile:publish:preview` (mobile/README.md, "How to publish").
 // Static files only: no Worker script (`main`), no binding, no workers.dev address, no logs. The token never reaches it
-// (decision 13). The STABLE site (notecards.yaseenarshad.com) is NOT here: it publishes on a version tag, when Yaseen says.
+// (decision 13). The STABLE site (notecard.yaseenarshad.com) is NOT here: it publishes on a version tag, when Yaseen says.
 {
   "name": "yaseen-notecards-preview",
   "account_id": "06ed69083fae875c626d37f9c05405a3",
   "compatibility_date": "2026-11-13",
   "workers_dev": false,
   "preview_urls": false,
-  "routes": [{ "pattern": "preview.notecards.yaseenarshad.com", "custom_domain": true }],
+  "routes": [{ "pattern": "preview.notecard.yaseenarshad.com", "custom_domain": true }],
   "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "html_handling": "auto-trailing-slash" }
 }

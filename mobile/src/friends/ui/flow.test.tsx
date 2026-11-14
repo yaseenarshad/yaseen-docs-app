@@ -88,7 +88,7 @@ describe('add a friend, both orders, on the real friends logic', () => {
     expect(plain(h.text())).toContain('Add a friend in two steps:')
     await tap(h, 'Share my link')
     await click(h, 'Share my link')
-    expect(shared[0].url).toMatch(/^https:\/\/notecards\.yaseenarshad\.com\/friend#[0-9a-f]{32}$/)
+    expect(shared[0].url).toMatch(/^https:\/\/notecard\.yaseenarshad\.com\/friend#[0-9a-f]{32}$/)
     expect(status(h)).toContain('Link sent.')
     // The link shows under "Links you shared" until a friend uses it.
     await settleAll(h)

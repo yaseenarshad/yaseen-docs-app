@@ -98,13 +98,13 @@ export function ownSiteLink(link: string, origin: string = globalThis.location?.
  * (`/group`, `/join`, as `/friend`) with the code and Copy; the paste box reads it.
  */
 export const groupShareText = (name: string, url: string) => ({
-  title: 'Notecards group link',
-  text: `Join my group ${name} on Notecards. Open this link, copy the code, then paste it in the app.`,
+  title: 'Notecard group link',
+  text: `Join my group ${name} on Notecard. Open this link, copy the code, then paste it in the app.`,
   url,
 })
 export const joinShareText = (name: string, url: string) => ({
-  title: 'Notecards join link',
-  text: `Please add me to ${name} on Notecards. Open this link, copy the code, then paste it in the app.`,
+  title: 'Notecard join link',
+  text: `Please add me to ${name} on Notecard. Open this link, copy the code, then paste it in the app.`,
   url,
 })
 
@@ -151,7 +151,7 @@ export function actionWords(result: unknown): string | null {
     case 'unauthorized':
       return 'Sign in again, then try again.'
     case 'newer-app':
-      return 'This needs a newer Notecards. Update this app.'
+      return 'This needs a newer Notecard. Update this app.'
     case 'needs-repair':
       return LIST_NEEDS_REPAIR
     case 'not-admin':

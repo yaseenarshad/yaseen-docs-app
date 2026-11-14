@@ -245,7 +245,7 @@ function CheerNudge({
       case 'gone':
         return `${name} is not your friend on GitHub any more.`
       case 'newer-app':
-        return 'Your link for this friend was written by a newer Notecards. Update this app.'
+        return 'Your link for this friend was written by a newer Notecard. Update this app.'
       case 'no-account':
         return 'Friends starts after the app checks your token.'
       default:

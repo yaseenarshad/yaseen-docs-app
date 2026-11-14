@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Notecards",
-  "short_name": "Notecards",
+  "name": "Notecard",
+  "short_name": "Notecard",
   "description": "Review the cards of your Yaseen Docs vault on your phone.",
   "lang": "en",
   "start_url": "/",

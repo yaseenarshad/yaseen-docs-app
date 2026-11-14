@@ -312,9 +312,9 @@ export interface WriteOptions {
 
 /** Default descriptions: what a person sees in their own gist list on GitHub. */
 export const DESCRIPTIONS: Record<'numbers' | 'index' | 'pointer', string> = {
-  numbers: 'Notecards: my review numbers for friends (no card text)',
-  index: 'Notecards: my friends list',
-  pointer: 'Notecards: a friend link',
+  numbers: 'Notecard: my review numbers for friends (no card text)',
+  index: 'Notecard: my friends list',
+  pointer: 'Notecard: a friend link',
 }
 
 /** Spaces the writes of one task about 1 second apart (`WRITE_GAP_MS`). */

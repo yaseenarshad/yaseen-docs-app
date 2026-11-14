@@ -1,4 +1,4 @@
-/* Notecards on the phone (YAZ-5077). The look is tuned with Yaseen in the demo round (7-); this is the clean first build.
+/* Notecard on the phone (YAZ-5077). The look is tuned with Yaseen in the demo round (7-); this is the clean first build.
    The colours and the font are the Mac app's own tokens (`client/src/app.css`, its `:root` and `[data-theme='dark']`
    blocks): `src/theme.test.ts` fails when a value here drifts from there. Dark mode follows the iPhone (round 10, item 6). */
 :root {
