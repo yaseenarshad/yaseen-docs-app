@@ -6,6 +6,7 @@ import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { NameEnding } from '../sidebar/FileIcon'
 import { foreignDrag, readPageDrag, writePageDrag, type PageDrag } from '../workspace/pageDrag'
 import './right-panel.css'
+import { useUnit } from '../vault/unitWord'
 
 export interface RightPanelProps {
   /** The vaults of the window (YAZ-2602): the Files tree of the vault that holds a page says whether it is a folder (YAZ-2290). */
@@ -42,6 +43,7 @@ const Chevron = ({ d }: { d: string }) => (
 )
 
 export function RightPanel({ roots, titles, windowId, items, expanded, width, overlay, canBack, canForward, onBack, onForward, onToggle, onClose, onHide, onResizeCommit, onDropPage, onMoveToMain, children }: RightPanelProps) {
+  const unit = useUnit()
   const [previewWidth, setPreviewWidth] = useState(width)
   const [dropAt, setDropAt] = useState<number | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; path: string } | null>(null)
@@ -193,7 +195,7 @@ export function RightPanel({ roots, titles, windowId, items, expanded, width, ov
       </div>
       <ul
         className={`right-panel__headers${dropAt === items.length && items.length === 0 ? ' right-panel__headers--drop-empty' : ''}`}
-        aria-label="Open pages in right panel"
+        aria-label={unit('Open pages in right panel')}
         onDragOver={(event) => {
           if (event.target === event.currentTarget) hoverDrop(event, items.length)
         }}
@@ -267,7 +269,7 @@ export function RightPanel({ roots, titles, windowId, items, expanded, width, ov
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropAt(null)
         }}
       >
-        {items.length === 0 ? <p className="right-panel__empty">Open a page in the right panel</p> : children}
+        {items.length === 0 ? <p className="right-panel__empty">{unit('Open a page in the right panel')}</p> : children}
       </div>
       {menu !== null && (
         <ContextMenuSurface x={menu.x} y={menu.y} onClose={() => setMenu(null)}>

@@ -2,7 +2,7 @@ import { ConfirmSheet } from '../components/ConfirmSheet'
 
 /**
  * The delete-comment sheet's copy (YAZ-1472) — PURE and separately tested, like every other
- * sheet's. A comment has no Trash behind it: the entry leaves the note's frontmatter for good,
+ * sheet's. A comment has no Trash behind it: the entry leaves the page's frontmatter for good,
  * and a parent takes its replies with it (🔒 D7), so the copy names both. `label` is the number
  * the row wears (`#3`, `#3.1`); a hand-written comment without one is "this comment".
  */

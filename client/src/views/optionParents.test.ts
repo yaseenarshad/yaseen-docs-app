@@ -2,7 +2,7 @@
  * Option parents, "Not set" vs "Any" (YAZ-4799 demo). Grouped Layer › Sub-layer with "Show empty groups" on:
  * - a sub-layer whose parent is a layer gets an empty group under that layer only;
  * - an "Any" sub-layer (`parent.any`) gets one under each layer;
- * - a "Not set" sub-layer (no parent, not in `any`) gets none: it shows only where its notes are.
+ * - a "Not set" sub-layer (no parent, not in `any`) gets none: it shows only where its pages are.
  * And `.folder.md` reads `parent.any`, dropping an entry that also has a parent.
  */
 import { describe, expect, it } from 'vitest'
@@ -19,14 +19,14 @@ const SUBS = ['DNS', 'CDN', 'Browser', 'Logs']
 const select = (options: string[]): ColumnTyping => ({ assigned: 'select', dominant: null, options })
 const typing = (key: string) => (key === 'note.Layer' ? select(LAYERS) : select(SUBS))
 const view: ViewDef = { type: 'table', name: 'T', groupBy: [{ property: 'note.Layer' }, { property: 'note.Sub' }], showEmptyColumns: true }
-const note = (name: string, properties: Record<string, unknown>) =>
+const page = (name: string, properties: Record<string, unknown>) =>
   ({ ...TEST_RECORDS[0], path: `/vault/db/${name}.md`, basename: name, title: name, folder: 'db', properties }) as IndexRecord
 
 /**
- * Browser's parent is Clients; DNS's is Edge; CDN is "Any"; Logs is "Not set" and has one note, under Edge.
- * Only Browser and Logs have notes.
+ * Browser's parent is Clients; DNS's is Edge; CDN is "Any"; Logs is "Not set" and has one page, under Edge.
+ * Only Browser and Logs have pages.
  */
-const recs = [note('Chrome', { Layer: '1) Clients', Sub: 'Browser' }), note('Loki', { Layer: '2) Edge', Sub: 'Logs' })]
+const recs = [page('Chrome', { Layer: '1) Clients', Sub: 'Browser' }), page('Loki', { Layer: '2) Edge', Sub: 'Logs' })]
 const parent = { column: 'Layer', of: { Browser: '1) Clients', DNS: '2) Edge' }, any: ['CDN'] }
 const optionParent = (key: string) => (key === 'note.Sub' || key === 'Sub' ? parent : undefined)
 
@@ -44,7 +44,7 @@ describe('YAZ-4799 demo: empty sub-layer groups under a parent group', () => {
     })
   })
 
-  it('YAZ-4799 demo: a "Not set" option still shows where it has notes (Logs under Edge), never under another layer', () => {
+  it('YAZ-4799 demo: a "Not set" option still shows where it has pages (Logs under Edge), never under another layer', () => {
     const s = shown()
     expect(s['2) Edge']).toContain('Logs 1')
     expect(s['1) Clients'].some((c) => c.startsWith('Logs'))).toBe(false)
@@ -58,7 +58,7 @@ describe('YAZ-4799 demo: empty sub-layer groups under a parent group', () => {
     })
   })
 
-  it('YAZ-4799 demo: with "Show empty groups" off, only groups with notes show', () => {
+  it('YAZ-4799 demo: with "Show empty groups" off, only groups with pages show', () => {
     expect(shown({ ...view, showEmptyColumns: false })).toEqual({ '1) Clients': ['Browser 1'], '2) Edge': ['Logs 1'] })
   })
 

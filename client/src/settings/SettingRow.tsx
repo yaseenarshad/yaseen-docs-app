@@ -3,7 +3,7 @@
  * between rows in a card (settings.css `.setting + .setting`). `data-setting` is the row's stable
  * address — tests and the e2e specs find a row by it rather than by position or label text.
  * `wide` stacks the control full-width under the text for the two controls a right-hand cell
- * cannot hold: the new-note folder input and the hotkey tables. `bare` drops the text too, for a
+ * cannot hold: the new-page folder input and the hotkey tables. `bare` drops the text too, for a
  * control that carries its own words (Storage, Sharing; YAZ-3039) or a group whose title already
  * names the row (Text formatting, YAZ-3068 D16).
  */

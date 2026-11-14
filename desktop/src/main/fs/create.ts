@@ -3,43 +3,43 @@ import type { CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFile
 import { cardFileId, isCardFileContent } from '@shared/cardFileFormat'
 import { isMarkdown } from '@shared/fileKind'
 import { FrontmatterWriteError, setFrontmatterProperty, withCommentsHint } from '@shared/frontmatter'
-import { NOTE_ID_KEY, isVaultNumberId } from '@shared/noteId'
-import { TITLE_KEY } from '@shared/noteName'
+import { PAGE_ID_KEY, isVaultNumberId } from '@shared/pageId'
+import { TITLE_KEY } from '@shared/pageName'
 import type { IdDoor } from '../vaultIndex/mint'
 import { BridgeFailure, createDurable, createFolderSettings, fsCall, requireAbsPath } from './fsUtils'
 import { requireRequest } from './validate'
 
-/** A request shaped for a vault that uses IDs (a folder's `title`, a note's `id`) reached one that does not: a window one answer behind. Nothing is made. */
+/** A request shaped for a vault that uses IDs (a folder's `title`, a page's `id`) reached one that does not: a window one answer behind. Nothing is made. */
 const noIds = (p: string): BridgeFailure => new BridgeFailure('BAD_REQUEST', 'this vault does not use IDs', { path: p })
 
 /**
- * Creation calls for the sidebar's "New folder" / "New note" (GRO-2022).
+ * Creation calls for the sidebar's "New folder" / "New page" (GRO-2022).
  * The object form's `content` (Bible B, GRO-2202) rides the same durable create —
  * content-at-create, no create-then-write race. Existence races resolve at the fs layer: mkdir
  * and `createDurable` throw EEXIST, which `toBridgeFailure` maps to ALREADY_EXISTS — nothing is
  * ever overwritten.
  *
- * 🔒 Every note is BORN with its id (YAZ-2293 D3): this is the one door all creation goes
+ * 🔒 Every page is BORN with its id (YAZ-2293 D3): this is the one door all creation goes
  * through, so the frontmatter `id` is set here — the caller's (`req.id`, when it had to know the
  * id before the file existed) or a fresh one. An `id` already in the seed is a template's and is
  * replaced. A seed whose frontmatter will not parse is created as given, without one: the id
- * never blocks a creation, and the index gives the note one once the YAML is fixed.
+ * never blocks a creation, and the index gives the page one once the YAML is fixed.
  *
  * 🔒 The id is the vault's next number, from its door (`ids`, YAZ-2677 D4), taken — and saved —
- * BEFORE the note is written (R18): a create that then fails leaves a gap (S31), never a number
- * given two times. The caller's id is one it took from the same door (`fs:mint-note-id`), so it
+ * BEFORE the page is written (R18): a create that then fails leaves a gap (S31), never a number
+ * given two times. The caller's id is one it took from the same door (`fs:mint-page-id`), so it
  * must be a number ID with the vault's current letters: nothing here writes an old ID (R3).
  *
  * 🔒 A folder is born with its id too (D13): its `.folder.md`, holding a fresh `id` and, when
  * the request carries one, the folder's `title` (YAZ-2420 🔒 D6): `createFolderSettings`. A folder
  * whose file could not be written stands without one, and the id sweep gives it one.
  *
- * A CARD FILE (YAZ-5037, `kind: card`) is the one note born with no `id`: the ID on its card line is the file's, taken
+ * A CARD FILE (YAZ-5037, `kind: card`) is the one page born with no `id`: the ID on its card line is the file's, taken
  * from the same door by the caller before it wrote the line. Its content is created as given, and the answer carries
  * that card's ID.
  *
  * 🔒 All of that only where the vault uses IDs (`ids`, its door; YAZ-2523 V3). In a vault that does
- * not (`null`), a folder is the directory and a note the content it was given, as Finder would make
+ * not (`null`), a folder is the directory and a page the content it was given, as Finder would make
  * them: no id is written and the answer carries none.
  */
 export async function createDir(req: CreateDirRequest, ids: IdDoor | null): Promise<CreateDirResponse> {
@@ -53,7 +53,7 @@ export async function createDir(req: CreateDirRequest, ids: IdDoor | null): Prom
   await ids
     .mint(1)
     .then(([id]) => {
-      const born = setFrontmatterProperty('', NOTE_ID_KEY, id)
+      const born = setFrontmatterProperty('', PAGE_ID_KEY, id)
       return createFolderSettings(p, title === undefined ? born : setFrontmatterProperty(born, TITLE_KEY, title))
     })
     .catch(() => undefined)
@@ -61,8 +61,8 @@ export async function createDir(req: CreateDirRequest, ids: IdDoor | null): Prom
 }
 
 /**
- * YAZ-4615 D10: `hint` puts `COMMENTS_HINT` at the top of the new note's frontmatter — in both kinds
- * of vault, since the note is the app's own file. The caller reads it from Settings › Comments.
+ * YAZ-4615 D10: `hint` puts `COMMENTS_HINT` at the top of the new page's frontmatter — in both kinds
+ * of vault, since the page is the app's own file. The caller reads it from Settings › Comments.
  */
 export async function createFile(req: string | CreateFileRequest, ids: IdDoor | null, { hint = false }: { hint?: boolean } = {}): Promise<CreateFileResponse> {
   // Crosses IPC from a sandboxed renderer: shape-checked like a request body (writeFile's posture).
@@ -73,12 +73,12 @@ export async function createFile(req: string | CreateFileRequest, ids: IdDoor | 
   const content = isReq ? (raw as Record<string, unknown>).content : undefined
   if (content !== undefined && typeof content !== 'string') throw new BridgeFailure('BAD_REQUEST', "'content' must be a string", { path: p })
   const given = isReq ? (raw as Record<string, unknown>).id : undefined
-  if (given !== undefined && typeof given !== 'string') throw new BridgeFailure('BAD_REQUEST', "'id' must be a note id", { path: p })
+  if (given !== undefined && typeof given !== 'string') throw new BridgeFailure('BAD_REQUEST', "'id' must be a page id", { path: p })
   if (ids === null && given !== undefined) throw noIds(p)
   if (ids !== null && given !== undefined && !isVaultNumberId(given, ids.letters)) throw new BridgeFailure('BAD_REQUEST', "'id' must be a number ID of this vault", { path: p })
   // A card file (YAZ-5037) is born as given: its card line holds its ID, and it gets no page `id:` (one number per card).
   const card = ids !== null && content !== undefined && isCardFileContent(content)
-  const made = ids === null ? { content: content ?? '', id: undefined } : card ? { content, id: cardFileId(content) ?? undefined } : withNoteId(content ?? '', given ?? (await ids.mint(1))[0])
+  const made = ids === null ? { content: content ?? '', id: undefined } : card ? { content, id: cardFileId(content) ?? undefined } : withPageId(content ?? '', given ?? (await ids.mint(1))[0])
   const born = hint ? { ...made, content: withCommentsHint(made.content) } : made
   return fsCall(p, async () => {
     await createDurable(p, born.content)
@@ -88,9 +88,9 @@ export async function createFile(req: string | CreateFileRequest, ids: IdDoor | 
 }
 
 /** `content` with its frontmatter `id` set to `id`; the content untouched (and no id) when its frontmatter will not parse. */
-function withNoteId(content: string, id: string): { content: string; id?: string } {
+function withPageId(content: string, id: string): { content: string; id?: string } {
   try {
-    return { content: setFrontmatterProperty(content, NOTE_ID_KEY, id), id }
+    return { content: setFrontmatterProperty(content, PAGE_ID_KEY, id), id }
   } catch (err) {
     if (err instanceof FrontmatterWriteError) return { content }
     throw err

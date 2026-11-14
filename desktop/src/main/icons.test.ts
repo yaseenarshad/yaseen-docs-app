@@ -42,7 +42,7 @@ describe('icons.json (YAZ-3440 D8)', () => {
     expect(await getIcons(root)).toEqual({ paths: {} })
     await expect(setIcons(root, { paths: {} })).rejects.toMatchObject({ code: 'INVALID_CONFIG' })
     expect(await readFile(file(root), 'utf8')).toBe('{ not json')
-    await seed(root, JSON.stringify({ version: 1, paths: { ok: 'python', '../out': 'python', bad: 'no spaces allowed' }, rules: [{ match: '', kind: 'file', icon: 'x' }, { match: '*.md', kind: 'note', icon: 'x' }, { match: 'src', kind: 'folder', icon: 'folder-src' }] }))
+    await seed(root, JSON.stringify({ version: 1, paths: { ok: 'python', '../out': 'python', bad: 'no spaces allowed' }, rules: [{ match: '', kind: 'file', icon: 'x' }, { match: '*.md', kind: 'page', icon: 'x' }, { match: 'src', kind: 'folder', icon: 'folder-src' }] }))
     expect(await getIcons(root)).toEqual({ paths: { [path.join(root, 'ok')]: 'python' } })
   })
 

@@ -1,5 +1,5 @@
 /**
- * Frozen rows and columns of a note table (YAZ-3769, YAZ-3696 🔒 S3): `freezeRows` rows from the
+ * Frozen rows and columns of a page table (YAZ-3769, YAZ-3696 🔒 S3): `freezeRows` rows from the
  * top and `freezeCols` columns from the left (`tableStyle.ts`), set from the right-click menu
  * (`tableMenu.ts`).
  *

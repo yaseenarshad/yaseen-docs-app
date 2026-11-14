@@ -38,7 +38,7 @@ export function openByGesture(e: Modifiers, path: string, handlers: OpenHandlers
 }
 
 /**
- * Enter's open (YAZ-4605 D56): ⇧Enter opens the note in the folder page's mini window, or switches an open one to it;
+ * Enter's open (YAZ-4605 D56): ⇧Enter opens the page in the folder page's mini window, or switches an open one to it;
  * every other Enter is `openByGesture`. A ⇧-click is not this: it stays the selection gesture.
  */
 export function openByKey(e: Modifiers, path: string, handlers: OpenHandlers & { onOpenWindow?: (path: string) => void }): OpenTarget | 'window' | null {

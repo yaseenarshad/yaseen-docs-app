@@ -17,7 +17,7 @@ afterEach(async () => {
 async function makeVault(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'yd-new-places-'))
   roots.push(root)
-  await mkdir(path.join(root, 'Notes', 'Daily'), { recursive: true })
+  await mkdir(path.join(root, 'Pages', 'Daily'), { recursive: true })
   return root
 }
 const file = (root: string) => path.join(root, VAULT_CONFIG_DIR, NEW_PLACES_FILE)
@@ -31,9 +31,9 @@ describe('new-places.json (YAZ-4252 D3)', () => {
 
   it('saves vault-relative paths ("" for the vault) and reads them back absolute', async () => {
     const root = await makeVault()
-    await setNewPlaces(root, [path.join(root, 'Notes', 'Daily'), null, root])
-    expect(JSON.parse(await readFile(file(root), 'utf8'))).toEqual({ version: 1, places: ['Notes/Daily', null, ''] })
-    expect(await getNewPlaces(root)).toEqual([path.join(root, 'Notes', 'Daily'), null, root])
+    await setNewPlaces(root, [path.join(root, 'Pages', 'Daily'), null, root])
+    expect(JSON.parse(await readFile(file(root), 'utf8'))).toEqual({ version: 1, places: ['Pages/Daily', null, ''] })
+    expect(await getNewPlaces(root)).toEqual([path.join(root, 'Pages', 'Daily'), null, root])
   })
 
   it('refuses a place outside the vault and a wrong count; a malformed file reads empty and is never written', async () => {

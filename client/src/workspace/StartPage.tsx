@@ -1,9 +1,9 @@
 /**
  * The new tab page (YAZ-2663 D3): what a new tab (⌘T) and a window with no tabs show in the page
- * area. Three columns of rows: the notes you closed last (YAZ-3487 D8, D13; it was "Used a lot, not a
+ * area. Three columns of rows: the pages you closed last (YAZ-3487 D8, D13; it was "Used a lot, not a
  * favorite yet", the third column), the pages last on show ("Recently viewed", D12), and the favorites. App mounts it only while it shows (R1), so
  * everything here is read when the page shows and followed while it does:
- *   - the open history, the closed notes and the other windows' tabs, off the app state the window already holds (`storage`);
+ *   - the open history, the closed pages and the other windows' tabs, off the app state the window already holds (`storage`);
  *   - the favorites, in the Favorites tab's order, off App's one reader of the window's lists (`useVaultListsHere`,
  *     YAZ-4450): the same list as the tab, the workspace list in a workspace, and no read of its own;
  *   - what is on the disk, and whether it is a file or a folder, off the window's one tree feed.
@@ -37,12 +37,12 @@ const START_ROWS = 8
 /** The columns in their order, each with the one grey line it shows when it has no rows (S19). */
 const COLUMNS = [
   // "Recently closed" stands first (YAZ-3487 D13), and "Recent" reads "Recently viewed" beside it (D12): each says what it holds.
-  { col: 'closed', label: 'Recently closed', empty: (unit: UnitText) => unit('Notes you close show here.') },
-  { col: 'recent', label: 'Recently viewed', empty: 'Pages you open show here.' },
+  { col: 'closed', label: 'Recently closed', empty: (unit: UnitText) => unit('Pages you close show here.') },
+  { col: 'recent', label: 'Recently viewed', empty: (unit: UnitText) => unit('Pages you open show here.') },
   { col: 'favorites', label: 'Favorites', empty: 'No favorites yet. Right-click a file or folder → Add to favorites.' },
 ] as const
 
-/** What the page reads of the app state for one vault of the window (R1): what the app calls the vault, its open history, and its closed notes (YAZ-3487 D9). */
+/** What the page reads of the app state for one vault of the window (R1): what the app calls the vault, its open history, and its closed pages (YAZ-3487 D9). */
 interface VaultRecord {
   root: string
   name: string
@@ -88,7 +88,7 @@ export interface StartPageProps {
   roots: readonly string[]
   /** The window's Favorites, App's (YAZ-4450 D2): each vault's list once it is read, and all of them in the tab's order. */
   favorites: { byRoot: Readonly<Record<string, readonly string[]>>; paths: readonly string[]; scope: ListScope; folders?: readonly { id: string; name: string; paths: readonly string[] }[] }
-  /** The notes this window's tabs show (YAZ-3487 D10): no row of "Recently closed". One array while the tabs stay the same. */
+  /** The pages this window's tabs show (YAZ-3487 D10): no row of "Recently closed". One array while the tabs stay the same. */
   openTabs?: readonly string[]
   titles: PathTitles
   /** A click on a file (S21): App opens it as a sidebar click does, so it fills the blank tab. */
@@ -117,7 +117,7 @@ export interface StartPageProps {
   previewPath?: string | null
   onPreview?: (path: string | null) => void
   onNotice: (message: string, kind?: NoticeKind) => void
-  /** Settings › Preview on hover (YAZ-3403): resting on a note or board row opens the sidebar's own panel beside the row. Space opens the big panel whatever this says. */
+  /** Settings › Preview on hover (YAZ-3403): resting on a page or board row opens the sidebar's own panel beside the row. Space opens the big panel whatever this says. */
   hoverPreview?: boolean
   /** What the hover panel needs of a row's vault: its links, its text formatting, its watch feed. No scope, no hover panel. */
   previewScope?: (path: string) => PreviewScope
@@ -126,12 +126,12 @@ export interface StartPageProps {
 
 export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen, onOpenBackground, onShowInFiles, onRowMenu, onBack, onBackToSearch, focusRef, previewPath = null, onPreview, onNotice, hoverPreview = false, previewScope, diagramDarkColors = 'adapt' }: StartPageProps) {
   // What is on the disk (S18) is the Files tree's to say: it alone knows a folder from a file, and
-  // holds the pages that are no notes. The window's one feed keeps the newest tree of each vault
-  // with the sidebar hidden too, but then nothing reads a new one when a note goes. So the page
+  // holds the pages that are no pages. The window's one feed keeps the newest tree of each vault
+  // with the sidebar hidden too, but then nothing reads a new one when a page goes. So the page
   // asks for ONE tree of each vault when it shows — the same request the sidebar makes, where both
   // mount in one commit (YAZ-2191) — and no row asks anything.
   const trees = useLatestTrees(roots)
-  // The first vault's word for a note (YAZ-4938): the page is the window's, and its lines name the unit once.
+  // The first vault's word for a page (YAZ-4938): the page is the window's, and its lines name the unit once.
   const unit = useVaultUnit(roots[0] ?? null)
   useEffect(() => {
     for (const vault of roots) fetchTree(vault).catch(() => undefined) // a vault whose folder is gone is App's to drop
@@ -146,7 +146,7 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
     if (next.length !== held.current.length || next.some((record, at) => !sameRecord(record, held.current[at]))) held.current = next
     return held.current
   })
-  // YAZ-3487 D10: a note a tab shows now — here, or in another window — is no closed note. Each broadcast is a new copy of
+  // YAZ-3487 D10: a page a tab shows now — here, or in another window — is no closed page. Each broadcast is a new copy of
   // the app state, so only the paths say that the other windows' tabs changed (the `held` idiom above, R5).
   const heldTabs = useRef<readonly string[]>([])
   const otherTabs = useSyncExternalStore(storage.subscribe, () => {
@@ -177,7 +177,7 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
       // S13: the order of the Favorites tab; a favorite with no file on this machine draws no row there either (YAZ-1766 D14).
       // The favorite folders first, as the tab shows them (YAZ-4470, 11): each folder's items under its name.
       favorites: { rows: rowsOf([...(favorites.folders ?? []).flatMap((f) => f.paths.map((path) => ({ path, group: f.name }))), ...favorites.paths.map((path) => ({ path }))]).slice(0, START_ROWS), read: favoritesRead },
-      // YAZ-3487 D8: the notes you closed, the newest first, of every vault; a note on the disk no more draws no row (S38).
+      // YAZ-3487 D8: the pages you closed, the newest first, of every vault; a page on the disk no more draws no row (S38).
       closed: { rows: rowsOf(recentlyClosed(records, openNow)).slice(0, START_ROWS), read: treesLanded },
     }
   }, [roots, trees, records, favorites.byRoot, favorites.paths, favorites.folders, openNow])
@@ -257,7 +257,7 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
   // The page goes while the keyboard is on one of its rows — Enter opened the row, or a different
   // tab shows. The focus would be on nothing, so the caret goes into the page on show, as off the
   // tab board (YAZ-2648). A page that mounts for the first time takes the caret by itself.
-  // In the tab stack alone: with no text on show there (a PDF), a note of the right panel does not get the caret.
+  // In the tab stack alone: with no text on show there (a PDF), a page of the right panel does not get the caret.
   useLayoutEffect(() => {
     const el = page.current
     return () => {

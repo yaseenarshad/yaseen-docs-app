@@ -12,18 +12,18 @@ export interface ShortcutDoors {
   homeOf: (path: string) => { dir: string; name: string } | null
   /** "Go to where it lives": that folder's page. */
   goHome: (dir: string) => void
-  /** Take the note's shortcut off this page (the note stays where it lives). A toast offers Undo. */
+  /** Take the page's shortcut off this page (the page stays where it lives). A toast offers Undo. */
   remove: (path: string) => void
-  /** Add a shortcut to the note in folder `dir`. A toast offers Undo. */
+  /** Add a shortcut to the page in folder `dir`. A toast offers Undo. */
   add: (path: string, dir: string) => void
   /** The folders a shortcut can go to, for "Add shortcut to ›": each folder of the vault, its name and its path. */
   folders: () => { dir: string; name: string; path: string }[]
   /**
-   * The folders (absolute) a note already shows in (checker 8A): where it lives and each folder its `also_in` names.
+   * The folders (absolute) a page already shows in (checker 8A): where it lives and each folder its `also_in` names.
    * "Add shortcut to ›" leaves them out, so a pick never adds what is there (and its Undo never removes it).
    */
   holders: (path: string) => ReadonlySet<string>
-  /** A note no write may touch (read-only): no shortcut items. */
+  /** A page no write may touch (read-only): no shortcut items. */
   locked: (path: string) => boolean
 }
 

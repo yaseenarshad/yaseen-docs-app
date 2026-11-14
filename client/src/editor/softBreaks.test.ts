@@ -55,7 +55,7 @@ describe('a single line break shows as a line break (YAZ-3727 6C)', () => {
     expect(getMarkdownForSave(crepe)).toBe('3- how are you?\n4- im good\n\nhard\\\nbreak\n')
   })
 
-  it('the note editor loads the stylesheet (a folder Page tab is that editor, YAZ-4584)', () => {
+  it('the page editor loads the stylesheet (a folder Page tab is that editor, YAZ-4584)', () => {
     for (const file of ['Editor.tsx']) {
       expect(readFileSync(resolve(__dirname, file), 'utf8')).toMatch(/import '[./]*(editor\/)?softBreaks\.css'/)
     }

@@ -6,12 +6,12 @@
  * same-file form) is a no-op.
  *
  * Location ruling (LOCKED, C2- GRO-2240): a BARE target creates under `base` — the
- * root-relative folder App computes from the "default location for new notes" setting via
- * `newNoteBase` ('' = the vault root, which is also Obsidian's and the setting's default).
+ * root-relative folder App computes from the "default location for new pages" setting via
+ * `newPageBase` ('' = the vault root, which is also Obsidian's and the setting's default).
  * A pathed target (`[[Sub/Page]]`, `[[/Page]]`) is an explicit aim and stays root-relative
  * whatever the setting (Obsidian's behavior); missing parent folders — the base included —
  * are created level by level (`ensureFolder` — the bridge's `createDir` does not recurse).
- * What was typed is the note's TITLE (YAZ-2420 🔒 D20) — the last segment of a pathed target,
+ * What was typed is the page's TITLE (YAZ-2420 🔒 D20) — the last segment of a pathed target,
  * whose earlier segments are the titles of the folders it names (🔒 D6), each a folder that is
  * there before it is one to make (YAZ-2478); `base` is a path on disk. In a vault that does not
  * use IDs (YAZ-2523 🔒 V3) every segment is a name on disk, and the page is `<typed>.md`.
@@ -20,7 +20,7 @@
  */
 import type { IndexRecord, SettingsState } from '@shared/types'
 import { api } from '../../api'
-import { createNote, ensureFolder } from '../../views/scaffold'
+import { createPage, ensureFolder } from '../../views/scaffold'
 import { validateEntryName } from '../../sidebar/createEntry'
 import { linkPageName } from './wikilinkPlugin'
 
@@ -37,12 +37,12 @@ export type CreateFromLinkResult =
  * (C2-, GRO-2240) — pure, computed by App from the Files & Links setting + the SOURCE page
  * (the page the link was clicked or typed in, YAZ-1643): `'root'` → '' (the vault root);
  * `'current'` (the default) → the source page's folder, falling back to the root for a
- * source outside the vault; `'folder'` → `newNoteFolder` (validated at the settings
+ * source outside the vault; `'folder'` → `newPageFolder` (validated at the settings
  * boundary; junk still fails safe in `planLinkCreation`).
  */
-export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'newNoteFolder'>, root: string, sourcePath: string): string {
-  if (settings.newNoteLocation === 'folder') return settings.newNoteFolder
-  if (settings.newNoteLocation === 'current' && sourcePath.startsWith(`${root}/`)) {
+export function newPageBase(settings: Pick<SettingsState, 'newPageLocation' | 'newPageFolder'>, root: string, sourcePath: string): string {
+  if (settings.newPageLocation === 'folder') return settings.newPageFolder
+  if (settings.newPageLocation === 'current' && sourcePath.startsWith(`${root}/`)) {
     const rel = sourcePath.slice(root.length + 1)
     const cut = rel.lastIndexOf('/')
     return cut === -1 ? '' : rel.slice(0, cut)
@@ -52,12 +52,12 @@ export function newNoteBase(settings: Pick<SettingsState, 'newNoteLocation' | 'n
 
 /**
  * Pure planning for `target` (already stripped): the root-relative folder ('' = the vault root)
- * and the note's title, or a human-readable error. A BARE target lands under `base` (see
- * `newNoteBase`), a path on disk; a PATHED one ignores it — an explicit path is an explicit aim
+ * and the page's title, or a human-readable error. A BARE target lands under `base` (see
+ * `newPageBase`), a path on disk; a PATHED one ignores it — an explicit path is an explicit aim
  * (module doc) — and its folder is `titled`: typed text, each segment a folder's title, free text
- * as the note's is (YAZ-2478) and only has to be there. The base's segments pass the sidebar's
+ * as the page's is (YAZ-2478) and only has to be there. The base's segments pass the sidebar's
  * `validateEntryName` rules. Errors name the full effective path. Without `ids` no segment is a
- * title: all of them pass those rules, the note's too, and the folder is never `titled`.
+ * title: all of them pass those rules, the page's too, and the folder is never `titled`.
  */
 export function planLinkCreation(target: string, ids: boolean, base = ''): { folder: string; titled: boolean; title: string } | { error: string } {
   const titled = target.includes('/')
@@ -73,7 +73,7 @@ export function planLinkCreation(target: string, ids: boolean, base = ''): { fol
 
 /**
  * Create the page behind raw `[[inner]]` under `root` — bare targets under `base` — and resolve where to open (see module doc).
- * It is born like every note in that folder (`createNote`): with the folder's `.template.md`, and as the vault's kind (`ids`) has it.
+ * It is born like every page in that folder (`createPage`): with the folder's `.template.md`, and as the vault's kind (`ids`) has it.
  * `id` is for the picker's Create row (YAZ-2293), which has already written `[[id]]` and needs the
  * page born with it; a click on a name link passes none and one is made for it. `folders` are the
  * index's, for a pathed target's folders; a caller that holds none has them read.
@@ -85,7 +85,7 @@ export async function createFromLink(root: string, inner: string, ids: boolean, 
   if ('error' in planned) return { status: 'error', message: planned.error }
   try {
     const dir = await ensureFolder(root, planned.folder, planned.titled ? folders ?? (await api.index(root)).folders : undefined)
-    return { status: 'created', path: await createNote(dir, planned.title, ids, undefined, id) }
+    return { status: 'created', path: await createPage(dir, planned.title, ids, undefined, id) }
   } catch (err) {
     return { status: 'error', message: `Can't create "${target}": ${err instanceof Error ? err.message : String(err)}` }
   }

@@ -277,7 +277,7 @@ describe('Mod-Shift-u / Mod-Shift-i (fold all / unfold all)', () => {
   })
 
   it('an image-only leaf bullet is foldable too (YAZ-1709): chipped by Mod-Shift-u, restored by Mod-Shift-i', async () => {
-    const { crepe, root } = await mount(`* L1 a\n  * L2 a\n* ![Shot](a.png)\n* L1 b\n`, { image: { root: '/v', notePath: '/v/n.md' } })
+    const { crepe, root } = await mount(`* L1 a\n  * L2 a\n* ![Shot](a.png)\n* L1 b\n`, { image: { root: '/v', pagePath: '/v/n.md' } })
     expect(toggles(root)).toHaveLength(2)
     caretIn(crepe, 'L1 b')
     expect(press(crepe, 'Mod-Shift-u')).toBe(true)
@@ -353,7 +353,7 @@ describe('Mod-ArrowUp / Mod-ArrowDown (fold / unfold the caret item, GRO-2092)',
   })
 
   it('folds an image bullet to its chip from the caret and unfolds it (YAZ-1709); a text-only leaf stays a no-op', async () => {
-    const { crepe, root } = await mount(`* ![Shot](a.png)\n* L1 b\n`, { image: { root: '/v', notePath: '/v/n.md' } })
+    const { crepe, root } = await mount(`* ![Shot](a.png)\n* L1 b\n`, { image: { root: '/v', pagePath: '/v/n.md' } })
     const imagePos = crepe.editor.action((ctx) => {
       let found = -1
       ctx.get(editorViewCtx).state.doc.descendants((node, pos) => {

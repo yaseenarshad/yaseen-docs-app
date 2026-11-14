@@ -9,8 +9,8 @@ import { createRoot, type Root } from 'react-dom/client'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { ExploreCard } from './ExploreCard'
-import { noteCardViewOfDom, setNoteCardEditorKind } from '../editor/noteCard/noteCardView'
-import type { ExploreVault } from './ExploreNote'
+import { cardBlockViewOfDom, setCardEditorKind } from '../editor/card/cardBlockView'
+import type { ExploreVault } from './ExplorePage'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -51,7 +51,7 @@ async function mount(opts: { startInEdit?: boolean; readOnly?: boolean } = {}) {
   document.body.append(el)
   root = createRoot(el)
   await act(async () => root?.render(<ExploreCard path={PATH} cardId="WIKI-9" index={0} startInEdit={opts.startInEdit} pageName="Cards" vault={vault} onOpenPage={vi.fn()} onOpenLink={vi.fn()} onOpenTab={vi.fn()} onOpenInTab={vi.fn()} onNotice={vi.fn()} onClose={onClose} active />))
-  await vi.waitFor(() => expect(el.querySelector('.note-card__hidden, .cm-content')).not.toBeNull())
+  await vi.waitFor(() => expect(el.querySelector('.card__hidden, .cm-content')).not.toBeNull())
   return { onClose, body: el.querySelector<HTMLElement>('[data-explore-card]')! }
 }
 
@@ -63,8 +63,8 @@ const codeMirror = async () => {
 
 describe('Edit card in the card window (YAZ-5003)', () => {
   // The raw-text fallback (YAZ-5026); the page's editor is the next block.
-  beforeAll(() => setNoteCardEditorKind('code'))
-  afterAll(() => setNoteCardEditorKind('page'))
+  beforeAll(() => setCardEditorKind('code'))
+  afterAll(() => setCardEditorKind('page'))
   it('E edits only the card in the page card`s own editor; ⌘↵ is Done: the new text lands in the page, the rest of the file the same, and the window reads again', async () => {
     const { body, onClose } = await mount()
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
@@ -72,13 +72,13 @@ describe('Edit card in the card window (YAZ-5003)', () => {
     const cm = await codeMirror()
     expect(cm.textContent).toContain('Capital of {{France}}')
     // The card's head keeps Done and its keys (the window's head has the ID).
-    expect(el.querySelector('[data-explore-card-edit] .note-card__edit')?.textContent).toBe('DoneEscCmd + Enter')
+    expect(el.querySelector('[data-explore-card-edit] .card__edit')?.textContent).toBe('DoneEscCmd + Enter')
     const view = CodeMirrorView.findFromDOM(cm)!
     act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: ' (Seine)' } }))
     key(cm, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.get(PATH)).toBe(PAGE.replace('Paris\n```', 'Paris (Seine)\n```')))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    await vi.waitFor(() => expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris (Seine)'))
+    await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
     expect(onClose).not.toHaveBeenCalled()
   })
 
@@ -87,7 +87,7 @@ describe('Edit card in the card window (YAZ-5003)', () => {
     const cm = await codeMirror()
     key(cm, { key: 'Escape' })
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris')
+    expect(el.querySelector('.card-screen')?.textContent).toContain('Paris')
     expect(onClose).not.toHaveBeenCalled()
     expect(disk.get(PATH)).toBe(PAGE)
   })
@@ -101,7 +101,7 @@ describe('Edit card in the card window (YAZ-5003)', () => {
     key(cm, { key: 'Escape' })
     await vi.waitFor(() => expect(disk.get(PATH)).toBe(PAGE.replace('Paris\n```', 'Paris (Seine)\n```')))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    await vi.waitFor(() => expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris (Seine)'))
+    await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
     expect(onClose).not.toHaveBeenCalled()
     // Locked again: the window's own E is the read-only vault's, blocked as in the page.
     key(body, { key: 'e' })
@@ -117,8 +117,8 @@ describe('Edit card in the card window (YAZ-5003)', () => {
 
 /** The card editor in the card window, once it holds the card's text (YAZ-5026). */
 const pageEditor = async () => {
-  await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .note-card__editor .ProseMirror')).not.toBeNull())
-  const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .note-card__editor .ProseMirror')!
+  await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())
+  const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
   await vi.waitFor(() => expect(dom.textContent).toContain('Paris'))
   return dom
 }
@@ -128,15 +128,15 @@ describe('Edit card in the card window with the page`s editor (YAZ-5026)', () =>
     const { body, onClose } = await mount()
     key(body, { key: 'e' })
     const dom = await pageEditor()
-    expect(dom.querySelector('.note-card__cloze')?.textContent).toBe('France')
-    expect(dom.querySelector('.note-card__side-break')).not.toBeNull()
+    expect(dom.querySelector('.card__cloze')?.textContent).toBe('France')
+    expect(dom.querySelector('.card__side-break')).not.toBeNull()
     expect(el.querySelector('[data-explore-card-edit] .cm-content')).toBeNull()
-    const view = noteCardViewOfDom(dom.closest('.note-card'))!.cardEditor!.view()!
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
     act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
     key(dom, { key: 'Enter', metaKey: true })
     await vi.waitFor(() => expect(disk.get(PATH)).toBe(PAGE.replace('Paris\n```', 'Paris (Seine)\n```')))
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
-    await vi.waitFor(() => expect(el.querySelector('.note-card-screen')?.textContent).toContain('Paris (Seine)'))
+    await vi.waitFor(() => expect(el.querySelector('.card-screen')?.textContent).toContain('Paris (Seine)'))
     expect(onClose).not.toHaveBeenCalled()
   })
 

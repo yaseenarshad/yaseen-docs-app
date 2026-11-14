@@ -266,7 +266,7 @@ describe('the controls D60 moved here keep "from Settings" and Reset', () => {
     expect(yaml()).not.toContain('groupIndent')
   })
 
-  it('View › Rows › Subfolders: each mode writes; Their notes, Settings’ value, removes the key', () => {
+  it('View › Rows › Subfolders: each mode writes; Their pages, Settings’ value, removes the key', () => {
     const { el, yaml } = mount(view('table'))
     const pop = openProperties(el)
     toTab(pop, 'View')
@@ -274,7 +274,7 @@ describe('the controls D60 moved here keep "from Settings" and Reset', () => {
     expect(follows(select().closest('label')!.querySelector('.view-from-settings'))).toBe(true)
     choose(select(), 'both')
     expect(yaml()).toContain('subfolders: both')
-    choose(select(), 'notes')
+    choose(select(), 'pages')
     expect(yaml()).not.toContain('subfolders')
   })
 })

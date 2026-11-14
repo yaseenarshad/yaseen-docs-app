@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { homedir, hostname } from 'node:os'
 import path from 'node:path'
-import { IDS_FILE, idLettersOf, idsAnswer, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
+import { IDS_FILE, idLettersOf, idsAnswer, pageIdNumber, numberId, vaultPageId } from '@shared/pageId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { BridgeFailure, atomicWrite, createDurable, toBridgeFailure } from '../fs/fsUtils'
@@ -14,7 +14,7 @@ import { walk } from './scan'
 /**
  * THE DOOR (YAZ-2677 🔒 D4, R13 to R21): the one place that makes an ID. Every new ID is the next
  * number of its vault — 1 plus the highest of each number ID in the vault and `last` of each Mac's
- * count file (R16) — so a number a deleted note had is never given again.
+ * count file (R16) — so a number a deleted page had is never given again.
  *
  * Each Mac keeps its own count file in the vault, `.yaseendocs/ids/<mac id>.json`, and only that
  * Mac writes it (R15): two Macs that sync the vault never change one file, so the sync cannot
@@ -32,7 +32,7 @@ import { walk } from './scan'
 export const COUNT_DIR = 'ids'
 /** `made` keeps this many days (R21). */
 export const MADE_DAYS = 30
-/** And this many runs at most, oldest dropped first: a script that makes notes one by one must not grow the file with no end. */
+/** And this many runs at most, oldest dropped first: a script that makes pages one by one must not grow the file with no end. */
 export const MADE_MAX = 5000
 /** Count files read in one vault: one for each Mac that ever wrote to it. */
 const COUNT_FILES_MAX = 64
@@ -41,7 +41,7 @@ const RETRIES = 3
 const MAC_FILE = 'mac.json'
 const MAC_ID_RE = /^[0-9a-z]{12}$/
 
-/** Numbers `from` to `to`, given together at `at` (ISO time): one new note is a run of one, a sweep of many notes is one run. */
+/** Numbers `from` to `to`, given together at `at` (ISO time): one new page is a run of one, a sweep of many pages is one run. */
 export interface Run {
   from: number
   to: number
@@ -82,7 +82,7 @@ function parseCount(raw: string): CountFile | null {
   return { name: typeof name === 'string' ? name : '', since, last: last as number, made: runs.slice(-MADE_MAX).map(({ from, to, at }) => ({ from, to, at })) }
 }
 
-/** One run on each line: a sync tool that shows the file's changes shows one line for one new note. */
+/** One run on each line: a sync tool that shows the file's changes shows one line for one new page. */
 const serialise = ({ name, since, last, made }: CountFile): string =>
   `{\n  "name": ${JSON.stringify(name)},\n  "since": ${JSON.stringify(since)},\n  "last": ${last},\n  "made": [${made.map((run) => `\n    ${JSON.stringify(run)}`).join(',')}${made.length === 0 ? '' : '\n  '}]\n}\n`
 
@@ -159,7 +159,7 @@ async function readOrMakeMacId(dir: string): Promise<string> {
 
 /** A vault's `ids.json`, read straight off the disk. */
 export interface VaultIds {
-  /** Its answer to "do your notes get IDs?" (YAZ-2523 🔒 V1); undefined when it has not answered. */
+  /** Its answer to "do your pages get IDs?" (YAZ-2523 🔒 V1); undefined when it has not answered. */
   answer: boolean | undefined
   /** Its ID letters, the current ones first and then each it had before (`idLettersOf`, R9). */
   letters: string[]
@@ -247,19 +247,19 @@ async function saveDefaultLetters(root: string): Promise<VaultIds | undefined> {
 }
 
 /**
- * The highest number among `notes`' IDs that are IDs of the vault with `letters` (R5) — the note's own, and each of
- * its note cards' (YAZ-4960 D2: one counter for notes, boards and cards); 0 when none is. An old ID has no number
+ * The highest number among `pages`' IDs that are IDs of the vault with `letters` (R5) — the page's own, and each of
+ * its cards' (YAZ-4960 D2: one counter for pages, boards and cards); 0 when none is. An old ID has no number
  * (S20), and nor does a kept one (YAZ-4922 D2): its numbers are apart from the current letters'.
  */
-export function highestNumber(notes: Iterable<{ id?: string; cards?: readonly { id: string | null }[] }>, letters: readonly string[]): number {
+export function highestNumber(pages: Iterable<{ id?: string; cards?: readonly { id: string | null }[] }>, letters: readonly string[]): number {
   let top = 0
   const current = `${letters[0]}-`
   const count = (id: string | null | undefined): void => {
-    const own = id == null ? undefined : vaultNoteId(id, letters)
-    const number = own?.startsWith(current) === true ? noteIdNumber(own) : undefined
+    const own = id == null ? undefined : vaultPageId(id, letters)
+    const number = own?.startsWith(current) === true ? pageIdNumber(own) : undefined
     if (number !== undefined && number > top) top = number
   }
-  for (const { id, cards } of notes) {
+  for (const { id, cards } of pages) {
     count(id)
     if (cards !== undefined) for (const card of cards) count(card.id)
   }
@@ -283,7 +283,7 @@ export function highestFrom(ask: Highest): void {
   highest = ask
 }
 
-/** The highest number among the notes of an index this process already holds; undefined where it holds none. Never builds one. */
+/** The highest number among the pages of an index this process already holds; undefined where it holds none. Never builds one. */
 type Seen = (root: string, letters: readonly string[]) => number | undefined
 let seen: Seen = () => undefined
 
@@ -303,8 +303,8 @@ async function counterOf(root: string): Promise<number> {
 /**
  * THE FLOOR OF A VAULT INSIDE A VAULT (YAZ-4922 🔒 D1, gap 3). Where the vault at `root` sits inside another ID vault
  * (`idVault` of the folder above it) and an ID it gives would read as an ID of that one too — the same letters —
- * its next number is above that vault's counter (its count files, R14) and above the highest number the notes of
- * that vault hold, when this process holds its index. So two notes of the two vaults never share a number. 0 where
+ * its next number is above that vault's counter (its count files, R14) and above the highest number the pages of
+ * that vault hold, when this process holds its index. So two pages of the two vaults never share a number. 0 where
  * there is no such vault. No vault is walked or indexed for it.
  */
 async function outerFloor(root: string, letters: readonly string[]): Promise<number> {
@@ -313,7 +313,7 @@ async function outerFloor(root: string, letters: readonly string[]): Promise<num
   const outer = await idVault(above)
   if (outer === null) return 0
   const theirs = (await vaultIds(outer)).letters
-  if (vaultNoteId(numberId(letters[0], 1), theirs) === undefined) return 0
+  if (vaultPageId(numberId(letters[0], 1), theirs) === undefined) return 0
   return Math.max(await counterOf(outer), seen(outer, letters) ?? 0)
 }
 
@@ -401,7 +401,7 @@ async function take(root: string, door: Door, count: number, floor: number | und
 /**
  * The next `count` IDs of the vault at `root`, in order — null, and nothing written, where the
  * vault does not use IDs. All of them are saved with ONE write of this Mac's count file (R19)
- * before they are returned (R18). `floor` is the highest number among the vault's notes when the
+ * before they are returned (R18). `floor` is the highest number among the vault's pages when the
  * caller already holds them (the sweep); else the index is asked (`highestFrom`).
  */
 export function mintIds(root: string, count: number, floor?: number): Promise<string[] | null> {
@@ -442,7 +442,7 @@ export interface IdDoor {
   letters: readonly string[]
 }
 
-/** The door of the vault at `root`; null where it does not give its notes IDs (YAZ-2523 🔒 V1): nothing there is given one. */
+/** The door of the vault at `root`; null where it does not give its pages IDs (YAZ-2523 🔒 V1): nothing there is given one. */
 export async function doorOf(root: string): Promise<IdDoor | null> {
   const { answer, letters } = await vaultIds(root)
   if (answer !== true) return null
@@ -467,7 +467,7 @@ export interface Counts {
 /**
  * Each Mac's count file in the vault at `root`, in the door's turn and from what the door already
  * holds: a stat for each count file, and a read only for one whose size or time changed. The
- * sweep asks only when two notes hold one ID or a file needs a number, never for each index event.
+ * sweep asks only when two pages hold one ID or a file needs a number, never for each index event.
  */
 export function countsOf(root: string): Promise<Counts> {
   return inTurn(root, async (door) => {
@@ -501,7 +501,7 @@ export interface Maker {
 /**
  * The Macs whose count file holds `number` in `made` (R22), the one that gave it first in front,
  * and of two that gave it at one moment the Mac ID that is first in order (R23). Two or more: the
- * notes that hold the number are a CLASH. A run older than `MADE_DAYS` days is not counted, whether
+ * pages that hold the number are a CLASH. A run older than `MADE_DAYS` days is not counted, whether
  * or not its Mac has dropped it yet (S49).
  */
 export function makersOf(files: ReadonlyMap<string, CountFile>, number: number, now: number): Maker[] {
@@ -527,7 +527,7 @@ export function _actAs(root: string, dir: string): void {
   appDataOf.set(root, dir)
 }
 
-/** Test hook: forgets each vault's door, this Mac, and who answers for the notes. */
+/** Test hook: forgets each vault's door, this Mac, and who answers for the pages. */
 export function _resetMint(): void {
   doors.clear()
   macs.clear()

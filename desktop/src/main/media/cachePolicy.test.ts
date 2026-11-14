@@ -80,7 +80,7 @@ describe('freshness and the sweep', () => {
     const entries = [
       { name: 'aa.json', mtimeMs: now - CACHE_TTL_MS - 1 },
       { name: 'bb.json', mtimeMs: now - 1000 },
-      { name: 'notes.txt', mtimeMs: 0 },
+      { name: 'pages.txt', mtimeMs: 0 },
       { name: 'cc.json.tmp-abc', mtimeMs: 0 },
     ]
     expect(planCacheSweep(entries, now)).toEqual(['aa.json'])

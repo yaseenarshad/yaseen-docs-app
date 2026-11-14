@@ -45,7 +45,7 @@ export function resultKeys<T>(results: readonly T[], sel: number, move: (at: num
  * reader clamps, since an index refresh can shrink the list under the keyboard's index (YAZ-808).
  *
  * With `keyOf` (Explore's search, YAZ-4990) the highlight follows its ROW when the list changes under it: a row added
- * or removed above it keeps it on the same note. A row that leaves the list leaves the highlight at its place (the
+ * or removed above it keeps it on the same page. A row that leaves the list leaves the highlight at its place (the
  * nearest row). A move by the keys, a click or a new query (`setSelected`) is a place, as before.
  */
 export function useResultKeys<T>(results: readonly T[], activate: (hit: T, e: KeyboardEvent) => void, keyOf?: (hit: T) => string) {
@@ -209,7 +209,7 @@ export function useSidebarSearch(
     [searchOpen, found],
   )
   // ↑/↓ walk the MATCHES in the order the tree draws them (🔒 D4) — the top group, then the rest
-  // (YAZ-2662 S22); a note and its alias rows are one row (S9), and a match below a folder the user
+  // (YAZ-2662 S22); a page and its alias rows are one row (S9), and a match below a folder the user
   // closed is not on screen, so it is no stop (S21). Read off the two trees as drawn: the rows above
   // a match of the top group start at its pinned item, not at its vault. Inside a folder that shows
   // all, each row on show is a stop, a match or not (YAZ-2662 S48).
@@ -405,7 +405,7 @@ export function useSidebarSearch(
       searchEsc()
     }
     // A held Enter is ONE Enter (YAZ-961): a repeat of the press that previews a file would be the
-    // second Enter, the caret would go into the page, and the next repeats would type into the note.
+    // second Enter, the caret would go into the page, and the next repeats would type into the page.
     // Taken here and not in `resultKeys`, which the shortcut picker shares (YAZ-2662 R7).
     else if (e.key === 'Enter' && e.repeat) e.preventDefault()
     else if (!listKey(e)) onKeys(e)

@@ -1,19 +1,19 @@
 /**
- * Section indent, in the REAL app (YAZ-2709): a note that uses headings reads like a bullet note.
+ * Section indent, in the REAL app (YAZ-2709): a page that uses headings reads like a bullet page.
  *  - THE SWITCH is "Section indent" in the page cog, beside "Line numbers", and it starts off.
  *  - THE INDENT: each block stands one step in for each section that holds it. The mark is `data-sd`
  *    on the block, and the indent is the block's own left border: 30px a step at the default.
  *  - THE PATH: the lines on the way to the caret are purple. The mark is `data-sp`, how many of the
  *    block's lines, and it stops at the caret's block.
  *  - A CLICK ON A LINE folds the sections beside it, a second click opens them, and the caret stays.
- *  - IT IS A VIEW: the note's text on disk has the same bytes after all of it, proven after a real
+ *  - IT IS A VIEW: the page's text on disk has the same bytes after all of it, proven after a real
  *    quit (the autosave flush point). Only the switch is added to its frontmatter.
- *  - THE SWITCH IS SAVED IN the note since YAZ-4094 G4: `section-indent: true` or `false` in its
+ *  - THE SWITCH IS SAVED IN the page since YAZ-4094 G4: `section-indent: true` or `false` in its
  *    frontmatter (`shared/pageSwitches.ts`), on AND off, and never in the state file of the app: it
  *    is on again after a restart.
  *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault with one
- * note of this spec's own in it, `section-indent-` step screenshots. Serial: each step continues
+ * page of this spec's own in it, `section-indent-` step screenshots. Serial: each step continues
  * the last.
  */
 // Written for YAZ-2709, step 7 for YAZ-2731, and steps 6 and 7 rewritten for YAZ-4094 G4 (YAZ-4119). Not yet run: Playwright was off limits when this was written, so every
@@ -22,12 +22,12 @@ import { expect, test, type ElectronApplication, type Locator, type Page } from 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { notePageSwitches, setNotePageSwitch } from '../../shared/pageSwitches'
+import { readPageSwitches, writePageSwitch } from '../../shared/pageSwitches'
 import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Trip.md'
+const PAGE = 'Trip.md'
 const INTRO = 'intro-text-e2e'
 const KYOTO = 'kyoto-text-e2e'
 const TEMPLES = 'temples-text-e2e'
@@ -52,7 +52,7 @@ ${OSAKA}
 
 /** `[text, data-sd, data-sp]` of each block, in page order, with the switch on and the caret in the H1. */
 const INDENTED = [
-  ['Trip', null, null], // the top heading of the note stands at the edge
+  ['Trip', null, null], // the top heading of the page stands at the edge
   [INTRO, '1', null],
   ['Kyoto', '1', null], // a heading stands with the text of the section that holds it
   [KYOTO, '2', null],
@@ -76,7 +76,7 @@ const ON_PATH = [
 let userData: string
 let vaultSrc: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -89,7 +89,7 @@ const heading = (w: Page, level: 1 | 2 | 3, text: string) => editorOf(w).locator
 const expandToggle = (w: Page, label: string) => editorOf(w).locator(`.heading-toggle[aria-label="Expand ${label}"]`)
 
 /**
- * Each heading and paragraph of the note, in page order: its text and its two marks. `data-sp` is
+ * Each heading and paragraph of the page, in page order: its text and its two marks. `data-sp` is
  * built from `state.selection.$from` (sectionIndent.ts), so it is ProseMirror's OWN answer to where
  * the caret is, read back off the DOM, and a folded block still carries it.
  */
@@ -104,7 +104,7 @@ const blocks = (w: Page): Promise<(string | null)[][]> =>
 const lineWidths = (block: Locator): Promise<string[]> =>
   block.evaluate((el) => ['--w1', '--w2', '--w3', '--w4'].map((name) => getComputedStyle(el).getPropertyValue(name).trim()))
 
-/** The DOM caret: the text of the top-level block it is in, and how far into it. Null with no selection in the note. */
+/** The DOM caret: the text of the top-level block it is in, and how far into it. Null with no selection in the page. */
 const caret = (w: Page): Promise<{ text: string; offset: number } | null> =>
   editorOf(w).evaluate((page) => {
     const sel = document.getSelection()
@@ -130,8 +130,8 @@ test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'sectionindent-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -139,8 +139,8 @@ test.afterAll(async () => {
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — a note with H1, H2 and H3 sections opens with the switch off and nothing moved in', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+test('step 1 — a page with H1, H2 and H3 sections opens with the switch off and nothing moved in', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(paragraph(win, OSAKA)).toBeVisible()
 
@@ -165,7 +165,7 @@ test('step 2 — "Section indent" in the page cog moves each block in, one step 
 })
 
 test('step 3 — the text of the H2 section stands one step in from its heading: 30px at the default step', async () => {
-  // The 1100px window gives the note a column wider than 480px, so one step is the setting's 30px and not the narrow note's 18px.
+  // The 1100px window gives the page a column wider than 480px, so one step is the setting's 30px and not the narrow page's 18px.
   await expect(heading(win, 1, 'Trip')).toHaveCSS('border-left-width', '0px')
   await expect(paragraph(win, INTRO)).toHaveCSS('border-left-width', '30px')
   await expect(heading(win, 2, 'Kyoto')).toHaveCSS('border-left-width', '30px')
@@ -225,13 +225,13 @@ test('step 5 — a click on the line below the H1 folds the H2 sections, a secon
 
 test('step 6 — the file on disk has the same text as at the start, and the switch in its frontmatter', async () => {
   await quitApp(app) // the autosave flush point: a pending write would land here
-  // The note is plain ASCII, so the same text is the same bytes. Step 2's click added `section-indent: true` and nothing else.
-  expect(await readFile(notePath, 'utf8')).toBe(setNotePageSwitch(BODY, 'section-indent', true))
+  // The page is plain ASCII, so the same text is the same bytes. Step 2's click added `section-indent: true` and nothing else.
+  expect(await readFile(pagePath, 'utf8')).toBe(writePageSwitch(BODY, 'section-indent', true))
 })
 
-test('step 7 — the switch is saved IN the note: on again after the restart, and off is saved too', async () => {
-  // Step 6 quit the app. The note holds the switch, and the state file holds none (YAZ-4094 G4).
-  expect(notePageSwitches(await readFile(notePath, 'utf8'))['section-indent']).toBe(true)
+test('step 7 — the switch is saved IN the page: on again after the restart, and off is saved too', async () => {
+  // Step 6 quit the app. The page holds the switch, and the state file holds none (YAZ-4094 G4).
+  expect(readPageSwitches(await readFile(pagePath, 'utf8'))['section-indent']).toBe(true)
   expect((await readState(userData)).folders[vault]?.sectionIndents ?? {}).toEqual({})
 
   app = await launchApp({ userData })
@@ -247,6 +247,6 @@ test('step 7 — the switch is saved IN the note: on again after the restart, an
   await indentSwitch(win).click()
   await expect(indentSwitch(win)).toHaveAttribute('aria-pressed', 'false')
   await expect(editorOf(win).locator('[data-sd], [data-sp]')).toHaveCount(0)
-  await expect.poll(async () => notePageSwitches(await readFile(notePath, 'utf8'))['section-indent'], { timeout: 10_000 }).toBe(false)
-  expect(await readFile(notePath, 'utf8')).toBe(setNotePageSwitch(BODY, 'section-indent', false))
+  await expect.poll(async () => readPageSwitches(await readFile(pagePath, 'utf8'))['section-indent'], { timeout: 10_000 }).toBe(false)
+  expect(await readFile(pagePath, 'utf8')).toBe(writePageSwitch(BODY, 'section-indent', false))
 })

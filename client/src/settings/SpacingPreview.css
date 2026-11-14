@@ -24,7 +24,7 @@
 .spacing-preview .spacing-preview__page .milkdown .ProseMirror {
   padding: 10px 0;
 }
-/* The card keeps its own frame (`.note-card`); its text at the page's size. */
+/* The card keeps its own frame (`.card`); its text at the page's size. */
 .spacing-preview .spacing-preview__card {
   font-size: 16px;
 }

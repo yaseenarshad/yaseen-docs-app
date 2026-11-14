@@ -1,5 +1,5 @@
 /**
- * ⌘F on a folder page (YAZ-4613, D64): the find engine behind the `views` find bar, as `findInPage.ts` is the note's.
+ * ⌘F on a folder page (YAZ-4613, D64): the find engine behind the `views` find bar, as `findInPage.ts` is the page's.
  *
  * It matches the text the view shows — a table's shown cells, a Board, List or Cards card's title and shown fields, a
  * Calendar card's title — read as the export reads it (`cellText`, YAZ-4594), over the view's ROWS and never the DOM:
@@ -361,7 +361,7 @@ export function useViewFind(
     return made.dispose
   }, [channel, link, paneRef])
   useEffect(() => finder.current?.refresh(), changed) // eslint-disable-line react-hooks/exhaustive-deps -- the caller's list
-  // The Page tab has its own find (the note's): a find left open on a view closes there.
+  // The Page tab has its own find (the page's): a find left open on a view closes there.
   useEffect(() => {
     if (off) channel.close()
   }, [off, channel])

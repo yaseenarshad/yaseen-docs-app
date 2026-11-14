@@ -67,7 +67,7 @@ const ABSENT: { readonly [K in DefaultedKey]: unknown } = {
   groupLines: 'off',
   groupLineStyle: 'plain',
   showEmptyColumns: false,
-  subfolders: 'notes',
+  subfolders: 'pages',
   foldersFirst: true,
   calendarScale: 'month',
   cardTitles: 'clip',

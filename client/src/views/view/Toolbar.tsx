@@ -49,7 +49,7 @@ export interface ToolbarProps {
   search: string | null
   onSearch: (next: string | null) => void
   onUpdate: Mutate
-  /** Create a note satisfying this view and open it (5D, GRO-2144). Absent: no + New (13BL, "Show New buttons" off). */
+  /** Create a page satisfying this view and open it (5D, GRO-2144). Absent: no + New (13BL, "Show New buttons" off). */
   onNew?: () => void
   /** Every group key of the view, and the collapsed subset — the collapse / expand all toggle (YAZ-744); empty when the view is not grouped. */
   allGroupKeys: readonly string[]
@@ -76,7 +76,7 @@ export interface ToolbarProps {
 export const countLabel = (shown: number, total: number, noun = 'item'): string =>
   shown === total ? `${total} ${noun}${total === 1 ? '' : 's'}` : `${shown} / ${total} ${noun}s`
 
-/** The toolbar count: with folder rows (YAZ-4595 S36) the notes as items, then the folders, as `3 items · 2 folders`. */
+/** The toolbar count: with folder rows (YAZ-4595 S36) the pages as items, then the folders, as `3 items · 2 folders`. */
 export const rowsLabel = (shown: number, total: number, folders?: { shown: number; total: number }): string =>
   folders === undefined
     ? countLabel(shown, total)
@@ -239,7 +239,7 @@ export function Toolbar({ def, view, viewIndex, records, filterErrors, shown, to
           </ContextMenuSurface>
         )}
         {onNew !== undefined && (
-          <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label={unit('New note')} title={unit('New note')} onClick={onNew}>
+          <button type="button" className="view-toolbar__btn view-toolbar__new" aria-label={unit('New page')} title={unit('New page')} onClick={onNew}>
             <PlusIcon />
             New
           </button>

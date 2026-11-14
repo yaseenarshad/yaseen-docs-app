@@ -1,11 +1,11 @@
 /**
- * Link target → note, THE resolution rule (GRO-2132, moved here from `client/src/views/engine.ts` for YAZ-4740): the
+ * Link target → page, THE resolution rule (GRO-2132, moved here from `client/src/views/engine.ts` for YAZ-4740): the
  * app's views, wikilink decorations and clicks resolve through it, and so does `yaseendocs mentions`, so an agent and
  * the app agree on what a link names. Generic over what a file is wrapped in: the views pass their `FileValue`s, the
  * command plain `{ record }`s. Pure; no DOM, no Node.
  */
 import { splitLink, undecided } from './linkParts'
-import { vaultNoteId } from './noteId'
+import { vaultPageId } from './pageId'
 import type { IndexRecord } from './types'
 
 /** What the resolver finds: a file, by its index record. */
@@ -18,7 +18,7 @@ export const LINK_VALUE_RE = /^\[\[([^\]|]+)(?:\|([^\]]*))?\]\]$/
 
 /**
  * `[[x|y]]` → `x`, the page side (`splitLink`, YAZ-4935: `[[y|WIKI-1]]` → `WIKI-1`); anything else unchanged. A link
- * whose page only the notes can pick (`undecided`: `[[Covid notes|COVID-19]]`) keeps both sides, `Covid notes|COVID-19`:
+ * whose page only the pages can pick (`undecided`: `[[Covid pages|COVID-19]]`) keeps both sides, `Covid pages|COVID-19`:
  * the resolver picks (`pickTarget`, YAZ-4954).
  */
 export function stripBrackets(s: string): string {
@@ -29,8 +29,8 @@ export function stripBrackets(s: string): string {
 }
 
 /**
- * A target that holds both sides of a link (`Covid notes|COVID-19`, as the index keeps it, or `[[…|…]]`) → its page
- * side with the notes known (YAZ-4954): the left side when `isPage` finds it, else the side the shape gives
+ * A target that holds both sides of a link (`Covid pages|COVID-19`, as the index keeps it, or `[[…|…]]`) → its page
+ * side with the pages known (YAZ-4954): the left side when `isPage` finds it, else the side the shape gives
  * (`splitLink`). A target with no `|` is itself, and `isPage` is not asked.
  */
 export function pickTarget(target: string, isPage: (page: string) => boolean): string {
@@ -42,7 +42,7 @@ const normalise = (s: string) => s.replace(/^\/+|\/+$/g, '').replace(/\.(md|mark
 
 /**
  * A link target as the resolver reads it: brackets, `#heading` and the `|words` off (`splitLink`), trimmed, lowercased.
- * It knows no notes, so it splits by the shape; the resolvers first `pickTarget` with their notes (YAZ-4954).
+ * It knows no pages, so it splits by the shape; the resolvers first `pickTarget` with their pages (YAZ-4954).
  */
 export const targetKey = (target: string) => splitLink(stripBrackets(target)).page.toLowerCase()
 
@@ -53,8 +53,8 @@ export const targetKey = (target: string) => splitLink(stripBrackets(target)).pa
 export const basenameKey = (basename: string): string => basename.toLowerCase().replace(/ς/g, 'σ')
 
 /**
- * The `basenameKey` of every note `target` can resolve to without aliases: each path and name match
- * in `makeResolver` ends in that basename. A note whose basename no link spells has no references
+ * The `basenameKey` of every page `target` can resolve to without aliases: each path and name match
+ * in `makeResolver` ends in that basename. A page whose basename no link spells has no references
  * (YAZ-2241: the rename detector skips those without building a resolver per rename).
  */
 export function targetBasename(target: string): string {
@@ -72,20 +72,20 @@ export interface ResolverOptions {
    */
   aliases?: boolean
   /**
-   * Resolve a target that IS a note's id (default true, YAZ-2293 D5). `false` for the rename
-   * engine's probe too: an id link names the note itself, not its place, so no rename rewrites it.
+   * Resolve a target that IS a page's id (default true, YAZ-2293 D5). `false` for the rename
+   * engine's probe too: an id link names the page itself, not its place, so no rename rewrites it.
    */
   ids?: boolean
   /**
    * The vault's ID letters (`IndexResponse.letters`, YAZ-2677 R5): the current ones, then each it
-   * had before. Given, a target with letters of before finds the note of that number: `[[OLD-12]]`
+   * had before. Given, a target with letters of before finds the page of that number: `[[OLD-12]]`
    * is `YAZ-12` (S82). Without them an id is found by the letters its record holds.
    */
   letters?: readonly string[]
   /**
    * The snapshot's folder settings records (YAZ-2478). Given, a pathed target no file path answers
-   * is read as a path of TITLES: `Sub/Page` is the note titled Page in the folder `Sub` names
-   * (`typedFolders`). The rename engine's probe gives them too, and rewrites such a link to the note's id.
+   * is read as a path of TITLES: `Sub/Page` is the page titled Page in the folder `Sub` names
+   * (`typedFolders`). The rename engine's probe gives them too, and rewrites such a link to the page's id.
    */
   folders?: readonly IndexRecord[]
 }
@@ -117,34 +117,34 @@ export function typedFolders(folders: readonly IndexRecord[]): (parent: string, 
  */
 export function idKey(key: string, letters?: readonly string[]): string {
   if (letters === undefined || letters.length < 2) return key
-  return vaultNoteId(key, letters)?.toLowerCase() ?? key
+  return vaultPageId(key, letters)?.toLowerCase() ?? key
 }
 
 /**
- * Link target → note: the note's own id (YAZ-2293 — first, so a note merely NAMED like an id
- * never captures it; a target that is the id of NO note falls through to the names below, so
- * `[[YAZ-7]]` still opens a note that is only named so: YAZ-2677 R6, S26), absolute path, root-relative path (with or without `.md` / leading slash),
- * TITLE (YAZ-2420 🔒 D17 — a note with no `title:` is titled by its file name), bare basename —
+ * Link target → page: the page's own id (YAZ-2293 — first, so a page merely NAMED like an id
+ * never captures it; a target that is the id of NO page falls through to the names below, so
+ * `[[YAZ-7]]` still opens a page that is only named so: YAZ-2677 R6, S26), absolute path, root-relative path (with or without `.md` / leading slash),
+ * TITLE (YAZ-2420 🔒 D17 — a page with no `title:` is titled by its file name), bare basename —
  * duplicates of either resolve to the SHALLOWEST folder (Obsidian's shortest-path rule,
  * GRO-2190), equal depth to the first in the given (path-sorted) order — a pathed target as a
  * path of TITLES (YAZ-2478, `ResolverOptions.folders`), and finally a
  * frontmatter ALIAS (E2, GRO-2214), by the same shallowest-then-first rule, so a real name
  * always beats an alias. Case-insensitive; `[[…]]`, `|alias` and `#heading` are stripped.
  *
- * A NOTE CARD's ID (YAZ-5030, `cardLinks.ts`) finds the page the card is on, right after the notes' own ids: a link to
+ * A PAGE CARD's ID (YAZ-5030, `cardLinks.ts`) finds the page the card is on, right after the pages' own ids: a link to
  * a card is a link into its page, as `[[Page#heading]]` is. Which card it names is `makeCardResolver`'s to say. Not
  * with `ids: false` (the rename probe): an ID link names the card itself, so no rename of its page rewrites it.
  */
 export function makeResolver<F extends Resolvable>(files: readonly F[], root?: string, opts: ResolverOptions = {}): (target: string) => F | null {
   const byId = new Map<string, F>()
-  /** A note card's ID in lowercase (YAZ-5030) → the page the card is on; the first page in the given order. */
+  /** A card's ID in lowercase (YAZ-5030) → the page the card is on; the first page in the given order. */
   const byCard = new Map<string, F>()
   const byPath = new Map<string, F>()
   const byRel = new Map<string, F>()
   const byTitle = new Map<string, { file: F; depth: number }>()
   const byBase = new Map<string, { file: F; depth: number }>()
   const byAlias = new Map<string, { file: F; depth: number }>()
-  /** `<folder>/<title>`, the folder as the index names it, to the first note of that title there; empty with no `folders`. */
+  /** `<folder>/<title>`, the folder as the index names it, to the first page of that title there; empty with no `folders`. */
   const byFolderTitle = new Map<string, F>()
   const typedFolder = typedFolders(opts.folders ?? [])
   const shallowest = (map: Map<string, { file: F; depth: number }>, key: string, file: F, depth: number) => {
@@ -177,7 +177,7 @@ export function makeResolver<F extends Resolvable>(files: readonly F[], root?: s
     if (opts.aliases !== false) for (const alias of r.aliases) shallowest(byAlias, alias.toLowerCase(), f, depth)
   }
   const rootKey = root ? `${root.replace(/\/+$/, '').toLowerCase()}/` : null
-  /** A path of titles: its last segment a note's title, the ones before it its folders, from the root down. */
+  /** A path of titles: its last segment a page's title, the ones before it its folders, from the root down. */
   const titledPath = (rel: string): F | null => {
     const segments = rel.split('/')
     const title = segments.pop()
@@ -201,7 +201,7 @@ export function makeResolver<F extends Resolvable>(files: readonly F[], root?: s
   return target => {
     const hit = cache.get(target)
     if (hit !== undefined) return hit
-    // Both sides of a link (YAZ-4954): the left side when it is a note, else the side the shape gives.
+    // Both sides of a link (YAZ-4954): the left side when it is a page, else the side the shape gives.
     const found = find(targetKey(pickTarget(target, isPage)))
     cache.set(target, found)
     return found

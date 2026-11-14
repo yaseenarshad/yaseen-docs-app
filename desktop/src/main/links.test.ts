@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { fileLink, isAppLink, LINK_SCHEMES, parseFileLink } from '@shared/links'
 
 // Deep links (E1, GRO-2171; format locked in D7): `yaseendocs://` + percent-encoded absolute
-// path, e.g. `yaseendocs:///Users/me/vault/My%20note.md`. Optional `?root=` override.
+// path, e.g. `yaseendocs:///Users/me/vault/My%20page.md`. Optional `?root=` override.
 
 describe('fileLink', () => {
   it('builds the D7 shape: yaseendocs:// + encoded absolute path (three slashes)', () => {
-    expect(fileLink('/Users/me/vault/My note.md')).toBe('yaseendocs:///Users/me/vault/My%20note.md')
+    expect(fileLink('/Users/me/vault/My page.md')).toBe('yaseendocs:///Users/me/vault/My%20page.md')
   })
 
   it('percent-encodes # and ? too (encodeURI alone would leave them and truncate the path)', () => {
@@ -18,9 +18,9 @@ describe('fileLink', () => {
 describe('parseFileLink round-trips fileLink', () => {
   const roundTrip = (path: string) => parseFileLink(fileLink(path))
   it.each([
-    ['spaces', '/Users/me/vault/My note.md'],
+    ['spaces', '/Users/me/vault/My page.md'],
     ['unicode', '/v/émojis 🎉.md'],
-    ['hash', '/v/notes#drafts/a#1.md'],
+    ['hash', '/v/pages#drafts/a#1.md'],
     ['question mark', '/v/really?.md'],
     ['percent', '/v/100% done.md'],
     ['ampersand and equals', '/v/a&b=c.md'],
@@ -32,7 +32,7 @@ describe('parseFileLink round-trips fileLink', () => {
 describe('parseFileLink', () => {
   it('extracts an optional percent-encoded ?root= override', () => {
     expect(parseFileLink('yaseendocs:///v/sub/a.md?root=%2FUsers%2Fme%2Fv')).toEqual({ path: '/v/sub/a.md', root: '/Users/me/v' })
-    expect(parseFileLink('yaseendocs:///v/My%20note.md?root=/my%20vault')).toEqual({ path: '/v/My note.md', root: '/my vault' })
+    expect(parseFileLink('yaseendocs:///v/My%20page.md?root=/my%20vault')).toEqual({ path: '/v/My page.md', root: '/my vault' })
   })
 
   it('ignores query params other than root', () => {
@@ -82,7 +82,7 @@ describe('yaseendraw:// links', () => {
   })
 
   it('every Docs link, re-spelled with the Draw scheme, parses to the same answer', () => {
-    for (const path of ['/Users/me/vault/My note.md', '/v/notes#drafts/a#1.md', '/v/100% done.excalidraw']) {
+    for (const path of ['/Users/me/vault/My page.md', '/v/pages#drafts/a#1.md', '/v/100% done.excalidraw']) {
       expect(parseFileLink(fileLink(path).replace('yaseendocs://', 'yaseendraw://'))).toEqual({ path, root: null })
     }
   })

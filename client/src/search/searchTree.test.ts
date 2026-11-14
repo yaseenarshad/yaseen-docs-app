@@ -10,7 +10,7 @@ import { searchTree } from './searchTree'
 const file = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
 const dir = (path: string, children: TreeNode[] = []): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
 
-/** Dirs lead each level, as main sorts one: two branches, a folder beside a note of its name, a note at the root. */
+/** Dirs lead each level, as main sorts one: two branches, a folder beside a page of its name, a page at the root. */
 const TREE: TreeNode[] = [
   dir('/v/Clients', [dir('/v/Clients/Acme', [file('/v/Clients/Acme/Call.md'), file('/v/Clients/Acme/Plan.md')]), file('/v/Clients/Index.md')]),
   dir('/v/Transcripts', [dir('/v/Transcripts/Old', [file('/v/Transcripts/Old/Jan.md')]), file('/v/Transcripts/Feb.md')]),

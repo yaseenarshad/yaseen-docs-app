@@ -1,0 +1,705 @@
+/*
+ * The card block (YAZ-4961, `cardBlockView.ts`): ideas from the Explore window (`explore/explore.css`: the 8px
+ * radius, the border, a shadow, a head), calmer in a page — a soft shadow, the page's own colours. Light and dark come
+ * from the app's tokens. The render's classes (`cardRender.ts`) are styled here too, for the Inbox to reuse.
+ *
+ * Crepe's reset `.milkdown * { margin: 0; padding: 0 }` has the weight of one class and loads after this file
+ * (YAZ-4973): each rule here that sets a margin or a padding has the weight of two classes at least, so it wins in the
+ * page as it does in the Inbox and the card window (`card.css.test.ts`).
+ */
+.card {
+  position: relative;
+  box-sizing: border-box;
+  width: min(100%, calc(100% * var(--document-zoom, 1)));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
+  counter-reset: card-side 1;
+  /* No overflow clip: the line number (`data-line`, drawn left of the block) stays visible. The head and the code
+     editor round their own corners instead. */
+}
+/* In the page: room above and below, so two cards (or a card and a quote) never touch. */
+.milkdown .card {
+  margin: 12px 0;
+}
+.card.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* An archived card (YAZ-5046, the line's `off`): muted; its head says "Archived". */
+.card--off {
+  opacity: 0.6;
+}
+.card--off .card__head {
+  background: transparent;
+}
+
+.card .card__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  border-radius: 7px 7px 0 0;
+  background: var(--bg-side);
+  font-size: 0.8125em;
+  line-height: 1.6;
+  user-select: none;
+}
+.card__head button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.card__head button:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* The card ID (D20): small and grey, FIRST in the head — the same place in the page, the card window and the Inbox
+   (`review/cardParts.tsx`), in the look of a page's ID in an Explore head (`.explore__id`). A click copies it. */
+:is(.card, .explore__head, .card-inbox__head) .card__id {
+  flex: none;
+  margin: 0 2px 0 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  cursor: pointer;
+}
+.card__head .card__id {
+  font-size: 11px;
+}
+.card__id:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.card__id[hidden] {
+  display: none;
+}
+.card__state {
+  flex: none;
+  color: var(--fg-muted);
+}
+.card__state:empty {
+  display: none;
+}
+/* "Up next" (YAZ-4999 D3): a small chip after the ID in the page, the card window and the Inbox; its × removes the mark. */
+:is(.card, .explore__head, .card-inbox__head) .card__next {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 2px 0 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.card__next[hidden] {
+  display: none;
+}
+:is(.card, .explore__head, .card-inbox__head) .card__next-remove {
+  flex: none;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 16px;
+  cursor: pointer;
+}
+:is(.card, .explore__head, .card-inbox__head) .card__next-remove:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card__head .card__edit,
+.card__head .card__more {
+  flex: none;
+  padding: 0 6px;
+}
+.card__head .card__edit {
+  margin-left: auto;
+}
+/* "Done Esc Cmd + Enter" (YAZ-5001, in words YAZ-5035): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
+.card__head .card__edit kbd {
+  margin-left: 4px;
+  font-family: inherit;
+  color: var(--fg-muted);
+}
+.card__more {
+  font-size: 1.2em;
+  line-height: 1.3;
+}
+/* A read-only page (a preview, or Read only with its caret, `data-read-only`): no Edit card — its review still works. */
+.ProseMirror[contenteditable='false'] .card__edit,
+.ProseMirror[data-read-only] .card__edit {
+  display: none;
+}
+.ProseMirror[contenteditable='false'] .card__more,
+.ProseMirror[data-read-only] .card__more {
+  margin-left: auto;
+}
+
+/* `white-space: normal` (YAZ-4964): in the page the body inherits ProseMirror's `break-spaces`, and the render's
+   `"\n"` text node after each side's last block (marked's output) then draws a blank line under the side. The Inbox
+   and the card window are outside the editor and have `normal` already; the rule makes the page the same. A code
+   block in a side keeps its own `pre` spacing. */
+.card .card__body {
+  padding: 10px 16px 12px;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.card--editing .card__body {
+  display: none;
+}
+.card__empty {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+/* Crepe's code block, while the card is edited: flush inside the card, with no tools row above line 1 (its language
+   is the card's, and its copy button is the page's ⌘C). */
+.milkdown .card .milkdown-code-block .tools {
+  display: none;
+}
+/* Crepe's code block, while the card is edited: flush inside the card. The key row is under it (YAZ-5034). */
+.card .card__code {
+  margin: 0;
+  border-radius: 0;
+  width: auto;
+}
+/* Edit card's key row (YAZ-5034): quiet, ONE line at the bottom of the card frame, keycaps as the Inbox's
+   (`.explore__foot kbd`). In the card only while it is edited (`cardKeyRow`). */
+.card .card__keys {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+  border-radius: 0 0 7px 7px;
+  user-select: none;
+}
+.card .card__keys > span {
+  flex: none;
+}
+/* The row's own look (YAZ-5026 round 2): `.explore__foot` is in `explore.css`, which loads only with the card window or
+   the Inbox; in a page before either opened the row ran together ("hide wordCmd"). The same values, here. */
+.card .card__keys {
+  display: flex;
+  gap: 14px;
+  padding: 7px 14px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border-top: 1px solid var(--border);
+}
+.card .card__keys kbd {
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+/* Edit card has the writing look (YAZ-5007, Yaseen's decision): the page's font, no line numbers or fold arrows, the
+   rendered card's padding (`.card__body`), so Edit card / Done does not jump. Other code blocks keep the code look.
+   The marks on other copies of the selected word are off in `cardEdit.ts`. */
+.milkdown .card .card__code {
+  padding: 10px 16px 12px;
+  background: transparent;
+}
+.milkdown .card .card__code .cm-editor {
+  background: transparent;
+}
+.card .card__code .cm-gutters {
+  display: none;
+}
+.card .card__code .cm-scroller {
+  font-family: var(--crepe-font-default);
+  line-height: inherit;
+}
+.card .card__code .cm-content {
+  padding: 0;
+}
+.card .card__code .cm-line {
+  padding: 0;
+}
+/* No current-line band in Edit card (YAZ-5008): the code look paints the focused editor's line with an opaque
+   `--bg-hover` (`codeTheme.ts`), and CodeMirror draws the selection in a layer UNDER the lines, so a selection on that
+   line (a drag, a double or triple click, ⇧+arrows) did not show. A text editor has no band; the selection shows. */
+.card .card__code .cm-editor.cm-focused .cm-activeLine {
+  background-color: transparent;
+}
+
+/* EDIT CARD WITH THE PAGE'S EDITOR (YAZ-5026): the page's own editor in the card frame, the "Editing" frame in the
+   accent colour, the key row under it. The inner editor is not the page: no gutters, no zoom of its own (the page's
+   zoom is on the card already), the rendered card's padding so Edit card / Done does not jump. */
+.card.card--editing {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(0, 0, 0, 0.06);
+}
+.card .card__editor {
+  position: relative;
+  cursor: text;
+}
+.milkdown .card .card__editor .milkdown > .ProseMirror {
+  zoom: 1;
+  padding: 10px 16px 12px;
+  margin: 0;
+  max-width: none;
+  min-height: 1.6em;
+  white-space: break-spaces;
+}
+.milkdown .card .card__editor .milkdown > .ProseMirror > :first-child {
+  margin-top: 0;
+}
+/* The block handle is off in a card (the card's own list): the `/` menu stays. */
+.card .card__editor .milkdown-block-handle {
+  display: none !important;
+}
+/* A hidden word in the card editor: the shown hidden word's look in the card (`.card__hidden`). */
+.card .card__cloze {
+  border-radius: 3px;
+  padding: 0 2px;
+  background: var(--mark-bg);
+}
+[data-shown-hidden-words='underline'] .card .card__cloze {
+  border-radius: 0;
+  background: none;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+/* Box (YAZ-5053) in Edit card: the shown look, the editor's own padding kept. */
+[data-shown-hidden-words='box'] .card .card__cloze {
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+/* Edit card's word is the editor's text, with no inner span (the caret lives there): its grey is a band of the same
+   height as the read box, in the middle of its line, so it never reaches the next line either (YAZ-5053 round 2). */
+[data-shown-hidden-words='box'] .card .card__editor .card__cloze {
+  background: linear-gradient(color-mix(in srgb, var(--fg) 5%, transparent), color-mix(in srgb, var(--fg) 5%, transparent)) 0 50% / 100%
+    min(100%, calc(var(--nc-box-line) - var(--nc-box-em) * 0.2)) no-repeat;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* The line between two sides: the render's rule (`.card__rule`), across the card, selectable as one block. */
+.card .card__side-break {
+  height: 1px;
+  margin: 12px -16px;
+  background: var(--border);
+  position: relative;
+}
+.card .card__side-break::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+.card .card__side-break.ProseMirror-selectednode {
+  background: var(--accent);
+  outline: none;
+}
+
+/* YAZ-5103 (Yaseen: "the line alone is not cutting it"): the line between two sides says which side starts, "Side 2",
+   in the Inbox's words ("Side 1 of 2"), quiet and at the text's left, in the editor and the read card. Side 1 is the
+   card's top: no label. Drawn over the line, out of the flow: the text never moves, the `---` does not change. */
+.card :is(.card__side-break, .card__rule) {
+  counter-increment: card-side;
+}
+.card :is(.card__side-break, .card__rule)::before {
+  content: 'Side ' counter(card-side);
+  position: absolute;
+  top: 0;
+  left: 10px;
+  transform: translateY(-50%);
+  padding: 0 6px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 11px;
+  line-height: 16px;
+  pointer-events: none;
+}
+/* The render (`renderCard`): the sides, a thin rule between two. */
+.card__side > :first-child {
+  margin-top: 0;
+}
+.card__side > :last-child {
+  margin-bottom: 0;
+}
+/* A card's text, read (YAZ-5050, Yaseen: "are the spacing on cards in view mode the same as … the entire vault?"): the
+   pages' Line spacing and Space between blocks (`--edit-line-height`, `--edit-block-gap` on `.app`), or Settings ›
+   Review › Card spacing's Custom values (`--card-line-height`, `--card-block-gap`, set only then, `review/cardSpacing.ts`)
+   — in the page, the card window and the Inbox alike. A paragraph's padding is the space between blocks, as the page's
+   (`app.css`); a heading has three gaps above it and one below. The page's own paragraph and heading rules reach a card
+   in a page, so these weigh more (`card.css.test.ts`). */
+.card .card__body .card__sides .card__side p {
+  margin: 0;
+  padding: var(--card-gap) 0;
+  line-height: var(--card-line);
+}
+.card .card__body .card__sides .card__side :is(h1, h2, h3, h4, h5, h6) {
+  margin: calc(var(--card-gap) * 3) 0 var(--card-gap);
+  padding: 0;
+}
+.card .card__body .card__sides .card__side > :first-child {
+  margin-top: 0;
+}
+.card .card__body .card__sides .card__side li > p {
+  padding: 0;
+}
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's softer text (#333 on white), the same step in dark. */
+[data-card-clean] .card__sides {
+  color: color-mix(in srgb, var(--fg) 90%, var(--bg));
+}
+/* A card's lists, read (YAZ-5026 round 2: "is this following the global settings?"): the page's look, from the same
+   settings — Settings › Editor › Outline › Bullet indent and Bullet gap (`--page-bullet-indent`, `--page-bullet-gap` on
+   `.app`, set only when changed) — in the page, the card window and the Inbox. The values are the page's
+   (`outline/bullets.css`): the dot's column is fixed, the text starts after it and the gap, and a child level's dot
+   steps in by the indent from its parent's. The dots are the page's ● ○ ■ by level, the numbers its right-aligned
+   ones, in the marker colour. Edit card is the page's editor inside `.editor-instance`: it follows them already. */
+.card__side {
+  /* YAZ-5050: Card spacing's Custom values first; with Same as pages they are not set, and the pages' hold. */
+  --card-gap: var(--card-block-gap, var(--edit-block-gap, 4px));
+  --card-line: var(--card-line-height, var(--edit-line-height, 1.5));
+  --card-list-gap: var(--card-bullet-gap, var(--page-bullet-gap, 10px));
+  --card-list-indent: var(--card-bullet-indent, var(--page-bullet-indent, 2.15em));
+  --card-list-gutter: calc(2.15em - 10px);
+  --card-list-row: var(--card-bullet-space, var(--card-gap));
+  line-height: var(--card-line);
+  --card-list-dot: 0.42em;
+  --card-list-marker: color-mix(in srgb, currentColor 78%, transparent);
+}
+.card .card__side :is(ul, ol) {
+  margin: 0.4em 0;
+  padding: 0;
+  list-style: none;
+}
+.card .card__side li {
+  position: relative;
+  margin: 0;
+  padding: var(--card-list-row) 0;
+  padding-left: calc(var(--card-list-gutter) + var(--card-list-gap));
+}
+.card .card__side li > :is(ul, ol) {
+  margin: 0 0 calc(-1 * var(--card-list-row));
+  margin-left: calc(var(--card-list-indent) - var(--card-list-gutter) - var(--card-list-gap));
+}
+.card .card__side li > p {
+  margin: 0;
+}
+.card .card__side li::before {
+  position: absolute;
+  box-sizing: border-box;
+  color: var(--card-list-marker);
+}
+/* Levels 1 and 4: a solid dot, in the middle of the dot's column and of the first line. */
+.card .card__side ul > li::before,
+.card .card__side :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  content: '';
+  left: calc((var(--card-list-gutter) - var(--card-list-dot)) / 2);
+  top: calc(var(--card-list-row) + (1lh - var(--card-list-dot)) / 2);
+  width: var(--card-list-dot);
+  height: var(--card-list-dot);
+  border: 0;
+  border-radius: 50%;
+  background: var(--card-list-marker);
+}
+/* Levels 2 and 5: a ring. */
+.card .card__side :is(ul, ol) ul > li::before,
+.card .card__side :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  border: max(1px, 0.094em) solid var(--card-list-marker);
+  border-radius: 50%;
+  background: transparent;
+}
+/* Levels 3 and 6: a small square. */
+.card .card__side :is(ul, ol) :is(ul, ol) ul > li::before,
+.card .card__side :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  left: calc((var(--card-list-gutter) - 0.38em) / 2);
+  top: calc(var(--card-list-row) + (1lh - 0.38em) / 2);
+  width: 0.38em;
+  height: 0.38em;
+  border: 0;
+  border-radius: 0.04em;
+  background: var(--card-list-marker);
+}
+/* Numbers: right-aligned in the dot's column, as the page's; `list-item` counts from the list's `start`. */
+.card .card__side ol > li::before {
+  content: counter(list-item) '.';
+  left: 0;
+  top: var(--card-list-row);
+  width: var(--card-list-gutter);
+  text-align: right;
+  white-space: nowrap;
+}
+.card__side img {
+  max-width: 100%;
+  border-radius: 4px;
+}
+.card__body pre {
+  overflow-x: auto;
+}
+/* A sound (YAZ-5014): ONE line — play, the file name, a bar, the time — in the app's tokens, light and dark. */
+.card .card__audio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  margin: 4px 0;
+  padding: 4px 10px 4px 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: nowrap;
+}
+.card .card__audio-play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+}
+.card .card__audio-play:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.card__audio-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card .card__audio-bar {
+  position: relative;
+  flex: 1 1 60px;
+  min-width: 40px;
+  height: 4px;
+  padding: 0;
+  border-radius: 2px;
+  background: var(--border);
+  cursor: pointer;
+}
+.card__audio-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.card__audio-time {
+  flex: none;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.card__audio--broken .card__audio-play {
+  background: var(--fg-muted);
+}
+/* A board embed (YAZ-5015): the whole board as a still picture, fit to the card's width, its name under it. */
+.card .card__board {
+  display: block;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.card .card__board-img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  min-height: 40px;
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--bg-side);
+}
+.card .card__board-img:not([src]) {
+  width: 100%;
+  height: 120px;
+}
+.card .card__board-name {
+  display: block;
+  margin-top: 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.card__board:hover .card__board-img {
+  border-color: var(--accent);
+}
+/* The line between two sides (YAZ-5051, Yaseen: "new side line break needs help"): a dashed line across the card, as
+   Mochi's, darker than the card's borders and unlike a rule in the text (`---` is the side break, so a rule in a side is
+   solid), with room on each side. The page and the card window; the Inbox gives it more room (`cardScreens.css`). */
+.card .card__rule {
+  position: relative;
+  height: 0;
+  margin: 16px -16px;
+  border-top: 1px dashed color-mix(in srgb, var(--fg) 30%, transparent);
+}
+/* A hidden word, shown or not (YAZ-5013: "never jumping around"): ONE box model — inline, the real word inside, the
+   same padding — so a show changes only the look and nothing on the line moves. */
+.card .card__hidden,
+.card .card__blank {
+  display: inline;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.card .card__hidden {
+  background: var(--mark-bg);
+}
+/* Settings › Review › Shown hidden words: Underline (YAZ-5005, app-wide, on `.app`): no highlight, a line under the
+   word in the accent colour, light and dark. The blanks (words not shown yet) do not change. */
+[data-shown-hidden-words='underline'] .card .card__hidden {
+  border-radius: 0;
+  background: none;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+/* Settings › Review › Shown hidden words: Box (YAZ-5053, Yaseen: "where its just a box? looks like mochi?"): a hidden word
+   is a plain grey box, a shown one sits in a lighter grey box with round corners. ONE padding for both, so a show moves
+   nothing on the line (YAZ-5013); a box that wraps keeps its ends on each line. The greys mix the text colour into the
+   page's, so they hold in light and dark. */
+[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank) {
+  --nc-box-height: min(calc(var(--nc-box-em) * 1.15 + 4px), calc(var(--nc-box-line) - var(--nc-box-em) * 0.2));
+  --nc-box-middle: calc(var(--nc-box-em) * 0.3);
+  --nc-box-above: max(0px, calc(var(--nc-box-height) / 2 + var(--nc-box-middle)));
+  --nc-box-below: max(0px, calc(var(--nc-box-height) / 2 - var(--nc-box-middle)));
+  font-size: 0;
+  padding: var(--nc-box-above) 6px var(--nc-box-below);
+  border-bottom: 0;
+  border-radius: 4px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+/* Box at every line spacing (YAZ-5053 round 2, Yaseen: "depending on the line spacing it overlaps"): an inline box is
+   as tall as its font's own line (about 1.2em) plus its padding, whatever the line spacing, so at 1.0 and 1.15 the box
+   of one line reached into the next. Here the box is sized from the line instead: the word's span has no font size
+   of its own (font-size 0, so no height), the word inside gets the text's size back, and the padding alone draws the
+   box — as tall as at 1.5, but never taller than the line less a gap, around the middle of the letters. The text's
+   size and line height come from the span's parent, as lengths (`@property`, so they do not follow the 0). The text
+   and its line do not change, so a show still moves nothing; a wrapped box gets the same height on each line. */
+@property --nc-box-em {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 16px;
+}
+@property --nc-box-line {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 24px;
+}
+[data-shown-hidden-words='box'] .card :has(> :is(.card__hidden, .card__blank, .card__cloze)) {
+  --nc-box-em: 1em;
+  --nc-box-line: 1lh;
+}
+[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank) > .card__word {
+  font-size: var(--nc-box-em);
+}
+[data-shown-hidden-words='box'] .card .card__blank {
+  background: color-mix(in srgb, var(--fg) 10%, transparent);
+}
+[data-shown-hidden-words='box'] .card .card__hidden {
+  background: color-mix(in srgb, var(--fg) 5%, transparent);
+}
+/* Mark the next hidden word (YAZ-5053 round 3): the one blank the next Space shows takes the colour, in the look of
+   Shown hidden words: its line, its highlight, its box. */
+[data-mark-next-hidden] .card .card__blank[data-next] {
+  border-bottom-color: var(--next-hidden);
+}
+[data-mark-next-hidden][data-shown-hidden-words='highlight'] .card .card__blank[data-next] {
+  background: color-mix(in srgb, var(--next-hidden) 22%, transparent);
+}
+[data-mark-next-hidden][data-shown-hidden-words='box'] .card .card__blank[data-next] {
+  background: color-mix(in srgb, var(--next-hidden) 35%, transparent);
+}
+/* The blank: the word's own width, a line under it; the word inside is invisible, and a selection skips it. An inline
+   border does not change the line's height. */
+.card__blank {
+  border-bottom: 2px solid var(--fg-muted);
+  user-select: none;
+}
+.card__blank > .card__word {
+  visibility: hidden;
+}
+/* A pill in a card opens on a click (idea 6): the hand, not the text caret of a pill in the page. */
+.card [data-card-link] {
+  cursor: pointer;
+}
+
+/* The Reviews toggle (YAZ-5032, as Mochi's tab), the page's and the card window's: here, so the page draws it before
+   the card window's styles load. */
+.card-reviews__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.card-reviews .card-reviews__toggle {
+  flex: none;
+  width: auto;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.card-reviews .card-reviews__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card-reviews .card-reviews__toggle[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--fg) 8%, transparent);
+  color: var(--fg);
+}
+.card-reviews__toggle .backlinks__title {
+  font-weight: 500;
+}
+
+/* "✓ 4 Reviews" at the bottom of a card with reviews (YAZ-5000, YAZ-5032): the card window's toggle and, on the same
+   row, its strip of glyphs (`review/cardScreens.css`), so the facts show while closed; the table opens under it,
+   with room inside the card. Hidden while the card is edited. */
+.card .card-reviews {
+  margin: 0;
+  padding: 4px 8px;
+  border-top: 1px solid var(--border);
+  user-select: none;
+}
+.card .card-reviews__bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 26px;
+}
+.card .card-reviews .card-reviews__toggle {
+  font-size: 12px;
+}
+.card .card-reviews__facts {
+  margin: 0 4px 0 auto;
+}
+.card .card-reviews .card-reviews__table {
+  margin: 4px 0 6px;
+}
+.card--editing .card-reviews {
+  display: none;
+}

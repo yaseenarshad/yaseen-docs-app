@@ -69,7 +69,7 @@ async function mount() {
   const crepe = createCrepe({
     root,
     defaultValue: DOC,
-    image: { root: '/v', notePath: '/v/n.md' },
+    image: { root: '/v', pagePath: '/v/n.md' },
     folding: { seedCollapsedKeys: () => keys.outline, onCollapsedKeysChange: (k) => (keys.outline = new Set(k)) },
     headingFolding: { seedCollapsedKeys: () => keys.heading, onCollapsedKeysChange: (k) => (keys.heading = new Set(k)) },
   })

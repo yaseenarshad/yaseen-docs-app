@@ -69,7 +69,7 @@ describe('the folded head of a narrow layer (YAZ-4956)', () => {
     expect(rule('.explore__head[data-compact] .explore__more')['display']).toBe('block')
     expect(rule('.explore__head [data-folded]')['display']).toBe('none')
     expect(css).not.toMatch(/\[data-compact\][^{]*\.explore__id[^{]*\{[^}]*display:\s*none/)
-    expect(rule('.explore__head > .explore__id,\n.explore__head > .note-card__id')['flex']).toBe('none')
+    expect(rule('.explore__head > .explore__id,\n.explore__head > .card__id')['flex']).toBe('none')
     expect(rule('.explore__head[data-compact] .explore__title')['min-width']).toBe('48px')
   })
 

@@ -275,7 +275,7 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(spanOf({}, 'due', 'end')).toBeNull()
   })
 
-  it('bucketByDay: a span goes to `multi`, an end-only note on its end day, and a preview moves one card', () => {
+  it('bucketByDay: a span goes to `multi`, an end-only page on its end day, and a preview moves one card', () => {
     const rows = [row('Trip', { due: '2026-12-03', end: '2026-12-05' }), row('After', { end: '2026-12-07' }), row('One', { due: '2026-12-04' }), row('None', {})]
     const { days, multi, undated } = bucketByDay(rows, 'due', 'end')
     expect(multi.map((m) => [m.row.record.title, m.start, m.end])).toEqual([['Trip', '2026-12-03', '2026-12-05']])

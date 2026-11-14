@@ -899,7 +899,7 @@
   text-align: var(--table-header-align);
 }
 
-/* Header row (YAZ-4774): the note table's tint and text (`table.css` sets the variables from Settings and from the
+/* Header row (YAZ-4774): the page table's tint and text (`table.css` sets the variables from Settings and from the
    view's own `data-table-header-*`), laid on the opaque page colour so the sticky header still hides the rows under it.
    Muted by default. `[data-table-id]` outranks the frozen cells' and the gutter's `--bg`. */
 .view-table[data-table-id] thead th {
@@ -940,7 +940,7 @@
   background-image: linear-gradient(var(--view-selection-wash), var(--view-selection-wash)), linear-gradient(var(--view-cell-fill, transparent), var(--view-cell-fill, transparent));
 }
 
-/* ⌘F on a folder page (YAZ-4613, D64, `view/viewFind.ts`): the note find's wash (`find.css` tokens) on the mounted
+/* ⌘F on a folder page (YAZ-4613, D64, `view/viewFind.ts`): the page find's wash (`find.css` tokens) on the mounted
    matching cells and cards, `data-find`, and the solid colour with dark text on the current one. Over a fill and a
    selection, as the selection wash is. */
 .view-table tbody td[data-find] {
@@ -1416,7 +1416,7 @@
   background: var(--accent-soft);
 }
 
-/* A link value in a folder page's cell (YAZ-4601 D47): the note editor's wikilink pill (`wikilink.css`). A click opens
+/* A link value in a folder page's cell (YAZ-4601 D47): the page editor's wikilink pill (`wikilink.css`). A click opens
    it, so it has the hand. The editor joins side-by-side pieces of ONE link into one box; a Multi-link cell's pills are
    separate links, so each keeps its own box. */
 .view-link-pill {
@@ -1438,7 +1438,7 @@
 /* Each pill wears its page's icon (YAZ-4544 4G): a `FileIcon` inside it, where the vault's format puts it (YAZ-4924:
    on the name, or a piece of the head or the tail). The pieces the format adds (`LinkPillParts.tsx`) are inside the
    pill's span here: no sibling rules to join; they take the words' own style and each part its own variables, as the
-   note's do (`wikilink.css`). */
+   page's do (`wikilink.css`). */
 .view-link-pill .link-pill__head,
 .view-link-pill .link-pill__tail {
   display: inline;
@@ -1684,7 +1684,7 @@
 }
 
 /* A group level's header style (YAZ-3742 D5): the level's highlight colour as a 40% wash, as the
-   note's highlights are, so the text keeps its own colour in both themes. No vertical padding: the
+   page's highlights are, so the text keeps its own colour in both themes. No vertical padding: the
    header must keep the row height (S18). */
 .view-group__value--highlight {
   padding: 0 4px;
@@ -1910,7 +1910,7 @@
   color: var(--fg-muted);
 }
 
-/* The text flags from view.cardStyle (YAZ-1206) — note rows only, never the title. */
+/* The text flags from view.cardStyle (YAZ-1206) — page rows only, never the title. */
 .view-board__prop--bold {
   font-weight: 600;
 }
@@ -1996,7 +1996,7 @@
   margin-left: 6px;
 }
 
-/* The row of the note the note window shows (YAZ-4547): an accent edge on its first cell and a soft fill. The
+/* The row of the page the page window shows (YAZ-4547): an accent edge on its first cell and a soft fill. The
    colour only (YAZ-4544): a cell or row fill is a `background-image`, and it stays over the soft fill. */
 .view-table tr.view-table__row--current td,
 .view-table tr.view-table__row--current td.view-table__frozen {
@@ -2012,7 +2012,7 @@
   box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 100vmax color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent);
 }
 
-/* The card or row of the note the note window shows in Board, List, Cards and Calendar (YAZ-4547 D24,
+/* The card or row of the page the page window shows in Board, List, Cards and Calendar (YAZ-4547 D24,
    `CURRENT_ITEM`): the table row's soft fill and an accent ring. */
 .view-board__card.view-item--current,
 .view-list__item.view-item--current,
@@ -2022,10 +2022,10 @@
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
-/* The note window (YAZ-4547, `NoteWindow.tsx`): a card over the folder page, in its `section.editor` beside the
+/* The page window (YAZ-4547, `PageWindow.tsx`): a card over the folder page, in its `section.editor` beside the
    scroller, so it stays put while the page scrolls. The cell-note card's look (`editor/table/table.css`); its head
-   buttons share the cell-note card's classes. `NoteWindow` writes its place and size. */
-.note-window {
+   buttons share the cell-note card's classes. `PageWindow` writes its place and size. */
+.page-window {
   position: absolute;
   z-index: 20;
   display: flex;
@@ -2038,7 +2038,7 @@
   color: var(--fg);
 }
 
-.note-window__head {
+.page-window__head {
   flex: none;
   display: flex;
   align-items: center;
@@ -2054,12 +2054,12 @@
   cursor: grab;
 }
 
-.note-window__open {
+.page-window__open {
   font-size: 13px;
 }
 
-/* The full editor of the note: its own scroller, inside the card's rounded corners. */
-.note-window__body {
+/* The full editor of the page: its own scroller, inside the card's rounded corners. */
+.page-window__body {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -2068,24 +2068,24 @@
   border-radius: 0 0 11px 11px;
 }
 
-.note-window__grip {
+.page-window__grip {
   position: absolute;
   z-index: 1;
 }
 
-.note-window__grip[data-grip='n'] { top: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
-.note-window__grip[data-grip='s'] { bottom: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
-.note-window__grip[data-grip='e'] { right: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
-.note-window__grip[data-grip='w'] { left: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
-.note-window__grip[data-grip='nw'] { top: -6px; left: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
-.note-window__grip[data-grip='se'] { bottom: -6px; right: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
-.note-window__grip[data-grip='ne'] { top: -6px; right: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
-.note-window__grip[data-grip='sw'] { bottom: -6px; left: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+.page-window__grip[data-grip='n'] { top: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+.page-window__grip[data-grip='s'] { bottom: -3px; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+.page-window__grip[data-grip='e'] { right: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+.page-window__grip[data-grip='w'] { left: -3px; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+.page-window__grip[data-grip='nw'] { top: -6px; left: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.page-window__grip[data-grip='se'] { bottom: -6px; right: -6px; width: 12px; height: 12px; cursor: nwse-resize; }
+.page-window__grip[data-grip='ne'] { top: -6px; right: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
+.page-window__grip[data-grip='sw'] { bottom: -6px; left: -6px; width: 12px; height: 12px; cursor: nesw-resize; }
 
 /* A drag of the head or of a grip: its cursor on the whole folder page until the drop. */
-.note-window-tracking,
-.note-window-tracking * {
-  cursor: var(--note-window-cursor) !important;
+.page-window-tracking,
+.page-window-tracking * {
+  cursor: var(--page-window-cursor) !important;
 }
 
 /* ---------- motion (YAZ-944) ---------- */
@@ -2448,14 +2448,14 @@
 }
 
 /* "Cross out when" (YAZ-4864): the whole card struck through and grey, its name and every column line, as a done task
-   in a note (Yaseen: "can we make the entire thing get crossed out including its columns?"). An icon is no text: it stays. */
+   in a page (Yaseen: "can we make the entire thing get crossed out including its columns?"). An icon is no text: it stays. */
 .view-cal__card--crossed,
 .view-cal__card--crossed .view-cal__card-name {
   color: var(--fg-muted);
   text-decoration: line-through;
 }
 
-/* A card's own colour (YAZ-4906, `cardStyleAttrs`): the note's `color` property on a calendar card and a board card.
+/* A card's own colour (YAZ-4906, `cardStyleAttrs`): the page's `color` property on a calendar card and a board card.
    The colours and the strengths are the header row's (`table.css`): Light 15 %, Medium 30 %, Strong 50 % of the
    colour over the card's background, so the text stays readable in light and dark; a crossed-out card keeps it. */
 :is(.view-cal__card, .view-board__card)[data-color='gray'] { --card-hue: var(--table-fill-solid-grey); }
@@ -2478,7 +2478,7 @@
 :is(.view-cal__card, .view-board__card)[data-color='black'][data-color-strength='strong'] { --card-wash: 100%; }
 :is(.view-cal__card, .view-board__card)[data-color] { background: color-mix(in srgb, var(--card-hue) var(--card-wash, 30%), var(--bg)); }
 
-/* A card's text colour and weight (YAZ-4906 round 2, `cardStyleAttrs`): the note's `text_color` (the header row's Text
+/* A card's text colour and weight (YAZ-4906 round 2, `cardStyleAttrs`): the page's `text_color` (the header row's Text
    choices: Muted, White, or a colour as its cell text colour, darker in light and lighter in dark, `table.css`) and
    `weight: bold`. They win over the title's own colour and over a crossed-out card's grey, which keeps its line. */
 :is(.view-cal__card, .view-board__card)[data-text='muted'] { --card-ink: var(--fg-muted); }
@@ -2845,7 +2845,7 @@
   cursor: text;
 }
 
-/* A read-only note's name and its lock (YAZ-3129): the name text is what ellipses, the lock its
+/* A read-only page's name and its lock (YAZ-3129): the name text is what ellipses, the lock its
    sibling, so a long name is cut before the lock and the lock always shows after the "…". */
 .view-read-only-name {
   display: inline-flex;
@@ -2860,7 +2860,7 @@
   white-space: nowrap;
 }
 
-/* The lock after a read-only note's name (YAZ-3076 D9, S60): muted, the size of the text, and no
+/* The lock after a read-only page's name (YAZ-3076 D9, S60): muted, the size of the text, and no
    layout of its own — `line-height: 0` keeps the row's height, `flex: none` keeps it whole beside
    the ellipsing name above. */
 .view-read-only-mark {
@@ -2878,7 +2878,7 @@
   height: 0.85em;
 }
 
-/* A read-only note's cell (YAZ-3076 D6): the plain value, and a cursor that says no edit is offered;
+/* A read-only page's cell (YAZ-3076 D6): the plain value, and a cursor that says no edit is offered;
    its tooltip says why. Its disabled checkbox takes the same cursor. */
 .view-cell-edit--read-only,
 .view-cell-edit input[type="checkbox"]:disabled {
@@ -3173,7 +3173,7 @@
 .view-menu--tabbed .view-prop__chevron { width: 8px; opacity: 0; }
 .view-menu--tabbed .view-prop__identity:hover .view-prop__chevron { opacity: 1; }
 .column-section--hidden .view-prop__name { color: var(--fg-muted); }
-/* Hidden, by where each column comes from (YAZ-4713 C4): the folder's own, From <owner>, Other properties in these notes. */
+/* Hidden, by where each column comes from (YAZ-4713 C4): the folder's own, From <owner>, Other properties in these pages. */
 .column-section__part-title { margin: 4px 0 0 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* An other property's two buttons stay on the row's one line: Show keeps its size, "Add to <folder>" shrinks with "…"
    (its title holds the whole name), after the label, which shrinks first. */
@@ -3356,7 +3356,7 @@
 .type-picker__option:focus-visible { background: var(--bg-hover); outline: none; }
 .type-picker__about { overflow: hidden; font-size: 11px; color: var(--fg-muted); text-overflow: ellipsis; white-space: nowrap; }
 .type-picker__check { color: var(--accent); }
-/* A searchable list ("Notes from" lists every folder, YAZ-4795 demo) scrolls inside its own box, the search kept on top, so it never stretches the panel past the window. */
+/* A searchable list ("Pages from" lists every folder, YAZ-4795 demo) scrolls inside its own box, the search kept on top, so it never stretches the panel past the window. */
 .type-picker__list:has(> .type-picker__search) { max-height: 320px; overflow-y: auto; }
 .type-picker__list:has(> .type-picker__search) > * { flex: none; }
 .type-picker__list > .type-picker__search { position: sticky; top: -4px; z-index: 1; box-shadow: 0 -4px 0 var(--bg); }
@@ -3479,7 +3479,7 @@
 }
 
 /* Confirm changes (YAZ-3746 13AN; laid out by 13AS): the ask by the cell, in `document.body` so the page zoom never
-   moves it. A quiet header (what and which note), the change as before → after, the two buttons with their keys, and a
+   moves it. A quiet header (what and which page), the change as before → after, the two buttons with their keys, and a
    tinted foot with the pauses. */
 .change-ask {
   position: fixed;

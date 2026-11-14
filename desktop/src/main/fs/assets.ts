@@ -81,7 +81,7 @@ async function existingUnderRoot(dir: string, ...rel: string[]): Promise<string 
 
 /**
  * Obsidian's link resolution order (YAZ-1658, YAZ-1656 D1), shared by `readAsset` and the `app://vault`
- * image protocol: (1) relative to the linking note's directory `from` when given — a note's own
+ * image protocol: (1) relative to the linking page's directory `from` when given — a page's own
  * `./pic.png` must beat a same-named file elsewhere; (2) relative to the root; (3) the
  * shortest-path basename walk above. Steps 1 and 2 require a REGULAR FILE inside the vault;
  * anything escaping `root` skips to the walk, which cannot leave it. `root` is absolute and
@@ -91,8 +91,8 @@ async function existingUnderRoot(dir: string, ...rel: string[]): Promise<string 
 export async function resolveAsset(root: string, target: string, from?: string): Promise<string | null> {
   if (target === '') return null
   if (from !== undefined) {
-    const viaNote = await existingUnderRoot(root, from, target)
-    if (viaNote !== null) return viaNote
+    const viaPage = await existingUnderRoot(root, from, target)
+    if (viaPage !== null) return viaPage
   }
   return (await existingUnderRoot(root, target)) ?? findByBasename(root, path.basename(target))
 }

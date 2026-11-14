@@ -1,6 +1,6 @@
 /**
  * The line's style in the file (YAZ-3164, YAZ-3167; CONTRACTS rule 41): real editors (`createCrepe`)
- * load a note, save it, and load the save again. Pinned here, by scenario key: the plain line (S1),
+ * load a page, save it, and load the save again. Pinned here, by scenario key: the plain line (S1),
  * only the set parts and in the fixed order (S2, S3), a value equal to the default written as it is
  * (S93, YAZ-3208 D9) and a line at Default in every part saved as `***` (S94), every comment that
  * is not ours kept byte for byte (S5–S7), the comment in a bullet with and without children and in
@@ -65,7 +65,7 @@ const htmlValues = (doc: ProseNode): string[] => {
   return out
 }
 
-/** The note saved after a style is set on its first line by one transaction. */
+/** The page saved after a style is set on its first line by one transaction. */
 async function saveStyled(attrs: Partial<Record<keyof LineStyle, unknown>>, markdown = 'a\n\n***\n\nb\n'): Promise<string> {
   const { crepe, view } = await mount(markdown)
   let pos = -1
@@ -117,7 +117,7 @@ describe('parseLineComment / formatLineComment', () => {
     ['<!-- line: darkness 050% -->'],
     ['<!-- line: darkness 80%, -->'],
     ['<!-- line: darkness 80% thickness 6px -->'],
-    ['<!-- a note -->'],
+    ['<!-- a page -->'],
   ])('S6: %s is another form, so it is not the line comment', (comment) => {
     expect(parseLineComment(comment)).toBeNull()
   })
@@ -155,11 +155,11 @@ describe('the line in the file', () => {
 
   it('S93: a picked value equal to the default is written, and a hand-written one stays as written', async () => {
     expect(await saveStyled({ darkness: 50, thickness: 3, pattern: 'solid' })).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 3px, style solid -->\n\nb\n')
-    const note = 'a\n\n***\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n'
-    const { view } = await mount(note)
+    const page = 'a\n\n***\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n'
+    const { view } = await mount(page)
     expect(lines(view.state.doc)).toEqual([{ darkness: 50, thickness: 3, pattern: null, width: null }])
     expect(htmlValues(view.state.doc)).toEqual([])
-    expect(await save(note)).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n')
+    expect(await save(page)).toBe('a\n\n***\n\n<!-- line: darkness 50%, thickness 3px -->\n\nb\n')
   })
 
   it('S94: a line with every part at Default (null) saves as plain ***', async () => {
@@ -183,18 +183,18 @@ describe('the line in the file', () => {
   it('S7: a comment with a block between it and the line, or before a line, stays HTML', async () => {
     const after = 'a\n\n***\n\ntext\n\n<!-- line: darkness 80% -->\n'
     const before = '<!-- line: darkness 80% -->\n\n***\n\nb\n'
-    for (const note of [after, before]) {
-      const { view } = await mount(note)
+    for (const page of [after, before]) {
+      const { view } = await mount(page)
       expect(lines(view.state.doc)).toEqual([PLAIN_LINE])
       expect(htmlValues(view.state.doc)).toEqual(['<!-- line: darkness 80% -->'])
-      expect(await save(note)).toBe(note)
+      expect(await save(page)).toBe(page)
     }
   })
 
   it('S8: in a tight bullet with children, the comment is indented in the item and the children stay children', async () => {
     // The item holding a line takes `-`: `* ***` would itself be a line (rule 6).
-    const note = '* a\n* ---\n  <!-- line: length 40% -->\n  * child\n* c\n'
-    const { view } = await mount(note)
+    const page = '* a\n* ---\n  <!-- line: length 40% -->\n  * child\n* c\n'
+    const { view } = await mount(page)
     const item = view.state.doc.child(0).child(1)
     expect(item.type.name).toBe('list_item')
     expect(item.childCount).toBe(2)
@@ -203,7 +203,7 @@ describe('the line in the file', () => {
     expect(item.child(1).type.name).toBe('bullet_list')
     expect(item.child(1).textContent).toBe('child')
     expect(htmlValues(view.state.doc)).toEqual([])
-    const out = await save(note)
+    const out = await save(page)
     expect(out).toContain('***\n  <!-- line: length 40% -->\n  * child\n')
     const again = await mount(out)
     expect(again.view.state.doc.child(0).child(1).child(1).textContent).toBe('child')
@@ -229,7 +229,7 @@ describe('the line in the file', () => {
     expect(quote.child(0).attrs.thickness).toBe(12)
   })
 
-  it('S11: a styled line first or last in the note saves and loads the same, and a first *** is no frontmatter', async () => {
+  it('S11: a styled line first or last in the page saves and loads the same, and a first *** is no frontmatter', async () => {
     const first = await save('***\n<!-- line: darkness 80% -->\n\ntext\n')
     expect(first).toBe('***\n\n<!-- line: darkness 80% -->\n\ntext\n')
     expect(splitFrontmatter(first).frontmatter).toBe('')
@@ -260,11 +260,11 @@ describe('the line in the file', () => {
   })
 
   it('S14: *** and the comment inside code are text', async () => {
-    const note = '```\n***\n<!-- line: darkness 80% -->\n```\n\nSee `***` and `<!-- line: darkness 80% -->` here.\n'
-    const { view } = await mount(note)
+    const page = '```\n***\n<!-- line: darkness 80% -->\n```\n\nSee `***` and `<!-- line: darkness 80% -->` here.\n'
+    const { view } = await mount(page)
     expect(lines(view.state.doc)).toEqual([])
     expect(htmlValues(view.state.doc)).toEqual([])
-    expect(await save(note)).toBe(note)
+    expect(await save(page)).toBe(page)
   })
 })
 

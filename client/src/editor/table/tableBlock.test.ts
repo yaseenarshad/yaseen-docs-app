@@ -11,7 +11,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { NodeSelection, TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
-import { TABLE_HANDLE_MENU } from '../noteMenu'
+import { TABLE_HANDLE_MENU } from '../pageMenu'
 import { cellDOM, cellPos, dragColumnEdge, mountTable as mount, mouseAt, unmountAll } from './tableTestKit'
 
 afterEach(unmountAll)
@@ -159,7 +159,7 @@ describe('table block: resize columns (YAZ-3696 D2)', () => {
     expect(colwidths(view).flat().every(width => width === null)).toBe(true)
   })
 
-  it('a read-only note shows no grip and does not resize', async () => {
+  it('a read-only page shows no grip and does not resize', async () => {
     const view = await mount()
     view.setProps({ editable: () => false })
     dragColumnEdge(view, 0, 50)
@@ -266,7 +266,7 @@ describe('table block: a handle opens the app\'s table menu (YAZ-3820)', () => {
     expect(got).toEqual([{ x: 7, y: 9, pos: kind === 'col' ? cellPos(view, 0, 1) : cellPos(view, 1, 0) }])
   })
 
-  it('in a read-only note a handle click or right-click selects nothing and asks nothing', async () => {
+  it('in a read-only page a handle click or right-click selects nothing and asks nothing', async () => {
     const view = await mount()
     const got = asks(view)
     mouse('pointermove', cellDOM(view, 1, 1).firstChild!, 1, 1)

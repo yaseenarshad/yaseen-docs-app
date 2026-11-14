@@ -109,7 +109,7 @@ describe('shared watchers', () => {
     const a = openWatch(root)
     await a.next()
     await writeFile(path.join(root, '.yaseendocs', 'types.json'), '{"b":2}')
-    await writeFile(path.join(root, '.yaseendocs', 'note.md'), 'even markdown in there is invisible')
+    await writeFile(path.join(root, '.yaseendocs', 'page.md'), 'even markdown in there is invisible')
     // A control event proves the silence: the next thing the subscriber sees is the unrelated mkdir.
     await mkdir(path.join(root, 'control-dir'))
     expect(await a.next()).toEqual({ type: 'addDir', path: path.join(root, 'control-dir') })
@@ -139,7 +139,7 @@ describe('shared watchers', () => {
     await a.next()
     await writeFile(path.join(root, 'alpha', 'a.md.tmp-0123456789ab'), 'torn')
     await new Promise((r) => setTimeout(r, 500)) // past the engine's settle (SETTLE_MS): a reported tmp would arrive first
-    const mine = path.join(root, 'alpha', 'notes.tmp-draft.md')
+    const mine = path.join(root, 'alpha', 'pages.tmp-draft.md')
     await writeFile(mine, 'mine')
     expect(await a.next()).toMatchObject({ type: 'add', path: mine })
   })

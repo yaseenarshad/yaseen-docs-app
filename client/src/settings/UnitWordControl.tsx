@@ -1,28 +1,29 @@
 /**
- * Settings › Files & Links › This vault › "Call a note a …" (YAZ-4938): Note (the default) · Card · Doc · Page · Your
- * own word. The own word has two boxes, one and many, saved when a box loses the focus or takes Enter, never on a
- * keystroke: the vault's word is read once per change, and every label follows it.
+ * Settings › Files & Links › This vault › "Call a page a …" (YAZ-4938): Page (the default) · Doc · Note · Your own
+ * word. The own word has two boxes, one and many, saved when a box loses the focus or takes Enter, never on a
+ * keystroke: the vault's word is read once per change, and every label follows it. YAZ-5036: "Card" is no choice: a
+ * card is its own thing, so a vault never shows two "New card" rows.
+ *
+ * rename-note-to-page: skip-file (the choice "Note" stays).
  */
 import { useEffect, useState } from 'react'
 import { OWN_WORD_MAX, cleanOwnWord, type UnitChoice, type UnitWordState } from '../vault/unitWord'
 import { Segmented } from './controls'
 
 const CHOICES: readonly { label: string; value: UnitChoice }[] = [
-  { label: 'Note', value: 'note' },
-  { label: 'Card', value: 'card' },
-  { label: 'Doc', value: 'doc' },
   { label: 'Page', value: 'page' },
+  { label: 'Doc', value: 'doc' },
+  { label: 'Note', value: 'note' },
   { label: 'Your own word', value: 'own' },
 ]
 
 /**
- * True when the vault's word is "Card" (or an own word "card") in a vault that has note cards (YAZ-4946 D16): its
- * pages and its note cards would both be "cards". Note cards keep their name; the row says so.
+ * True when the vault's own word is "card" in a vault that has cards (YAZ-4946 D16): its pages and its cards would
+ * both be "cards". Cards keep their name; the row says so.
  */
-export const clashesWithNoteCards = (settings: UnitWordState['settings'], hasNoteCards: boolean): boolean =>
-  hasNoteCards && (settings.unit === 'card' || (settings.unit === 'own' && /^cards?$/i.test(settings.own.one.trim())))
+export const clashesWithCards = (settings: UnitWordState['settings'], hasCards: boolean): boolean => hasCards && settings.unit === 'own' && /^cards?$/i.test(settings.own.one.trim())
 
-export function UnitWordControl({ unitWord, hasNoteCards = false }: { unitWord: UnitWordState; hasNoteCards?: boolean }) {
+export function UnitWordControl({ unitWord, hasCards = false }: { unitWord: UnitWordState; hasCards?: boolean }) {
   const { settings, save } = unitWord
   const [one, setOne] = useState(settings.own.one)
   const [many, setMany] = useState(settings.own.many)
@@ -41,10 +42,10 @@ export function UnitWordControl({ unitWord, hasNoteCards = false }: { unitWord: 
   const bad = (typed: string): boolean => typed.trim() !== '' && cleanOwnWord(typed) === ''
   return (
     <>
-      <Segmented options={CHOICES} value={settings.unit} onChange={(unit) => save({ unit, own: settings.own })} ariaLabel="Call a note a" />
-      {clashesWithNoteCards(settings, hasNoteCards) && (
+      <Segmented options={CHOICES} value={settings.unit} onChange={(unit) => save({ unit, own: settings.own })} ariaLabel="Call a page a" />
+      {clashesWithCards(settings, hasCards) && (
         <p className="settings__error" role="status">
-          Pages and note cards would both be called cards.
+          Pages and cards would both be called cards.
         </p>
       )}
       {settings.unit === 'own' && (

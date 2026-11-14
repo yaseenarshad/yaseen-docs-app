@@ -170,7 +170,7 @@ describe("a folder's settings file is created on its first change (YAZ-2290 D1)"
     expect(writeFile.mock.calls[1][0].content).toContain('defaultView: Board') // the winner's bytes survive
   })
 
-  it('a missing NOTE is still an error: only the settings file is created by a write', async () => {
+  it('a missing PAGE is still an error: only the settings file is created by a write', async () => {
     readFile.mockRejectedValue(missing())
 
     await expect(writeProperty(PATH, 'status', 'done')).rejects.toBeInstanceOf(BridgeRequestError)
@@ -241,14 +241,14 @@ describe('writeRouted: one key, capitals ignored (YAZ-4769)', () => {
 
   beforeEach(() => writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 1 }))
 
-  it('a write under `Dessert Column` takes the note’s `dessert column` in the same write: renamed in place, its comment kept', async () => {
+  it('a write under `Dessert Column` takes the page’s `dessert column` in the same write: renamed in place, its comment kept', async () => {
     readFile.mockResolvedValue(file('---\nstatus: draft\n# the kind\ndessert column: Pie\ntags: []\n---\nBody\n', 100))
     await writeRouted(PATH, [{ key: 'Dessert Column', value: 'Cake' }], new Set(), undefined)
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(written()).toBe('---\nstatus: draft\n# the kind\nDessert Column: Cake\ntags: []\n---\nBody\n')
   })
 
-  it('a note holding both spellings keeps one: the column’s, with the value written; the other goes', async () => {
+  it('a page holding both spellings keeps one: the column’s, with the value written; the other goes', async () => {
     readFile.mockResolvedValue(file('---\nDessert Column: Pie\nDESSERT COLUMN: Tart\n---\n', 100))
     await writeRouted(PATH, [{ key: 'Dessert Column', value: 'Cake' }], new Set(), undefined)
     expect(written()).toBe('---\nDessert Column: Cake\n---\n')

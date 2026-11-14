@@ -4,7 +4,7 @@
  * 2 a name that starts with the text, 3 a name that holds it, 4 a word match, 5 a joined match (YAZ-3748 D2).
  * `sortLevel` orders each level by it, then by the newer row, then by the name.
  */
-import { holdsId } from '@shared/noteId'
+import { holdsId } from '@shared/pageId'
 import type { TreeNode } from '@shared/types'
 import { matchTier, readNeedle, type Needle } from '../links/completion'
 import { idQuery, type SearchCandidate } from './searchCandidates'
@@ -19,7 +19,7 @@ export function matchScore(row: Pick<SearchCandidate, 'name' | 'lower' | 'id' | 
 }
 
 /**
- * The score of each row of the cut (`trees`, its `open` folders): a note takes the best of its rows (its aliases), a
+ * The score of each row of the cut (`trees`, its `open` folders): a page takes the best of its rows (its aliases), a
  * folder the best of itself and every match inside it. A folder the cut did not open holds no match, so the walk stops there.
  */
 export function bestScores(results: readonly SearchCandidate[], query: string, trees: readonly TreeNode[], open: ReadonlySet<string>): ReadonlyMap<string, number> {

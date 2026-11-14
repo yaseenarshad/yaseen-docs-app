@@ -1,6 +1,6 @@
 /**
- * One typed field of the vault's note card review settings (YAZ-4967, D14) — on the folder input's draft + commit
- * pattern (NewNoteLocationControl): Enter or blur saves a valid draft; one the rules refuse is marked while it stands
+ * One typed field of the vault's card review settings (YAZ-4967, D14) — on the folder input's draft + commit
+ * pattern (NewPageLocationControl): Enter or blur saves a valid draft; one the rules refuse is marked while it stands
  * and gives way to the stored value on commit. The rules are `sanitizeReviewSettings`' alone — a draft is valid when
  * the sanitiser keeps it as it is — so "70 to 99 %", "whole days" and "21 weights" are said in one place. A change
  * from elsewhere (another window, a sync) resets the draft.

@@ -14,7 +14,7 @@ export interface RecordingSender {
 export interface HotkeyRecording {
   set(sender: RecordingSender, on: boolean): void
   active(): boolean
-  /** This window's flag (YAZ-3564: a drawing over a note is in front of it). */
+  /** This window's flag (YAZ-3564: a drawing over a page is in front of it). */
   has(id: number): boolean
   /** Called when `active()` changes; returns the unsubscribe. */
   onChange(listener: () => void): () => void
@@ -62,7 +62,7 @@ export function createHotkeyRecording(tell: 'any' | 'each' = 'any'): HotkeyRecor
 export const hotkeyRecording = createHotkeyRecording()
 
 /**
- * Which windows have a drawing open OVER a note (YAZ-3564 K9): the active file is the note, but the drawing is in
+ * Which windows have a drawing open OVER a page (YAZ-3564 K9): the active file is the page, but the drawing is in
  * front, so the App keys that step aside in drawings (⌘D) must step aside there too. The modal says when it opens and
  * closes (`hotkeys.drawingInFront`); a reload, crash or close ends it, as for a recorder.
  */

@@ -1,7 +1,7 @@
 /**
- * Settings › Review › Card spacing (YAZ-5050, Yaseen: "the user might want to have spacing for reviewing notecards
+ * Settings › Review › Card spacing (YAZ-5050, Yaseen: "the user might want to have spacing for reviewing cards
  * slightly different than what they want globally"): Same as pages (the default) sets nothing, so a card reads the
- * pages' Line spacing, Space between blocks, Bullet indent and Bullet gap (`noteCard.css` falls back to them); Custom
+ * pages' Line spacing, Space between blocks, Bullet indent and Bullet gap (`card.css` falls back to them); Custom
  * sets the card's own values on `.app`, for the Inbox, the card window and a card in a page. Clean (round 4) sets
  * Mochi's values (`CARD_SPACING_CLEAN`) and Mochi's look (`data-card-clean`: softer text, more room inside the Inbox
  * card, shorter lines there); Custom starts from Clean, keeps its look, and its spacing rows are yours.

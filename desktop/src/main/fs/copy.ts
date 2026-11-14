@@ -3,8 +3,8 @@ import path from 'node:path'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { BOARD_ID_KEY, BOARD_META_HEAD_BYTES, BOARD_META_KEY, boardIdOf, FORMER_IDS_KEY, parseBoardMetaBlock, serializeBoard } from '@shared/drawingAssets'
 import { isDrawing } from '@shared/fileKind'
-import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
-import { TITLE_KEY, kebabTitle, noteFileName, titleOf } from '@shared/noteName'
+import { PAGE_ID_KEY, vaultPageId } from '@shared/pageId'
+import { TITLE_KEY, kebabTitle, pageFileName, titleOf } from '@shared/pageName'
 import { FOLDER_SETTINGS_FILE, folderSettingsPath, type PasteResponse, type RenameFileResponse } from '@shared/types'
 import type { FileClip } from '../fileClip'
 import { carryFolderValues } from '../vaultIndex/idSweep'
@@ -19,11 +19,11 @@ type PastedEntry = PasteResponse['pasted'][number]
 const taken = async (dir: string, name: string): Promise<boolean> => (await stat(path.join(dir, name)).catch(() => null)) !== null
 
 /**
- * Finder's clash rule (YAZ-1674, D3): `Note.md` → `Note copy.md` → `Note copy 2.md` → …
+ * Finder's clash rule (YAZ-1674, D3): `Page.md` → `Page copy.md` → `Page copy 2.md` → …
  * The name itself is returned when nothing sits at `dir/name`. A file is split at the LAST extension
  * (`archive.tar.gz` → `archive.tar copy.gz`, exactly Finder); a folder keeps its whole name
  * (`v1.2` → `v1.2 copy`): a dot in it is no extension. A source that already ends in
- * ` copy` / ` copy N` counts on from N rather than becoming `Note copy copy.md`, which is also Finder.
+ * ` copy` / ` copy N` counts on from N rather than becoming `Page copy copy.md`, which is also Finder.
  */
 export async function freeName(dir: string, name: string, kind: 'file' | 'dir'): Promise<string> {
   return fsCall(dir, async () => {
@@ -67,9 +67,9 @@ interface Fresh {
 }
 
 /**
- * How many ids a copy of `src` takes at most: one for a note; for a folder, one for each note in
+ * How many ids a copy of `src` takes at most: one for a page; for a folder, one for each page in
  * it that the copy reaches and one for each `.folder.md` it writes — the one the user `picked`
- * gets a `.folder.md` even when it has none. A note that will not parse is counted and takes none.
+ * gets a `.folder.md` even when it has none. A page that will not parse is counted and takes none.
  */
 async function idsFor(src: string, kind: 'file' | 'dir', picked = true): Promise<number> {
   if (kind === 'file') return isMarkdown(src) ? 1 : 0
@@ -102,7 +102,7 @@ function reborn(content: string, fresh: Fresh): { properties: Record<string, unk
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
   if (error !== undefined) return
   const id = fresh.next()
-  return { properties, id, content: setFrontmatterProperty(content, NOTE_ID_KEY, id) }
+  return { properties, id, content: setFrontmatterProperty(content, PAGE_ID_KEY, id) }
 }
 
 /** A byte copy, whole and never over anything: an errno from it belongs to the TARGET (EEXIST → ALREADY_EXISTS on `to`). */
@@ -134,15 +134,15 @@ async function copyFile(src: string, to: string): Promise<void> {
 }
 
 /**
- * The note `src` born again in `dir` (YAZ-2420 🔒 D21): a fresh `id`, its title with `suffix`, and
+ * The page `src` born again in `dir` (YAZ-2420 🔒 D21): a fresh `id`, its title with `suffix`, and
  * the name built from both. Resolves to where it landed; undefined, and nothing written, for a
- * file that is no note or a note whose properties do not parse.
+ * file that is no page or a page whose properties do not parse.
  */
-async function copyNote(src: string, dir: string, fresh: Fresh, suffix = ''): Promise<string | undefined> {
+async function copyPage(src: string, dir: string, fresh: Fresh, suffix = ''): Promise<string | undefined> {
   const born = isMarkdown(src) ? reborn(await readFile(src, 'utf8'), fresh) : undefined
   if (born === undefined) return
   const title = titleOf(born.properties, path.parse(src).name) + suffix
-  const to = path.join(dir, noteFileName(title, born.id))
+  const to = path.join(dir, pageFileName(title, born.id))
   await fsCall(to, () => createDurable(to, setFrontmatterProperty(born.content, TITLE_KEY, title)))
   return to
 }
@@ -151,9 +151,9 @@ async function copyNote(src: string, dir: string, fresh: Fresh, suffix = ''): Pr
  * The folder `src` copied into `dir` (YAZ-2420 🔒 D21); resolves to where it landed. The one the
  * user `picked` is titled `<title> copy` under the kebab-case of that (`freeTitle`), and its
  * `.folder.md` is made when it has none; a folder inside it keeps its name and title. The
- * `.folder.md` comes first, holding a fresh `id`. Every note is born again under its own title, a
- * folder is copied the same way, and anything else — a hidden entry, a file that is no note —
- * comes as it is. Last, the notes carry their values for the original to the copy's id
+ * `.folder.md` comes first, holding a fresh `id`. Every page is born again under its own title, a
+ * folder is copied the same way, and anything else — a hidden entry, a file that is no page —
+ * comes as it is. Last, the pages carry their values for the original to the copy's id
  * (`carryFolderValues`, YAZ-2375 D19).
  */
 async function copyFolder(src: string, dir: string, fresh: Fresh, picked = false): Promise<string> {
@@ -168,11 +168,11 @@ async function copyFolder(src: string, dir: string, fresh: Fresh, picked = false
     if (entry.name === FOLDER_SETTINGS_FILE && born !== undefined) continue
     if (entry.isDirectory() && !isSkipped(entry.name)) await copyFolder(from, to, fresh)
     else if (!entry.isFile() || isSkipped(entry.name)) await copyBytes(from, path.join(to, entry.name))
-    else if ((await copyNote(from, to, fresh)) === undefined) await copyFile(from, path.join(to, entry.name))
+    else if ((await copyPage(from, to, fresh)) === undefined) await copyFile(from, path.join(to, entry.name))
   }
-  // The values the notes hold for the original are under its id as its file holds it.
-  const held = born?.properties[NOTE_ID_KEY]
-  if (born !== undefined && typeof held === 'string' && vaultNoteId(held, fresh.letters) !== undefined) await carryFolderValues(to, held, born.id)
+  // The values the pages hold for the original are under its id as its file holds it.
+  const held = born?.properties[PAGE_ID_KEY]
+  if (born !== undefined && typeof held === 'string' && vaultPageId(held, fresh.letters) !== undefined) await carryFolderValues(to, held, born.id)
   return to
 }
 
@@ -180,8 +180,8 @@ async function copyFolder(src: string, dir: string, fresh: Fresh, picked = false
  * Copies one entry INTO `toDir` (YAZ-1674, D4), never over anything. Copying into the entry's OWN
  * folder is Duplicate for free.
  *
- * A note and a folder are born again (YAZ-2420 🔒 D21: `copyNote`, `copyFolder`); any other file,
- * and a note whose properties do not parse, is `fs.cp` under Finder's next free name (`freeName`).
+ * A page and a folder are born again (YAZ-2420 🔒 D21: `copyPage`, `copyFolder`); any other file,
+ * and a page whose properties do not parse, is `fs.cp` under Finder's next free name (`freeName`).
  * So is every entry where the vault does not use IDs (`ids` is null, YAZ-2523 🔒 V3): the same bytes, all
  * the way down. Each fresh id is the next number of the vault the copy lands in (`ids`, its door).
  * The original keeps its id (YAZ-2293 D4, YAZ-2677 S34).
@@ -211,7 +211,7 @@ export async function copyEntry(from: unknown, toDir: unknown, ids: IdDoor | nul
     if (ids !== null) {
       const fresh = await freshFor(ids, src, kind)
       if (kind === 'dir') return { from: src, to: await copyFolder(src, dir, fresh, true), kind }
-      const copied = await copyNote(src, dir, fresh, ' copy')
+      const copied = await copyPage(src, dir, fresh, ' copy')
       if (copied !== undefined) return { from: src, to: copied, kind }
     }
     const to = path.join(dir, await freeName(dir, path.basename(src), kind))
@@ -229,7 +229,7 @@ export async function copyEntry(from: unknown, toDir: unknown, ids: IdDoor | nul
  *
  * `freeName: true` is a Paste of Finder's files (YAZ-3265 D14): a clash takes Finder's next free
  * name (`Report copy.pdf`, `freeName`) in place of the refusal; the name is still the item's own,
- * never one built from a note's title and id. A folder into itself is refused, as `copyEntry`'s is.
+ * never one built from a page's title and id. A folder into itself is refused, as `copyEntry`'s is.
  */
 export async function importCopy(from: unknown, toDir: unknown, options: { freeName?: boolean } = {}): Promise<PastedEntry> {
   const src = requireAbsPath(from, 'from')
@@ -277,7 +277,7 @@ function failureOf(from: string, err: unknown): PasteResponse['failed'][number] 
  * target itself is a whole-call failure — it must be absolute, exist and be a folder (`NOT_FOUND`
  * / `NOT_A_DIRECTORY`, attributed to it); it is never created.
  *
- * `copy` → `ops.copy(from, targetDir)` (a note or a folder under its built name, any other file
+ * `copy` → `ops.copy(from, targetDir)` (a page or a folder under its built name, any other file
  * under the next free one, D3).
  * `cut` → `ops.move(from, targetDir/basename)`: the EXISTING rename pipeline per entry, so a
  * clash is `ALREADY_EXISTS` (never overwrites) and an entry already IN the target folder is

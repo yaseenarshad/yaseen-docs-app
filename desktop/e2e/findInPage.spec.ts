@@ -1,7 +1,7 @@
 /**
  * CMD+F IN-PAGE FIND, end to end (YAZ-970, proving YAZ-962): Chrome-style find in the REAL app —
  * highlights, the N-of-M counter, Enter cycling, fold auto-reveal with the landing exception, and
- * the routing rule between the note editor and a folder's outline editor.
+ * the routing rule between the page editor and a folder's outline editor.
  *
  * The two proofs that are THE feature:
  *   1 a match hidden inside a collapsed bullet is revealed the moment the query matches it, and
@@ -11,8 +11,8 @@
  *     byte-identical, proven after a real quit (the autosave flush point).
  *
  * Routing (locked in YAZ-967, visibility amendment YAZ-970): each editor has its own bar; CMD+F
- * belongs to an outline while focus stands inside it, and to the note editor otherwise — and a
- * folder's tab (YAZ-2290) has no note editor at all, so there the outline answers from anywhere.
+ * belongs to an outline while focus stands inside it, and to the page editor otherwise — and a
+ * folder's tab (YAZ-2290) has no page editor at all, so there the outline answers from anywhere.
  *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault, nothing
  * sleeps — every wait is a locator assertion on the UI consequence.
@@ -51,7 +51,7 @@ const matches = (w: Page) => w.locator('.find-match')
 const active = (w: Page) => w.locator('.find-match--active')
 const folded = (w: Page) => w.locator('[data-outline-folded="true"]')
 
-test.describe('note page: highlights, cycling, fold reveal, untouched disk', () => {
+test.describe('page page: highlights, cycling, fold reveal, untouched disk', () => {
   let userData: string
   let vault: string
   let app: ElectronApplication
@@ -88,7 +88,7 @@ test.describe('note page: highlights, cycling, fold reveal, untouched disk', () 
     await expect(folded(win)).toHaveCount(0)
     await expect(matches(win)).toHaveCount(3)
     await expect(active(win)).toHaveText('bullet')
-    await shoot(win, 'find-note-revealed')
+    await shoot(win, 'find-page-revealed')
 
     await win.keyboard.press('Enter')
     await expect(counter(win)).toHaveText('2 of 3')
@@ -104,7 +104,7 @@ test.describe('note page: highlights, cycling, fold reveal, untouched disk', () 
     await expect(bar(win)).toHaveCount(0)
     await expect(matches(win)).toHaveCount(0)
     await expect(folded(win)).toHaveCount(0)
-    await shoot(win, 'find-note-landing-open')
+    await shoot(win, 'find-page-landing-open')
 
     // Same search again, but END on the top-level first hit: now Esc puts the fold back exactly
     // as the reader had it. Collapse by hand first (Esc's landing left it open), then reopen —
@@ -118,7 +118,7 @@ test.describe('note page: highlights, cycling, fold reveal, untouched disk', () 
     await expect(counter(win)).toHaveText('1 of 3')
     await win.keyboard.press('Escape')
     await expect(folded(win)).toHaveCount(1)
-    await shoot(win, 'find-note-fold-restored')
+    await shoot(win, 'find-page-fold-restored')
   })
 
   test(`the query also finds "${CHILD_BULLET}" case-insensitively`, async () => {
@@ -129,7 +129,7 @@ test.describe('note page: highlights, cycling, fold reveal, untouched disk', () 
     await win.keyboard.press('Escape')
   })
 
-  test('the whole session left the note byte-identical on disk (proven after a real quit)', async () => {
+  test('the whole session left the page byte-identical on disk (proven after a real quit)', async () => {
     await quitApp(app)
     expect(await md5(path.join(vault, SEED_FILE))).toBe(seedBefore)
   })
@@ -223,9 +223,9 @@ test.describe('folder tab: CMD+F belongs to the outline, the only editor it has'
     await expect(bar(win)).toHaveCount(0)
   })
 
-  test('focus outside the editor: the outline still answers — a folder’s tab HAS no note editor', async () => {
-    // A folder's tab mounts no note editor at all (YAZ-2290 D9): the views stand where a note's
-    // body would be. So there is no note bar to claim the key, and the visibility amendment
+  test('focus outside the editor: the outline still answers — a folder’s tab HAS no page editor', async () => {
+    // A folder's tab mounts no page editor at all (YAZ-2290 D9): the views stand where a page's
+    // body would be. So there is no page bar to claim the key, and the visibility amendment
     // routes CMD+F to the outline even from the sidebar. The sidebar's search bar is on the
     // Search tab only (YAZ-2638 D2), so the tab is shown first.
     await expect(win.locator('.editor-mount')).toHaveCount(0)
@@ -300,7 +300,7 @@ test.describe('the bullet thread follows the active match (YAZ-3166)', () => {
     await expect(win.locator('.outline-thread-node')).toHaveCount(4)
     await shoot(win, 'find-thread-on-match')
 
-    // A click in the note moves the caret: the thread goes back to it, and the bar stays open.
+    // A click in the page moves the caret: the thread goes back to it, and the bar stays open.
     await line(win, 'Alpha child').click()
     await expect(stopLine(win)).toHaveText('Alpha child')
     await expect(counter(win)).toHaveText('2 of 2')

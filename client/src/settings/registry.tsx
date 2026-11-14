@@ -12,11 +12,11 @@
  * in `.yaseendocs/github.json`, read and written through the engine, so its section is
  * `available` only when App hands the engine's status + setter over.
  *
- * Review (note cards, YAZ-4959 D14, YAZ-4967) is per-vault the same way: `.yaseendocs/review.json`, read and saved
+ * Review (cards, YAZ-4959 D14, YAZ-4967) is per-vault the same way: `.yaseendocs/review.json`, read and saved
  * through the vault's one `useReviewSettings`, so its section is `available` only with a vault open and
  * its rows call `review.save` — never `onChange`. Its switch is the one row while review is off.
  *
- * "Give this vault's notes IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
+ * "Give this vault's pages IDs" (YAZ-2523 🔒 V4) is per-vault too: `.yaseendocs/ids.json`, so its
  * row is `available` only with a vault open and calls `ids.set`. On asks first (YAZ-2677 🔒 D2).
  * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
@@ -24,11 +24,11 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
-import { isIdLetters } from '@shared/noteId'
+import { isIdLetters } from '@shared/pageId'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -51,14 +51,14 @@ import { IdLettersControl, KeepIdsSheet, OldIdsControl, TypedConfirmSheet, said,
 import { idsAskMessage, idsLettersAsk, keepIdsAskMessage } from './idsAskMessage'
 import { AllowedPictureFoldersControl } from './AllowedPictureFoldersControl'
 import { NewBoardPicturesControl } from './NewBoardPicturesControl'
-import { NewNoteLocationControl } from './NewNoteLocationControl'
+import { NewPageLocationControl } from './NewPageLocationControl'
 import { GoToControl } from './GoToControl'
-import { DailyNoteFolderControl, DailyNoteFormatControl } from './DailyNoteControl'
-import { dailyNoteName } from '@shared/dailyNote'
+import { DailyPageFolderControl, DailyPageFormatControl } from './DailyPageControl'
+import { dailyPageName } from '@shared/dailyPage'
 import { formatTime } from '@shared/timeFormat'
 import { CalendarDayControl } from './CalendarDayControl'
 import { TimeFormatControl } from './TimeFormatControl'
-import { DEFAULT_NEW_NOTE_TITLE, renderTitleTemplate } from '../sidebar/createEntry'
+import { DEFAULT_NEW_PAGE_TITLE, renderTitleTemplate } from '../sidebar/createEntry'
 import { capital, fillSwatch } from '../editor/table/colours'
 import { TABLE_COLORS, type TableColor } from '../editor/table/tableComment'
 import type { PlaceVault } from '../sidebar/PlacePicker'
@@ -73,7 +73,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, CARD_SPACING_OPTIONS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -198,10 +198,10 @@ function BandColourControl({ value, onChange }: { value: string; onChange: (next
 }
 
 /**
- * "Header row" (YAZ-4774): every table's header row, in a note and on a folder page. Color is a table fill colour's
+ * "Header row" (YAZ-4774): every table's header row, in a page and on a folder page. Color is a table fill colour's
  * swatch (Gray, the text colour, first), then Strength and Text. Text colour not set is each table's own; Reset brings it
  * and the rest back.
- * YAZ-4794: a live preview of a sample header row tops the controls (a note table's look: no Text colour is Full),
+ * YAZ-4794: a live preview of a sample header row tops the controls (a page table's look: no Text colour is Full),
  * each column lined up its own way, so Align's Follow column shows; then Fill colour, Strength, Weight, Text colour
  * (Muted, Full and the eight colours) and Align (Follow column, Left, Center, Right).
  */
@@ -262,27 +262,27 @@ function HeaderRowControl({ value, onChange, defaults = DEFAULT_HEADER_ROW }: { 
 }
 
 /**
- * "New item name starts with" (YAZ-4246, YAZ-4252): a text field, kept on blur or ⏎; Reset brings the Dated note's format
+ * "New item name starts with" (YAZ-4246, YAZ-4252): a text field, kept on blur or ⏎; Reset brings the Dated page's format
  * back. A name cannot hold a "/", so a draft with one is not kept and says why (YAZ-4202, the checker's nit).
  */
-function NewNoteTitleControl({ settings, onChange }: { settings: SettingsState; onChange: (next: SettingsState) => void }) {
-  const stored = settings.newNoteTitleTemplate ?? DEFAULT_NEW_NOTE_TITLE
+function NewPageTitleControl({ settings, onChange }: { settings: SettingsState; onChange: (next: SettingsState) => void }) {
+  const stored = settings.newPageTitleTemplate ?? DEFAULT_NEW_PAGE_TITLE
   const [draft, setDraft] = useState(stored)
   useEffect(() => setDraft(stored), [stored])
   const slash = draft.includes('/')
   const keep = (value: string) => {
-    if (value !== stored && !value.includes('/')) onChange({ ...settings, newNoteTitleTemplate: value })
+    if (value !== stored && !value.includes('/')) onChange({ ...settings, newPageTitleTemplate: value })
   }
   return (
     <>
-      <input className={`settings__input${slash ? ' settings__input--error' : ''}`} aria-label="New item name starts with" aria-invalid={slash} placeholder="Blank" maxLength={NEW_NOTE_TITLE_MAX} spellCheck={false}
+      <input className={`settings__input${slash ? ' settings__input--error' : ''}`} aria-label="New item name starts with" aria-invalid={slash} placeholder="Blank" maxLength={NEW_PAGE_TITLE_MAX} spellCheck={false}
         value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={() => keep(draft)}
         onKeyDown={(event) => {
           if (event.key === 'Enter') keep(draft)
         }} />
       {slash && <span className="settings__error settings__error--inline">Name cannot contain "/"</span>}
-      {stored !== DEFAULT_NEW_NOTE_TITLE && (
-        <button type="button" className="settings__option" onClick={() => onChange({ ...settings, newNoteTitleTemplate: DEFAULT_NEW_NOTE_TITLE })}>
+      {stored !== DEFAULT_NEW_PAGE_TITLE && (
+        <button type="button" className="settings__option" onClick={() => onChange({ ...settings, newPageTitleTemplate: DEFAULT_NEW_PAGE_TITLE })}>
           Reset
         </button>
       )}
@@ -322,18 +322,18 @@ export interface SettingsCtx {
   showIds?: ShowIdsState
   /** This vault's link pills look (YAZ-4924, Settings › Link pills); absent with no vault open. */
   linkPills?: LinkPillsState
-  /** What this vault calls a note (YAZ-4938); absent with no vault open, and the labels then say "note". */
+  /** What this vault calls a page (YAZ-4938); absent with no vault open, and the labels then say "page". */
   unitWord?: UnitWordState
-  /** Does this vault have note cards (YAZ-4946 D16)? The word row warns against "Card". */
-  hasNoteCards?: boolean
+  /** Does this vault have cards (YAZ-4946 D16)? The word row warns against "Card". */
+  hasCards?: boolean
   /** This vault's Read only (YAZ-4939); absent with no vault open. */
   readOnlyVault?: ReadOnlyVaultState
   /**
    * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
-   * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
+   * answer, and no answer reads as no. `held`: a page holds an ID. `ask`: what a yes would write,
    * while the answer is not yes, with the ID letters the vault already has (none: it has none
-   * yet). `set` saves the answer, and with a yes the ID letters (YAZ-2677 🔒 D2). `check` settles the notes that share an ID now, and resolves to
-   * the result in one line (🔒 D7, S55 to S57). `old`: how many notes and folders hold an old
+   * yet). `set` saves the answer, and with a yes the ID letters (YAZ-2677 🔒 D2). `check` settles the pages that share an ID now, and resolves to
+   * the result in one line (🔒 D7, S55 to S57). `old`: how many pages and folders hold an old
    * 12-character ID; `unfinished`: a run of "Give old IDs numbers" stopped with links left to change. `state` asks the main process for the letters and the counts; `reletter` is
    * "Change letters" and `backfill` "Give old IDs numbers" (🔒 D5, D6): each resolves, when the
    * change is done, to the state after it.
@@ -376,13 +376,13 @@ export interface SettingsCtx {
   hotkeyFilter?: HotkeyFilter
   /** The window's vaults for the place picker (YAZ-3556 D6), the active tab's first; absent in a window with no vault. */
   places?: readonly PlaceVault[]
-  /** Daily notes › Open template (YAZ-3607): App opens the daily notes folder's `.template.md`, made empty first when missing. Absent with no vault. */
+  /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
 }
 
 export interface SettingDef {
   id: string
-  /** A label written as a function reads live state: the vault's word for a note (YAZ-4938). */
+  /** A label written as a function reads live state: the vault's word for a page (YAZ-4938). */
   label: string | ((ctx: SettingsCtx) => string)
   /** Shown under the label; a hint written as a function reads live state (the sync repo facts). */
   hint?: string | ((ctx: SettingsCtx) => string)
@@ -405,7 +405,7 @@ export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifica
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
-  /** A title written as a function reads the vault's word for a note (YAZ-4938). */
+  /** A title written as a function reads the vault's word for a page (YAZ-4938). */
   title?: string | ((ctx: SettingsCtx) => string)
   hint?: string
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
@@ -427,7 +427,7 @@ export interface SettingsSection {
   /** A section that only exists in some contexts (sync needs the engine); absent = always. */
   available?: (ctx: SettingsCtx) => boolean
   /** One line under the section title: for the section whose settings do not live where the rest do, or one that says what the page is for (Memory, YAZ-3977). */
-  note?: string
+  page?: string
   /** The whole section is ONE vault's (YAZ-2602 R10): it names that vault where the window has two or more. */
   vault?: true
   /**
@@ -465,7 +465,7 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
   return {
     id: `sidebarIconColors.${kind}`,
     label: (ctx) => `${name(ctx)} colour`,
-    keywords: ['sidebar', 'tree', 'icon', 'icons', 'color', 'colour', 'appearance', kind === 'note' ? 'markdown' : kind, ...(kind === 'note' ? ['page'] : [])],
+    keywords: ['sidebar', 'tree', 'icon', 'icons', 'color', 'colour', 'appearance', kind === 'page' ? 'markdown' : kind, ...(kind === 'page' ? ['page'] : [])],
     available: (ctx) => iconColourShown(kind, ctx),
     render: (ctx) => (
       <Suspense fallback={null}>
@@ -476,7 +476,7 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
 }
 
 /** What the section title does not say: the feature's name, and where its cards turn up. */
-const REVIEW_KEYWORDS = ['note cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
+const REVIEW_KEYWORDS = ['cards', 'cards', 'flashcards', 'inbox', 'spaced repetition', 'fsrs', 'archive', 'archived']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
@@ -513,8 +513,8 @@ const reviewField = (id: string, field: ReviewField, label: string, hint: string
   render: ({ review }) => review && <ReviewNumberControl field={field} label={label} unit={unit} review={review} wide={wide} />,
 })
 
-/** The counts of a vault whose snapshot carries none: a yes there writes into no note and no folder. */
-const NOTHING_TO_WRITE = { notes: 0, folders: 0, foreign: 0 }
+/** The counts of a vault whose snapshot carries none: a yes there writes into no page and no folder. */
+const NOTHING_TO_WRITE = { pages: 0, folders: 0, foreign: 0 }
 
 /**
  * The box that On opens before anything is written (YAZ-2677 🔒 D2): what an ID is, what a yes would
@@ -529,7 +529,7 @@ function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNu
 }
 
 /**
- * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the main process settles the notes that share
+ * "Check for duplicates" (YAZ-2677 🔒 D7, S55 to S57): the main process settles the pages that share
  * an ID now, and its answer is the one line under the button — "No duplicates.", what was fixed, or
  * which ID another Mac must fix. Nothing runs until the click, and one check runs at a time.
  */
@@ -554,7 +554,7 @@ function DuplicatesControl({ check }: { check: () => Promise<string> }) {
  * The vault's IDs switch. Only a CHANGE writes: a click on the answer the row shows is nothing, and a
  * vault with no answer reads Off. On opens the box with the typed ID letters and writes nothing
  * before it is confirmed (YAZ-2677 🔒 D2); the letters the vault already has come with the index (`ask.letters`). Off in a vault
- * whose notes hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
+ * whose pages hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
  */
 function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
   const unit = useUnit()
@@ -570,12 +570,12 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           else if (ids.held) setAsking('off')
           else ids.set(false)
         }}
-        ariaLabel={unit("Give this vault's notes IDs")}
+        ariaLabel={unit("Give this vault's pages IDs")}
       />
       {asking === 'off' && (
         <ConfirmSheet
           labelId="confirm-ids-off-text"
-          text="This vault's notes will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
+          text="This vault's pages will show their file names, and links stored as IDs will not open, until you turn this back on. Nothing is removed."
           confirmLabel="Turn off"
           keys="contained"
           onConfirm={() => {
@@ -615,7 +615,7 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
 /** Settings › Link pills (YAZ-4924): one row, its words those of every choice it holds. */
 const LINK_PILL_WORDS = ['link', 'links', 'pill', 'pills', 'wikilink', 'look', 'style', 'vault', 'preview', 'reset', 'format', 'token', 'icon', 'id', 'folder', 'path', 'colour', 'color', 'fill', 'tint', 'strength', 'bold', 'italic', 'underline', 'size', 'muted', 'shape', 'square', 'rounded', 'box', 'brackets', 'parentheses', 'arrow', 'text', 'before', 'after']
 
-const HOVER_WORDS = ['hover', 'preview', 'note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
+const HOVER_WORDS = ['hover', 'preview', 'page', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
 
 /** Settings › Files & Links › Preview on hover (YAZ-3403): one row per place, under the master switch. */
 /** An App command's key as the user set it, for a hint (YAZ-3564: no hint hard-codes a key); null for "No key". */
@@ -630,9 +630,9 @@ const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string | ((ctx: Set
   { place: 'newTab', label: 'New tab page', keywords: ['new tab', 'start', 'page', 'recent'] },
   { place: 'tabBoard', label: 'Tab board', hint: 'Mission Control: each open tab as a card.', keywords: ['tab board', 'mission control', 'cards', 'overview'] },
   { place: 'tabs', label: 'Tabs', hint: "A tab you're not on.", keywords: ['tabs', 'tab strip', 'tab bar'] },
-  { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
+  { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a page.', keywords: ['backlinks', 'linked mentions', 'references'] },
   // Folder views' row lives in Settings › Folder pages since YAZ-4585 (D34), on the same key.
-  { place: 'links', label: (ctx) => unit(ctx, 'Links in notes'), hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
+  { place: 'links', label: (ctx) => unit(ctx, 'Links in pages'), hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
   // YAZ-3943 demo round 2: a board's link pills have their own row; YAZ-4748 D7: a diagram's too.
   { place: 'drawings', label: 'Links in drawings and diagrams', hint: 'Link pills on a board or a draw.io diagram.', keywords: ['links', 'pills', 'drawing', 'board', 'excalidraw', 'diagram', 'drawio'] },
 ]
@@ -688,14 +688,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3487 D15: blank is the default (D7); the last note is the old way (YAZ-1767 D2).
+        // YAZ-3487 D15: blank is the default (D7); the last page is the old way (YAZ-1767 D2).
         title: 'When a vault opens',
         items: [
           {
             id: 'vaultOpensOn',
             label: 'Open on',
-            hint: 'A link to a note still opens that note.',
-            keywords: ['vault', 'open', 'blank', 'last note', 'new tab', 'start'],
+            hint: 'A link to a page still opens that page.',
+            keywords: ['vault', 'open', 'blank', 'last page', 'new tab', 'start'],
             render: (ctx) => (
               <Segmented options={vaultOpensOnOptions((text) => unit(ctx, text))} value={ctx.settings.vaultOpensOn} onChange={(vaultOpensOn) => ctx.onChange({ ...ctx.settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
@@ -756,7 +756,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // the vault (D15), so the group has no `vault: true` line. App puts each vault's formatting on
         // that vault's page layers (YAZ-3067 D12).
         title: 'Text formatting',
-        hint: 'How text looks in every note of this vault.',
+        hint: 'How text looks in every page of this vault.',
         items: [
           {
             id: 'textFormatting',
@@ -769,7 +769,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // How you READ a note, like the rows above; the Editor page keeps to a note's structure (YAZ-2709).
+        // How you READ a page, like the rows above; the Editor page keeps to a page's structure (YAZ-2709).
         title: 'Comments',
         items: [
           {
@@ -791,13 +791,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-4615 D10: one line at the top of each new note, so an agent knows where comments go.
+            // YAZ-4615 D10: one line at the top of each new page, so an agent knows where comments go.
             id: 'commentsHint',
-            label: (ctx) => unit(ctx, 'Add the comment hint to new notes'),
-            hint: 'Each new note gets one hidden line that tells an agent how to add a comment.',
-            keywords: ['comment hint', 'agent', 'ai', 'new note', 'yaml'],
+            label: (ctx) => unit(ctx, 'Add the comment hint to new pages'),
+            hint: 'Each new page gets one hidden line that tells an agent how to add a comment.',
+            keywords: ['comment hint', 'agent', 'ai', 'new page', 'yaml'],
             render: (ctx) => (
-              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.commentsHint} onChange={(commentsHint) => ctx.onChange({ ...ctx.settings, commentsHint })} ariaLabel={unit(ctx, 'Add the comment hint to new notes')} />
+              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.commentsHint} onChange={(commentsHint) => ctx.onChange({ ...ctx.settings, commentsHint })} ariaLabel={unit(ctx, 'Add the comment hint to new pages')} />
             ),
           },
         ],
@@ -924,10 +924,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-3440 D4: an icon before each file's name for its kind; "Colour" leaves the notes grey, so the other kinds stand out.
+            // YAZ-3440 D4: an icon before each file's name for its kind; "Colour" leaves the pages grey, so the other kinds stand out.
             id: 'sidebarFileIcons',
             label: 'File icons',
-            hint: 'Colour leaves notes grey, so the other kinds stand out; All colour colours notes too; Grey draws every file icon grey.',
+            hint: 'Colour leaves pages grey, so the other kinds stand out; All colour colours pages too; Grey draws every file icon grey.',
             keywords: ['sidebar', 'tree', 'icon', 'icons', 'file type', 'kind', 'color', 'colour', 'folder'],
             render: ({ settings, onChange }) => (
               <Segmented options={SIDEBAR_FILE_ICONS_OPTIONS} value={settings.sidebarFileIcons} onChange={(sidebarFileIcons) => onChange({ ...settings, sidebarFileIcons })} ariaLabel="File icons in the sidebar" />
@@ -964,7 +964,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               const row = keyRow('app.goTo')
               const keep = key === null || row === undefined ? [] : ASIDE_PLACES.filter((place) => stepsAside(row, place, settings.hotkeysAside))
               const tabs = keep.map((place) => ({ drawing: 'drawings', diagram: 'diagrams', code: 'code' })[place])
-              const daily = settings.goTo.kind === 'daily' ? " Today's daily note opens, and its row shows." : ''
+              const daily = settings.goTo.kind === 'daily' ? " Today's daily page opens, and its row shows." : ''
               return `Show in sidebar (${key ?? 'no key'}, File menu) shows this tab, folder or file in the sidebar.${daily}${tabs.length > 0 ? ` In ${tabs.join(' and ').replace(/ and (?=.* and )/, ', ')}, ${key} does their own action (Settings › Hotkeys).` : ''}`
             },
             keywords: ['sidebar', 'go to', 'place', 'cmd d', 'shortcut', 'folder', 'file', 'tab', 'focus', 'favorites', 'sessions', 'recents', 'daily'],
@@ -982,7 +982,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     groups: [
       {
         // YAZ-4094: the defaults of the page cog's "Guide lines" and "Folding" (D2, F1; each page can change its own),
-        // and how the guide lines look in every note (G2, G3).
+        // and how the guide lines look in every page (G2, G3).
         title: 'Outline',
         hint: 'Lines and folding for bullets. A page can change each one in its cog.',
         items: [
@@ -1035,24 +1035,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // The YAZ-3818 demo: the note's bullets, as the cells' have their own (Settings › Tables › All tables).
-            id: 'noteBulletIndent',
+            // The YAZ-3818 demo: the page's bullets, as the cells' have their own (Settings › Tables › All tables).
+            id: 'pageBulletIndent',
             label: 'Bullet indent',
             hint: 'How far each child level steps in.',
             keywords: ['bullet', 'indent', 'spacing', 'list', 'nested', 'child', 'outline'],
             render: ({ settings, onChange }) => (
-              <PxSetting name="Bullet indent" value={settings.noteBulletIndent ?? DEFAULT_SETTINGS.noteBulletIndent} fallback={DEFAULT_SETTINGS.noteBulletIndent}
-                min={NOTE_BULLET_INDENT_MIN} max={NOTE_BULLET_INDENT_MAX} step={2} onSet={(noteBulletIndent) => onChange({ ...settings, noteBulletIndent })} />
+              <PxSetting name="Bullet indent" value={settings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent} fallback={DEFAULT_SETTINGS.pageBulletIndent}
+                min={PAGE_BULLET_INDENT_MIN} max={PAGE_BULLET_INDENT_MAX} step={2} onSet={(pageBulletIndent) => onChange({ ...settings, pageBulletIndent })} />
             ),
           },
           {
-            id: 'noteBulletGap',
+            id: 'pageBulletGap',
             label: 'Bullet gap',
             hint: 'The space between a bullet and its text; a bigger gap moves the text, not the bullet.',
             keywords: ['bullet', 'gap', 'spacing', 'list', 'text', 'outline'],
             render: ({ settings, onChange }) => (
-              <PxSetting name="Bullet gap" value={settings.noteBulletGap ?? DEFAULT_SETTINGS.noteBulletGap} fallback={DEFAULT_SETTINGS.noteBulletGap}
-                min={NOTE_BULLET_GAP_MIN} max={NOTE_BULLET_GAP_MAX} step={1} onSet={(noteBulletGap) => onChange({ ...settings, noteBulletGap })} />
+              <PxSetting name="Bullet gap" value={settings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap} fallback={DEFAULT_SETTINGS.pageBulletGap}
+                min={PAGE_BULLET_GAP_MIN} max={PAGE_BULLET_GAP_MAX} step={1} onSet={(pageBulletGap) => onChange({ ...settings, pageBulletGap })} />
             ),
           },
         ],
@@ -1109,11 +1109,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // Section indent (YAZ-2709). On or off is a switch of each note (the page cog); these rows
-        // are how it looks in every note. The purple path has no rows here: it takes the Bullet
+        // Section indent (YAZ-2709). On or off is a switch of each page (the page cog); these rows
+        // are how it looks in every page. The purple path has no rows here: it takes the Bullet
         // threading rows above (show, width, colour).
         title: 'Section indent',
-        hint: 'Text stands below its heading, with lines that show the sections. Turn it on for a note from the page cog. The purple path uses the Bullet threading settings above.',
+        hint: 'Text stands below its heading, with lines that show the sections. Turn it on for a page from the page cog. The purple path uses the Bullet threading settings above.',
         items: [
           {
             id: 'sectionStep',
@@ -1161,14 +1161,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ON_OFF_OPTIONS} value={settings.typingArrows ?? true} onChange={(typingArrows) => onChange({ ...settings, typingArrows })} ariaLabel="Arrows while typing" />
             ),
           },
-          // YAZ-3746 13AB: Enter at the end of a styled line, and the new line types in that style; notes off, boxes on.
+          // YAZ-3746 13AB: Enter at the end of a styled line, and the new line types in that style; pages off, boxes on.
           {
-            id: 'enterKeepsStyleNotes',
-            label: (ctx) => unit(ctx, 'Enter keeps the text style in notes'),
+            id: 'enterKeepsStylePages',
+            label: (ctx) => unit(ctx, 'Enter keeps the text style in pages'),
             hint: 'Press Enter at the end of a bold, italic, underlined or coloured line, and the new line types in the same style. Off: the new line starts plain.',
-            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'notes'],
+            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'pages'],
             render: (ctx) => (
-              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.enterKeepsStyleNotes ?? false} onChange={(enterKeepsStyleNotes) => ctx.onChange({ ...ctx.settings, enterKeepsStyleNotes })} ariaLabel={unit(ctx, 'Enter keeps the text style in notes')} />
+              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.enterKeepsStylePages ?? false} onChange={(enterKeepsStylePages) => ctx.onChange({ ...ctx.settings, enterKeepsStylePages })} ariaLabel={unit(ctx, 'Enter keeps the text style in pages')} />
             ),
           },
           {
@@ -1187,7 +1187,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // "Pin default" (YAZ-2700, named by YAZ-3558 D2a) is the same field the table of contents' own "Pin" and "Unpin" buttons write.
         // "Level lines" (YAZ-2762) says when the lines of its names show.
         title: 'Table of contents',
-        hint: 'The headings or the bullets of a note, at its right edge.',
+        hint: 'The headings or the bullets of a page, at its right edge.',
         items: [
           {
             id: 'tocOnByDefault',
@@ -1217,9 +1217,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-4787: what ⌘F does with folds. The find bar's fold button sets it for one note.
+        // YAZ-4787: what ⌘F does with folds. The find bar's fold button sets it for one page.
         title: 'Find',
-        hint: 'What ⌘F does with folded bullets and headings. The find bar’s fold button changes it for one note.',
+        hint: 'What ⌘F does with folded bullets and headings. The find bar’s fold button changes it for one page.',
         items: [
           {
             id: 'findFolds',
@@ -1233,10 +1233,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3704 D5: the glow on text an outside save changed in an open note. The words say "outside": the app
+        // YAZ-3704 D5: the glow on text an outside save changed in an open page. The words say "outside": the app
         // cannot tell an AI's save from a sync pull or another app.
         title: 'Outside changes',
-        hint: 'Text that an AI or another app changed in an open note.',
+        hint: 'Text that an AI or another app changed in an open page.',
         items: [
           {
             id: 'outsideChangeGlow',
@@ -1250,7 +1250,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'outsideListPinned',
             label: 'Pin default',
-            hint: 'On: the numbered list of changes sits left of the note. Off: it opens from the count. Its Pin button sets this too.',
+            hint: 'On: the numbered list of changes sits left of the page. Off: it opens from the count. Its Pin button sets this too.',
             keywords: ['ai', 'agent', 'changed', 'list', 'numbered', 'sidebar', 'pin'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.outsideListPinned} onChange={(outsideListPinned) => onChange({ ...settings, outsideListPinned })} ariaLabel="Pin default" />
@@ -1259,14 +1259,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-4783 layer 3: the width of every code block in a note. A note's cog (Code block width) and a block's own
+        // YAZ-4783 layer 3: the width of every code block in a page. A page's cog (Code block width) and a block's own
         // dragged edge win over it, so a change here moves only the blocks that follow Settings.
         title: 'Code blocks',
         items: [
           {
             id: 'codeBlockWidth',
             label: 'Width',
-            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, into the margin, never past the editor. A note's own width and a block you dragged keep theirs.",
+            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, into the margin, never past the editor. A page's own width and a block you dragged keep theirs.",
             keywords: ['code', 'code block', 'width', 'wide', 'wider', 'narrow', 'px', 'pixels', 'column'],
             render: ({ settings, onChange }) => (
               <BlockWidthSetting name="Code block width" value={settings.codeBlockWidth ?? null} start={900} onSet={(codeBlockWidth) => onChange({ ...settings, codeBlockWidth })} />
@@ -1277,7 +1277,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     ],
   },
   {
-    // YAZ-4775: the note tables' settings, a page of their own after Editor (they had grown to three groups there).
+    // YAZ-4775: the page tables' settings, a page of their own after Editor (they had grown to three groups there).
     // Each setting keeps its key; only where it shows moved. "Editor" stays a keyword, so the search finds them by it.
     id: 'tables',
     title: 'Tables',
@@ -1289,16 +1289,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         title: 'All tables',
         items: [
           {
-            // YAZ-4774: one look for both kinds of table; a note table's "Header row ›" and a folder table's View tab can say otherwise.
+            // YAZ-4774: one look for both kinds of table; a page table's "Header row ›" and a folder table's View tab can say otherwise.
             id: 'tableHeaderRow',
             label: 'Header row',
-            hint: "The first row of every table, in a note and on a folder page. Text colour not set: full in a note, muted on a folder page. A table's own menu can say otherwise.",
+            hint: "The first row of every table, in a page and on a folder page. Text colour not set: full in a page, muted on a folder page. A table's own menu can say otherwise.",
             keywords: ['header', 'header row', 'shade', 'shaded', 'tint', 'colour', 'color', 'bold', 'muted', 'first row', 'table'],
             wide: () => true,
             render: ({ settings, onChange }) => <HeaderRowControl value={settings.tableHeaderRow ?? DEFAULT_SETTINGS.tableHeaderRow} onChange={(tableHeaderRow) => onChange({ ...settings, tableHeaderRow })} />,
           },
           {
-            // YAZ-4899: the look of every note table's subheader rows ("Make subheader row"); a table's "Subheader row ›" can say otherwise.
+            // YAZ-4899: the look of every page table's subheader rows ("Make subheader row"); a table's "Subheader row ›" can say otherwise.
             id: 'tableSubheaderRow',
             label: 'Subheader row',
             hint: "A body row you make a subheader row (right-click it › Make subheader row). Stronger than the header row by default. A table's own menu can say otherwise.",
@@ -1309,39 +1309,39 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-4899 round 2: the header row stays at the top of the note while the table scrolls by (the same freeze as
+            // YAZ-4899 round 2: the header row stays at the top of the page while the table scrolls by (the same freeze as
             // "Freeze up to this row"); a table's own freeze wins.
             id: 'tableStickyHeader',
             label: 'Sticky header row',
-            hint: "The header row stays at the top of the note while the table scrolls by. A table's 6-dot menu can turn its own on or off; a table's own Freeze wins.",
+            hint: "The header row stays at the top of the page while the table scrolls by. A table's 6-dot menu can turn its own on or off; a table's own Freeze wins.",
             keywords: ['header', 'sticky', 'stick', 'pinned', 'frozen', 'freeze', 'scroll', 'table'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.tableStickyHeader ?? true} onChange={(tableStickyHeader) => onChange({ ...settings, tableStickyHeader })} ariaLabel="Sticky header row" />
             ),
           },
           {
-            // YAZ-4899: a subheader row stays at the top of the note while its section scrolls by, under any frozen rows.
+            // YAZ-4899: a subheader row stays at the top of the page while its section scrolls by, under any frozen rows.
             id: 'tableStickySubheaders',
             label: 'Sticky subheaders',
-            hint: "A subheader row stays at the top of the note while its section scrolls by, under any frozen rows. A table's 6-dot menu can turn its own on or off.",
+            hint: "A subheader row stays at the top of the page while its section scrolls by, under any frozen rows. A table's 6-dot menu can turn its own on or off.",
             keywords: ['subheader', 'sticky', 'stick', 'pinned', 'scroll', 'section', 'table'],
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.tableStickySubheaders ?? true} onChange={(tableStickySubheaders) => onChange({ ...settings, tableStickySubheaders })} ariaLabel="Sticky subheaders" />
             ),
           },
           {
-            // YAZ-4783 layer 3: the width of every note table whose columns have no widths of their own, shared evenly.
-            // A note's cog (Table width) wins; a table whose every column was dragged keeps its widths.
+            // YAZ-4783 layer 3: the width of every page table whose columns have no widths of their own, shared evenly.
+            // A page's cog (Table width) wins; a table whose every column was dragged keeps its widths.
             id: 'tableWidth',
             label: 'Width',
-            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, its columns shared evenly, into the margin, never past the editor. A note's own width and columns you dragged keep theirs.",
+            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, its columns shared evenly, into the margin, never past the editor. A page's own width and columns you dragged keep theirs.",
             keywords: ['table', 'width', 'wide', 'wider', 'narrow', 'px', 'pixels', 'column', 'columns'],
             render: ({ settings, onChange }) => (
               <BlockWidthSetting name="Table width" value={settings.tableWidth ?? null} start={1000} onSet={(tableWidth) => onChange({ ...settings, tableWidth })} />
             ),
           },
           {
-            // YAZ-4900: every note table's cells wrap or clip; a table's 6-dot menu, or a column's right-click, can say otherwise.
+            // YAZ-4900: every page table's cells wrap or clip; a table's 6-dot menu, or a column's right-click, can say otherwise.
             id: 'tableTextInCells',
             label: 'Text in cells',
             hint: "Wrap: the text goes onto more lines. Clip: one line, cut with \"…\"; hover a cut cell to read it all. A table's 6-dot menu › Text in cells, or a column's right-click › Text in this column, can say otherwise.",
@@ -1479,7 +1479,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every note. Never in the file.
+        // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every page. Never in the file.
         title: 'Calendar tables',
         items: [
           {
@@ -1567,30 +1567,30 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Files & Links',
     groups: [
       {
-        // YAZ-4246: what ⌘N's New… box makes, at the top of Files & Links: "Default location for new notes" (unchanged) and the title.
-        title: (ctx) => unit(ctx, 'New notes'),
+        // YAZ-4246: what ⌘N's New… box makes, at the top of Files & Links: "Default location for new pages" (unchanged) and the title.
+        title: (ctx) => unit(ctx, 'New pages'),
         items: [
           {
-            id: 'newNoteLocation',
-            label: (ctx) => unit(ctx, 'Default location for new notes'),
-            // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
+            id: 'newPageLocation',
+            label: (ctx) => unit(ctx, 'Default location for new pages'),
+            // YAZ-3556 D3: the New… box uses it too, for pages, drawings and diagrams.
             hint: ({ settings }) => {
               const key = menuKey('newItem', settings)
               return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
             },
             keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
             // A plain label-left / dropdown-right row, until the folder input needs the width.
-            wide: ({ settings }) => settings.newNoteLocation === 'folder',
-            render: ({ settings, onChange, places }) => <NewNoteLocationControl settings={settings} onChange={onChange} vaults={places} />,
+            wide: ({ settings }) => settings.newPageLocation === 'folder',
+            render: ({ settings, onChange, places }) => <NewPageLocationControl settings={settings} onChange={onChange} vaults={places} />,
           },
           {
             // YAZ-4246: the title the New… box starts with; the Dated items and a new [[link]] keep their own.
-            id: 'newNoteTitleTemplate',
+            id: 'newPageTitleTemplate',
             // YAZ-4252 D1: one template for the four kinds of the New… box; the key keeps its name.
             label: 'New item name starts with',
-            hint: ({ settings }) => `For the New… box: notes, drawings, diagrams and folders. {YYYY} {YY} {MM} {DD} {HH} {mm} are the date and time. Now: "${renderTitleTemplate(settings.newNoteTitleTemplate ?? DEFAULT_NEW_NOTE_TITLE)}".`,
-            keywords: ['title', 'template', 'new note', 'cmd n', 'name', 'date', 'dated', 'format', 'drawing', 'diagram'],
-            render: ({ settings, onChange }) => <NewNoteTitleControl settings={settings} onChange={onChange} />,
+            hint: ({ settings }) => `For the New… box: pages, drawings, diagrams and folders. {YYYY} {YY} {MM} {DD} {HH} {mm} are the date and time. Now: "${renderTitleTemplate(settings.newPageTitleTemplate ?? DEFAULT_NEW_PAGE_TITLE)}".`,
+            keywords: ['title', 'template', 'new page', 'cmd n', 'name', 'date', 'dated', 'format', 'drawing', 'diagram'],
+            render: ({ settings, onChange }) => <NewPageTitleControl settings={settings} onChange={onChange} />,
           },
         ],
       },
@@ -1602,7 +1602,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // actually means rather than being a bare switch.
             id: 'confirmDelete',
             label: 'Confirm before deleting',
-            hint: 'Deleted notes and folders move to the Trash either way.',
+            hint: 'Deleted pages and folders move to the Trash either way.',
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmDelete} onChange={(confirmDelete) => onChange({ ...settings, confirmDelete })} ariaLabel="Confirm before deleting" />
             ),
@@ -1610,7 +1610,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'confirmRename',
             label: 'Ask before renaming',
-            hint: 'Shows the confirmation, with the number of links that will be updated, before a note or folder is renamed.',
+            hint: 'Shows the confirmation, with the number of links that will be updated, before a page or folder is renamed.',
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.confirmRename} onChange={(confirmRename) => onChange({ ...settings, confirmRename })} ariaLabel="Ask before renaming" />
             ),
@@ -1631,7 +1631,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'New boards keep pictures',
             hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures.',
             keywords: ['pictures', 'images', 'assets', 'drawing', 'board', 'folder', 'pictures folder'],
-            // A plain row, until the chosen folder and "Choose…" need the width (the new-note folder's rule).
+            // A plain row, until the chosen folder and "Choose…" need the width (the new-page folder's rule).
             wide: ({ settings }) => settings.newBoardPictures === 'folder',
             render: ({ settings, onChange, places }) => <NewBoardPicturesControl settings={settings} onChange={onChange} vaults={places} />,
           },
@@ -1648,55 +1648,55 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-3607 D8: today's note, for the footer button, File › Open Today's Daily Note and ⌘D on "Today's daily note".
-        // One switch (`dailyNotes`); the other rows show while it is on.
-        title: 'Daily notes',
+        // YAZ-3607 D8: today's page, for the footer button, File › Open Today's Daily Page and ⌘D on "Today's daily page".
+        // One switch (`dailyPages`); the other rows show while it is on.
+        title: 'Daily pages',
         items: [
           {
-            id: 'dailyNotes',
-            label: 'Daily notes',
+            id: 'dailyPages',
+            label: 'Daily pages',
             hint: ({ settings }) => {
-              const key = menuKey('dailyNote', settings)
-              return `One note for each day. The calendar button after the % at the bottom of the sidebar opens today's note, and makes it first when today has none. So does Open Today's Daily Note${key === null ? '' : ` (${key})`} in the File menu.`
+              const key = menuKey('dailyPage', settings)
+              return `One page for each day. The calendar button after the % at the bottom of the sidebar opens today's page, and makes it first when today has none. So does Open Today's Daily Page${key === null ? '' : ` (${key})`} in the File menu.`
             },
             keywords: ['daily', 'journal', 'today', 'calendar', 'date', 'cmd d'],
-            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNotes} onChange={(dailyNotes) => onChange({ ...settings, dailyNotes })} ariaLabel="Daily notes" />,
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyPages} onChange={(dailyPages) => onChange({ ...settings, dailyPages })} ariaLabel="Daily pages" />,
           },
           {
-            id: 'dailyNoteFolder',
-            label: 'Daily notes folder',
-            hint: 'Each daily note starts from this folder\'s template, a hidden .template.md. "Open template" shows it, and makes an empty one first when there is none.',
+            id: 'dailyPageFolder',
+            label: 'Daily pages folder',
+            hint: 'Each daily page starts from this folder\'s template, a hidden .template.md. "Open template" shows it, and makes an empty one first when there is none.',
             keywords: ['daily', 'folder', 'template', 'journal'],
-            available: ({ settings }) => settings.dailyNotes,
+            available: ({ settings }) => settings.dailyPages,
             wide: () => true,
-            render: ({ settings, onChange, places, openDailyTemplate }) => <DailyNoteFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} />,
+            render: ({ settings, onChange, places, openDailyTemplate }) => <DailyPageFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} />,
           },
           {
-            id: 'dailyNoteFormat',
+            id: 'dailyPageFormat',
             label: 'Name style',
-            hint: ({ settings }) => `Today: ${dailyNoteName(settings.dailyNoteFormat, new Date())}`,
+            hint: ({ settings }) => `Today: ${dailyPageName(settings.dailyPageFormat, new Date())}`,
             keywords: ['daily', 'date', 'format', 'name'],
-            available: ({ settings }) => settings.dailyNotes,
+            available: ({ settings }) => settings.dailyPages,
             // Wide always: the label keeps its width while "Custom…" adds its field beside the dropdown.
             wide: () => true,
-            render: ({ settings, onChange }) => <DailyNoteFormatControl settings={settings} onChange={onChange} />,
+            render: ({ settings, onChange }) => <DailyPageFormatControl settings={settings} onChange={onChange} />,
           },
           {
-            id: 'dailyNoteDayFolder',
+            id: 'dailyPageDayFolder',
             label: 'Make a folder for each day',
-            hint: "Today's note goes inside a folder with the same name.",
+            hint: "Today's page goes inside a folder with the same name.",
             keywords: ['daily', 'folder', 'day'],
-            available: ({ settings }) => settings.dailyNotes,
-            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyNoteDayFolder} onChange={(dailyNoteDayFolder) => onChange({ ...settings, dailyNoteDayFolder })} ariaLabel="Make a folder for each day" />,
+            available: ({ settings }) => settings.dailyPages,
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.dailyPageDayFolder} onChange={(dailyPageDayFolder) => onChange({ ...settings, dailyPageDayFolder })} ariaLabel="Make a folder for each day" />,
           },
           {
-            // YAZ-4164 D11: the footer button, ⌘D and File › Open Today's Daily Note. A ⌘-click opens a background tab, which never scrolls.
-            id: 'dailyNoteOpens',
+            // YAZ-4164 D11: the footer button, ⌘D and File › Open Today's Daily Page. A ⌘-click opens a background tab, which never scrolls.
+            id: 'dailyPageOpens',
             label: 'The button opens',
-            hint: 'At now: the row of the current time in the note\'s first calendar table, with the caret in its first empty cell.',
+            hint: 'At now: the row of the current time in the page\'s first calendar table, with the caret in its first empty cell.',
             keywords: ['daily', 'now', 'calendar', 'time', 'today', 'cmd d', 'button'],
-            available: ({ settings }) => settings.dailyNotes,
-            render: ({ settings, onChange }) => <Segmented options={DAILY_NOTE_OPENS_OPTIONS} value={settings.dailyNoteOpens} onChange={(dailyNoteOpens) => onChange({ ...settings, dailyNoteOpens })} ariaLabel="The button opens" />,
+            available: ({ settings }) => settings.dailyPages,
+            render: ({ settings, onChange }) => <Segmented options={DAILY_PAGE_OPENS_OPTIONS} value={settings.dailyPageOpens} onChange={(dailyPageOpens) => onChange({ ...settings, dailyPageOpens })} ariaLabel="The button opens" />,
           },
         ],
       },
@@ -1706,10 +1706,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         items: [
           {
             // Draw's YAZ-1800 D2, ported by YAZ-3044 A20: the sidebar's hover preview, on by default.
-            // One switch for notes and boards (YAZ-3075 D5).
+            // One switch for pages and boards (YAZ-3075 D5).
             id: 'hoverPreview',
             label: 'Preview on hover',
-            hint: 'Rest the mouse on a note, drawing or diagram to see it. Turn single places off below.',
+            hint: 'Rest the mouse on a page, drawing or diagram to see it. Turn single places off below.',
             keywords: HOVER_WORDS,
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.hoverPreview} onChange={(hoverPreview) => onChange({ ...settings, hoverPreview })} ariaLabel="Preview on hover" />
@@ -1732,15 +1732,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         title: 'This vault',
         vault: true,
         items: [
-          // YAZ-4938: one row of its own, saved in the vault (`.yaseendocs/unit-word.json`): what this vault calls a note.
+          // YAZ-4938: one row of its own, saved in the vault (`.yaseendocs/unit-word.json`): what this vault calls a page.
           {
             id: 'unitWord',
-            label: 'Call a note a …',
-            hint: 'The word for the thing you make and open here: New card, Delete card…, 12 cards. Saved in this vault; another vault keeps its own word. Feature names like Cell note and Daily notes, and the .md files, do not change.',
-            keywords: ['note', 'card', 'doc', 'page', 'word', 'name', 'unit', 'call', 'rename', 'flavour', 'flavor'],
+            label: 'Call a page a …',
+            hint: 'The word for the thing you make and open here: New doc, Delete doc…, 12 docs. Saved in this vault; another vault keeps its own word. Feature names like Cell note and Daily pages, and the .md files, do not change.',
+            keywords: ['page', 'doc', 'note', 'word', 'name', 'unit', 'call', 'rename', 'flavour', 'flavor'],
             wide: (ctx) => ctx.unitWord?.settings.unit === 'own',
             available: (ctx) => ctx.unitWord !== undefined,
-            render: ({ unitWord, hasNoteCards }) => unitWord && <UnitWordControl unitWord={unitWord} hasNoteCards={hasNoteCards} />,
+            render: ({ unitWord, hasCards }) => unitWord && <UnitWordControl unitWord={unitWord} hasCards={hasCards} />,
           },
           // YAZ-4940: "Show IDs", three rows in one block, saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
           {
@@ -1765,7 +1765,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'showIds.title',
             label: 'Show IDs in the title',
-            hint: (ctx) => unit(ctx, 'The note\'s ID after its title, small and muted ("DNS basics  EMB-46"), in the note and in Explore. A click on it copies the ID. It is drawn, never part of the title, and never written to the note.'),
+            hint: (ctx) => unit(ctx, 'The page\'s ID after its title, small and muted ("DNS basics  EMB-46"), in the page and in Explore. A click on it copies the ID. It is drawn, never part of the title, and never written to the page.'),
             keywords: ['id', 'ids', 'title', 'heading', 'show', 'copy'],
             available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
             render: ({ showIds }) => showIds && <Segmented options={ON_OFF_OPTIONS} value={showIds.settings.title} onChange={(title) => showIds.save({ ...showIds.settings, title })} ariaLabel="Show IDs in the title" />,
@@ -1773,7 +1773,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'showIds.files',
             label: 'Show IDs in the files list',
-            hint: (ctx) => unit(ctx, 'The ID at the right end of each note\'s row in the sidebar\'s Files, Focus and Favorites, small and muted, so the IDs line up and the names stay where they are. Number shows "#12" (the letters are the same on every row; the title and search keep the full ID). A long name is cut before the ID. A folder row shows none.'),
+            hint: (ctx) => unit(ctx, 'The ID at the right end of each page\'s row in the sidebar\'s Files, Focus and Favorites, small and muted, so the IDs line up and the names stay where they are. Number shows "#12" (the letters are the same on every row; the title and search keep the full ID). A long name is cut before the ID. A folder row shows none.'),
             keywords: ['id', 'ids', 'files', 'sidebar', 'tree', 'list', 'row', 'show', 'number', 'full'],
             available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
             render: ({ showIds }) =>
@@ -1794,14 +1794,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'linkClick',
             label: 'Clicking a link',
-            hint: 'A plain click on a note pill. With Explore it opens the note as a reading layer, as ⌘⇧F does; ⌘-click and the other keys keep their doors, and a board or a folder pill keeps its click.',
+            hint: 'A plain click on a page pill. With Explore it opens the page as a reading layer, as ⌘⇧F does; ⌘-click and the other keys keep their doors, and a board or a folder pill keeps its click.',
             keywords: ['link', 'pill', 'click', 'explore', 'open', 'reading'],
             available: (ctx) => ctx.linkClick !== undefined,
             render: (ctx) =>
               ctx.linkClick && (
                 <Segmented
                   options={[
-                    { label: unit(ctx, 'Opens the note'), value: 'open' as const },
+                    { label: unit(ctx, 'Opens the page'), value: 'open' as const },
                     { label: 'Opens it in Explore', value: 'explore' as const },
                   ]}
                   value={ctx.linkClick.settings.click}
@@ -1814,22 +1814,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'readOnlyVault',
             label: 'Read only',
-            hint: 'On: every note, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your notes for it. The Read only chip offers Allow edits for 1 minute, 10 minutes or until the tab closes. Rename, Move, Delete, New and Paste ask first.',
+            hint: 'On: every page, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your pages for it. The Read only chip offers Allow edits for 1 minute, 10 minutes or until the tab closes. Rename, Move, Delete, New and Paste ask first.',
             keywords: ['read only', 'readonly', 'lock', 'locked', 'protect', 'allow edits', 'timer', 'vault'],
             available: (ctx) => ctx.readOnlyVault !== undefined,
             render: ({ readOnlyVault }) => readOnlyVault && <Segmented options={ON_OFF_OPTIONS} value={readOnlyVault.settings.on} onChange={(on) => readOnlyVault.save({ on })} ariaLabel="Read only for this vault" />,
           },
           {
             id: 'ids',
-            label: (ctx) => unit(ctx, "Give this vault's notes IDs"),
-            hint: 'Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.',
+            label: (ctx) => unit(ctx, "Give this vault's pages IDs"),
+            hint: 'Saved in this vault and synced with it. On: every page gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
             render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
           },
           {
             id: 'duplicates',
             label: 'Duplicate IDs',
-            hint: 'Two Macs that sync this vault can give two notes one ID. The app fixes that by itself; this checks now.',
+            hint: 'Two Macs that sync this vault can give two pages one ID. The app fixes that by itself; this checks now.',
             keywords: ['duplicate', 'clash', 'ids', 'check', 'fix'],
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true,
@@ -1838,7 +1838,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'idLetters',
             label: 'ID letters',
-            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a note outside this vault stays as it is.',
+            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a page outside this vault stays as it is.',
             keywords: ['letters', 'prefix', 'ids', 'rename', 'change'],
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true,
@@ -1847,7 +1847,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'oldIds',
             label: 'Old IDs',
-            hint: 'Notes from before numbers have an ID of 12 characters. It still works; this gives each one a number.',
+            hint: 'Pages from before numbers have an ID of 12 characters. It still works; this gives each one a number.',
             keywords: ['old', 'ids', 'numbers', 'backfill', 'migrate'],
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true && (ctx.ids.old > 0 || ctx.ids.unfinished),
@@ -1863,7 +1863,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'linkPills',
             label: 'Link pills',
-            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of the sample pill in the preview to style it; click its icon for the box. Every link to a page shows this way in this vault's notes, folder pages and the explore stack. The default look changes no note: it keeps its [[Name]].",
+            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of the sample pill in the preview to style it; click its icon for the box. Every link to a page shows this way in this vault's pages, folder pages and the explore stack. The default look changes no page: it keeps its [[Name]].",
             keywords: LINK_PILL_WORDS,
             wide: true,
             available: (ctx) => ctx.linkPills !== undefined,
@@ -1880,14 +1880,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Review',
     available: (ctx) => ctx.review !== undefined,
     vault: true,
-    note: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
+    page: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
     groups: [
       {
         items: [
           {
             id: 'enabled',
             label: 'Review cards',
-            hint: 'Note cards in this vault come back in the Inbox when they are due. An archived card does not: unarchive it from its ⋯ menu, or from the Inbox\'s Archived list.',
+            hint: 'Cards in this vault come back in the Inbox when they are due. An archived card does not: unarchive it from its ⋯ menu, or from the Inbox\'s Archived list.',
             keywords: REVIEW_KEYWORDS,
             render: ({ review }) => review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.enabled} onChange={(enabled) => review.save({ ...review.settings, enabled })} ariaLabel="Review cards" />,
           },
@@ -2037,14 +2037,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // starts from Clean and shows the rows.
             id: 'cardSpacing',
             label: 'Card spacing',
-            hint: 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, shorter lines. Custom starts from Clean; you set its spacing.',
+            hint: (ctx) => unit(ctx, 'How a card reads in the Inbox, the card window and the page. Same as pages follows Appearance. Clean reads as in Mochi: more room, softer text, shorter lines. Custom starts from Clean; you set its spacing.'),
             keywords: CARD_SPACING_KEYWORDS,
             available: reviewOn,
-            render: ({ settings, onChange }) => (
+            render: (ctx) => (
               <Segmented
-                options={CARD_SPACING_OPTIONS}
-                value={settings.cardSpacing}
-                onChange={(cardSpacing) => onChange(cardSpacing === 'custom' && settings.cardSpacing !== 'custom' ? { ...settings, cardSpacing, ...CARD_SPACING_CLEAN } : { ...settings, cardSpacing })}
+                options={cardSpacingOptions((text) => unit(ctx, text))}
+                value={ctx.settings.cardSpacing}
+                onChange={(cardSpacing) => ctx.onChange(cardSpacing === 'custom' && ctx.settings.cardSpacing !== 'custom' ? { ...ctx.settings, cardSpacing, ...CARD_SPACING_CLEAN } : { ...ctx.settings, cardSpacing })}
                 ariaLabel="Card spacing"
               />
             ),
@@ -2077,7 +2077,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: cardSpacingCustom,
             render: ({ settings, onChange }) => (
               <PxSetting name="Card bullet indent" value={settings.cardBulletIndent} fallback={CARD_SPACING_CLEAN.cardBulletIndent}
-                min={NOTE_BULLET_INDENT_MIN} max={NOTE_BULLET_INDENT_MAX} step={2} onSet={(cardBulletIndent) => onChange({ ...settings, cardBulletIndent })} />
+                min={PAGE_BULLET_INDENT_MIN} max={PAGE_BULLET_INDENT_MAX} step={2} onSet={(cardBulletIndent) => onChange({ ...settings, cardBulletIndent })} />
             ),
           },
           {
@@ -2088,7 +2088,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: cardSpacingCustom,
             render: ({ settings, onChange }) => (
               <PxSetting name="Card bullet gap" value={settings.cardBulletGap} fallback={CARD_SPACING_CLEAN.cardBulletGap}
-                min={NOTE_BULLET_GAP_MIN} max={NOTE_BULLET_GAP_MAX} step={1} onSet={(cardBulletGap) => onChange({ ...settings, cardBulletGap })} />
+                min={PAGE_BULLET_GAP_MIN} max={PAGE_BULLET_GAP_MAX} step={1} onSet={(cardBulletGap) => onChange({ ...settings, cardBulletGap })} />
             ),
           },
           {
@@ -2127,7 +2127,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     title: 'Sync',
     available: (ctx) => ctx.sync !== undefined,
     vault: true,
-    note: "These settings are saved in this vault's .yaseendocs folder, not app-wide.",
+    page: "These settings are saved in this vault's .yaseendocs folder, not app-wide.",
     groups: [
       {
         items: [

@@ -140,7 +140,7 @@ describe('Put back into this page', () => {
 
   it('a card file that holds more than this card is not put back (it would go to the Trash with the rest)', async () => {
     put(PAGE, 'Above.\n\n![[GEO-140]]\n')
-    put(CARD, `---\nkind: card\n---\nA note.\n\n${BLOCK}\n`)
+    put(CARD, `---\nkind: card\n---\nA page.\n\n${BLOCK}\n`)
     await expect(putCardBackIntoPage(PAGE, CARD, 'GEO-140', 'GEO-140', 0)).rejects.toBeInstanceOf(ConvertStopped)
     expect(disk.writes).toEqual([])
     expect(disk.deleted).toEqual([])

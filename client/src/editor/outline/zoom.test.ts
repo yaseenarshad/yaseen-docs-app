@@ -30,7 +30,7 @@ const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 async function mount(markdown = OUTLINE, opts: Omit<CreateCrepeOptions, 'root' | 'defaultValue'> = {}) {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, zoom: { title: () => 'Notes' }, ...opts })
+  const crepe = createCrepe({ root, defaultValue: markdown, zoom: { title: () => 'Pages' }, ...opts })
   await crepe.create()
   mounted.push({ crepe, root })
   return { crepe, root }
@@ -149,7 +149,7 @@ describe('zoom into a bullet', () => {
     expect(root.querySelector('p:not(li p)')?.classList.contains(ZOOM_HIDDEN_CLASS)).toBe(true)
     expect(itemEl(root, 'L1 a').parentElement?.classList.contains(ZOOM_ANCESTOR_CLASS)).toBe(true)
     expect(itemEl(root, 'L2 a').parentElement?.classList.contains(ZOOM_ANCESTOR_CLASS)).toBe(false)
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a', 'L2 a'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a', 'L2 a'])
     // Breadcrumbs sit before the first block.
     expect(root.querySelector('.ProseMirror')?.firstElementChild?.classList.contains(ZOOM_CRUMBS_CLASS)).toBe(true)
   })
@@ -158,7 +158,7 @@ describe('zoom into a bullet', () => {
     const long = 'A'.repeat(60)
     const { root } = await mount(`* ${long}\n  * child\n`)
     clickGlyph(root, 'child')
-    expect(crumbLabels(root)).toEqual(['Notes', `${'A'.repeat(39)}…`, 'child'])
+    expect(crumbLabels(root)).toEqual(['Pages', `${'A'.repeat(39)}…`, 'child'])
   })
 
   it('moves the caret into the zoomed item when the selection was outside', async () => {
@@ -175,14 +175,14 @@ describe('zoom into a bullet', () => {
     const { crepe, root } = await mount()
     caretIn(crepe, 'L3 b')
     expect(press(crepe, 'Mod-.')).toBe(true)
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a', 'L2 a', 'L3 b'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a', 'L2 a', 'L3 b'])
     expect(isHidden(root, 'L3 a')).toBe(true)
     expect(press(crepe, 'Mod-Shift-.')).toBe(true)
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a', 'L2 a'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a', 'L2 a'])
     expect(isHidden(root, 'L3 a')).toBe(false)
     expect(isHidden(root, 'L2 b')).toBe(true)
     expect(press(crepe, 'Mod-Shift-.')).toBe(true)
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a'])
     expect(press(crepe, 'Mod-Shift-.')).toBe(true)
     expect(zoomedPos(crepe)).toBeNull()
     expect(hiddenCount(root)).toBe(0)
@@ -210,10 +210,10 @@ describe('zoom into a bullet', () => {
     const { crepe, root } = await mount()
     clickGlyph(root, 'L3 a')
     clickCrumb(root, 'L1 a')
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a'])
     expect(isHidden(root, 'L2 b')).toBe(false)
     expect(isHidden(root, 'L1 b')).toBe(true)
-    clickCrumb(root, 'Notes')
+    clickCrumb(root, 'Pages')
     expect(zoomedPos(crepe)).toBeNull()
     expect(hiddenCount(root)).toBe(0)
   })
@@ -227,13 +227,13 @@ describe('zoom into a bullet', () => {
     caretIn(crepe, 'L1 a')
     typeText(crepe, ' more text')
     expect(zoomedPos(crepe)).toBe((before ?? 0) + ' more text'.length)
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a more text', 'L2 a'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a more text', 'L2 a'])
     // Edit INSIDE: type and add a child with Enter.
     caretIn(crepe, 'L3 b')
     typeText(crepe, '!')
     press(crepe, 'Enter')
     typeText(crepe, 'L3 c')
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a more text', 'L2 a'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a more text', 'L2 a'])
     expect(isHidden(root, 'L3 c')).toBe(false)
     expect(isHidden(root, 'L2 b')).toBe(true)
     expect(getMarkdownForSave(crepe)).toContain('    * L3 b!\n    * L3 c\n')
@@ -250,7 +250,7 @@ describe('zoom into a bullet', () => {
     expect(getMarkdownForSave(crepe)).toBe(md)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
     // Zoomed out: Shift-Tab lifts again.
-    clickCrumb(root, 'Notes')
+    clickCrumb(root, 'Pages')
     caretIn(crepe, 'L3 a')
     expect(press(crepe, 'Shift-Tab')).toBe(true)
     expect(getMarkdownForSave(crepe)).not.toBe(md)
@@ -319,21 +319,21 @@ describe('zoom into a bullet', () => {
 
 describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom goes to the tab; Back comes back quietly', () => {
   it('tells the tab each zoom change (a dot, ⌘., a crumb) with its zoom key, null for the whole page; the browser history is untouched', async () => {
-    history.replaceState(null, '', '#/vault/notes.md')
+    history.replaceState(null, '', '#/vault/pages.md')
     const onZoom = vi.fn()
     const length0 = history.length
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onZoom } })
     clickGlyph(root, 'L2 a')
     caretIn(crepe, 'L3 a')
     press(crepe, 'Mod-.')
-    clickCrumb(root, 'Notes')
+    clickCrumb(root, 'Pages')
     expect(onZoom.mock.calls).toEqual([[keyAt(crepe, 'L2 a'), false, 'L2 a'], [keyAt(crepe, 'L3 a'), false, 'L3 a'], [null, false, null]])
-    expect([history.length, location.hash]).toEqual([length0, '#/vault/notes.md'])
+    expect([history.length, location.hash]).toEqual([length0, '#/vault/pages.md'])
   })
 
   it('zoomPageTo (Back, Forward) goes to a level and tells no one; the same level is no change; a key that is gone zooms out', async () => {
     const onZoom = vi.fn()
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onZoom } })
     clickGlyph(root, 'L3 a')
     onZoom.mockClear()
     expect(zoomPageTo(crepe, keyAt(crepe, 'L2 a'))).toBe(true)
@@ -347,7 +347,7 @@ describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom 
 
   it('⌘-click opens the bullet in a new tab behind, ⇧-click in front (YAZ-3646 D10); a page with no tab zooms in place', async () => {
     const onOpen = vi.fn()
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onOpen } })
     const glyph = itemEl(root, 'L2 a').querySelector<HTMLElement>(':scope > .label-wrapper')!
     glyph.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
     glyph.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
@@ -361,13 +361,13 @@ describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom 
   it('⌘- and ⇧-click on a crumb open that level in a new tab, as on a dot; the title crumb opens the whole page (YAZ-3647 E2)', async () => {
     const onOpen = vi.fn()
     const onZoom = vi.fn()
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen, onZoom } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onOpen, onZoom } })
     clickGlyph(root, 'L3 a')
     onZoom.mockClear()
     const crumb = (label: string) => [...root.querySelectorAll<HTMLButtonElement>(`.${ZOOM_CRUMB_CLASS}`)].find((b) => b.textContent === label)!
     crumb('L1 a').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
     crumb('L2 a').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
-    crumb('Notes').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
+    crumb('Pages').dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }))
     expect(onOpen.mock.calls).toEqual([[keyAt(crepe, 'L1 a'), true, 'L1 a'], [keyAt(crepe, 'L2 a'), false, 'L2 a'], [null, true, null]])
     // This page stays where it was; a plain click still zooms here.
     expect([zoomedPos(crepe), onZoom.mock.calls.length]).toEqual([posOf(crepe, 'L3 a') - 2, 0])
@@ -378,7 +378,7 @@ describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom 
   it('a dot and a crumb read the "Bullet dots" gestures at the click (YAZ-3936): swapped bindings swap what they do; a click no row has is the editor\'s', async () => {
     const onOpen = vi.fn()
     let hotkeys: Record<string, string | null> = {}
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen, hotkeys: () => hotkeys } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onOpen, hotkeys: () => hotkeys } })
     const glyph = itemEl(root, 'L2 a').querySelector<HTMLElement>(':scope > .label-wrapper')!
     const click = (el: HTMLElement, init: MouseEventInit = {}) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }))
     // ⌘-click zooms in, a plain click opens behind, ⇧-click is no row's.
@@ -392,15 +392,15 @@ describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom 
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
     // A crumb follows them too; any other click on a crumb zooms.
     const crumb = (label: string) => [...root.querySelectorAll<HTMLButtonElement>(`.${ZOOM_CRUMB_CLASS}`)].find((b) => b.textContent === label)!
-    click(crumb('Notes'))
+    click(crumb('Pages'))
     expect(onOpen.mock.calls.at(-1)).toEqual([null, true, null])
-    click(crumb('Notes'), { shiftKey: true })
+    click(crumb('Pages'), { shiftKey: true })
     expect(zoomedPos(crepe)).toBeNull()
   })
 
   it('⇧-click on a bullet\'s text extends the selection and opens no tab: only the dot opens one (YAZ-3647 E5)', async () => {
     const onOpen = vi.fn()
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onOpen } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onOpen } })
     const text = itemEl(root, 'L2 a').querySelector<HTMLElement>(':scope > .children > .content-dom > p')!
     for (const init of [{ shiftKey: true }, { metaKey: true }]) text.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, ...init }))
     expect(onOpen).not.toHaveBeenCalled()
@@ -411,7 +411,7 @@ describe('the window\'s Back list (YAZ-3647 D2, replaces GRO-2091 A): each zoom 
 
   it('the zoomed bullet\'s new key goes to the tab quietly, once typing stops (YAZ-3646 D14)', async () => {
     const onZoom = vi.fn()
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onZoom } })
     clickGlyph(root, 'L2 a')
     onZoom.mockClear()
     vi.useFakeTimers()
@@ -477,7 +477,7 @@ describe('Mod-z reverts the latest zoom; folds and zooms share one latest-view-a
 
   it('reverts the latest zoom change once (single step), and the revert is a Back step too', async () => {
     const onZoom = vi.fn()
-    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
+    const { crepe, root } = await mount(OUTLINE, { zoom: { title: () => 'Pages', onZoom } })
     clickGlyph(root, 'L2 a')
     clickGlyph(root, 'L3 a')
     expect(press(crepe, 'Mod-z')).toBe(true)
@@ -541,13 +541,13 @@ describe('a page starts drilled in from a page view (YAZ-2951 D1, S1, S7, S21, S
     if (key === null) throw new Error(`no key for "${text}"`)
     return key
   }
-  const startAt = (startKey: string | null, onZoom = vi.fn()) => mount(OUTLINE, { zoom: { title: () => 'Notes', startKey, onZoom } })
+  const startAt = (startKey: string | null, onZoom = vi.fn()) => mount(OUTLINE, { zoom: { title: () => 'Pages', startKey, onZoom } })
 
   it('starts drilled into the start key: crumbs drawn, getZoomKeyOf says it back', async () => {
     const key = await keyOf('L2 a')
     const { crepe, root } = await startAt(key)
     expect(zoomedPos(crepe)).toBe(posOf(crepe, 'L2 a') - 2)
-    expect(crumbLabels(root)).toEqual(['Notes', 'L1 a', 'L2 a'])
+    expect(crumbLabels(root)).toEqual(['Pages', 'L1 a', 'L2 a'])
     expect(isHidden(root, 'L1 b')).toBe(true)
     expect(getZoomKeyOf(crepe)).toBe(key)
   })
@@ -618,7 +618,7 @@ describe('a renamed bullet\'s key reaches its steps when the level changes or th
     const dispatch = (a: WorkspaceAction) => (w.s = workspaceReducer(w.s, a))
     const onZoom = (zoom: string | null, quiet: boolean, _label: string | null, from?: string | null) =>
       dispatch({ type: 'zoom', id, zoom, ...(quiet ? { quiet: true as const } : {}), ...(from === undefined ? {} : { from: { path: A, key: from } }) })
-    const page = await mount(OUTLINE, { zoom: { title: () => 'Notes', onZoom } })
+    const page = await mount(OUTLINE, { zoom: { title: () => 'Pages', onZoom } })
     return { w, id, dispatch, onZoom, ...page }
   }
   const follow = (crepe: Crepe, w: { s: WorkspaceState }, id: string) => zoomPageTo(crepe, tabById(w.s, id)!.zoom ?? null)
@@ -657,13 +657,13 @@ describe('a renamed bullet\'s key reaches its steps when the level changes or th
     await old.crepe.destroy()
     old.root.remove()
     dispatch({ type: 'back' })
-    const again = await mount(text, { zoom: { title: () => 'Notes', startKey: tabById(w.s, id)!.zoom ?? null } })
+    const again = await mount(text, { zoom: { title: () => 'Pages', startKey: tabById(w.s, id)!.zoom ?? null } })
     expect(tabById(w.s, id)!.zoom).toBe(keyAt(again.crepe, 'L2 aX'))
     expect(zoomedPos(again.crepe)).toBe(posOf(again.crepe, 'L2 aX') - 2)
   })
 })
 
-describe('the crumbs and the labels name a bullet\'s links as the note shows them (YAZ-3744 D6)', () => {
+describe('the crumbs and the labels name a bullet\'s links as the page shows them (YAZ-3744 D6)', () => {
   const ID = 'k3m9x2pq7abc'
   const md = `* [[${ID}]]\n  * AR\n    * Confirm value pairs\n`
 

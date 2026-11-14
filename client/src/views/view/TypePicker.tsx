@@ -11,7 +11,7 @@ export interface PickerOption<T extends string> {
 }
 
 /**
- * The column editor's Type picker (YAZ-3746 13L), for any short list of choices (C8A: the note's "Column"): a quiet button
+ * The column editor's Type picker (YAZ-3746 13L), for any short list of choices (C8A: the page's "Column"): a quiet button
  * with the choice's icon, and under the row a list of every choice with its icon, name and one line on what it does, the
  * current one ticked. ↑ ↓ move, Enter picks, Esc closes the list alone (the editor's own Esc waits for the next press).
  * `value` undefined: `empty` ("Auto").
@@ -26,7 +26,7 @@ export function MenuPicker<T extends string>({ value, options, menuLabel, trigge
   lead?: string
   /** Each choice's line UNDER its name (YAZ-4769): a long name ("YAZ-4713 Columns flow down") never cuts its line. */
   stacked?: boolean
-  /** A search box on top of the list (YAZ-4795 demo: "Notes from" lists every folder): typing keeps the choices whose name or line has it. */
+  /** A search box on top of the list (YAZ-4795 demo: "Pages from" lists every folder): typing keeps the choices whose name or line has it. */
   search?: boolean
   onPick: (next: T) => void
 }) {
@@ -135,7 +135,7 @@ export function MenuPicker<T extends string>({ value, options, menuLabel, trigge
   )
 }
 
-/** The column editor's Type (YAZ-3746 13L) on `MenuPicker`. `kinds`: the types offered (a note's panel has no Linked mentions, C8A). */
+/** The column editor's Type (YAZ-3746 13L) on `MenuPicker`. `kinds`: the types offered (a page's panel has no Linked mentions, C8A). */
 export function TypePicker({ kind, label, kinds = PROPERTY_KINDS, onPick }: { kind: PropertyKind | undefined; label: string; kinds?: readonly PropertyKind[]; onPick: (next: PropertyKind) => void }) {
   return (
     <MenuPicker

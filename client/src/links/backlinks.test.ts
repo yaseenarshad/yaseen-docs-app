@@ -40,7 +40,7 @@ const rec = (path: string, { links = [], embeds = [], aliases = [] }: RecInit = 
   }
 }
 
-/** No snapshot's titles: an id link reads as its note's file name. */
+/** No snapshot's titles: an id link reads as its page's file name. */
 const NO_TITLES = pathTitles([], [])
 
 /** The resolve function the app feeds the section — `resolverFor` unwrapped to a path (bridge idiom). */
@@ -52,7 +52,7 @@ const resolverOver = (records: readonly IndexRecord[]): ResolveLink => {
 const B = '/vault/B.md'
 
 describe('backlinksFor (Links D, GRO-2193)', () => {
-  it('collects the notes whose links resolve to the open note, and only those', () => {
+  it('collects the pages whose links resolve to the open page, and only those', () => {
     const records = [rec('/vault/A.md', { links: ['B'] }), rec(B, {}), rec('/vault/C.md', { links: ['Elsewhere'] })]
     expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
@@ -81,12 +81,12 @@ describe('backlinksFor (Links D, GRO-2193)', () => {
     expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
-  it('never lists the open note itself, even when it links to itself', () => {
+  it('never lists the open page itself, even when it links to itself', () => {
     const records = [rec('/vault/A.md', { links: ['B'] }), rec(B, { links: ['B'] })]
     expect(backlinksFor(B, records, resolverOver(records), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
-  it('one entry per referencing note, whatever the number of mentions it holds', () => {
+  it('one entry per referencing page, whatever the number of mentions it holds', () => {
     const records = [rec('/vault/A.md', { links: ['B', 'b', 'B.md'], embeds: ['B'] }), rec(B, {})]
     expect(backlinksFor(B, records, resolverOver(records), [])).toHaveLength(1)
   })
@@ -134,13 +134,13 @@ describe('links from FOLDER pages: a folder\'s Page and settings mention what th
   const DIRS = ['/vault/Areas', '/vault/Projects', TEAM, '/vault/Work']
   /** The settings record of the folder at `dir`, holding `folder_settings`. */
   const settings = (dir: string, folder_settings: Record<string, unknown>): IndexRecord => ({ ...rec(`${dir}/.folder.md`), properties: { folder_settings } })
-  /** The record of a folder whose Page (its `.folder.md` body, YAZ-4584 D40) links `links`, as the index reads a note's. */
+  /** The record of a folder whose Page (its `.folder.md` body, YAZ-4584 D40) links `links`, as the index reads a page's. */
   const page = (dir: string, links: string[]): IndexRecord => rec(`${dir}/.folder.md`, { links })
-  const NOTES = [rec('/vault/A.md', { links: ['B'] }), { ...rec(B), id: ID }, rec('/vault/Work/Plan.md', { links: ['Team'] })]
-  const mentions = (path: string, folders: IndexRecord[], records = NOTES) =>
+  const PAGES = [rec('/vault/A.md', { links: ['B'] }), { ...rec(B), id: ID }, rec('/vault/Work/Plan.md', { links: ['Team'] })]
+  const mentions = (path: string, folders: IndexRecord[], records = PAGES) =>
     backlinksFor(path, records, linkResolver(records, '/vault', DIRS, folders), folders).map((r) => r.path)
 
-  it('a folder\'s Page has a link to a note: that note\'s Linked mentions lists the folder (D40)', () => {
+  it('a folder\'s Page has a link to a page: that page\'s Linked mentions lists the folder (D40)', () => {
     expect(mentions(B, [page('/vault/Projects', [ID])])).toEqual(['/vault/A.md', '/vault/Projects/.folder.md'])
     expect(mentions(B, [page('/vault/Projects', ['B'])])).toEqual(['/vault/A.md', '/vault/Projects/.folder.md'])
   })
@@ -155,7 +155,7 @@ describe('links from FOLDER pages: a folder\'s Page and settings mention what th
     expect(mentions(B, [column, order])).toEqual(['/vault/A.md', '/vault/Areas/.folder.md', '/vault/Projects/.folder.md'])
   })
 
-  it('a folder\'s own link property (`owner: "[[B]]"` in its `.folder.md`) is a mention, as a note\'s is', () => {
+  it('a folder\'s own link property (`owner: "[[B]]"` in its `.folder.md`) is a mention, as a page\'s is', () => {
     expect(mentions(B, [rec('/vault/Team/.folder.md', { links: ['B'] })])).toEqual(['/vault/A.md', '/vault/Team/.folder.md'])
   })
 
@@ -164,13 +164,13 @@ describe('links from FOLDER pages: a folder\'s Page and settings mention what th
     expect(mentions(B, [keys, settings('/vault/Projects', {}), rec('/vault/Work/.folder.md')])).toEqual(['/vault/A.md'])
   })
 
-  it('a folder whose Page links to itself is not listed, as a note never lists itself', () => {
+  it('a folder whose Page links to itself is not listed, as a page never lists itself', () => {
     expect(mentions(TEAM, [page(TEAM, ['Team'])])).toEqual(['/vault/Work/Plan.md'])
     // Its links to OTHER pages still count.
     expect(mentions(B, [page(TEAM, ['Team', 'B'])])).toEqual(['/vault/A.md', '/vault/Team/.folder.md'])
   })
 
-  it('one entry per referencing note or folder, path-sorted — a folder by its settings file\'s path', () => {
+  it('one entry per referencing page or folder, path-sorted — a folder by its settings file\'s path', () => {
     const many = { ...settings('/vault/Work', { columns: { owner: { kind: 'link', target: '[[B]]' } }, views: [{ type: 'page', name: 'Page', order: ['[[B]]'] }] }), links: ['B', 'B'] }
     const records = [rec('/vault/Work/Zed.md', { links: ['B'] }), rec('/vault/A.md', { links: ['B'] }), rec(B), rec('/vault/Work.md', { links: ['B'] })]
     expect(mentions(B, [many, page('/vault/Areas', ['B'])], records)).toEqual([
@@ -184,10 +184,10 @@ describe('links from FOLDER pages: a folder\'s Page and settings mention what th
 })
 
 /**
- * The reverse map (YAZ-4738 L5) replaced a pass over every note for each note asked about. The old pass is kept here
+ * The reverse map (YAZ-4738 L5) replaced a pass over every page for each page asked about. The old pass is kept here
  * as the oracle: for every page of a mixed vault, the map answers what it answered.
  */
-describe('the reverse map answers what the per-note pass did (YAZ-4738 L5)', () => {
+describe('the reverse map answers what the per-page pass did (YAZ-4738 L5)', () => {
   const dirOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
   /** The pass `backlinksFor` ran before the map, verbatim. */
   const referencing = (path: string, records: readonly IndexRecord[], folders: readonly IndexRecord[], resolve: ResolveLink): IndexRecord[] => {
@@ -198,7 +198,7 @@ describe('the reverse map answers what the per-note pass did (YAZ-4738 L5)', () 
     ].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
   }
 
-  it('the same notes and folders, in the same order, for every note and folder of a small vault', () => {
+  it('the same pages and folders, in the same order, for every page and folder of a small vault', () => {
     const records = [
       rec('/vault/A.md', { links: ['B', 'b', 'Sub/Deep'], embeds: ['C'] }),
       rec(B, { links: ['B', 'CAC', 'Team'] }),
@@ -298,15 +298,15 @@ describe('mentionSnippets (Links D, GRO-2193; display text + line grouping FN9/F
   })
 
   it('a short line keeps its whole text and gets no ellipsis', () => {
-    const [snippet] = mentionSnippets('   * [[B]] note   \n', B, resolve, NO_TITLES)
-    expect(snippet.text).toBe('* B note')
+    const [snippet] = mentionSnippets('   * [[B]] page   \n', B, resolve, NO_TITLES)
+    expect(snippet.text).toBe('* B page')
   })
 
-  it('mentions of another note, same-file `[[#heading]]` links and plain text yield nothing', () => {
+  it('mentions of another page, same-file `[[#heading]]` links and plain text yield nothing', () => {
     expect(mentionSnippets('[[Elsewhere]] and [[#top]] and words\n', B, resolve, NO_TITLES)).toEqual([])
   })
 
-  it('caps the snippet LINES per note (the section stays quiet on link-heavy notes)', () => {
+  it('caps the snippet LINES per page (the section stays quiet on link-heavy pages)', () => {
     const content = Array.from({ length: MAX_SNIPPETS + 3 }, (_, i) => `line ${i} [[B]]`).join('\n')
     expect(mentionSnippets(content, B, resolve, NO_TITLES)).toHaveLength(MAX_SNIPPETS)
   })
@@ -324,17 +324,17 @@ describe('id links (YAZ-2293): a mention by id, read as the title', () => {
   const resolve = resolverOver(records)
   const marked = (s: MentionSnippet): string[] => s.ranges.map((r) => s.text.slice(r.from, r.to))
 
-  it('a note linking by id is a linked mention of the note that id names', () => {
+  it('a page linking by id is a linked mention of the page that id names', () => {
     expect(backlinksFor(ROAD, records, resolve, []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
 
-  it('the snippet shows the note\'s current TITLE where the editor does — heading form and hand-typed label included', () => {
+  it('the snippet shows the page\'s current TITLE where the editor does — heading form and hand-typed label included', () => {
     const [snippet] = mentionSnippets(`See [[${ID}]], [[${ID}#Scope]] and [[${ID}|the plan]].\n`, ROAD, resolve, NO_TITLES)
     expect(snippet.text).toBe('See Road Map, Road Map > Scope and the plan.')
     expect(marked(snippet)).toEqual(['Road Map', 'Road Map > Scope', 'the plan'])
   })
 
-  it('E: the snippet shows the title the note\'s record holds, not its file name (YAZ-2420 D14)', () => {
+  it('E: the snippet shows the title the page\'s record holds, not its file name (YAZ-2420 D14)', () => {
     const titled = [{ ...rec('/vault/Projects/up-001-abdul-k3m9x2pq7abc.md'), id: ID, title: 'UP-001 - Abdul' }]
     const [snippet] = mentionSnippets(`See [[${ID}#Scope]].\n`, titled[0].path, resolverOver(titled), pathTitles(titled, []))
     expect(snippet.text).toBe('See UP-001 - Abdul > Scope.')
@@ -350,7 +350,7 @@ describe('id links (YAZ-2293): a mention by id, read as the title', () => {
     expect(mentionSnippets(content, ROAD, over, NO_TITLES).map((s) => s.text)).toEqual(['owner: "Road Map"'])
   })
 
-  it('an id no note has reads as the raw id, as the editor shows it', () => {
+  it('an id no page has reads as the raw id, as the editor shows it', () => {
     const [snippet] = mentionSnippets(`gone [[zzzzzzzzzzz9]] but [[${ID}]]\n`, ROAD, resolve, NO_TITLES)
     expect(snippet.text).toBe('gone zzzzzzzzzzz9 but Road Map')
     expect(marked(snippet)).toEqual(['Road Map'])
@@ -373,7 +373,7 @@ describe('the cell notes\' syntax reads as text (YAZ-3818, round 3 of the demo)'
     expect(shown(ordered!)).toEqual(['B'])
   })
 
-  it('a cell note\'s first line reads "Cell note: …", its next lines know their note; a hand-written footnote and other HTML stay', () => {
+  it('a cell note\'s first line reads "Cell note: …", its next lines know their page; a hand-written footnote and other HTML stay', () => {
     const file = '| a |\n| - |\n| x[^cell-13] |\n\n[^cell-13]: see [[B]]\n\n    * and [[B]]\n\n[^1]: <b>[[B]]</b>\n'
     const snippets = mentionSnippets(file, B, resolve, NO)
     expect(snippets.map((s) => [s.text, s.cellNote])).toEqual([
@@ -386,27 +386,27 @@ describe('the cell notes\' syntax reads as text (YAZ-3818, round 3 of the demo)'
 })
 
 /**
- * YAZ-4954: the index keeps both page sides of `[[Covid notes|COVID-19]]` (`Covid notes|COVID-19`, `scan.test.ts`), as
- * only a reader that knows the notes can pick. Linked mentions pick as the editor does: the left side when it is a page.
+ * YAZ-4954: the index keeps both page sides of `[[Covid pages|COVID-19]]` (`Covid pages|COVID-19`, `scan.test.ts`), as
+ * only a reader that knows the pages can pick. Linked mentions pick as the editor does: the left side when it is a page.
  */
 describe('words that only LOOK like an ID (YAZ-4954): Linked mentions agree with the editor', () => {
-  const COVID = '/vault/Covid notes.md'
-  const ID_NOTE = '/vault/COVID-19.md'
-  const words = rec('/vault/A.md', { links: ['Covid notes|COVID-19'] })
+  const COVID = '/vault/Covid pages.md'
+  const ID_PAGE = '/vault/COVID-19.md'
+  const words = rec('/vault/A.md', { links: ['Covid pages|COVID-19'] })
   const idFirst = rec('/vault/B.md', { links: ['COVID-19'] })
   const window = (records: IndexRecord[], dirs: string[] = []) => linkResolver(records, '/vault', dirs, [])
 
-  it('both notes exist: "Covid notes" lists the words-first link, COVID-19 lists the ID-first one', () => {
-    const records = [words, idFirst, rec(COVID), rec(ID_NOTE)]
+  it('both pages exist: "Covid pages" lists the words-first link, COVID-19 lists the ID-first one', () => {
+    const records = [words, idFirst, rec(COVID), rec(ID_PAGE)]
     for (const resolve of [window(records), resolverOver(records)]) {
       expect(backlinksFor(COVID, records, resolve, []).map((r) => r.path)).toEqual(['/vault/A.md'])
-      expect(backlinksFor(ID_NOTE, records, resolve, []).map((r) => r.path)).toEqual(['/vault/B.md'])
+      expect(backlinksFor(ID_PAGE, records, resolve, []).map((r) => r.path)).toEqual(['/vault/B.md'])
     }
   })
 
   it('only one side is a page: that side', () => {
-    const idOnly = [words, rec(ID_NOTE)]
-    expect(backlinksFor(ID_NOTE, idOnly, window(idOnly), []).map((r) => r.path)).toEqual(['/vault/A.md'])
+    const idOnly = [words, rec(ID_PAGE)]
+    expect(backlinksFor(ID_PAGE, idOnly, window(idOnly), []).map((r) => r.path)).toEqual(['/vault/A.md'])
     const nameOnly = [words, rec(COVID)]
     expect(backlinksFor(COVID, nameOnly, window(nameOnly), []).map((r) => r.path)).toEqual(['/vault/A.md'])
   })
@@ -419,18 +419,18 @@ describe('words that only LOOK like an ID (YAZ-4954): Linked mentions agree with
     // One map per resolver: a new resolver for each set of folders, as the app makes one when they change.
     const listed = (page: string, records: IndexRecord[], folder: IndexRecord) =>
       backlinksFor(page, records, window(records, ['/vault/Team']), [folder]).map((r) => r.path)
-    const both = [rec(COVID), rec(ID_NOTE)]
-    const wordsFirst = leaf('[[Covid notes|COVID-19]]', '[[Covid notes|COVID-19]]')
+    const both = [rec(COVID), rec(ID_PAGE)]
+    const wordsFirst = leaf('[[Covid pages|COVID-19]]', '[[Covid pages|COVID-19]]')
     expect(listed(COVID, both, wordsFirst)).toEqual(['/vault/Team/.folder.md'])
-    expect(listed(ID_NOTE, both, wordsFirst)).toEqual([])
-    expect(listed(ID_NOTE, both, leaf('[[COVID-19|Covid notes]]', '[[COVID-19|Covid notes]]'))).toEqual(['/vault/Team/.folder.md'])
-    expect(listed(ID_NOTE, [rec(ID_NOTE)], leaf('[[Covid notes|COVID-19]]', '[[x]]'))).toEqual(['/vault/Team/.folder.md'])
+    expect(listed(ID_PAGE, both, wordsFirst)).toEqual([])
+    expect(listed(ID_PAGE, both, leaf('[[COVID-19|Covid pages]]', '[[COVID-19|Covid pages]]'))).toEqual(['/vault/Team/.folder.md'])
+    expect(listed(ID_PAGE, [rec(ID_PAGE)], leaf('[[Covid pages|COVID-19]]', '[[x]]'))).toEqual(['/vault/Team/.folder.md'])
   })
 
   it('the left side is a FOLDER: the window picks it, as the editor\'s pill does', () => {
-    const records = [words, rec(ID_NOTE)]
-    const resolve = window(records, ['/vault/Covid notes'])
-    expect(resolve('Covid notes|COVID-19')).toBe('/vault/Covid notes')
-    expect(backlinksFor(ID_NOTE, records, resolve, [])).toEqual([])
+    const records = [words, rec(ID_PAGE)]
+    const resolve = window(records, ['/vault/Covid pages'])
+    expect(resolve('Covid pages|COVID-19')).toBe('/vault/Covid pages')
+    expect(backlinksFor(ID_PAGE, records, resolve, [])).toEqual([])
   })
 })

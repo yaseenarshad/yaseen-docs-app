@@ -44,7 +44,7 @@
  * without them, so the bytes cross the bridge once (🔒 YAZ-2073 D7); opening it writes nothing — and
  * a "pictures out" board SHRINKS on its next save:
  * `liftEmbedded` takes the referenced bytes out of the scene and `landAssets` writes them into the
- * store, then the scene is written lean. A note embed's sidecar (YAZ-852) keeps its pictures inside
+ * store, then the scene is written lean. A page embed's sidecar (YAZ-852) keeps its pictures inside
  * as it always has.
  *
  * ASSETS FIRST, THEN THE SCENE. A scene on disk must never name bytes that are not there, so
@@ -71,7 +71,7 @@ import path from 'node:path'
 import type { DrawingFileEntry, DrawingLoadResponse, DrawingNewFile, DrawingSaveResponse } from '@shared/types'
 import { isRecord } from '@shared/guards'
 import { assetFileName, BOARD_META_HEAD_BYTES, createdOf, extForMime, fileIdOfAssetName, isValidFileId, mimeForAssetExt, parseBoardMetaBlock, parseDataUrl, PICTURES_INSIDE_MAX_BYTES, PICTURES_KEY, PICTURES_OUT, picturesFolderOf, picturesOut, referencedFileIds, serializeBoard, stampBoardMetaScene, BOARD_ID_KEY, boardIdOf, withSwitchTime, stripEmbeddedScene, type BoardMetaBlock, type EmbeddedFile } from '@shared/drawingAssets'
-import { vaultNoteId } from '@shared/noteId'
+import { vaultPageId } from '@shared/pageId'
 import { boardIdKeeper } from '../vaultIndex/live'
 import { mintIds, vaultIds } from '../vaultIndex/mint'
 import { BOARDS, boardTarget, guardedStamp } from './boardDocument'
@@ -217,14 +217,14 @@ async function readCurrent(file: string): Promise<{ head: BoardHead; data: Buffe
 
 /**
  * The ID a save gives the board (YAZ-3943 4C), or undefined: the vault does not give IDs, or the block holds an ID of
- * this vault already. An ID of another vault, or another tool's, is none, as a note's is (YAZ-2420 D30): the vault's
- * door gives a new one. The door is the note's (`mintIds`), so a board and a note never share a number.
+ * this vault already. An ID of another vault, or another tool's, is none, as a page's is (YAZ-2420 D30): the vault's
+ * door gives a new one. The door is the page's (`mintIds`), so a board and a page never share a number.
  * YAZ-4129 6B3: an ID that another board keeps (a Finder copy's, `boardIdKeeper`) is none for this one either.
  */
 async function boardIdToGive(root: string, file: string, block: BoardMetaBlock | null | undefined): Promise<string | undefined> {
   const { answer, letters } = await vaultIds(root)
   if (answer !== true) return undefined
-  const held = vaultNoteId(boardIdOf(block), letters)
+  const held = vaultPageId(boardIdOf(block), letters)
   if (held !== undefined) {
     const keeper = await boardIdKeeper(root, boardIdOf(block)!)
     if (keeper === undefined || keeper === file) return undefined

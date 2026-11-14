@@ -1,6 +1,6 @@
 /**
  * `board:set-read-only` (YAZ-3076 D1): the human's read-only switch, written IN a drawing or a
- * diagram (`shared/readOnly.ts`), so it moves with the file. A note's switch is a frontmatter key and
+ * diagram (`shared/readOnly.ts`), so it moves with the file. A page's switch is a frontmatter key and
  * goes through `transformFile` like any property; a board has no such door, so it gets this one.
  *
  * ONE READ, ONE WRITE (S17). The board doors' bounded read gives the bytes and the mtime in one
@@ -31,7 +31,7 @@ export function boardKindOf(raw: unknown): BoardKind {
   if (kind === 'drawing' || kind === 'diagram') return kind
   // A missing or empty path is `boardTarget`'s BAD_REQUEST, which comes first.
   if (typeof rel !== 'string' || rel.trim() === '') return 'drawing'
-  throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .excalidraw and .drawio files have this read-only switch; a note keeps it in its frontmatter', { path: rel })
+  throw new BridgeFailure('UNSUPPORTED_EXTENSION', 'only .excalidraw and .drawio files have this read-only switch; a page keeps it in its frontmatter', { path: rel })
 }
 
 export async function setBoardReadOnly(req: unknown): Promise<BoardReadOnlyResponse> {

@@ -54,7 +54,7 @@ import { basename } from '../lib/paths'
 import { registerRenameContinuity } from '../lib/renameContinuity'
 import { createStore, type Store } from '../lib/store'
 import { VaultReadOnly } from '../vault/readOnlyVault'
-import { noteBoardSaved } from '../share/liveShare'
+import { pageBoardSaved } from '../share/liveShare'
 import { BOARD_COMMAND_EVENT, type BoardCommand } from './boardCommand'
 import { ConflictBar } from './ConflictBar'
 
@@ -140,7 +140,7 @@ export function useDocumentHost(options: DocumentHostOptions) {
         const res = await engine.current.write(expectedMtime)
         // Always-live share links (Draw's YAZ-1799, YAZ-3040): a shared board re-uploads once its saves settle.
         // Only a board can be shared, so a code save never arms the share timer (YAZ-3458).
-        if (isBoard(engine.current.path)) noteBoardSaved(engine.current.root, engine.current.path)
+        if (isBoard(engine.current.path)) pageBoardSaved(engine.current.root, engine.current.path)
         return res
       } catch (err) {
         // A stale guard is the conflict bar's business, not an error chip.

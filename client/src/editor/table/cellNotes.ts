@@ -7,7 +7,7 @@
  * except the one open as a card beside its cell (`cellNoteCard.ts`, the YAZ-3818 demo); the hidden-line checks
  * (`lineSelection.ts`) skip it through `isCellNoteHidden`.
  *
- * `notesFollowTables` (D12): after a change that adds or removes a table, a cell note or a cell note's mark, each cell
+ * `pagesFollowTables` (D12): after a change that adds or removes a table, a cell note or a cell note's mark, each cell
  * note goes right under the table that holds its mark, in the order of the marks. A cell note with no mark in a table
  * cell stays where it is and shows (`cell-note--orphan`): no words are hidden for good. A typed key never runs it. Its
  * state also gives each cell that holds a mark the class that draws the corner triangle (`CELL_NOTE_CELL_CLASS`).
@@ -120,7 +120,7 @@ export const tableAround = (doc: ProseNode, cellPos: number): { pos: number; end
 /**
  * Add a cell note to the cell at `cellPos` (D4, D8): the mark at the END of the cell's first line (in a cell that
  * starts with a list, the first bullet's line), and a cell note with one empty line right under the table, among the
- * table's notes in the order of the marks. Find the note by its label (`notePosOf`): `notesFollowTables` may move it.
+ * table's notes in the order of the marks. Find the note by its label (`notePosOf`): `pagesFollowTables` may move it.
  * Declines on a cell that already has a cell note. `blocks`: what the new note holds instead (the template, round 3 of
  * the demo).
  */
@@ -254,7 +254,7 @@ export function cellNoteTitle(doc: ProseNode, label: string): string {
 }
 
 /**
- * The open cell note card (the YAZ-3818 demo, `cellNoteCard.ts`): the open note's label, its position and its cell's
+ * The open cell note card (the YAZ-3818 demo, `cellNoteCard.ts`): the open page's label, its position and its cell's
  * position (mapped), and the card's decorations. All null when no card is open. Here so `isCellNoteHidden` reads it.
  */
 export interface CellNoteCardState {
@@ -442,7 +442,7 @@ function placeNotes(state: EditorState): Transaction | null {
  * D12. The state: the orphan decorations and the marked cells' class (5A-18), built again after a transaction that adds
  * or removes a table, a cell note or a mark, and mapped after any other: a typed key only maps them.
  */
-const notesFollowTables = $prose(
+const pagesFollowTables = $prose(
   () =>
     new Plugin<DecorationSet>({
       key: cellNotesKey,
@@ -484,4 +484,4 @@ const protectMarks = $prose(
 )
 
 /** Register with `editor.use(cellNotes)`, next to the table and cell schemas, before `inlineBreaks`. */
-export const cellNotes = [footnoteEmptyLines, cellNoteSchema, otherFootnotes, notesFollowTables, protectMarks].flat()
+export const cellNotes = [footnoteEmptyLines, cellNoteSchema, otherFootnotes, pagesFollowTables, protectMarks].flat()

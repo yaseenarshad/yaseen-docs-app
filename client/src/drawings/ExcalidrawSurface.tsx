@@ -1,10 +1,10 @@
 /**
  * THE ENGINE SEAM (YAZ-879; rebuilt for the drawing DOCUMENT in Draw's 🔒 YAZ-1810, merged back into
- * Docs by YAZ-3028 so the note embed's modal and a drawing TAB share it).
+ * Docs by YAZ-3028 so the page embed's modal and a drawing TAB share it).
  *
  * 🔒 ONE FILE OWNS THE CANVAS. This is the only component that mounts `<Excalidraw>`, the only
  * one that knows how a scene serializes, and the only one that knows what "changed" means to the
- * engine. Its two hosts — `DrawingModal` (the note embed, rule 28) and `DrawingEditor` (a tab, with
+ * engine. Its two hosts — `DrawingModal` (the page embed, rule 28) and `DrawingEditor` (a tab, with
  * the `useDocumentHost` chrome) — import this module's TYPES and this component and nothing
  * else. `DrawingModal.test.tsx` pins the boundary as source; `DrawingEditor.test.tsx` mocks this
  * one module and drives the host through it.
@@ -33,7 +33,7 @@
  * engine's first `onChange` — so a canvas background change is an edit like any other.
  *
  * ONE WRITER: `serializeAsJSON(…, 'local')` is the library's own writer, with `source` pinned
- * (`engine.ts`) and a trailing newline. `serialize()` is a save, by a tab and by the note's popup
+ * (`engine.ts`) and a trailing newline. `serialize()` is a save, by a tab and by the page's popup
  * (YAZ-3943 1A1): the scene with an EMPTY files map, plus the engine's live images and the ids the
  * scene still references, so the host can ship what main lacks (`unpersistedFiles`) without ever
  * seeing an engine type. Main puts the pictures back inside the file (YAZ-3943 D5), or in `assets/`
@@ -60,8 +60,8 @@
  * (`CanvasSidebar.tsx`, Add / Present, the engine's one child), the ⌘F / ⌘C keys that
  * open it — bound on THIS component's own element in the capture phase, because several tabs each mount an
  * engine; the one `window` listener takes only a ⌘F whose target is the page itself, and only while this board is on
- * screen (YAZ-4157 demo 6N) — and the presentation player. The note embed's modal passes
- * none of it: it keeps the engine's own menu at top-left, and a note's drawing has no library
+ * screen (YAZ-4157 demo 6N) — and the presentation player. The page embed's modal passes
+ * none of it: it keeps the engine's own menu at top-left, and a page's drawing has no library
  * (rule 28). Which mode a surface is in is read ONCE, at mount.
  */
 import { requestKeySheet } from '../keys/keySheetRequest'
@@ -163,7 +163,7 @@ export interface DrawingSurfaceProps {
   canvasPanel?: CanvasPanelState
   /**
    * A panel choice to remember. PASSING IT IS WHAT TURNS THE CANVAS PANEL ON (YAZ-3038): the drawing TAB
-   * passes it; the note embed's modal does not, and gets no rail, no panel, no ⌘F / ⌘C and no player.
+   * passes it; the page embed's modal does not, and gets no rail, no panel, no ⌘F / ⌘C and no player.
    */
   onCanvasPanelChange?: (next: CanvasPanelState) => void
   /** Mount, then every engine change. The first call is the host's clean baseline. */
@@ -194,7 +194,7 @@ export interface DrawingSurfaceProps {
   hotkeys?: HotkeyOverrides
   /** `settings.hotkeysAside` (YAZ-3564 K9): with a switch off, the drawing lets that App key go to the menu. */
   hotkeysAside?: HotkeyAside
-  /** Page links (YAZ-4039): the tab passes them; the note embed's modal does not, and its pills stay text. */
+  /** Page links (YAZ-4039): the tab passes them; the page embed's modal does not, and its pills stay text. */
   links?: DrawingSurfaceLinks
   /**
    * The export box's PDF button (YAZ-3943 D6): the engine's SVG of the export and its size, for the host to
@@ -209,7 +209,7 @@ export interface DrawingSurfaceProps {
 
 /**
  * The app's drawing settings, as both hosts take them (YAZ-4277 3A1, YAZ-4436). Every Settings › Drawings row is a
- * `CanvasPrefs` key, and `Editor` builds this pair once for the tab (`DrawingEditor`) and the note embed's modal
+ * `CanvasPrefs` key, and `Editor` builds this pair once for the tab (`DrawingEditor`) and the page embed's modal
  * (`DrawingModal`). So a new row reaches both. The keys are required, so a host cannot leave them out; a value may be
  * absent (the defaults, no writes).
  */
@@ -899,7 +899,7 @@ export function ExcalidrawSurface({
         viewModeEnabled={readOnly ? true : undefined}
         keyBindings={keyBindings}
         hostLinks={links?.hostLinks}
-        // YAZ-4277 D1: a text box edits with the notes engine (`textBoxEditor.ts`)
+        // YAZ-4277 D1: a text box edits with the pages engine (`textBoxEditor.ts`)
         textEditor={textEditor}
         foldArrows={foldArrows}
         newElementStyle={canvasPrefs.newElementStyle}

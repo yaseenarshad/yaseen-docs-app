@@ -9,7 +9,7 @@
  * before any paste path uses it (`pasteIntoCells`, a new table, text in a cell): a label a mark in this note already
  * uses gets a new one, in the marks and in the cell notes; a mark with no cell note in the attribute (a paste from another app)
  * goes, so no mark is left without its note. The paste's transaction then gets the cell notes, at the end of the
- * note; `notesFollowTables` puts each under the table that holds its mark.
+ * note; `pagesFollowTables` puts each under the table that holds its mark.
  *
  * PASTE AS › CELLS ONLY (D18, `pasteCellsOnly`): the HTML's cells with no marks and no cell notes.
  *

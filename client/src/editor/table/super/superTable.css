@@ -1,5 +1,5 @@
 /* A Super table's tabs, panels and view (YAZ-4869 S2–S5, `SuperTable.tsx`); the lazy chunk's own. The place of the bar
-   and the hidden table are `table.css`'s (eager, small). The view looks like a note table: the same borders, header row
+   and the hidden table are `table.css`'s (eager, small). The view looks like a page table: the same borders, header row
    look (the table's own `data-table-header-*` on `.super-view`, else Settings › Tables' on `.app`; YAZ-4834 P21), fills
    and text colours (`table.css` tokens), with the folder pages' group headers (`views.css`). */
 
@@ -185,7 +185,7 @@
   border-left-width: 1px;
 }
 
-/* The column header: the note table's header row formula (`table.css` `th`), its tint as a layer over the opaque page
+/* The column header: the page table's header row formula (`table.css` `th`), its tint as a layer over the opaque page
    colour so the sticky header hides the rows under it. */
 .super-view thead th {
   position: sticky;

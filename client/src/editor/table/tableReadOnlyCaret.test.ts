@@ -18,7 +18,7 @@ import { createCrepe, getMarkdownForSave } from '../createCrepe'
 import { tableMenuSections } from './tableMenu'
 import { tableRows } from './tableRows'
 
-/** Two body rows; the last cell holds a bullet list (YAZ-3818 D2), where an editable note's Tab / ⇧Tab move the bullet. */
+/** Two body rows; the last cell holds a bullet list (YAZ-3818 D2), where an editable page's Tab / ⇧Tab move the bullet. */
 const NOTE = `Intro
 
 | h1 | h2 |
@@ -129,7 +129,7 @@ describe('a table in a Read only note keeps its caret (YAZ-4433)', () => {
     expect(caretCell(view)).toBe('b1')
   })
 
-  it('← / → at a cell’s edge go to the next cell, as in an editable note; inside the text they are the browser’s', async () => {
+  it('← / → at a cell’s edge go to the next cell, as in an editable page; inside the text they are the browser’s', async () => {
     const { crepe, view, saves, saved } = await locked()
     caretIn(view, 'a1', 1)
     expect(key(view, 'ArrowLeft').defaultPrevented).toBe(false)
@@ -160,7 +160,7 @@ describe('a table in a Read only note keeps its caret (YAZ-4433)', () => {
     expect(saves).toEqual([])
   })
 
-  it('⇧ + arrows select across cells as in an editable note, and change nothing', async () => {
+  it('⇧ + arrows select across cells as in an editable page, and change nothing', async () => {
     const { crepe, view, saves, saved } = await locked()
     caretIn(view, 'a1', 2)
     key(view, 'ArrowRight', { shift: true })
@@ -179,7 +179,7 @@ describe('a table in a Read only note keeps its caret (YAZ-4433)', () => {
     expect(caretCell(view)).toBe('a2')
     key(view, 'Tab', { shift: true })
     expect(caretCell(view)).toBe('b1')
-    // A bullet in a cell: an editable note's Tab indents it and ⇧Tab outdents it; locked, they only move the caret.
+    // A bullet in a cell: an editable page's Tab indents it and ⇧Tab outdents it; locked, they only move the caret.
     caretIn(view, 'y1', 1)
     expect(key(view, 'Tab').defaultPrevented).toBe(true)
     // The last cell: no next cell, and no new row.
@@ -238,7 +238,7 @@ describe('a table in a Read only note keeps its caret (YAZ-4433)', () => {
       view.dom.dispatchEvent(event)
       expect(event.defaultPrevented, inputType).toBe(true)
     }
-    // Tab-separated cells would fill from the caret cell and grow the table in an editable note (`tablePaste.ts`).
+    // Tab-separated cells would fill from the caret cell and grow the table in an editable page (`tablePaste.ts`).
     const paste = clipboard('paste', { 'text/plain': 'P1\tP2\tP3\nP4\tP5\tP6' })
     view.dom.dispatchEvent(paste.event)
     expect(paste.event.defaultPrevented).toBe(true)
@@ -268,7 +268,7 @@ describe('a table in a Read only note keeps its caret (YAZ-4433)', () => {
     expect(tableMenuSections(view, posOf(view, 'b1', 1))).toEqual([])
     const table = view.state.doc.resolve(posOf(view, 'b1', 1)).before(1)
     expect(tableRows(view, { inside: table + 3 } as Parameters<typeof tableRows>[1], undefined as never)).toEqual([])
-    // Two selected cells: an editable note shows the fill handle and the cell toolbar.
+    // Two selected cells: an editable page shows the fill handle and the cell toolbar.
     const $a = view.state.doc.resolve(view.state.doc.resolve(posOf(view, 'a1')).before())
     const $b = view.state.doc.resolve(view.state.doc.resolve(posOf(view, 'b1')).before())
     view.dispatch(view.state.tr.setSelection(new CellSelection(view.state.doc.resolve($a.before()), view.state.doc.resolve($b.before()))))

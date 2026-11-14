@@ -25,7 +25,7 @@ const NO_BEST: ReadonlyMap<string, number> = new Map()
 
 /** The groups of a level (D7): folders, then files. */
 const typeRank = (node: TreeNode): number => (node.type === 'dir' ? 0 : 1)
-/** The groups under Kind first (YAZ-4614 D66): folders, notes, drawings, diagrams, PDFs, images, text files, other files. */
+/** The groups under Kind first (YAZ-4614 D66): folders, pages, drawings, diagrams, PDFs, images, text files, other files. */
 const KIND_RANK: Record<FileKind, number> = { markdown: 1, drawing: 2, diagram: 3, pdf: 4, image: 5, text: 6 }
 const OTHER_RANK = 7
 const kindRank = (node: TreeNode): number => (node.type === 'dir' ? 0 : node.kind === null ? OTHER_RANK : KIND_RANK[node.kind])

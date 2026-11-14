@@ -1,12 +1,12 @@
 /**
  * The code tab's own chips (YAZ-3449), drawn first in the document host's row (`DocumentChips`' `lead`),
- * in a note's order: the fold-all button (YAZ-3938 D4), the page cog, the text size pill (YAZ-3451), then
+ * in a page's order: the fold-all button (YAZ-3938 D4), the page cog, the text size pill (YAZ-3451), then
  * the Read only chip while the tab is locked. The sync and save chips follow from the host.
  *
  * The cog's first three rows are APP SETTINGS (YAZ-3438 D5, D6, D8), under the heading "All code files", each row
  * on one line: each one changes every code tab at once, the same field as its row in Settings › Code. The fourth,
- * "Table of contents" (YAZ-3506), after a line, is THIS file's, as a note's cog row is: saved for the file in the
- * app state (`tocSwitches`), because a code file has no frontmatter (a note's is in the note, YAZ-4094 G4). The chip is this tab's: a time choice in its box
+ * "Table of contents" (YAZ-3506), after a line, is THIS file's, as a page's cog row is: saved for the file in the
+ * app state (`tocSwitches`), because a code file has no frontmatter (a page's is in the page, YAZ-4094 G4). The chip is this tab's: a time choice in its box
  * unlocks this tab for 1 minute, 10 minutes or until it closes (YAZ-4939), and the setting stays on; so does the vault's Read only.
  */
 import { DocumentZoom } from '../editor/DocumentZoom'
@@ -21,7 +21,7 @@ export interface CodeChipsProps {
   onChangeSettings?: (patch: Partial<CodeSettings>) => void
   /** This file's "Table of contents" switch (YAZ-3506). The tab always passes it (YAZ-3558 D1); absent → no row. */
   tableOfContents?: { on: boolean; onToggle: () => void }
-  /** This tab's text size, percent (YAZ-3451): the note's pill, never stored. */
+  /** This tab's text size, percent (YAZ-3451): the page's pill, never stored. */
   zoom: number
   onZoom: (zoom: number) => void
   /** This tab is under Read only: the setting, or the vault's (YAZ-4939). The chip shows while it is, locked or editing for a time. */

@@ -1,6 +1,6 @@
 /**
- * The comment stream (YAZ-1472) end-to-end: the block under a note, driven in the REAL app, with
- * the note's own frontmatter as the only storage (🔒 D1/D2 — one reserved `comments` key).
+ * The comment stream (YAZ-1472) end-to-end: the block under a page, driven in the REAL app, with
+ * the page's own frontmatter as the only storage (🔒 D1/D2 — one reserved `comments` key).
  *
  * What only the real app can prove: every gesture is ONE `transformFile` write on the fresh bytes
  * (D8) and the block then adopts what landed, through the watcher echo, without disturbing the open
@@ -19,12 +19,12 @@ import { appWindow, editorOf, launchApp, seededState, sheet, shoot } from './hel
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Commented.md'
+const PAGE = 'Commented.md'
 const BODY = '# Commented\n\ncomments-e2e-body\n'
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -36,15 +36,15 @@ const composer = (w: Page, placeholder: string) => block(w).locator(`.comments__
 
 /** The `comments` list on disk, and the body beside it. */
 async function onDisk(): Promise<{ comments: PageComment[] | undefined; body: string }> {
-  const { frontmatter, body } = splitFrontmatter(await readFile(notePath, 'utf8'))
+  const { frontmatter, body } = splitFrontmatter(await readFile(pagePath, 'utf8'))
   return { comments: parseFrontmatter(frontmatter).properties.comments as PageComment[] | undefined, body }
 }
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'comments-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'comments-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -53,7 +53,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — a page with no comments starts collapsed; a titled comment lands as #1 in the frontmatter', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('comments-e2e-body')
   await expect(header(win)).toHaveAttribute('aria-expanded', 'false')
@@ -70,7 +70,7 @@ test('step 1 — a page with no comments starts collapsed; a titled comment land
   const { comments, body } = await onDisk()
   expect(comments?.[0]).toMatchObject({ n: 1, title: 'Plan', body: 'line one\nline two' })
   expect(comments?.[0].by).toBeUndefined() // 🔒 D3: the app never writes `by` for the person at the keyboard
-  expect(body).toBe(BODY) // the note's text is never touched
+  expect(body).toBe(BODY) // the page's text is never touched
   await shoot(win, 'comments-01-first')
 })
 
@@ -127,7 +127,7 @@ test('step 4 — Delete asks first; a parent takes its reply; the last delete re
   await sheet(win).locator('.confirm__btn--danger').click()
   await expect(header(win).locator('.comments__count')).toHaveCount(0)
   // 🔒 D7: the key goes, never a `comments: []` (the emptied block stays, GRO-2216); the body is as written.
-  await expect.poll(async () => /^comments:/m.test(splitFrontmatter(await readFile(notePath, 'utf8')).frontmatter)).toBe(false)
+  await expect.poll(async () => /^comments:/m.test(splitFrontmatter(await readFile(pagePath, 'utf8')).frontmatter)).toBe(false)
   expect((await onDisk()).body).toBe(BODY)
   await shoot(win, 'comments-03-all-deleted')
 })

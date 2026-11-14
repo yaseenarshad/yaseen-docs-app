@@ -37,8 +37,8 @@ import { appWindow, buildFixtureVault, clickMenuItem, closeWindow, editorOf, ext
 test.describe.configure({ mode: 'serial' })
 
 /** The two vaults' FOLDER names — what the rows, the filter and the titles show until a display name is set. */
-const ALPHA = 'Alpha Notes'
-const BETA = 'Beta Notes'
+const ALPHA = 'Alpha Pages'
+const BETA = 'Beta Pages'
 /** The display name step 4 gives Beta (YAZ-1974 D5). */
 const DISPLAY = 'Work Vault'
 /** Bodies of the fixture's files (helpers.buildFixtureVault). */
@@ -414,7 +414,7 @@ test('step 8 — ⇧⏎ on a vault of a workspace window opens it by itself, and
   expect(await windowCount(app)).toBe(2)
   await shoot(empty, 'vault-switcher-13-empty-window-took-the-vault')
 
-  // Recently closed (D8, D10, S31): close the tab of `w1`, open a new tab, and its note leads the third column.
+  // Recently closed (D8, D10, S31): close the tab of `w1`, open a new tab, and its page leads the third column.
   await clickMenuItem(app, 'menu.file.close-tab', 'w1')
   await clickMenuItem(app, 'menu.file.new-tab', 'w1')
   await expect(win.locator('.start__column[data-col="closed"] .start__name').first()).toHaveText(path.basename(SEED_FILE, '.md'))

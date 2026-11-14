@@ -1,7 +1,7 @@
 /**
  * The window's CSS against Crepe's reset, read as text (jsdom computes no imported sheet): the rules that must win do
  * win by specificity, with no `!important`. YAZ-4860: the picture was squashed by `.milkdown .ProseMirror img`.
- * YAZ-4863: a window with no picture shows no rest note and no zoom chip.
+ * YAZ-4863: a window with no picture shows no rest page and no zoom chip.
  */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
@@ -21,7 +21,7 @@ describe('the board window`s CSS', () => {
     expect(ours.body).not.toContain('!important')
   })
 
-  it('YAZ-4863: no rest note and no zoom chip on a window with no picture; that rule beats the hover rules that show them', () => {
+  it('YAZ-4863: no rest page and no zoom chip on a window with no picture; that rule beats the hover rules that show them', () => {
     const hide = rules(windowCss, '.board-window--missing').find((r) => r.selector.includes('.board-window__rest') && /display:\s*none/.test(r.body))!
     for (const state of ['loading', 'missing', 'broken', 'empty']) expect(hide.selector).toContain(`.board-window--${state}`)
     expect(hide.selector).toContain('.board-window__zoom')

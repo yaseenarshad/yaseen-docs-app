@@ -56,7 +56,7 @@ function load({ linked = true } = {}) {
   Graph.prototype.getLabel = (cell) => cell.label
   Graph.prototype.isHtmlLabel = () => true
   const graph = new Graph()
-  /** One model: its undo steps are counted, and each insert notes how deep in a step it is. */
+  /** One model: its undo steps are counted, and each insert pages how deep in a step it is. */
   const model = { depth: 0, steps: 0, beginUpdate: () => model.depth++ === 0 && model.steps++, endUpdate: () => model.depth--, getGeometry: () => ({ height: 30 }), getCell: () => null }
   Object.assign(graph, {
     enabled: true,

@@ -22,7 +22,7 @@ describe('the two sections', () => {
     expect(edited.map((e) => e.path)).toEqual(['/v/s1.md', '/v/s2.md', '/v/s3.md', '/v/s4.md', '/v/s5.md', '/v/s6.md', '/v/s7.md', '/v/s8.md'])
   })
 
-  it('only notes, drawings and diagrams; only this window`s vaults; a folder-of-a-vault window only under its folder', () => {
+  it('only pages, drawings and diagrams; only this window`s vaults; a folder-of-a-vault window only under its folder', () => {
     const explore = [
       { path: '/v/sub/a.md', at: 5 },
       { path: '/v/b.md', at: 4 },

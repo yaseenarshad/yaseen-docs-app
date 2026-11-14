@@ -10,7 +10,7 @@ import { _evictAll, getIndex } from './index'
 // rides `IndexResponse.folders`, never `records`, so no row, search or completion has to filter it.
 
 const SETTINGS = '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n---\n'
-/** A note of the model YAZ-2290 removed: flagged a folder page, listed on others, holding that page's views. */
+/** A page of the model YAZ-2290 removed: flagged a folder page, listed on others, holding that page's views. */
 const OLD_MODEL = '---\nfolder_page: true\nfolder_pages:\n  - "[[Idea]]"\nfolder_page_settings:\n  views:\n    - type: board\n      name: Board\n---\n# Old hub\n'
 
 const until = async (pred: () => Promise<boolean> | boolean, ms = 3000) => {
@@ -58,7 +58,7 @@ describe('folder settings in the index', () => {
     expect(index.records.some((r) => r.name === 'Idea.md')).toBe(true)
   })
 
-  it('A note still carrying `folder_page`, `folder_pages` or `folder_page_settings` (the old model’s keys) is an ordinary note to the index: a record, never a folder’s settings, its properties as written — nothing is rewritten and nothing is lost', async () => {
+  it('A page still carrying `folder_page`, `folder_pages` or `folder_page_settings` (the old model’s keys) is an ordinary page to the index: a record, never a folder’s settings, its properties as written — nothing is rewritten and nothing is lost', async () => {
     const file = path.join(root, 'Projects', 'Old hub.md')
     const index = await getIndex(root)
     expect(index.folders.some((r) => r.path === file)).toBe(false)
@@ -100,10 +100,10 @@ describe('folder settings in the index', () => {
     await watcherReady(root)
     const dir = path.join(root, 'Made in Finder')
     await mkdir(dir)
-    await writeFile(path.join(dir, 'note.md'), '# note\n')
+    await writeFile(path.join(dir, 'page.md'), '# page\n')
     await until(async () => (await getIndex(root)).records.some((r) => r.folder === 'Made in Finder'))
     await new Promise((r) => setTimeout(r, 300)) // long enough for a write the sweep must not make
-    expect(await readdir(dir)).toEqual(['note.md'])
+    expect(await readdir(dir)).toEqual(['page.md'])
     expect((await readdir(path.join(root, 'Content Pillars'))).filter((name) => name.startsWith('.'))).toEqual([])
     expect((await getIndex(root)).folders.map((r) => r.path)).toEqual([path.join(root, 'Projects', FOLDER_SETTINGS_FILE)])
   })

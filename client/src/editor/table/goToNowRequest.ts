@@ -1,5 +1,5 @@
 /**
- * "Go to now" for a note the app opens (YAZ-4164, YAZ-4159 D11): the daily-note button, ⌘D and File › Open Today's
+ * "Go to now" for a note the app opens (YAZ-4164, YAZ-4159 D11): the daily-page button, ⌘D and File › Open Today's
  * Daily Note open today's note, then ask its editor for the now row. The editor may not exist yet (the tab opens, the
  * file loads, then the editor starts), so the request waits here, as `zoomRequest.ts` is the door for a step to the
  * editor in front. The editor of the path takes it when it is ready (`Editor.tsx`); one that is open already hears

@@ -1,5 +1,5 @@
 /**
- * A code block's own width (YAZ-4783): drag the right edge of a note's code block (the grey box,
+ * A code block's own width (YAZ-4783): drag the right edge of a page's code block (the grey box,
  * `.milkdown-code-block`) to make it wider or narrower, as a table column's edge does.
  *
  * IN THE FILE the width is the `<!-- code: width 1300 -->` line right under the closing fence (`codeComment.ts` reads
@@ -11,8 +11,8 @@
  * comment leaves the tree. A comment that is not ours stays an `html` node, bytes untouched.
  *
  * SAVE: the `code_block` schema gains `width` (px at 100% document zoom, or `null`) and `unknownParts` (the parts this
- * build keeps as text, or `null`); its `toMarkdown` writes the fence, then the comment as an `html` node. A NOTE CARD
- * (YAZ-4961, `noteCard/noteCardLine.ts`) keeps its `<!-- card: … -->` line in a third attribute, `cardLine`, joined
+ * build keeps as text, or `null`); its `toMarkdown` writes the fence, then the comment as an `html` node. A PAGE CARD
+ * (YAZ-4961, `card/cardBlockLine.ts`) keeps its `<!-- card: … -->` line in a third attribute, `cardLine`, joined
  * on load before the code comment and written right under the fence before it: one schema extension holds both. The `join`
  * rule `codeCommentJoin` puts the comment on the line right after the fence, with no blank line between, also at the
  * top level (a table's comment gets a blank line there): then the comment is always exactly ONE line of the file, and
@@ -33,14 +33,14 @@
  * transaction of its own: one ⌘Z. The travel is divided by the zoom at the box, so the edge stays under the mouse.
  * Smallest `CODE_WIDTH_MIN`; widest, the right edge of the editor's scroll area (`.editor-host`), never under the
  * table of contents beside it (`blockRightEdge`, `blockRoom.ts`). A double-click on the edge removes the width: back to
- * the normal width. A read-only note has no grip. The code, its language, the Copy button, the language picker and the
+ * the normal width. A read-only page has no grip. The code, its language, the Copy button, the language picker and the
  * gutter are not touched.
  *
- * THREE LAYERS, the nearest wins (YAZ-4783): this block's own width (here); else the note's `code-width` key (the page
+ * THREE LAYERS, the nearest wins (YAZ-4783): this block's own width (here); else the page's `code-width` key (the page
  * cog, `pageSwitches.ts`), `--code-block-width` on the editor's mount; else Settings › Editor › Code blocks › Width,
  * `--code-block-width` on `.app`; else the text column. app.css reads the variable only for a box with no
  * `data-code-width`. After a drag wrote a width, the box sends `CODE_WIDTH_DRAGGED`, and the editor host offers to make
- * it the note's width for every code block (`codeWidthsToNote`).
+ * it the page's width for every code block (`codeWidthsToPage`).
  */
 import { remarkStringifyOptionsCtx } from '@milkdown/kit/core'
 import type { Ctx } from '@milkdown/kit/ctx'
@@ -57,7 +57,7 @@ import { holdColResize } from '../../lib/colResize'
 import { cssZoom } from '../../lib/cssZoom'
 import { blockRightEdge } from '../blockRoom'
 import { joinNextComment } from '../joinComment'
-import { CARD_LINE_ATTR, cleanCardLine, isNoteCardCode, NOTE_CARD_LANGUAGE } from '../noteCard/noteCardLine'
+import { CARD_LINE_ATTR, cleanCardLine, isCardCode, CARD_LANGUAGE } from '../card/cardBlockLine'
 import { CODE_WIDTH_MAX, CODE_WIDTH_MIN, codeWidth, formatCodeComment, parseCodeComment, type CodeLook, type CodeUnknownPart } from './codeComment'
 
 export * from './codeComment'
@@ -75,7 +75,7 @@ const PARTS_ATTR = 'data-code-parts'
 
 /**
  * Sent from `.ProseMirror` (it bubbles) after a drag of a block's edge wrote a width (YAZ-4783 layer 2): the editor host
- * offers "Use 900 px for all code blocks in this note" (`codeWidthsToNote`). A double-click reset sends none.
+ * offers "Use 900 px for all code blocks in this page" (`codeWidthsToPage`). A double-click reset sends none.
  */
 export const CODE_WIDTH_DRAGGED = 'mdapp:code-width-dragged'
 export interface CodeWidthDragged {
@@ -93,11 +93,11 @@ export function codeBlockCount(doc: ProseNode): number {
 }
 
 /**
- * "Use 900 px for all code blocks in this note" (YAZ-4783 layer 2), the document's half: ONE transaction, its own undo
- * step, that takes every code block's own width away, so each follows the note's width (the frontmatter `code-width` key
+ * "Use 900 px for all code blocks in this page" (YAZ-4783 layer 2), the document's half: ONE transaction, its own undo
+ * step, that takes every code block's own width away, so each follows the page's width (the frontmatter `code-width` key
  * the host writes beside it). The blocks' text, language and other comment parts stay. `null` when no block has a width.
  */
-export function codeWidthsToNote(state: EditorState): Transaction | null {
+export function codeWidthsToPage(state: EditorState): Transaction | null {
   const tr = closeHistory(state.tr)
   state.doc.descendants((node, pos) => {
     if (node.type.name === 'code_block') {
@@ -127,12 +127,12 @@ const lookAttrs = (look: CodeLook) => ({ width: look.width, unknownParts: look.u
 
 interface CodeData {
   codeLook?: CodeLook
-  /** A note card's card line (YAZ-4961, `noteCard/noteCardLine.ts`), its text. */
+  /** A card's card line (YAZ-4961, `card/cardBlockLine.ts`), its text. */
   cardLine?: string
 }
 
 export const codeWidthRemark = $remark('mdapp-code-width', () => () => (tree) => {
-  // A note card's line first: it is the line right under the fence; a code comment may come after it.
+  // A card's line first: it is the line right under the fence; a code comment may come after it.
   joinNextComment(
     tree as Nodes,
     'code',
@@ -140,7 +140,7 @@ export const codeWidthRemark = $remark('mdapp-code-width', () => () => (tree) =>
     (node, cardLine) => {
       node.data = { ...node.data, cardLine } as typeof node.data
     },
-    isNoteCardCode,
+    isCardCode,
   )
   joinNextComment(tree as Nodes, 'code', parseCodeComment, (node, look) => {
     node.data = { ...node.data, codeLook: look } as typeof node.data
@@ -148,12 +148,12 @@ export const codeWidthRemark = $remark('mdapp-code-width', () => () => (tree) =>
 })
 
 /**
- * The comment goes on the line right under the fence: no blank line between, wherever the block is. A note card's line
+ * The comment goes on the line right under the fence: no blank line between, wherever the block is. A card's line
  * (YAZ-4961) goes there too, and a code comment of the card right under its line.
  */
 const codeCommentJoin: Join = (left, right) => {
   if (right.type !== 'html') return undefined
-  if (left.type === 'code' && (parseCodeComment(right.value) !== null || (isNoteCardCode(left) && cleanCardLine(right.value) !== null))) return 0
+  if (left.type === 'code' && (parseCodeComment(right.value) !== null || (isCardCode(left) && cleanCardLine(right.value) !== null))) return 0
   return left.type === 'html' && cleanCardLine(left.value) !== null && parseCodeComment(right.value) !== null ? 0 : undefined
 }
 
@@ -213,8 +213,8 @@ export const codeWidthSchema = codeBlockSchema.extendSchema((prev) => (ctx) => {
       match: base.toMarkdown.match,
       runner: (state, node) => {
         base.toMarkdown.runner(state, node)
-        // A note card's line (YAZ-4961): right under the fence, before a code comment. A block that is no card writes none.
-        const cardLine = node.attrs.language === NOTE_CARD_LANGUAGE ? cleanCardLine(node.attrs.cardLine) : null
+        // A card's line (YAZ-4961): right under the fence, before a code comment. A block that is no card writes none.
+        const cardLine = node.attrs.language === CARD_LANGUAGE ? cleanCardLine(node.attrs.cardLine) : null
         if (cardLine !== null) state.addNode('html', undefined, cardLine)
         const comment = formatCodeComment(codeLookOf(node))
         if (comment !== null) state.addNode('html', undefined, comment)
@@ -285,8 +285,8 @@ class CodeWidthGrip {
     const block = event.target instanceof Element ? event.target.closest<HTMLElement>(BLOCK) : null
     if (block === this.block) return
     this.leave()
-    // A note card's editor (YAZ-4961) has no grip: the card line, not a width, sits under a card's fence.
-    if (block === null || !this.view.dom.contains(block) || block.closest('.note-card') !== null) return
+    // A card's editor (YAZ-4961) has no grip: the card line, not a width, sits under a card's fence.
+    if (block === null || !this.view.dom.contains(block) || block.closest('.card') !== null) return
     this.block = block
     block.addEventListener('mousemove', this.onMove)
     block.addEventListener('mouseleave', this.onLeave)

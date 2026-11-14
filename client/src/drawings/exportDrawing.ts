@@ -68,7 +68,7 @@ function withStandardFont<T>(item: T, key: string): T {
  *
  * `standardFonts` (YAZ-3943 D14) is set by Export Excalidraw Drawing… only: the copy gets the standard
  * fonts (`STANDARD_FONT`), so a friend on normal Excalidraw sees readable text. The board's own save,
- * the note embed's sidecar and Share Link never set it and keep their fonts. Per-letter styles (text
+ * the page embed's sidecar and Share Link never set it and keep their fonts. Per-letter styles (text
  * runs) stay in the copy; normal Excalidraw shows them as plain text.
  */
 export function assembleStandaloneScene(engine: ExportEngine, scene: ExportableScene, { standardFonts = false }: { standardFonts?: boolean } = {}): string {

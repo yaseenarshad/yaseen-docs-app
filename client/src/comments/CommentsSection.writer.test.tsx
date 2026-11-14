@@ -22,11 +22,11 @@ afterEach(() => {
 })
 
 const PATH = '/v/Funnel.md'
-const note = (by: string) => `---\ntitle: Funnel\ncomments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T20:00:00Z\n    by: ${by}\n    body: Hello\n---\nBody\n`
+const page = (by: string) => `---\ntitle: Funnel\ncomments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-09-11T20:00:00Z\n    by: ${by}\n    body: Hello\n---\nBody\n`
 
 async function writerRow(vault: string, by: string, people: unknown) {
   vi.mocked(api.vaultConfig.read).mockResolvedValue(people as never)
-  const content = note(by)
+  const content = page(by)
   vi.mocked(api.readFile).mockResolvedValue({ path: PATH, content, mtime: 1, size: content.length } as never)
   box = document.createElement('div')
   document.body.appendChild(box)

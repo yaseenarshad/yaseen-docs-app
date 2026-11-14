@@ -18,7 +18,7 @@
  * replaces its node. So the fallback below runs once per such keystroke — one `nodeAt` and one
  * `DecorationSet.create` of ONE decoration, which passes over the document's top-level blocks (and
  * the items of the lists around a heading in a bullet) and enters no textblock: 0.05–0.09 ms on a
- * note of 2,500 blocks and 2,500 bullets, measured. Nothing here walks the document's text.
+ * page of 2,500 blocks and 2,500 bullets, measured. Nothing here walks the document's text.
  */
 import type { EditorState } from '@milkdown/kit/prose/state'
 import { Plugin, PluginKey } from '@milkdown/kit/prose/state'

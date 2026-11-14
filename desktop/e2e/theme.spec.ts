@@ -68,7 +68,7 @@ test('cog → Dark flips this window AND the other open window live', async () =
   // Default is System; pin the emulated OS appearance to light so the baseline is deterministic.
   await winA.emulateMedia({ colorScheme: 'light' })
   await expect.poll(() => bgOf(winA)).toBe(LIGHT_BG)
-  // The window exists before the app inside it listens to the menu: wait for the note it opens.
+  // The window exists before the app inside it listens to the menu: wait for the page it opens.
   await expect(editorOf(winA)).toBeVisible()
 
   await clickMenuItem(app, 'menu.file.new-window', 'w1')

@@ -75,12 +75,12 @@ export const HEADING_TOGGLE_CLASS = 'heading-toggle'
  * reads the places off the DOM after each update and rewrites its `<style data-heading-folds>` only when one moved.
  * No decoration marks a hidden block: one on each made each doc change cost O(blocks²) in ProseMirror
  * (`DecorationSet.forChild`, `map`, `buildTree` over 2,000 root decorations: ~50 ms). No sibling selector either: `~`
- * made each restyle of the note walk back over every block before each block (~35–80 ms at 2,000 blocks in Chromium).
+ * made each restyle of the page walk back over every block before each block (~35–80 ms at 2,000 blocks in Chromium).
  */
 export const HEADING_FOLD_STYLE_ATTR = 'data-heading-folds'
 export const HEADING_FOLD_VIEW_ATTR = 'data-heading-fold-view'
 
-/** One id for each editor, so the same note folded differently in another tab is not touched. */
+/** One id for each editor, so the same page folded differently in another tab is not touched. */
 let nextViewId = 0
 
 /**

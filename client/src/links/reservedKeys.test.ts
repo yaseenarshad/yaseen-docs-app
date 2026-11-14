@@ -3,8 +3,8 @@ import { ALSO_IN_KEY } from '@shared/alsoIn'
 import { COMMENTS_KEY } from '@shared/comments'
 import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_NEW_BUTTONS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY } from '@shared/folderPage'
 import { FOLDER_VALUES_KEY } from '@shared/folderValues'
-import { NOTE_ID_KEY } from '@shared/noteId'
-import { TITLE_KEY } from '@shared/noteName'
+import { PAGE_ID_KEY } from '@shared/pageId'
+import { TITLE_KEY } from '@shared/pageName'
 import { CODE_WIDTH_KEY, FIND_FOLDS_KEY, OUTSIDE_GLOW_KEY, PAGE_SWITCH_KEYS, TABLE_WIDTH_KEY } from '@shared/pageSwitches'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import { reservedKeys } from './reservedKeys'
@@ -50,13 +50,13 @@ describe('reserved keys: the read-only switch (YAZ-3076 D1, S16)', () => {
 describe('reserved keys: a vault that does not use IDs (YAZ-2523 V12)', () => {
   it('`id`, `title`, `also_in` and `in` are ordinary properties there; the comments store, the review log, the read-only switch and the page switches are still the app\u2019s', () => {
     const plain = reservedKeys(false)
-    for (const key of [NOTE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY]) expect(plain.has(key)).toBe(false)
+    for (const key of [PAGE_ID_KEY, TITLE_KEY, ALSO_IN_KEY, FOLDER_VALUES_KEY]) expect(plain.has(key)).toBe(false)
     expect([...plain].sort()).toEqual([COMMENTS_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 
   // The folder page cog's keys (FOLDER_PAGE_KEYS) are the app's too: the cog sets them (`show_new_buttons`, YAZ-3746 13BL, the latest).
   it('a vault that uses IDs owns all twenty-two', () => {
-    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, NOTE_ID_KEY, FOLDER_VALUES_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
+    expect([...RESERVED_KEYS].sort()).toEqual([ALSO_IN_KEY, COMMENTS_KEY, PAGE_ID_KEY, FOLDER_VALUES_KEY, TITLE_KEY, READ_ONLY_KEY, ...PAGE_SWITCH_KEYS, OUTSIDE_GLOW_KEY, FIND_FOLDS_KEY, CODE_WIDTH_KEY, TABLE_WIDTH_KEY, ...FOLDER_PAGE_KEYS].sort())
   })
 })
 

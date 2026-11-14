@@ -13,7 +13,7 @@
  *
  *   4 the create rows (YAZ-3085 D1, D3; YAZ-3036, D9): right-click a folder → hover "New drawing" →
  *     its list (Excalidraw, dated Excalidraw | draw.io) → New draw.io diagram → a name → Enter: the
- *     `.drawio` is born on disk with its dates and opens in a tab. A click on the "New note" row
+ *     `.drawio` is born on disk with its dates and opens in a tab. A click on the "New page" row
  *     itself opens the name box (Escape makes nothing). A click on the "New drawing" row itself is
  *     an Excalidraw drawing: the file is born with the empty scene and its dates, and opens on the
  *     canvas — the tab step 5 needs in front.
@@ -27,7 +27,7 @@
  *     and place, and nothing is written back.
  *   7 the names (YAZ-3536 D1–D5): a drawing and a diagram read without their extension in the tree and the
  *     tab; Rename shows the name alone and keeps the extension on disk; with File icons Off the board's
- *     extension shows again, and a note stays bare.
+ *     extension shows again, and a page stays bare.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -57,7 +57,7 @@ const ONE_BOX = [
   '',
 ].join('\n')
 const PAGES = 'Pages.drawio'
-/** Two pages; Page-2 has a second layer ("Notes"), so draw.io would open its Layers window on load. */
+/** Two pages; Page-2 has a second layer ("Pages"), so draw.io would open its Layers window on load. */
 const twoPages = (extra = '') =>
   [
     '<mxfile>',
@@ -77,11 +77,11 @@ const twoPages = (extra = '') =>
     '      <root>',
     '        <mxCell id="0" />',
     '        <mxCell id="1" parent="0" />',
-    '        <mxCell id="l2" value="Notes" parent="0" />',
+    '        <mxCell id="l2" value="Pages" parent="0" />',
     '        <mxCell id="b1" value="Second page box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="1">',
     '          <mxGeometry x="40" y="40" width="160" height="80" as="geometry" />',
     '        </mxCell>',
-    '        <mxCell id="b2" value="Note box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="l2">',
+    '        <mxCell id="b2" value="Page box" style="rounded=1;whiteSpace=wrap;" vertex="1" parent="l2">',
     '          <mxGeometry x="240" y="40" width="160" height="80" as="geometry" />',
     '        </mxCell>',
     extra,
@@ -192,15 +192,15 @@ test('step 3 — a diagram row opens draw.io offline on app://drawio, and an edi
   await shoot(win, 'boards-05-diagram-saved')
 })
 
-test('step 4 — the create rows: hover New drawing → New draw.io diagram → a name makes and opens a .drawio; a click on New note opens the name box; a click on New drawing makes an Excalidraw drawing', async () => {
+test('step 4 — the create rows: hover New drawing → New draw.io diagram → a name makes and opens a .drawio; a click on New page opens the name box; a click on New drawing makes an Excalidraw drawing', async () => {
   if (app === null) throw new Error('step 2 did not relaunch the app')
   const box = win.locator('.create-inline__input')
 
   // The three rows, in order (D3), and the drawing list behind a hover — with its separator (two groups).
   await dirRow(win, 'Projects').click({ button: 'right' })
-  await expect(menuParent(win, 'New note')).toBeVisible()
+  await expect(menuParent(win, 'New page')).toBeVisible()
   const rows = await menuParent(win).allTextContents()
-  expect(rows.slice(0, 3)).toEqual(['New note', 'New drawing', 'New folder'])
+  expect(rows.slice(0, 3)).toEqual(['New page', 'New drawing', 'New folder'])
   await menuParent(win, 'New drawing').hover()
   const list = win.locator('.ctx-overlay .ctx-menu__sub')
   await expect(list.locator('[role="menuitem"]')).toHaveText(['New Excalidraw drawing', 'New dated Excalidraw drawing', 'New draw.io diagram'])
@@ -218,11 +218,11 @@ test('step 4 — the create rows: hover New drawing → New draw.io diagram → 
   await expect(fileRow(win, 'Roadmap.drawio')).toBeVisible()
   await shoot(win, 'boards-06b-new-diagram')
 
-  // A click on the "New note" row itself is the everyday note (D1): the name box opens at once.
+  // A click on the "New page" row itself is the everyday page (D1): the name box opens at once.
   await dirRow(win, 'Projects').click({ button: 'right' })
-  await menuParent(win, 'New note').click()
+  await menuParent(win, 'New page').click()
   await expect(win.locator('.ctx-overlay')).toHaveCount(0)
-  await expect(box).toHaveAttribute('placeholder', 'New note')
+  await expect(box).toHaveAttribute('placeholder', 'New page')
   await expect(box).toHaveValue('')
   await box.press('Escape')
   await expect(box).toHaveCount(0)
@@ -349,7 +349,7 @@ test('step 7 — a board reads without its extension, renames by its name alone,
   await expect(shown(fileRow(win, 'Board v2.excalidraw'))).toHaveText('Board v2', { useInnerText: true })
   await shoot(win, 'boards-10-names-bare')
 
-  // D4, D5: with File icons Off, a board names its kind; a note stays bare.
+  // D4, D5: with File icons Off, a board names its kind; a page stays bare.
   await quitApp(app)
   const state = await readState(userData)
   state.settings.sidebarFileIcons = 'off'
@@ -357,8 +357,8 @@ test('step 7 — a board reads without its extension, renames by its name alone,
   win = await appWindow(app, 'w1')
   await expect(shown(fileRow(win, DIAGRAM))).toHaveText('Flow.drawio', { useInnerText: true })
   await expect(activeTab(win).locator('.tabbar__label')).toHaveText('Flow.drawio', { useInnerText: true })
-  const note = fileRow(win, SEED_FILE.replace(/\.md$/, ''))
-  await expect(note).toBeVisible()
-  await expect(note.locator('.name-ending')).toHaveCount(0)
+  const page = fileRow(win, SEED_FILE.replace(/\.md$/, ''))
+  await expect(page).toBeVisible()
+  await expect(page.locator('.name-ending')).toHaveCount(0)
   await shoot(win, 'boards-11-names-icons-off')
 })

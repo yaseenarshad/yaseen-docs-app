@@ -108,7 +108,7 @@ export function sanitizeMediaLibrary(raw: unknown): MediaLibraryFile | null {
 export function addFavorite(lib: MediaLibraryFile, item: MediaItem, now: number): MediaLibraryFile {
   if (lib.favorites.some((f) => f.itemKey === item.itemKey)) return lib
   // A favorite added again is newer than its removal (also one from a Mac whose clock runs ahead), so a merge keeps
-  // it; the note has done its work. It is also newer than the head of the list, so it shows first on every Mac.
+  // it; the page has done its work. It is also newer than the head of the list, so it shows first on every Mac.
   const { [item.itemKey]: was, ...removed } = lib.removed
   return { ...lib, favorites: [stamp(item, after(now, was, lib.favorites[0]?.updatedAt)), ...lib.favorites], removed }
 }
@@ -118,7 +118,7 @@ export function addFavorite(lib: MediaLibraryFile, item: MediaItem, now: number)
  * more adds, the same rule as the first time, and never on the very next add. Its words stay. It is kept in `removed`
  * (YAZ-4364), so another Mac's file that still holds the favorite does not bring it back.
  *
- * Both stamps are newer than the rows they replace (`after`): the note is newer than the favorite, also one from a Mac
+ * Both stamps are newer than the rows they replace (`after`): the page is newer than the favorite, also one from a Mac
  * whose clock runs ahead (YAZ-4381), and the `used` row at count 0 is stamped again, so it wins over the other Mac's
  * row with the old count (YAZ-4380).
  */
@@ -129,7 +129,7 @@ export function removeFavorite(lib: MediaLibraryFile, itemKey: string, now: numb
     ...lib,
     favorites: lib.favorites.filter((f) => f !== row),
     used: lib.used.map((u) => (u.itemKey === itemKey ? { ...u, count: 0, updatedAt: after(now, u.updatedAt) } : u)),
-    // Not capped here: the next read's merge caps it, and knows which old notes still hold a favorite back.
+    // Not capped here: the next read's merge caps it, and knows which old pages still hold a favorite back.
     removed: { ...lib.removed, [itemKey]: after(now, row.updatedAt, lib.removed[itemKey]) },
   }
 }
@@ -202,7 +202,7 @@ export const MEDIA_FILE_RE = /^media-[0-9a-z]{12}\.json$/
 export const mediaFileName = (macId: string): string => `media-${macId}.json`
 
 /**
- * `removed` without a bad entry, newest first: the newest `cap`, and every note in `held` past the cap. A file is read
+ * `removed` without a bad entry, newest first: the newest `cap`, and every page in `held` past the cap. A file is read
  * whole (`Infinity`); the merge caps (YAZ-4366).
  */
 function cleanRemoved(raw: unknown, cap: number, held: ReadonlySet<string> = new Set()): Record<string, number> {
@@ -233,9 +233,9 @@ function newestRows<T extends StoredMediaItem>(lists: readonly (readonly T[])[],
  * `removed` (itemKey → when), so a merge does not bring back a favorite that is older than its removal; a favorite
  * added again after it is newer, and stays. The first library wins a tie: the caller puts this Mac's own file first.
  *
- * The newest `MAX_MEDIA_REMOVED` notes stay, and past the cap every note that still holds back a favorite of an input
+ * The newest `MAX_MEDIA_REMOVED` pages stay, and past the cap every page that still holds back a favorite of an input
  * (YAZ-4366): the old `media.json` and the file of a Mac that no longer runs are never written again, so the favorite
- * they hold would come back the day its note dropped. One library within the cap is answered as it is.
+ * they hold would come back the day its page dropped. One library within the cap is answered as it is.
  */
 export function mergeMediaLibraries(libs: readonly MediaLibraryFile[]): MediaLibraryFile {
   if (libs.length === 0) return EMPTY_MEDIA_LIBRARY

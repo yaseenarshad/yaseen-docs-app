@@ -10,15 +10,15 @@
  *      writer, `withOrder`),
  *  (b') the same references in the views of every `.folder.md` below the folder whose page takes the column from it
  *      (YAZ-4713 C7, `below`): no view under the owner keeps pointing at a column that is gone,
- *  (c) with "Delete column and clear N values" only (C7): the value from every note the host names (`records`) that
- *      holds it (`notesHolding`) — the note's own field (C1), or for a separate column (C3) this page's block of `in`
- *      (D19, `shared/folderValues.ts`). "Keep the values in the notes" leaves every note as it is: the field then
- *      shows under "Other properties". Nothing else in a note is touched, and a read-only note is never written.
+ *  (c) with "Delete column and clear N values" only (C7): the value from every page the host names (`records`) that
+ *      holds it (`pagesHolding`) — the page's own field (C1), or for a separate column (C3) this page's block of `in`
+ *      (D19, `shared/folderValues.ts`). "Keep the values in the pages" leaves every page as it is: the field then
+ *      shows under "Other properties". Nothing else in a page is touched, and a read-only page is never written.
  *
  * (a)+(b) are ONE settings write through the host's door — never a bypass of the folder
  * host's echo guard (YAZ-1234/1241) — and they land FIRST and are AWAITED: settings are the source
- * of truth, and if that write is refused nothing else moves (YAZ-1549). (b') is one quiet write per file. (c) is per note, against
- * fresh file bytes, byte-preserving every other key; a note whose record shows the field but whose
+ * of truth, and if that write is refused nothing else moves (YAZ-1549). (b') is one quiet write per file. (c) is per page, against
+ * fresh file bytes, byte-preserving every other key; a page whose record shows the field but whose
  * disk no longer does is simply not written. Strip failures are aggregated — one error for the
  * banner, successes committed, no rollback.
  *
@@ -50,18 +50,18 @@ export function undeletableReason(key: string): string | null {
 }
 
 /**
- * The indexed notes holding the field where `home` says (YAZ-4713 C7): the note's own field (null), or the block of the
- * page with that id (a separate column, C3) — the notes a delete clears, and the confirm sheet's count.
+ * The indexed pages holding the field where `home` says (YAZ-4713 C7): the page's own field (null), or the block of the
+ * page with that id (a separate column, C3) — the pages a delete clears, and the confirm sheet's count.
  */
-export function notesHolding(records: readonly IndexRecord[], home: ValueHome, key: string): IndexRecord[] {
+export function pagesHolding(records: readonly IndexRecord[], home: ValueHome, key: string): IndexRecord[] {
   const bare = bareOf(key)
-  // YAZ-4769: a note holds the column in any capitals.
+  // YAZ-4769: a page holds the column in any capitals.
   return records.filter((record) => heldKey(home === null ? record.properties : folderValues(record.properties, home.block), bare) !== undefined)
 }
 
 /**
- * One note's bytes with `value` put where `home` says (`undefined` removes it); a note read only on disk stays as it is (YAZ-3076 D6).
- * YAZ-4769: under the column's spelling, the note's other spellings going in the same write; the app's keys never.
+ * One page's bytes with `value` put where `home` says (`undefined` removes it); a page read only on disk stays as it is (YAZ-3076 D6).
+ * YAZ-4769: under the column's spelling, the page's other spellings going in the same write; the app's keys never.
  */
 function setValue(content: string, home: ValueHome, bare: string, value: unknown): string {
   const parsed = parseFrontmatter(splitFrontmatter(content).frontmatter)
@@ -74,7 +74,7 @@ function setValue(content: string, home: ValueHome, bare: string, value: unknown
 const withoutStringLiterals = (expr: string): string => expr.replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')
 
 /**
- * Does a filter expression name the column? The identifier `note.<key>` or the bare `<key>` as a
+ * Does a filter expression name the column? The identifier `page.<key>` or the bare `<key>` as a
  * whole token, outside string literals — a tokenizer-free check: literals go first, then a
  * word-boundary match (YAZ-1549).
  */
@@ -188,8 +188,8 @@ export interface DeleteColumnHost {
   /** The LIVE def (views + labels) — the host's `parsed.def`, never the index snapshot (YAZ-1234). */
   def: ViewSet
   /**
-   * The notes (and subfolder `.folder.md`s, D31) whose value a "clear" removes — those that hold it go (`notesHolding`) —
-   * and where the value is (`home`): the note's own field (C1), or this page's block for a separate column (C3).
+   * The pages (and subfolder `.folder.md`s, D31) whose value a "clear" removes — those that hold it go (`pagesHolding`) —
+   * and where the value is (`home`): the page's own field (C1), or this page's block for a separate column (C3).
    */
   records: readonly IndexRecord[]
   home: ValueHome
@@ -199,8 +199,8 @@ export interface DeleteColumnHost {
   writeSettings: (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']) => Promise<void>
   /**
    * The S29 Undo toast (YAZ-4608 C6): `restore` writes the declaration, the views' references and the label back, in
-   * ONE settings write, then each note's value back (YAZ-3746 13AY: the values the delete took from the notes, kept at
-   * the delete). It rejects with the notes it could not write back.
+   * ONE settings write, then each page's value back (YAZ-3746 13AY: the values the delete took from the pages, kept at
+   * the delete). It rejects with the pages it could not write back.
    */
   notice?: (message: string, restore: () => Promise<void>) => void
   /**
@@ -218,8 +218,8 @@ export const pruneStored = (key: string) => (views: unknown, properties: unknown
 })
 
 /**
- * Delete `key` everywhere in this folder (see the module doc); `clear` false keeps every note's value (C7). The
- * settings write is awaited and a refusal ABORTS — no note is touched; the host has already surfaced that error.
+ * Delete `key` everywhere in this folder (see the module doc); `clear` false keeps every page's value (C7). The
+ * settings write is awaited and a refusal ABORTS — no page is touched; the host has already surfaced that error.
  * Rejects with the aggregated failures otherwise.
  */
 export async function deleteColumn(key: string, host: DeleteColumnHost, clear = true): Promise<void> {
@@ -229,9 +229,9 @@ export async function deleteColumn(key: string, host: DeleteColumnHost, clear = 
 
   const before = { columns: { ...host.columns }, views: structuredClone(host.def.views), properties: structuredClone(host.def.properties) }
   const { home } = host
-  // Each note's value, kept before the strip, so the Undo puts it back (YAZ-3746 13AY).
-  const strip = clear ? notesHolding(host.records, home, key) : []
-  const values = strip.map((note) => ({ note, value: foldedValue(home === null ? note.properties : folderValues(note.properties, home.block), bare) }))
+  // Each page's value, kept before the strip, so the Undo puts it back (YAZ-3746 13AY).
+  const strip = clear ? pagesHolding(host.records, home, key) : []
+  const values = strip.map((page) => ({ page, value: foldedValue(home === null ? page.properties : folderValues(page.properties, home.block), bare) }))
   const columns: Record<string, ColumnDecl> = { ...host.columns }
   delete columns[bare]
   const pruned = { views: pruneColumnFromViews(host.def.views, key), properties: pruneColumnLabel(host.def.properties, key) }
@@ -261,22 +261,22 @@ export async function deleteColumn(key: string, host: DeleteColumnHost, clear = 
         const views = await Promise.allSettled(
           prunedBelow.map(({ path, was, now: left }) => rewriteFolderViews(path, (nowViews, nowLabels) => ({ views: rebaseSettings(left.views, was.views, nowViews), properties: rebaseSettings(left.properties, was.properties, nowLabels) }))),
         )
-        const back = await Promise.allSettled(values.map(({ note, value }) => transformFile(note.path, (content) => setValue(content, home, bare, value), true)))
-        const lost = back.flatMap((result, index) => (result.status === 'rejected' ? [values[index]!.note.title] : []))
+        const back = await Promise.allSettled(values.map(({ page, value }) => transformFile(page.path, (content) => setValue(content, home, bare, value), true)))
+        const lost = back.flatMap((result, index) => (result.status === 'rejected' ? [values[index]!.page.title] : []))
         const pages = views.filter((result) => result.status === 'rejected').length
-        if (lost.length > 0) throw new Error(`Could not put "${bare}" back on ${lost.length} ${lost.length === 1 ? 'note' : 'notes'}: ${lost.join(', ')}`)
+        if (lost.length > 0) throw new Error(`Could not put "${bare}" back on ${lost.length} ${lost.length === 1 ? 'page' : 'pages'}: ${lost.join(', ')}`)
         if (pages > 0) throw new Error(`Could not put "${bare}" back in the views of ${pages} ${pages === 1 ? 'folder page' : 'folder pages'}`)
       })
   })
 
-  const results = await Promise.allSettled(strip.map((note) => transformFile(note.path, (content) => setValue(content, home, bare, undefined), true))) // quiet: a tidy-up of each note (YAZ-3235 D1)
+  const results = await Promise.allSettled(strip.map((page) => transformFile(page.path, (content) => setValue(content, home, bare, undefined), true))) // quiet: a tidy-up of each page (YAZ-3235 D1)
   const failed = results.flatMap((result, index) =>
-    result.status === 'rejected' ? [{ note: strip[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
+    result.status === 'rejected' ? [{ page: strip[index]!, why: result.reason instanceof Error ? result.reason.message : String(result.reason) }] : [],
   )
   const pagesFailed = belowDone.filter((result) => result.status === 'rejected').length
   if (failed.length > 0)
     throw new Error(
-      `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'note' : 'notes'}: ${failed.map(({ note, why }) => `${note.title} (${why})`).join('; ')}`,
+      `Could not remove "${bare}" from ${failed.length} ${failed.length === 1 ? 'page' : 'pages'}: ${failed.map(({ page, why }) => `${page.title} (${why})`).join('; ')}`,
     )
   if (pagesFailed > 0) throw new Error(`Could not remove "${bare}" from the views of ${pagesFailed} ${pagesFailed === 1 ? 'folder page' : 'folder pages'}`)
 }

@@ -20,7 +20,7 @@ import { mapFolderSettingsLinks } from './folderSettingsLinks'
 import { FOLDER_VALUES_KEY, folderBlocks, moveFolderValues } from './folderValues'
 import { parseFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { indexTarget, splitLink } from './linkParts'
-import { NOTE_ID_KEY, canonicalNoteId, isNoteId } from './noteId'
+import { PAGE_ID_KEY, canonicalPageId, isPageId } from './pageId'
 
 /** Does this raw link target point at what changed? */
 export type ResolvesToOld = (target: string) => boolean
@@ -44,7 +44,7 @@ export { maskCode }
  * padding included.
  */
 export function rewriteInner(inner: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
-  // Words that only look like an ID (`[[Covid notes|COVID-19]]`): the left side is the page when it is the renamed note.
+  // Words that only look like an ID (`[[Covid pages|COVID-19]]`): the left side is the page when it is the renamed page.
   const { page: target, hash, words, pageFirst } = splitLink(inner, resolves)
   if (target === '' || !resolves(target)) return null
   const next = newTarget(target)
@@ -94,8 +94,8 @@ function rewriteLinkValue(value: unknown, resolves: ResolvesToOld, newTarget: Ne
 /**
  * A frontmatter string's link TARGET (`|alias` / `#heading` stripped) when it is exactly `[[…]]`,
  * or null — what `rewriteInner` decides on, exposed for a probe that only needs to look.
- * The side follows `splitLink` (YAZ-4954 part 2): a reader with the notes passes `isPage`, and the left side wins when
- * it is a page. Without it, words that only look like an ID keep both sides (`Covid notes|COVID-19`, `indexTarget`),
+ * The side follows `splitLink` (YAZ-4954 part 2): a reader with the pages passes `isPage`, and the left side wins when
+ * it is a page. Without it, words that only look like an ID keep both sides (`Covid pages|COVID-19`, `indexTarget`),
  * as the index keeps them, and the resolver picks when it reads them (`pickTarget`).
  */
 export function exactLinkTarget(value: string, isPage?: (page: string) => boolean): string | null {
@@ -106,12 +106,12 @@ export function exactLinkTarget(value: string, isPage?: (page: string) => boolea
 }
 
 /**
- * One note's full rewrite: body scan + frontmatter whole-value links (through
+ * One page's full rewrite: body scan + frontmatter whole-value links (through
  * `setFrontmatterProperty`, one key at a time) + the ONE reserved key's nested links
  * (YAZ-864 — see the module doc). Null when nothing changed — the caller never writes an
  * unchanged file, so a page carrying settings that reference nobody stays byte-identical.
  */
-export function rewriteNoteLinks(content: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
+export function rewritePageLinks(content: string, resolves: ResolvesToOld, newTarget: NewTarget): string | null {
   const { frontmatter, body } = splitFrontmatter(content)
   let out = frontmatter + rewriteBodyLinks(body, resolves, newTarget)
   if (frontmatter !== '') {
@@ -142,17 +142,17 @@ export type IdChange = ReadonlyMap<string, string> | ((id: string) => string | u
 
 /**
  * THE ID REWRITE (YAZ-2677 🔒 D5, D6, D7): `content` with each ID that `change` names written as
- * its new ID, wherever a file names a note or a folder by its ID —
+ * its new ID, wherever a file names a page or a folder by its ID —
  *  - a link in the body, in every form: `[[id]]`, `[[id|label]]`, `[[id#heading]]`, `![[id]]`;
  *  - a link that is a property's whole value, in a list, in a folder's values, and in the link
- *    leaves of a folder's settings (a view's order, a fill's note, a column's target);
+ *    leaves of a folder's settings (a view's order, a fill's page, a column's target);
  *  - an `also_in` entry;
  *  - a folder-value key: the block `in.<id>` moves to the new ID with its values (never over a
  *    block the new ID already has);
  *  - with `own`, the file's own `id:` line.
  *
  * An ID is matched WHOLE — `YAZ-1` is never found in `YAZ-12` — and in any case, and `change` is
- * asked with the form the app writes (`canonicalNoteId`): one entry `YAZ-1` covers `[[yaz-1]]`.
+ * asked with the form the app writes (`canonicalPageId`): one entry `YAZ-1` covers `[[yaz-1]]`.
  * Code blocks and code spans are left as they are, and so is every byte of a file that names no
  * changed ID: `changed` is then 0 and `content` the same string. Safe to run again: the second
  * run finds nothing to change. Properties that do not parse keep each byte; the body still changes.
@@ -164,8 +164,8 @@ export function rewriteIds(content: string, change: IdChange, opts: { own?: bool
   const ask = typeof change === 'function' ? change : (id: string): string | undefined => change.get(id)
   /** What `written` becomes; undefined when it is no ID, or one that stays. */
   const next = (written: unknown): string | undefined => {
-    if (!isNoteId(written)) return undefined
-    const id = canonicalNoteId(written)
+    if (!isPageId(written)) return undefined
+    const id = canonicalPageId(written)
     const to = ask(id)
     return to === undefined || to === id ? undefined : to
   }
@@ -174,7 +174,7 @@ export function rewriteIds(content: string, change: IdChange, opts: { own?: bool
     changed++
     return next(target) as string
   }
-  let out = rewriteNoteLinks(content, (target) => next(target) !== undefined, moved) ?? content
+  let out = rewritePageLinks(content, (target) => next(target) !== undefined, moved) ?? content
   const { properties, error } = parseFrontmatter(splitFrontmatter(out).frontmatter)
   if (error !== undefined) return { content: out, changed }
   const entries = alsoInEntries(properties)
@@ -191,9 +191,9 @@ export function rewriteIds(content: string, change: IdChange, opts: { own?: bool
     if (carried !== out) changed++
     out = carried
   }
-  const own = opts.own === true ? next(properties[NOTE_ID_KEY]) : undefined
+  const own = opts.own === true ? next(properties[PAGE_ID_KEY]) : undefined
   if (own !== undefined) {
-    out = setFrontmatterProperty(out, NOTE_ID_KEY, own)
+    out = setFrontmatterProperty(out, PAGE_ID_KEY, own)
     changed++
   }
   return { content: out, changed }

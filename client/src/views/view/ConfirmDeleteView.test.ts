@@ -15,7 +15,7 @@ describe('deleteViewMessage', () => {
   })
 
   it('every other view names its configuration instead', () => {
-    expect(deleteViewMessage({ type: 'table', name: 'Table' })).toBe('Delete the view "Table"? Its columns, sort, filters and grouping go with it. The notes stay.')
-    expect(deleteViewMessage({ type: 'board', name: 'Kanban' })).toBe('Delete the view "Kanban"? Its columns, sort, filters and grouping go with it. The notes stay.')
+    expect(deleteViewMessage({ type: 'table', name: 'Table' })).toBe('Delete the view "Table"? Its columns, sort, filters and grouping go with it. The pages stay.')
+    expect(deleteViewMessage({ type: 'board', name: 'Kanban' })).toBe('Delete the view "Kanban"? Its columns, sort, filters and grouping go with it. The pages stay.')
   })
 })

@@ -11,7 +11,7 @@ import { ConfirmDelete, deleteConfirmMessage, type DeleteTarget } from './Confir
 const NONE = pathTitles([], [])
 
 describe('deleteConfirmMessage', () => {
-  it('E: the delete sheet names a note and a folder by their titles; a file the index does not hold by its file name (YAZ-2420 D14)', () => {
+  it('E: the delete sheet names a page and a folder by their titles; a file the index does not hold by its file name (YAZ-2420 D14)', () => {
     const titled = (path: string, title: string) => ({ path, title }) as IndexRecord
     const titles = pathTitles([titled('/v/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul')], [titled('/v/upwork/.folder.md', 'Upwork 2026')])
     expect(deleteConfirmMessage({ path: '/v/up-001-abdul-k3m9x2pq7abc.md', kind: 'file' }, titles)).toBe('Delete "UP-001 - Abdul"? It moves to the Trash.')
@@ -24,8 +24,8 @@ describe('deleteConfirmMessage', () => {
   })
 
   it('a file with backlinks appends the count, pluralised', () => {
-    expect(deleteConfirmMessage({ path: '/v/Roadmap.md', kind: 'file', backlinks: 3 }, NONE)).toBe('Delete "Roadmap"? It moves to the Trash. 3 notes link to this.')
-    expect(deleteConfirmMessage({ path: '/v/Roadmap.md', kind: 'file', backlinks: 1 }, NONE)).toBe('Delete "Roadmap"? It moves to the Trash. 1 note links to this.')
+    expect(deleteConfirmMessage({ path: '/v/Roadmap.md', kind: 'file', backlinks: 3 }, NONE)).toBe('Delete "Roadmap"? It moves to the Trash. 3 pages link to this.')
+    expect(deleteConfirmMessage({ path: '/v/Roadmap.md', kind: 'file', backlinks: 1 }, NONE)).toBe('Delete "Roadmap"? It moves to the Trash. 1 page links to this.')
   })
 
   it('an unavailable backlink count prints no count line at all', () => {
@@ -33,31 +33,31 @@ describe('deleteConfirmMessage', () => {
   })
 
   it('a folder reports its contents, pluralised on each half', () => {
-    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 12, folders: 2 } }, NONE)).toBe('Delete "Docs"? 12 notes and 2 folders move to the Trash.')
-    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 1, folders: 1 } }, NONE)).toBe('Delete "Docs"? 1 note and 1 folder move to the Trash.')
-    // A single item takes a singular verb: "1 note moves", not "1 note move".
-    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 1, folders: 0 } }, NONE)).toBe('Delete "Docs"? 1 note moves to the Trash.')
-    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 0, folders: 1 } }, NONE)).toBe('Delete "Docs"? 1 folder moves to the Trash.')
+    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { pages: 12, folders: 2 } }, NONE)).toBe('Delete "Docs"? 12 pages and 2 folders move to the Trash.')
+    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { pages: 1, folders: 1 } }, NONE)).toBe('Delete "Docs"? 1 page and 1 folder move to the Trash.')
+    // A single item takes a singular verb: "1 page moves", not "1 page move".
+    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { pages: 1, folders: 0 } }, NONE)).toBe('Delete "Docs"? 1 page moves to the Trash.')
+    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { pages: 0, folders: 1 } }, NONE)).toBe('Delete "Docs"? 1 folder moves to the Trash.')
   })
 
-  it('a folder with only notes, or only subfolders, omits the empty half', () => {
-    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 4, folders: 0 } }, NONE)).toBe('Delete "Docs"? 4 notes move to the Trash.')
-    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 0, folders: 3 } }, NONE)).toBe('Delete "Docs"? 3 folders move to the Trash.')
+  it('a folder with only pages, or only subfolders, omits the empty half', () => {
+    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { pages: 4, folders: 0 } }, NONE)).toBe('Delete "Docs"? 4 pages move to the Trash.')
+    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { pages: 0, folders: 3 } }, NONE)).toBe('Delete "Docs"? 3 folders move to the Trash.')
   })
 
-  /** The whole selection (YAZ-3272 D21): the sheet counts N items, and the links count is of the notes outside them, each counted once. */
+  /** The whole selection (YAZ-3272 D21): the sheet counts N items, and the links count is of the pages outside them, each counted once. */
   it('two or more items: "Delete 3 items? They move to the Trash.", with the links count when the index gave it', () => {
     const items = ['/v/a.md', '/v/Docs', '/v/c.md']
     expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items }, NONE)).toBe('Delete 3 items? They move to the Trash.')
     expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 0 }, NONE)).toBe('Delete 3 items? They move to the Trash.')
-    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 1 }, NONE)).toBe('Delete 3 items? They move to the Trash. 1 note links to them.')
-    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 4 }, NONE)).toBe('Delete 3 items? They move to the Trash. 4 notes link to them.')
+    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 1 }, NONE)).toBe('Delete 3 items? They move to the Trash. 1 page links to them.')
+    expect(deleteConfirmMessage({ path: items[0]!, kind: 'file', paths: items, backlinks: 4 }, NONE)).toBe('Delete 3 items? They move to the Trash. 4 pages link to them.')
     // One path in the list is the one-item sheet.
     expect(deleteConfirmMessage({ path: '/v/Roadmap.md', kind: 'file', paths: ['/v/Roadmap.md'] }, NONE)).toBe('Delete "Roadmap"? It moves to the Trash.')
   })
 
-  it('an EMPTY folder never prints "0 notes and 0 folders"', () => {
-    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { notes: 0, folders: 0 } }, NONE)).toBe('Delete "Docs"? It moves to the Trash.')
+  it('an EMPTY folder never prints "0 pages and 0 folders"', () => {
+    expect(deleteConfirmMessage({ path: '/v/Docs', kind: 'dir', children: { pages: 0, folders: 0 } }, NONE)).toBe('Delete "Docs"? It moves to the Trash.')
   })
 })
 
@@ -84,7 +84,7 @@ const FILE: DeleteTarget = { path: '/v/a.md', kind: 'file', backlinks: 0 }
 const btn = (el: HTMLElement, label: string) => [...el.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent === label)
 
 describe('ConfirmDelete', () => {
-  it('E: names the note by its title (YAZ-2420 D14)', () => {
+  it('E: names the page by its title (YAZ-2420 D14)', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)

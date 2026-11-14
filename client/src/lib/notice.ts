@@ -57,7 +57,7 @@ export const countItems = (n: number) => (n === 1 ? '1 item' : `${n} items`)
 /** How many names a gesture's toast shows before " + N more" (YAZ-3274 D22). */
 export const NAMES_SHOWN = 3
 
-/** What an item of a gesture is: a file (a note, a drawing, any file) or a folder. */
+/** What an item of a gesture is: a file (a page, a drawing, any file) or a folder. */
 export type ItemKind = 'file' | 'dir'
 
 /** An item of a gesture as its toast names it (YAZ-3293 D23): its name on disk and its kind. */
@@ -124,7 +124,7 @@ export function noticeMs(notice: Notice, length: NoticeLength = '4s'): number | 
 /**
  * The box after rows were dragged out to Finder (YAZ-3254 D9B): Finder took copies, and the box asks
  * whether the vault keeps the items. Its own slot beside the toast, so a later toast does not hide it
- * (S32); it stays until answered, and a second drag out replaces it. `links`: the notes outside the
+ * (S32); it stays until answered, and a second drag out replaces it. `links`: the pages outside the
  * items that link to them, off the window's index snapshot.
  */
 export interface DragOutAsk {
@@ -134,10 +134,10 @@ export interface DragOutAsk {
   links: number
 }
 
-/** "Copied 2 files (Todo.md, Plan.md) to Finder? 3 notes link to them." — with no second sentence when no note links (one item: "1 note links to it"). The box asks; it does not claim (S29). */
+/** "Copied 2 files (Todo.md, Plan.md) to Finder? 3 pages link to them." — with no second sentence when no page links (one item: "1 page links to it"). The box asks; it does not claim (S29). */
 export function dragOutText({ paths, kinds, links }: DragOutAsk, unit: UnitText = SAME_WORD): string {
   const items = namedItems(paths.map((path, i) => onDisk(path, kinds[i])))
   const them = paths.length === 1 ? 'it' : 'them'
-  const notes = unit(links === 1 ? '1 note links' : `${links} notes link`)
-  return links > 0 ? `Copied ${items} to Finder? ${notes} to ${them}.` : `Copied ${items} to Finder?`
+  const pages = unit(links === 1 ? '1 page links' : `${links} pages link`)
+  return links > 0 ? `Copied ${items} to Finder? ${pages} to ${them}.` : `Copied ${items} to Finder?`
 }

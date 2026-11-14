@@ -1,6 +1,6 @@
 /**
  * Where a page's columns come from (YAZ-4713): Columns ⚙ parts its hidden columns into the folder's own ("Desserts"),
- * "From <owner>" and "Other properties in these notes" (C4), with Show and "Add to Desserts" on an other property; and
+ * "From <owner>" and "Other properties in these pages" (C4), with Show and "Add to Desserts" on an other property; and
  * Edit column's "Separate value for Desserts" switch with its turn-off ask (C3, 1B). ViewsPane mounted with react-dom in
  * jsdom over `TEST_RECORDS`, with the folder host's doors as spies.
  */
@@ -92,12 +92,12 @@ const parts = (pop: ParentNode): Record<string, string[]> =>
   )
 
 describe('Columns ⚙: where each hidden column comes from (YAZ-4713 C4)', () => {
-  it('the folder’s own (by its name), From <owner>, then the notes’ other fields', () => {
+  it('the folder’s own (by its name), From <owner>, then the pages’ other fields', () => {
     const pop = openColumns(mount().el)
     expect(parts(pop)).toEqual({
       Desserts: ['Status', 'File name', 'Folder'],
       'From Schema': ['Pillar'],
-      'Other properties in these notes': ['Cover', 'Date', 'Priority', 'Published', 'Related', 'Tags', 'Views'],
+      'Other properties in these pages': ['Cover', 'Date', 'Priority', 'Published', 'Related', 'Tags', 'Views'],
     })
     // An other property has Show and "Add to Desserts" in place of the switch.
     expect(pop.querySelector('[aria-label="Show Tags"]')?.tagName).toBe('BUTTON')
@@ -156,13 +156,13 @@ describe('Edit column › "Separate value for <folder>" (YAZ-4713 C3, 1B)', () =
     expect(openDetail(mount().el).querySelector('[aria-label="Status: separate value for Desserts"]')).toBeNull()
   })
 
-  it('on: at once, no ask, and nothing in the notes moves', async () => {
+  it('on: at once, no ask, and nothing in the pages moves', async () => {
     const set = vi.fn(async () => undefined)
     const counts = vi.fn()
     const detail = openDetail(mount({ separate: { counts, set } }).el)
     expect(switchOf(detail).checked).toBe(false)
     await act(async () => switchOf(detail).click())
-    expect(set).toHaveBeenCalledExactlyOnceWith('status', STATUS, true, 'notes')
+    expect(set).toHaveBeenCalledExactlyOnceWith('status', STATUS, true, 'pages')
     expect(counts).not.toHaveBeenCalled()
   })
 
@@ -173,11 +173,11 @@ describe('Edit column › "Separate value for <folder>" (YAZ-4713 C3, 1B)', () =
     const detail = openDetail(el)
     expect(switchOf(detail).checked).toBe(true)
     act(() => switchOf(detail).click())
-    expect(q(el, '.confirm__text').textContent).toBe("12 notes have a Desserts value. 9 fill an empty note field or match it. 3 differ from the note's value.")
+    expect(q(el, '.confirm__text').textContent).toBe("12 pages have a Desserts value. 9 fill an empty page field or match it. 3 differ from the page's value.")
     expect(q(el, '.confirm__status--error').textContent).toContain('only one stays')
-    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Use the Desserts values', 'Cancel', "Keep the notes' values"])
+    expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Use the Desserts values', 'Cancel', "Keep the pages' values"])
     await act(async () => click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Use the Desserts values')!))
-    expect(set).toHaveBeenCalledExactlyOnceWith('status', separate, false, 'page')
+    expect(set).toHaveBeenCalledExactlyOnceWith('status', separate, false, 'folder')
     expect(el.querySelector('.confirm__text')).toBeNull()
   })
 
@@ -188,7 +188,7 @@ describe('Edit column › "Separate value for <folder>" (YAZ-4713 C3, 1B)', () =
     const { el } = mount({ separate: { counts: () => ({ total, fill: total, differ: 0 }), set } }, separate)
     const detail = openDetail(el)
     await act(async () => switchOf(detail).click())
-    expect(set).toHaveBeenCalledExactlyOnceWith('status', separate, false, 'notes')
+    expect(set).toHaveBeenCalledExactlyOnceWith('status', separate, false, 'pages')
     total = 2
     act(() => switchOf(detail).click())
     expect(el.querySelector('.confirm__status--error')).toBeNull() // nothing differs: no warning
@@ -213,7 +213,7 @@ describe('Edit column on a column from a parent folder (YAZ-4713 C6, C7)', () =>
     const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'pillar' ? { from: 'Schema' } : {}), here } })
     const detail = openDetail(el, 'Pillar')
     expect(pressed(detail, 'Pillar')).toEqual(['Shared'])
-    expect(q(detail, '.column-detail__source').textContent).toBe('Shared with Schema: a change here changes it on every page under Schema. Each note keeps one value.')
+    expect(q(detail, '.column-detail__source').textContent).toBe('Shared with Schema: a change here changes it on every page under Schema. Each page keeps one value.')
     expect(detail.querySelector('[aria-label="Delete column Pillar"]')).toBeNull()
     await act(async () => click(settingsOf(detail, 'Pillar').find((b) => b.textContent === 'Only here')!))
     expect(here).toHaveBeenCalledExactlyOnceWith('pillar')
@@ -224,11 +224,11 @@ describe('Edit column on a column from a parent folder (YAZ-4713 C6, C7)', () =>
     const { el } = mount({ sources: { ...testFolderHost().sources, folderName: 'Orders', of: (key) => (key === 'status' ? { over: 'Schema' } : {}), useParent } })
     const detail = openDetail(el, 'Status')
     expect(pressed(detail, 'Status')).toEqual(['Only here'])
-    expect(q(detail, '.column-detail__source').textContent).toBe('Only on Orders: its own type, options and description (Schema keeps the shared ones). Each note keeps one value.')
+    expect(q(detail, '.column-detail__source').textContent).toBe('Only on Orders: its own type, options and description (Schema keeps the shared ones). Each page keeps one value.')
     expect(detail.querySelector('[aria-label="Delete column Status"]')).toBeNull()
     click(settingsOf(detail, 'Status').find((b) => b.textContent === 'Shared')!)
     expect(useParent).not.toHaveBeenCalled()
-    expect(q(el, '.confirm__text').textContent).toBe('Share the settings of "Status" with Schema again? The own type, options and description on Orders go. The notes keep their values.')
+    expect(q(el, '.confirm__text').textContent).toBe('Share the settings of "Status" with Schema again? The own type, options and description on Orders go. The pages keep their values.')
     await act(async () => click([...el.querySelectorAll<HTMLElement>('.confirm__btn')].find((b) => b.textContent === 'Share again')!))
     expect(useParent).toHaveBeenCalledExactlyOnceWith('status')
   })

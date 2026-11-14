@@ -13,7 +13,7 @@ vi.mock('../api', () => ({ api: { share: { list: vi.fn(), onChanged: vi.fn() } }
 
 import { api } from '../api'
 import { Tree, type TreeFileMove, type TreeSelection } from '../sidebar/Tree'
-import { noteBoardSaved, resetLiveShareForTests } from './liveShare'
+import { pageBoardSaved, resetLiveShareForTests } from './liveShare'
 import { useShareBadges } from './useShareBadges'
 
 const list = vi.mocked(api.share.list)
@@ -114,7 +114,7 @@ describe('shared-board marks (YAZ-1890, YAZ-3040)', () => {
     list.mockResolvedValue([row(A)])
     await mount([file(A)])
     expect(list).toHaveBeenCalledTimes(1)
-    act(() => noteBoardSaved('/v', A, 1e9))
+    act(() => pageBoardSaved('/v', A, 1e9))
     expect(mark(A)?.getAttribute('title')).toBe('Shared · Waiting to upload changes…')
     expect(mark(A)?.dataset.tone).toBe('ok')
     expect(list).toHaveBeenCalledTimes(1)
@@ -150,7 +150,7 @@ describe('shared-board marks (YAZ-1890, YAZ-3040)', () => {
     act(() => root?.render(<Probe nodes={[file(A)]} />))
     expect(seen.at(-1)).toBe(before)
     // A save of an UNSHARED board re-derives, and the marks are the same: still the same map.
-    act(() => noteBoardSaved('/v', '/v/other.excalidraw', 1e9))
+    act(() => pageBoardSaved('/v', '/v/other.excalidraw', 1e9))
     expect(seen.at(-1)).toBe(before)
   })
 })

@@ -1,6 +1,6 @@
 /**
  * Paste a path, get a link (YAZ-3609). A pasted absolute path or `yaseendocs://` link to a file or
- * folder of THIS vault becomes the link the `[[` picker writes for it: a note's or folder's id, else
+ * folder of THIS vault becomes the link the `[[` picker writes for it: a page's or folder's id, else
  * its vault spelling (`[[report.pdf]]`). Both are vault-relative, so they work on every Mac. A file
  * no tab can show gets a relative Markdown link, which opens in its default app (YAZ-1311). A path
  * in ANOTHER vault of the window gets a relative Markdown link too (D15), which opens in a tab (D14).
@@ -18,7 +18,7 @@ import { EXTERNAL_EDIT_META } from './external/applyExternalMarkdown'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { linkSchema } from '@milkdown/kit/preset/commonmark'
 import { isBoardTarget, newEmbed, newEmbedAlt } from '@shared/embedOptions'
-import { inCellOrNote } from './table/cellBlocks'
+import { inCellOrPage } from './table/cellBlocks'
 import { cardCheckOf } from './drawing/boardEmbedScan'
 import { fileKind } from '@shared/fileKind'
 import { parseFileLink } from '@shared/links'
@@ -29,8 +29,8 @@ import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 export interface PathPasteOptions {
   /** Vault root (absolute). A path in another vault of the window is a relative Markdown link (D15); one outside every vault of the window stays text. */
   root: string
-  /** ABSOLUTE path of this note: the `from` of a relative Markdown link. */
-  notePath: string
+  /** ABSOLUTE path of this page: the `from` of a relative Markdown link. */
+  pagePath: string
   /** This vault's `[[` picker rows: the spelling of every link the app writes. */
   candidates: WikilinkCandidateSource
   /** The `[[` picker rows of the window's vault that holds `path`, or null outside them (D14): links across the workspace. */
@@ -76,14 +76,14 @@ export function linkFor(path: string, options: PathPasteOptions): string | null 
     const other = options.candidatesOf?.(path)
     const row = other == null ? undefined : rowOf(path, other.candidates)
     // The link's text is the page's name, as the sidebar shows it (YAZ-3778 D2): no `.excalidraw`.
-    return row === undefined ? null : markdownLink(fileLabel(row.name), options.notePath, path)
+    return row === undefined ? null : markdownLink(fileLabel(row.name), options.pagePath, path)
   }
   const insert = rowOf(path, options.candidates.candidates)?.insert
   if (insert !== undefined) return `[[${insert}]]`
   // A file no tab can show (D5): a relative Markdown link. A click opens its default app (YAZ-1311).
   const name = nameOf(path)
   if (!name.includes('.') || fileKind(name) !== null) return null
-  return markdownLink(name, options.notePath, path)
+  return markdownLink(name, options.pagePath, path)
 }
 
 /** `[label](relative href)`: the label's brackets escaped. */
@@ -91,18 +91,18 @@ const markdownLink = (label: string, from: string, to: string): string => `[${la
 
 /** A Markdown link's target as a page, folder or file of a vault of the window (D8, D14), or null: the web, another folder, a missing file. */
 export function hrefTarget(href: string, options: PathPasteOptions): string | null {
-  const target = hrefPath(href, options.notePath)
+  const target = hrefPath(href, options.pagePath)
   return target === null ? null : rowOf(target, (options.candidatesOf?.(target) ?? options.candidates).candidates)?.path ?? null
 }
 
 /** A Markdown link's target as an absolute path in a vault of this window, found or not (D19); null for the web or anywhere else. */
 export function vaultHref(href: string, options: PathPasteOptions): string | null {
-  const target = hrefPath(href, options.notePath)
+  const target = hrefPath(href, options.pagePath)
   return target !== null && (inVault(target, options) || options.candidatesOf?.(target) != null) ? target : null
 }
 
-/** A local `href` as an absolute path: decoded, `#` and `?` dropped, resolved from `notePath`'s folder; null for the web. */
-export function hrefPath(href: string, notePath: string): string | null {
+/** A local `href` as an absolute path: decoded, `#` and `?` dropped, resolved from `pagePath`'s folder; null for the web. */
+export function hrefPath(href: string, pagePath: string): string | null {
   if (/^[a-z][a-z\d+.-]+:/i.test(href) && !/^file:/i.test(href)) return null
   let path: string
   try {
@@ -110,7 +110,7 @@ export function hrefPath(href: string, notePath: string): string | null {
   } catch {
     return null
   }
-  const absolute = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : `${notePath.replace(/[\\/][^\\/]*$/, '')}/${path}`
+  const absolute = path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path) ? path : `${pagePath.replace(/[\\/][^\\/]*$/, '')}/${path}`
   // A folder's page names its folder, as a pasted path does.
   return collapse(absolute).replace(/\/\.folder\.md$/, '')
 }
@@ -127,7 +127,7 @@ function collapse(path: string): string {
 
 /**
  * A link set in the link box (or "Add link…") or pasted with the absolute path of a file or folder of a
- * vault in this window (D16) is stored relative to this note, as a paste of a path writes it: it keeps
+ * vault in this window (D16) is stored relative to this page, as a paste of a path writes it: it keeps
  * working on another Mac where the vaults keep their layout. Only the links that this change SETS are
  * read (YAZ-3649): never a link that an outside edit (an agent, another app) wrote, and never an older
  * link that the caret types inside. Milkdown's paste carries no meta, so a link that text brings counts
@@ -169,7 +169,7 @@ export const relativeLinks = $prose((ctx) => new Plugin({
       const href = mark?.attrs.href
       const path = typeof href === 'string' && absolute.includes(href) ? vaultHref(href, options) : null
       if (mark === undefined || path === null) return
-      tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, href: relativeHref(options.notePath, path) }))
+      tr.addMark(pos, pos + node.nodeSize, type.create({ ...mark.attrs, href: relativeHref(options.pagePath, path) }))
     })
     return tr.docChanged ? tr : null
   },
@@ -227,7 +227,7 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   if (links.length > 1) {
     const tr = closeHistory(view.state.tr).deleteSelection()
     // A header cell or a heading holds no list (YAZ-3631, YAZ-3818 D7): there the links go on the line, one space
-    // apart. A body cell holds lists (YAZ-3818 D1), so there they are bullets, as in the note (D11).
+    // apart. A body cell holds lists (YAZ-3818 D1), so there they are bullets, as in the page (D11).
     const $at = tr.selection.$from
     const noList = $at.parent.type.name === 'heading' || Array.from({ length: $at.depth }, (_, d) => $at.node(d).type.name).includes('table_header')
     if (noList) {
@@ -266,7 +266,7 @@ export function pastePathLinks(view: EditorView, ctx: Ctx, options: PathPasteOpt
   const card = link.startsWith('[[') ? (cardCheckOf(view.state)?.cardOf(link.slice(2, -2)) ?? null) : null
   // A new embed's view starts locked (YAZ-2571 round 7): `![[x|locked]]`, or `![name|locked](href)` into another vault.
   const embedText = () => (card !== null ? `![[${card.id}]]` : link.startsWith('[[') ? newEmbed(link.slice(2, -2)) : `!${link.replace(/^\[((?:\\.|[^\]])*)\]/, (_, name: string) => `[${newEmbedAlt(name)}]`)}`)
-  const embed = (card !== null || (path !== null && isBoardTarget(path))) && !inCellOrNote(view.state.doc.resolve(to - raw.length)) ? Slice.maxOpen(ctx.get(parserCtx)(embedText()).content) : undefined
+  const embed = (card !== null || (path !== null && isBoardTarget(path))) && !inCellOrPage(view.state.doc.resolve(to - raw.length)) ? Slice.maxOpen(ctx.get(parserCtx)(embedText()).content) : undefined
   // No chip after a paste over words (K5): ⌘Z gives the words back.
   if (empty) offerKeepAsPath(view, to - raw.length, to - raw.length + slice.size, raw, embed)
   return true

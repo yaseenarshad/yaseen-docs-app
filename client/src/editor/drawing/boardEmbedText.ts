@@ -9,14 +9,14 @@ import { boardBaseName } from '@shared/fileKind'
 /** The host's word on an id-shaped target (YAZ-4920): does the id resolve to a board file? */
 export type BoardCheck = (target: string) => boolean
 
-/** An id-shaped link target (`EMB-40`, the vault's note ids): no ending to read, so only a resolver knows its kind. */
+/** An id-shaped link target (`EMB-40`, the vault's page ids): no ending to read, so only a resolver knows its kind. */
 export const isIdTarget = (page: string): boolean => /^[A-Za-z]{2,5}-[1-9]\d{0,14}$/.test(page.trim())
 
 /** The text has an id-shaped embed (`![[EMB-40`, resolved or not): what it is can change when the resolver does. */
 export const hasIdEmbed = (text: string): boolean => text.includes('![[') && /!\[\[[A-Za-z]{2,5}-[1-9]\d{0,14}(?:[|#\]])/.test(text)
 
 /**
- * The board an `![[inner]]` embeds (with any `#…`), or null when it is no board: `![[img.png]]`, `![[note]]`. An id
+ * The board an `![[inner]]` embeds (with any `#…`), or null when it is no board: `![[img.png]]`, `![[page]]`. An id
  * link (`![[EMB-40]]`, YAZ-4920: the paste chip's "Embed" and the picker's ⌥Enter write the id in an ID vault, D1 on
  * YAZ-4821) is a board when `isBoard`, the host's resolver, says the id names a board file; without it, no id is.
  */

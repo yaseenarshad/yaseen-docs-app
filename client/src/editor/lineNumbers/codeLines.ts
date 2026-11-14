@@ -14,7 +14,7 @@ const shown = new WeakMap<EditorView, number>()
  * and then effects only: no change of the text and none of the selection, so nothing goes to ProseMirror.
  */
 export function syncCodeLines(cm: EditorView): void {
-  // A note card's editor (YAZ-4961): its code block is inside the card, and the card holds the block's lines.
+  // A card's editor (YAZ-4961): its code block is inside the card, and the card holds the block's lines.
   const attr = cm.dom.closest(`[${CODE_LINE_ATTR}]`)?.getAttribute(CODE_LINE_ATTR)
   const first = attr == null ? undefined : Number(attr)
   if (shown.get(cm) === first) return

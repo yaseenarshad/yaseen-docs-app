@@ -11,7 +11,7 @@ import { setUpNextTaken, subscribeUpNextTaken, upNextTakenToday } from './upNext
 import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdded'
 
 /**
- * Note card review as App sees it (YAZ-4967): how many cards are due, and the one review
+ * Card review as App sees it (YAZ-4967): how many cards are due, and the one review
  * session a vault can have open. The queue comes from the index (`cardQueue`) and is taken ONCE, at start; a card is
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
  * text, D4). A card whose page or ID is gone is passed over.

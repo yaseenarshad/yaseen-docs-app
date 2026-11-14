@@ -20,7 +20,7 @@ import { appWindow, buildFixtureVault, copyVault, launchApp, layer, nextFrame, s
 test.describe.configure({ mode: 'serial' })
 
 const LINES = 300
-const note = (prefix: string) => `# Long ${prefix}\n\n${Array.from({ length: LINES }, (_, i) => `${prefix}-line-${i}`).join('\n\n')}\n`
+const page = (prefix: string) => `# Long ${prefix}\n\n${Array.from({ length: LINES }, (_, i) => `${prefix}-line-${i}`).join('\n\n')}\n`
 
 let userData: string
 let vault: string
@@ -46,8 +46,8 @@ const recorded: { aTop?: number; aZoom?: string; bTop?: number; bCount?: string 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'tab-layers-userdata-'))
   vault = await copyVault(await buildFixtureVault())
-  await writeFile(path.join(vault, 'Long A.md'), note('a'))
-  await writeFile(path.join(vault, 'Long B.md'), note('b'))
+  await writeFile(path.join(vault, 'Long A.md'), page('a'))
+  await writeFile(path.join(vault, 'Long B.md'), page('b'))
 })
 
 test.afterAll(async () => {

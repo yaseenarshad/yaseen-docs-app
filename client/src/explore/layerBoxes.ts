@@ -4,7 +4,7 @@
  * its own: every layer's box is written to its style here (`layerBoxes` says where each stands), on mount, on a
  * change of the list or of the window, and on each pointer move of a drag. A pointer move writes `left`, `top`,
  * `width` and `height` and nothing else: nothing renders and no layout is read while the pointer moves (the mini
- * window's rule, `NoteWindow.tsx`). The first layer's box is kept for this window (`saveLayerBox`).
+ * window's rule, `PageWindow.tsx`). The first layer's box is kept for this window (`saveLayerBox`).
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { layerBoxes, MIN_BOX_HEIGHT, MIN_BOX_WIDTH, savedLayerBox, saveLayerBox, type ExploreLayer, type LayerBox } from './layers'

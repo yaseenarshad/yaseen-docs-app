@@ -6,7 +6,7 @@
  * - THE PILL lives in a widget right before each table: a zero-height anchor (`table-zoom-anchor`) that `table.css`
  *   draws at the table block's top-right corner, outside the cells, with ONE rule (the demo decides the place). It
  *   shows while the pointer is over the table or the pill, while the pill has the focus, and always while the zoom is
- *   not 100% (`data-zoomed`); a read-only note shows none (a Super table keeps its tabs, YAZ-4897). The widget stops its events and ignores selection, so a key
+ *   not 100% (`data-zoomed`); a read-only page shows none (a Super table keeps its tabs, YAZ-4897). The widget stops its events and ignores selection, so a key
  *   in the pill's field never reaches the note. One key for every pill: a rebuild keeps its DOM and its React root.
  * - A CHANGE is one transaction with the history closed: one ⌘Z.
  * - THE VALUE: the widget renders the table's `zoom` at its position. A transaction that changes a table's `zoom` (or

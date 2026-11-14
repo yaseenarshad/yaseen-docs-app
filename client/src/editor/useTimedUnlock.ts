@@ -1,6 +1,6 @@
 /**
  * THE TIMED "ALLOW EDITS" OF ONE PAGE (YAZ-4939): the chip's box offers "Allow edits for 1 minute" · "10 minutes" ·
- * "Until I close this tab" (Yaseen's order, lowest first; 15 minutes and 1 hour were the first cut). The unlock is THIS tab's alone — a note's own switch, a board's and the vault's Read only
+ * "Until I close this tab" (Yaseen's order, lowest first; 15 minutes and 1 hour were the first cut). The unlock is THIS tab's alone — a page's own switch, a board's and the vault's Read only
  * all stay as they are in their files — and `until` says it: null while the page is locked (nothing runs), `Infinity`
  * until the tab closes, else the moment it ends. ONE `setTimeout` per unlock, armed here and cleared on close or on
  * "Lock now"; no clock ticks here (the chip keeps its own 1-second tick, only while a timer runs). At zero the page

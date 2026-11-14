@@ -4,7 +4,7 @@
  * - YAZ-3477 (bug): the page cog's menu shows ABOVE Monaco's sticky scroll lines. Before the fix the
  *   sticky lines (`.sticky-widget`, z-index 4) drew over the menu's top rows. The check hit-tests the
  *   centre of each menu row with `elementFromPoint`, so it reads the real stacking order.
- * - YAZ-3478: the note's fold keys in a code tab (⌘⇧U, ⌘⇧I, ⌘↑, ⌘↓), ⌘End / ⌘Home, the fold chevron's
+ * - YAZ-3478: the page's fold keys in a code tab (⌘⇧U, ⌘⇧I, ⌘↑, ⌘↓), ⌘End / ⌘Home, the fold chevron's
  *   right-click menu ("Collapse all", "Expand all"), the folds kept through a close and a reopen, and
  *   Monaco's own right-click menu in the app's `.ctx-menu` look (light and dark), above the chips row.
  * - YAZ-3505: `Dockerfile`, `Makefile` and the other well-known names with no extension open, with colours.

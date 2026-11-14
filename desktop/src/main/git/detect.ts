@@ -71,7 +71,7 @@ export async function detectRepo(bin: string, root: string): Promise<RepoFacts> 
 
   // `rev-parse --abbrev-ref HEAD` prints the branch, or the literal `HEAD` when detached. It
   // FAILS (exit 128) on a repo with zero commits, because the branch HEAD names has no commit to
-  // resolve — note it prints `HEAD` to stdout there too, so the exit code is what we branch on.
+  // resolve — page it prints `HEAD` to stdout there too, so the exit code is what we branch on.
   // `symbolic-ref` reads HEAD's ref without resolving it, which is exactly the unborn-branch case.
   const head = await git(bin, root, ['rev-parse', '--abbrev-ref', 'HEAD'])
   let branch: string | null
@@ -83,7 +83,7 @@ export async function detectRepo(bin: string, root: string): Promise<RepoFacts> 
     branch = sym.code === 0 ? sym.stdout.trim() || null : null
   }
 
-  // Untracked files included (porcelain's default), since an unsynced new note is exactly the
+  // Untracked files included (porcelain's default), since an unsynced new page is exactly the
   // state this flag exists to catch. Untracked DIRECTORIES collapse to a single `dir/` entry —
   // fine for "is there anything to commit", and 2B stages with `add -A` regardless.
   const status = await git(bin, root, ['status', '--porcelain=v1'])

@@ -52,7 +52,7 @@ interface FlyoutParentProps {
   onHover: () => void
   onOpen: () => void
   onCloseFlyout: () => void
-  /** A parent WITH a default (YAZ-3085 D1, "New note ›"): a click or Enter runs it; hover and ArrowRight open the flyout. Absent → they open it too. */
+  /** A parent WITH a default (YAZ-3085 D1, "New page ›"): a click or Enter runs it; hover and ArrowRight open the flyout. Absent → they open it too. */
   onChoose?: () => void
   /** Drawn from `data-hint`, as on a leaf. */
   hint?: string

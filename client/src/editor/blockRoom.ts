@@ -5,13 +5,13 @@
  *
  *  - `blockRightEdge`: that edge, in screen px. The code block's own drag (`code/codeWidth.ts`) stops at it.
  *  - `watchBlockRoom`: the same room for CSS, as `--block-room` on the editor's mount: px at 100% zoom from the right
- *    edge of `.ProseMirror` to that edge. app.css caps a code block or a table that takes the note's or Settings' width at
+ *    edge of `.ProseMirror` to that edge. app.css caps a code block or a table that takes the page's or Settings' width at
  *    `calc(100% + var(--block-room, 0px))`. Measured when the scroller or the body changes WIDTH (a window resize, the
  *    sidebar, the column width), when the zoom changes and when the host asks (`measure`, the table of contents turned on
  *    or off): never on a keystroke. A body that only grows taller is skipped before any measuring.
  */
 
-/** The rightmost point a block of the note under `dom` may reach, in screen px: the scroller's inner right edge, or `gap` px left of a visible Contents rail. */
+/** The rightmost point a block of the page under `dom` may reach, in screen px: the scroller's inner right edge, or `gap` px left of a visible Contents rail. */
 export function blockRightEdge(dom: HTMLElement, gap: number): number {
   const scroller = dom.closest<HTMLElement>('.editor-host') ?? dom
   // The ProseMirror root is an `.editor` too, so the rail is found from the page's side: the one whose editor holds `dom`.

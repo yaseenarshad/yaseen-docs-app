@@ -601,7 +601,7 @@ function tabsStep(s: TabsState, a: TabsAction): TabsState {
     case 'delete':
       // Deleting a tab IS closing it, from the user's point of view — so reuse the `close`
       // case rather than re-implementing the heir ladder. Divergence between the two would
-      // show up as "deleting the active note picks a different tab than ⌘W does", which is
+      // show up as "deleting the active page picks a different tab than ⌘W does", which is
       // the kind of inconsistency nobody reports but everybody feels. Every tab of the file
       // closes (S18), and the page leaves the Back list.
       return dropPages(s, (p) => p === a.path)
@@ -919,7 +919,7 @@ export function bootTabs(root: string | null): TabsState {
   if (root === null) return EMPTY
   // A Files window (YAZ-3357 D1) has no tabs at all.
   if (storage.isFilesWindow()) return EMPTY
-  // No restored file: the window opens blank (YAZ-3487 D7) — or, with "Open on: Its last note" (D15), on the vault's last
+  // No restored file: the window opens blank (YAZ-3487 D7) — or, with "Open on: Its last page" (D15), on the vault's last
   // file, unless it was opened empty on purpose (YAZ-3343).
   const fallback = storage.getSettings().vaultOpensOn === 'last' && !storage.isEmptyByChoice() ? storage.getLastFile(root) : null
   const active = hashFilePath(location.hash) ?? storage.getFile() ?? fallback
@@ -990,7 +990,7 @@ export interface UseWorkspace extends WorkspaceState {
   sleep: (ids: readonly string[]) => void
   /** A hover on a sleeping tab (YAZ-3737 S7): its editor mounts behind the page on show. Never mirrored. */
   wake: (id: string) => void
-  /** That tab only: a copy closes alone (S11). Its note goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
+  /** That tab only: a copy closes alone (S11). Its page goes to "Recently closed" (YAZ-3487 D10) — not when `moved`: it lives on in another window. */
   close: (id: string, moved?: boolean) => void
   /** The tab board's closes of several tabs (YAZ-2648 D9, D15), by id: each as `close`, and ONE identity write for all of them. */
   closeMany: (ids: readonly string[], moved?: boolean) => void
@@ -1125,19 +1125,19 @@ export function useWorkspace(root: string | null): UseWorkspace {
     sweepEmbedPicturesSoon()
   }, [dispatch])
   const wake = useCallback((id: string) => dispatch({ type: 'wake', id }, { mirror: false }), [dispatch])
-  /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
-  const noteClosed = useCallback((ids: readonly string[]): void => {
+  /** YAZ-3487 D10: the pages of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
+  const pageClosed = useCallback((ids: readonly string[]): void => {
     const paths = stateRef.current.tabs.filter((t) => ids.includes(t.id)).map((t) => t.path)
-    if (paths.length > 0) storage.noteClosed(paths)
+    if (paths.length > 0) storage.pageClosed(paths)
   }, [])
   const close = useCallback((id: string, moved = false) => {
-    if (!moved) noteClosed([id])
+    if (!moved) pageClosed([id])
     dispatch({ type: 'close', id })
-  }, [dispatch, noteClosed])
+  }, [dispatch, pageClosed])
   const closeMany = useCallback((ids: readonly string[], moved = false) => {
-    if (!moved) noteClosed(ids)
+    if (!moved) pageClosed(ids)
     dispatch({ type: 'close-many', ids })
-  }, [dispatch, noteClosed])
+  }, [dispatch, pageClosed])
   const openStored = useCallback((tabs: readonly StoredTab[]) => dispatch({ type: 'open-stored', tabs }), [dispatch])
   const move = useCallback((from: number, to: number) => dispatch({ type: 'move', from, to }), [dispatch])
   // The blank tab is in no stored field (YAZ-2655 D10): showing it and closing it mirror nothing.
@@ -1150,10 +1150,10 @@ export function useWorkspace(root: string | null): UseWorkspace {
     }
     const active = stateRef.current.active
     if (active === null) return false
-    noteClosed([active])
+    pageClosed([active])
     dispatch({ type: 'close', id: active })
     return true
-  }, [dispatch, closeBlank, noteClosed])
+  }, [dispatch, closeBlank, pageClosed])
   const next = useCallback(() => dispatch({ type: 'cycle', dir: 1 }), [dispatch])
   const prev = useCallback(() => dispatch({ type: 'cycle', dir: -1 }), [dispatch])
   const back = useCallback(() => dispatch({ type: 'back' }), [dispatch])

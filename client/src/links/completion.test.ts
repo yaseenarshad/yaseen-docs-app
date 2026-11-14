@@ -73,8 +73,8 @@ describe('matchLinkCandidates over plain names', () => {
   })
 
   it('caps at MAX_SUGGESTIONS', () => {
-    const many = Array.from({ length: 20 }, (_, i) => `Note ${i}`)
-    expect(matchLinkNames(many, 'Note')).toHaveLength(MAX_SUGGESTIONS)
+    const many = Array.from({ length: 20 }, (_, i) => `Page ${i}`)
+    expect(matchLinkNames(many, 'Page')).toHaveLength(MAX_SUGGESTIONS)
     expect(matchLinkNames(many, '')).toEqual(many.slice(0, MAX_SUGGESTIONS))
   })
 })
@@ -92,7 +92,7 @@ describe('matchLinkCandidates ranking (F2, GRO-2197)', () => {
   })
 
   it('the cap applies AFTER ranking — a late exact match still tops a board of substrings', () => {
-    const candidates = [...Array.from({ length: 20 }, (_, i) => `note cac ${i}`), 'CAC']
+    const candidates = [...Array.from({ length: 20 }, (_, i) => `page cac ${i}`), 'CAC']
     const matched = names(candidates, 'cac')
     expect(matched).toHaveLength(MAX_SUGGESTIONS)
     expect(matched[0]).toBe('CAC')
@@ -200,18 +200,18 @@ describe('linkCandidates', () => {
   })
 
   it('duplicate basenames: the shallowest keeps the bare name, others get folder/basename', () => {
-    const records = [rec('/vault/Note.md'), rec('/vault/deep/Note.md'), rec('/vault/deep/deeper/Note.md')]
-    expect(inserts(records)).toEqual(['Note', 'deep/Note', 'deep/deeper/Note'])
+    const records = [rec('/vault/Page.md'), rec('/vault/deep/Page.md'), rec('/vault/deep/deeper/Page.md')]
+    expect(inserts(records)).toEqual(['Page', 'deep/Page', 'deep/deeper/Page'])
   })
 
   it('equal depth ties go to the first in (path-sorted) order, like the resolver', () => {
-    const records = [rec('/vault/a/Note.md'), rec('/vault/b/Note.md')]
-    expect(inserts(records)).toEqual(['Note', 'b/Note'])
+    const records = [rec('/vault/a/Page.md'), rec('/vault/b/Page.md')]
+    expect(inserts(records)).toEqual(['Page', 'b/Page'])
   })
 
   it('duplicate detection is case-insensitive, like resolution', () => {
-    const records = [rec('/vault/note.md'), rec('/vault/sub/Note.md')]
-    expect(inserts(records)).toEqual(['note', 'sub/Note'])
+    const records = [rec('/vault/page.md'), rec('/vault/sub/Page.md')]
+    expect(inserts(records)).toEqual(['page', 'sub/Page'])
   })
 
   it('a name row matches, inserts and reads as itself (lower precomputed for the ranking scan, GRO-2197)', () => {
@@ -219,12 +219,12 @@ describe('linkCandidates', () => {
     expect(linkCandidates([rec('/vault/A.md')])).toEqual([{ name: 'A', insert: 'A', label: 'A', lower: 'a', path: '/vault/A.md' }])
   })
 
-  it('an alias adds a row after its note: typed as the alias, inserted PIPED, labelled with the note (GRO-2214)', () => {
+  it('an alias adds a row after its page: typed as the alias, inserted PIPED, labelled with the page (GRO-2214)', () => {
     const CAC = '/vault/Customer Acquisition Cost.md'
     const records = [rec(CAC, ['CAC', 'Acquisition Cost']), rec('/vault/Ideas.md')]
     expect(linkCandidates(records)).toEqual([
       // Every row carries the record it came from (YAZ-957) — the alias rows included, so an
-      // alias row and its note's own row agree on whose note they are.
+      // alias row and its page's own row agree on whose page they are.
       { name: 'Customer Acquisition Cost', insert: 'Customer Acquisition Cost', label: 'Customer Acquisition Cost', lower: 'customer acquisition cost', path: CAC },
       { name: 'CAC', insert: 'Customer Acquisition Cost|CAC', label: 'CAC — Customer Acquisition Cost', lower: 'cac', path: CAC },
       { name: 'Acquisition Cost', insert: 'Customer Acquisition Cost|Acquisition Cost', label: 'Acquisition Cost — Customer Acquisition Cost', lower: 'acquisition cost', path: CAC },
@@ -239,9 +239,9 @@ describe('linkCandidates', () => {
     expect(linkCandidates(records).map((c) => c.label)).toEqual(['CAC', 'Customer Acquisition Cost — CAC'])
   })
 
-  it('an alias matching only the BARE basename of a folder-disambiguated note is NOT degenerate — the piped row stays', () => {
-    const records = [rec('/vault/Note.md'), rec('/vault/a/Note.md', ['Note'])]
-    expect(linkCandidates(records).map((c) => c.insert)).toEqual(['Note', 'a/Note', 'a/Note|Note'])
+  it('an alias matching only the BARE basename of a folder-disambiguated page is NOT degenerate — the piped row stays', () => {
+    const records = [rec('/vault/Page.md'), rec('/vault/a/Page.md', ['Page'])]
+    expect(linkCandidates(records).map((c) => c.insert)).toEqual(['Page', 'a/Page', 'a/Page|Page'])
   })
 
   it('an alias containing [ or ] is skipped — its piped insert would re-parse as a different link (GRO-2197)', () => {
@@ -249,17 +249,17 @@ describe('linkCandidates', () => {
     expect(linkCandidates(records).map((c) => c.insert)).toEqual(['Metrics', 'Metrics|Fine'])
   })
 
-  it('two notes claiming one alias both show, told apart by the note half (folder-disambiguated when the basenames collide too)', () => {
+  it('two pages claiming one alias both show, told apart by the page half (folder-disambiguated when the basenames collide too)', () => {
     const records = [rec('/vault/a/Model.md', ['CAC']), rec('/vault/b/Model.md', ['CAC'])]
     expect(matchLinkCandidates(linkCandidates(records), 'CAC').map((c) => c.label)).toEqual(['CAC — Model', 'CAC — b/Model'])
   })
 
   it('every candidate resolves to exactly its own record (unambiguous by construction)', () => {
     const records = [
-      rec('/vault/Note.md', ['Alias one']),
-      rec('/vault/a/Note.md'),
+      rec('/vault/Page.md', ['Alias one']),
+      rec('/vault/a/Page.md'),
       rec('/vault/a/Other.md', ['Alias one']), // a duplicate alias: the piped insert is still exact
-      rec('/vault/b/c/Note.md'),
+      rec('/vault/b/c/Page.md'),
     ]
     const resolve = resolverFor(records, '/vault')
     const owners = records.flatMap((r) => Array<string>(1 + r.aliases.length).fill(r.path))
@@ -267,7 +267,7 @@ describe('linkCandidates', () => {
   })
 })
 
-describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
+describe('linkCandidates: a page with an id is linked BY it (YAZ-2293)', () => {
   const ID = 'k3m9x2pq7abc'
   const CAC = '/vault/Customer Acquisition Cost.md'
 
@@ -277,7 +277,7 @@ describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
     ])
   })
 
-  it('an alias row inserts the SAME plain id — no pipe — and still reads `Alias — Note`', () => {
+  it('an alias row inserts the SAME plain id — no pipe — and still reads `Alias — Page`', () => {
     expect(linkCandidates([{ ...rec(CAC, ['CAC']), id: ID }])[1]).toEqual({
       name: 'CAC',
       insert: ID,
@@ -287,7 +287,7 @@ describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
     })
   })
 
-  it('a note without an id beside one with: exactly the by-name rows it always had', () => {
+  it('a page without an id beside one with: exactly the by-name rows it always had', () => {
     const records = [{ ...rec('/vault/A.md'), id: ID }, rec(CAC, ['CAC'])]
     expect(linkCandidates(records).slice(1)).toEqual([
       { name: 'Customer Acquisition Cost', insert: 'Customer Acquisition Cost', label: 'Customer Acquisition Cost', lower: 'customer acquisition cost', path: CAC },
@@ -302,13 +302,13 @@ describe('linkCandidates: a note with an id is linked BY it (YAZ-2293)', () => {
   })
 
   it('duplicate basenames are still told apart in name and label, id or no id', () => {
-    const records = [rec('/vault/Note.md'), { ...rec('/vault/a/Note.md', ['N']), id: ID }, rec('/vault/b/Note.md', ['N'])]
+    const records = [rec('/vault/Page.md'), { ...rec('/vault/a/Page.md', ['N']), id: ID }, rec('/vault/b/Page.md', ['N'])]
     expect(linkCandidates(records).map(({ name, label, insert }) => ({ name, label, insert }))).toEqual([
-      { name: 'Note', label: 'Note', insert: 'Note' },
-      { name: 'a/Note', label: 'a/Note', insert: ID },
-      { name: 'N', label: 'N — a/Note', insert: ID },
-      { name: 'b/Note', label: 'b/Note', insert: 'b/Note' },
-      { name: 'N', label: 'N — b/Note', insert: 'b/Note|N' },
+      { name: 'Page', label: 'Page', insert: 'Page' },
+      { name: 'a/Page', label: 'a/Page', insert: ID },
+      { name: 'N', label: 'N — a/Page', insert: ID },
+      { name: 'b/Page', label: 'b/Page', insert: 'b/Page' },
+      { name: 'N', label: 'N — b/Page', insert: 'b/Page|N' },
     ])
   })
 })
@@ -318,7 +318,7 @@ describe('linkCandidates: rows are typed and read as TITLES (YAZ-2420 D17)', () 
   const ABDUL = `/vault/candidates/up-001-abdul-${ID}.md`
   const abdul = (aliases: string[] = []): IndexRecord => ({ ...rec(ABDUL, aliases), title: 'UP-001 - Abdul' })
 
-  it('E: the row of a note with a title matches and reads as the title, and inserts the id; so does its alias row', () => {
+  it('E: the row of a page with a title matches and reads as the title, and inserts the id; so does its alias row', () => {
     const rows = linkCandidates([{ ...abdul(['Abdul R']), id: ID }])
     expect(rows).toEqual([
       { name: 'UP-001 - Abdul', insert: ID, label: 'UP-001 - Abdul', lower: 'up-001 - abdul', path: ABDUL, id: ID },
@@ -328,13 +328,13 @@ describe('linkCandidates: rows are typed and read as TITLES (YAZ-2420 D17)', () 
     expect(matchLinkCandidates(rows, ID)).toEqual([]) // the file name is not what a row is typed as
   })
 
-  it('a note with a title and no id inserts its title, which resolves back to it', () => {
+  it('a page with a title and no id inserts its title, which resolves back to it', () => {
     const records = [abdul(['Abdul R'])]
     expect(linkCandidates(records).map((c) => c.insert)).toEqual(['UP-001 - Abdul', 'UP-001 - Abdul|Abdul R'])
     expect(linkCandidates(records).map((c) => resolverFor(records, '/vault')(c.insert)?.record.path)).toEqual([ABDUL, ABDUL])
   })
 
-  it('two notes with one title and no id: the shallowest inserts the title, the other its path, and each row tells them apart', () => {
+  it('two pages with one title and no id: the shallowest inserts the title, the other its path, and each row tells them apart', () => {
     const records = [abdul(['Abdul R']), { ...rec('/vault/z/deep/old-abdul.md', ['Old one']), title: 'UP-001 - Abdul' }]
     expect(linkCandidates(records).map(({ label, insert }) => ({ label, insert }))).toEqual([
       { label: 'UP-001 - Abdul', insert: 'UP-001 - Abdul' },
@@ -348,7 +348,7 @@ describe('linkCandidates: rows are typed and read as TITLES (YAZ-2420 D17)', () 
 })
 
 describe('titleCandidates (the cell editors, YAZ-2293)', () => {
-  it('E: offers a note with a title by the title, and writes its id — its title when it has none (YAZ-2420 D17)', () => {
+  it('E: offers a page with a title by the title, and writes its id — its title when it has none (YAZ-2420 D17)', () => {
     const titled = { ...rec('/vault/candidates/up-001-abdul-k3m9x2pq7abc.md'), title: 'UP-001 - Abdul' }
     expect(titleCandidates([{ ...titled, id: 'k3m9x2pq7abc' }, titled])).toEqual([
       { name: 'UP-001 - Abdul', insert: 'k3m9x2pq7abc', label: 'UP-001 - Abdul', lower: 'up-001 - abdul', id: 'k3m9x2pq7abc' },
@@ -357,21 +357,21 @@ describe('titleCandidates (the cell editors, YAZ-2293)', () => {
   })
 
 
-  it('offers every note by its BASENAME — no alias row, no folder form — and writes its id when it has one', () => {
-    const records = [rec('/vault/Note.md', ['Alias']), { ...rec('/vault/a/Note.md'), id: 'k3m9x2pq7abc' }]
+  it('offers every page by its BASENAME — no alias row, no folder form — and writes its id when it has one', () => {
+    const records = [rec('/vault/Page.md', ['Alias']), { ...rec('/vault/a/Page.md'), id: 'k3m9x2pq7abc' }]
     expect(titleCandidates(records)).toEqual([
-      { name: 'Note', insert: 'Note', label: 'Note', lower: 'note' },
-      { name: 'Note', insert: 'k3m9x2pq7abc', label: 'Note', lower: 'note', id: 'k3m9x2pq7abc' },
+      { name: 'Page', insert: 'Page', label: 'Page', lower: 'page' },
+      { name: 'Page', insert: 'k3m9x2pq7abc', label: 'Page', lower: 'page', id: 'k3m9x2pq7abc' },
     ])
   })
 })
 
-// The ID vault's half is `a note with an id is linked BY it` and `rows are typed and read as TITLES`, above.
+// The ID vault's half is `a page with an id is linked BY it` and `rows are typed and read as TITLES`, above.
 describe('a vault that does not use IDs links by NAME (YAZ-2523 V3)', () => {
-  /** A note as such a vault's index hands it out: no `id`, its file name as its title; `id` and `title` are among its properties. */
+  /** A page as such a vault's index hands it out: no `id`, its file name as its title; `id` and `title` are among its properties. */
   const records = [{ ...rec('/vault/candidates/Abdul.md', ['AR']), properties: { id: 'k3m9x2pq7abc', title: 'UP-001 - Abdul' } }]
 
-  it('the `[[` picker\u2019s rows are typed, read and inserted as the file name, the alias row piped; each resolves back to the note', () => {
+  it('the `[[` picker\u2019s rows are typed, read and inserted as the file name, the alias row piped; each resolves back to the page', () => {
     const rows = linkCandidates(records)
     expect(rows.map(({ name, insert }) => ({ name, insert }))).toEqual([
       { name: 'Abdul', insert: 'Abdul' },
@@ -380,7 +380,7 @@ describe('a vault that does not use IDs links by NAME (YAZ-2523 V3)', () => {
     expect(rows.map((c) => resolverFor(records, '/vault')(c.insert)?.record.path)).toEqual(['/vault/candidates/Abdul.md', '/vault/candidates/Abdul.md'])
   })
 
-  it('a link cell offers the note by its file name and writes that name', () => {
+  it('a link cell offers the page by its file name and writes that name', () => {
     expect(titleCandidates(records)).toEqual([{ name: 'Abdul', insert: 'Abdul', label: 'Abdul', lower: 'abdul' }])
   })
 })
@@ -390,12 +390,12 @@ describe('mergeLinkCandidates (YAZ-1310)', () => {
     const markdown = [
       { ...nameCandidate('data.json'), path: '/vault/data.json.md' },
       { name: 'JSON alias', insert: 'data.json|JSON alias', label: 'JSON alias — data.json', path: '/vault/data.json.md' },
-      { name: 'data.json', insert: 'Note|data.json', label: 'data.json — Note', path: '/vault/Note.md' },
-      { ...nameCandidate('Note'), path: '/vault/Note.md' },
+      { name: 'data.json', insert: 'Page|data.json', label: 'data.json — Page', path: '/vault/Page.md' },
+      { ...nameCandidate('Page'), path: '/vault/Page.md' },
     ]
     expect(mergeLinkCandidates(markdown, []).map((candidate) => candidate.insert)).toEqual([
-      'Note|data.json',
-      'Note',
+      'Page|data.json',
+      'Page',
     ])
   })
 
@@ -403,22 +403,22 @@ describe('mergeLinkCandidates (YAZ-1310)', () => {
     const markdown = [
       { ...nameCandidate('data.json'), path: '/vault/data.json.md' },
       { name: 'JSON alias', insert: 'data.json|JSON alias', label: 'JSON alias — data.json', path: '/vault/data.json.md' },
-      { name: 'data.json', insert: 'Note|data.json', label: 'data.json — Note', path: '/vault/Note.md' },
-      { ...nameCandidate('Note'), path: '/vault/Note.md' },
+      { name: 'data.json', insert: 'Page|data.json', label: 'data.json — Page', path: '/vault/Page.md' },
+      { ...nameCandidate('Page'), path: '/vault/Page.md' },
     ]
     const viewOnly = [
       { ...nameCandidate('data.json'), path: '/vault/data.json' },
       { ...nameCandidate('deep/tool.PY'), path: '/vault/deep/tool.PY' },
     ]
     expect(mergeLinkCandidates(markdown, viewOnly).map((candidate) => candidate.insert)).toEqual([
-      'Note|data.json',
-      'Note',
+      'Page|data.json',
+      'Page',
       'data.json',
       'deep/tool.PY',
     ])
   })
 
-  it('keeps a note NAMED like a view-only file once it links by id: the id is no view-only spelling (YAZ-2293)', () => {
+  it('keeps a page NAMED like a view-only file once it links by id: the id is no view-only spelling (YAZ-2293)', () => {
     const records = [{ ...rec('/vault/report.pdf.md', ['Q3']), id: 'k3m9x2pq7abc' }, rec('/vault/data.json.md')]
     expect(mergeLinkCandidates(linkCandidates(records), []).map((candidate) => candidate.label)).toEqual(['report.pdf', 'Q3 — report.pdf'])
   })

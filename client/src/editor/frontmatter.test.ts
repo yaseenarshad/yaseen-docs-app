@@ -50,20 +50,20 @@ describe('frontmatter split/join', () => {
 })
 
 describe('renameFrontmatterKey (YAZ-4551)', () => {
-  const NOTE = '---\n# filed\nstatus: draft\n# the due day\ndue: 2026-12-01\ntags:\n  - a\nin:\n  f1:\n    Status: Ready\n---\nBody\n'
+  const PAGE = '---\n# filed\nstatus: draft\n# the due day\ndue: 2026-12-01\ntags:\n  - a\nin:\n  f1:\n    Status: Ready\n---\nBody\n'
 
   it('renames ONE key in place: its value, its comment and its place stay, every other byte too', () => {
-    expect(renameFrontmatterKey(NOTE, [], 'due', 'Due Date')).toBe(NOTE.replace('due: 2026-12-01', 'Due Date: 2026-12-01'))
-    expect(renameFrontmatterKey(NOTE, [], 'tags', 'Tags')).toBe(NOTE.replace('tags:\n', 'Tags:\n'))
+    expect(renameFrontmatterKey(PAGE, [], 'due', 'Due Date')).toBe(PAGE.replace('due: 2026-12-01', 'Due Date: 2026-12-01'))
+    expect(renameFrontmatterKey(PAGE, [], 'tags', 'Tags')).toBe(PAGE.replace('tags:\n', 'Tags:\n'))
   })
 
   it('renames a key inside a map — a folder block of `in`', () => {
-    expect(renameFrontmatterKey(NOTE, ['in', 'f1'], 'Status', 'Stage')).toBe(NOTE.replace('    Status: Ready', '    Stage: Ready'))
+    expect(renameFrontmatterKey(PAGE, ['in', 'f1'], 'Status', 'Stage')).toBe(PAGE.replace('    Status: Ready', '    Stage: Ready'))
   })
 
   it('refuses a missing key and a name the map holds already', () => {
-    expect(() => renameFrontmatterKey(NOTE, [], 'gone', 'x')).toThrow('"gone" is not a property')
-    expect(() => renameFrontmatterKey(NOTE, [], 'due', 'status')).toThrow('"status" is already a property')
+    expect(() => renameFrontmatterKey(PAGE, [], 'gone', 'x')).toThrow('"gone" is not a property')
+    expect(() => renameFrontmatterKey(PAGE, [], 'due', 'status')).toThrow('"status" is already a property')
   })
 
   it('keeps the frame as a property write does (YAZ-4544, one helper): CRLF line ends, the `...` fence; bad YAML is refused', () => {

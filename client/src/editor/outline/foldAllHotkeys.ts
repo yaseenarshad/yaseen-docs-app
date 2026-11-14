@@ -2,13 +2,13 @@
  * Document-wide fold-all hotkeys. Bullet and heading folds keep independent plugin state, but
  * Cmd+Shift+U / Cmd+Shift+I are one user gesture: one metadata-only transaction updates both and
  * one Cmd+Z restores both exact prior sets. Individual chevrons and caret-local folds stay owned by
- * their existing keymaps. The note's fold-all button (YAZ-3938, `FoldAllButton.tsx`) runs the same
+ * their existing keymaps. The page's fold-all button (YAZ-3938, `FoldAllButton.tsx`) runs the same
  * command, so one Cmd+Z undoes a click too, and `foldsChanged` tells the button when to read again.
  */
 import { type Command, type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'
 import { $prose, $shortcut } from '@milkdown/kit/utils'
 import type { FoldNext } from '../FoldAllButton'
-import { rowShortcuts } from '../noteKeys'
+import { rowShortcuts } from '../pageKeys'
 import { addHeadingFoldAllMeta, addHeadingFoldUndoMeta, hasHeadingFoldMeta } from './headingFolding'
 import { addOutlineFoldAllMeta, addOutlineFoldUndoMeta, hasOutlineFoldMeta } from './outlineFolding'
 import { foldingBlocked, isFoldingOn } from './foldingSwitch'
@@ -77,9 +77,9 @@ const undoCombinedDocumentFold: Command = (state, dispatch) => {
   return true
 }
 
-/** The keys are the rows' (`shared/keys/note.ts`, YAZ-3564 K4). */
+/** The keys are the rows' (`shared/keys/page.ts`, YAZ-3564 K4). */
 export const foldAllHotkeys = $shortcut((ctx) => ({
-  ...rowShortcuts(ctx, 'note.foldAll', 'FoldAllDocument', { priority: PRIORITY, onRun: () => setAllDocumentFolds(true) }),
-  ...rowShortcuts(ctx, 'note.unfoldAll', 'UnfoldAllDocument', { priority: PRIORITY, onRun: () => setAllDocumentFolds(false) }),
-  ...rowShortcuts(ctx, 'note.undo', 'UndoCombinedDocumentFold', { priority: PRIORITY, onRun: () => undoCombinedDocumentFold }),
+  ...rowShortcuts(ctx, 'page.foldAll', 'FoldAllDocument', { priority: PRIORITY, onRun: () => setAllDocumentFolds(true) }),
+  ...rowShortcuts(ctx, 'page.unfoldAll', 'UnfoldAllDocument', { priority: PRIORITY, onRun: () => setAllDocumentFolds(false) }),
+  ...rowShortcuts(ctx, 'page.undo', 'UndoCombinedDocumentFold', { priority: PRIORITY, onRun: () => undoCombinedDocumentFold }),
 }))

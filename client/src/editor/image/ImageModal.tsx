@@ -5,7 +5,7 @@
  * A MODAL BESIDE THE EDITOR, the `DrawingModal` precedent (YAZ-879): `Editor`'s `CrepeHost` holds
  * `openImage`, the node view's double-click sets it (`image.onOpenImage`), and this renders over
  * the window. It is given the RESOLVED src — the same URL the inline `<img>` loaded — so what the
- * lightbox shows is exactly what the note showed, cache and all.
+ * lightbox shows is exactly what the page showed, cache and all.
  *
  * GALLERY (YAZ-1709 follow-on): the caller hands over EVERY image on the page in document order
  * plus the index of the one double-clicked; this owns only the cursor. The list is the node

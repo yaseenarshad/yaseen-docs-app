@@ -23,14 +23,14 @@ function vaultUrl(root: string, ref: string, from?: string): string {
 let root: string
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'mdapp-vault-url-'))
-  await Promise.all([mkdir(path.join(root, 'pics'), { recursive: true }), mkdir(path.join(root, 'notes', 'sub'), { recursive: true })])
+  await Promise.all([mkdir(path.join(root, 'pics'), { recursive: true }), mkdir(path.join(root, 'pages', 'sub'), { recursive: true })])
   await Promise.all([
     writeFile(path.join(root, 'pics', 'a b.png'), PNG),
     writeFile(path.join(root, 'pics', 'pic.png'), PNG),
-    writeFile(path.join(root, 'notes', 'pic.png'), PNG),
+    writeFile(path.join(root, 'pages', 'pic.png'), PNG),
     writeFile(path.join(root, 'ünï.PNG'), PNG),
     writeFile(path.join(root, 'sketch.excalidraw'), '{"type":"excalidraw"}'),
-    writeFile(path.join(root, 'note.md'), '# note'),
+    writeFile(path.join(root, 'page.md'), '# page'),
   ])
 })
 afterAll(() => rm(root, { recursive: true, force: true }))
@@ -38,7 +38,7 @@ afterAll(() => rm(root, { recursive: true, force: true }))
 describe('parseVaultUrl', () => {
   it('decodes the root, re-joins the ref segments, and carries `from` only when present', () => {
     expect(parseVaultUrl(vaultUrl('/v/my vault', 'pics/a b.png'))).toEqual({ root: '/v/my vault', ref: 'pics/a b.png' })
-    expect(parseVaultUrl(vaultUrl('/v', 'ünï.PNG', 'notes/sub'))).toEqual({ root: '/v', ref: 'ünï.PNG', from: 'notes/sub' })
+    expect(parseVaultUrl(vaultUrl('/v', 'ünï.PNG', 'pages/sub'))).toEqual({ root: '/v', ref: 'ünï.PNG', from: 'pages/sub' })
     expect(parseVaultUrl(vaultUrl('/v', 'pic.png', ''))).toEqual({ root: '/v', ref: 'pic.png', from: '' })
   })
 
@@ -82,10 +82,10 @@ describe('parseVaultUrl', () => {
 describe('resolveVaultUrl', () => {
   const file = async (url: string) => (await resolveVaultUrl(url))?.path ?? null
 
-  it('walks the Obsidian order: note-relative, then root-relative, then basename', async () => {
-    expect(await file(vaultUrl(root, 'pic.png', 'notes'))).toBe(path.join(root, 'notes', 'pic.png'))
-    expect(await file(vaultUrl(root, 'pics/pic.png', 'notes'))).toBe(path.join(root, 'pics', 'pic.png'))
-    expect(await file(vaultUrl(root, 'a b.png', 'notes/sub'))).toBe(path.join(root, 'pics', 'a b.png'))
+  it('walks the Obsidian order: page-relative, then root-relative, then basename', async () => {
+    expect(await file(vaultUrl(root, 'pic.png', 'pages'))).toBe(path.join(root, 'pages', 'pic.png'))
+    expect(await file(vaultUrl(root, 'pics/pic.png', 'pages'))).toBe(path.join(root, 'pics', 'pic.png'))
+    expect(await file(vaultUrl(root, 'a b.png', 'pages/sub'))).toBe(path.join(root, 'pics', 'a b.png'))
     expect(await file(vaultUrl(root, 'ünï.PNG'))).toBe(path.join(root, 'ünï.PNG'))
   })
 
@@ -99,9 +99,9 @@ describe('resolveVaultUrl', () => {
     expect((await resolveVaultUrl(vaultUrl(root, 'pics/pic.png')))?.mime).toBe('image/png')
   })
 
-  it('serves IMAGE_EXTENSIONS only: a drawing, a note or a directory under the same root is null', async () => {
+  it('serves IMAGE_EXTENSIONS only: a drawing, a page or a directory under the same root is null', async () => {
     expect(await resolveVaultUrl(vaultUrl(root, 'sketch.excalidraw'))).toBeNull()
-    expect(await resolveVaultUrl(vaultUrl(root, 'note.md'))).toBeNull()
+    expect(await resolveVaultUrl(vaultUrl(root, 'page.md'))).toBeNull()
     expect(await resolveVaultUrl(vaultUrl(root, 'pics'))).toBeNull()
   })
 
@@ -112,15 +112,15 @@ describe('resolveVaultUrl', () => {
   })
 
   it('an escaping `from` is skipped, not honoured: the basename walk still answers from INSIDE the vault', async () => {
-    expect(await file(vaultUrl(root, 'pic.png', '..'))).toBe(path.join(root, 'notes', 'pic.png'))
+    expect(await file(vaultUrl(root, 'pic.png', '..'))).toBe(path.join(root, 'pages', 'pic.png'))
   })
 
-  it('a ref escaping the root never reaches a file outside it, on the note step or the root step', async () => {
+  it('a ref escaping the root never reaches a file outside it, on the page step or the root step', async () => {
     const outside = path.join(root, '..', 'escaped-yaz1658.png')
     await writeFile(outside, PNG)
     try {
       expect(await resolveVaultUrl(vaultUrl(root, '../escaped-yaz1658.png'))).toBeNull()
-      expect(await resolveVaultUrl(vaultUrl(root, '../../escaped-yaz1658.png', 'notes'))).toBeNull()
+      expect(await resolveVaultUrl(vaultUrl(root, '../../escaped-yaz1658.png', 'pages'))).toBeNull()
       expect(await resolveVaultUrl(vaultUrl(root, outside))).toBeNull()
     } finally {
       await rm(outside, { force: true })
@@ -133,7 +133,7 @@ describe('serveVaultImage', () => {
 
   it('200 with the asset pipe mime and no-cache, the body streamed from the file fetch of the resolved path', async () => {
     const fetcher = fetchFile()
-    const res = await serveVaultImage(new Request(vaultUrl(root, 'a b.png', 'notes')), fetcher)
+    const res = await serveVaultImage(new Request(vaultUrl(root, 'a b.png', 'pages')), fetcher)
     expect(res.status).toBe(200)
     expect(res.headers.get('Content-Type')).toBe('image/png')
     expect(res.headers.get('Cache-Control')).toBe('no-cache')
@@ -146,7 +146,7 @@ describe('serveVaultImage', () => {
     const outside = path.join(root, '..', 'escaped-yaz1658.png')
     await writeFile(outside, PNG)
     try {
-      for (const url of [vaultUrl(root, 'missing.png'), vaultUrl(root, '../escaped-yaz1658.png'), vaultUrl(root, 'sketch.excalidraw'), vaultUrl(root, 'note.md'), 'app://yaseen/index.html']) {
+      for (const url of [vaultUrl(root, 'missing.png'), vaultUrl(root, '../escaped-yaz1658.png'), vaultUrl(root, 'sketch.excalidraw'), vaultUrl(root, 'page.md'), 'app://yaseen/index.html']) {
         expect((await serveVaultImage(new Request(url), fetcher)).status, url).toBe(404)
       }
     } finally {
@@ -159,8 +159,8 @@ describe('serveVaultImage', () => {
 describe('revealVaultImage', () => {
   it('a vault src reveals the file the protocol would have served', async () => {
     const reveal = vi.fn(async (_file: string) => undefined)
-    await revealVaultImage(vaultUrl(root, 'pic.png', 'notes'), reveal)
-    expect(reveal).toHaveBeenCalledWith(path.join(root, 'notes', 'pic.png'))
+    await revealVaultImage(vaultUrl(root, 'pic.png', 'pages'), reveal)
+    expect(reveal).toHaveBeenCalledWith(path.join(root, 'pages', 'pic.png'))
   })
 
   it('an http, data: or bundle src is a no-op: there is no file to reveal', async () => {

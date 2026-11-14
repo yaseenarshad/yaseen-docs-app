@@ -37,7 +37,7 @@ const CELL_AND_ROW: readonly FillTarget[] = ['cell', 'row']
  * "Fill cell ›" and "Fill row ›" (YAZ-4536 D12), for the folder table's row right-click
  * (`PageContextMenu`'s `extra`). Each flyout is the table block's Fill menu (`tableMenu.ts`): No fill,
  * the ten colours with swatches, and "Custom colour…". The rows are the app's one flyout
- * (`components/Flyout.tsx`, YAZ-4544 4F: the right-or-left place, the hover wait between two parents). A colour closes the menu. "Custom colour…" opens the note's colour box under it, as the
+ * (`components/Flyout.tsx`, YAZ-4544 4F: the right-or-left place, the hover wait between two parents). A colour closes the menu. "Custom colour…" opens the page's colour box under it, as the
  * cell toolbar does: each finished pick is one write, and the box stays for the next.
  */
 export function FillMenu({ start, onFill, onClose, targets = CELL_AND_ROW, flyout: shared, combined }: FillMenuProps) {
@@ -91,7 +91,7 @@ export function FillMenu({ start, onFill, onClose, targets = CELL_AND_ROW, flyou
   )
 }
 
-/** One Fill flyout's rows: No fill, the colours, and "Custom colour…" with the note's colour box under it. */
+/** One Fill flyout's rows: No fill, the colours, and "Custom colour…" with the page's colour box under it. */
 function FillRows({ start, custom, onCustom, onFill, onClose }: { start: string | undefined; custom: boolean; onCustom: (open: boolean) => void; onFill: (fill: string | null) => void; onClose: () => void }) {
   const boxHolder = useRef<HTMLDivElement>(null)
   const box = useRef<ColourBox | null>(null)

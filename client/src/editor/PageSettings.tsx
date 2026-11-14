@@ -4,8 +4,9 @@ import { createPortal } from 'react-dom'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, type OutsideChangeGlow, type TocSource } from '@shared/types'
 import { OUTSIDE_CHANGE_GLOW_OPTIONS } from '../settings/options'
 import { CogIcon } from '../settings/SettingsButton'
+import { useUnit } from '../vault/unitWord'
 
-/** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a note has until the reader chooses. */
+/** "TOC made from" (YAZ-2700 D14): Auto is the absence of a choice, `null`, and stands first — it is what a page has until the reader chooses. */
 const TOC_SOURCE_CHOICES: readonly { label: string; value: TocSource | null }[] = [
   { label: 'Auto', value: null },
   { label: 'Headings', value: 'headings' },
@@ -60,7 +61,7 @@ export type Hint = string | { lead?: string; rows: readonly (readonly [ReactNode
 
 /** The cog's props: also what a folder page's Page tab hands its cog (YAZ-3746 D35, `FolderPageTab`). */
 export interface PageSettingsProps {
-  /** The file's read-only switch (YAZ-3076 D1): a note, a drawing and a diagram have it. */
+  /** The file's read-only switch (YAZ-3076 D1): a page, a drawing and a diagram have it. */
   readOnly?: boolean
   /** Off → the host turns it on; on → the host opens the "Allow edits?" box (this menu closes first). Absent → no row (a file with no switch, YAZ-3448). */
   onToggleReadOnly?: () => void
@@ -96,11 +97,11 @@ export interface PageSettingsProps {
   appGlow?: OutsideChangeGlow
   /** Absent → no "Outside changes glow" row (a board, a drawing, a diagram, a code file). `null` is Default. */
   onChangeOutsideGlow?: (glow: OutsideChangeGlow | null) => void
-  /** This note's width for every code block (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Editor › Code blocks › Width. */
+  /** This page's width for every code block (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Editor › Code blocks › Width. */
   codeWidth?: number | null
   /** Absent → no "Code block width" row (a board, a drawing, a diagram, a code file). `null` is Default. */
   onChangeCodeWidth?: (width: number | null) => void
-  /** This note's width for every table (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Tables › All tables › Width. */
+  /** This page's width for every table (YAZ-4783 layer 2): whole px, or `null` (Default), which follows Settings › Tables › All tables › Width. */
   tableWidth?: number | null
   /** Absent → no "Table width" row. `null` is Default. */
   onChangeTableWidth?: (width: number | null) => void
@@ -123,19 +124,19 @@ export interface PageSettingsProps {
  * The page's own quick switches (YAZ-2643): a cog left of the zoom pill, and a small menu under it.
  * Nothing here is stored. The host editor keeps the state, so a switch lasts as long as its tab —
  * all but section indent (YAZ-2709), "Guide lines" and "Folding" (YAZ-4094), "Table of contents" (YAZ-2950)
- * and "TOC made from" (YAZ-2700 D14), which the host saves with the note. "Line numbers" and "Heading
+ * and "TOC made from" (YAZ-2700 D14), which the host saves with the page. "Line numbers" and "Heading
  * levels" are never saved. "Outside changes glow" (YAZ-4272 D5) is a native dropdown: Default (Settings' glow) or one
- * of the four glows, saved in the note. "Code block width" and "Table width" (YAZ-4783 layer 2) are Default (Settings')
- * or a px you type, saved in the note too (`code-width`, `table-width`).
+ * of the four glows, saved in the page. "Code block width" and "Table width" (YAZ-4783 layer 2) are Default (Settings')
+ * or a px you type, saved in the page too (`code-width`, `table-width`).
  *
- * "Read only" (YAZ-3076 D3) is the FIRST row on a note, a drawing and a diagram, and is stored IN
+ * "Read only" (YAZ-3076 D3) is the FIRST row on a page, a drawing and a diagram, and is stored IN
  * the file by the host. A file with no switch (a code file, YAZ-3448) gives no `onToggleReadOnly`. A board's menu has only that row: every Markdown-only row
  * and the counts show only when their handler is given, the rule "Table of contents" already had.
  * While read only is on, the row closes the menu and the host opens the chip's "Allow edits?" box
  * (D4, S47); while it is off, the row turns it on at once and the menu stays open (S43).
  *
  * A folder page (YAZ-3746 D35) passes "Read only" and its `switches` under the heading "This folder page": the
- * "Read only" row then stands first IN that group. Its Page tab adds a note's rows after them (`FolderPageTab`).
+ * "Read only" row then stands first IN that group. Its Page tab adds a page's rows after them (`FolderPageTab`).
  *
  * A code tab (YAZ-3449) passes its own rows instead, as `switches`: "Read only", "Wrap long lines" and
  * "Minimap", under the heading "All code files", each one an app setting for every code file; then "Table of
@@ -148,7 +149,7 @@ export interface PageSettingsProps {
 const HINT_WIDTH = 240
 
 /**
- * "Code block width" / "Table width" (YAZ-4783 layer 2): Default (the Settings row `settingsRow` names) or this note's px,
+ * "Code block width" / "Table width" (YAZ-4783 layer 2): Default (the Settings row `settingsRow` names) or this page's px,
  * typed into the field and kept on ⏎ or when the field loses the focus, clamped to `BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`. An
  * emptied field is Default too. The menu stays open.
  */
@@ -178,6 +179,7 @@ function BlockWidthRow({ label, value, settingsRow, onChange }: { label: string;
 }
 
 export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers = false, onToggleLineNumbers, sectionIndent = false, onToggleSectionIndent, guideLines = true, onToggleGuideLines, folding = true, onToggleFolding, bulletThreading = false, onToggleBulletThreading, headingLevels = false, onToggleHeadingLevels, tableOfContents = true, onToggleTableOfContents, tocSource = null, onChangeTocSource, outsideGlow = null, appGlow, onChangeOutsideGlow, codeWidth = null, onChangeCodeWidth, tableWidth = null, onChangeTableWidth, switches, switchesHeading, rows, readText, trigger }: PageSettingsProps) {
+  const unit = useUnit()
   // The text counted at the open IS the open state: the counts cannot drift while the menu shows.
   // A board has no text to count: its open menu holds '' and shows no counts.
   const [text, setText] = useState<string | null>(null)
@@ -469,7 +471,7 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
             {OUTSIDE_CHANGE_GLOW_OPTIONS.map(({ label, value }) => <option key={value} value={value}>{label}</option>)}
           </select>
         </>}
-        {/* This note's width for its code blocks and its tables (YAZ-4783 layer 2), saved in the note. */}
+        {/* This page's width for its code blocks and its tables (YAZ-4783 layer 2), saved in the page. */}
         {(onChangeCodeWidth !== undefined || onChangeTableWidth !== undefined) && <div className="page-settings__divider" aria-hidden="true" />}
         {onChangeCodeWidth !== undefined && <BlockWidthRow label="Code block width" value={codeWidth} settingsRow="Editor › Code blocks › Width" onChange={onChangeCodeWidth} />}
         {onChangeTableWidth !== undefined && <BlockWidthRow label="Table width" value={tableWidth} settingsRow="Tables › All tables › Width" onChange={onChangeTableWidth} />}
@@ -488,17 +490,17 @@ export function PageSettings({ readOnly = false, onToggleReadOnly, lineNumbers =
         </>}
       </div>, document.body)}
       {open && info && <div id={tipId} role="tooltip" className="page-settings__tip">
-        <p>This sets what the table of contents of this page shows.</p>
+        <p>{unit('This sets what the table of contents of this page shows.')}</p>
         <dl>
           <dt>Auto</dt>
-          <dd>The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.</dd>
+          <dd>{unit('The app selects. A page with two or more headings outside bullets shows its headings. Each other page shows its bullets.')}</dd>
           <dt>Headings</dt>
           <dd>Shows each heading from H1 to H5. This includes the headings that are in bullets.</dd>
           <dt>Bullets</dt>
           <dd>Shows the bullets, to three levels.</dd>
         </dl>
         <p>If a selection finds less than two lines, no table of contents shows. Select Auto to get it back.</p>
-        <p>The app saves the selection for this page.</p>
+        <p>{unit('The app saves the selection for this page.')}</p>
       </div>}
     </div>
   )

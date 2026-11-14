@@ -3,7 +3,7 @@
  * channel, as findInPage.test.ts does:
  * - the channel's `folds`, by default `current`: only the fold that hides the ACTIVE match opens, and it folds again on
  *   the next step; `all` opens every fold hiding a match; `keep` opens none and counts only what shows;
- * - a note's own choice is `find-folds:` in its properties (`noteFindFolds` / `setNoteFindFolds`);
+ * - a page's own choice is `find-folds:` in its properties (`readFindFolds` / `writeFindFolds`);
  * - matches inside a code block (a CodeMirror editor that draws its own text) are painted there too, the active one
  *   marked.
  */
@@ -12,7 +12,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { FIND_FOLDS } from '@shared/types'
-import { FIND_FOLDS_KEY, noteFindFolds, setNoteFindFolds } from '@shared/pageSwitches'
+import { FIND_FOLDS_KEY, readFindFolds, writeFindFolds } from '@shared/pageSwitches'
 import { createCrepe, type CreateCrepeOptions } from '../createCrepe'
 import { OUTLINE_FOLDED_ATTR } from '../outline/outlineFolding'
 import { getOutlineFoldKey } from '../outline/outlineFoldKeys'
@@ -49,27 +49,27 @@ const folded = { folding: { seedCollapsedKeys: () => new Set([getOutlineFoldKey(
 const foldedText = (root: HTMLElement) => [...root.querySelectorAll(`[${OUTLINE_FOLDED_ATTR}="true"]`)].map((el) => el.textContent ?? '')
 const isFolded = (root: HTMLElement, text: string) => foldedText(root).some((t) => t.includes(text))
 
-describe('YAZ-4787 demo: the note choice in its properties', () => {
+describe('YAZ-4787 demo: the page choice in its properties', () => {
   it('YAZ-4787 demo: the three choices are current, all and keep', () => {
     expect(FIND_FOLDS).toEqual(['current', 'all', 'keep'])
     expect(FIND_FOLDS_KEY).toBe('find-folds')
   })
 
   it('YAZ-4787 demo: `find-folds:` reads back; no key or a value that is no choice is null (follow Settings)', () => {
-    expect(noteFindFolds('---\nfind-folds: all\n---\nbody\n')).toBe('all')
-    expect(noteFindFolds('---\nfind-folds: keep\n---\n')).toBe('keep')
-    expect(noteFindFolds('---\ntitle: x\n---\n')).toBeNull()
-    expect(noteFindFolds('---\nfind-folds: sometimes\n---\n')).toBeNull()
-    expect(noteFindFolds('no frontmatter, find-folds: all\n')).toBeNull()
+    expect(readFindFolds('---\nfind-folds: all\n---\nbody\n')).toBe('all')
+    expect(readFindFolds('---\nfind-folds: keep\n---\n')).toBe('keep')
+    expect(readFindFolds('---\ntitle: x\n---\n')).toBeNull()
+    expect(readFindFolds('---\nfind-folds: sometimes\n---\n')).toBeNull()
+    expect(readFindFolds('no frontmatter, find-folds: all\n')).toBeNull()
   })
 
-  it('YAZ-4787 demo: setNoteFindFolds writes the key; "Use the default" (null) removes it; the same value changes nothing', () => {
-    const set = setNoteFindFolds('---\na: 1\n---\nbody\n', 'keep')
-    expect(noteFindFolds(set)).toBe('keep')
+  it('YAZ-4787 demo: writeFindFolds writes the key; "Use the default" (null) removes it; the same value changes nothing', () => {
+    const set = writeFindFolds('---\na: 1\n---\nbody\n', 'keep')
+    expect(readFindFolds(set)).toBe('keep')
     expect(set.endsWith('body\n')).toBe(true)
-    expect(setNoteFindFolds(set, 'keep')).toBe(set)
-    const back = setNoteFindFolds(set, null)
-    expect(noteFindFolds(back)).toBeNull()
+    expect(writeFindFolds(set, 'keep')).toBe(set)
+    const back = writeFindFolds(set, null)
+    expect(readFindFolds(back)).toBeNull()
     expect(back).not.toContain('find-folds')
   })
 })

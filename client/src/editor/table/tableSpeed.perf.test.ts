@@ -1,5 +1,5 @@
 /**
- * S6 (YAZ-3696): the speed of a big note table on the real editor in jsdom — open a 500 × 10 table, type in a
+ * S6 (YAZ-3696): the speed of a big page table on the real editor in jsdom — open a 500 × 10 table, type in a
  * cell, paste 50 × 4 tab-separated cells; then the same table frozen and styled (`freeze 1 row 2 cols, stripes,
  * fill`). jsdom has no layout, so the numbers are the editor's own work (parse, transactions, DOM updates), not
  * paint. Runs in the `perf` project (YAZ-740), each budget on the MEDIAN (`src/test-perf.ts`). The frozen tables'

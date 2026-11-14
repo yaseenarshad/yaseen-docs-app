@@ -9,7 +9,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { MenuAction, MenuItem, MenuSection } from '../../sidebar/menuSections'
 import { getMarkdownForSave } from '../createCrepe'
-import { noteMenuSections } from '../noteMenu'
+import { pageMenuSections } from '../pageMenu'
 import { mount, unmountAll } from '../marks/markTestKit'
 import { formatTableComment, parseTableComment, plainTable } from './tableComment'
 import { cellPos } from './tableTestKit'
@@ -32,7 +32,7 @@ async function mountAt(hours: number, minutes: number, markdown: string) {
 const rowsOf = (view: EditorView) => [...view.dom.querySelectorAll<HTMLTableRowElement>('tbody[data-content-dom] > tr')]
 const pastRows = (view: EditorView) => rowsOf(view).flatMap((row, i) => (row.classList.contains('table-past-row') ? [i] : []))
 const all = (sections: MenuSection[]): MenuAction[] => sections.flat().flatMap((item: MenuItem) => (item.children === undefined ? [item] : item.children.flat()))
-const itemAt = (view: EditorView, r: number, id: string): MenuAction | undefined => all(noteMenuSections(view, null, vi.fn(), cellPos(view, r, 0) + 2)).find((i) => i.id === id)
+const itemAt = (view: EditorView, r: number, id: string): MenuAction | undefined => all(pageMenuSections(view, null, vi.fn(), cellPos(view, r, 0) + 2)).find((i) => i.id === id)
 
 describe('YAZ-4796 demo: the comment part', () => {
   it('YAZ-4796 demo: `nodim 2` reads into the 0-based body rows and writes back the same, before the calendar part', () => {

@@ -33,10 +33,10 @@ const at = (body: string) => css.indexOf(body)
 const LINE = rules.find((rule) => /mask:\s*var\(--kind-icon\)/.test(rule.body))
 const IMAGE = rules.find((rule) => /background:\s*var\(--icon\) center/.test(rule.body))
 const SILHOUETTE = rules.find((rule) => /background:\s*var\(--fg-muted\);/.test(rule.body) && /mask:\s*var\(--icon\)/.test(rule.body))
-/** The Line set's colour for a note: "All colour", or a picked one. */
-const NOTE_COLOUR = rules.find((rule) => /--kind-color:\s*var\(--kind-note\)/.test(rule.body))
-/** YAZ-5100 round 2: Material's page icon (a sheet with lines, in the note's colour), and a picked colour on Material's icon (its silhouette). */
-const PAGE = rules.find((rule) => rule.selectors.some((sel) => sel.includes("[data-icon='markdown']")) && /mask:\s*var\(--kind-icon\)/.test(rule.body))
+/** The Line set's colour for a page: "All colour", or a picked one. */
+const PAGE_COLOUR = rules.find((rule) => /--kind-color:\s*var\(--kind-page\)/.test(rule.body))
+/** YAZ-5100 round 2: Material's page icon (a sheet with lines, in the page's colour), and a picked colour on Material's icon (its silhouette). */
+const PAGE_RULE = rules.find((rule) => rule.selectors.some((sel) => sel.includes("[data-icon='markdown']")) && /mask:\s*var\(--kind-icon\)/.test(rule.body))
 const PICKED = rules.find((rule) => /background:\s*var\(--kind-color\);/.test(rule.body) && /mask:\s*var\(--icon\)/.test(rule.body))
 
 type App = { set: 'material' | 'line'; files: 'quiet' | 'color' | 'grey' | 'off'; folders?: 'plain' | 'named' | 'off'; colors?: string }
@@ -71,7 +71,7 @@ function look(app: App, row: Row): 'line' | 'image' | 'silhouette' | 'page' | 'p
   const [tree, outside] = (['tree', 'outside'] as const).map((where) => {
     const el = build(app, row, where)
     // After the others and heavier: each wins where it applies (YAZ-5100 round 2).
-    if (draws(PAGE, el)) return 'page'
+    if (draws(PAGE_RULE, el)) return 'page'
     if (draws(PICKED, el)) return draws(IMAGE, el) ? 'picked' : 'picked alone'
     if (draws(SILHOUETTE, el)) return draws(IMAGE, el) || draws(LINE, el) ? 'silhouette' : 'silhouette alone'
     if (draws(IMAGE, el)) return 'image'
@@ -85,33 +85,33 @@ function look(app: App, row: Row): 'line' | 'image' | 'silhouette' | 'page' | 'p
 }
 
 const README: Row = { kind: 'markdown', icon: 'readme' }
-const NOTE: Row = { kind: 'markdown', icon: 'markdown' }
+const PAGE: Row = { kind: 'markdown', icon: 'markdown' }
 const TS: Row = { kind: 'text', icon: 'typescript' }
 const FOLDER: Row = { folder: true, kind: 'folder', icon: 'folder-docs' }
 
 describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
   it('finds the three ways an icon draws, and the silhouette comes after the image and its light twin', () => {
-    expect(LINE && IMAGE && SILHOUETTE && NOTE_COLOUR).toBeTruthy()
+    expect(LINE && IMAGE && SILHOUETTE && PAGE_COLOUR).toBeTruthy()
     const light = rules.find((rule) => /background-image:\s*var\(--icon-light, var\(--icon\)\)/.test(rule.body))
     expect(light).toBeDefined()
     expect(at(SILHOUETTE?.body ?? '')).toBeGreaterThan(at(light?.body ?? ''))
     expect(at(SILHOUETTE?.body ?? '')).toBeGreaterThan(at(IMAGE?.body ?? ''))
   })
 
-  it('Material, "Colour" (`quiet`, the default): a note with a name icon is a grey silhouette (README.md, SKILL.md, todo.md), a plain note the grey page; the other kinds and the folders keep their colours', () => {
+  it('Material, "Colour" (`quiet`, the default): a page with a name icon is a grey silhouette (README.md, SKILL.md, todo.md), a plain page the grey page; the other kinds and the folders keep their colours', () => {
     const quiet: App = { set: 'material', files: 'quiet' }
     expect(look(quiet, README)).toBe('silhouette')
     for (const icon of ['skill', 'todo', 'claude', 'changelog', 'agent']) expect(look(quiet, { kind: 'markdown', icon }), icon).toBe('silhouette')
-    expect(look(quiet, NOTE)).toBe('page')
+    expect(look(quiet, PAGE)).toBe('page')
     expect(look(quiet, TS)).toBe('image')
     expect(look(quiet, FOLDER)).toBe('image')
-    // A note's own pick or a rule (D8, D9) is a deliberate choice: it keeps its colours.
+    // A page's own pick or a rule (D8, D9) is a deliberate choice: it keeps its colours.
     expect(look(quiet, { ...README, custom: true })).toBe('image')
   })
 
-  it('Material, "All colour" colours notes too; "Grey" greys every file, not the folders; "Off" hides the files and keeps the folders', () => {
+  it('Material, "All colour" colours pages too; "Grey" greys every file, not the folders; "Off" hides the files and keeps the folders', () => {
     expect(look({ set: 'material', files: 'color' }, README)).toBe('image')
-    expect(look({ set: 'material', files: 'color' }, NOTE)).toBe('page')
+    expect(look({ set: 'material', files: 'color' }, PAGE)).toBe('page')
     const grey: App = { set: 'material', files: 'grey' }
     expect(look(grey, TS)).toBe('silhouette')
     expect(look(grey, README)).toBe('silhouette')
@@ -123,17 +123,17 @@ describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
     expect(look(off, FOLDER)).toBe('image')
   })
 
-  it('YAZ-5100 round 2: a note with Material\'s default icon is the page (a sheet with lines) in every style but Off; a name icon of its own or a pick keeps Material\'s', () => {
-    expect(PAGE && PICKED).toBeTruthy()
+  it('YAZ-5100 round 2: a page with Material\'s default icon is the page (a sheet with lines) in every style but Off; a name icon of its own or a pick keeps Material\'s', () => {
+    expect(PAGE_RULE && PICKED).toBeTruthy()
     // After the image, its light twin and the silhouette: it wins over each where it applies.
-    expect(rules.indexOf(PAGE!)).toBeGreaterThan(rules.indexOf(SILHOUETTE!))
+    expect(rules.indexOf(PAGE_RULE!)).toBeGreaterThan(rules.indexOf(SILHOUETTE!))
     expect(rules.indexOf(PICKED!)).toBeGreaterThan(rules.indexOf(SILHOUETTE!))
-    for (const files of ['quiet', 'color', 'grey'] as const) expect(look({ set: 'material', files }, NOTE), files).toBe('page')
-    expect(look({ set: 'material', files: 'off' }, NOTE)).toBe('none')
+    for (const files of ['quiet', 'color', 'grey'] as const) expect(look({ set: 'material', files }, PAGE), files).toBe('page')
+    expect(look({ set: 'material', files: 'off' }, PAGE)).toBe('none')
     expect(look({ set: 'material', files: 'quiet' }, README)).toBe('silhouette')
-    expect(look({ set: 'material', files: 'quiet' }, { ...NOTE, custom: true })).toBe('image')
-    // The Line set draws the same page, its note glyph.
-    expect(look({ set: 'line', files: 'quiet' }, NOTE)).toBe('line')
+    expect(look({ set: 'material', files: 'quiet' }, { ...PAGE, custom: true })).toBe('image')
+    // The Line set draws the same page, its page glyph.
+    expect(look({ set: 'line', files: 'quiet' }, PAGE)).toBe('line')
     const page = rules.find((rule) => rule.selectors.some((sel) => sel.endsWith("[data-kind='markdown']")) && /--kind-icon/.test(rule.body))
     expect(decodeURIComponent(page?.body ?? '')).toContain("<path d='M3.5 2.5a1 1 0 0 1 1-1h5l3 3v9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1zM9.5 1.5v3h3M5.75 8h4.5M5.75 10.75h4.5'/>")
   })
@@ -159,14 +159,14 @@ describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
     expect(look({ ...picked, folders: 'off' }, PLAIN)).toBe('none')
   })
 
-  it('YAZ-5100 round 2: a picked note colour shows with "Colour" too; Grey keeps the files grey but not the folders, whose colour is `--kind-folder`', () => {
-    const noteColour = (app: App) => draws({ selectors: NOTE_COLOUR?.selectors.map((s) => `${s}::before`) ?? [] }, build(app, NOTE, 'tree').closest('.tree__row') as Element)
-    expect(noteColour({ set: 'material', files: 'quiet' })).toBe(false)
-    expect(noteColour({ set: 'material', files: 'quiet', colors: 'note' })).toBe(true)
-    expect(noteColour({ set: 'line', files: 'quiet', colors: 'card note' })).toBe(true)
+  it('YAZ-5100 round 2: a picked page colour shows with "Colour" too; Grey keeps the files grey but not the folders, whose colour is `--kind-folder`', () => {
+    const pageColour = (app: App) => draws({ selectors: PAGE_COLOUR?.selectors.map((s) => `${s}::before`) ?? [] }, build(app, PAGE, 'tree').closest('.tree__row') as Element)
+    expect(pageColour({ set: 'material', files: 'quiet' })).toBe(false)
+    expect(pageColour({ set: 'material', files: 'quiet', colors: 'page' })).toBe(true)
+    expect(pageColour({ set: 'line', files: 'quiet', colors: 'card page' })).toBe(true)
     const GREY = rules.find((rule) => /--kind-color:\s*var\(--fg-muted\)/.test(rule.body))
     const greys = (row: Row) => draws({ selectors: GREY?.selectors.map((s) => `${s}::before`) ?? [] }, build({ set: 'line', files: 'grey' }, row, 'tree').closest('.tree__row') as Element)
-    expect(greys(NOTE)).toBe(true)
+    expect(greys(PAGE)).toBe(true)
     expect(greys({ kind: 'card' })).toBe(true)
     expect(greys(FOLDER)).toBe(false)
     const folderRule = rules.find((rule) => rule.selectors.some((s) => s.endsWith("[data-kind='folder']")) && /--kind-icon/.test(rule.body))
@@ -205,14 +205,14 @@ describe('file and folder icons CSS contract (YAZ-3440 D4, D5)', () => {
     expect(look({ set: 'line', files: 'quiet', folders: 'off' }, FOLDER)).toBe('none')
   })
 
-  it("the Line set draws each kind's glyph; a pick or a rule shows its Material icon there too; only \"All colour\" colours a note", () => {
+  it("the Line set draws each kind's glyph; a pick or a rule shows its Material icon there too; only \"All colour\" colours a page", () => {
     const line: App = { set: 'line', files: 'quiet' }
     expect(look(line, TS)).toBe('line')
     expect(look(line, README)).toBe('line')
     expect(look(line, FOLDER)).toBe('line')
     expect(look(line, { ...TS, custom: true })).toBe('image')
     expect(look({ set: 'line', files: 'off' }, TS)).toBe('none')
-    const colours = (files: App['files']) => draws({ selectors: NOTE_COLOUR?.selectors.map((s) => `${s}::before`) ?? [] }, build({ set: 'line', files }, NOTE, 'tree').closest('.tree__row') as Element)
+    const colours = (files: App['files']) => draws({ selectors: PAGE_COLOUR?.selectors.map((s) => `${s}::before`) ?? [] }, build({ set: 'line', files }, PAGE, 'tree').closest('.tree__row') as Element)
     expect(colours('color')).toBe(true)
     expect(colours('quiet')).toBe(false)
   })

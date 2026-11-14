@@ -18,8 +18,8 @@ import { useFlip } from './flip'
 import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
-import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
-import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
+import { type CardPageDoors, cardMenuItems } from './rowMenuItems'
+import { type PageWindowLink, currentItemClass, shownRows, usePageWindowItems } from './PageWindow'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
@@ -52,25 +52,25 @@ export interface BoardViewProps {
   onOpenFileBackground?: (path: string) => void
   /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
-  /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's note (D24). */
-  windowLink?: NoteWindowLink
+  /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's page (D24). */
+  windowLink?: PageWindowLink
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
   onNotice?: (message: string) => void
   /** A drop on another section, including nested level metadata, via ViewsPane's existing optimistic write path. */
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
-  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  /** The read-only pages (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
-  /** "Card style ›" in a card's right-click (YAZ-4906, YAZ-4834 P5): the note's `color`, `text_color` and `weight`, as the calendar card's. Absent: no item. */
+  /** "Card style ›" in a card's right-click (YAZ-4906, YAZ-4834 P5): the page's `color`, `text_color` and `weight`, as the calendar card's. Absent: no item. */
   onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
-  /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
+  /** Create a page seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
-  /** "Show New buttons" (YAZ-3746 13BL): false drops each column's "+ New card" and its header's "+"; the header menu's New note in this group stays. */
+  /** "Show New buttons" (YAZ-3746 13BL): false drops each column's "+ New card" and its header's "+"; the header menu's New page in this group stays. */
   newCards?: boolean
-  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
-  noteDoors?: CardNoteDoors
-  /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its note's title (YAZ-2293 D8). */
+  /** The card menu's page items (YAZ-3746 13BO): Open, the new page beside a card, Duplicate, Delete. Absent: none. */
+  pageDoors?: CardPageDoors
+  /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its page's title (YAZ-2293 D8). */
   resolve?: Resolver
 }
 
@@ -121,7 +121,7 @@ export function BoardView({
   moveError,
   onNewInGroup,
   newCards = true,
-  noteDoors,
+  pageDoors,
   resolve,
   readOnly = NO_READ_ONLY,
   onStyle,
@@ -134,7 +134,7 @@ export function BoardView({
   const adds = levels.map((_, level) => groupTakesNew(view, level, settings.columns))
   /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES; a fold never plays (13A). */
   const flipRoot = useFlip(collapsed.join('\u001e'))
-  // The note window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root
+  // The page window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root
   // is the FLIP root too, so one stable ref callback sets both.
   const windowOrder = useMemo(() => shownRows(groups, [], collapsed), [groups, collapsed])
   const boardRef = useRef<HTMLDivElement | null>(null)
@@ -198,7 +198,7 @@ export function BoardView({
     }
   }, [find, revealCard])
   // The mini window's step onto a card not drawn yet: draw it, then show it (two frames: the commit, then its layout).
-  useNoteWindowItems(windowLink, windowOrder, boardRef, (current) => {
+  usePageWindowItems(windowLink, windowOrder, boardRef, (current) => {
     if (current !== null && revealCard(current)) requestAnimationFrame(() => requestAnimationFrame(() => windowLink?.show?.()))
   })
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
@@ -206,12 +206,12 @@ export function BoardView({
   /** The exact rendered record targeted by the latest whole-card secondary click. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
   /**
-   * The card menu's groups: the note items, then "Card style ›" (YAZ-4906, YAZ-4834 P5: the card shows the note's style,
-   * so it sets it here too) when the pane writes styles and the note is not read-only. The panel's ✓ marks are the
+   * The card menu's groups: the page items, then "Card style ›" (YAZ-4906, YAZ-4834 P5: the card shows the page's style,
+   * so it sets it here too) when the pane writes styles and the page is not read-only. The panel's ✓ marks are the
    * card's style NOW (the rows, optimistic).
    */
   const cardMenu = (path: string) => {
-    const items = cardMenuItems(noteDoors, path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(path) })
+    const items = cardMenuItems(pageDoors, path, () => setMenu(null), pageDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => pageDoors.newBelow!(path) })
     if (onStyle === undefined || readOnly.has(path)) return items
     const properties = records.find((r) => r.path === path)?.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(path, writes)} />] }
@@ -255,7 +255,7 @@ export function BoardView({
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
       <div className="view-board__hint">
-        <p>{unit('Board views group notes into columns. Pick a property to group by.')}</p>
+        <p>{unit('Board views group pages into columns. Pick a property to group by.')}</p>
         <button
           type="button"
           className="view-menu__action"
@@ -328,7 +328,7 @@ export function BoardView({
           key={row.record.path}
           data-flip-key={row.record.path}
           className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}${currentItemClass(windowLink, row.record.path)}`}
-          // The note's `color`, `text_color` and `weight` dress the card here too (YAZ-4906, views.css), the calendar card's attributes.
+          // The page's `color`, `text_color` and `weight` dress the card here too (YAZ-4906, views.css), the calendar card's attributes.
           {...cardStyleAttrs(row.record.properties)}
           {...dragSource(row, group, at)}
           {...hover.itemProps(row.record.path)}
@@ -336,7 +336,7 @@ export function BoardView({
           // title, Enter, or a modifier opens — so a card without a title still has a name to read.
           tabIndex={0}
           aria-label={nameKey === undefined ? row.record.title : undefined}
-          // ⇧⌘-click opens the note in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
+          // ⇧⌘-click opens the page in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
           onClick={(event) => {
             if (newWindowClick(event, rowPage(row.record.path))) return
             if (openTarget(event) === 'current') event.currentTarget.focus()

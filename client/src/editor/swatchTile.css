@@ -1,5 +1,5 @@
 /*
- * The board toolbar's color tiles, in the note's pop-up toolbar and the text box's (YAZ-4445, Yaseen: "can we make
+ * The board toolbar's color tiles, in the page's pop-up toolbar and the text box's (YAZ-4445, Yaseen: "can we make
  * this look the same also so its 1 design language?"). `toolbarButtons.ts` `swatchTile` makes the markup. Each value
  * below is the engine's own; the engine compiles its SCSS into its own bundle, so they are copied here, once:
  *  - engine/packages/excalidraw/components/ColorPicker/ColorPicker.scss:
@@ -10,7 +10,7 @@
  *  - engine/packages/excalidraw/css/styles.scss `.text-toolbar-more`: the ▾ (1rem wide, 0.7rem, a 3px bar of a color
  *    of its own menu); engine/packages/excalidraw/css/theme.scss `--theme-filter`: a white tile in dark mode.
  * `swatchTile.test.ts` reads those engine files and fails when a value here is no longer the engine's.
- * The lit ring is the note's accent, as the highlight ▾ panel's (app.css `.highlight-panel__swatch.active`).
+ * The lit ring is the page's accent, as the highlight ▾ panel's (app.css `.highlight-panel__swatch.active`).
  */
 :root {
   --swatch-tile-size: 1.375rem;
@@ -62,7 +62,7 @@
 [data-theme='dark'] .swatch-tile--color {
   filter: var(--swatch-theme-filter);
 }
-/* Highlight: the "A" in the note's text color on the wash, so it reads as highlighted text does in each theme. */
+/* Highlight: the "A" in the page's text color on the wash, so it reads as highlighted text does in each theme. */
 .swatch-tile--on-color .swatch-tile__letter {
   color: var(--fg, var(--swatch-tile-dark));
 }

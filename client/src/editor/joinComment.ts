@@ -6,7 +6,7 @@
  * a bare `html` node, or the paragraph Milkdown's `remarkHtmlTransformer` wraps a block `html` in.
  * `apply` gets the block and the value, and the comment leaves the tree. A `type` block's own
  * children are not walked. Any other comment stays an `html` node, bytes untouched. `accepts`
- * narrows the blocks of `type` that take a comment (a note card is a `code` block of the
+ * narrows the blocks of `type` that take a comment (a card is a `code` block of the
  * language `card`, YAZ-4961).
  */
 import type { Nodes, Parent, RootContent } from 'mdast'

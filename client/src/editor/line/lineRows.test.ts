@@ -79,7 +79,7 @@ const type = (box: HTMLInputElement, text: string) => {
   box.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-/** Open the menu on the first line of the note. */
+/** Open the menu on the first line of the page. */
 async function openOnLine(markdown: string) {
   const m = await mount(markdown)
   aim(m.view, nth(m.view, 'hr'))
@@ -161,7 +161,7 @@ describe('which blocks get the pickers', () => {
     expect(targetLine(led.view.state.doc, nth(led.view, 'paragraph'))).toBeNull()
   })
 
-  it('S51: a read-only note shows no pickers', async () => {
+  it('S51: a read-only page shows no pickers', async () => {
     const { view, item } = await mount('***\n')
     view.setProps({ editable: () => false })
     aim(view, nth(view, 'hr'))

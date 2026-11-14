@@ -11,25 +11,25 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { appWindow, editorOf, launchApp, layer, nextFrame, seededState, shoot } from './helpers'
 
-const NOTE = 'Slash.md'
+const PAGE = 'Slash.md'
 const BODY = '* First bullet\n* Second bullet\n'
 const TIME = '\\d{1,2}:\\d{2}(am|pm) - '
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
 const slashMenu = (w: Page) => layer(w).locator('.milkdown-slash-menu[data-show="true"]')
 const slashRows = (w: Page) => slashMenu(w).locator('.menu-group li')
-const disk = () => readFile(notePath, 'utf8')
+const disk = () => readFile(pagePath, 'utf8')
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'slash-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'slash-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -38,7 +38,7 @@ test.afterAll(async () => {
 })
 
 test('in a bullet, "/time" + Enter puts the time at the caret and the bullet stays a bullet', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await editorOf(win).locator('p', { hasText: /^First bullet$/ }).click()
   await win.keyboard.press('End')

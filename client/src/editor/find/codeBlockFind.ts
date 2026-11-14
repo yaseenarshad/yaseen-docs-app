@@ -1,5 +1,5 @@
 /**
- * ⌘F inside a note's code blocks (YAZ-4787 demo: "how come Command F doesn't work if I have a code block"). Find always
+ * ⌘F inside a page's code blocks (YAZ-4787 demo: "how come Command F doesn't work if I have a code block"). Find always
  * counted a code block's text (it is a ProseMirror textblock), but a code block is a CodeMirror editor that draws its own
  * text, so ProseMirror's inline decorations never showed there and the active match could not be scrolled to.
  *

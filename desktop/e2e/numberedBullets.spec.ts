@@ -15,16 +15,16 @@ import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, se
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Numbered.md'
+const PAGE = 'Numbered.md'
 // The fixture includes legacy explicit escapes; YAZ-1329 canonicalizes them away when the row is
 // saved as a bullet, while preserving the visible `1) x` text and preventing CommonMark nesting.
-const NOTE_BODY = '# Numbered\n\n* Fundamentals\n  * 1\\) Setup\n    * deep\n  * 2\\) VS Code\n  * 3\\) WisprFlow\n'
+const PAGE_BODY = '# Numbered\n\n* Fundamentals\n  * 1\\) Setup\n    * deep\n  * 2\\) VS Code\n  * 3\\) WisprFlow\n'
 const CHILDREN = ['1) Setup', '2) VS Code', '3) WisprFlow']
 
 let userData: string
 let vaultSrc: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
@@ -81,22 +81,22 @@ async function openHandleMenu(w: Page, text: string): Promise<void> {
     // mousemove is the first thing to feel it. Raised again with 6B-'s `topics.spec.ts` (since
     // deleted, YAZ-2290), and again with 8H-'s outline spec (`folderOutline.spec.ts` today), which
     // sorts ahead of this file and drives a second Milkdown instance. Healthy runs pass on the FIRST attempt and never spend any of this — the
-    // budget only buys retries. NOTE the budget is only spendable because the steps that call this
+    // budget only buys retries. PAGE the budget is only spendable because the steps that call this
     // raise their OWN timeout past it: a 30s probe inside a 30s test can never retry at all.
   }).toPass({ timeout: 30_000 })
   await handle.locator('.operation-item').last().click({ button: 'right' })
   await expect(menu(w)).toBeVisible()
 }
 
-const diskHasNumbers = async () => /^ *1\. 1\\\) Setup$/m.test(await readFile(notePath, 'utf8'))
+const diskHasNumbers = async () => /^ *1\. 1\\\) Setup$/m.test(await readFile(pagePath, 'utf8'))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'numbered-userdata-'))
   vaultSrc = await buildFixtureVault()
   vault = await copyVault(vaultSrc)
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, NOTE_BODY)
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, PAGE_BODY)
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('WisprFlow')
 })
@@ -130,7 +130,7 @@ test('step 2 — Number children: 1. 2. 3. labels, grandchild stays a bullet, te
   await expect(editorOf(win)).toContainText('1) Setup') // D2: the hand-typed prefix is never touched
   await shoot(win, 'numbered-after')
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(true)
-  const md = await readFile(notePath, 'utf8')
+  const md = await readFile(pagePath, 'utf8')
   expect(md).toMatch(/^ *2\. 2\\\) VS Code$/m)
   expect(md).toMatch(/^ *3\. 3\\\) WisprFlow$/m)
   expect(md).toMatch(/^ *\* deep$/m)
@@ -161,7 +161,7 @@ test('step 4 — one undo restores the bullets in the GUI and on disk', async ()
   await win.keyboard.press('ControlOrMeta+z')
   for (const text of CHILDREN) await expect(labelOf(rowOf(win, text))).toHaveClass(/\bbullet\b/)
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(false)
-  expect(await readFile(notePath, 'utf8')).toMatch(/^ *\* 1\) Setup$/m)
+  expect(await readFile(pagePath, 'utf8')).toMatch(/^ *\* 1\) Setup$/m)
 })
 
 test('step 5 — re-number, then the row reads "Bullet children" and flips back', async () => {

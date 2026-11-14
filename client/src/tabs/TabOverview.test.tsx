@@ -1,6 +1,6 @@
 /**
  * The tab board (YAZ-2648 D5–D8, the canvas of YAZ-3343): every open tab as a card on its folder's group;
- * the first lines of the notes in ONE bridge call; the keyboard, which stays in the filter box; the camera,
+ * the first lines of the pages in ONE bridge call; the keyboard, which stays in the filter box; the camera,
  * which renders nothing; a card's drag and drop, in a frame of another window too; "Show all windows"; and
  * the menus. `api` is mocked so the calls are observable, and `storage`'s canvas is a small fake that
  * applies a patch by the shared rule. The pure rules — groups, the layout, the drop rule, the arrows'
@@ -28,7 +28,7 @@ vi.mock('../api', async (importOriginal) => ({
   },
 }))
 // The sidebar's preview panels (D18: one preview look): stand-ins that say which file they show.
-vi.mock('../sidebar/NotePreview', () => ({ default: ({ name }: { name: string }) => <div className="note-preview" aria-label={`Preview of ${name}`} /> }))
+vi.mock('../sidebar/PagePreview', () => ({ default: ({ name }: { name: string }) => <div className="page-preview" aria-label={`Preview of ${name}`} /> }))
 vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: string } }) => <div className="board-preview" aria-label={`Preview of ${node.path}`} /> }))
 import { setStripTarget } from './stripDrop'
 import tabsCss from './tabs.css?inline'
@@ -77,12 +77,12 @@ const TABS = ['/v/a.md', '/v/Projects/plan.md', '/v/Projects/report.pdf', '/w/x.
 const HEADS: Record<string, string> = {
   '/v/a.md': '# Heading\n\n- [ ] a **task** with [[k3m9|a link]]\n---\n',
   '/w/x.md': 'Plain first line\n',
-  // A daily note headed with its own date: the page says the date once.
+  // A daily page headed with its own date: the page says the date once.
   '/v/Projects/Alpha/2026-10-08.md': '# 2026-10-08\nStandup at ten\n',
 }
 
 async function mount(over: Partial<TabOverviewProps> = {}) {
-  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToSlot: vi.fn(), onTakeAt: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
+  const props: TabOverviewProps = { roots: ['/v', '/w'], vaultNames: ['Pages', 'Work'], tabs: TABS, active: '/v/a.md', preview: '/w/x.md', titles: new Map(), windowId: 'me', onOpen: vi.fn(), onCloseTabs: vi.fn(), onDismiss: vi.fn(), onMoveToRight: vi.fn(), onShowInSidebar: vi.fn(), onDropToWindow: vi.fn(), onMoveTab: vi.fn(), onMoveToSlot: vi.fn(), onTakeAt: vi.fn(), onMoveToNewWindowQuietly: vi.fn(), ...over }
   container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -111,7 +111,7 @@ const taken = (el: HTMLElement, k: string): boolean => {
 }
 const shiftClick = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true })))
 /** The preview panel on show (Space, or a rest of the pointer): which file it says, or null. */
-const peek = (_el?: HTMLElement) => document.querySelector('.note-preview, .board-preview')?.getAttribute('aria-label')?.replace('Preview of ', '') ?? null
+const peek = (_el?: HTMLElement) => document.querySelector('.page-preview, .board-preview')?.getAttribute('aria-label')?.replace('Preview of ', '') ?? null
 const settled = () => act(async () => {})
 const SCOPE = () => ({ root: '/v', wikilinks: {} as never, textVars: {} })
 const rightClick = (target: Element | null | undefined) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
@@ -167,7 +167,7 @@ beforeEach(() => {
   readers.clear()
   names.clear()
   fakeStorage()
-  // A note that could not be read (plan.md) answers null and fails nothing.
+  // A page that could not be read (plan.md) answers null and fails nothing.
   readHeads.mockImplementation(async (paths) => paths.map((path): FileHead | null => (HEADS[path] === undefined ? null : { path, mtime: 1, text: HEADS[path] })))
 })
 
@@ -181,13 +181,13 @@ afterEach(() => {
 })
 
 describe('TabOverview', () => {
-  it('YAZ-2648 S33 to S35, S53, S54, S57, S58: a page per tab on the island of its folder, under its vault; the notes read in ONE call: plain first lines on a note, a title alone on anything else', async () => {
+  it('YAZ-2648 S33 to S35, S53, S54, S57, S58: a page per tab on the island of its folder, under its vault; the pages read in ONE call: plain first lines on a page, a title alone on anything else', async () => {
     const { el, again } = await mount()
-    // Only the notes are asked for, all at once; a folder tab and a PDF have no lines.
+    // Only the pages are asked for, all at once; a folder tab and a PDF have no lines.
     expect(readHeads.mock.calls).toEqual([[['/v/a.md', '/v/Projects/plan.md', '/w/x.md', '/v/Projects/Alpha/2026-10-08.md']]])
-    expect(texts(el, '.taboverview__vault-name')).toEqual(['Notes', 'Work'])
+    expect(texts(el, '.taboverview__vault-name')).toEqual(['Pages', 'Work'])
     // One island per folder that directly holds a page: the whole path in the vault, then the count. The top level is named by its vault.
-    expect(texts(el, '.taboverview__island-head').map((head) => head?.replace('✕', '').trim())).toEqual(['Notes1', 'Projects3', 'Projects / Alpha1', 'Work1'])
+    expect(texts(el, '.taboverview__island-head').map((head) => head?.replace('✕', '').trim())).toEqual(['Pages1', 'Projects3', 'Projects / Alpha1', 'Work1'])
     expect(texts(island(el, 'Projects'), '.taboverview__title')).toEqual(['plan', 'report.pdf', 'Alpha'])
     expect(texts(el, '.taboverview__title')).toEqual(['a', 'plan', 'report.pdf', 'Alpha', '2026-10-08', 'x'])
     // The first line that only repeats the title is not said twice.
@@ -202,13 +202,13 @@ describe('TabOverview', () => {
     expect(readHeads.mock.calls.slice(1)).toEqual([[['/w/new.md']]])
 
     // One vault: its name is not said above the islands, and still names its top level.
-    await again({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/Projects/plan.md'] })
+    await again({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md', '/v/Projects/plan.md'] })
     expect(texts(el, '.taboverview__vault-name')).toEqual([])
-    expect(texts(el, '.taboverview__island-leaf')).toEqual(['Notes', 'Projects'])
+    expect(texts(el, '.taboverview__island-leaf')).toEqual(['Pages', 'Projects'])
   })
 
   it('YAZ-3044 A37: a drawing or diagram page names its kind under its title, and is never asked for lines', async () => {
-    const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/Flow.excalidraw', '/v/Map.drawio'] })
+    const { el } = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md', '/v/Flow.excalidraw', '/v/Map.drawio'] })
     expect(readHeads.mock.calls).toEqual([[['/v/a.md']]])
     expect(texts(el, '.taboverview__lines')).toEqual(['Heading\na task with a link', 'Excalidraw drawing', 'draw.io diagram'])
   })
@@ -308,7 +308,7 @@ describe('TabOverview', () => {
       act(() => el.querySelector<HTMLButtonElement>('[aria-label="Fit all tabs"]')!.click())
       expect(zoomOf()).toBeCloseTo(z0)
       expect(commits.n).toBe(0)
-      await again({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md'] })
+      await again({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md'] })
       act(() => el.querySelector<HTMLButtonElement>('[aria-label="Fit all tabs"]')!.click())
       expect(zoomOf()).toBe(1)
     } finally {
@@ -318,9 +318,9 @@ describe('TabOverview', () => {
 
   it('YAZ-3343 S13, S19, D12: a drag moves the card — it follows the pointer by its own transform with no render, and the drop is ONE render and ONE stored place; a press with no move is a click', async () => {
     // One group, so a drop anywhere keeps it clear of the others (the no-overlap rule has its own tests).
-    const { el, props, commits } = await mount({ roots: ['/v', '/w'], vaultNames: ['Notes', 'Work'], tabs: ['/v/a.md', '/v/b.md'] })
+    const { el, props, commits } = await mount({ roots: ['/v', '/w'], vaultNames: ['Pages', 'Work'], tabs: ['/v/a.md', '/v/b.md'] })
     const card = page(el, '/v/a.md')!
-    // Two vaults: Notes' name row, then its group's label row and padding.
+    // Two vaults: Pages' name row, then its group's label row and padding.
     const home = { left: BOARD.islandPad, top: BOARD.islandPad + BOARD.labelH }
     expect([card.style.left, card.style.top]).toEqual([`${home.left}px`, `${home.top}px`])
     commits.n = 0
@@ -338,7 +338,7 @@ describe('TabOverview', () => {
     expect(card.style.transform).toBe('')
     expect(card.dataset.lifted).toBeUndefined()
     // The card stands where it was dropped; its group takes it in (the group's box starts where its card is, less the padding and the label).
-    const group = island(el, 'Notes')
+    const group = island(el, 'Pages')
     expect([Number.parseFloat(group.style.left) + Number.parseFloat(card.style.left), Number.parseFloat(group.style.top) + Number.parseFloat(card.style.top)]).toEqual([home.left + 100, BOARD.vaultH + home.top + 50])
     // The click that follows a drop opens nothing; a press with no move is a click.
     act(() => card.click())
@@ -480,7 +480,7 @@ describe('TabOverview', () => {
   it('YAZ-3343 S18, S26, D28, no overlap: a FRAME dropped on another takes the nearest free spot (the other stays); a CARD whose frame would grow into another goes to the nearest spot that keeps it clear', async () => {
     canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w2', ['/w'], [{ path: '/w/y.md', active: true }])]
-    const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/b.md'] })
+    const { el } = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md', '/v/b.md'] })
     const boxOf = (win: string) => {
       const f = frame(el, win)
       return { x: Number.parseFloat(f.style.left), y: Number.parseFloat(f.style.top) - BOARD.frameLabelH, w: Number.parseFloat(f.style.width), h: Number.parseFloat(f.style.height) + BOARD.frameLabelH }
@@ -732,7 +732,7 @@ describe('TabOverview', () => {
   it('YAZ-3343 S1, S33, D27: the open fits — a tiny board stays at 100%; and an armed Close goes back to ✕ when the pointer leaves its card', async () => {
     const restore = boardArea(1000, 600)
     try {
-      const { el, props } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md'] })
+      const { el, props } = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md'] })
       expect(world(el).style.transform).toMatch(/scale\(1\)$/)
       const close = () => page(el, '/v/a.md')!.querySelector<HTMLButtonElement>('.taboverview__close')!
       act(() => close().click())
@@ -765,7 +765,7 @@ describe('TabOverview', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/v/b.md' }, { id: 't3', path: '/v/a.md' }]
-    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Notes']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v']} vaultNames={['Pages']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={vi.fn()} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const face = (id: string) => [page(el, id)?.querySelector('.taboverview__title')?.textContent, page(el, id)?.querySelector('.taboverview__pagename')?.textContent ?? null, page(el, id)?.querySelector('.taboverview__copy')?.textContent ?? null]
     expect(face('t1')).toEqual(['Outline', 'Page: Plan', '1 of 2'])
@@ -937,11 +937,11 @@ describe('TabOverview', () => {
     const faces = (win: string) => [...el.querySelectorAll<HTMLElement>(`.taboverview__page[data-win="${win}"]`)].map((c) => [c.querySelector('.taboverview__title')?.textContent, c.querySelector('.taboverview__folder')?.textContent])
     // This window has two vaults: the vault's name leads; its top level is the vault's name alone.
     expect(faces('me')).toEqual([
-      ['a', 'Notes'],
-      ['plan', 'Notes / Projects'],
-      ['report.pdf', 'Notes / Projects'],
-      ['Alpha', 'Notes / Projects'],
-      ['2026-10-08', 'Notes / Projects / Alpha'],
+      ['a', 'Pages'],
+      ['plan', 'Pages / Projects'],
+      ['report.pdf', 'Pages / Projects'],
+      ['Alpha', 'Pages / Projects'],
+      ['2026-10-08', 'Pages / Projects / Alpha'],
       ['x', 'Work'],
     ])
     // One vault: the folder alone, in folder order (the top level first), whatever the strip's order.
@@ -1144,7 +1144,7 @@ describe('TabOverview', () => {
       const drawing = (path: string) => ({ type: 'file', name: path.split('/').pop(), path, size: 1, mtime: 1, kind: 'excalidraw' })
       vi.mocked(api.tree).mockImplementation(async (root: string) => ({ root, tree: root === '/v' ? [drawing('/v/quilt.excalidraw'), { type: 'dir', name: 'Projects', path: '/v/Projects', children: [drawing('/v/Projects/quote.excalidraw')] }] : [], generatedAt: 1 }) as never)
       const onOpenTabHere = vi.fn()
-      const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/Projects/plan.md'], active: '/v/Projects/plan.md', preview: null, onOpenTabHere })
+      const { el } = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/Projects/plan.md'], active: '/v/Projects/plan.md', preview: null, onOpenTabHere })
       const search = async (win: string) => {
         act(() => void frame(el, win).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
         act(() => menuItem(el, 'Open tabs here…')?.click())
@@ -1158,7 +1158,7 @@ describe('TabOverview', () => {
         await settled()
         return { panel, input }
       }
-      // THIS window: only the note and the drawing under /v/Projects.
+      // THIS window: only the page and the drawing under /v/Projects.
       const mine = await search('me')
       expect(texts(mine.panel, '.search-results__label').join(' | ')).toMatch(/Quarterly/)
       expect(texts(mine.panel, '.search-results__label').join(' | ')).toMatch(/quote/)
@@ -1250,8 +1250,8 @@ describe('TabOverview', () => {
     expect(props.onShowInSidebar).toHaveBeenLastCalledWith('/w')
     act(() => root?.unmount())
     container?.remove()
-    const one = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md'] })
-    rightClick(island(one.el, 'Notes').querySelector('.taboverview__island-head'))
+    const one = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md'] })
+    rightClick(island(one.el, 'Pages').querySelector('.taboverview__island-head'))
     expect(menuItems(one.el)).toEqual(['Copy path', 'Tidy up this group', 'Close 1 tab'])
   })
 
@@ -1267,13 +1267,13 @@ describe('TabOverview', () => {
   })
 
   it('YAZ-3091 D3, S17: a page\'s "Move to ▸" lists the windows asked for ITS page, a line, then "Right panel"; a window row moves that tab by id and leaves the board open', async () => {
-    const onMoveTargets = vi.fn((path: string) => (path.startsWith('/w/') ? [] : [{ id: 'w2', label: 'Notes — plan · 3 tabs' }]))
+    const onMoveTargets = vi.fn((path: string) => (path.startsWith('/w/') ? [] : [{ id: 'w2', label: 'Pages — plan · 3 tabs' }]))
     const { el, props } = await mount({ onMoveTargets })
     rightClick(page(el, '/v/Projects/plan.md'))
     expect(onMoveTargets).toHaveBeenLastCalledWith('/v/Projects/plan.md')
     act(() => menuItem(el, 'Move to')?.click())
-    expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Notes — plan · 3 tabs', 'Right panel'])
-    act(() => menuItem(el, 'Notes — plan · 3 tabs')?.click())
+    expect([...el.querySelectorAll('.ctx-menu__sub [role="group"]')].map((g) => g.textContent)).toEqual(['Pages — plan · 3 tabs', 'Right panel'])
+    act(() => menuItem(el, 'Pages — plan · 3 tabs')?.click())
     // Quiet from the board (D20): the drop's door.
     expect(props.onDropToWindow).toHaveBeenCalledExactlyOnceWith('w2', '/v/Projects/plan.md', '/v/Projects/plan.md')
     expect(el.querySelector('.ctx-menu')).toBeNull()
@@ -1417,7 +1417,7 @@ describe('TabOverview', () => {
     expect(props.onDismiss).not.toHaveBeenCalled()
   })
 
-  it('YAZ-3343 S10, S11, D18: with Preview on hover, resting on a card for the dwell opens its panel beside it (a note, a board); another card switches it; leaving, a drag start or a pan closes it; the hover renders no card', async () => {
+  it('YAZ-3343 S10, S11, D18: with Preview on hover, resting on a card for the dwell opens its panel beside it (a page, a board); another card switches it; leaving, a drag start or a pan closes it; the hover renders no card', async () => {
     vi.useFakeTimers()
     const { el } = await mount({ previewScope: SCOPE, hoverPreview: true, tabs: [...TABS, '/v/Map.drawio'], active: '/v/a.md' })
     const rest = async (path: string) => {
@@ -1484,9 +1484,9 @@ describe('TabOverview', () => {
     expect(el.style.getPropertyValue('--tab-zoom-ms')).toBe('')
   })
 
-  it('YAZ-2648 S55, S59, S61: an empty note shows its title alone, and the title is the index\'s; a second open shows the text it holds before the call answers and takes new text for a new mtime; a call that fails takes no text away', async () => {
+  it('YAZ-2648 S55, S59, S61: an empty page shows its title alone, and the title is the index\'s; a second open shows the text it holds before the call answers and takes new text for a new mtime; a call that fails takes no text away', async () => {
     const tabs = ['/v/a-k3m9.md', '/v/empty.md', '/v/only-frontmatter.md']
-    const over = { roots: ['/v'], vaultNames: ['Notes'], tabs, active: '/v/a-k3m9.md', preview: null, titles: new Map([['/v/a-k3m9.md', 'Alpha, as titled']]) }
+    const over = { roots: ['/v'], vaultNames: ['Pages'], tabs, active: '/v/a-k3m9.md', preview: null, titles: new Map([['/v/a-k3m9.md', 'Alpha, as titled']]) }
     const heads = (text: string, mtime: number) => tabs.map((path): FileHead => ({ path, mtime, text: path === tabs[0] ? text : '' }))
     const leave = () => {
       act(() => root?.unmount())
@@ -1594,7 +1594,7 @@ describe('YAZ-3376, YAZ-3343 S16, D16, S45: a tab that LEAVES a window from the 
   async function board(over: Partial<TabOverviewProps> = {}) {
     canvas = { allWindows: true, snap: true, cards: [], frames: [] }
     others = [other('w2', ['/v'], W2), other('w3', ['/v'], W3)]
-    const mounted = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: MINE, active: '/v/a.md', preview: null, ...over })
+    const mounted = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: MINE, active: '/v/a.md', preview: null, ...over })
     return { ...mounted, before: spots(mounted.el, STAY) }
   }
 
@@ -1727,7 +1727,7 @@ describe('YAZ-3376, YAZ-3343 S16, D16, S45: a tab that LEAVES a window from the 
   it('a group\'s "Close N" (the folder layout, the switch off — a window frame has no groups, D17): the tabs close by their door, and the board writes nothing (D16: the folder layout reflows on a close)', async () => {
     const onCloseTabs = vi.fn()
     canvas = { allWindows: false, snap: true, cards: [], frames: [] }
-    const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/a.md', '/v/P/b.md', '/v/P/c.md', '/v/Q/d.md'], active: '/v/a.md', preview: null, onCloseTabs })
+    const { el } = await mount({ roots: ['/v'], vaultNames: ['Pages'], tabs: ['/v/a.md', '/v/P/b.md', '/v/P/c.md', '/v/Q/d.md'], active: '/v/a.md', preview: null, onCloseTabs })
     const close = island(el, 'P').querySelector<HTMLButtonElement>('.taboverview__island-close')!
     act(() => close.click())
     act(() => close.click())
@@ -1772,7 +1772,7 @@ describe('TabOverview display name (YAZ-2949 D4, D5)', () => {
     root = createRoot(container)
     const tabs = [{ id: 't1', path: '/v/a.md', name: 'Outline' }, { id: 't2', path: '/w/x.md' }]
     const onOpen = vi.fn()
-    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Notes', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
+    await act(async () => root?.render(<IdTabOverview roots={['/v', '/w']} vaultNames={['Pages', 'Work']} tabs={tabs} active="t1" preview={null} titles={new Map([['/v/a.md', 'Plan']])} windowId="me" onOpen={onOpen} onCloseTabs={vi.fn()} onDismiss={vi.fn()} onSetName={onSetName} onDropToWindow={vi.fn()} onMoveTab={vi.fn()} onMoveToSlot={vi.fn()} onTakeAt={vi.fn()} onMoveToNewWindowQuietly={vi.fn()} />))
     const el = container
     const card = page(el, 't1')!
     expect(card.querySelector('.taboverview__title')?.textContent).toBe('Outline')

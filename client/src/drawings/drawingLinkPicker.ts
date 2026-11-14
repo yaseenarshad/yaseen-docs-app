@@ -1,9 +1,9 @@
 /**
- * The `[[` picker in a drawing's text box (YAZ-4039 D12): the note's picker rows (`rowsFor`, the one matcher of
- * `links/completion.ts`) in the note's popup look (`.wikilink-picker`), at the caret of the engine's text editor. A pick
+ * The `[[` picker in a drawing's text box (YAZ-4039 D12): the page's picker rows (`rowsFor`, the one matcher of
+ * `links/completion.ts`) in the page's popup look (`.wikilink-picker`), at the caret of the engine's text editor. A pick
  * writes the row's link, `[[ID]]` for a page with an ID (YAZ-2293), and the caret goes after it.
  *
- * As in a note: only typing opens it (YAZ-908), ↑ ↓ move, Enter picks, Esc closes it for that `[[` and leaves the typed
+ * As in a page: only typing opens it (YAZ-908), ↑ ↓ move, Enter picks, Esc closes it for that `[[` and leaves the typed
  * text, and a `|` closes it. While no row has the typed name, a Create row makes the page at the pick (YAZ-1357 🔒 D3
  * revised, `createLinkedPage`) and links it by the ID it is born with.
  *
@@ -39,10 +39,10 @@ interface Session {
 }
 
 /**
- * A Create row's page (YAZ-1357 🔒 D3 revised), in the note's order (`createPage` of `wikilinkPicker.ts`, YAZ-2677 S35):
+ * A Create row's page (YAZ-1357 🔒 D3 revised), in the page's order (`createPage` of `wikilinkPicker.ts`, YAZ-2677 S35):
  * where the vault uses IDs, the NUMBER first, from main's door; then the link, `[[ID]]` where the typed name stands; then
- * the note, born with that ID. A step that fails leaves a link that reads: no number, and the link stays the typed
- * name; no note, and the link gets its typed name back. The link was written at the pick as `[[name]]`, so what the
+ * the page, born with that ID. A step that fails leaves a link that reads: no number, and the link stays the typed
+ * name; no page, and the link gets its typed name back. The link was written at the pick as `[[name]]`, so what the
  * user types meanwhile lands after it.
  */
 export async function createLinkedPage(editor: PickerEditor, name: string, links: WikilinkResolveSource, nav: WikilinkNav): Promise<void> {
@@ -54,7 +54,7 @@ export async function createLinkedPage(editor: PickerEditor, name: string, links
   let linked = false
   let numbered = links.ids
   if (links.ids && linkPageName(name) !== '') {
-    const given = await api.mintNoteId(nav.root).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+    const given = await api.mintPageId(nav.root).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
     if (given instanceof Error) return nav.onNotice(`Can't create "${linkPageName(name)}": ${given.message}`)
     // `null`: the vault stopped using IDs. The page is made the plain way, and the link holds its name.
     if (given === null) numbered = false
@@ -71,7 +71,7 @@ export async function createLinkedPage(editor: PickerEditor, name: string, links
 
 /**
  * `create`: a Create row's page is made (`createLinkedPage`); absent, no Create row (no vault to make it in). `look`: the
- * rows' file icons, as the note's picker shows them. `onShow`: the picker opened or closed (YAZ-4748: a diagram's frame
+ * rows' file icons, as the page's picker shows them. `onShow`: the picker opened or closed (YAZ-4748: a diagram's frame
  * sends the picker's keys up only while it is open).
  */
 export function createDrawingLinkPicker(parent: () => HTMLElement | null, candidates: () => readonly LinkCandidate[], create?: (editor: PickerEditor, name: string) => void, look?: LinkLook, onShow?: (open: boolean) => void) {

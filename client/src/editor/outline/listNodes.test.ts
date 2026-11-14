@@ -50,10 +50,10 @@ describe('YAZ-4920: an id embed on a bullet, with the host\'s board check', () =
 
   it('the label counts the id embed as a board, without its options (the fold key stays through a view write); without the check it is text', async () => {
     const doc = await docOf('* ![[EMB-40|640x360 view=1,2,0.5]]\n* ![[YAZ-12|x]]\n')
-    const [board, note] = items(doc)
+    const [board, page] = items(doc)
     expect(itemLabelText(board.item, isBoard)).toBe('![[EMB-40]]')
     expect(itemLabelText(board.item)).toBe('![[EMB-40|640x360 view=1,2,0.5]]')
-    expect(itemLabelText(note.item, isBoard)).toBe('![[YAZ-12|x]]')
+    expect(itemLabelText(page.item, isBoard)).toBe('![[YAZ-12|x]]')
   })
 
   it('findOwnEmbeds finds the id embed with the check, and not without it', async () => {
@@ -119,10 +119,10 @@ const at = (doc: ProseNode, text: string) => {
 
 describe('a table cell is a boundary (YAZ-3818)', () => {
   // A bullet holding a table (YAZ-3770) whose body cells hold a plain line and a bullet with a child.
-  const NOTE = '* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | <ul><li>cell<ul><li>kid</li></ul></li></ul> |\n\ntext\n'
+  const PAGE = '* outer\n\n  | h1 | h2 |\n  | --- | --- |\n  | plain | <ul><li>cell<ul><li>kid</li></ul></li></ul> |\n\ntext\n'
 
   it('itemInCell: true in a cell bullet at any depth; false on a plain cell line, in the outer bullet and outside lists', async () => {
-    const doc = await docOf(NOTE)
+    const doc = await docOf(PAGE)
     expect(itemInCell(at(doc, 'cell'))).toBe(true)
     expect(itemInCell(at(doc, 'kid'))).toBe(true)
     expect(itemInCell(at(doc, 'plain'))).toBe(false)
@@ -131,7 +131,7 @@ describe('a table cell is a boundary (YAZ-3818)', () => {
   })
 
   it('innermostItemPos: the cell bullet in a cell; null on a plain cell line, never the outer bullet', async () => {
-    const doc = await docOf(NOTE)
+    const doc = await docOf(PAGE)
     const [outer, cell, kid] = items(doc)
     expect(innermostItemPos(at(doc, 'outer'))).toBe(outer.itemPos)
     expect(innermostItemPos(at(doc, 'cell'))).toBe(cell.itemPos)

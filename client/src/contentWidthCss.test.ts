@@ -24,7 +24,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     expect(maxWidthFor(backlinksCss, '.backlinks')).toBe('var(--content-max-width)')
   })
 
-  it('the scroller owns the page\'s ONE tail; the blocks under the note carry no tail and no hairline (YAZ-1680)', () => {
+  it('the scroller owns the page\'s ONE tail; the blocks under the page carry no tail and no hairline (YAZ-1680)', () => {
     expect(appCss).toMatch(/\.editor-host\s*\{[^}]*padding-bottom:\s*64px;/s)
     for (const [css, selector] of [
       [folderViewCss, '.folder-view'],
@@ -38,7 +38,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     }
   })
 
-  it("no rule hides a note's body", () => {
+  it("no rule hides a page's body", () => {
     expect(appCss).not.toMatch(/\.editor-mount\s*\{[^}]*display:\s*none/)
   })
 

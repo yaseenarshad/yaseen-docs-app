@@ -13,11 +13,11 @@ import { appWindow, launchApp, quitApp, readState, seededState, shoot } from './
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'AgentRenumbered.md'
+const PAGE = 'AgentRenumbered.md'
 const CHILD = 'child-bullet-e2e'
 const KID = 'kid-bullet-e2e'
 const ADDED = 'agent-added-bullet-e2e'
-const BODY = `# Notes
+const BODY = `# Pages
 
 * 1) Parent bullet
   * ${CHILD}
@@ -25,7 +25,7 @@ const BODY = `# Notes
   * ${KID}
 `
 const RENAMED = '2) Parent bullet renamed by the agent'
-const EDITED = `# Notes
+const EDITED = `# Pages
 
 * ${RENAMED}
   * ${CHILD}
@@ -36,18 +36,18 @@ const EDITED = `# Notes
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
-const foldKeys = async () => (await readState(userData)).folders[vault]?.folds[notePath] ?? []
+const foldKeys = async () => (await readState(userData)).folders[vault]?.folds[pagePath] ?? []
 const hasBulletKey = (keys: readonly string[]) => keys.some((k) => !k.startsWith('h:'))
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'fda-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'fda-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -56,7 +56,7 @@ test.afterAll(async () => {
 })
 
 test('step 1 — collapse the numbered parent; its key lands in app state', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(win.locator('.ProseMirror')).toContainText(CHILD)
 
@@ -70,7 +70,7 @@ test('step 1 — collapse the numbered parent; its key lands in app state', asyn
 })
 
 test('step 2 — the agent renumbers everything and rewords the collapsed line; the fold survives', async () => {
-  await writeFile(notePath, EDITED)
+  await writeFile(pagePath, EDITED)
 
   // The diff apply delivers the agent's new content...
   await expect(win.locator('.ProseMirror')).toContainText(ADDED, { timeout: 15_000 })
@@ -81,7 +81,7 @@ test('step 2 — the agent renumbers everything and rewords the collapsed line; 
 
   // Persisted keys re-derive from the live label, so cold start would restore this exact fold.
   await expect.poll(async () => hasBulletKey(await foldKeys()), { timeout: 10_000 }).toBe(true)
-  expect(await readFile(notePath, 'utf8')).toBe(EDITED)
+  expect(await readFile(pagePath, 'utf8')).toBe(EDITED)
   await shoot(win, 'fda-02-diff-apply-kept-fold')
 
   await quitApp(app)

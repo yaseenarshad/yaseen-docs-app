@@ -5,7 +5,7 @@ import path from 'node:path'
 import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
-import { dailyNoteName } from '@shared/dailyNote'
+import { dailyPageName } from '@shared/dailyPage'
 import { withCommentsHint } from '@shared/frontmatter'
 import { loadDrawing } from '../fs/drawing'
 import { makeFixture, removeVault, sleep, vaultFiles } from '../fs/testFixture'
@@ -97,7 +97,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.makeDailyNote.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.duplicate.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.downloadImage.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintPageId.channel, CONTRACT.makeDailyPage.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.duplicate.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.downloadImage.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -312,7 +312,7 @@ describe('registerFsIpc', () => {
   })
 
   describe('fs:retitle (YAZ-2420 🔒 D16)', () => {
-    const NOTE = '---\nid: k3m9x2pq7abc\n---\n'
+    const PAGE = '---\nid: k3m9x2pq7abc\n---\n'
     const windowOn = (id: string) => {
       store.upsertWindow({ id, root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
       senderWinId = id
@@ -321,7 +321,7 @@ describe('registerFsIpc', () => {
     it('a title edit that changes the name runs the rename handler\'s downstream: the store and favorites are repaired and file:renamed reaches every window', async () => {
       const oldPath = path.join(root, 'Retitle.md')
       const newPath = path.join(root, 'big-plan-k3m9x2pq7abc.md')
-      await writeFile(oldPath, NOTE)
+      await writeFile(oldPath, PAGE)
       windowOn('w-retitle')
       store.setFolder(root, { lastFile: oldPath })
       const w = fakeWindow()
@@ -337,7 +337,7 @@ describe('registerFsIpc', () => {
 
     it('a title edit that keeps the name writes the title and moves nothing: no repair, no broadcast', async () => {
       const file = path.join(root, 'same-name-k3m9x2pq7abc.md')
-      await writeFile(file, NOTE)
+      await writeFile(file, PAGE)
       windowOn('w-retitle')
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
@@ -362,8 +362,8 @@ describe('registerFsIpc', () => {
     })
   })
 
-  describe('creating a note or a folder is no answer about IDs (YAZ-2523 V10, V11)', () => {
-    it("a note and a folder created in a window's folder do not create `.yaseendocs/`, and nothing already there is written to", async () => {
+  describe('creating a page or a folder is no answer about IDs (YAZ-2523 V10, V11)', () => {
+    it("a page and a folder created in a window's folder do not create `.yaseendocs/`, and nothing already there is written to", async () => {
       const plain = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-plain-'))
       try {
         await mkdir(path.join(plain, 'Made in Finder'))
@@ -386,13 +386,13 @@ describe('registerFsIpc', () => {
   })
 
   describe("a create, a title edit and a paste follow the calling window's vault (YAZ-2523 V3, V5)", () => {
-    const NOTE = '---\nstatus: idea\n---\nbody\n'
+    const PAGE = '---\nstatus: idea\n---\nbody\n'
     const ID = 'k3m9x2pq7abc'
     /** A window on a fresh vault that holds `Plans/Name.md`; `answer` is what its `ids.json` says, and it has none when undefined. */
     const open = async (answer?: boolean): Promise<string> => {
       const vault = await mkdtemp(path.join(tmpdir(), 'yd-fs-ipc-kind-'))
       await mkdir(path.join(vault, 'Plans'))
-      await writeFile(path.join(vault, 'Plans', 'Name.md'), NOTE)
+      await writeFile(path.join(vault, 'Plans', 'Name.md'), PAGE)
       if (answer !== undefined) {
         await mkdir(path.join(vault, '.yaseendocs'))
         // A vault that said yes has its letters (YAZ-2677 R9).
@@ -414,7 +414,7 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'copy', paths: [from] })
       return call(CONTRACT.file.paste, pasteReq(targetDir))
     }
-    // These cases are about ids: a new note's bytes are what the caller sent. The hint has its own test below (YAZ-4700).
+    // These cases are about ids: a new page's bytes are what the caller sent. The hint has its own test below (YAZ-4700).
     let hintBefore = true
     beforeEach(() => {
       hintBefore = store.get().settings.commentsHint
@@ -422,30 +422,30 @@ describe('registerFsIpc', () => {
     })
     afterEach(() => store.setSettings({ ...store.get().settings, commentsHint: hintBefore }))
 
-    it('a new note starts with the comment hint while Settings says so, and without it when the switch is off (YAZ-4615 D10, YAZ-4700)', async () => {
+    it('a new page starts with the comment hint while Settings says so, and without it when the switch is off (YAZ-4615 D10, YAZ-4700)', async () => {
       const vault = await open(false)
       try {
         const at = (...p: string[]) => path.join(vault, ...p)
         store.setSettings({ ...store.get().settings, commentsHint: true })
-        expect(await call(CONTRACT.createFile, { path: at('With hint.md'), content: NOTE })).toMatchObject({ ok: true })
-        expect(await readFile(at('With hint.md'), 'utf8')).toBe(withCommentsHint(NOTE))
+        expect(await call(CONTRACT.createFile, { path: at('With hint.md'), content: PAGE })).toMatchObject({ ok: true })
+        expect(await readFile(at('With hint.md'), 'utf8')).toBe(withCommentsHint(PAGE))
         expect(await readFile(at('With hint.md'), 'utf8')).toMatch(/^---\n# comments: /)
         store.setSettings({ ...store.get().settings, commentsHint: false })
-        expect(await call(CONTRACT.createFile, { path: at('No hint.md'), content: NOTE })).toMatchObject({ ok: true })
-        expect(await readFile(at('No hint.md'), 'utf8')).toBe(NOTE)
+        expect(await call(CONTRACT.createFile, { path: at('No hint.md'), content: PAGE })).toMatchObject({ ok: true })
+        expect(await readFile(at('No hint.md'), 'utf8')).toBe(PAGE)
       } finally {
         await close(vault)
       }
     })
 
-    it('in a vault that uses IDs, a new note also starts with the hint, above its id (YAZ-4615 D10)', async () => {
+    it('in a vault that uses IDs, a new page also starts with the hint, above its id (YAZ-4615 D10)', async () => {
       const vault = await open(true)
       try {
         const at = (...p: string[]) => path.join(vault, ...p)
         store.setSettings({ ...store.get().settings, commentsHint: true })
-        expect(await call(CONTRACT.mintNoteId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
-        expect(await call(CONTRACT.createFile, { path: at('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
-        expect(await readFile(at('meeting-notes-yaz-1.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\nstatus: idea\nid: YAZ-1\n---\nbody\n')
+        expect(await call(CONTRACT.mintPageId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: at('meeting-pages-yaz-1.md'), content: PAGE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await readFile(at('meeting-pages-yaz-1.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\nstatus: idea\nid: YAZ-1\n---\nbody\n')
       } finally {
         await close(vault)
       }
@@ -454,13 +454,13 @@ describe('registerFsIpc', () => {
     it.each([
       ['said no', false],
       ['has not answered', undefined],
-    ])('in a vault that %s a note, a folder and a copy are what Finder would make, a title edit is refused, and nothing else is written', async (_, answer) => {
+    ])('in a vault that %s a page, a folder and a copy are what Finder would make, a title edit is refused, and nothing else is written', async (_, answer) => {
       const vault = await open(answer)
       try {
         const at = (...p: string[]) => path.join(vault, ...p)
-        expect(await call(CONTRACT.createFile, { path: at('Meeting notes.md'), content: NOTE })).toEqual({ ok: true, value: { path: at('Meeting notes.md'), mtime: expect.any(Number), size: NOTE.length } })
+        expect(await call(CONTRACT.createFile, { path: at('Meeting pages.md'), content: PAGE })).toEqual({ ok: true, value: { path: at('Meeting pages.md'), mtime: expect.any(Number), size: PAGE.length } })
         // A request shaped for a vault that uses IDs is refused, and makes nothing.
-        expect(await call(CONTRACT.createFile, { path: at(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.createFile, { path: at(`meeting-pages-${ID}.md`), content: PAGE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await call(CONTRACT.createDir, { path: at('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await call(CONTRACT.createFile, at('Empty.md'))).toMatchObject({ ok: true })
         expect(await call(CONTRACT.createDir, { path: at('Q3 Plans') })).toEqual({ ok: true, value: { path: at('Q3 Plans') } })
@@ -472,33 +472,33 @@ describe('registerFsIpc', () => {
         }
         expect(await vaultFiles(vault)).toEqual({
           ...(answer === false && { '.yaseendocs/': '', '.yaseendocs/ids.json': '{"enabled":false}' }),
-          'Meeting notes.md': NOTE,
+          'Meeting pages.md': PAGE,
           'Empty.md': '',
           'Q3 Plans/': '',
           'Plans/': '',
-          'Plans/Name.md': NOTE,
-          'Plans/Name copy.md': NOTE,
+          'Plans/Name.md': PAGE,
+          'Plans/Name copy.md': PAGE,
           'Plans copy/': '',
-          'Plans copy/Name.md': NOTE,
-          'Plans copy/Name copy.md': NOTE,
+          'Plans copy/Name.md': PAGE,
+          'Plans copy/Name copy.md': PAGE,
         })
       } finally {
         await close(vault)
       }
     })
 
-    it('in a vault that said yes a note and a folder are born with their ids, a copy is born again, and a title edit goes through', async () => {
+    it('in a vault that said yes a page and a folder are born with their ids, a copy is born again, and a title edit goes through', async () => {
       const vault = await open(true)
       try {
         const at = (...p: string[]) => path.join(vault, ...p)
-        // The front end takes the number first, from the door (YAZ-2677 R17), and the note is born with it.
-        expect(await call(CONTRACT.mintNoteId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
-        expect(await call(CONTRACT.createFile, { path: at('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
-        expect(await readFile(at('meeting-notes-yaz-1.md'), 'utf8')).toBe('---\nstatus: idea\nid: YAZ-1\n---\nbody\n')
+        // The front end takes the number first, from the door (YAZ-2677 R17), and the page is born with it.
+        expect(await call(CONTRACT.mintPageId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: at('meeting-pages-yaz-1.md'), content: PAGE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await readFile(at('meeting-pages-yaz-1.md'), 'utf8')).toBe('---\nstatus: idea\nid: YAZ-1\n---\nbody\n')
         // An old ID is never written (R3): a request that carries one is refused, and makes nothing.
-        expect(await call(CONTRACT.createFile, { path: at(`old-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
-        // Each ID after that is a next number: a folder (S33), a note with no `id` in its request, a copy
-        // (S34), a title edit of a note that has none. The sweep of the vault's own notes takes numbers from the same door meanwhile.
+        expect(await call(CONTRACT.createFile, { path: at(`old-${ID}.md`), content: PAGE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        // Each ID after that is a next number: a folder (S33), a page with no `id` in its request, a copy
+        // (S34), a title edit of a page that has none. The sweep of the vault's own pages takes numbers from the same door meanwhile.
         expect(await call(CONTRACT.createDir, { path: at('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
         expect(await readFile(at('q3-plans', '.folder.md'), 'utf8')).toMatch(/^---\nid: YAZ-[1-9]\d*\ntitle: Q3 Plans\n---\n$/)
         expect(await call(CONTRACT.createFile, at('Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^YAZ-[1-9]\d*$/) } })
@@ -513,14 +513,14 @@ describe('registerFsIpc', () => {
       }
     })
 
-    it('a note made inside a vault inside the window\'s vault takes the INNER vault\'s next ID (YAZ-4922 D1: the nearest folder that answered)', async () => {
+    it('a page made inside a vault inside the window\'s vault takes the INNER vault\'s next ID (YAZ-4922 D1: the nearest folder that answered)', async () => {
       const vault = await open(true)
       const inner = path.join(vault, 'Plans')
       try {
         await mkdir(path.join(inner, '.yaseendocs'))
         await writeFile(path.join(inner, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: true, letters: 'TECH' }))
-        expect(await call(CONTRACT.mintNoteId, path.join(inner, 'Deep'))).toEqual({ ok: true, value: 'TECH-1' })
-        expect(await call(CONTRACT.mintNoteId, vault)).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.mintPageId, path.join(inner, 'Deep'))).toEqual({ ok: true, value: 'TECH-1' })
+        expect(await call(CONTRACT.mintPageId, vault)).toEqual({ ok: true, value: 'YAZ-1' })
         // The inner vault's own sweep can give Plans/Name.md a number meanwhile: the next one is a TECH number either way.
         expect(await call(CONTRACT.createFile, path.join(inner, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^TECH-[2-9]$/) } })
       } finally {
@@ -528,15 +528,15 @@ describe('registerFsIpc', () => {
       }
     })
 
-    it('a window that is "a folder of" the vault (YAZ-4922 D3): a note made there gets the vault\'s next ID, and nothing writes an `ids.json` or any `.yaseendocs` into the folder', async () => {
+    it('a window that is "a folder of" the vault (YAZ-4922 D3): a page made there gets the vault\'s next ID, and nothing writes an `ids.json` or any `.yaseendocs` into the folder', async () => {
       const vault = await open(true)
       const folder = path.join(vault, 'Plans')
       try {
         const before = await readFile(path.join(vault, '.yaseendocs', 'ids.json'), 'utf8')
         store.setFolder(folder, { in: vault })
         store.upsertWindow({ id: 'w-kind', root: folder, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
-        expect(await call(CONTRACT.mintNoteId, folder)).toEqual({ ok: true, value: 'YAZ-1' })
-        expect(await call(CONTRACT.createFile, { path: path.join(folder, 'idea-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await call(CONTRACT.mintPageId, folder)).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: path.join(folder, 'idea-yaz-1.md'), content: PAGE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
         expect(await call(CONTRACT.createFile, path.join(folder, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^YAZ-[2-9]$/) } })
         // The vault's own doors take the vault from this window too: its IDs are the vault's.
         expect(await call(CONTRACT.ids.check, vault)).toMatchObject({ ok: true })
@@ -549,43 +549,43 @@ describe('registerFsIpc', () => {
       }
     })
 
-    it('`fs:make-daily-note` finds or makes today\'s note of a vault of the calling window, by the app\'s settings, one note for many asks (YAZ-4269 D2)', async () => {
+    it('`fs:make-daily-page` finds or makes today\'s page of a vault of the calling window, by the app\'s settings, one page for many asks (YAZ-4269 D2)', async () => {
       const yes = await open(true)
       const before = store.get().settings
       try {
-        store.setSettings({ ...before, dailyNotes: true, dailyNoteFolder: 'Plans', dailyNoteFormat: 'YYYY-MM-DD', dailyNoteDayFolder: false })
-        const title = dailyNoteName('YYYY-MM-DD', new Date())
-        const asked = await Promise.all(Array.from({ length: 4 }, () => call(CONTRACT.makeDailyNote, yes)))
-        const notes = asked.map((answer) => (answer as { ok: true; value: { path: string; title: string; created: boolean } }).value)
-        expect(notes.filter((note) => note.created)).toHaveLength(1)
-        expect(new Set(notes.map((note) => note.path)).size).toBe(1)
-        expect(notes[0]).toMatchObject({ title, path: expect.stringMatching(new RegExp(`^${yes}/Plans/${title}-yaz-\\d+\\.md$`)) })
+        store.setSettings({ ...before, dailyPages: true, dailyPageFolder: 'Plans', dailyPageFormat: 'YYYY-MM-DD', dailyPageDayFolder: false })
+        const title = dailyPageName('YYYY-MM-DD', new Date())
+        const asked = await Promise.all(Array.from({ length: 4 }, () => call(CONTRACT.makeDailyPage, yes)))
+        const pages = asked.map((answer) => (answer as { ok: true; value: { path: string; title: string; created: boolean } }).value)
+        expect(pages.filter((page) => page.created)).toHaveLength(1)
+        expect(new Set(pages.map((page) => page.path)).size).toBe(1)
+        expect(pages[0]).toMatchObject({ title, path: expect.stringMatching(new RegExp(`^${yes}/Plans/${title}-yaz-\\d+\\.md$`)) })
         // Not a vault of this window, or no window: refused, and nothing is made.
-        expect(await call(CONTRACT.makeDailyNote, path.join(yes, 'Plans'))).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.makeDailyPage, path.join(yes, 'Plans'))).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         senderWinId = undefined
-        expect(await call(CONTRACT.makeDailyNote, yes)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.makeDailyPage, yes)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
       } finally {
         store.setSettings(before)
         await close(yes)
       }
     })
 
-    it('`fs:mint-note-id` gives the next number of the vault that holds the path, one request at a time (YAZ-2677 R17, S32); null where the vault does not use IDs', async () => {
+    it('`fs:mint-page-id` gives the next number of the vault that holds the path, one request at a time (YAZ-2677 R17, S32); null where the vault does not use IDs', async () => {
       const yes = await open(true)
       try {
         const numberOf = (answer: unknown): number => Number(/^YAZ-([1-9]\d*)$/.exec((answer as { value: string }).value)?.[1])
-        const asked = (await Promise.all(Array.from({ length: 12 }, () => call(CONTRACT.mintNoteId, path.join(yes, 'Plans', 'Name.md'))))).map(numberOf)
-        // 12 numbers, no two the same. (The sweep of the vault's own note and folder takes its numbers from the same door.)
+        const asked = (await Promise.all(Array.from({ length: 12 }, () => call(CONTRACT.mintPageId, path.join(yes, 'Plans', 'Name.md'))))).map(numberOf)
+        // 12 numbers, no two the same. (The sweep of the vault's own page and folder takes its numbers from the same door.)
         expect(new Set(asked).size).toBe(12)
         expect(asked.every((n) => Number.isInteger(n) && n >= 1 && n <= 14)).toBe(true)
         // The vault's own folder is in the vault too.
-        expect(numberOf(await call(CONTRACT.mintNoteId, yes))).toBeGreaterThan(Math.max(...asked))
-        expect(await call(CONTRACT.mintNoteId, 'relative')).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
-        expect(await call(CONTRACT.mintNoteId, undefined)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(numberOf(await call(CONTRACT.mintPageId, yes))).toBeGreaterThan(Math.max(...asked))
+        expect(await call(CONTRACT.mintPageId, 'relative')).toMatchObject({ ok: false, error: { code: 'NOT_ABSOLUTE' } })
+        expect(await call(CONTRACT.mintPageId, undefined)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         // A path that no vault of the calling window holds, and a window with no vault.
-        expect(await call(CONTRACT.mintNoteId, path.join(tmpdir(), 'elsewhere', 'x.md'))).toEqual({ ok: true, value: null })
+        expect(await call(CONTRACT.mintPageId, path.join(tmpdir(), 'elsewhere', 'x.md'))).toEqual({ ok: true, value: null })
         senderWinId = undefined
-        expect(await call(CONTRACT.mintNoteId, path.join(yes, 'Plans'))).toEqual({ ok: true, value: null })
+        expect(await call(CONTRACT.mintPageId, path.join(yes, 'Plans'))).toEqual({ ok: true, value: null })
       } finally {
         await close(yes)
       }
@@ -593,7 +593,7 @@ describe('registerFsIpc', () => {
         const vault = await open(answer)
         try {
           const before = await vaultFiles(vault)
-          expect(await call(CONTRACT.mintNoteId, path.join(vault, 'Plans'))).toEqual({ ok: true, value: null })
+          expect(await call(CONTRACT.mintPageId, path.join(vault, 'Plans'))).toEqual({ ok: true, value: null })
           expect(await vaultFiles(vault)).toEqual(before)
         } finally {
           await close(vault)
@@ -644,9 +644,9 @@ describe('registerFsIpc', () => {
         const w = fakeWindow()
         vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
         vi.mocked(favorites.renamePath).mockClear()
-        expect(await call(CONTRACT.ids.state, vault)).toEqual({ ok: true, value: { letters: 'YAZ', notes: 3, stale: 0, old: 1, unfinished: false } })
+        expect(await call(CONTRACT.ids.state, vault)).toEqual({ ok: true, value: { letters: 'YAZ', pages: 3, stale: 0, old: 1, unfinished: false } })
         // Change letters: the open tab follows the file.
-        expect(await call(CONTRACT.ids.reletter, vault, 'doc')).toEqual({ ok: true, value: { letters: 'DOC', notes: 3, stale: 0, old: 1, unfinished: false } })
+        expect(await call(CONTRACT.ids.reletter, vault, 'doc')).toEqual({ ok: true, value: { letters: 'DOC', pages: 3, stale: 0, old: 1, unfinished: false } })
         expect(JSON.parse(await readFile(at('.yaseendocs', 'ids.json'), 'utf8'))).toEqual({ enabled: true, letters: 'DOC', was: ['YAZ'] })
         expect(await readFile(at('foo-doc-1.md'), 'utf8')).toBe('---\nid: DOC-1\ntitle: Foo\n---\n[[DOC-1]]\n')
         expect(store.get().windows.find((win) => win.id === 'w-kind')).toMatchObject({ file: at('foo-doc-1.md'), tabs: [at('foo-doc-1.md'), at(`old-${ID}.md`)] })
@@ -655,7 +655,7 @@ describe('registerFsIpc', () => {
         // Each window hears that the change ended, and reads its index at once (YAZ-3102).
         expect(w.webContents.send).toHaveBeenLastCalledWith(CONTRACT.ids.onChanged.channel, { root: vault })
         // Give old IDs numbers: the same downstream.
-        expect(await call(CONTRACT.ids.backfill, vault)).toEqual({ ok: true, value: { letters: 'DOC', notes: 4, stale: 0, old: 0, unfinished: false } })
+        expect(await call(CONTRACT.ids.backfill, vault)).toEqual({ ok: true, value: { letters: 'DOC', pages: 4, stale: 0, old: 0, unfinished: false } })
         expect(await readFile(at('old-doc-4.md'), 'utf8')).toBe('---\nid: DOC-4\ntitle: Old\n---\n[[DOC-1]]\n')
         expect(store.get().windows.find((win) => win.id === 'w-kind')?.tabs).toEqual([at('foo-doc-1.md'), at('old-doc-4.md')])
         expect(w.webContents.send).toHaveBeenCalledWith(CONTRACT.file.onRenamed.channel, { oldPath: at(`old-${ID}.md`), newPath: at('old-doc-4.md'), kind: 'file' })
@@ -684,21 +684,21 @@ describe('registerFsIpc', () => {
         const inYes = (...p: string[]) => path.join(yes, ...p)
         const inNo = (...p: string[]) => path.join(no, ...p)
         // In the vault that said yes: born with their ids, and a title edit goes through by that vault's rules.
-        expect(await call(CONTRACT.mintNoteId, inYes('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
-        expect(await call(CONTRACT.mintNoteId, inNo('Plans'))).toEqual({ ok: true, value: null })
-        expect(await call(CONTRACT.createFile, { path: inYes('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await call(CONTRACT.mintPageId, inYes('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.mintPageId, inNo('Plans'))).toEqual({ ok: true, value: null })
+        expect(await call(CONTRACT.createFile, { path: inYes('meeting-pages-yaz-1.md'), content: PAGE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
         expect(await call(CONTRACT.createDir, { path: inYes('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
         expect(await paste(inNo('Plans', 'Name.md'), inYes('Plans'))).toMatchObject({ ok: true, value: { pasted: [{ to: expect.stringMatching(/\/Plans\/name-copy-yaz-\d+\.md$/) }] } })
-        // The title edit gives the note the next number of its OWN vault; that vault's folder takes a title and keeps its name (YAZ-4921), wherever the vault sits in the window's list (S47).
+        // The title edit gives the page the next number of its OWN vault; that vault's folder takes a title and keeps its name (YAZ-4921), wherever the vault sits in the window's list (S47).
         expect(await call(CONTRACT.file.retitle, { path: inYes('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: expect.stringMatching(/\/Plans\/big-plan-yaz-\d+\.md$/) } })
         expect(await call(CONTRACT.file.retitle, { path: yes, title: 'Vault' })).toEqual({ ok: true, value: { oldPath: yes, newPath: yes, kind: 'dir' } })
         // In the vault that said no, from the SAME window: what Finder would make, and no title edit.
-        expect(await call(CONTRACT.createFile, { path: inNo(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(await call(CONTRACT.createFile, { path: inNo(`meeting-pages-${ID}.md`), content: PAGE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await call(CONTRACT.createDir, { path: inNo('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
-        expect(await call(CONTRACT.createFile, { path: inNo('Meeting notes.md'), content: NOTE })).toMatchObject({ ok: true })
+        expect(await call(CONTRACT.createFile, { path: inNo('Meeting pages.md'), content: PAGE })).toMatchObject({ ok: true })
         expect(await paste(inNo('Plans', 'Name.md'), inNo('Plans'))).toEqual({ ok: true, value: { pasted: [{ from: inNo('Plans', 'Name.md'), to: inNo('Plans', 'Name copy.md'), kind: 'file' }], failed: [] } })
         expect(await call(CONTRACT.file.retitle, { path: inNo('Plans', 'Name.md'), title: 'Big Plan' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'this vault does not use IDs' } })
-        expect(await vaultFiles(no)).toEqual({ '.yaseendocs/': '', '.yaseendocs/ids.json': '{"enabled":false}', 'Meeting notes.md': NOTE, 'Plans/': '', 'Plans/Name.md': NOTE, 'Plans/Name copy.md': NOTE })
+        expect(await vaultFiles(no)).toEqual({ '.yaseendocs/': '', '.yaseendocs/ids.json': '{"enabled":false}', 'Meeting pages.md': PAGE, 'Plans/': '', 'Plans/Name.md': PAGE, 'Plans/Name copy.md': PAGE })
       } finally {
         await close(yes, no)
       }
@@ -1034,15 +1034,15 @@ describe('registerFsIpc', () => {
 })
 
 describe('the save log at the fs:write door (YAZ-3235 D1)', () => {
-  it('S1: a save that lands logs its note in the vault of the calling window; S9: a CONFLICT logs nothing; a path in no vault of the window logs nothing', async () => {
+  it('S1: a save that lands logs its page in the vault of the calling window; S9: a CONFLICT logs nothing; a path in no vault of the window logs nothing', async () => {
     registerFsIpc(store, windows)
     store.upsertWindow({ id: 'w-log', root, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'recents', bounds: { x: 0, y: 0, width: 800, height: 600 } })
     senderWinId = 'w-log'
-    const note = path.join(root, 'Logged.md')
+    const page = path.join(root, 'Logged.md')
     const write = registered(CONTRACT.writeFile.channel)
-    const ok = (await write({ sender: {} }, { path: note, content: '# Logged\n' })) as { ok: true; value: { mtime: number } }
+    const ok = (await write({ sender: {} }, { path: page, content: '# Logged\n' })) as { ok: true; value: { mtime: number } }
     expect(ok.ok).toBe(true)
-    const logged = store.get().folders[root].edits[note]
+    const logged = store.get().folders[root].edits[page]
     expect(typeof logged).toBe('number')
 
     const conflict = path.join(root, 'Conflict.md')

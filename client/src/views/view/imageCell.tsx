@@ -13,14 +13,14 @@ import { LinkValue } from '../expr'
 import { Popover } from './Popover'
 
 /**
- * The Image column (YAZ-4802): one picture per note, for any use — a company's mark, a product photo, a screenshot, a
- * person's photo, a card cover. The note holds a link to a file in the vault, `Image: "[[assets/images/acme.png]]"`; a
+ * The Image column (YAZ-4802): one picture per page, for any use — a company's mark, a product photo, a screenshot, a
+ * person's photo, a card cover. The page holds a link to a file in the vault, `Image: "[[assets/images/acme.png]]"`; a
  * plain vault path or an `http(s)` address written by hand shows too. The picture loads through `app://vault/…`, the
- * door note images use (`editor/image/imageSrc.ts`): main finds the file root-relative, then by its name anywhere.
+ * door page images use (`editor/image/imageSrc.ts`): main finds the file root-relative, then by its name anywhere.
  * The column's look (`size`, `shape`) is on its declaration in `.folder.md`.
  */
 
-/** The vault the shown pictures are in: the folder page's views and a note's Properties panel each provide theirs. */
+/** The vault the shown pictures are in: the folder page's views and a page's Properties panel each provide theirs. */
 export const ImageVault = createContext<string | null>(null)
 
 /** What a stored value names: a link's target, else the text as written (a path or a web address); null for none. */
@@ -168,7 +168,7 @@ function ImagePicker({ anchor, root, current, label, onPick, onClose }: { anchor
         </button>
       </div>
       {root === null ? (
-        <p className="image-picker__note">{unit('This note is not in a vault.')}</p>
+        <p className="image-picker__note">{unit('This page is not in a vault.')}</p>
       ) : tab === 'vault' ? (
         <>
           <input className="view-input image-picker__search" type="search" aria-label="Search images" placeholder="Search images" value={query} onChange={(e) => setQuery(e.target.value)} />

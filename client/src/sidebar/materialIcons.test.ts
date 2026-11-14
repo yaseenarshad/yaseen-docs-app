@@ -23,7 +23,7 @@ describe("Material Icon Theme's matching (YAZ-3440 D4)", () => {
   })
 
   it('then the default file', () => {
-    expect(materialFileIcon('notes')).toBe('file')
+    expect(materialFileIcon('pages')).toBe('file')
     expect(materialFileIcon('a.nosuchextension')).toBe('file')
   })
 
@@ -43,7 +43,7 @@ describe("Material Icon Theme's matching (YAZ-3440 D4)", () => {
     expect(materialFolderIcon('.github')).toBe('folder-github')
     expect(materialFolderIcon('.venv')).toBe('folder-environment')
     expect(materialFolderIcon('__tests__')).toBe('folder-test')
-    expect(materialFolderIcon('My notes 2026')).toBe('folder')
+    expect(materialFolderIcon('My pages 2026')).toBe('folder')
     expect(openIcon('folder-docs')).toBe('folder-docs-open')
     expect(openIcon('folder')).toBe('folder-open')
   })

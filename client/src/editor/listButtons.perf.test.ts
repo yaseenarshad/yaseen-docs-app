@@ -105,7 +105,7 @@ describe('listButtons', () => {
     console.log(`listButtons perf: T over 1,000 H3 bullets, ${tr!.steps.length} steps, build ${build.toFixed(0)} ms, apply and draw ${(performance.now() - start).toFixed(0)} ms`)
   })
 
-  // ⌘A on a long note: the ▾ asks on each update (YAZ-4366). Highlighted at the top, so the ▾'s walk can stop there.
+  // ⌘A on a long page: the ▾ asks on each update (YAZ-4366). Highlighted at the top, so the ▾'s walk can stop there.
   it.each([
     ['1,000 folded parents (5,000 lines)', `<mark class="highlight-red">top</mark>\n\n${OUTLINE}`, `P${PARENTS - 1}`, true],
     ['5,000 plain lines', `<mark class="highlight-red">top</mark>\n\n${PLAIN}`, `L${PARENTS * 5 - 1}`, false],

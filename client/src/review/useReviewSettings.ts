@@ -5,7 +5,7 @@ import { BridgeRequestError, api } from '../api'
 import type { NoticeKind } from '../lib/notice'
 
 /**
- * A vault's note card review settings as the UI sees them (YAZ-4959 D14): `.yaseendocs/review.json` through the
+ * A vault's card review settings as the UI sees them (YAZ-4959 D14): `.yaseendocs/review.json` through the
  * generic vault-config door, sanitised on the way in, re-read whenever that file changes — a write from another
  * window, or one that arrived by sync. A vault with no file has the defaults, and nothing is created until `save`.
  * While the file is not valid JSON the settings stay as they were. Each vault's scope owns ONE of these.

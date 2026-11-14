@@ -1,4 +1,4 @@
-/** The sidebar sort at the repo's 10k-note scale (YAZ-3227): a level, a whole tree and a save stay far under a frame. Runs in the `perf` project (YAZ-740). */
+/** The sidebar sort at the repo's 10k-page scale (YAZ-3227): a level, a whole tree and a save stay far under a frame. Runs in the `perf` project (YAZ-740). */
 import { describe, expect, it } from 'vitest'
 import type { TabSort, TreeNode, TreeResponse } from '@shared/types'
 import { pageLabel } from '../lib/pageLabel'
@@ -9,8 +9,8 @@ import { searchTree } from '../search/searchTree'
 import { sortLevel, timeOf, withMtime } from './treeSort'
 import { budgetMs, timeMedian } from '../test-perf'
 
-// 100 folders × 10 subfolders × 10 notes = 10,000 notes, each with its own time; plus a level of 108 rows, the largest one a real vault has.
-const note = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime, kind: 'markdown' })
+// 100 folders × 10 subfolders × 10 pages = 10,000 pages, each with its own time; plus a level of 108 rows, the largest one a real vault has.
+const page = (path: string, mtime: number): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime, kind: 'markdown' })
 const tree = (): TreeNode[] =>
   Array.from({ length: 100 }, (_, f) => ({
     type: 'dir' as const,
@@ -20,10 +20,10 @@ const tree = (): TreeNode[] =>
       type: 'dir' as const,
       name: `Sub ${s}`,
       path: `/v/Folder ${f}/Sub ${s}`,
-      children: Array.from({ length: 10 }, (_, n) => note(`/v/Folder ${f}/Sub ${s}/Note ${n}.md`, (f * 100 + s * 10 + n) * 7919 % 10_000)),
+      children: Array.from({ length: 10 }, (_, n) => page(`/v/Folder ${f}/Sub ${s}/Page ${n}.md`, (f * 100 + s * 10 + n) * 7919 % 10_000)),
     })),
   }))
-/** The label the rows draw (`Tree.tsx`): no title known, so the file name without `.md`, as for a note the index has not read. */
+/** The label the rows draw (`Tree.tsx`): no title known, so the file name without `.md`, as for a page the index has not read. */
 const NO_TITLES = new Map<string, string>()
 const label = (node: TreeNode) => pageLabel(node.path, node.type === 'dir', NO_TITLES)
 const UPDATED: TabSort = { by: 'updated', reverse: false }
@@ -40,13 +40,13 @@ function sortAll(nodes: TreeNode[], sort: TabSort): number {
 
 describe('sidebar sort perf (YAZ-3227)', () => {
   it('a 108-row level sorts by name in well under 1 ms', () => {
-    const level = Array.from({ length: 108 }, (_, i) => note(`/v/Phase ${(i * 37) % 108}.md`, i))
+    const level = Array.from({ length: 108 }, (_, i) => page(`/v/Phase ${(i * 37) % 108}.md`, i))
     sortLevel(level, { by: 'name', reverse: false }, label)
     const { median } = timeMedian(100, (i) => sortLevel(level, { by: 'name', reverse: i % 2 === 1 }, label))
     expect(median).toBeLessThan(budgetMs(1))
   })
 
-  it('every level of 10,000 notes, fully open, sorts by Last updated in under 50 ms — the folder times come once per tree', () => {
+  it('every level of 10,000 pages, fully open, sorts by Last updated in under 50 ms — the folder times come once per tree', () => {
     const nodes = tree()
     const t0 = performance.now()
     expect(sortAll(nodes, UPDATED)).toBe(11_100)
@@ -58,17 +58,17 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     expect(cold).toBeLessThan(budgetMs(50))
   })
 
-  it('a save patches one time into 10,000 notes in under 1 ms', () => {
+  it('a save patches one time into 10,000 pages in under 1 ms', () => {
     let trees: ReadonlyMap<string, TreeResponse> = new Map([['/v', { root: '/v', tree: tree() } as TreeResponse]])
-    const { median: each, worst } = timeMedian(100, (i) => (trees = withMtime(trees, '/v', `/v/Folder ${i}/Sub 9/Note 9.md`, 20_000 + i)))
+    const { median: each, worst } = timeMedian(100, (i) => (trees = withMtime(trees, '/v', `/v/Folder ${i}/Sub 9/Page 9.md`, 20_000 + i)))
     console.log(`withMtime 10k: median ${(each * 1000).toFixed(0)} µs per save, worst ${(worst * 1000).toFixed(0)} µs of 100`)
     expect(each).toBeLessThan(budgetMs(1))
   })
 
-  it('a keystroke on Search (YAZ-3511): 50 matches cut from 10,000 notes, sorted by Last updated, each row\'s date, in under 2 ms', () => {
+  it('a keystroke on Search (YAZ-3511): 50 matches cut from 10,000 pages, sorted by Last updated, each row\'s date, in under 2 ms', () => {
     const nodes = tree()
     // 50 matches spread over the vault, a new set each run: each keystroke cuts a new tree, so no folder time is warm.
-    const hitsOf = (run: number) => new Set(Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Note ${(i + run) % 10}.md`))
+    const hitsOf = (run: number) => new Set(Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Page ${(i + run) % 10}.md`))
     const keystroke = (run: number) => {
       const cut = searchTree(nodes, hitsOf(run), new Set())
       let dated = 0
@@ -87,14 +87,14 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     expect(median).toBeLessThan(budgetMs(2))
   })
 
-  it('a keystroke on Search under Best match (YAZ-3511 D12): 50 matches cut from 10,000 notes, each folder scored by its best match, in under 2 ms', () => {
+  it('a keystroke on Search under Best match (YAZ-3511 D12): 50 matches cut from 10,000 pages, each folder scored by its best match, in under 2 ms', () => {
     const nodes = tree()
     const BEST: TabSort = { by: 'best', reverse: false }
-    const resultsOf = (run: number) => fileCandidates('/v', Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Note ${(i + run) % 10}.md`))
+    const resultsOf = (run: number) => fileCandidates('/v', Array.from({ length: 50 }, (_, i) => `/v/Folder ${(i * 2 + run) % 100}/Sub ${i % 10}/Page ${(i + run) % 10}.md`))
     const keystroke = (run: number) => {
       const results = resultsOf(run)
       const cut = searchTree(nodes, new Set(results.map((r) => r.path)), new Set())
-      const scores = bestScores(results, 'note', cut.nodes, cut.open)
+      const scores = bestScores(results, 'page', cut.nodes, cut.open)
       let rows = 0
       const draw = (level: readonly TreeNode[]): void => {
         for (const node of sortLevel(level, BEST, label, scores)) {
@@ -116,7 +116,7 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     const nodes = tree()
     const paths: string[] = []
     const collect = (level: readonly TreeNode[]): void => {
-      for (const node of level) (node.type === 'dir' ? collect(node.children) : paths.push(node.path.replace(/(Note [0-2])\.md$/, '$1.pdf')))
+      for (const node of level) (node.type === 'dir' ? collect(node.children) : paths.push(node.path.replace(/(Page [0-2])\.md$/, '$1.pdf')))
     }
     collect(nodes)
     return { nodes, candidates: fileCandidates('/v', paths) }
@@ -126,7 +126,7 @@ describe('sidebar sort perf (YAZ-3227)', () => {
     const { candidates } = filtered()
     const kept = candidates.filter(filterTest({ type: 'pdfs', time: 'any' }, () => 0, undefined)!)
     expect(kept.length).toBe(3000)
-    const queries = ['n', 'no', 'not', 'note', 'note 1', 'note 2']
+    const queries = ['n', 'no', 'not', 'page', 'page 1', 'page 2']
     const { median, worst } = timeMedian(60, (i) => searchRows(kept, queries[i % queries.length]).length)
     console.log(`search keystroke with PDFs on, 3k of 10k kept: median ${(median * 1000).toFixed(0)} µs, worst ${(worst * 1000).toFixed(0)} µs of 60`)
     expect(median).toBeLessThan(budgetMs(2))

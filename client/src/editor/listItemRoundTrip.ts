@@ -312,7 +312,7 @@ const BARE_ITEM = /^([ \t]*)(?:[-*+]|\d+[.)])[ \t]*\r?$/
 /**
  * Before parsing (YAZ-1357, rule 7): a text item followed on the VERY NEXT line by a deeper bare
  * marker gets one blank line between them. CommonMark forbids an EMPTY list item from interrupting
- * a paragraph, so `* a` + `  *` (Enter, Tab) read back as the text `a *` in the note editor and, in
+ * a paragraph, so `* a` + `  *` (Enter, Tab) read back as the text `a *` in the page editor and, in
  * the outline editor's `-` spelling, as a setext heading that the bullets-only schema drops whole
  * (the YAZ-974 guard then locked the view). The blank line is the one spelling every parser reads
  * as a nested empty item — and the one Milkdown writes back, so the file converges on it. A no-op

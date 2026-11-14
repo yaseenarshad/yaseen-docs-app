@@ -1,7 +1,7 @@
 /**
  * Subfolders on a parent folder's page (YAZ-4564, 2C, D25-D27): ViewsPane mounted with react-dom in jsdom over a
- * page `Projects` whose rows are its own note, two subfolders' notes (Alpha has a settings record and a title,
- * Beta has none) and a shortcut from `Inbox` (YAZ-2290 D4). Pinned: "Notes in subfolders: Hide" narrows the
+ * page `Projects` whose rows are its own page, two subfolders' pages (Alpha has a settings record and a title,
+ * Beta has none) and a shortcut from `Inbox` (YAZ-2290 D4). Pinned: "Pages in subfolders: Hide" narrows the
  * rows of one view, the Folder column shows the subfolder as a chip that opens its page, and a Folder group
  * header has "Open folder page ↗".
  */
@@ -25,11 +25,11 @@ const rec = (path: string, properties: Record<string, unknown> = {}): IndexRecor
   return { ...TEST_RECORDS[0], path, name, basename: name.replace(/\.md$/, ''), title, folder: rel.slice(0, rel.lastIndexOf('/')), properties }
 }
 
-/** The page's rows, as `folderRows` hands them: its own note, one in each subfolder, and a shortcut. */
+/** The page's rows, as `folderRows` hands them: its own page, one in each subfolder, and a shortcut. */
 const RECORDS = [
   rec('/vault/Projects/Plan.md', { status: 'open', due: '2026-12-03' }),
   rec('/vault/Projects/Alpha/Spec.md', { status: 'open', due: '2026-12-04' }),
-  rec('/vault/Projects/Beta/Notes.md', { status: 'done', due: '2026-12-05' }),
+  rec('/vault/Projects/Beta/Pages.md', { status: 'done', due: '2026-12-05' }),
   rec('/vault/Inbox/Idea.md', { status: 'open', due: '2026-12-06' }),
 ]
 /** Alpha has its own `.folder.md`, with a title; Beta has none (its directory name heads it). */
@@ -93,23 +93,23 @@ const TABLE = `views:
       - file.name
 `
 
-describe('"Notes in subfolders: Show / Hide", per view (D25)', () => {
+describe('"Pages in subfolders: Show / Hide", per view (D25)', () => {
   it('absent = Show: every row the folder holds, subfolders included', () => {
     const { el } = mount(TABLE)
-    expect(names(el)).toEqual(['Plan', 'Spec', 'Notes', 'Idea'])
+    expect(names(el)).toEqual(['Plan', 'Spec', 'Pages', 'Idea'])
   })
 
-  it('`subfolders: false` hides the notes in subfolders and keeps the shortcut', () => {
+  it('`subfolders: false` hides the pages in subfolders and keeps the shortcut', () => {
     const { el } = mount(`${TABLE}    subfolders: false\n`)
     expect(names(el)).toEqual(['Plan', 'Idea'])
   })
 
   it('a calendar narrows the same way', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(new Date(2026, 11, 10, 12, 0)) // the month the notes are due in
+    vi.setSystemTime(new Date(2026, 11, 10, 12, 0)) // the month the pages are due in
     const titles = (el: ParentNode) => [...el.querySelectorAll('.view-cal__card-title')].map((t) => t.textContent)
     try {
-      expect(titles(mount(`views:\n  - type: calendar\n    name: C\n`).el)).toEqual(['Plan', 'Spec', 'Notes', 'Idea'])
+      expect(titles(mount(`views:\n  - type: calendar\n    name: C\n`).el)).toEqual(['Plan', 'Spec', 'Pages', 'Idea'])
       act(() => root?.unmount())
       container?.remove()
       expect(titles(mount(`views:\n  - type: calendar\n    name: C\n    subfolders: false\n`).el)).toEqual(['Plan', 'Idea'])
@@ -119,18 +119,18 @@ describe('"Notes in subfolders: Show / Hide", per view (D25)', () => {
   })
 
   // YAZ-4579 D30 replaced the Show / Hide select with the "Subfolders" switch: Hide is now written `hide`.
-  it('Properties › "Subfolders" › Hide writes `subfolders: hide`; Their notes deletes the key', () => {
+  it('Properties › "Subfolders" › Hide writes `subfolders: hide`; Their pages deletes the key', () => {
     const { el, yaml } = mount(TABLE)
     click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
     click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]')) // View › Rows (YAZ-4607 D59)
     const select = () => q<HTMLSelectElement>(el, '.view-popover--properties [aria-label="Subfolders"]')
-    expect(select().value).toBe('notes')
+    expect(select().value).toBe('pages')
     choose(select(), 'hide')
     expect(yaml()).toContain('subfolders: hide')
     expect(names(el)).toEqual(['Plan', 'Idea'])
-    choose(select(), 'notes')
+    choose(select(), 'pages')
     expect(yaml()).not.toContain('subfolders')
-    expect(names(el)).toEqual(['Plan', 'Spec', 'Notes', 'Idea'])
+    expect(names(el)).toEqual(['Plan', 'Spec', 'Pages', 'Idea'])
   })
 })
 
@@ -153,13 +153,13 @@ describe('the Folder column (D26)', () => {
   })
 
   // YAZ-4801 demo: the column is the path from this page, the page first ("how come no folder showing up here?" — the
-  // page's own notes show the page, never a blank); "Last folder" is the one chip of before.
-  it('the path from this page, by titles, each part opening its folder’s page; "Last folder" shows only the note’s own folder', () => {
+  // page's own pages show the page, never a blank); "Last folder" is the one chip of before.
+  it('the path from this page, by titles, each part opening its folder’s page; "Last folder" shows only the page’s own folder', () => {
     const { el, openFolderPage } = mount(WITH_FOLDER)
     const parts = (name: string) => [...folderCell(el, name).querySelectorAll('.view-folder-path__part')].map((p) => p.textContent)
     expect(parts('Plan')).toEqual(['Projects'])
     expect(parts('Spec')).toEqual(['Projects', 'Alpha team']) // the title the Folder group header uses
-    expect(parts('Notes')).toEqual(['Projects', 'Beta']) // no settings file: its directory's name
+    expect(parts('Pages')).toEqual(['Projects', 'Beta']) // no settings file: its directory's name
     click([...folderCell(el, 'Spec').querySelectorAll('button')].find((b) => b.textContent === 'Alpha team')!)
     expect(openFolderPage).toHaveBeenCalledWith('/vault/Projects/Alpha')
     act(() => root?.unmount())
@@ -167,7 +167,7 @@ describe('the Folder column (D26)', () => {
     const last = mount(`${WITH_FOLDER}    folderColumn: last\n`)
     expect(folderCell(last.el, 'Plan').textContent).toBe('Projects')
     expect(folderCell(last.el, 'Spec').textContent).toBe('Alpha team')
-    expect(folderCell(last.el, 'Notes').textContent).toBe('Beta')
+    expect(folderCell(last.el, 'Pages').textContent).toBe('Beta')
     click(q(folderCell(last.el, 'Spec'), 'button'))
     expect(last.openFolderPage).toHaveBeenCalledWith('/vault/Projects/Alpha')
   })

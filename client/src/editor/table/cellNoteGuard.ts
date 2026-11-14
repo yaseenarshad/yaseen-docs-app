@@ -1,8 +1,8 @@
 /**
  * Cell notes and the actions that delete, duplicate or paste cells (YAZ-4206: D16, D17).
  *
- * THE ASK: the editor asks `NoteMenu` (`noteMenu.tsx`) for the app's `ConfirmSheet` through a DOM event on the
- * editor (`CELL_NOTE_ASK`), as a table handle asks for the menu (`TABLE_HANDLE_MENU`). An editor with no `NoteMenu`
+ * THE ASK: the editor asks `PageMenu` (`pageMenu.tsx`) for the app's `ConfirmSheet` through a DOM event on the
+ * editor (`CELL_NOTE_ASK`), as a table handle asks for the menu (`TABLE_HANDLE_MENU`). An editor with no `PageMenu`
  * (a bare mount, a preview) hears no answer, and the action runs as it did before.
  *
  * D16, DELETE: `deleteWithNotes` builds the action's transaction on the current state and compares the cell note
@@ -27,7 +27,7 @@ import { CellSelection, deleteCellSelection, tableEditingKey } from '@milkdown/k
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { cellNoteLabelsIn, isCellNote, isCellNoteMark, nextCellNoteLabel, notePosOf, removeCellNote } from './cellNotes'
 
-/** The editor's ask for a sheet (`NoteMenu` shows it). */
+/** The editor's ask for a sheet (`PageMenu` shows it). */
 export const CELL_NOTE_ASK = 'yd-cell-note-ask'
 
 /** What the sheet says, its buttons, and what each one does. Esc and a click outside are Cancel (nothing). */
@@ -40,7 +40,7 @@ export interface CellNoteAsk {
   other?: { label: string; run: () => void }
 }
 
-/** Ask through `NoteMenu`; with no one to ask, the confirm runs (the action as before 4C). */
+/** Ask through `PageMenu`; with no one to ask, the confirm runs (the action as before 4C). */
 export function askCellNotes(view: EditorView, ask: CellNoteAsk): void {
   const event = new CustomEvent<CellNoteAsk>(CELL_NOTE_ASK, { detail: ask, cancelable: true })
   view.dom.dispatchEvent(event)
@@ -146,8 +146,8 @@ export function clonedNotes(doc: ProseNode, labels: readonly string[], map: Read
 
 /**
  * D17: a duplicate of cells that hold marks asks "This row has 2 cell notes." — "Copy with notes" or "Cells only".
- * `build(copy)` makes the duplicate, `copy` mapping each copied node to what is inserted; `notesIn` are the copied
- * labels. Copy with notes relabels the copies and clones each cell note under the table (`notesFollowTables` puts them
+ * `build(copy)` makes the duplicate, `copy` mapping each copied node to what is inserted; `pagesIn` are the copied
+ * labels. Copy with notes relabels the copies and clones each cell note under the table (`pagesFollowTables` puts them
  * in mark order); Cells only drops the marks. No marks: the duplicate at once.
  */
 export function duplicateWithNotes(
@@ -157,7 +157,7 @@ export function duplicateWithNotes(
   build: (state: EditorState, copy: (content: Fragment) => Fragment) => Transaction | null,
   tableEnd: (doc: ProseNode) => number,
 ): boolean {
-  const withNotes = labels.filter((label) => notePosOf(view.state.doc, label) !== null)
+  const withPages = labels.filter((label) => notePosOf(view.state.doc, label) !== null)
   if (labels.length === 0) {
     const tr = build(view.state, (content) => content)
     if (tr !== null) view.dispatch(tr)
@@ -169,12 +169,12 @@ export function duplicateWithNotes(
     const tr = build(view.state, (content) => (keep ? relabel(content, map) : withoutMarks(content)))
     if (tr === null) return
     if (keep) {
-      const cloned = clonedNotes(doc, withNotes, map)
+      const cloned = clonedNotes(doc, withPages, map)
       if (cloned.length > 0) tr.insert(tableEnd(tr.doc), cloned)
     }
     view.dispatch(tr)
   }
-  const count = withNotes.length
+  const count = withPages.length
   askCellNotes(view, {
     text: `${noun} ${noun.startsWith('These') ? 'have' : 'has'} ${count === 1 ? '1 cell note' : `${count} cell notes`}.`,
     confirm: 'Copy with notes',

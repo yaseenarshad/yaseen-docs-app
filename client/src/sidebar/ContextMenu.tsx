@@ -158,7 +158,7 @@ function StripButtons({ item, onClose, onMouseEnter }: { item: MenuStrip; onClos
 
 /**
  * A parent ("Open in ▸", D7 amended, YAZ-1674): the app's one flyout row (`components/Flyout.tsx`, YAZ-4544 4F), its
- * flyout drawn by the SAME group renderer, one level deep. A parent WITH a default (YAZ-3085 D1, "New note ▸") runs
+ * flyout drawn by the SAME group renderer, one level deep. A parent WITH a default (YAZ-3085 D1, "New page ▸") runs
  * it on a click or Enter and closes the menu, as a leaf does; only hover and ArrowRight open its flyout. The flyout
  * stays while the pointer is inside the row or the flyout — there is no leave rule — and closes when the pointer
  * enters a DIFFERENT top-level item, after the root's hover wait (D4).

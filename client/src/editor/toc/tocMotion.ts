@@ -1,6 +1,6 @@
 /**
  * How a jump from a table of contents MOVES (YAZ-2700; shared since YAZ-3486): the glide to the row
- * and the one flash on it. A note's table of contents (`tocPlugin.ts`) and a code tab's Outline
+ * and the one flash on it. A page's table of contents (`tocPlugin.ts`) and a code tab's Outline
  * (`code/outline/codeJump.ts`) move the same way, so both read these numbers.
  */
 

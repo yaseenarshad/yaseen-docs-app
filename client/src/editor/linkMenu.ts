@@ -2,7 +2,7 @@
  * One right-click menu for every link (YAZ-3609 D23): a `[[link]]` of any kind and a Markdown link
  * show the same rows in the same order (YAZ-3740). A row a link cannot do is left out.
  *
- *   ID: YAS-466                one grey top line, only what the pill hides: an ID link's ID, a missing note, an ID
+ *   ID: YAS-466                one grey top line, only what the pill hides: an ID link's ID, a missing page, an ID
  *                              of another vault; none on a name, folder or Markdown link (demo M3, YAZ-4001)
  *   ───────────
  *   Open                       as a click does
@@ -19,11 +19,11 @@
  *   Open in ▸                  New window (files) · VS Code · Default app ─ Reveal in Finder (S3, S4)
  *   ───────────
  *   Show as embed              a link to a drawing or a diagram: a window into it (YAZ-4829 D8); not read-only
- *   Edit link                  not in a read-only note
+ *   Edit link                  not in a read-only page
  *   Remove link                keeps the text the link shows
  *
- * The place rows (Show in sidebar to Open in) are only for a target that is there. A missing note shows
- * (Missing note) (YAS-466) and Copy ID; an ID of another vault (INL-4) (ID from the … vault) and Copy ID
+ * The place rows (Show in sidebar to Open in) are only for a target that is there. A missing page shows
+ * (Missing page) (YAS-466) and Copy ID; an ID of another vault (INL-4) (ID from the … vault) and Copy ID
  * (YAZ-3905). No "Copy link": a selected pill and ⌘C copy a working link. The popup is
  * `blockHandleMenu.ts`'s (`renderMenu`), with its flyout for "Open in ▸" (YAZ-3901).
  */
@@ -77,11 +77,11 @@ export interface ListRow {
 }
 
 export interface LinkMenu {
-  /** What the one grey top line says (demo M3), joined by " · ": only what the pill hides, an ID link's "ID: <id>", a missing note, an ID of another vault (YAZ-3747 demo). */
+  /** What the one grey top line says (demo M3), joined by " · ": only what the pill hides, an ID link's "ID: <id>", a missing page, an ID of another vault (YAZ-3747 demo). */
   labels: string[]
   open?: () => void
   openNew?: () => void
-  /** "Open in Explore" (YAZ-4936): a note, as a reading layer of the explore stack. */
+  /** "Open in Explore" (YAZ-4936): a page, as a reading layer of the explore stack. */
   openExplore?: () => void
   showInSidebar?: () => void
   /** "Copy name and ID" of an ID link that is found (S8's text); else "Copy name". Never both. */
@@ -95,11 +95,11 @@ export interface LinkMenu {
   focus?: ListRow
   /** "Open in ▸": no child, no row. */
   openIn?: { newWindow?: () => void; vsCode?: () => void; defaultApp?: () => void; reveal?: () => void }
-  /** A drawing's or a diagram's link becomes its embed (YAZ-4829 D8). Left out in a read-only note. */
+  /** A drawing's or a diagram's link becomes its embed (YAZ-4829 D8). Left out in a read-only page. */
   showAsEmbed?: () => void
-  /** "Pill style ›" (YAZ-4924 round 5, `pillStyle.ts`): a pill in a note; disabled in a read-only note. */
+  /** "Pill style ›" (YAZ-4924 round 5, `pillStyle.ts`): a pill in a page; disabled in a read-only page. */
   pillStyle?: MenuRow
-  /** Left out in a read-only note, with `remove`. */
+  /** Left out in a read-only page, with `remove`. */
   edit?: () => void
   remove?: () => void
 }

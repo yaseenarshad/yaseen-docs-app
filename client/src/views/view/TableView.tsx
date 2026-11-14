@@ -11,7 +11,7 @@ import { BUILTIN_SUMMARIES, summarize } from '../summaries'
 import { cellEditor, columnTyping } from '../editorType'
 import { fillSeries } from '../../editor/table/fillSeries'
 import { CUT_CARD_DWELL_MS, cardShell, cellHoverCards, textPart } from '../../editor/table/cellHoverCard'
-import { type HistoryStep, type ValueHistory, inBatches, noteRef } from './valueHistory'
+import { type HistoryStep, type ValueHistory, inBatches, pageRef } from './valueHistory'
 import { isPairWritten, type PairWritten } from '../relationPair'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { edgeScroller } from '../../lib/edgeScroll'
@@ -32,7 +32,7 @@ import { MAX_FROZEN_ROWS, UNFROZE_ROWS, frozenColumnCount, frozenGapCover, froze
 import { PageContextMenu } from './PageContextMenu'
 import { OtherFilesMove, trayRowDrag } from './otherFilesMove'
 import { FillMenu, type FillTarget } from './FillMenu'
-import { deleteNoteItem, duplicateNoteItem, FilterValueParent } from './rowMenuItems'
+import { deletePageItem, duplicatePageItem, FilterValueParent } from './rowMenuItems'
 import { withFilter } from './filterRows'
 import { cellFillOf, fillIndex, fillPaint, setViewFill, setViewFills } from './fills'
 import { columnFillOf, setColumnFill } from './columnFill'
@@ -58,7 +58,7 @@ import { NO_READ_ONLY, readOnlyTip, writableKey } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
-import type { NoteWindowLink } from './NoteWindow'
+import type { PageWindowLink } from './PageWindow'
 import { ViewFind } from './viewFind'
 import { CHANGE_CANCELLED, type ChangeAsk, type ConfirmChange } from '../confirmChanges'
 import { clipboardImage, imageValue, saveImageFile } from './imageCell'
@@ -91,16 +91,16 @@ export interface TableViewProps {
   /** The row menu's "Open in mini window" (YAZ-4547, D57) and ⇧Enter on any cell (YAZ-4605 D56): the card over the folder page. Absent: neither. */
   onOpenWindow?: (path: string) => void
   /** The card's link (YAZ-4547 D16): the table hands it its rows in display order, and marks the card's row. */
-  windowLink?: NoteWindowLink
+  windowLink?: PageWindowLink
   /** Passive reporting for a stale or failed OS action. */
   onNotice?: FolderHost['onNotice']
   /** A drop on another section: `groupBy.property = value` (undefined deletes) via ViewsPane (5C, GRO-2143); `drop` says which LEVEL, and carries the outer's write on a cross-outer inner drop (YAZ-1101). */
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The last failed move, flagged inline on its row. */
   moveError: { path: string; message: string } | null
-  /** Create a note seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers and no "+ New" row. `at` places the section for the level-aware seed (YAZ-1101). null: the ungrouped table's "+ New" row (YAZ-4539). */
+  /** Create a page seeded with a section's group value (5D, GRO-2144); absent → no "+" on headers and no "+ New" row. `at` places the section for the level-aware seed (YAZ-1101). null: the ungrouped table's "+ New" row (YAZ-4539). */
   onNewInGroup?: (group: Group | null, name?: string, at?: GroupSpot) => void
-  /** "Show New buttons" (YAZ-3746 13BL): false drops the "+ New" rows and the group headers' "+"; the row menu's New row below and the header menu's New note in this group stay. */
+  /** "Show New buttons" (YAZ-3746 13BL): false drops the "+ New" rows and the group headers' "+"; the row menu's New row below and the header menu's New page in this group stay. */
   newRows?: boolean
   /** Vault root, so the picker's resolver is THE one the wikilink surfaces share (YAZ-846). */
   root: string
@@ -112,7 +112,7 @@ export interface TableViewProps {
   vaultRecords: readonly IndexRecord[]
   /** The snapshot's folder settings records, for a link column narrowed to a folder. */
   vaultFolders: readonly IndexRecord[]
-  /** ViewsPane's resolver: a cell reads an id link as the title of the note, or folder, it names (YAZ-2293 D8). */
+  /** ViewsPane's resolver: a cell reads an id link as the title of the page, or folder, it names (YAZ-2293 D8). */
   resolve: Resolver
   /** The window's link resolver, by which a link column's target names its folder. */
   resolveLink: ResolveLink
@@ -134,9 +134,9 @@ export interface TableViewProps {
   relation?: FolderHost['relation']
   /** A cell's commit: one value of one row, through the host's writer (`FolderHost.writeValues`). */
   onWriteValue: (path: string, key: string, value: unknown) => Promise<unknown>
-  /** A bulk write on a selection (YAZ-4593): several values of one note in ONE guarded write, `FolderHost.writeValues`. */
+  /** A bulk write on a selection (YAZ-4593): several values of one page in ONE guarded write, `FolderHost.writeValues`. */
   onWriteValues: FolderHost['writeValues']
-  /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
+  /** The read-only pages (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
   /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
   onRetitle: (path: string, title: string) => void
@@ -144,15 +144,15 @@ export interface TableViewProps {
   confirmChange?: ConfirmChange
   /** The app's own keys in this vault (`reservedKeys`): the header's "Add column" refuses them (YAZ-4544). */
   reservedKeys: ReadonlySet<string>
-  /** The row menu's "Duplicate note" (YAZ-4592 S26): `FolderHost.duplicate`; the selection menu's "Duplicate notes" calls it once per note (YAZ-4593). Absent: no such item, and that one is off. */
-  onDuplicateNote?: (path: string) => void
-  /** "Delete note…" (YAZ-4592 S26): ViewsPane's `confirmDeleteNotes`, which asks first unless the setting is off; the selection menu's "Delete notes…" too (YAZ-4593). Absent: no such item, and that one is off. */
-  onDeleteNotes?: (paths: readonly string[]) => void
+  /** The row menu's "Duplicate page" (YAZ-4592 S26): `FolderHost.duplicate`; the selection menu's "Duplicate pages" calls it once per page (YAZ-4593). Absent: no such item, and that one is off. */
+  onDuplicatePage?: (path: string) => void
+  /** "Delete page…" (YAZ-4592 S26): ViewsPane's `confirmDeletePages`, which asks first unless the setting is off; the selection menu's "Delete pages…" too (YAZ-4593). Absent: no such item, and that one is off. */
+  onDeletePages?: (paths: readonly string[]) => void
   /** The folder page's ⌘Z / ⇧⌘Z history of value changes (YAZ-4612 S41, `valueHistory.ts`). Absent: no history. */
   history?: ValueHistory
   /** The toolbar's selection chip (S46): the table writes Count, Sum and Average into it on the DOM, so it renders nothing. */
   selectionChip?: { current: HTMLElement | null }
-  /** "New row below" (YAZ-4611 D63): ViewsPane's seeded create; resolves the new note's path. Absent: no such item. */
+  /** "New row below" (YAZ-4611 D63): ViewsPane's seeded create; resolves the new page's path. Absent: no such item. */
   onNewRowBelow?: (row: Row, group: Group | null, at: GroupSpot | null) => Promise<string>
 }
 
@@ -187,7 +187,7 @@ const GUTTER_WIDTH = 44
 const SLIM_GUTTER_WIDTH = 12
 /** The header drag's own payload (YAZ-1548) — `ViewTabs`' `VIEW_TAB_MIME` idiom; never `text/plain`, so a stray text drop is not a reorder. */
 const COLUMN_MIME = 'application/x-yaseen-table-column'
-/** The row of the note the note window shows (YAZ-4547). */
+/** The row of the page the page window shows (YAZ-4547). */
 const CURRENT_ROW = 'view-table__row--current'
 /**
  * ...and the frozen lines stop here (YAZ-4544): at most, each row brings a header for each level and its own
@@ -196,17 +196,17 @@ const CURRENT_ROW = 'view-table__row--current'
 const MAX_FROZEN_LINES = MAX_FROZEN_ROWS * (MAX_GROUP_LEVELS + 2)
 /** A selected cell, row number or header (YAZ-4593): an attribute React does not own, so a render never drops it. */
 const SELECTED = 'data-selected'
-/** A bulk write, planned (YAZ-4593): each note's writes, its values before them, and the number of cells that change. */
+/** A bulk write, planned (YAZ-4593): each page's writes, its values before them, and the number of cells that change. */
 interface WritePlan {
   byPath: Map<string, PropertyWrite[]>
   before: Map<string, PropertyWrite[]>
   count: number
 }
-/** More notes than this in one bulk write show a progress note (YAZ-4612 S48). */
+/** More pages than this in one bulk write show a progress page (YAZ-4612 S48). */
 const PROGRESS_AT = 20
 /** Clearing more cells than this asks first (S49). */
 const CONFIRM_CLEAR_AT = 50
-/** The most (note, key) pairs `lastWritten` keeps while the index catches up (YAZ-4637 T4). */
+/** The most (page, key) pairs `lastWritten` keeps while the index catches up (YAZ-4637 T4). */
 const LAST_WRITTEN_MAX = 500
 /** The editors a typed letter opens with that letter in them (YAZ-4612 S42): a field. A box, a choice or a date picker opens by Enter. */
 const TYPE_KINDS = new Set(['text', 'number', 'link', 'list', 'multi-link'])
@@ -281,7 +281,7 @@ function cellIsCut(cell: HTMLElement): boolean {
 /**
  * A clipped cell's full value shows on hover ONLY when its text is really cut (YAZ-4867, amends YAZ-4582 D29): the value
  * waits in `data-clip-title`, and one check on the hover says whether the cell gets a card. Nothing is measured at
- * render. The card is the note table's full-text card (YAZ-4901, `cellHoverCard.ts`: its look, place, 250 ms wait, warm
+ * render. The card is the page table's full-text card (YAZ-4901, `cellHoverCard.ts`: its look, place, 250 ms wait, warm
  * run and closes), not the macOS tooltip; a Wrap column's cell has no value waiting (YAZ-4895), so no card.
  */
 function cutCellCard(cell: HTMLElement): { box: HTMLElement; dwell: number; under: boolean } | null {
@@ -302,11 +302,11 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
 
 /**
  * Table view (GRO-2136): sticky header with drag-to-resize columns (`view.columnSize`, written on
- * mouseup), typed cells, the `file.name` cell showing the note's title as plain text (YAZ-2420
+ * mouseup), typed cells, the `file.name` cell showing the page's title as plain text (YAZ-2420
  * 🔒 D26: a click selects it, a double-click edits the title, ⌘/⌥-click and Enter open the
- * note), a pinned summary row with a
+ * page), a pinned summary row with a
  * click-to-pick kind per column (`view.summaries`), arrow-key cell navigation and windowing above
- * `WINDOW_AT` lines. Note-property cells edit inline (5B, GRO-2142): `EditableCell` per cell,
+ * `WINDOW_AT` lines. Page-property cells edit inline (5B, GRO-2142): `EditableCell` per cell,
  * opened by a whole-cell double-click or Enter, typed by `cellEditor` over the view's rows. With `groupBy` (4C, GRO-2137) the groups render as sections in the same flat
  * tbody slice: one full-width `GroupHeader` row per group (its height = the data row height so the
  * spacer maths holds), collapsed sections keep the header and drop the rows, the total summary row
@@ -315,7 +315,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, matchRows, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeleteNotes, onDuplicateNote, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, matchRows, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeletePages, onDuplicatePage, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
   const unit = useUnit()
   /**
    * YAZ-4799: the deepest Folder group a row line is drawn in (its group and the groups above it), or null: a shortcut's
@@ -352,7 +352,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /** The data row (`rowKey`) whose title is being edited in its Name cell (YAZ-2420 🔒 D26). */
   const [titleEdit, setTitleEdit] = useState<string | null>(null)
   // Row drag between sections (5C, GRO-2143); disabled without groups. One write key PER level
-  // (YAZ-1101): a level that is not a note property takes no drops and shows no "+".
+  // (YAZ-1101): a level that is not a page property takes no drops and shows no "+".
   const levelKeys = shownGroupLevels(view).map((_, level) => groupByKey(view, level, settings.columns))
   const dnd = useGroupDrag(groups === null ? [] : levelKeys, onMoveToGroup)
   /** The Other files tray's door (YAZ-4597): null unless the folder page's tray takes moves. */
@@ -456,9 +456,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     [view.columnTypeIcons, keys, typings, settings],
   )
   /** What the pickers resolve and complete over: the WHOLE vault, never the folder's rows alone (🔒 D2). */
-  // The note editor's `[[` rows, notes and folders (YAZ-4601 D49).
+  // The page editor's `[[` rows, pages and folders (YAZ-4601 D49).
   const titles = useMemo(() => cellLinkCandidates(vaultRecords, vaultFolders, resolveLink, root), [vaultRecords, vaultFolders, resolveLink, root])
-  // Relation columns narrow the link picker to the notes in the FOLDER the target names
+  // Relation columns narrow the link picker to the pages in the FOLDER the target names
   // (YAZ-2290 D10: `belongsToTitles`); a target naming no folder falls back to all titles.
   const linkNames = useMemo(
     () => typings.map((t) => (t?.target !== undefined ? belongsToTitles(vaultRecords, vaultFolders, resolveLink, root, t.target) : null)),
@@ -521,7 +521,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (fill === undefined && depth === undefined) return base
     return { ...base, ...(fill !== undefined && { '--view-cell-fill': fillPaint(fill) }), ...(depth !== undefined && { '--depth': indentDepth(depth), '--view-name-indent': `${nameIndent(depth)}px` }) } as CSSProperties
   }
-  /** The view's cell and row fills by note path (YAZ-4536): built once per fills write, two map reads per cell. */
+  /** The view's cell and row fills by page path (YAZ-4536): built once per fills write, two map reads per cell. */
   const fills = useMemo(() => fillIndex(view.fills, resolveLink), [view.fills, resolveLink])
 
   // one flat display list (headers + visible data rows) so windowing and keyboard nav share it
@@ -630,7 +630,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const zoom = cssZoom(wrap)
     return Math.max(0, (scroller.getBoundingClientRect().top + scroller.clientTop * zoom - table.getBoundingClientRect().top) / zoom)
   }
-  /** Scrolls the real scroller so the table is `past` px past its top (T5): the one way find, "New row below" and the note window move a windowed table. */
+  /** Scrolls the real scroller so the table is `past` px past its top (T5): the one way find, "New row below" and the page window move a windowed table. */
   const scrollPast = (past: number): void => {
     const wrap = wrapRef.current
     if (wrap === null) return
@@ -730,7 +730,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
   /** The roving-tabindex entry: the first data row in the mounted lines. */
   const firstDataRow = [...head, ...visible].find((l): l is Extract<Line, { row: Row }> => 'row' in l)?.r
-  // The note window (YAZ-4547 D16): the rows it steps through, read at its step, and the mark of its row. A step writes
+  // The page window (YAZ-4547 D16): the rows it steps through, read at its step, and the mark of its row. A step writes
   // the mark on the DOM, so the table does not render for it; a render of the table draws the same mark from `current`.
   const wroteRows = useRef<readonly Row[]>(flat)
   wroteRows.current = flat
@@ -765,7 +765,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     [windowLink],
   )
   // ⌘F (YAZ-4613, D64): a match off a windowed table's mounted slice — scroll to its line, which mounts it. Written at
-  // each render, as the note window's link is; find marks the cell once it mounts.
+  // each render, as the page window's link is; find marks the cell once it mounts.
   const find = useContext(ViewFind)
   if (find !== null)
     find.scrollTo = (path) => {
@@ -775,7 +775,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
 
   /**
-   * "New row below" (YAZ-4611 D63): the new note's path until its row shows; then its Name cell goes into title edit
+   * "New row below" (YAZ-4611 D63): the new page's path until its row shows; then its Name cell goes into title edit
    * (Enter retitles, Esc keeps "Untitled") and, in a windowed table, the scroll moves to its line. One path at most.
    */
   const newRowRef = useRef<string | null>(null)
@@ -879,7 +879,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const selRef = useRef<TableSelection | null>(null)
   /** Whether a mark may be on the DOM: with none and no selection, a render skips the pass. */
   const painted = useRef(false)
-  /** The selection's right-click, with the selection it was opened on and the notes it held then (YAZ-4636 T7). */
+  /** The selection's right-click, with the selection it was opened on and the pages it held then (YAZ-4636 T7). */
   /** The selection's menu; `r` is the row the right-click was on, for its row freeze (YAZ-3746 13AI). */
   const [selMenu, setSelMenu] = useState<{ x: number; y: number; sel: TableSelection; paths: string[]; r?: number } | null>(null)
   const paintSelection = (): void => {
@@ -896,7 +896,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }
   /**
    * The rows the selection was made over (YAZ-4636 T7): a selection is by row index, so after a re-sort or an outside
-   * change that moves rows it would mark other notes. It goes instead; a change that keeps the order (by path) keeps it.
+   * change that moves rows it would mark other pages. It goes instead; a change that keeps the order (by path) keeps it.
    */
   const selRows = useRef<readonly Row[]>(flat)
   useLayoutEffect(() => {
@@ -1096,13 +1096,13 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     navigator.clipboard.writeText(text).catch((error: unknown) => onNotice?.(`Can't copy: ${error instanceof Error ? error.message : String(error)}`))
   }
   /**
-   * The bulk write (YAZ-4593): the cells' values grouped into ONE guarded write per note. A read-only note, the Name
-   * column and a column no view writes are skipped, and so is a value the note already has.
+   * The bulk write (YAZ-4593): the cells' values grouped into ONE guarded write per page. A read-only page, the Name
+   * column and a column no view writes are skipped, and so is a value the page already has.
    */
   /**
-   * The last value this table wrote per note and key, until the index shows it (YAZ-4637 T4): two quick commits to one
+   * The last value this table wrote per page and key, until the index shows it (YAZ-4637 T4): two quick commits to one
    * cell before the index refreshes would otherwise both record the rendered value as their `before`, and ⌘Z would skip
-   * a state. Read by `liveValue`; an entry goes once the record catches up (or the note leaves the rows), and the map
+   * a state. Read by `liveValue`; an entry goes once the record catches up (or the page leaves the rows), and the map
    * keeps at most `LAST_WRITTEN_MAX` entries, the oldest out. A ref: no render on a write.
    */
   const lastWritten = useRef(new Map<string, unknown>())
@@ -1110,7 +1110,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const at = `${path}\n${bare}`
     return lastWritten.current.has(at) ? lastWritten.current.get(at) : records.find((r) => r.path === path)?.properties[bare]
   }
-  const noteWritten = (path: string, writes: readonly PropertyWrite[]): void => {
+  const recordWritten = (path: string, writes: readonly PropertyWrite[]): void => {
     const map = lastWritten.current
     for (const { key, value } of writes) {
       map.delete(`${path}\n${key}`)
@@ -1158,7 +1158,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   }, [records])
   const planWrites = (cells: Iterable<{ r: number; c: number; value: unknown }>): WritePlan => {
     const byPath = new Map<string, PropertyWrite[]>()
-    /** Each note's values before the write, for Undo: one write per note back (undefined deletes the key). */
+    /** Each page's values before the write, for Undo: one write per page back (undefined deletes the key). */
     const before = new Map<string, PropertyWrite[]>()
     let count = 0
     for (const { r, c, value } of cells) {
@@ -1176,10 +1176,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     return { byPath, before, count }
   }
   const failed = (error: unknown) => onNotice?.(`Can't write: ${error instanceof Error ? error.message : String(error)}`)
-  /** Each note's writes, one write per note, at most 8 at a time (YAZ-4612 S48); more than 20 notes say so first. */
-  const writeNotes = (writes: ReadonlyMap<string, PropertyWrite[]>): Promise<void> => {
-    if (writes.size > PROGRESS_AT) onNotice?.(unit(`Writing ${writes.size} notes…`))
-    for (const [path, w] of writes) noteWritten(path, w)
+  /** Each page's writes, one write per page, at most 8 at a time (YAZ-4612 S48); more than 20 pages say so first. */
+  const writePages = (writes: ReadonlyMap<string, PropertyWrite[]>): Promise<void> => {
+    if (writes.size > PROGRESS_AT) onNotice?.(unit(`Writing ${writes.size} pages…`))
+    for (const [path, w] of writes) recordWritten(path, w)
     return inBatches(
       [...writes].map(([path, w]) => () =>
         onWriteValues(path, w).catch((error: unknown) => {
@@ -1192,7 +1192,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   /**
    * A planned bulk write: ONE step of the page's ⌘Z history (S41), then the writes. With `undo`, one S29 toast for the
    * whole gesture once every write landed (YAZ-4609 D61); its Undo is the step's own (YAZ-4637 T9e), so ⌘Z and ⇧⌘Z
-   * agree with it. The step holds its notes as refs (T3): a rename since moves the writes with the note.
+   * agree with it. The step holds its pages as refs (T3): a rename since moves the writes with the page.
    */
   const commitWrites = (plan: WritePlan, undo?: (count: number) => string, verb = 'Change', asked = false): void => {
     if (plan.count === 0) return
@@ -1202,21 +1202,21 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       void confirmChange({ ...planAsk(plan, verb), anchor: anchor ?? wrapRef.current }).then((ok) => ok && commitWrites(plan, undo, verb, true))
       return
     }
-    const notes = [...plan.byPath].map(([path, writes]) => ({ ref: noteRef(path), writes, before: plan.before.get(path)! }))
-    const live = (pick: 'writes' | 'before') => new Map(notes.flatMap((note) => (note.ref.path === null ? [] : [[note.ref.path, note[pick]] as const])))
+    const pages = [...plan.byPath].map(([path, writes]) => ({ ref: pageRef(path), writes, before: plan.before.get(path)! }))
+    const live = (pick: 'writes' | 'before') => new Map(pages.flatMap((page) => (page.ref.path === null ? [] : [[page.ref.path, page[pick]] as const])))
     const again = (pick: 'writes' | 'before') => () => {
       const writes = live(pick)
       showUndone(writes)
-      void writeNotes(writes).catch(() => {})
+      void writePages(writes).catch(() => {})
     }
     const back = again('before')
-    const step: HistoryStep = { undo: back, redo: again('writes'), notes: notes.map((note) => note.ref) }
+    const step: HistoryStep = { undo: back, redo: again('writes'), pages: pages.map((page) => page.ref) }
     history?.push(step)
     // The cells show the written values at once (YAZ-3746 13AK), as an undo does (13O): Delete, Clear cells, Paste, Set
     // value and the fill handle waited for the index's echo of the write, about half a second.
     const writes = live('writes')
     showUndone(writes)
-    writeNotes(writes).then(
+    writePages(writes).then(
       () => {
         if (undo !== undefined) onNotice?.(undo(plan.count), 'info', 'undo', { label: 'Undo', run: () => (history === undefined ? back() : void history.undoStep(step)), fades: true })
       },
@@ -1234,11 +1234,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const planAsk = (plan: WritePlan, verb: string): Omit<ChangeAsk, 'anchor' | 'point'> => {
     if (plan.count === 1) {
       const [path, [write]] = [...plan.byPath][0]
-      return { kind: bareLabel(write.key), note: titleOfPath(path), from: plan.before.get(path)?.[0]?.value, to: write.value }
+      return { kind: bareLabel(write.key), page: titleOfPath(path), from: plan.before.get(path)?.[0]?.value, to: write.value }
     }
-    const notes = plan.byPath.size
+    const pages = plan.byPath.size
     const [kind, action] = BULK_ASK[verb] ?? [verb, 'Change']
-    return { kind, action, summary: `${plan.count} cells in ${notes} ${notes === 1 ? 'note' : 'notes'}` }
+    return { kind, action, summary: `${plan.count} cells in ${pages} ${pages === 1 ? 'page' : 'pages'}` }
   }
   /** A clear awaiting its confirm (S49): more than 50 cells. */
   const [confirmClear, setConfirmClear] = useState<WritePlan | null>(null)
@@ -1254,12 +1254,12 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (confirmChange !== undefined) {
       const r = flat.findIndex((row) => row.record.path === path)
       const cell = wrapRef.current?.querySelector(`[data-cell="${r}:${bares.indexOf(bare)}"]`) ?? null
-      const ok = await confirmChange({ kind: bareLabel(bare), note: titleOfPath(path), from: liveValue(path, bare), to: next, anchor: cell })
+      const ok = await confirmChange({ kind: bareLabel(bare), page: titleOfPath(path), from: liveValue(path, bare), to: next, anchor: cell })
       if (!ok) throw CHANGE_CANCELLED
     }
     const before = liveValue(path, bare)
-    const ref = noteRef(path)
-    /** A tied cell's write (YAZ-4781 R2) resolves with the Undo of the notes it wrote: the step's undo runs that, not a write of `before`. */
+    const ref = pageRef(path)
+    /** A tied cell's write (YAZ-4781 R2) resolves with the Undo of the pages it wrote: the step's undo runs that, not a write of `before`. */
     let paired: PairWritten | null = null
     const keep = (result: unknown): unknown => {
       if (isPairWritten(result)) paired = result
@@ -1267,19 +1267,19 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     }
     const write = (value: unknown, undo = false) => {
       if (ref.path === null) return
-      noteWritten(ref.path, [{ key: bare, value }])
+      recordWritten(ref.path, [{ key: bare, value }])
       showUndone(new Map([[ref.path, [{ key: bare, value }]]]))
       void (undo && paired !== null ? paired.undoPair() : onWriteValues(ref.path, [{ key: bare, value }]).then(keep)).catch(failed)
     }
-    history?.push({ undo: () => write(before, true), redo: () => write(next), notes: [ref] })
-    noteWritten(path, [{ key: bare, value: next }])
+    history?.push({ undo: () => write(before, true), redo: () => write(next), pages: [ref] })
+    recordWritten(path, [{ key: bare, value: next }])
     return onWriteValue(path, bare, next).then(keep)
   }
   /**
    * The fill handle (YAZ-4609 D61, the table block's `editor/table/tableFill.ts`): a square in the bottom-right corner
    * of the selection, or of the focused cell. One element, moved on the DOM like the selection marks, so placing it
    * renders nothing. A drag down or right marks the cells it would fill (`data-fill-target`, dashed in views.css); on
-   * mouseup each column (down) or row (right) continues with `fillSeries`, ONE write per note with one Undo.
+   * mouseup each column (down) or row (right) continues with `fillSeries`, ONE write per page with one Undo.
    */
   const handleRef = useRef<HTMLSpanElement | null>(null)
   const fillRef = useRef<{ rows: number[]; cols: number[]; axis: 'down' | 'right'; count: number } | null>(null)
@@ -1328,7 +1328,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     placeHandle()
     if (fillRef.current !== null) paintFillTarget()
   })
-  /** A cell's source text for `fillSeries`: a note value as written (an ISO date, a number), else what the cell shows. */
+  /** A cell's source text for `fillSeries`: a page value as written (an ISO date, a number), else what the cell shows. */
   const sourceText = (r: number, c: number): string => {
     const bare = bares[c]
     if (bare == null) return cellText(flat[r], c)
@@ -1346,7 +1346,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const bare = bares[c]
     return bare == null ? undefined : valueFromText(text, cellEditor(flat[r].record.properties[bare], typings[c]) ?? 'text')
   }
-  /** The fill on mouseup (D61): it stops at the last shown row and column, and never makes a note. */
+  /** The fill on mouseup (D61): it stops at the last shown row and column, and never makes a page. */
   const runFill = ({ rows: src, cols, axis, count }: NonNullable<typeof fillRef.current>): void => {
     const cells: { r: number; c: number; value: unknown }[] = []
     if (axis === 'down') {
@@ -1413,7 +1413,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     if (area.cols.every((c) => typings[c]?.assigned === 'image')) {
       void clipboardImage().then((file) => {
         if (file === null) return pasteText(area)
-        // A pasted picture has no name: it is named after the first note it lands on.
+        // A pasted picture has no name: it is named after the first page it lands on.
         saveImageFile(root, file, flat[area.rows[0]]?.record.basename).then(
           (path) => writeCells(area.rows.flatMap((r) => (flat[r] === undefined ? [] : area.cols.map((c) => ({ r, c, value: imageValue(path) })))), undefined, 'Paste into'),
           (error: unknown) => onNotice?.(`Can't paste the picture: ${error instanceof Error ? error.message : String(error)}`),
@@ -1478,9 +1478,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * when nothing changes. Values and the column setup (formats, widths, group header styles) stay.
    */
   const clearFormatting = (sel: TableSelection | null, area: { rows: number[]; cols: number[] }): void => {
-    const notes = area.rows.map((r) => flat[r].record)
-    const targets: { record: IndexRecord; column?: string }[] = notes.flatMap((record) => area.cols.map((c) => ({ record, column: keys[c] })))
-    if (sel?.cols === null) targets.push(...notes.map((record) => ({ record })))
+    const pages = area.rows.map((r) => flat[r].record)
+    const targets: { record: IndexRecord; column?: string }[] = pages.flatMap((record) => area.cols.map((c) => ({ record, column: keys[c] })))
+    if (sel?.cols === null) targets.push(...pages.map((record) => ({ record })))
     const unwrap = sel?.rows === null ? new Set(area.cols.map((c) => canonicalKey(keys[c]))) : null
     const clear = (d: ViewSet) => {
       setViewFills(d, viewIndex, targets, null, resolveLink, true)
@@ -1545,10 +1545,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   selectionKeyRef.current = selectionKey
 
   /**
-   * The notes of a selection, for its Duplicate and Delete (YAZ-4592 S26): a folder row is no note, and a note shown
+   * The pages of a selection, for its Duplicate and Delete (YAZ-4592 S26): a folder row is no page, and a page shown
    * under two groups counts once (YAZ-4636 T7). Read when the menu opens, so a later change of rows cannot swap them.
    */
-  const notePathsOf = (sel: TableSelection): string[] => [...new Set(indicesOf(sel.rows, flat.length).map((r) => flat[r].record).filter((record) => !isFolderRow(record)).map((record) => record.path))]
+  const pagePathsOf = (sel: TableSelection): string[] => [...new Set(indicesOf(sel.rows, flat.length).map((r) => flat[r].record).filter((record) => !isFolderRow(record)).map((record) => record.path))]
   /** Google-Sheets style: right-click selects the data cell, unless a typed editor owns it. Inside the selection it opens the selection's menu (YAZ-4593). */
   const openRowMenu = ({ record, values }: Row) => (event: ReactMouseEvent<HTMLTableRowElement>): void => {
     if (!(event.target instanceof Element)) return
@@ -1565,7 +1565,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const r = Number(gutterCell.dataset.row)
       if (sel?.kind === 'rows' && sel.rows!.has(r) && sel.rows!.size > 1) {
         setRowMenu(null)
-        setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel), r })
+        setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: pagePathsOf(sel), r })
         return
       }
       const rows = pickLine(null, 'rows', r, 'plain')
@@ -1579,7 +1579,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const [r, c] = (cell.dataset.cell ?? '').split(':').map(Number)
     if (sel !== null && inSelection(sel, r, c)) {
       setRowMenu(null)
-      setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: notePathsOf(sel), r })
+      setSelMenu({ x: event.clientX, y: event.clientY, sel, paths: pagePathsOf(sel), r })
       return
     }
     setSelection(null)
@@ -1680,7 +1680,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     setHeaderMenu({ x: event.clientX, y: event.clientY, key })
   }
 
-  /** Arrow keys move between body cells (`data-cell="row:col"`); Enter on the name column opens the note. */
+  /** Arrow keys move between body cells (`data-cell="row:col"`); Enter on the name column opens the page. */
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const at = (e.target as HTMLElement).dataset.cell
     if (at === undefined) return
@@ -1780,7 +1780,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       else d.views[viewIndex].frozenRows = count
     }, count === 0 ? UNFROZE_ROWS : undefined)
 
-  /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on; Duplicate and Delete on the notes it held then (`paths`). */
+  /** The selection's right-click (YAZ-4593): every action works on the selection it was opened on; Duplicate and Delete on the pages it held then (`paths`). */
   const selectionMenu =({ x, y, sel, paths, r }: NonNullable<typeof selMenu>) => {
     const area = areaOf(sel)!
     const one = area.cols.length === 1 ? area.cols[0] : -1
@@ -1808,8 +1808,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         onSetValue={(value) => writeCells(area.rows.map((r) => ({ r, c: one, value })), undefined, 'Set')}
         onClearFormatting={() => clearFormatting(sel, area)}
         onNewRowBelow={newRowBelow && area.rows.length > 0 ? () => newRowBelow(area.rows.at(-1)!) : undefined}
-        onDuplicate={onDuplicateNote && paths.length > 0 ? () => paths.forEach(onDuplicateNote) : undefined}
-        onDelete={onDeleteNotes && paths.length > 0 ? () => onDeleteNotes(paths) : undefined}
+        onDuplicate={onDuplicatePage && paths.length > 0 ? () => paths.forEach(onDuplicatePage) : undefined}
+        onDelete={onDeletePages && paths.length > 0 ? () => onDeletePages(paths) : undefined}
         // The row menu's freeze, on the row right-clicked (YAZ-3746 13AI: the two menus match where they can).
         extra={sel.kind === 'rows' && r !== undefined ? <FreezeRowItems row={r} frozen={frozenRows} onFreeze={(count) => { setSelMenu(null); freezeRows(count) }} /> : undefined}
         onClose={() => setSelMenu(null)}
@@ -1842,7 +1842,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     const frozenRowStyle = frozenAt === undefined ? undefined : ({ '--view-frozen-i': frozenAt } as CSSProperties)
     const lineMark = guide === null || index === undefined ? undefined : index
     if ('add' in line)
-      // The "+ New" row (YAZ-4539): the group header "+"'s path, so the note gets the filter seed and every group value above it.
+      // The "+ New" row (YAZ-4539): the group header "+"'s path, so the page gets the filter seed and every group value above it.
       return (
         <tr key={`new:${line.gk}`} className={['view-table__new', ...(frozenRow ?? [])].filter(Boolean).join(' ')} style={frozenRowStyle} data-line={lineMark}>
           <td className="view-table__new-cell" colSpan={span} style={{ '--depth': line.at === undefined ? 0 : indentDepth(line.at.ancestors.length + 1) } as CSSProperties}>
@@ -1934,10 +1934,10 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 style={cellStyle(c, fill, c === indentCol && line.at !== null ? line.at.ancestors.length + 1 : undefined)}
                 tabIndex={line.r === firstDataRow && c === 0 ? 0 : -1}
                 data-cell={`${line.r}:${c}`}
-                // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the note; a plain click only selects, as on any cell.
+                // The Name cell (YAZ-2420 🔒 D26): ⌘ and ⌥ open the page; a plain click only selects, as on any cell.
                 // ⇧⌘ opens it in a new window (YAZ-4444 D32), asked first.
                 onClick={c === nameCol ? (e) => (newWindowClick(e, rowPage(path)) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
-                // A read-only note's Name cell opens no title field: a title edit renames the note (YAZ-3076 D6).
+                // A read-only page's Name cell opens no title field: a title edit renames the page (YAZ-3076 D6).
                 // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `cutCellCard`.
                 title={c === nameCol && locked ? readOnlyTip(unit) : undefined}
                 data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
@@ -2256,8 +2256,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                   }}
                 />
               </Fragment>,
-              // The row-making edits (YAZ-4611 D63, YAZ-4592 S26): every row offers New row below, a folder row too; a folder row is no note, so it has no Duplicate.
-              (newRowBelow || (onDuplicateNote && !isFolderRow(rowMenu.record))) && (
+              // The row-making edits (YAZ-4611 D63, YAZ-4592 S26): every row offers New row below, a folder row too; a folder row is no page, so it has no Duplicate.
+              (newRowBelow || (onDuplicatePage && !isFolderRow(rowMenu.record))) && (
                 <Fragment key="rows">
                   {newRowBelow && (
                     <button
@@ -2273,11 +2273,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                     </button>
                   )}
                   {!isFolderRow(rowMenu.record) &&
-                    duplicateNoteItem(
-                      onDuplicateNote &&
+                    duplicatePageItem(
+                      onDuplicatePage &&
                         (() => {
                           setRowMenu(null)
-                          onDuplicateNote(rowMenu.record.path)
+                          onDuplicatePage(rowMenu.record.path)
                         }),
                     )}
                 </Fragment>
@@ -2307,15 +2307,15 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 />
               </Fragment>,
             ].filter((group) => group !== null && group !== undefined && group !== false)}
-            // Destructive, last (C8): a folder row is no note (YAZ-4592 S26), so it has no Delete.
+            // Destructive, last (C8): a folder row is no page (YAZ-4592 S26), so it has no Delete.
             danger={
               isFolderRow(rowMenu.record)
                 ? null
-                : deleteNoteItem(
-                    onDeleteNotes &&
+                : deletePageItem(
+                    onDeletePages &&
                       (() => {
                         setRowMenu(null)
-                        onDeleteNotes([rowMenu.record.path])
+                        onDeletePages([rowMenu.record.path])
                       }),
                   )
             }

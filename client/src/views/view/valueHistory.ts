@@ -1,25 +1,25 @@
 /**
  * ⌘Z / ⇧⌘Z for the folder table's value changes (YAZ-4612 S41): one history per folder page, in memory only. A step
- * is one gesture — a typed cell, a paste, a fill, a clear, a Set value, a New row below — however many notes it wrote.
+ * is one gesture — a typed cell, a paste, a fill, a clear, a Set value, a New row below — however many pages it wrote.
  * Undo runs the step's `undo` and moves it to the redo list; a new step empties that list. A step with no `redo` (New
- * row below: its undo trashes the note) leaves no redo. At most `MAX_STEPS` steps a page, and `MAX_PAGES` pages, the
+ * row below: its undo trashes the page) leaves no redo. At most `MAX_STEPS` steps a page, and `MAX_PAGES` pages, the
  * oldest out. A toast's Undo is `undoStep` on its own step (YAZ-4637 T9e): the same move to the redo list as ⌘Z.
- * The notes a step writes are `PathRef`s (T3): a rename remaps them and a delete retires them, so a step written
- * before a retitle still reaches its note — and never another file at the old path.
+ * The pages a step writes are `PathRef`s (T3): a rename remaps them and a delete retires them, so a step written
+ * before a retitle still reaches its page — and never another file at the old path.
  */
 export interface HistoryStep {
   undo: () => void
   redo?: () => void
-  /** The notes the step writes (YAZ-4637 T3), remapped by `renameHistoryPaths`, retired by `dropHistoryPaths`. */
-  notes?: PathRef[]
+  /** The pages the step writes (YAZ-4637 T3), remapped by `renameHistoryPaths`, retired by `dropHistoryPaths`. */
+  pages?: PathRef[]
 }
 
-/** A note as a step holds it: its current path, or null once the note was deleted. */
+/** A page as a step holds it: its current path, or null once the page was deleted. */
 export interface PathRef {
   path: string | null
 }
 
-export const noteRef = (path: string): PathRef => ({ path })
+export const pageRef = (path: string): PathRef => ({ path })
 
 export interface ValueHistory {
   push: (step: HistoryStep) => void
@@ -86,24 +86,24 @@ const isAtOrUnder = (path: string, at: string): boolean => path === at || path.s
 
 /** Every step's refs, in every page's past and future. */
 function eachRef(visit: (ref: PathRef) => void): void {
-  for (const page of pages.values()) for (const step of [...page.past, ...page.future]) for (const ref of step.notes ?? []) visit(ref)
+  for (const page of pages.values()) for (const step of [...page.past, ...page.future]) for (const ref of step.pages ?? []) visit(ref)
 }
 
-/** A note or folder renamed (App's `file:renamed`, YAZ-4637 T3): every step's note at or under it follows. */
+/** A page or folder renamed (App's `file:renamed`, YAZ-4637 T3): every step's page at or under it follows. */
 export function renameHistoryPaths(oldPath: string, newPath: string): void {
   eachRef((ref) => {
     if (ref.path !== null && isAtOrUnder(ref.path, oldPath)) ref.path = newPath + ref.path.slice(oldPath.length)
   })
 }
 
-/** A note or folder deleted (App's `file:deleted`, T3): every step's note at or under it is retired — an Undo writes nothing there. */
+/** A page or folder deleted (App's `file:deleted`, T3): every step's page at or under it is retired — an Undo writes nothing there. */
 export function dropHistoryPaths(path: string): void {
   eachRef((ref) => {
     if (ref.path !== null && isAtOrUnder(ref.path, path)) ref.path = null
   })
 }
 
-/** At most this many notes are written at once (S48): a big paste does not start hundreds of writes together. */
+/** At most this many pages are written at once (S48): a big paste does not start hundreds of writes together. */
 export const WRITE_BATCH = 8
 
 /** Run `jobs` with at most `WRITE_BATCH` running at a time; resolves when all settle, rejects with the first failure. */

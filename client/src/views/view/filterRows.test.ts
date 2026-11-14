@@ -87,7 +87,7 @@ const CASES: { type: PropertyType; property: string; op: OperatorId; value: stri
   { type: 'multi-select', property: 'note.labels', op: 'hasAllOf', value: ['Ready', 'Done'], expr: 'note.labels.containsAll("Ready", "Done")' },
   { type: 'multi-select', property: 'note.labels', op: 'isEmpty', value: '', expr: 'note.labels.isEmpty()' },
   { type: 'multi-select', property: 'note.labels', op: 'isNotEmpty', value: '', expr: '!note.labels.isEmpty()' },
-  // A Linked mentions column (YAZ-4738 L3): the notes that link here.
+  // A Linked mentions column (YAZ-4738 L3): the pages that link here.
   { type: 'mentions', property: 'note.used_by', op: 'isEmpty', value: '', expr: 'note.used_by.isEmpty()' },
   { type: 'mentions', property: 'note.used_by', op: 'isNotEmpty', value: '', expr: '!note.used_by.isEmpty()' },
   { type: 'mentions', property: 'note.used_by', op: 'contains', value: 'POST orders', expr: 'note.used_by.contains("POST orders")' },

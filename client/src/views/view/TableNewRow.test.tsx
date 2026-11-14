@@ -1,8 +1,8 @@
 /**
  * The "+ New" row of the folder table (YAZ-4539, S12): ViewsPane mounted in jsdom, the folder host's `create` spied.
  * One row at the end of an ungrouped table and one at the end of each innermost group's rows. A click takes the
- * group header "+" path, so the note gets the filter seed and every group value above it. It is a line of the flat
- * list (windowing counts it), but not a data row: no `data-cell`, no `#` number, not in the note window's order,
+ * group header "+" path, so the page gets the filter seed and every group value above it. It is a line of the flat
+ * list (windowing counts it), but not a data row: no `data-cell`, no `#` number, not in the page window's order,
  * and not counted by frozen rows.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
-import type { NewNoteSeed } from '../newNote'
+import type { NewPageSeed } from '../newPage'
 import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 import viewsCss from '../views.css?inline'
@@ -20,7 +20,7 @@ import viewsCss from '../views.css?inline'
 
 vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: vi.fn(() => []), setViewGroups: vi.fn() } }))
 
-const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>(async () => '/vault/Untitled.md')
+const create = vi.fn<(seed: NewPageSeed, name?: string) => Promise<string>>(async () => '/vault/Untitled.md')
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
   ...TEST_RECORDS[0],
@@ -110,7 +110,7 @@ describe('the "+ New" row (YAZ-4539)', () => {
     expect(q(row, 'button').textContent).toBe('+ New')
   })
 
-  it('a click makes a note through the "+" path, with the filter seed', async () => {
+  it('a click makes a page through the "+" path, with the filter seed', async () => {
     const { el } = mount(table('    filters:\n      and:\n        - status == "idea"\n'))
     await act(async () => click(q(newRows(el)[0], 'button')))
     expect(create).toHaveBeenCalledOnce()
@@ -152,7 +152,7 @@ describe('the "+ New" row (YAZ-4539)', () => {
     expect(lineNames(el)).toEqual(['[A]', '[B]', 'b1', '+'])
   })
 
-  it('no row where the group header offers no "+": a level that is not a note property', () => {
+  it('no row where the group header offers no "+": a level that is not a page property', () => {
     const { el } = mount(table('    groupBy:\n      property: file.ext\n'), { records: NESTED_RECORDS })
     expect(el.querySelector('.view-group__new')).toBeNull()
     expect(newRows(el)).toHaveLength(0)
@@ -190,7 +190,7 @@ describe('the "+ New" row (YAZ-4539)', () => {
 })
 
 describe('the "+ New" row under windowing (YAZ-4539)', () => {
-  it('counts as a line: 500 notes and the row make 501 lines, so the table windows', () => {
+  it('counts as a line: 500 pages and the row make 501 lines, so the table windows', () => {
     const { el } = mount(table(), { records: manyRecords(500) })
     expect(el.querySelector('.view-table__spacer')).not.toBeNull()
     expect(newRows(el)).toHaveLength(0)

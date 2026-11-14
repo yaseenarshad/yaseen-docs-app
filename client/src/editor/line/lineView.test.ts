@@ -224,7 +224,7 @@ describe('selection and the length handle', () => {
     expect(wrapperOf(root).style.getPropertyValue('--line-width')).toBe('60%')
   })
 
-  it('S38: a read-only note shows the line with its style, no selected look and no gesture', async () => {
+  it('S38: a read-only page shows the line with its style, no selected look and no gesture', async () => {
     const { crepe, root, view } = await mount('***\n<!-- line: thickness 6px, length 40% -->\n')
     view.setProps({ editable: () => false })
     expect(wrapperOf(root).style.getPropertyValue('--line-thickness')).toBe('6px')

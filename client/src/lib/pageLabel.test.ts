@@ -18,7 +18,7 @@ vi.mock('../api', async (importOriginal) => ({
 import { api } from '../api'
 
 const TREE: TreeNode[] = [
-  { type: 'dir', name: 'Notes.md', path: '/labels/Notes.md', children: [] },
+  { type: 'dir', name: 'Pages.md', path: '/labels/Pages.md', children: [] },
   { type: 'file', name: 'Plan.md', path: '/labels/Plan.md', size: 1, mtime: 1, kind: 'markdown' },
 ]
 
@@ -32,11 +32,11 @@ describe('pageLabel', () => {
     expect(pageLabel('/v/App.tsx', false, none)).toBe('App.tsx')
     expect(pageLabel('/v/Flow.drawio.svg', false, none)).toBe('Flow.drawio.svg')
     expect(pageLabel('/v/Plan.drawio', true, none)).toBe('Plan.drawio')
-    expect(pageLabel('/v/Notes.md', true, none)).toBe('Notes.md')
+    expect(pageLabel('/v/Pages.md', true, none)).toBe('Pages.md')
     expect(pageLabel('/v/v1.2', true, none)).toBe('v1.2')
   })
 
-  it('a drawing and a diagram hide their extension, as a note does — the last one only, in any case (YAZ-3536 D1, S1–S5)', () => {
+  it('a drawing and a diagram hide their extension, as a page does — the last one only, in any case (YAZ-3536 D1, S1–S5)', () => {
     const none = pathTitles([], [])
     expect(pageLabel('/v/Flow.excalidraw', false, none)).toBe('Flow')
     expect(pageLabel('/v/Map.DRAWIO', false, none)).toBe('Map')
@@ -45,7 +45,7 @@ describe('pageLabel', () => {
     expect(pageLabel('/v/Flow.excalidraw.md', false, none)).toBe('Flow.excalidraw')
   })
 
-  it('E: a note shows its title, and a folder the title in its settings file (YAZ-2420 D14)', () => {
+  it('E: a page shows its title, and a folder the title in its settings file (YAZ-2420 D14)', () => {
     const titles = pathTitles([titled('/v/upwork/up-001-abdul-k3m9x2pq7abc.md', 'UP-001 - Abdul')], [titled('/v/upwork/.folder.md', 'Upwork 2026')])
     expect(pageLabel('/v/upwork/up-001-abdul-k3m9x2pq7abc.md', false, titles)).toBe('UP-001 - Abdul')
     expect(pageLabel('/v/upwork', true, titles)).toBe('Upwork 2026')
@@ -77,11 +77,11 @@ describe('pathTitles', () => {
 
 describe('isFolderPath', () => {
   it('is the newest tree\'s answer: false with no root, false before the first tree, then by the tree alone', async () => {
-    expect(isFolderPath(null, '/labels/Notes.md')).toBe(false)
-    expect(isFolderPath('/labels', '/labels/Notes.md')).toBe(false)
+    expect(isFolderPath(null, '/labels/Pages.md')).toBe(false)
+    expect(isFolderPath('/labels', '/labels/Pages.md')).toBe(false)
     vi.mocked(api.tree).mockResolvedValueOnce({ root: '/labels', tree: TREE, generatedAt: 1 })
     await fetchTree('/labels')
-    expect(isFolderPath('/labels', '/labels/Notes.md')).toBe(true)
+    expect(isFolderPath('/labels', '/labels/Pages.md')).toBe(true)
     expect(isFolderPath('/labels', '/labels/Plan.md')).toBe(false)
     expect(isFolderPath('/labels', '/labels/Gone')).toBe(false)
   })
@@ -154,19 +154,19 @@ describe('useAllPathTitles (YAZ-2602 D1)', () => {
 describe('useFolderPaths (YAZ-2602 S31)', () => {
   it('asks the tree of the vault that holds each path, the most specific one, and follows each vault\'s tree as it lands', async () => {
     const dir = (path: string): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children: [] })
-    vi.mocked(api.tree).mockImplementation(async (root) => ({ root, tree: root === '/fp/a' ? [dir('/fp/a/Notes.md')] : [dir('/fp/b/Plans.md')], generatedAt: 1 }))
+    vi.mocked(api.tree).mockImplementation(async (root) => ({ root, tree: root === '/fp/a' ? [dir('/fp/a/Pages.md')] : [dir('/fp/b/Plans.md')], generatedAt: 1 }))
     const roots = ['/fp/a', '/fp/b']
     const { seen, unmount } = probe(() => useFolderPaths(roots))
-    expect(seen.value('/fp/a/Notes.md')).toBe(false) // no tree yet
+    expect(seen.value('/fp/a/Pages.md')).toBe(false) // no tree yet
     await act(async () => void (await fetchTree('/fp/a')))
-    expect(seen.value('/fp/a/Notes.md')).toBe(true)
+    expect(seen.value('/fp/a/Pages.md')).toBe(true)
     expect(seen.value('/fp/b/Plans.md')).toBe(false)
     const renders = seen.renders
     await act(async () => void (await fetchTree('/fp/b')))
     expect(seen.renders).toBeGreaterThan(renders)
     expect(seen.value('/fp/b/Plans.md')).toBe(true)
-    expect(seen.value('/fp/b/Notes.md')).toBe(false) // a folder of /fp/a says nothing about /fp/b
-    expect(seen.value('/elsewhere/Notes.md')).toBe(false) // in no vault: the first vault's tree is asked
+    expect(seen.value('/fp/b/Pages.md')).toBe(false) // a folder of /fp/a says nothing about /fp/b
+    expect(seen.value('/elsewhere/Pages.md')).toBe(false) // in no vault: the first vault's tree is asked
     unmount()
   })
 })

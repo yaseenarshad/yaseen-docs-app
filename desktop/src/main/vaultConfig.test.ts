@@ -165,7 +165,7 @@ describe('subscribeConfig', () => {
     await rm(path.join(root, VAULT_CONFIG_DIR, 'sample.json'))
     await until(() => changes.length >= 2)
     expect(changes[1]).toEqual({ root, name: 'sample.json' })
-    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'notes.txt'), 'not config')
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'pages.txt'), 'not config')
     await sleep(500)
     expect(changes).toHaveLength(2)
   })

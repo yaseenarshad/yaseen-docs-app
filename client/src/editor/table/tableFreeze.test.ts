@@ -1,5 +1,5 @@
 /**
- * Frozen rows and columns of a note table (YAZ-3769, YAZ-3696 S3) on the real editor in jsdom: the
+ * Frozen rows and columns of a page table (YAZ-3769, YAZ-3696 S3) on the real editor in jsdom: the
  * frozen cells' decorations, the columns' sticky offsets, and the rows' offset on a scroll of the
  * note (the folder page's method, `lib/pinnedHeader.ts`): it follows the scroll, stops at the
  * table's end, keeps one value at each document zoom, and its listeners go when the table unfreezes; and
@@ -11,7 +11,7 @@ import type { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe, getMarkdownForSave } from '../createCrepe'
-import { TABLE_HANDLE_MENU } from '../noteMenu'
+import { TABLE_HANDLE_MENU } from '../pageMenu'
 import { cellPos } from './tableTestKit'
 import { setStickyHeaderSetting } from './timeFormatSetting'
 

@@ -4,8 +4,8 @@
  * list, however many vaults. No debounce — the ranking scan is synchronous over title-scale data
  * (guarded by `searchCandidates.perf.test.ts`). Since YAZ-1491 the list also carries the tree's
  * FOLDERS (🔒 D1): `dirs` is the Sidebar's own `allDirs` memo — no second feed, no extra read —
- * spliced in FIRST so a folder ranks above a note it ties with (tree order: dirs before files).
- * Since YAZ-2620 it carries the tree's files that are no notes as well (🔒 D3): `files` is the
+ * spliced in FIRST so a folder ranks above a page it ties with (tree order: dirs before files).
+ * Since YAZ-2620 it carries the tree's files that are no pages as well (🔒 D3): `files` is the
  * Sidebar's `otherFiles` memo, spliced in LAST. Vault by vault, in the order of the window's
  * vaults. A query that holds an id gets its ID matches first, then the title matches (`searchRows`,
  * YAZ-2677 🔒 D9; 🔒 D32); a folder's title
@@ -27,7 +27,7 @@ import { placeOnly } from '../vault/placeScope'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
 import type { IdsInSearch } from './showIds'
 
-/** One vault the search covers: its folder, its watcher, and its folders and its files that are no notes (the Sidebar's own `allDirs` and `otherFiles`). */
+/** One vault the search covers: its folder, its watcher, and its folders and its files that are no pages (the Sidebar's own `allDirs` and `otherFiles`). */
 export interface SearchVault {
   root: string
   watch: WatchSource
@@ -35,9 +35,9 @@ export interface SearchVault {
   files: readonly string[]
   /** This vault's "Show IDs in search" (YAZ-4940), read at each draw of a result list; absent → Always. */
   idsInSearch?: () => IdsInSearch
-  /** This vault's "Show IDs in the title" (YAZ-4940), read where the explore stack's note head draws; absent → On. */
+  /** This vault's "Show IDs in the title" (YAZ-4940), read where the explore stack's page head draws; absent → On. */
   idsInTitle?: () => boolean
-  /** "A folder of" the vault (YAZ-4922 🔒 D3): the vault's index is read, and only the notes under this folder are found (`placeOnly`). */
+  /** "A folder of" the vault (YAZ-4922 🔒 D3): the vault's index is read, and only the pages under this folder are found (`placeOnly`). */
   folder?: string
   /** The vault's Review is on (YAZ-5037): its cards are rows, each a Card (`searchCandidates`). Absent: none is. */
   cards?: boolean
@@ -58,14 +58,14 @@ function scoped(snapshot: Snapshot, folder: string | undefined): Snapshot {
 }
 
 /** One vault's rows as they were last built, with what each part was built from. */
-type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; cards: boolean; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; extra?: (records: readonly IndexRecord[]) => SearchCandidate[]; extraRows: SearchCandidate[]; all: SearchCandidate[] }
+type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; cards: boolean; folderRows: SearchCandidate[]; pageRows: SearchCandidate[]; fileRows: SearchCandidate[]; extra?: (records: readonly IndexRecord[]) => SearchCandidate[]; extraRows: SearchCandidate[]; all: SearchCandidate[] }
 const NO_ROWS: SearchCandidate[] = []
 
 /**
  * The rows the search ranks, over every vault (split out of `useSearchResults`, which ranks them, by YAZ-2571 for the
  * explore stack): each vault's feed and its rows, rebuilt only for what changed. `activated` latches the feeds on:
  * false until the first search, then true for the component's life. `extra` (the explore search's text rows) adds a
- * vault's rows AFTER its other-file rows, built from its records as the note rows are; the caller keeps the function
+ * vault's rows AFTER its other-file rows, built from its records as the page rows are; the caller keeps the function
  * while it stands.
  */
 export function useSearchCandidates(vaults: readonly SearchVault[], activated: boolean, extra?: (records: readonly IndexRecord[]) => SearchCandidate[]): SearchCandidate[] {
@@ -91,7 +91,7 @@ export function useSearchCandidates(vaults: readonly SearchVault[], activated: b
       let generation = 0
       const load = () => {
         const mine = ++generation
-        // An unreadable index leaves search with no NOTE rows — quietly (the folders and the other
+        // An unreadable index leaves search with no PAGE rows — quietly (the folders and the other
         // files come from the tree, S35 on YAZ-2620). Search is an accelerator, not a view: a banner
         // here would shout about something the tree below is already showing fine.
         api.index(root).then(
@@ -130,10 +130,10 @@ export function useSearchCandidates(vaults: readonly SearchVault[], activated: b
     [],
   )
 
-  // One list over every vault. Each vault's folder rows, note rows and other-file rows are rebuilt
+  // One list over every vault. Each vault's folder rows, page rows and other-file rows are rebuilt
   // only when what they were built from changed — its `dirs` or folder records, its records, its
   // `files` — so a snapshot or a tree of one vault rebuilds no row of another. One vault → its own
-  // list: folders, notes, other files (a tie in a rank reads in that order, YAZ-2620 S19).
+  // list: folders, pages, other files (a tie in a rank reads in that order, YAZ-2620 S19).
   const built = useRef(new Map<string, Rows>())
   return useMemo(() => {
     const next = new Map<string, Rows>()
@@ -142,12 +142,12 @@ export function useSearchCandidates(vaults: readonly SearchVault[], activated: b
       const { records, folders, letters } = scoped(snapshots.get(root) ?? NO_SNAPSHOT, folder)
       const last = built.current.get(root)
       const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders, letters)
-      const noteRows = last !== undefined && last.records === records && last.cards === cards ? last.noteRows : searchCandidates(records, letters, cards)
+      const pageRows = last !== undefined && last.records === records && last.cards === cards ? last.pageRows : searchCandidates(records, letters, cards)
       const fileRows = last !== undefined && last.files === files ? last.fileRows : fileCandidates(root, files)
-      // The extra rows (YAZ-2571) follow the records, as the note rows do, and the function: a new one builds anew.
+      // The extra rows (YAZ-2571) follow the records, as the page rows do, and the function: a new one builds anew.
       const extraRows = extra === undefined ? NO_ROWS : last !== undefined && last.records === records && last.extra === extra ? last.extraRows : extra(records)
-      const same = last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows && last.fileRows === fileRows && last.extraRows === extraRows
-      next.set(root, { dirs, files, cards, records, folders, folderRows, noteRows, fileRows, extra, extraRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows, ...extraRows] })
+      const same = last !== undefined && last.folderRows === folderRows && last.pageRows === pageRows && last.fileRows === fileRows && last.extraRows === extraRows
+      next.set(root, { dirs, files, cards, records, folders, folderRows, pageRows, fileRows, extra, extraRows, all: same ? last.all : [...folderRows, ...pageRows, ...fileRows, ...extraRows] })
     }
     built.current = next
     const lists = [...next.values()].map((rows) => rows.all)

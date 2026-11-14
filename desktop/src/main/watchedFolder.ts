@@ -12,7 +12,7 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
  *    file announced once it has settled rather than half-written. A folder that does not exist
  *    yet is waited for.
  *  - RE-ANCHORING. Only the engine's polling fallback can lose a folder — one that appears while it
- *    starts — so the FIRST write that creates the folder re-adds it (`noteOwnWrite` does this).
+ *    starts — so the FIRST write that creates the folder re-adds it (`recordOwnWrite` does this).
  *  - ECHO SUPPRESSION. A write this process made is announced to subscribers synchronously by the
  *    store itself; its watcher echo is dropped by mtime (`null` = an unlink this process caused).
  *  - DEBOUNCE. 50 ms, because one save touches two or three files and the subscriber only wants
@@ -22,9 +22,9 @@ import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 const NOTIFY_DEBOUNCE_MS = 50
 
 export interface WatchedFolder {
-  /** Note a write this process just made, so its echo is dropped; `null` mtime = a delete. */
-  noteOwnWrite(file: string, mtime: number | null): void
-  /** Point at another folder; the old one goes quiet and every own-write note is dropped. */
+  /** Page a write this process just made, so its echo is dropped; `null` mtime = a delete. */
+  recordOwnWrite(file: string, mtime: number | null): void
+  /** Point at another folder; the old one goes quiet and every own-write page is dropped. */
   setFolder(next: string): void
   close(): Promise<void>
 }
@@ -93,9 +93,9 @@ export function createWatchedFolder(opts: WatchedFolderOptions): WatchedFolder {
   watcher = start()
 
   return {
-    noteOwnWrite(file, mtime) {
+    recordOwnWrite(file, mtime) {
       // An entry is consumed by the echo it predicts; an echo that never arrives (a watcher that
-      // missed it) would otherwise keep its note for the session. Clearing the lot at a generous
+      // missed it) would otherwise keep its page for the session. Clearing the lot at a generous
       // ceiling costs at most one spurious "something changed", which is a re-list.
       if (ownWrites.size > 256) ownWrites.clear()
       ownWrites.set(file, mtime)

@@ -34,7 +34,7 @@ const shared = new Map<string, Shared>()
 
 /**
  * Follows the people file of `root` for `onPeople`; returns the stop. The first block of a vault
- * reads it and follows its changes; the rest share that read, so ten open notes parse it once.
+ * reads it and follows its changes; the rest share that read, so ten open pages parse it once.
  */
 function follow(root: string, onPeople: (people: PeopleRead) => void): () => void {
   let entry = shared.get(root)

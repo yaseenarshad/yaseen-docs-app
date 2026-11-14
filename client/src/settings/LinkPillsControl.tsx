@@ -8,8 +8,8 @@
  *     caret and keep at once. A dropdown of ready formats beside it. The vault rule (other vaults only · always ·
  *     never) shows only while the format has `{vault}`.
  *  2. **Preview:** a muted "Preview" label and ONE sample pill, "Roadmap" (round 4: the sentence of four read as real
- *     text), drawn by the folder page's pill (`PillEnds`, the same pieces the note's widgets draw) under the look's
- *     variables. The sample note has every part (an ID, a folder, a path, a vault), so each token of the format shows.
+ *     text), drawn by the folder page's pill (`PillEnds`, the same pieces the page's widgets draw) under the look's
+ *     variables. The sample page has every part (an ID, a folder, a path, a vault), so each token of the format shows.
  *  3. **Click to style:** a click on a part of a pill (the name, the ID, the number, the vault, the folder, the path,
  *     your own text) opens the style panel under the preview, titled "Styling: the name" (the title is a quiet dropdown:
  *     the second way to pick a part), with three labelled rows — Text (B I U), Colour (ONE row: Accent · Text · Muted,
@@ -198,7 +198,7 @@ function BoxRows({ look }: { look: LinkPillsState }) {
   )
 }
 
-/** The sample note: every part a format can show, so each token has text on it. */
+/** The sample page: every part a format can show, so each token has text on it. */
 const SAMPLE = { text: 'Roadmap', path: '/preview/Roadmap.md', info: { id: 'YAS-12', folder: 'Projects/Plans' } }
 /** The sample's vault name where the app has none for this vault. */
 const SAMPLE_VAULT = 'Wiki'
@@ -277,7 +277,7 @@ function FormatBox({ look }: { look: LinkPillsState }) {
           </button>
         ))}
       </span>
-      {problem !== null ? <span className="settings__error settings__error--inline">{problem}</span> : <span className="settings__tokens">{unit('Other text shows as you type it. An empty part, like the ID of a note without one, takes its text with it.')}</span>}
+      {problem !== null ? <span className="settings__error settings__error--inline">{problem}</span> : <span className="settings__tokens">{unit('Other text shows as you type it. An empty part, like the ID of a page without one, takes its text with it.')}</span>}
     </>
   )
 }

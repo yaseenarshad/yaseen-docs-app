@@ -1,18 +1,18 @@
 /**
- * THE BLOCK LOCK OF A TEXT BOX (YAZ-4277 1B, D4). The box editor is the note's `createCrepe`; a box holds only what
+ * THE BLOCK LOCK OF A TEXT BOX (YAZ-4277 1B, D4). The box editor is the page's `createCrepe`; a box holds only what
  * the canvas draws: lines, bullets (checklists too) and the letter styles of `textRuns`. Three layers, cheapest first
  * (the folder outline's bullets-only lock had the same shape until YAZ-4584 removed it):
  *
  *  1. OFF: the input rules that would make a block or a mark a box cannot hold — `> ` quote, ``` code, `---` line,
  *     `# ` heading, `` `x` `` inline code (it deletes the backticks), `|2x2| ` table, the image rule. Kept: italic,
  *     bold, strike, highlight, the `[ ] ` checklist and the app's own bullet typing. `textBoxLock.test.ts` lists the
- *     rules that stay, so a new note rule fails it until it is put on a side.
+ *     rules that stay, so a new page rule fails it until it is put on a side.
  *  2. SCHEMA: a list item holds one line and its sub-bullets (`paragraph bullet_list?`); no trailing paragraph.
  *  3. MAP, NEVER DROP: a paste, a key (⌘⌥1 heading, ⌘E code) or anything else that still makes such a block is
  *     turned back into lines and bullets with the same letters, by a paste rule and an `appendTransaction`. A mark
  *     the box cannot draw comes off; its letters stay.
  *
- * Also here: `text_color`, the box's letter color mark (`textRuns[].color`). Notes have none; it never reaches Markdown.
+ * Also here: `text_color`, the box's letter color mark (`textRuns[].color`). Pages have none; it never reaches Markdown.
  */
 import type { Crepe } from '@milkdown/crepe'
 import { trailingConfig } from '@milkdown/kit/plugin/trailing'
@@ -139,7 +139,7 @@ export function blocksOf(schema: Schema, content: Fragment): ProseNode[] {
   return out
 }
 
-/** A pasted slice as lines and bullets; one that already fits is kept as it is (a copy from a box or a note's bullets). */
+/** A pasted slice as lines and bullets; one that already fits is kept as it is (a copy from a box or a page's bullets). */
 function pasteAsBox(slice: Slice, schema: Schema): Slice {
   let ok = true
   slice.content.forEach((node) => {
@@ -217,8 +217,8 @@ const boxBlocks = $prose(
 )
 
 /**
- * `[ ] ` / `[x] ` at the start of a plain line makes it a checklist item (YAZ-4302, D4). In a bullet the note's own
- * rule does it; a note's plain line has no such rule, a box's line does. The item joins a list right above or below.
+ * `[ ] ` / `[x] ` at the start of a plain line makes it a checklist item (YAZ-4302, D4). In a bullet the page's own
+ * rule does it; a page's plain line has no such rule, a box's line does. The item joins a list right above or below.
  */
 const plainLineChecklist = $inputRule(
   () =>
@@ -240,7 +240,7 @@ const plainLineChecklist = $inputRule(
 
 /**
  * Tab / Shift-Tab on plain lines (YAZ-4277 1D, the old textarea's rule): 4 spaces at the start of each line the selection
- * covers, or up to 4 taken away. In a bullet the note's outliner indents the bullet (its keys run first).
+ * covers, or up to 4 taken away. In a bullet the page's outliner indents the bullet (its keys run first).
  */
 const plainLineIndent = (direction: 1 | -1): Command => (state, dispatch) => {
   const { from, to } = state.selection
@@ -264,7 +264,7 @@ const plainLineIndent = (direction: 1 | -1): Command => (state, dispatch) => {
   return true
 }
 
-// before the note's Tab keys, which take Tab on a plain line too; in a bullet they decline, and the outliner runs
+// before the page's Tab keys, which take Tab on a plain line too; in a bullet they decline, and the outliner runs
 const boxKeys = $shortcut(() => ({
   PlainLineIndent: { key: 'Tab', priority: 150, onRun: () => plainLineIndent(1) },
   PlainLineOutdent: { key: 'Shift-Tab', priority: 150, onRun: () => plainLineIndent(-1) },

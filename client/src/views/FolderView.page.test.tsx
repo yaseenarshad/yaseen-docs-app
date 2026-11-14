@@ -1,10 +1,10 @@
 /**
  * A folder as a PAGE (YAZ-2290 D9): around its views a folder keeps what a page has — the editable
  * title, its OWN properties panel and its OWN comments, the last two stored in `.folder.md` beside
- * the view settings and shown with the components a note uses. Mounted like `FolderView.test.tsx`,
+ * the view settings and shown with the components a page uses. Mounted like `FolderView.test.tsx`,
  * but with the `api` mock sitting UNDER the real `writeProperty` over a tiny in-memory disk, so a
  * write on a folder with no settings file is seen creating it. Last on the page come its linked
- * mentions (D10): the notes and the folders whose links resolve to the folder itself.
+ * mentions (D10): the pages and the folders whose links resolve to the folder itself.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -61,7 +61,7 @@ const onRetitle = vi.fn()
 const onOpenFile = vi.fn()
 const onOpenFileBackground = vi.fn()
 
-/** The index's snapshot of the disk, in a vault that uses IDs (YAZ-2523): the note, and the settings file's record when the file exists. */
+/** The index's snapshot of the disk, in a vault that uses IDs (YAZ-2523): the page, and the settings file's record when the file exists. */
 function feed(): void {
   const records = [rec(LEAD)]
   const settings = disk.get(SETTINGS_FILE)
@@ -162,17 +162,17 @@ describe('a folder with no `.folder.md`', () => {
     expect(onDisk()).toBe('---\nowner: Yasin\n---\n')
   })
 
-  it('it has no column (YAZ-4713 C5): neither its own panel nor a note inside it lists an empty row', async () => {
+  it('it has no column (YAZ-4713 C5): neither its own panel nor a page inside it lists an empty row', async () => {
     const el = await mount()
     expandPanel(el)
     expect(rowKeys(el)).toEqual([])
-    const note = document.createElement('div')
-    el.appendChild(note)
-    const noteRoot = createRoot(note)
-    act(() => noteRoot.render(<FrontmatterPanel file={{ path: LEAD, content: '', mtime: 1 }} root="/vault" wikilinks={source} />))
-    expandPanel(note)
-    expect(rowKeys(note)).toEqual([]) // no default column
-    act(() => noteRoot.unmount())
+    const page = document.createElement('div')
+    el.appendChild(page)
+    const pageRoot = createRoot(page)
+    act(() => pageRoot.render(<FrontmatterPanel file={{ path: LEAD, content: '', mtime: 1 }} root="/vault" wikilinks={source} />))
+    expandPanel(page)
+    expect(rowKeys(page)).toEqual([]) // no default column
+    act(() => pageRoot.unmount())
   })
 })
 
@@ -244,20 +244,20 @@ describe('the title retitles the FOLDER (YAZ-2420 D16)', () => {
     expect(onRetitle).toHaveBeenCalledExactlyOnceWith(STAGES, 'Phases: 2026', 'dir')
   })
 
-  it('a folder named `Notes.md` shows and edits its full name — no extension logic', async () => {
-    const el = await mount('/vault/Notes.md')
-    expect(q(el, '.page-title__text').textContent).toBe('Notes.md')
+  it('a folder named `Pages.md` shows and edits its full name — no extension logic', async () => {
+    const el = await mount('/vault/Pages.md')
+    expect(q(el, '.page-title__text').textContent).toBe('Pages.md')
     click(q(el, '.page-title__text'))
     const field = q<HTMLTextAreaElement>(el, '.page-title__input')
-    expect(field.value).toBe('Notes.md')
+    expect(field.value).toBe('Pages.md')
     field.value = 'Ideas'
     press(field, 'Enter')
-    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('/vault/Notes.md', 'Ideas', 'dir')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('/vault/Pages.md', 'Ideas', 'dir')
   })
 })
 
 describe('a row\u2019s title is edited from the table (YAZ-2420 D19)', () => {
-  it('a double-click on the Name cell and a commit reach the rename door as a title edit of that NOTE', async () => {
+  it('a double-click on the Name cell and a commit reach the rename door as a title edit of that PAGE', async () => {
     const el = await mount()
     const cell = q<HTMLElement>(el, '.view-table__name')
     act(() => void cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
@@ -273,11 +273,11 @@ describe('a row\u2019s title is edited from the table (YAZ-2420 D19)', () => {
   })
 })
 
-describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', () => {
+describe('linked mentions: the pages that link to the FOLDER (YAZ-2290 D10)', () => {
   const PLAN = '/vault/Plan.md'
   const ELSEWHERE = '/vault/Elsewhere.md'
 
-  /** The snapshot as the bridge feeds it (`linkResolver`): Plan links the folder, Elsewhere only a note inside it. */
+  /** The snapshot as the bridge feeds it (`linkResolver`): Plan links the folder, Elsewhere only a page inside it. */
   function feedLinks(): void {
     const records = [{ ...rec(ELSEWHERE), links: ['Lead Gen', 'stages/Lead Gen'] }, { ...rec(PLAN), links: ['Stages'] }, rec(LEAD)]
     act(() => source.update(linkResolver(records, '/vault', [STAGES]), records, [], true))
@@ -288,7 +288,7 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     expect(el.querySelector('.backlinks')).toBeNull()
   })
 
-  it('lists the note that links `[[Stages]]`, after the comments — never one that links only INTO the folder', async () => {
+  it('lists the page that links `[[Stages]]`, after the comments — never one that links only INTO the folder', async () => {
     disk.set(PLAN, { content: 'Move it to [[Stages]] next.\n', mtime: 1 })
     const el = await mount()
     feedLinks()
@@ -296,12 +296,12 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     expect([...q(el, '.editor-host').children].map((c) => c.className)).toEqual(['page-header', 'folder-view', 'comments', 'backlinks'])
     click(q(el, '.backlinks__header'))
     await flush()
-    expect([...el.querySelectorAll('.backlinks__note')].map((n) => n.textContent)).toEqual(['Plan'])
+    expect([...el.querySelectorAll('.backlinks__page')].map((n) => n.textContent)).toEqual(['Plan'])
     expect(q(el, '.backlinks__snippet').textContent).toBe('Move it to Stages next.')
     expect(q(el, '.backlinks__match').textContent).toBe('Stages')
   })
 
-  it('Linked mentions on a folder\'s page lists the notes AND the folders whose Page links to it, snippets from the Page body; a folder that links to itself is not listed (YAZ-4584 D40)', async () => {
+  it('Linked mentions on a folder\'s page lists the pages AND the folders whose Page links to it, snippets from the Page body; a folder that links to itself is not listed (YAZ-4584 D40)', async () => {
     const TEAM = '/vault/Team'
     // A folder's Page is its `.folder.md` body: the index holds its links, the snippets are read from the body alone.
     const settings = (dir: string) => ({ ...rec(`${dir}/.folder.md`, { folder_settings: { views: [{ type: 'page', name: 'Page' }] } }), links: ['Stages'] })
@@ -314,21 +314,21 @@ describe('linked mentions: the notes that link to the FOLDER (YAZ-2290 D10)', ()
     expect(q(el, '.backlinks__title').textContent).toBe('Linked mentions (2)')
     click(q(el, '.backlinks__header'))
     await flush()
-    expect([...el.querySelectorAll('.backlinks__note')].map((n) => n.textContent)).toEqual(['Plan', 'Team'])
+    expect([...el.querySelectorAll('.backlinks__page')].map((n) => n.textContent)).toEqual(['Plan', 'Team'])
     expect([...el.querySelectorAll('.backlinks__snippet')].slice(-2).map((n) => n.textContent)).toEqual(['- Stages', '- then on through Stages'])
     // Clicking the folder opens the folder's page.
-    click([...el.querySelectorAll('.backlinks__note')][1])
+    click([...el.querySelectorAll('.backlinks__page')][1])
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(TEAM)
   })
 
-  it('an entry opens its note: a click in the current tab, a ⌘-click in a background tab', async () => {
+  it('an entry opens its page: a click in the current tab, a ⌘-click in a background tab', async () => {
     const el = await mount()
     feedLinks()
     click(q(el, '.backlinks__header'))
     await flush()
-    click(q(el, '.backlinks__note'))
+    click(q(el, '.backlinks__page'))
     expect(onOpenFile).toHaveBeenCalledExactlyOnceWith(PLAN)
-    act(() => void q(el, '.backlinks__note').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
+    act(() => void q(el, '.backlinks__page').dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })))
     expect(onOpenFileBackground).toHaveBeenCalledExactlyOnceWith(PLAN)
   })
 })

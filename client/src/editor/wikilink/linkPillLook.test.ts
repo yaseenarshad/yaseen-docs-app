@@ -148,7 +148,7 @@ describe('the {number} and {mark} tokens on a pill (YAZ-4924 round 5)', () => {
     expect(ends({ format: '{name} {id} #{number}' }, { info, otherVault: null })).toEqual([null, ['text: ', 'id:YAS-12', 'text: #', 'number:12']])
   })
 
-  it('{mark} is always shown, a missing note too, with the icon the mark part names (the arrow up-right by default); it is no part for the empty-part rule: a run reaches across it', () => {
+  it('{mark} is always shown, a missing page too, with the icon the mark part names (the arrow up-right by default); it is no part for the empty-part rule: a run reaches across it', () => {
     expect(ends({ format: '{name}{mark}' }, { otherVault: null })).toEqual([null, ['mark:arrow-up-right']])
     expect(ends({ format: '{name}{mark}' }, { otherVault: null }, 'Mine', false)).toEqual([null, ['mark:arrow-up-right']])
     expect(ends({ format: '{mark} {name}', parts: { mark: { icon: 'star' } } }, { otherVault: null })).toEqual([['mark:star', 'text: '], null])
@@ -250,7 +250,7 @@ describe("a pill's size follows its line: a pill in a heading is as big as the h
 })
 
 describe('pathInfo (YAZ-4924)', () => {
-  it('a note by its path, a folder by its directory, built once per snapshot', () => {
+  it('a page by its path, a folder by its directory, built once per snapshot', () => {
     const records = [rec('/v/Projects/Plans/a.md', 'Projects/Plans', 'YAS-1'), rec('/v/b.md', '')]
     const folders = [rec('/v/Projects/Plans/.folder.md', 'Projects/Plans'), rec('/v/Top/.folder.md', 'Top')]
     const infos = pathInfo(records, folders)

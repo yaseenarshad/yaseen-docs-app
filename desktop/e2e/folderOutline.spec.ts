@@ -73,7 +73,7 @@ test.describe.configure({ mode: 'serial' })
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const FOLDER = 'Funnel Stages'
 const SETTINGS_FILE = path.join(FOLDER, '.folder.md')
-/** The notes that live in the folder — its rows, whatever the outline says. */
+/** The pages that live in the folder — its rows, whatever the outline says. */
 const MEMBERS = ['Lead Gen', 'Lead Nurture', 'Sales-Conversion']
 /** The page this spec links to from the outline: a kpi, so it lives in ANOTHER folder. */
 const SUBJECT = 'CAC'
@@ -82,14 +82,14 @@ const SUBJECT_FILE = path.join('KPIs', 'CAC.md')
 /** The document the settings file ships, as the editor RENDERS it — one bullet per line. */
 const BODY = [
   'Funnel Stages',
-  'The stages a deal walks through, from first touch to closed-won. Every note in this',
+  'The stages a deal walks through, from first touch to closed-won. Every page in this',
   'folder is one of them — there is no list to maintain.',
 ]
 /** …and as the EDITOR re-serialises it, once the document has been typed into at all (Milkdown's own `* `). */
 const BODY_COMMITTED = BODY.map((line) => `* ${line}`)
 
 /** The two text lines the document grows; neither is a link. */
-const NOTE = 'Only the notes in the folder are its rows'
+const PAGE = 'Only the pages in the folder are its rows'
 const CHILD = 'and this one is nested under it'
 
 let userData: string
@@ -97,7 +97,7 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-/** The name cell shows the page TITLE: for a fixture note, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
+/** The name cell shows the page TITLE: for a fixture page, which has no `title:`, its file name without `.md` (YAZ-2420 🔒 D14). */
 const rowNames = (scope: Locator) => scope.locator('.view-table__name')
 
 const read = (rel: string) => readFile(path.join(vault, rel), 'utf8')
@@ -138,7 +138,7 @@ test('step 1 — first open: the document is what the settings ship, opening wri
   await expect(activeTab(win)).toHaveText(FOLDER)
 
   // THE FIRST OPEN: the outline is the folder's first view, and what it shows is the stored
-  // document — three lines of prose, and not one line for a note (YAZ-2290 D5). A mere look
+  // document — three lines of prose, and not one line for a page (YAZ-2290 D5). A mere look
   // is not an edit: the settings file is byte-identical once the editor has mounted.
   await expect(viewTabs(contents(win))).toHaveText(['Outline', 'Table', 'Board'])
   await expect(outlineLines(contents(win))).toHaveText(BODY)
@@ -146,17 +146,17 @@ test('step 1 — first open: the document is what the settings ship, opening wri
   await shoot(win, 'outline-01-shipped-document')
 
   // The user's own text lives in the very same document, under the prose.
-  await typeOutlineLine(win, contents(win), BODY.length - 1, NOTE)
+  await typeOutlineLine(win, contents(win), BODY.length - 1, PAGE)
 
   // ONE `folder_settings` write, debounced 500ms — and the editor re-serialises the WHOLE
   // document, so this is where a shipped line could have been lost: every one of them is still
   // here, in Milkdown's own `* ` spelling, with the typed line after them.
-  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(NOTE)
+  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(PAGE)
   const view = await outlineViewOnDisk()
   expect(view.name).toBe('Outline') // the view itself is untouched — only its content key moved
-  expect(view.outline?.split('\n').filter((l) => l.trim() !== '')).toEqual([...BODY_COMMITTED, `* ${NOTE}`])
+  expect(view.outline?.split('\n').filter((l) => l.trim() !== '')).toEqual([...BODY_COMMITTED, `* ${PAGE}`])
 
-  // TEXT MEANS NOTHING to what the folder holds: its rows are the notes in it, as before.
+  // TEXT MEANS NOTHING to what the folder holds: its rows are the pages in it, as before.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   await viewTabs(contents(win)).filter({ hasText: 'Outline' }).click()
@@ -167,12 +167,12 @@ test('step 1 — first open: the document is what the settings ship, opening wri
 test('step 2 — `[[` picks a page, and the link line is JUST a link: the picked page and the folder’s rows do not move', async () => {
   const before = await read(SUBJECT_FILE)
 
-  await bulletAfterLine(win, contents(win), await outlineLineIndex(contents(win), NOTE))
+  await bulletAfterLine(win, contents(win), await outlineLineIndex(contents(win), PAGE))
   await pickOutlineLink(win, SUBJECT, 'outline-03-picker')
 
   // The picker inserts PLAIN TEXT `[[CAC]]`, and the document — the ONE thing that moved — holds
-  // it, typed in by hand under the note line.
-  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, NOTE, `[[${SUBJECT}]]`])
+  // it, typed in by hand under the page line.
+  await expect.poll(() => outlineSaid(contents(win))).toEqual([...BODY, PAGE, `[[${SUBJECT}]]`])
   await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(`* [[${SUBJECT}]]`)
   // A link in an outline says nothing about what the folder holds (YAZ-2290 D5): the picked page's
   // own file is byte for byte what it was, and no sheet asked about anything.
@@ -187,14 +187,14 @@ test('step 2 — `[[` picks a page, and the link line is JUST a link: the picked
 })
 
 test('step 3 — Tab indents, and the nesting is in the document itself', async () => {
-  await typeOutlineLine(win, contents(win), await outlineLineIndex(contents(win), NOTE), CHILD)
+  await typeOutlineLine(win, contents(win), await outlineLineIndex(contents(win), PAGE), CHILD)
   await indentOutlineLine(win, contents(win), CHILD)
 
   // The editor's own DOM says it: a bullet list inside a bullet list, which is the only shape the
   // bullets-only lock allows to nest at all.
   await expect(outlineNested(contents(win))).toHaveText([CHILD])
   // And so does the document on disk — two spaces deeper than the line it hangs from.
-  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(`* ${NOTE}\n  * ${CHILD}`)
+  await expect.poll(outlineOnDisk, { timeout: 10_000 }).toContain(`* ${PAGE}\n  * ${CHILD}`)
   // The link line is a SIBLING of the text, not a casualty of it: still depth 0.
   expect(await outlineOnDisk()).toContain(`\n* [[${SUBJECT}]]`)
   await shoot(win, 'outline-05-nested')
@@ -223,14 +223,14 @@ test('step 5 — the document lives in the settings file, not in the session: it
 
   // The text, the nesting, the shipped prose and the link, read back out of the one place they
   // live — BYTE FOR BYTE the document the quit flushed: a mount that types nothing writes nothing.
-  await expect(outlineLines(contents(win)).filter({ hasText: NOTE })).toHaveCount(1)
+  await expect(outlineLines(contents(win)).filter({ hasText: PAGE })).toHaveCount(1)
   await expect(outlineNested(contents(win)).filter({ hasText: CHILD })).toHaveCount(1)
   await expect(outlineLines(contents(win)).first()).toHaveText(BODY[0])
   await expect(outlineLines(contents(win)).last()).toHaveText(`[[${SUBJECT}]]`)
   expect(await outlineOnDisk()).toBe(document)
 
   // What the folder holds was never the document's to say: the Table answers it, and it is the
-  // three notes that have lived there all along.
+  // three pages that have lived there all along.
   await viewTabs(contents(win)).filter({ hasText: 'Table' }).click()
   await expect(rowNames(contents(win))).toHaveText(MEMBERS)
   await shoot(win, 'outline-07-survives-relaunch')

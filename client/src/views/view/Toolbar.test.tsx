@@ -179,7 +179,7 @@ function aheadHost(columns: Record<string, ColumnDecl>) {
 }
 
 /**
- * The vault's folder pages, each reached by its name (YAZ-4795 demo): what "Notes from", the folder picker that took the
+ * The vault's folder pages, each reached by its name (YAZ-4795 demo): what "Pages from", the folder picker that took the
  * "Link target" text box's place, lists after "Any folder".
  */
 const FOLDER_PAGES: IndexRecord[] = ['Global People', 'Local People', 'People', 'Teams'].map((title) => ({
@@ -192,9 +192,9 @@ const folderAt = (target: string): string | null => {
 }
 /** A host whose vault has `FOLDER_PAGES`. */
 const linkHost = (over: Parameters<typeof testFolderHost>[0] = {}) => testFolderHost({ vaultFolders: FOLDER_PAGES, resolveLink: (t) => folderAt(t) ?? HOST.resolveLink(t), ...over })
-/** "Notes from" (YAZ-4795 demo): its button, then a folder by name ("Any folder" clears the target). */
-function pickNotesFrom(pop: ParentNode, label: string, folder: string): void {
-  click(byLabel(pop, `Notes from for ${label}`))
+/** "Pages from" (YAZ-4795 demo): its button, then a folder by name ("Any folder" clears the target). */
+function pickPagesFrom(pop: ParentNode, label: string, folder: string): void {
+  click(byLabel(pop, `Pages from for ${label}`))
   click([...pop.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find((o) => o.querySelector('.type-picker__name')?.textContent === folder)!)
 }
 
@@ -210,7 +210,7 @@ const wrap = (el: ParentNode, i: number): HTMLElement => [...el.querySelectorAll
 const WITH_PAGE = 'views:\n  - type: page\n    name: Page\n  - type: table\n    name: Table\n'
 const tabs = (el: ParentNode): string[] => [...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent ?? '')
 const selected = (el: ParentNode): string | undefined => [...el.querySelectorAll('[role="tab"]')].find((t) => t.getAttribute('aria-selected') === 'true')?.textContent ?? undefined
-/** Note links in the body: the table's name cells (4B) or the placeholder list of other view types. */
+/** Page links in the body: the table's name cells (4B) or the placeholder list of other view types. */
 const rows = (el: ParentNode): string[] => [...el.querySelectorAll('.view-table__name, .view-row__link')].map((b) => b.textContent ?? '')
 const count = (el: ParentNode): string => q(el, '.view-toolbar__count').textContent ?? ''
 const openMenu = (el: ParentNode, label: string): HTMLElement => {
@@ -340,7 +340,7 @@ describe('view tabs — drag to reorder (YAZ-1471)', () => {
   })
 
   /** TabBar.test's own payload assertion on this strip: a private MIME, never `text/plain`. */
-  it('writes a PRIVATE view-tab payload — a text/plain name would paste into the note body', () => {
+  it('writes a PRIVATE view-tab payload — a text/plain name would paste into the page body', () => {
     const { el } = mount()
     const data = { setData: vi.fn(), effectAllowed: '' } as unknown as DataTransfer
     const event = new MouseEvent('dragstart', { bubbles: true, cancelable: true })
@@ -470,7 +470,7 @@ describe('view tabs — right-click menu (YAZ-1471)', () => {
     const { el, onChange } = mount()
     click(item(openOn(el, 'View'), 'Delete'))
     expect(q(el, '[role="dialog"]').getAttribute('aria-modal')).toBe('true')
-    expect(q(el, '.confirm__text').textContent).toBe('Delete the view "View"? Its columns, sort, filters and grouping go with it. The notes stay.')
+    expect(q(el, '.confirm__text').textContent).toBe('Delete the view "View"? Its columns, sort, filters and grouping go with it. The pages stay.')
     act(() => void window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     draw()
     expect(el.querySelector('[role="dialog"]')).toBeNull()
@@ -736,7 +736,7 @@ describe('filter menu (YAZ-1227-1229)', () => {
       'Sort',
       'Columns and view',
       'Filter',
-      'New note',
+      'New page',
       'Search',
     ])
     // The sliders button is "Columns and view", its two tabs, in the tooltip too (YAZ-4608 C1).
@@ -1051,7 +1051,7 @@ describe('filter menu (YAZ-1227-1229)', () => {
   describe('value suggestions (YAZ-1232)', () => {
     const options = (pop: ParentNode): string[] => [...q(pop, 'datalist').querySelectorAll('option')].map((o) => o.value)
 
-    it("a note property's text value lists the values TEST_RECORDS hold for it, in first-seen order", () => {
+    it("a page property's text value lists the values TEST_RECORDS hold for it, in first-seen order", () => {
       const pop = openMenu(mount(RULE).el, 'Filter')
       const list = q<HTMLDataListElement>(pop, 'datalist')
       expect(byLabel<HTMLInputElement>(pop, 'Value').getAttribute('list')).toBe(list.id)
@@ -1605,7 +1605,7 @@ views:
     }
   })
 
-  it('S1: a note property of the same name is SHOWN, not declared again — one order write', () => {
+  it('S1: a page property of the same name is SHOWN, not declared again — one order write', () => {
     const setColumns = vi.fn()
     const { el, onChange } = mount(undefined, { folder: testFolderHost({ setColumns }) })
     const pop = openMenu(el, 'Columns and view')
@@ -1617,16 +1617,16 @@ views:
     expect(pop.querySelector('[aria-label="Column name"]')).toBeNull()
   })
 
-  // YAZ-4795 demo: the target is "Notes from", a folder picker (it writes the folder's link), not a text box.
+  // YAZ-4795 demo: the target is "Pages from", a folder picker (it writes the folder's link), not a text box.
   it('the target is offered for link kinds only, and lands in the declaration', () => {
     const setColumns = vi.fn()
     const { el } = mount(undefined, { folder: linkHost({ setColumns }) })
     const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
-    expect(pop.querySelector('[aria-label="Notes from for the new column"]')).toBeNull()
+    expect(pop.querySelector('[aria-label="Pages from for the new column"]')).toBeNull()
     choosePropertyType(pop, 'Multi-link')
     setValue(byLabel(pop, 'Column name'), 'owner')
-    pickNotesFrom(pop, 'the new column', 'People')
+    pickPagesFrom(pop, 'the new column', 'People')
     click(byLabel(pop, 'Save column'))
     expect(setColumns.mock.calls[0][0]).toEqual({ owner: { kind: 'multi-link', target: '[[People]]' } })
   })
@@ -1637,11 +1637,11 @@ views:
     const { el } = mount(undefined, { root: '/vault', folder })
     const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Owner'))
-    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('People')
-    pickNotesFrom(pop, 'Owner', 'Teams')
+    expect(byLabel(pop, 'Pages from for Owner').textContent).toBe('People')
+    pickPagesFrom(pop, 'Owner', 'Teams')
     expect(setColumn).toHaveBeenNthCalledWith(1, 'owner', { kind: 'link', target: '[[Teams]]' }, base)
     await settle()
-    pickNotesFrom(pop, 'Owner', 'Any folder')
+    pickPagesFrom(pop, 'Owner', 'Any folder')
     expect(setColumn).toHaveBeenNthCalledWith(2, 'owner', { kind: 'link' }, { kind: 'link', target: '[[Teams]]' })
     expect(pop.querySelector('.frontmatter-property-menu__actions')).toBeNull() // no Save / Cancel anywhere
   })
@@ -1652,11 +1652,11 @@ views:
     const pop = openMenu(el, 'Columns and view')
     click(byText(pop, 'button', '+ Add column'))
     choosePropertyType(pop, 'Link')
-    pickNotesFrom(pop, 'the new column', 'People')
+    pickPagesFrom(pop, 'the new column', 'People')
     choosePropertyType(pop, 'Text')
-    setValue(byLabel(pop, 'Column name'), 'notes')
+    setValue(byLabel(pop, 'Column name'), 'pages')
     click(byLabel(pop, 'Save column'))
-    expect(setColumns.mock.calls[0][0]).toEqual({ notes: { kind: 'text' } })
+    expect(setColumns.mock.calls[0][0]).toEqual({ pages: { kind: 'text' } })
   })
 
   it('a declared column shows its kind in the Type select; changing it writes that definition immediately, and nothing else', async () => {
@@ -1671,7 +1671,7 @@ views:
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('an undeclared note key reads Auto; picking a kind declares it immediately', async () => {
+  it('an undeclared page key reads Auto; picking a kind declares it immediately', async () => {
     const setColumn = vi.fn().mockResolvedValue(undefined)
     const { el, onChange } = mount(undefined, { folder: testFolderHost({ setColumn }) })
     const pop = openMenu(el, 'Columns and view')
@@ -1683,7 +1683,7 @@ views:
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('file.* rows get no property editor — they are not note properties; the detail reads the type instead', () => {
+  it('file.* rows get no property editor — they are not page properties; the detail reads the type instead', () => {
     const pop = openMenu(mount().el, 'Columns and view')
     click(byLabel(pop, 'Open Name'))
     expect(pop.querySelector('[aria-label="Edit property Name"]')).toBeNull()
@@ -1813,7 +1813,7 @@ views:
     expect(el.querySelector('.view-popover')).toBeNull()
   })
 
-  it('the conditional sections (YAZ-1513): Options only for Select kinds, Relation only for note keys with a root, card styling only on a board', () => {
+  it('the conditional sections (YAZ-1513): Options only for Select kinds, Relation only for page keys with a root, card styling only on a board', () => {
     const settings = { columns: { status: { kind: 'select' as const, options: ['A', 'B'] }, owner: { kind: 'link' as const, target: '[[People]]' } }, views: [], problems: [] }
     const { el } = mount(undefined, { root: '/vault', folder: linkHost({ settings }) })
     const pop = openMenu(el, 'Columns and view')
@@ -1824,10 +1824,10 @@ views:
     click(byLabel(pop, 'Back to columns'))
     click(byLabel(pop, 'Open Owner'))
     expect(pop.querySelector('[aria-label="Property options"]')).toBeNull()
-    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('People') // a link kind: the target inline (YAZ-4795 demo picker)
+    expect(byLabel(pop, 'Pages from for Owner').textContent).toBe('People') // a link kind: the target inline (YAZ-4795 demo picker)
     click(byLabel(pop, 'Back to columns'))
     click(byLabel(pop, 'Open Name'))
-    expect(pop.querySelector('[aria-label^="Relation for "]')).toBeNull() // file.name is not a note property
+    expect(pop.querySelector('[aria-label^="Relation for "]')).toBeNull() // file.name is not a page property
   })
 
   it('the actions row (YAZ-1513): Hide in this view unchecks the column in ONE order write and returns to the list', () => {
@@ -1838,7 +1838,7 @@ views:
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].order).toEqual(['file.name', 'note.priority'])
     expect(def().views[0].frozenColumns).toBe(2)
-    // Status is a note field no folder declares: hidden, it waits under "Other properties in these notes" with Show and
+    // Status is a page field no folder declares: hidden, it waits under "Other properties in these pages" with Show and
     // "Add to <folder>" in place of the switch (YAZ-4713 C4).
     expect(byLabel(pop, 'Show Status').tagName).toBe('BUTTON')
     expect(byLabel(pop, 'Add Status to vault')).toBeDefined()
@@ -1865,7 +1865,7 @@ views:
     expect(byLabel(pop, 'Show Status')).toBeDefined() // back on the list
   })
 
-  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and reserved keys, enabled for a plain note key', () => {
+  it('the actions row (YAZ-1513): Delete column… is disabled with the tooltip for file.*, formula.* and reserved keys, enabled for a plain page key', () => {
     const deleteColumn = vi.fn(async () => {})
     const records = [{ ...TEST_RECORDS[0], properties: { status: 'idea', comments: [] } }]
     const { el } = mount(`formulas:\n  score: '1'\nviews:\n  - type: table\n    name: T\n    order: [file.name, note.status, note.comments, formula.score]\n`, { records, folder: testFolderHost({ deleteColumn, vaultRecords: records }) })
@@ -1910,7 +1910,7 @@ describe('search, count and body', () => {
     expect(rows(el)).toEqual(['The Levels of an Agency'])
   })
 
-  it('search finds a row by the TITLE of a note it links to by id (YAZ-2293 D8)', () => {
+  it('search finds a row by the TITLE of a page it links to by id (YAZ-2293 D8)', () => {
     const ID = 'k3m9x2pq7abc'
     const records = TEST_RECORDS.map((r) =>
       r.basename === 'Attribution' ? { ...r, id: ID } : r.basename === 'VSL-v1' ? { ...r, properties: { ...r.properties, related: `[[${ID}]]` } } : r,
@@ -1930,7 +1930,7 @@ describe('search, count and body', () => {
     expect(count(el)).toBe('3 / 8 items')
   })
 
-  it('Enter on a row\'s Name cell opens the note; the other order values are the row cells (4B)', () => {
+  it('Enter on a row\'s Name cell opens the page; the other order values are the row cells (4B)', () => {
     const { el, onOpenFile } = mount('views:\n  - type: table\n    name: T\n    order:\n      - file.name\n      - note.status\n      - note.priority\n')
     expect(q(el, '[data-cell="0:1"]').textContent).toBe('idea')
     expect(q(el, '[data-cell="0:2"]').textContent).toBe('2')
@@ -1949,7 +1949,7 @@ describe('search, count and body', () => {
  * The report-don't-block footnote (YAZ-861). Both halves were produced on every render and read
  * by nobody until this line existed; neither may block a row, and neither is an `alert`.
  */
-describe('the notes line', () => {
+describe('the pages line', () => {
   it('says nothing at all when there is nothing to say', () => {
     const { el } = mount()
     expect(el.querySelector('.views-pane__notes')).toBeNull()
@@ -1958,17 +1958,17 @@ describe('the notes line', () => {
   it("lists the settings' problems — the one-liners folderSettings collects while ignoring an unusable key", () => {
     const problems = ['folder_settings.columns must be a map of column names — ignoring it']
     const { el } = mount(YASIN_BASE, { folder: testFolderHost({ settings: { columns: {}, views: [], problems } }) })
-    const note = q<HTMLElement>(el, '.views-pane__notes')
-    expect(note.getAttribute('role')).toBe('note') // a note, never an alert: nothing here failed
-    expect(note.textContent).toBe(problems[0])
+    const page = q<HTMLElement>(el, '.views-pane__notes')
+    expect(page.getAttribute('role')).toBe('note') // a page, never an alert: nothing here failed
+    expect(page.textContent).toBe(problems[0])
     expect(rows(el).length).toBeGreaterThan(0) // and it blocks nothing above it
   })
 
   it("lists the engine's compile errors, `where: message`, from a hand-written filters block", () => {
     const { el } = mount('filters: 1 +\nviews:\n  - type: table\n    name: T\n    order:\n      - file.name\n')
-    const note = q<HTMLElement>(el, '.views-pane__notes')
-    expect(note.getAttribute('role')).toBe('note')
-    expect(note.textContent).toMatch(/^filters: /)
+    const page = q<HTMLElement>(el, '.views-pane__notes')
+    expect(page.getAttribute('role')).toBe('note')
+    expect(page.textContent).toMatch(/^filters: /)
   })
 
   it('joins both halves into ONE line — the settings first, then the engine', () => {
@@ -1976,9 +1976,9 @@ describe('the notes line', () => {
     const { el } = mount('filters: 1 +\nviews:\n  - type: table\n    name: T\n    order:\n      - file.name\n', {
       folder: testFolderHost({ settings: { columns: {}, views: [], problems } }),
     })
-    const notes = el.querySelectorAll('.views-pane__notes')
-    expect(notes).toHaveLength(1)
-    expect(notes[0].textContent).toBe(`${problems[0]} · filters: unexpected end of input`)
+    const pages = el.querySelectorAll('.views-pane__notes')
+    expect(pages).toHaveLength(1)
+    expect(pages[0].textContent).toBe(`${problems[0]} · filters: unexpected end of input`)
   })
 })
 
@@ -2134,7 +2134,7 @@ describe('card style toggles (YAZ-1206/YAZ-1217): per-property cardStyle writes 
     groupBy:
       property: note.status
 `
-  it('note rows carry B / U / hide-label / join; the file.name row carries ONLY join; non-boards none', () => {
+  it('page rows carry B / U / hide-label / join; the file.name row carries ONLY join; non-boards none', () => {
     const { el } = mount(BOARD)
     const pop = openMenu(el, 'Columns and view')
     // the LIST carries none of them (YAZ-1513); the detail does
@@ -2361,7 +2361,7 @@ views:
     click(byText(el, '[role="tab"]', 'Board'))
     const actions = q(el, '.view-toolbar__actions')
     expect([...actions.querySelectorAll('.view-toolbar__btn')].map((button) => button.getAttribute('aria-label'))).toEqual([
-      'Sort', 'Columns and view', 'Filter', 'Collapse all groups', 'New note', 'Search',
+      'Sort', 'Columns and view', 'Filter', 'Collapse all groups', 'New page', 'Search',
     ])
     expect(actions.lastElementChild?.className).toBe('view-toolbar__count')
     expect(onChange).not.toHaveBeenCalled()
@@ -2489,8 +2489,8 @@ describe('folder-local relation shortcut', () => {
     const { el, onChange } = mount(undefined, { root: '/vault', properties, folder: linkHost({ settings: { columns: { owner: base }, views: [], problems: [] }, setColumn }) })
     const pop = openMenu(el, 'Columns and view')
     click(byLabel(pop, 'Open Owner'))
-    expect(byLabel(pop, 'Notes from for Owner').textContent).toBe('Local People') // the local declaration, not the legacy one
-    pickNotesFrom(pop, 'Owner', 'Teams')
+    expect(byLabel(pop, 'Pages from for Owner').textContent).toBe('Local People') // the local declaration, not the legacy one
+    pickPagesFrom(pop, 'Owner', 'Teams')
     expect(setColumn).toHaveBeenCalledExactlyOnceWith('owner', { kind: 'link', target: '[[Teams]]' }, base)
     expect(properties.properties.owner).toEqual({ kind: 'multi-link', target: '[[Global People]]' })
     expect(onChange).not.toHaveBeenCalled()
@@ -2508,7 +2508,7 @@ describe('folder-local relation shortcut', () => {
     await settle()
     // the panel now holds a link kind: the target is inline and the type picker says so
     expect(typeShown(pop, 'Status')).toBe('Multi-link')
-    expect(byLabel(pop, 'Notes from for Status').textContent).toBe('Global People') // legacy.target, in the YAZ-4795 picker
+    expect(byLabel(pop, 'Pages from for Status').textContent).toBe('Global People') // legacy.target, in the YAZ-4795 picker
   })
 })
 

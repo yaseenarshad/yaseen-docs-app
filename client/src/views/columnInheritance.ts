@@ -1,7 +1,7 @@
 /**
  * Columns flow down (YAZ-4713 C2): a folder page shows its own columns and the columns of every folder above it. A
  * column's DEFINITION lives in the `.folder.md` of the folder that declares it (its OWNER); when two folders on the
- * chain declare the same key, the nearest one wins. A note's VALUE is one field of the note (C1), whatever page shows it.
+ * chain declare the same key, the nearest one wins. A page's VALUE is one field of the page (C1), whatever page shows it.
  */
 import { findKey, keyFold } from '@shared/propertyKeys'
 import { isReadOnlyProperties } from '@shared/readOnly'
@@ -74,8 +74,8 @@ export function declarationOf(folders: FolderMap, ids: boolean, folder: string, 
 
 /**
  * Does the page of `dir` take `key`'s definition from `owner` (YAZ-4713 C6, C7)? True when no folder from `dir` up to
- * `owner` (not `owner` itself) declares the key. A `dir` outside `owner` is a shortcut's home: its note is on `owner`'s
- * page, so it counts too. `cache` keeps one answer per folder for one walk over many notes.
+ * `owner` (not `owner` itself) declares the key. A `dir` outside `owner` is a shortcut's home: its page is on `owner`'s
+ * page, so it counts too. `cache` keeps one answer per folder for one walk over many pages.
  */
 export function takesFrom(folders: FolderMap, ids: boolean, dir: string, owner: string, key: string, cache = new Map<string, boolean>()): boolean {
   if (dir === owner || !inFolder(dir, owner)) return true
@@ -104,20 +104,20 @@ export function folderName(folders: FolderMap, dir: string, vaultName: string): 
 }
 
 /**
- * The ask's words for a column move (YAZ-4769), in a note's Edit property and a folder page's Edit column alike: what
- * each folder gains or loses. `from` or `to` null: making a column, or removing one. The notes keep their values.
+ * The ask's words for a column move (YAZ-4769), in a page's Edit property and a folder page's Edit column alike: what
+ * each folder gains or loses. `from` or `to` null: making a column, or removing one. The pages keep their values.
  */
 export function moveColumnText(key: string, from: string | null, to: string | null, down = false): string {
   // A move down (YAZ-4769 demo): the folder it leaves and its other subfolders lose it, so the ask says so.
-  if (from !== null && to !== null && down) return `Move the "${key}" column from ${from} down to ${to}? ${to} and every folder below it show it. ${from} and its other folders stop showing it. The notes keep their values.`
-  if (from !== null && to !== null) return `Move the "${key}" column from ${from} to ${to}? ${to} and every folder below it show it. ${from} no longer defines it. The notes keep their values.`
-  if (from !== null) return `Remove the "${key}" column from ${from}? No folder page shows it as a column. The notes keep their values.`
-  return `Make "${key}" a column on ${to}? ${to} and every folder below it show it. The notes keep their values.`
+  if (from !== null && to !== null && down) return `Move the "${key}" column from ${from} down to ${to}? ${to} and every folder below it show it. ${from} and its other folders stop showing it. The pages keep their values.`
+  if (from !== null && to !== null) return `Move the "${key}" column from ${from} to ${to}? ${to} and every folder below it show it. ${from} no longer defines it. The pages keep their values.`
+  if (from !== null) return `Remove the "${key}" column from ${from}? No folder page shows it as a column. The pages keep their values.`
+  return `Make "${key}" a column on ${to}? ${to} and every folder below it show it. The pages keep their values.`
 }
 
 /**
  * D36: a read-only folder page's `.folder.md` takes no column write, from its own page or from any other door (a page
- * below it, the note's properties panel). The refusal's words, or null when `dir`'s page is not read only.
+ * below it, the page's properties panel). The refusal's words, or null when `dir`'s page is not read only.
  */
 export function readOnlyRefusal(folders: FolderMap, dir: string, vaultName: string): string | null {
   const record = folders.get(dir)
@@ -141,7 +141,7 @@ export interface ColumnSource {
   over?: string
   /** C11: a column shown here through "Other properties" whose definition lives on a subfolder: the subfolders' names ("From Desserts", "From Desserts, Pies"). */
   below?: string
-  /** No column on this page or below: a field only in the notes, shown through "Other properties" (YAZ-4713 C11B): the ◌ mark. */
+  /** No column on this page or below: a field only in the pages, shown through "Other properties" (YAZ-4713 C11B): the ◌ mark. */
   loose?: true
 }
 
@@ -160,12 +160,12 @@ export interface ColumnSources {
   /** "Use <parent>'s": this folder's own declaration goes, and the parent's shows again. A toast offers Undo. */
   useParent: (key: string) => Promise<unknown>
   /**
-   * "Column on" (YAZ-4769, the note's Edit property's picker): the folder that defines the column now and the folders
+   * "Column on" (YAZ-4769, the page's Edit property's picker): the folder that defines the column now and the folders
    * that may: this one, each above it (nearest first), then each below it (the YAZ-4769 demo: "I want to move it down
    * to desserts"), each with its name and its place. Null where the column does not move from here: none of this
    * folder's, one "Desserts only" copy, a separate value, a Linked mentions column, a read-only page, or nowhere to go.
    */
   columnOn: (key: string) => { at: string; choices: { dir: string; name: string; place: 'here' | 'above' | 'below' }[] } | null
-  /** Move the column's definition to folder `to`, one of `columnOn`'s choices. The notes keep their values; a toast offers Undo. */
+  /** Move the column's definition to folder `to`, one of `columnOn`'s choices. The pages keep their values; a toast offers Undo. */
   moveTo: (key: string, to: string) => Promise<unknown>
 }

@@ -4,8 +4,8 @@ import path from 'node:path'
 
 /**
  * Temp vault mirroring a real Obsidian vault (synthetic content), shared by every view/index
- * test: 8 markdown notes (one with invalid frontmatter, two with none), png stubs, a `.trash`
- * note, and a dotfolder that must stay invisible to tree/index/watcher — `.obsidian` (a foreign
+ * test: 8 markdown pages (one with invalid frontmatter, two with none), png stubs, a `.trash`
+ * page, and a dotfolder that must stay invisible to tree/index/watcher — `.obsidian` (a foreign
  * app's, now EMPTY: ⚡ YAZ-815 deleted the `types.json` it used to carry along with every read
  * of it). Caller removes it via `cleanup`.
  *

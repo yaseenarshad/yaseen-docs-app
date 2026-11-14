@@ -126,8 +126,8 @@ function hiddenSelectionSelectors(): string[] {
   return out
 }
 
-describe('a selection with no lit link costs no search of the note (YAZ-4005)', () => {
-  it('in a note with no link, or a selection beside one, nothing searches the note for a lit pill', async () => {
+describe('a selection with no lit link costs no search of the page (YAZ-4005)', () => {
+  it('in a page with no link, or a selection beside one, nothing searches the page for a lit pill', async () => {
     const { view } = await mount(`plain words here\n\nmore plain words [[Named]] end\n`)
     const search = vi.spyOn(view.dom, 'querySelector')
     select(view, 1, 6)

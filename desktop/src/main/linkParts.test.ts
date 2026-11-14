@@ -52,7 +52,7 @@ describe('splitLink: the page on either side of the | (YAZ-4935)', () => {
 
   it('no |: the page and its #heading, the words null', () => {
     expect(splitLink('WIKI-116')).toEqual({ page: 'WIKI-116', hash: '', head: 'WIKI-116', words: null, pipe: -1, pageFirst: true })
-    expect(splitLink('Note#Heading')).toEqual({ page: 'Note', hash: '#Heading', head: 'Note#Heading', words: null, pipe: -1, pageFirst: true })
+    expect(splitLink('Page#Heading')).toEqual({ page: 'Page', hash: '#Heading', head: 'Page#Heading', words: null, pipe: -1, pageFirst: true })
     expect(splitLink('#same-file')).toMatchObject({ page: '', hash: '#same-file', words: null })
     expect(splitLink(' D ')).toMatchObject({ page: 'D', head: ' D ' })
   })
@@ -62,17 +62,17 @@ describe('splitLink: the page on either side of the | (YAZ-4935)', () => {
     expect(splitLink('x.drawio|My name|640x360')).toMatchObject({ page: 'x.drawio', words: 'My name|640x360', pageFirst: true })
   })
 
-  it('with the notes known: the left side wins when it names a found page; the right side is the page only when the left does not resolve (YAZ-4935 round 2)', () => {
-    const found = (page: string) => page === 'Covid notes'
-    // Words that only LOOK like an ID: the left side is a note, so it is the page.
-    expect(splitLink('Covid notes|COVID-19', found)).toMatchObject({ page: 'Covid notes', head: 'Covid notes', words: 'COVID-19', pageFirst: true })
-    // The left side names no note: the right side is the ID, as before.
+  it('with the pages known: the left side wins when it names a found page; the right side is the page only when the left does not resolve (YAZ-4935 round 2)', () => {
+    const found = (page: string) => page === 'Covid pages'
+    // Words that only LOOK like an ID: the left side is a page, so it is the page.
+    expect(splitLink('Covid pages|COVID-19', found)).toMatchObject({ page: 'Covid pages', head: 'Covid pages', words: 'COVID-19', pageFirst: true })
+    // The left side names no page: the right side is the ID, as before.
     expect(splitLink('staging|WIKI-116', found)).toMatchObject({ page: 'WIKI-116', words: 'staging', pageFirst: false })
     // Page first stays page first; an empty left side is no page.
     expect(splitLink('WIKI-116|staging', found)).toMatchObject({ page: 'WIKI-116', words: 'staging', pageFirst: true })
     expect(splitLink('|WIKI-116', () => true)).toMatchObject({ page: 'WIKI-116', pageFirst: false })
     // The heading goes with the left side when it wins; the check is asked only when the shape alone would pick the right.
-    expect(splitLink('Covid notes#Intro|COVID-19', found)).toMatchObject({ page: 'Covid notes', hash: '#Intro', pageFirst: true })
+    expect(splitLink('Covid pages#Intro|COVID-19', found)).toMatchObject({ page: 'Covid pages', hash: '#Intro', pageFirst: true })
     const asked: string[] = []
     splitLink('Postgres|database', (p) => (asked.push(p), false))
     splitLink('WIKI-116|staging', (p) => (asked.push(p), false))
@@ -84,39 +84,39 @@ describe('splitLink: the page on either side of the | (YAZ-4935)', () => {
   })
 })
 
-describe('indexTarget: a reader with no list of notes keeps both sides when only the notes can pick (YAZ-4954)', () => {
+describe('indexTarget: a reader with no list of pages keeps both sides when only the pages can pick (YAZ-4954)', () => {
   it('the shape picks the right side and the left side is a plain name: both page sides, left|right, no #heading', () => {
-    expect(indexTarget('Covid notes|COVID-19')).toBe('Covid notes|COVID-19')
+    expect(indexTarget('Covid pages|COVID-19')).toBe('Covid pages|COVID-19')
     expect(indexTarget('staging|WIKI-116')).toBe('staging|WIKI-116')
-    expect(indexTarget(' Covid notes #Intro | COVID-19#^b ')).toBe('Covid notes|COVID-19')
+    expect(indexTarget(' Covid pages #Intro | COVID-19#^b ')).toBe('Covid pages|COVID-19')
   })
 
   it('every other link keeps the one page the shape gives', () => {
-    expect(indexTarget('COVID-19|Covid notes')).toBe('COVID-19')
+    expect(indexTarget('COVID-19|Covid pages')).toBe('COVID-19')
     expect(indexTarget('WIKI-116|staging')).toBe('WIKI-116')
     expect(indexTarget('|WIKI-116')).toBe('WIKI-116')
     expect(indexTarget('#Intro|WIKI-116')).toBe('WIKI-116')
     expect(indexTarget('Postgres|database')).toBe('Postgres')
     expect(indexTarget('WIKI-116|WIKI-117')).toBe('WIKI-116')
-    expect(indexTarget('Note#Heading')).toBe('Note')
+    expect(indexTarget('Page#Heading')).toBe('Page')
     expect(indexTarget('EMB-40|640x360 view=120,-40,0.8')).toBe('EMB-40')
   })
 })
 
-describe('pickTarget: a reader WITH the notes picks the side (YAZ-4954)', () => {
+describe('pickTarget: a reader WITH the pages picks the side (YAZ-4954)', () => {
   const only = (...names: string[]) => (page: string) => names.includes(page)
   it('both sides kept: the left side wins when it is a page; else the right side', () => {
-    expect(pickTarget('Covid notes|COVID-19', only('Covid notes', 'COVID-19'))).toBe('Covid notes')
-    expect(pickTarget('Covid notes|COVID-19', only('COVID-19'))).toBe('COVID-19')
-    expect(pickTarget('Covid notes|COVID-19', only())).toBe('COVID-19')
-    expect(pickTarget('[[Covid notes|COVID-19]]', only('Covid notes'))).toBe('Covid notes')
-    expect(pickTarget('[[Covid notes#Intro|COVID-19]]', only('Covid notes'))).toBe('Covid notes')
+    expect(pickTarget('Covid pages|COVID-19', only('Covid pages', 'COVID-19'))).toBe('Covid pages')
+    expect(pickTarget('Covid pages|COVID-19', only('COVID-19'))).toBe('COVID-19')
+    expect(pickTarget('Covid pages|COVID-19', only())).toBe('COVID-19')
+    expect(pickTarget('[[Covid pages|COVID-19]]', only('Covid pages'))).toBe('Covid pages')
+    expect(pickTarget('[[Covid pages#Intro|COVID-19]]', only('Covid pages'))).toBe('Covid pages')
   })
 
   it('a target with no | is itself, and the check is not asked', () => {
     const asked: string[] = []
-    expect(pickTarget('Covid notes', (p) => (asked.push(p), true))).toBe('Covid notes')
-    expect(pickTarget('Note#Heading', (p) => (asked.push(p), true))).toBe('Note#Heading')
+    expect(pickTarget('Covid pages', (p) => (asked.push(p), true))).toBe('Covid pages')
+    expect(pickTarget('Page#Heading', (p) => (asked.push(p), true))).toBe('Page#Heading')
     expect(asked).toEqual([])
   })
 })
@@ -135,7 +135,7 @@ describe('a file name is always the page; an ID shape never beats it (YAZ-4954 p
     expect(splitLink(`${OLD}|x.drawio`)).toMatchObject({ page: 'x.drawio', words: OLD, pageFirst: false })
   })
 
-  it('the notes are not asked: a file needs no check', () => {
+  it('the pages are not asked: a file needs no check', () => {
     const asked: string[] = []
     const all = (p: string) => (asked.push(p), true)
     expect(splitLink('photo.png|FIG-1', all).page).toBe('photo.png')
@@ -143,10 +143,10 @@ describe('a file name is always the page; an ID shape never beats it (YAZ-4954 p
     expect(asked).toEqual([])
   })
 
-  it('every other link reads as before: a note name and a file, a .md name, a code file name, two files', () => {
-    expect(splitLink('Covid notes|photo.png')).toMatchObject({ page: 'Covid notes', pageFirst: true })
-    expect(splitLink('notes.md|FIG-1')).toMatchObject({ page: 'FIG-1', pageFirst: false })
-    expect(splitLink('notes.md|FIG-1', (p) => p === 'notes.md')).toMatchObject({ page: 'notes.md', pageFirst: true })
+  it('every other link reads as before: a page name and a file, a .md name, a code file name, two files', () => {
+    expect(splitLink('Covid pages|photo.png')).toMatchObject({ page: 'Covid pages', pageFirst: true })
+    expect(splitLink('pages.md|FIG-1')).toMatchObject({ page: 'FIG-1', pageFirst: false })
+    expect(splitLink('pages.md|FIG-1', (p) => p === 'pages.md')).toMatchObject({ page: 'pages.md', pageFirst: true })
     expect(splitLink('Node.js|FIG-1')).toMatchObject({ page: 'FIG-1', pageFirst: false })
     expect(splitLink('a.png|b.png')).toMatchObject({ page: 'a.png', pageFirst: true })
   })

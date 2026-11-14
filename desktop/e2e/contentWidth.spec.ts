@@ -1,6 +1,6 @@
 /**
  * YAZ-1176: the real Electron proof for one global content-width preference — exact preset
- * mapping, aligned note/folder surfaces, live switching, persistence, and narrow-window
+ * mapping, aligned page/folder surfaces, live switching, persistence, and narrow-window
  * fallback. The app runs against a copied vault and isolated `--user-data-dir` throughout.
  */
 // Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
@@ -15,7 +15,7 @@ test.describe.configure({ mode: 'serial' })
 test.setTimeout(60_000)
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-const NOTE = path.join('Funnel Stages', 'Lead Gen.md')
+const PAGE = path.join('Funnel Stages', 'Lead Gen.md')
 const FOLDER = 'KPIs'
 
 async function pickContentWidth(win: Page, label: 'Narrow' | 'Medium' | 'Full'): Promise<void> {
@@ -61,26 +61,26 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('Narrow → Medium → Full changes the real note surfaces live and persists Full', async () => {
-  const state = seededState(vault, path.join(vault, NOTE))
+test('Narrow → Medium → Full changes the real page surfaces live and persists Full', async () => {
+  const state = seededState(vault, path.join(vault, PAGE))
   state.windows[0].bounds.width = 1800
   app = await launchApp({ userData, seedState: state })
   win = await appWindow(app, 'w1')
 
-  const noteSurfaces = ['.page-header', '.editor-instance', '.backlinks'] as const
+  const pageSurfaces = ['.page-header', '.editor-instance', '.backlinks'] as const
   await expect(layer(win).locator('.editor-instance')).toBeVisible()
-  await expect.poll(() => computedMaxWidths(win, noteSurfaces)).toEqual(['1040px', '1040px', '1040px'])
-  await expect.poll(() => alignedWithinHost(win, noteSurfaces, 1040)).toBe(true)
+  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual(['1040px', '1040px', '1040px'])
+  await expect.poll(() => alignedWithinHost(win, pageSurfaces, 1040)).toBe(true)
 
   await pickContentWidth(win, 'Medium')
-  await expect.poll(() => computedMaxWidths(win, noteSurfaces)).toEqual(['1440px', '1440px', '1440px'])
-  await expect.poll(() => alignedWithinHost(win, noteSurfaces, 1440)).toBe(true)
+  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual(['1440px', '1440px', '1440px'])
+  await expect.poll(() => alignedWithinHost(win, pageSurfaces, 1440)).toBe(true)
 
   await pickContentWidth(win, 'Full')
-  await expect.poll(() => computedMaxWidths(win, noteSurfaces)).toEqual(['none', 'none', 'none'])
-  await expect.poll(() => alignedWithinHost(win, noteSurfaces, null)).toBe(true)
+  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual(['none', 'none', 'none'])
+  await expect.poll(() => alignedWithinHost(win, pageSurfaces, null)).toBe(true)
   await expect.poll(async () => (await readState(userData)).settings.contentWidth).toBe('full')
-  await shoot(win, 'content-width-01-full-note')
+  await shoot(win, 'content-width-01-full-page')
 })
 
 test('Full aligns the folder view and Board, survives relaunch, and stays fluid in a narrow window', async () => {
@@ -96,7 +96,7 @@ test('Full aligns the folder view and Board, survives relaunch, and stays fluid 
   await win.keyboard.press('Escape')
   await expect(layer(win).locator('.view-board')).toBeVisible()
   // A folder's tab stacks the header row, the views and its comments (FolderView.tsx): there is no
-  // note body, and "Linked mentions" renders nothing for a folder no note links to.
+  // page body, and "Linked mentions" renders nothing for a folder no page links to.
   const folderSurfaces = ['.page-header', '.folder-view', '.comments'] as const
   await expect(layer(win).locator('.comments')).toBeVisible()
   await expect.poll(() => computedMaxWidths(win, folderSurfaces)).toEqual(['none', 'none', 'none'])

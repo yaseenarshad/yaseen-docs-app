@@ -1,5 +1,5 @@
 /**
- * Heading folding end-to-end (YAZ-1140, issue 4): the REAL built app, a heading-based note.
+ * Heading folding end-to-end (YAZ-1140, issue 4): the REAL built app, a heading-based page.
  * Chevron click → section hidden → `h:` key reaches yaseendocs.json → quit → relaunch → fold
  * restored — with a bullet fold coexisting in the same file's bucket the whole way (decision D3:
  * one `folds` bucket, two key spaces). Serial like smoke.spec.ts; screenshots are the evidence.
@@ -12,7 +12,7 @@ import { appWindow, launchApp, quitApp, readState, seededState, shoot } from './
 
 test.describe.configure({ mode: 'serial' })
 
-const NOTE = 'Sections.md'
+const PAGE = 'Sections.md'
 const ALPHA = 'alpha-body-e2e'
 const BETA = 'beta-body-e2e'
 const CHILD = 'child-bullet-e2e'
@@ -34,15 +34,15 @@ ${BETA}
 
 let userData: string
 let vault: string
-let notePath: string
+let pagePath: string
 let app: ElectronApplication
 let win: Page
 
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'hf-userdata-'))
   vault = await mkdtemp(path.join(tmpdir(), 'hf-vault-'))
-  notePath = path.join(vault, NOTE)
-  await writeFile(notePath, BODY)
+  pagePath = path.join(vault, PAGE)
+  await writeFile(pagePath, BODY)
 })
 
 test.afterAll(async () => {
@@ -50,8 +50,8 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('step 1 — the seeded note opens with a chevron per foldable heading', async () => {
-  app = await launchApp({ userData, seedState: seededState(vault, notePath) })
+test('step 1 — the seeded page opens with a chevron per foldable heading', async () => {
+  app = await launchApp({ userData, seedState: seededState(vault, pagePath) })
   win = await appWindow(app, 'w1')
   await expect(win.locator('.ProseMirror')).toContainText(ALPHA)
   // Part 1, Section A, Section B — H1/H2 with non-empty sections; nothing else.
@@ -59,7 +59,7 @@ test('step 1 — the seeded note opens with a chevron per foldable heading', asy
 })
 
 test('step 2 — collapsing Section A hides exactly its body and lands an h: key in app state', async () => {
-  const noteBefore = await readFile(notePath, 'utf8')
+  const pageBefore = await readFile(pagePath, 'utf8')
   await win.locator('.ProseMirror h2', { hasText: 'Section A' }).hover() // reveal (opacity)
   await win.locator('.heading-toggle[aria-label="Collapse Section A"]').click()
 
@@ -75,18 +75,18 @@ test('step 2 — collapsing Section A hides exactly its body and lands an h: key
   // Both keys reach yaseendocs.json (store debounces 150 ms); the file on disk never changes.
   await expect
     .poll(async () => {
-      const folds = (await readState(userData)).folders[vault]?.folds[notePath] ?? []
+      const folds = (await readState(userData)).folders[vault]?.folds[pagePath] ?? []
       return folds.some((k) => k.startsWith('h:')) && folds.some((k) => !k.startsWith('h:'))
     }, { timeout: 10_000 })
     .toBe(true)
-  expect(await readFile(notePath, 'utf8')).toBe(noteBefore)
+  expect(await readFile(pagePath, 'utf8')).toBe(pageBefore)
   await shoot(win, 'hf-01-collapsed')
 })
 
 test('step 3 — quit flushes; relaunch restores both folds from the shared bucket', async () => {
   await quitApp(app)
   const flushed = await readState(userData)
-  const folds = flushed.folders[vault]?.folds[notePath] ?? []
+  const folds = flushed.folders[vault]?.folds[pagePath] ?? []
   expect(folds.some((k) => k.startsWith('h:'))).toBe(true)
   expect(folds.some((k) => !k.startsWith('h:'))).toBe(true)
 

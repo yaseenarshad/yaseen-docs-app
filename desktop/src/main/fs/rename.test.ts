@@ -177,11 +177,11 @@ describe('renameFile (Links E1b, GRO-2241: cross-directory file move + folder re
 
   it('renames a folder (kind: dir); extension rules do not apply to directories', async () => {
     await mkdir(path.join(root, 'Movable'), { recursive: true })
-    await writeFile(path.join(root, 'Movable', 'note.md'), 'inside')
+    await writeFile(path.join(root, 'Movable', 'page.md'), 'inside')
     const oldPath = path.join(root, 'Movable')
     const newPath = path.join(root, 'Moved')
     expect(await renameFile({ oldPath, newPath })).toEqual({ oldPath, newPath, kind: 'dir' })
-    expect(await readFile(path.join(newPath, 'note.md'), 'utf8')).toBe('inside')
+    expect(await readFile(path.join(newPath, 'page.md'), 'utf8')).toBe('inside')
     await expect(stat(oldPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 

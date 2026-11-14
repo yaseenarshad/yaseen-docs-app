@@ -8,7 +8,7 @@ import { findDirNode, treeHasFile } from './treeState'
 
 /**
  * Whether `path` is a FOLDER, by the window's newest Files tree (YAZ-2290 D3). Only the tree can
- * say: a folder may be named `Notes.md`. False until the first tree answers.
+ * say: a folder may be named `Pages.md`. False until the first tree answers.
  */
 export function isFolderPath(root: string | null, path: string): boolean {
   if (root === null) return false
@@ -21,7 +21,7 @@ export function isFolderPath(root: string | null, path: string): boolean {
 /** `path` is the vault `root` itself (YAZ-4921), a trailing slash on the root aside. */
 export const isVaultRoot = (root: string, path: string): boolean => path === root.replace(/\/+$/, '')
 
-/** Every note's and folder's title by its absolute path, a folder's by its directory's (YAZ-2420 🔒 D14). */
+/** Every page's and folder's title by its absolute path, a folder's by its directory's (YAZ-2420 🔒 D14). */
 export type PathTitles = ReadonlyMap<string, string>
 
 const titlesCache = new WeakMap<readonly IndexRecord[], WeakMap<readonly IndexRecord[], PathTitles>>()
@@ -66,7 +66,7 @@ export function pathTitles(records: readonly IndexRecord[], folders: readonly In
 /**
  * A path as a NAME, wherever one is shown: its title (YAZ-2420 🔒 D14). A path the index does not
  * hold (not loaded yet, a PDF, an image, a board, a folder with no settings file) shows its file name: a
- * note, a drawing and a diagram hide their extension (YAZ-3536 D1); a folder's label is its whole name (YAZ-2290).
+ * page, a drawing and a diagram hide their extension (YAZ-3536 D1); a folder's label is its whole name (YAZ-2290).
  */
 export const pageLabel = (path: string, folder: boolean, titles: PathTitles): string => titles.get(path) ?? (folder ? basename(path) : fileLabel(basename(path)))
 
@@ -148,7 +148,7 @@ export function useFolderPaths(roots: readonly string[]): (path: string) => bool
  * What `path` is by the window's newest Files tree, off its one feed (YAZ-2191): a folder, a file,
  * or neither; null until a tree can say. A tab opened later reads the tree the sidebar already
  * holds. A tree that holds the path as neither may only be BEHIND: an in-app folder rename retargets
- * the tab before the tree that shows the new name lands, and a folder may be named `Notes.md`. So
+ * the tab before the tree that shows the new name lands, and a folder may be named `Pages.md`. So
  * nothing is said until a tree asked for NOW answers — the stale-tab probe's rule (`useVaultTree.ts`).
  */
 export function useTreeKind(root: string, path: string): 'dir' | 'file' | 'none' | null {

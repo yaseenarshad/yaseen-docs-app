@@ -122,9 +122,9 @@ export async function appWindow(app: ElectronApplication, winId: string, timeout
 
 /** The visible tab's layer: every other open tab stays mounted underneath, hidden. */
 export const layer = (w: Page) => w.locator('.tabstack__layer:not(.tabstack__layer--hidden)')
-/** The visible tab's note editor. */
+/** The visible tab's page editor. */
 export const editorOf = (w: Page) => layer(w).locator('.ProseMirror')
-/** The visible tab's folder view (YAZ-2290): the views a folder's tab shows over its notes (`section.folder-view`, FolderView.tsx). */
+/** The visible tab's folder view (YAZ-2290): the views a folder's tab shows over its pages (`section.folder-view`, FolderView.tsx). */
 export const contents = (w: Page) => layer(w).locator('.folder-view')
 export const tabsOf = (w: Page) => w.locator('.tabbar [role="tab"]')
 export const activeTab = (w: Page) => w.locator('.tabbar [role="tab"][aria-selected="true"]')
@@ -146,7 +146,7 @@ export const lensTab = (w: Page, label: 'Files') => w.locator('.sidebar__lenses 
 /** The Search tab (YAZ-2638 D2): the second tab of the row, a magnifier, so its name lives in `aria-label`. */
 export const searchTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Search"]')
 /** The search bar. It is on the Search tab only (YAZ-2638 S6): on Files, Focus and Favorites this finds nothing. */
-export const searchBar = (w: Page) => w.locator('[aria-label="Search notes"]')
+export const searchBar = (w: Page) => w.locator('[aria-label="Search pages"]')
 /**
  * Shows the Search tab by the click a user makes on it (YAZ-2638 S5) and waits for its bar. Every
  * spec calls this before it types a query: no other tab has the bar. Safe on the tab that already
@@ -175,7 +175,7 @@ export async function openFromBlankTab(w: Page, label: string): Promise<void> {
 export const menuItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
 /**
  * An item of the menu's open LIST (the flyout, `.ctx-menu__sub`) by its exact label. The create rows
- * (YAZ-3085 D1, D3) share a label with their list's first item — "New note" is both (edge case 9) —
+ * (YAZ-3085 D1, D3) share a label with their list's first item — "New page" is both (edge case 9) —
  * so `menuItem` matches two buttons while a list is open; a list item is clicked through this one.
  */
 export const menuListItem = (w: Page, label: string) => w.locator('.ctx-overlay .ctx-menu__sub [role="menuitem"]').filter({ hasText: new RegExp(`^${label}$`) })
@@ -232,7 +232,7 @@ export async function dragAbove(w: Page, source: Locator, target: Locator): Prom
 export const nextFrame = (w: Page): Promise<unknown> => w.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))))
 
 /**
- * Types ` <prefix><timestamp>` at the end of the seed note's LAST bullet and returns the marker; the
+ * Types ` <prefix><timestamp>` at the end of the seed page's LAST bullet and returns the marker; the
  * autosave is left pending. The caret goes to the line end with ⌘→: on macOS `End` does not move it,
  * it starts an animated scroll (YAZ-2131, 3ccc0cc).
  */
@@ -247,7 +247,7 @@ export async function typeMarkerAtLastBullet(w: Page, prefix: string): Promise<s
 // ---------- fixture vault ----------
 
 /** The file the smoke suite seeds open; has nested bullets so outline folding is exercisable. */
-export const SEED_FILE = 'Welcome note.md'
+export const SEED_FILE = 'Welcome page.md'
 export const SEED_BODY = 'seed-welcome-body'
 export const PARENT_BULLET = 'Parent bullet'
 export const CHILD_BULLET = 'Child bullet alpha'
@@ -279,14 +279,14 @@ export async function copyVault(src: string): Promise<string> {
   return dest
 }
 
-// ---------- a note on disk (YAZ-2420): the app builds its name as `<kebab-title>-<id>.md` ----------
+// ---------- a page on disk (YAZ-2420): the app builds its name as `<kebab-title>-<id>.md` ----------
 
 /**
- * A note id as a pattern, for finding a file whose name the app built: a number ID (YAZ-2677 D3 —
- * `YAZ-12` in the note's `id:` line, `yaz-12` in its file name), or an old 12-character ID, which
- * a note made before number IDs still holds.
+ * A page id as a pattern, for finding a file whose name the app built: a number ID (YAZ-2677 D3 —
+ * `YAZ-12` in the page's `id:` line, `yaz-12` in its file name), or an old 12-character ID, which
+ * a page made before number IDs still holds.
  */
-export const NOTE_ID = '(?:[A-Za-z]{2,5}-[1-9]\\d*|[0-9a-hjkmnp-tv-z]{12})'
+export const PAGE_ID = '(?:[A-Za-z]{2,5}-[1-9]\\d*|[0-9a-hjkmnp-tv-z]{12})'
 
 /** The one file in `dir` whose name matches, or '' while there is none or more than one. */
 export async function only(dir: string, pattern: RegExp): Promise<string> {
@@ -294,15 +294,15 @@ export async function only(dir: string, pattern: RegExp): Promise<string> {
   return hits.length === 1 ? hits[0] : ''
 }
 
-/** The one note in `dir` the app named for a title whose kebab-case is `kebab`, or '' (`only`). */
-export const builtNote = (dir: string, kebab: string): Promise<string> => only(dir, new RegExp(`^${kebab}-${NOTE_ID}\\.md$`))
+/** The one page in `dir` the app named for a title whose kebab-case is `kebab`, or '' (`only`). */
+export const builtPage = (dir: string, kebab: string): Promise<string> => only(dir, new RegExp(`^${kebab}-${PAGE_ID}\\.md$`))
 
 /** This Mac's ID in a test profile (`mac.json` in the user data folder, YAZ-2677): 12 of `[0-9a-z]`. */
 export const E2E_MAC = 'e2emac000001'
 
 /**
  * A vault that uses IDs before the app opens it (YAZ-2523 🔒 V1): its `ids.json` says yes with
- * `letters`, and this Mac is its first Mac, so the index gives each note its number at once. With
+ * `letters`, and this Mac is its first Mac, so the index gives each page its number at once. With
  * no count file no Mac is first, and the sweep waits 10 minutes (YAZ-2677 🔒 D8). A vault left as
  * it is stays plain: that is the default, and every spec that does not call this tests it.
  */
@@ -607,7 +607,7 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
  * own answer, and retry the whole thing until the two agree. Never a sleep.
  */
 
-/** The outline view's editor — a real contenteditable, the note editor's own Crepe (YAZ-901). */
+/** The outline view's editor — a real contenteditable, the page editor's own Crepe (YAZ-901). */
 export const outlineEditor = (scope: Locator) => scope.locator('.view-outline .editor-instance .ProseMirror')
 
 /**

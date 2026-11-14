@@ -13,12 +13,12 @@ import { focusOpenDocument } from '../lib/focusHandoff'
 import { pageName, useAllPathTitles } from '../lib/pageLabel'
 import { absFrom, basename, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { countLinkReferences, linkingNotes } from '../links/renameLinks'
+import { countLinkReferences, linkingPages } from '../links/renameLinks'
 import { addShortcut, removeShortcut, type Move } from '../links/shortcuts'
 import type { MovedGesture } from '../lib/moveHistory'
 import { ancestorDirs, favoriteRoots, findDirNode, findNode, firstCopy, pinnedRoots, treeHasFile } from '../lib/treeState'
 import { SEARCH_CAP, type SearchCandidate } from '../search/searchCandidates'
-import { landOnCard } from '../editor/noteCard/noteCardOpen'
+import { landOnCard } from '../editor/card/cardOpen'
 import { filterOn, filterSection, NO_FILTER, typeChip, typeFlyout, type SearchFilter, type SearchType } from '../search/searchFilter'
 import { useReviewOnRoots } from '../review/useReviewSettings'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
@@ -92,10 +92,10 @@ export interface SidebarVault {
   index: WikilinkResolveSource
   /** This vault's "Show IDs in search" (YAZ-4940), read when the search rows draw; absent → only on a row found by its ID. */
   idsInSearch?: () => IdsInSearch
-  /** This vault's "Show IDs in the files list" (YAZ-4940): each note row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
+  /** This vault's "Show IDs in the files list" (YAZ-4940): each page row of Files, Focus and Favorites ends with its ID's number ("#12") or the full ID. Absent → off. */
   idsInFiles?: IdsInFiles
   /**
-   * Whether this vault has note card review on (Settings › Review, YAZ-4967). Off — or a vault that gives no IDs, so
+   * Whether this vault has card review on (Settings › Review, YAZ-4967). Off — or a vault that gives no IDs, so
    * has no cards (D8) — it has no Inbox row, and no "Review this folder" or "Review this page".
    */
   review: boolean
@@ -166,7 +166,7 @@ interface SidebarProps {
   onPreview: (path: string | null) => void
   /** The new tab page's Space panel shows (YAZ-2663 S39): no hover preview, as with the search's (YAZ-3403). */
   pagePreviewShown?: boolean
-  /** The text formatting of the vault that holds a path (YAZ-3067 D12): App's `textVarsFor`, which a note's hover preview wears (YAZ-3075 C20). */
+  /** The text formatting of the vault that holds a path (YAZ-3067 D12): App's `textVarsFor`, which a page's hover preview wears (YAZ-3075 C20). */
   textVarsFor: (path: string) => CSSProperties
   /** "Open folder…" — the last row of the header's vault switcher (YAZ-1767 D4) — runs App's picker; the picked vault opens beside (YAZ-1914). */
   onPickFolder: () => void
@@ -221,8 +221,8 @@ interface SidebarProps {
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
-  /** The footer's "Open today's daily note" (YAZ-3607 D7), a background tab on ⌘-click (YAZ-3776); absent while Daily notes is off. */
-  onOpenDailyNote?: (background: boolean) => void
+  /** The footer's "Open today's daily page" (YAZ-3607 D7), a background tab on ⌘-click (YAZ-3776); absent while Daily pages is off. */
+  onOpenDailyPage?: (background: boolean) => void
   /** The updater's state (YAZ-2976 D4): App reads it once for the window, and the footer shows its pill beside the cog. */
   update: UpdateState
   /** The pill's click: App mounts the "What's new" sheet (D5), as it does the settings dialog. */
@@ -298,7 +298,7 @@ interface SidebarProps {
    * (YAZ-3254 D9B, S26): App's box asks whether the vault keeps them. A cancelled drag looks the same (S29).
    */
   onDraggedOut: (paths: string[]) => void
-  /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a note or a folder. */
+  /** A title edit (YAZ-2420 🔒 D16), to the same door: the inline rename of a page or a folder. */
   onRetitle: (path: string, title: string, kind: TreeNode['type']) => Promise<void>
   /**
    * Delete confirmed (GRO-2272) — by the menu or by ⌘⌫ (YAZ-3272 D20): App's ONE list delete door
@@ -532,9 +532,9 @@ export interface MenuTargets {
   iconRuleSet: boolean
   /** True only when EVERY `favoritePaths` entry is already a favorite — a mixed selection reads as Add. */
   favoriteIsOn: boolean
-  /** "Review this folder" (YAZ-2322) — FOLDER rows only: a review is of the notes inside one. */
+  /** "Review this folder" (YAZ-2322) — FOLDER rows only: a review is of the pages inside one. */
   reviewDir: string | null
-  /** "Review this page" (YAZ-4967) — a PAGE row that holds a note card, outside a plural selection; null for every other row. */
+  /** "Review this page" (YAZ-4967) — a PAGE row that holds a card, outside a plural selection; null for every other row. */
   reviewPage: string | null
   /** The `reviewPage` row is a card file (YAZ-5037): the item reads "Review this card". */
   reviewCard?: boolean
@@ -544,13 +544,13 @@ export interface MenuTargets {
    */
   cardDir?: string | null
   /**
-   * "Add note shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
-   * picked note will also appear in. Null on a file row, on blank space and inside a 2+
+   * "Add page shortcut" — a FOLDER row outside a plural selection (YAZ-2290 D2): the folder the
+   * picked page will also appear in. Null on a file row, on blank space and inside a 2+
    * selection. Equal to `openPath` today; its OWN field, per this split's doctrine.
    */
   shortcutDir: string | null
   /**
-   * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the note and the folder it stands in.
+   * "Remove shortcut" — a SHORTCUT row only (YAZ-2290 E5): the page and the folder it stands in.
    * Such a row has no `deletePaths` (it is deleted from where it lives), no `renamePath` (the inline
    * input is the real row's) and no `clipPaths` (it is not a file in this folder), whatever the
    * selection holds.
@@ -585,32 +585,32 @@ export interface MenuTargets {
   showPath: string | null
   /**
    * "Info" (YAZ-3028 D11, Draw's 🔒 YAZ-1835 D6) — ONE drawing or diagram row outside a plural
-   * selection: the board whose Info popover opens. Null on a note, a folder, a shortcut row, blank
+   * selection: the board whose Info popover opens. Null on a page, a folder, a shortcut row, blank
    * space and a 2+ selection. Its OWN field.
    */
   infoPath: string | null
 }
 
 /**
- * Notes and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
+ * Pages and subfolders inside `dir`, counted RECURSIVELY from the already-loaded tree
  * (GRO-2272 `C3-`) — a delete takes the whole subtree, so a shallow count would understate
  * what the user is about to lose. No fetch: the sidebar already holds this tree.
  */
-export function countChildren(nodes: readonly TreeNode[], dir: string): { notes: number; folders: number } {
+export function countChildren(nodes: readonly TreeNode[], dir: string): { pages: number; folders: number } {
   const found = findDirNode(nodes, dir)
-  if (found?.type !== 'dir') return { notes: 0, folders: 0 }
-  let notes = 0
+  if (found?.type !== 'dir') return { pages: 0, folders: 0 }
+  let pages = 0
   let folders = 0
   const walk = (children: readonly TreeNode[]): void => {
     for (const child of children) {
       if (child.type === 'dir') {
         folders++
         walk(child.children)
-      } else notes++
+      } else pages++
     }
   }
   walk(found.children)
-  return { notes, folders }
+  return { pages, folders }
 }
 
 /** The keys of the search, as the empty Search tab lists them (YAZ-2662 D10, S59): the keycaps of a row, and what they do. */
@@ -624,7 +624,7 @@ const SEARCH_KEYS: readonly (readonly [keys: readonly string[], does: string])[]
   [['esc'], 'Back to the page'],
 ]
 
-/** Which note is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
+/** Which page is a shortcut where, as one comparable string: all a shortcut row draws is its path. */
 const shortcutStamp = (shortcuts: ReadonlyMap<string, readonly TreeNode[]>): string => JSON.stringify([...shortcuts].map(([dir, rows]) => [dir, rows.map((row) => row.path)]))
 
 /** The search tree's file move (S32, YAZ-2620): nothing there drags to disk, so every callback is a no-op and nothing is ever a drop target. */
@@ -696,7 +696,7 @@ export function Sidebar({
   settings,
   onChangeSettings,
   onOpenSettings,
-  onOpenDailyNote,
+  onOpenDailyPage,
   update,
   onOpenWhatsNew,
   onRestoreSession,
@@ -861,7 +861,7 @@ export function Sidebar({
   const infoPath = infoPopover?.path ?? null
   // The delete confirm sheet's target (GRO-2272 `C3-`); null when the sheet is closed.
   const [confirmingDelete, setConfirmingDelete] = useState<DeleteTarget | null>(null)
-  // The folder "Add note shortcut" is picking a note for (YAZ-2290 D2); null when the picker is closed.
+  // The folder "Add page shortcut" is picking a page for (YAZ-2290 D2); null when the picker is closed.
   const [pickingShortcut, setPickingShortcut] = useState<string | null>(null)
   const seenRevealId = useRef<number | null>(null)
   const handledFilesRevealId = useRef<number | null>(null)
@@ -953,7 +953,7 @@ export function Sidebar({
   // Enter in the search bar, on a file: the highlighted row's page opens as a tab.
   // The tree rows' rule (YAZ-961): the first Enter PREVIEWS — focus stays in the bar, so ↑/↓ carry
   // on — and a second on the page already open is the deliberate "take me in". A CLICK is the tree
-  // row's own (YAZ-2620 🔒 D1): it opens a note the same way, and folds a folder.
+  // row's own (YAZ-2620 🔒 D1): it opens a page the same way, and folds a folder.
   // The row is the search tree's own: a match, or a row of a folder that shows all (YAZ-2662 S52).
   const activate = (row: TreeNode, background: boolean, reveal: boolean) => {
     // Enter on a folder, and Shift+Enter on any row, show the row in Files with the keyboard focus on
@@ -985,14 +985,14 @@ export function Sidebar({
   searchCardNow.current = openSearchCard
   const openTreeCard = useCallback((row: SearchCandidate, background: boolean) => searchCardNow.current(row, background), [])
   // The search covers every vault of the window (YAZ-2602 R2): each one's index, read by its own
-  // watcher, its own folders and its own files that are no notes. The tree it cuts is the one Files
+  // watcher, its own folders and its own files that are no pages. The tree it cuts is the one Files
   // draws — the forest, with two or more vaults (A9).
   // Each vault's "Show IDs in search" getter rides with its search feed (YAZ-4940), read when the rows draw. Through a
   // ref: `vaults` is a new array each render of App, and the feed's list must stay the same object while nothing in
   // it changed (YAZ-2194: a render that changes nothing for the search re-renders no row).
   const vaultsNow = useRef(vaults)
   vaultsNow.current = vaults
-  // A folder of a vault (YAZ-4922 D3): the search reads the vault's index and finds the folder's notes only.
+  // A folder of a vault (YAZ-4922 D3): the search reads the vault's index and finds the folder's pages only.
   const searchFolders = useSameList(vaults.map((vault) => vault.folder))
   // The vaults whose Review is on (YAZ-5037): their cards are search rows, and the Type menu offers Cards.
   const reviewRoots = useReviewOnRoots(roots)
@@ -1103,7 +1103,7 @@ export function Sidebar({
       // Where the key was pressed: nowhere is the body, or a part of the panel that is no row and no field.
       const on = e.target instanceof Element ? e.target : null
       const nowhere = on === null || on === document.body || on === document.documentElement || (on.closest('.sidebar') !== null && !on.matches('.tree__row, input, textarea, select, [contenteditable]'))
-      // A page holds the keys (YAZ-3127, YAZ-3140): the reader's selection in a note page is not "nowhere".
+      // A page holds the keys (YAZ-3127, YAZ-3140): the reader's selection in a page page is not "nowhere".
       if (!nowhere || pageHoldsKeys(on) || document.querySelector('[aria-modal="true"]') !== null) return
       if (e.key === 'ArrowRight') {
         if (onLeaveToPage?.() === true) e.preventDefault()
@@ -1318,7 +1318,7 @@ export function Sidebar({
   /** A rename that a tab's menu started (YAZ-4248): its field flashes as the row did (below, once `renaming` is known). */
   const renameFlash = useRef(false)
 
-  // ---- New note / new folder (GRO-2022): right-click menu → inline name input ----
+  // ---- New page / new folder (GRO-2022): right-click menu → inline name input ----
 
   // The ONE builder of the row menu, by the row and the point: a right-click in the panel
   // (`openMenu`) and a menu request (YAZ-2663 D6). `outside` is a row that is not the panel's — a
@@ -1363,7 +1363,7 @@ export function Sidebar({
       // Only a ROW opens a menu on the Search tab (blank space there offers none), and a search row is a disk row.
       const asSearch = searching || outside
       const menuLens: SidebarLens = asSearch ? 'files' : lens
-      // A shortcut row (YAZ-2290 E5): `node.path` is the note where it LIVES, this the folder the row stands in.
+      // A shortcut row (YAZ-2290 E5): `node.path` is the page where it LIVES, this the folder the row stands in.
       const shortcutIn = node?.shortcutIn ?? null
       // "Change icon ▸" (YAZ-3440 D8, D9): the row or its selection (never a vault row, a shortcut row or blank space), and the one name rule its rows want.
       const iconPaths = node === null || vaultRow !== null || shortcutIn !== null || holdsVault ? null : plural ?? [node.path]
@@ -1399,7 +1399,7 @@ export function Sidebar({
         // below is exactly the divergence the split exists for.
         //
         // Blank space copies the vault ROOT (GRO-2273): the blank area already means "the
-        // root" everywhere else here (`targetDirFor` sends "New note" there), and VS Code's
+        // root" everywhere else here (`targetDirFor` sends "New page" there), and VS Code's
         // empty-Explorer menu does the same. Trailing separators are stripped so the copied
         // bytes match the root the rest of the app uses.
         copyPath: node?.path ?? blank,
@@ -1439,7 +1439,7 @@ export function Sidebar({
         reviewDir: cardsOn && node?.type === 'dir' && vaultRow === null ? node.path : null,
         reviewPage,
         reviewCard: pageRecord?.kind === 'card',
-        // A shortcut is a folder's ID on a note: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
+        // A shortcut is a folder's ID on a page: offered only where the vault uses IDs (YAZ-2523 🔒 V5).
         shortcutDir: home.index.ids && plural === null && node?.type === 'dir' && vaultRow === null ? node.path : null,
         removeShortcut: node === null || shortcutIn === null ? null : { path: node.path, dir: shortcutIn },
         // The known vaults that are not in this window (YAZ-2602 D2), in the order of the ⌘O list, read as the menu opens.
@@ -1496,8 +1496,8 @@ export function Sidebar({
    * Both come from data already in hand — the loaded tree and the vault index — so the delete
    * path makes no extra fetch. When the index is unavailable the backlink line is simply
    * omitted (`backlinks: undefined`): a missing count must never block a delete. For two or more
-   * items the count is of the notes outside them whose links reach any of them, each note once
-   * (`linkingNotes`, as the drag-out box counts, YAZ-3254 D9B).
+   * items the count is of the pages outside them whose links reach any of them, each page once
+   * (`linkingPages`, as the drag-out box counts, YAZ-3254 D9B).
    */
   const openDelete = useCallback(
     (paths: string[], asked: boolean) => {
@@ -1526,8 +1526,8 @@ export function Sidebar({
             const { records, folders, ids } = indexes.get(vault)!
             return { ids, root: vault, oldPath: path, kind: kindOf(path), records, folders, dirs: dirsOf(vault) }
           }
-          const inside = (note: string) => paths.some((item) => note === item || note.startsWith(`${item}/`))
-          const n = paths.length === 1 ? countLinkReferences(about(first)) : new Set(paths.flatMap((path) => linkingNotes(about(path)).filter((note) => !inside(note)))).size
+          const inside = (page: string) => paths.some((item) => page === item || page.startsWith(`${item}/`))
+          const n = paths.length === 1 ? countLinkReferences(about(first)) : new Set(paths.flatMap((path) => linkingPages(about(path)).filter((page) => !inside(page)))).size
           setConfirmingDelete((current) => (current === target ? { ...current, backlinks: n } : current))
         },
         () => undefined,
@@ -1776,7 +1776,7 @@ export function Sidebar({
   // Blank space is one vault's root only in a window with one vault, and only on a tab that has a tree of it (YAZ-3247 D12).
   const blankDrop = !multi && !searching && lens !== 'sessions' && lens !== 'recents'
 
-  // The active vault's word for a note (YAZ-4938), for the panel's own words; a row's menu and its delete ask read the row's vault.
+  // The active vault's word for a page (YAZ-4938), for the panel's own words; a row's menu and its delete ask read the row's vault.
   const unit = useVaultUnit(root)
   return (
     <UnitContext.Provider value={unit}>
@@ -1841,7 +1841,7 @@ export function Sidebar({
           </button>
         )}
       </div>
-      {/* The Inbox (YAZ-4967), with note card review on: above the tabs, so it shows on every tab — the Search tab too.
+      {/* The Inbox (YAZ-4967), with card review on: above the tabs, so it shows on every tab — the Search tab too.
           One row per vault that has it (YAZ-2602 R5), in vault order; two or more say whose each is. Silent with no card due. */}
       {inboxes.map((vault) => {
         const label = inboxes.length > 1 ? `Inbox · ${vault.name}` : 'Inbox'
@@ -1895,7 +1895,7 @@ export function Sidebar({
             type="text"
             placeholder="Search"
             title={titleWithKey('Search', 'search', settings.hotkeys)}
-            aria-label={unit('Search notes')}
+            aria-label={unit('Search pages')}
             spellCheck={false} // a search is names, not prose: no red line under `yaseen` (YAZ-3748 B2)
             value={query}
             onChange={changeQuery}
@@ -1931,7 +1931,7 @@ export function Sidebar({
           onClear={() => (onRecentVault?.(null), onRecentType?.('all'))}
         />
       )}
-      {/* The blank-space menu is the TREE's ("New note" here creates in the vault root); the
+      {/* The blank-space menu is the TREE's ("New page" here creates in the vault root); the
           Search tab has no such target, so right-clicking its blank space offers nothing (YAZ-803)
           — not even Electron's text menu, which leaked through until YAZ-2050. Its ROWS get the
           full menu. Blank space means the same thing in every lens: the vault ROOT. */}
@@ -2033,7 +2033,7 @@ export function Sidebar({
           // The Search tab with an empty bar (YAZ-2638 D2): one line, the keys of the search below it
           // (YAZ-2662 D10), and no tree.
           <>
-            <p className="sidebar__msg">{unit('Type to search every note and folder.')}</p>
+            <p className="sidebar__msg">{unit('Type to search every page and folder.')}</p>
             <dl className="sidebar__keys">
               {SEARCH_KEYS.map(([keys, does]) => (
                 <Fragment key={does}>
@@ -2051,7 +2051,7 @@ export function Sidebar({
           // The Search tab with text typed (YAZ-2638 D2): its body is the Files tree cut down to
           // the matches and their parents (YAZ-2620 🔒 D1): full tree rows,
           // each with its own menu. The folds and the highlight are the search's own; nothing here
-          // creates, renames or drags, and a note shows once, where it lives (S7). Only this tree
+          // creates, renames or drags, and a page shows once, where it lives (S7). Only this tree
           // gets `marks` (🔒 D5): the typed text bold in a match, every other row dim. With two or
           // more vaults each match stands under its vault's row, a parent like any folder (YAZ-2602 A9).
           // The matches of the pinned items are a group of their own, first and under its label
@@ -2215,7 +2215,7 @@ export function Sidebar({
             {errorLines}
             {forest === null && errors.length === 0 && <p className="sidebar__msg">Loading…</p>}
             {forest !== null && forest.length === 0 && pending === null && (
-              <p className="sidebar__msg">{unit('No notes here.')}</p>
+              <p className="sidebar__msg">{unit('No pages here.')}</p>
             )}
             {/* One vault → its tree. Two or more → one row per vault (YAZ-2602 D3), and a vault row drags to reorder (YAZ-2631 D5). */}
             {forest !== null && <Tree {...treeProps} nodes={forest} move={fileMove} reorder={multi ? reorder : undefined} sort={sort} />}
@@ -2227,9 +2227,9 @@ export function Sidebar({
         {/* The zoom chip (YAZ-3432): its menu zooms the lists above (YAZ-3389: one value for every full window, a Files
             window's own, D13) and sets the App size of every window. */}
         <ZoomMenu sidebar={zoomValue} onSidebar={onZoom} app={settings.appZoom} onApp={changeAppZoom} onOpenChange={onZoomMenu} />
-        {onOpenDailyNote !== undefined && (
-          // YAZ-3607 D7: today's daily note in one click, the same as ⌘D on "Today's daily note".
-          <button type="button" className="sidebar__daily" title="Open today's daily note (⌘-click: background tab)" aria-label="Open today's daily note" onClick={(e) => onOpenDailyNote(e.metaKey)}>
+        {onOpenDailyPage !== undefined && (
+          // YAZ-3607 D7: today's daily page in one click, the same as ⌘D on "Today's daily page".
+          <button type="button" className="sidebar__daily" title="Open today's daily page (⌘-click: background tab)" aria-label="Open today's daily page" onClick={(e) => onOpenDailyPage(e.metaKey)}>
             <CalendarIcon />
           </button>
         )}
@@ -2370,15 +2370,15 @@ export function Sidebar({
                 if (menu.targetDir !== null) void pasteInto(menu.targetDir, menu.lens === 'files' ? undefined : (menu.top ?? undefined))
               },
               onNotice,
-              onNewNote: viaTree(() => startCreate('file')),
-              onNewDatedNote: viaTree(() => startCreate('file', datedSeed())),
+              onNewPage: viaTree(() => startCreate('file')),
+              onNewDatedPage: viaTree(() => startCreate('file', datedSeed())),
               onNewFolder: viaTree(() => startCreate('dir')),
               onNewDatedFolder: viaTree(() => startCreate('dir', datedSeed())),
               // The boards (YAZ-3028 D9): name first, then the empty board, then its tab.
               onNewDrawing: viaTree(() => startCreate('drawing')),
               onNewDatedDrawing: viaTree(() => startCreate('drawing', datedSeed())),
               onNewDiagram: viaTree(() => startCreate('diagram')),
-              // A card file (YAZ-5101): the name box first, as New note's; the menu's folder is the card's (`cardDir`).
+              // A card file (YAZ-5101): the name box first, as New page's; the menu's folder is the card's (`cardDir`).
               onNewCard: viaTree(() => startCreate('card')),
               onToggleFavorite: toggleFavorite,
               onReviewFolder,

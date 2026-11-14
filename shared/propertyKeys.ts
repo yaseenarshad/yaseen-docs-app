@@ -1,9 +1,9 @@
 /**
  * One key, capitals ignored (YAZ-4769, option B): property and column keys that differ only by letter case, or by
  * spaces at either end, are THE SAME key everywhere in the app — `Dessert Column` on Recipes and `dessert column` on
- * Desserts are one column, and a note's `dessert column` is that column's value. A file keeps whatever spelling it
- * has: the app folds only to compare (`keyFold`). A write under one spelling removes the note's other spellings of the
- * key in the same file write (`setOneSpelling`), so stray spellings go as notes are edited. Nothing is migrated.
+ * Desserts are one column, and a page's `dessert column` is that column's value. A file keeps whatever spelling it
+ * has: the app folds only to compare (`keyFold`). A write under one spelling removes the page's other spellings of the
+ * key in the same file write (`setOneSpelling`), so stray spellings go as pages are edited. Nothing is migrated.
  *
  * The app's own keys (`reservedKeys`: `id`, `title`, `in`, …) keep their exact spelling: a caller passes them as
  * `keep`, and no fold ever removes or renames one.
@@ -56,8 +56,8 @@ export function spellings(keys: Iterable<string>): Map<string, string> {
 }
 
 /**
- * A note's values with each key that is one of `spell`'s keys under that key's spelling (a page's columns): a note's
- * `dessert column` reads as the page's `Dessert Column`. When a note holds two spellings, the column's own wins, else
+ * A page's values with each key that is one of `spell`'s keys under that key's spelling (a page's columns): a page's
+ * `dessert column` reads as the page's `Dessert Column`. When a page holds two spellings, the column's own wins, else
  * the first; the other stays in the file and is not shown. `skip` (the app's keys) is never moved. The same object
  * when nothing moves, so a memoized row stays the same row.
  */
@@ -78,7 +78,7 @@ export function respell(properties: Record<string, unknown>, spell: ReadonlyMap<
 /**
  * Set (or delete, `value === undefined`) ONE key of a whole file's frontmatter under ONE spelling: `key`'s. Any other
  * spelling of it at the top level goes in the same change — the first is renamed to `key` in place (its line, its
- * comment), the rest are removed — so the note holds the key once. `keep` (the app's keys) is never touched.
+ * comment), the rest are removed — so the page holds the key once. `keep` (the app's keys) is never touched.
  */
 export function setOneSpelling(content: string, key: string, value: unknown, keep?: ReadonlySet<string>): string {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)

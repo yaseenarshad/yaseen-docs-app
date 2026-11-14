@@ -128,7 +128,7 @@ describe('getIndex + persistent cache (GRO-2228/2229)', () => {
   it('watcher mutations schedule persists: after a flush the cache file reflects them', async () => {
     await getIndex(root)
     await watcherReady(root) // the test above evicted, so this watcher may still be scanning
-    const live = path.join(root, 'Live Note.md')
+    const live = path.join(root, 'Live Page.md')
     await writeFile(live, '# Live\n')
     await until(async () => (await getIndex(root)).records.some((r) => r.path === live))
     await flushIndexCache()
@@ -215,7 +215,7 @@ describe('stale-cache torture (GRO-2230): heavy offline mutation, cache-assisted
     await rename(creatorOld, creatorNew)
     await writeFile(born, '# New\n#offline [[VSL-v1]]\n')
     await mkdir(path.join(pillars, '5. New Pillar'))
-    await writeFile(fresh, '---\npillar: New\n---\n\nFresh note in a folder born offline.\n')
+    await writeFile(fresh, '---\npillar: New\n---\n\nFresh page in a folder born offline.\n')
     // Same size, new content (mtime is the only tell):
     const levelsBase = '# Levels rewritten offline\n\n#same-size\n'
     await writeFile(levels, levelsBase + '.'.repeat(cached.get(levels)!.size - levelsBase.length))
@@ -289,7 +289,7 @@ describe('the persisted payload is version/root/records and nothing else', () =>
   })
 })
 
-// A folder's settings record rides the same cached map as the notes (YAZ-2290 D8): no payload key
+// A folder's settings record rides the same cached map as the pages (YAZ-2290 D8): no payload key
 // of its own, no CACHE_VERSION bump, and a warm start serves it without reading the file.
 describe('folder settings survive a cold start from cache', () => {
   let root: string

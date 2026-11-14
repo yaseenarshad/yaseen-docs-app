@@ -22,10 +22,10 @@ export interface GalleryImage {
 }
 
 export interface ImageOptions {
-  /** Vault root (absolute); with the note's directory it is what a relative `src` resolves against. */
+  /** Vault root (absolute); with the page's directory it is what a relative `src` resolves against. */
   root: string
-  /** ABSOLUTE path of the note this editor shows; its directory is the `from` of every relative src. */
-  notePath: string
+  /** ABSOLUTE path of the page this editor shows; its directory is the `from` of every relative src. */
+  pagePath: string
   /**
    * Double-click on a rendered image: every image on the page in document order plus the one
    * clicked (the lightbox pages through them). Absent → double-click is inert.
@@ -39,7 +39,7 @@ export interface ImageOptions {
 
 /** How the image node finds and opens a board in any vault of the window (YAZ-4828), as the Markdown link pill does. */
 export interface ImageBoards {
-  /** The board's vault root and absolute path, and that vault's name when it is not the note's; null outside the window's vaults. */
+  /** The board's vault root and absolute path, and that vault's name when it is not the page's; null outside the window's vaults. */
   place: (src: string) => { root: string; path: string; vault: string | null } | null
   /** The pill icon's attributes (`fileIconDecoration`). */
   icon?: (path: string) => Record<string, string>

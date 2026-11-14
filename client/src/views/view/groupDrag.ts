@@ -32,12 +32,12 @@ export interface PendingWrite {
   key: string
   /** The raw YAML value written; undefined = the key was deleted ("No value" drop). */
   value: unknown
-  /** The note's raw value when the move was committed; the entry clears when the index moves off it. */
+  /** The page's raw value when the move was committed; the entry clears when the index moves off it. */
   prevRaw: unknown
 }
 
 /**
- * One committed-but-not-yet-indexed move, keyed by note path in ViewsPane's state. A drop into a
+ * One committed-but-not-yet-indexed move, keyed by page path in ViewsPane's state. A drop into a
  * different branch (🔒 YAZ-745, every level since YAZ-4531) carries one write per level that
  * differs, innermost first: they apply, clear and — on any one failing — drop as a single unit, so
  * the row is never left half-moved.
@@ -45,7 +45,7 @@ export interface PendingWrite {
 export type PendingMove = PendingWrite[]
 
 /**
- * The bare frontmatter key `groupBy` names at `level`, or null when THAT level is not a note
+ * The bare frontmatter key `groupBy` names at `level`, or null when THAT level is not a page
  * property — what a drop there writes, and what its group "+" seeds. Null disables the level's
  * own drag and "+" (YAZ-1101) while the other level keeps working.
  */
@@ -62,7 +62,7 @@ export const groupsByFolder = (view: ViewDef, level = 0): boolean => {
   return typeof property === 'string' && canonicalKey(property) === 'file.folder'
 }
 
-/** Whether a level's groups take a new note: one it can seed, or — grouped by Folder — place. */
+/** Whether a level's groups take a new page: one it can seed, or — grouped by Folder — place. */
 export const groupTakesNew = (view: ViewDef, level: number, columns: Readonly<Record<string, PropertyDecl>>): boolean => groupByKey(view, level, columns) !== null || groupsByFolder(view, level)
 
 /** `records` with the pending moves patched in, for the engine (same clearing discipline as 5B). */
@@ -128,7 +128,7 @@ export interface GroupDrag {
   over: string | null
   /**
    * Spread on each draggable card/row, with the group it is being dragged out of and where that group
-   * sits. `locked` (a read-only note, YAZ-3076 D6 S53) makes it no drag source: a move writes a property.
+   * sits. `locked` (a read-only page, YAZ-3076 D6 S53) makes it no drag source: a move writes a property.
    */
   source: (path: string, group: Group, at?: GroupSpot, locked?: boolean) => Record<string, unknown>
   /** Spread on each column/section drop target (a group's own rows included — events bubble). */

@@ -37,7 +37,7 @@ open desktop/dist-app/*.dmg
 ## App state — where it lives, how to reset it
 
 - ONE user-global file, owned by the main process: `~/Library/Application Support/Yaseen Docs/yaseendocs.json` (settings, recents, open windows with their vaults, tabs and sidebar lens, per-folder view state, saved workspaces — schema in `docs/CONTRACTS.md` "App state"). Nothing is ever stored in the browser profile.
-- These things live in the vault, by design: they are the user's own data rather than app state, so they travel with the notes and stay after a quit. Each one is created lazily on its first write; reading creates nothing.
+- These things live in the vault, by design: they are the user's own data rather than app state, so they travel with the pages and stay after a quit. Each one is created lazily on its first write; reading creates nothing.
   - `<folder>/.folder.md`: a folder's settings — its views and columns under the single `folder_settings` key, with the folder's own properties and comments beside them (frontmatter only; created by the first change, never by opening the folder).
   - `<vault>/.yaseendocs/properties.json`: the vault-wide property declarations, in the `.obsidian`-style dotfolder.
   - `<vault>/.yaseendocs/favorites.json`: the Favorites (YAZ-1766).
@@ -45,8 +45,8 @@ open desktop/dist-app/*.dmg
   - `<vault>/.yaseendocs/focus.<mac id>.json`: the focus list, one file for each Mac; the newest file is the list, and no window holds one (YAZ-2702).
   - `<vault>/.yaseendocs/shares.json`: which boards are shared as links, and their ids (YAZ-3040). Sync merges it per entry.
   - `<vault>/.yaseendocs/github.json`: the vault's sync switch (YAZ-1081).
-  - `<vault>/assets/<sha1>.<ext>`: the pictures inside drawings, one file per picture by its hash (Draw's store, kept where Draw put it; YAZ-3028). Note images stay in `assets/images/`.
-  - A change of a list file starts a GitHub sync, as a note edit does (YAZ-2706). Sync never edits the vault's `.gitignore` (YAZ-3044 A3); the board merge rule lives in `.git/info/attributes`, this machine only.
+  - `<vault>/assets/<sha1>.<ext>`: the pictures inside drawings, one file per picture by its hash (Draw's store, kept where Draw put it; YAZ-3028). Page images stay in `assets/images/`.
+  - A change of a list file starts a GitHub sync, as a page edit does (YAZ-2706). Sync never edits the vault's `.gitignore` (YAZ-3044 A3); the board merge rule lives in `.git/info/attributes`, this machine only.
   - Everything else about a vault stays in the state file above — the order of the Favorites and of the focus rows ACROSS the vaults of one window too (`favoritesOrder`, `focusOrder`), which is per Mac.
 - Beside the state file, in the same app-data folder (YAZ-3028; most ported from Draw), each made lazily:
   - `secrets.json` (YAZ-3038, YAZ-3040): the Pixabay API key, the Cloudflare API token and the share upload password. Owner-only (0600), plain text, never sent to a renderer.
@@ -84,7 +84,7 @@ npm run perf -- all --runs 5 --app <after.app> --vs <before.app>   # local perf 
 
 - If `npm` isn't in the shell's PATH (agent shells often lack it), use its install location directly — e.g. `/opt/homebrew/bin/npm` (ARM mac), `/usr/local/bin/npm` (Intel mac), or the Volta/nvm/fnm install under `$HOME`.
 
-### Agent note: live checks
+### Agent page: live checks
 
 The preview tool is gone — there is no browser mode and no URL to point one at. A check must never take Yasin's mouse, keyboard or focus, so do not drive the app with Playwright unless he asks for that run. Check a running app over its debug port:
 

@@ -4,7 +4,7 @@
  *
  * `App.tsx` hands the setting in and gives the door that saves it; the panel counts each custom pick here. The
  * count lands here at once, so an open panel shows it before the setting comes back. No editor import: App reads
- * this before any note opens.
+ * this before any page opens.
  */
 import { HIGHLIGHT_CUSTOM_COLORS_KEPT, HIGHLIGHT_CUSTOM_COLORS_SHOWN, type HighlightCustomColor } from '@shared/types'
 
@@ -44,7 +44,7 @@ export function countUse(list: readonly HighlightCustomColor[], color: string): 
 }
 
 /** One custom pick: counted here, then saved. */
-export function noteHighlightColorUse(color: string): void {
+export function recordHighlightColorUse(color: string): void {
   used = countUse(used, color)
   save([...used])
 }

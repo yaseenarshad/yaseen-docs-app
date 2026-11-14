@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { undo } from '@milkdown/kit/prose/history'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { getMarkdownForSave } from '../../createCrepe'
-import { mountNote, unmountAll } from '../tableTestKit'
+import { mountPage, unmountAll } from '../tableTestKit'
 import { loadSuperTable } from '../tableZoomPill'
 import { setActiveTab } from './superTables'
 
@@ -27,7 +27,7 @@ const tablePos = (view: EditorView): number => {
 const wait = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function showView(view: string, name: string) {
-  const m = await mountNote(TABLE + COMMENT(view))
+  const m = await mountPage(TABLE + COMMENT(view))
   await loadSuperTable()
   setActiveTab(m.view, tablePos(m.view), name)
   await wait()

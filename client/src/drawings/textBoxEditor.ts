@@ -1,6 +1,6 @@
 /**
- * THE TEXT BOX EDITOR (YAZ-4277 D1): the engine's `textEditor`. A drawing text box edits with the notes engine —
- * the same `createCrepe` a note uses — mounted in the root the engine places over the box.
+ * THE TEXT BOX EDITOR (YAZ-4277 D1): the engine's `textEditor`. A drawing text box edits with the pages engine —
+ * the same `createCrepe` a page uses — mounted in the root the engine places over the box.
  *
  * INVISIBLE BY DESIGN (YAZ-4300 decision): the canvas keeps drawing the box while it is edited, so no letter moves
  * when the edit starts or ends. This editor takes the keys, the selection and the IME only; the engine's CSS makes it
@@ -35,7 +35,7 @@ import './textBoxEditor.css'
 type HostTextEditor = NonNullable<ComponentProps<ExcalidrawModule['Excalidraw']>['textEditor']>
 type Selection = Parameters<HostTextEditor['mount']>[0]['selection']
 
-/** The note features minus the blocks a box cannot hold. The pop-up toolbar and the `/` menu (BlockEdit) stay (D4, D8). */
+/** The page features minus the blocks a box cannot hold. The pop-up toolbar and the `/` menu (BlockEdit) stay (D4, D8). */
 export const textBoxFeatures: Record<CrepeFeature, boolean> = {
   ...features,
   [CrepeFeature.Table]: false,
@@ -83,13 +83,13 @@ const textColorButtons = (builder: ToolbarBuilder) => {
 /** The pop-ups Crepe puts beside its view; they move out of the root, which is invisible and zoomed (1C). */
 const POPUPS = '.milkdown-toolbar, .milkdown-slash-menu'
 
-/** Escape and ⌘Enter end the edit in the engine; here they only keep the note keys (Escape to the sidebar) off. */
+/** Escape and ⌘Enter end the edit in the engine; here they only keep the page keys (Escape to the sidebar) off. */
 const endKeys = $shortcut(() => ({
   Escape: () => true,
   'Mod-Enter': () => true,
 }))
 
-/** D3: ⌘Z never undoes a fold in a box (a note's ⌘Z right after a fold does): the plain undo, before the note's key. */
+/** D3: ⌘Z never undoes a fold in a box (a page's ⌘Z right after a fold does): the plain undo, before the page's key. */
 const plainUndo = $shortcut(() => ({
   BoxUndo: { key: 'Mod-z', priority: 200, onRun: () => undo },
 }))
@@ -154,7 +154,7 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
                 const changed = next.text !== reported.text || !sameRuns(next.textRuns, reported.textRuns)
                 const moved = anchor !== reported.anchor || head !== reported.head
                 reported = { ...next, anchor, head }
-                // the note's fold state, mapped through each change: the folded items' lines now (YAZ-4306); a caret
+                // the page's fold state, mapped through each change: the folded items' lines now (YAZ-4306); a caret
                 // move keeps the same document and the same fold state, so no fold can move
                 const collapsed = outlineCollapsedPositions(view.state)
                 const folds = doc === prev.doc && collapsed === outlineCollapsedPositions(prev) ? reportedFolds : itemLines(doc, collapsed, helpers)
@@ -168,13 +168,13 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
           }),
       )
 
-      // the note keys as the user set them (YAZ-3564 K4), read as a note reads them: once, as the edit opens
+      // the page keys as the user set them (YAZ-3564 K4), read as a page reads them: once, as the edit opens
       const crepe = createCrepe({ root, defaultValue: '', features: textBoxFeatures, hidden: TEXT_BOX_HIDDEN, extendToolbar: textColorButtons, hotkeys: storage.getSettings()?.hotkeys, enterKeepsStyle: enterKeepsStyleInBoxes })
       lockToTextBox(crepe)
       crepe.editor.use(endKeys).use(plainUndo).use(noScroll).use(selectAllLetters).use(textColorPanel).use(report)
 
       // The toolbar and the `/` menu draw at screen size, over the board: in a layer of their own on the page, with
-      // Crepe's look (`milkdown`). Floating UI places them from the selection's box on screen, as in a note.
+      // Crepe's look (`milkdown`). Floating UI places them from the selection's box on screen, as in a page.
       const popups = document.createElement('div')
       popups.className = 'milkdown excalidraw-text-box-popups'
       document.body.appendChild(popups)
@@ -207,7 +207,7 @@ export function createTextBoxEditor(helpers: BoxHelpers): HostTextEditor {
         tr.setSelection(TextSelection.create(tr.doc, posAt(tr.doc, pending.anchor, helpers), posAt(tr.doc, pending.head, helpers)))
         // the box's text is where the edit starts: ⌘Z never goes back past it
         view.dispatch(tr.setMeta('addToHistory', false))
-        // the box's folds, in the note's own fold state (YAZ-4306): Enter, typing over a fold, ⌘↑ / ⌘↓ act as in a note
+        // the box's folds, in the page's own fold state (YAZ-4306): Enter, typing over a fold, ⌘↑ / ⌘↓ act as in a page
         const fold = view.state.tr
         addOutlineFoldSetMeta(fold, itemPositions(view.state.doc, foldedLines, helpers), true)
         view.dispatch(fold)

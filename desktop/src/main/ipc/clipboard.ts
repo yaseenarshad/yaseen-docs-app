@@ -20,17 +20,17 @@ export interface ClipboardHost {
   writeText(text: string): void
   /** Copy as › Without folded lines (YAZ-3653): the text and rich HTML normal Copy writes. */
   write(data: { text: string; html: string }): void
-  /** The clipboard's text, for the note menu's Paste as (YAZ-3653). */
+  /** The clipboard's text, for the page menu's Paste as (YAZ-3653). */
   readText(): string
   /** The clipboard's HTML, for Paste as › Cells only (YAZ-4206 D18). */
   readHTML(): string
-  /** The note menu's Reveal in Finder for an image (YAZ-3727 D22): the native menu's row (`revealVaultImage`). */
+  /** The page menu's Reveal in Finder for an image (YAZ-3727 D22): the native menu's row (`revealVaultImage`). */
   revealImage(src: string): Promise<void>
   rendererUrl: string
 }
 
 /**
- * Private preload reply to Copy as; no arbitrary clipboard writer is exposed to the renderer. A note menu row
+ * Private preload reply to Copy as; no arbitrary clipboard writer is exposed to the renderer. A page menu row
  * (`menu:edit`, YAZ-3653) asks the same way, from the target window and, in the preload, only during a user gesture.
  */
 export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, host: ClipboardHost): void {
@@ -51,7 +51,7 @@ export function registerClipboardIpc(windows: Pick<WindowManagerIpc, 'idFor'>, h
     if (typeof html === 'string') host.write({ text, html })
     else host.writeText(text)
   })
-  // A note's own right-click menu (YAZ-3653): each row does what the native menu's row does, on the
+  // A page's own right-click menu (YAZ-3653): each row does what the native menu's row does, on the
   // window that sent it. Only that window's own selection and clipboard commands; never other text.
   handleWithEvent(SPECIAL.menuEdit, async (event, action: unknown, arg?: unknown) => {
     const { sender, senderFrame } = event

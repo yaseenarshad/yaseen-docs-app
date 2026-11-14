@@ -6,19 +6,19 @@ import { isSyncConflictCopy } from '@shared/syncConflict'
 import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, withCardOff, type CardLine } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
-import { NOTE_ID_KEY, noteIdNumber, vaultNoteId } from '@shared/noteId'
-import { titleOf } from '@shared/noteName'
+import { PAGE_ID_KEY, pageIdNumber, vaultPageId } from '@shared/pageId'
+import { titleOf } from '@shared/pageName'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
-import { myNote, settleClash, type ClashFix, type Pair } from './clash'
+import { myPage, settleClash, type ClashFix, type Pair } from './clash'
 import { openDiary, saveDiarySoon } from './diary'
 import { countsOf, firstMac, highestNumber, makersOf, mintIds, vaultIds, type Counts } from './mint'
 import { idsOwnedBy, ownOnly, walk } from './scan'
 
 /**
  * One sweep write at a time. One pass runs at a time for a vault, and an index event joins a pass
- * that waits (`sweepIds`). But a folder's carry (`carryNote`) writes notes too, and the app's own
+ * that waits (`sweepIds`). But a folder's carry (`carryPage`) writes pages too, and the app's own
  * copy calls it outside any pass, for any vault: without this queue, two compare-and-sets could
  * meet on one file, and the loser would be a copy left holding its original's id, or its values.
  */
@@ -42,7 +42,7 @@ export interface SweepOptions {
   waits?: Map<string, number>
   /**
    * Resolves when the index has read every file its watcher already reported. A clash is settled
-   * only after it: the notes and links that arrived in one sync with the second note are then in
+   * only after it: the pages and links that arrived in one sync with the second page are then in
    * the index and in the diary, so the notice can list each link it leaves (S44, S45).
    */
   indexed?: () => Promise<unknown>
@@ -61,7 +61,7 @@ export interface SweepOptions {
 export const CARD_MOVE_WAIT_MS = 60 * 1000
 
 /**
- * One note card the sweep gives a new number: its place among its page's cards, the ID it must still hold (null: none),
+ * One card the sweep gives a new number: its place among its page's cards, the ID it must still hold (null: none),
  * and whether its history stays. A COPY names the card that keeps its ID: `copyOf`, the first card of the page that
  * holds it, or `keeper`, the page that keeps it (one ID on two pages after the wait). A copy with that card's text
  * gives its reviews to it, then empties its own history; a copy with another text keeps its history (YAZ-4993: the
@@ -77,17 +77,17 @@ export interface CardFix {
   off?: true
 }
 
-/** What one sweep did about notes that share an ID. A note that only needed an ID is not reported. */
+/** What one sweep did about pages that share an ID. A page that only needed an ID is not reported. */
 export interface SweepResult {
-  /** Each note this Mac gave a new number in a clash (S45). */
+  /** Each page this Mac gave a new number in a clash (S45). */
   fixes: ClashFix[]
-  /** Each ID two notes hold that ANOTHER Mac must fix (S57): this one wrote nothing. `other` is the note that will change, when known. */
+  /** Each ID two pages hold that ANOTHER Mac must fix (S57): this one wrote nothing. `other` is the page that will change, when known. */
   theirs: { id: string; other?: string }[]
   /** Each copy that was given its own number (R30). */
   copies: { title: string; id: string }[]
-  /** Each ID two notes still hold because a file changed under this pass: the next one settles it. */
+  /** Each ID two pages still hold because a file changed under this pass: the next one settles it. */
   later: string[]
-  /** For each clash that still stands after this pass: the ID, and the path of the note that keeps it, when this Mac knows it (S46). */
+  /** For each clash that still stands after this pass: the ID, and the path of the page that keeps it, when this Mac knows it (S46). */
   kept: Map<string, string>
 }
 
@@ -105,7 +105,7 @@ interface Wanted {
 /**
  * Does a number the sweep gives WAIT on this Mac (R31, R33)? Not on the vault's first Mac. On every
  * other, and on each Mac of a vault that has no count file yet: there no Mac is first, and a Mac
- * that took "no count file" for "I am first" would number every note at the moment a yes arrives
+ * that took "no count file" for "I am first" would number every page at the moment a yes arrives
  * by the sync ahead of the first Mac's count file (S65) — two numbers in each file.
  */
 const sweepWaits = ({ me, files }: Counts): boolean => firstMac(files) !== me
@@ -135,7 +135,7 @@ const noResult = (): SweepResult => ({ fixes: [], theirs: [], copies: [], later:
 
 /**
  * Files a sweep could not write, with the time they had: no number is taken for one again until it
- * changes. Without this an unwritable note would cost one number on every pass. Only while the app runs.
+ * changes. Without this an unwritable page would cost one number on every pass. Only while the app runs.
  */
 const refused = new Map<string, number | undefined>()
 const REFUSED_MAX = 1000
@@ -144,22 +144,22 @@ const REFUSED_MAX = 1000
 const READS = 16
 
 /**
- * The id sweep (YAZ-2293 D3, D4). Each note in `among` with no id is given one, and an `id` that
+ * The id sweep (YAZ-2293 D3, D4). Each page in `among` with no id is given one, and an `id` that
  * is not an ID of THIS vault is none: the app's is written over it (YAZ-2420 🔒 D30, YAZ-2677 R7 —
  * another tool's `id`, and a number ID whose letters the vault never had). Each folder in `dirs`
  * (never the vault root) with no `.folder.md` is given one holding only its id (D13).
  *
- * TWO NOTES, ONE ID (YAZ-2677 🔒 D7). The notes on disk that share an id with a note in `among` are
+ * TWO PAGES, ONE ID (YAZ-2677 🔒 D7). The pages on disk that share an id with a page in `among` are
  * either a CLASH — two Macs each gave that number, by their count files (R22) — and then the clash
- * rule decides (`clash.ts`): one Mac fixes its own note, and every other writes nothing. Or they
+ * rule decides (`clash.ts`): one Mac fixes its own page, and every other writes nothing. Or they
  * are a COPY (R30, YAZ-2293 D4): only the KEEPER keeps the id — the one the index knew to hold it
  * (`knew`), else the first in path order — and any other in `among` is given a fresh one. A folder's
- * settings file given a fresh id is a COPIED folder's: the notes under it carry their values for it
+ * settings file given a fresh id is a COPIED folder's: the pages under it carry their values for it
  * to that id first (`carryFolderValues`), then the folder takes it.
  *
- * WHICH MAC GIVES A NUMBER (🔒 D8, R31 to R33). A number the sweep gives — to a note with no id, to
+ * WHICH MAC GIVES A NUMBER (🔒 D8, R31 to R33). A number the sweep gives — to a page with no id, to
  * a copy, to a folder's settings file — comes at once only on the vault's FIRST Mac (`firstMac`).
- * Any other Mac leaves the file, notes when in `opts.waits`, and gives the number `ID_WAIT_MS`
+ * Any other Mac leaves the file, pages when in `opts.waits`, and gives the number `ID_WAIT_MS`
  * later if the file still needs one: two Macs must not write two numbers into one file. A vault
  * with no count file has no first Mac yet, and every Mac waits. A clash fix never waits: the rule
  * already names its one Mac.
@@ -169,8 +169,8 @@ const READS = 16
  * 🔒 Each fresh id is the vault's next NUMBER, from the door (YAZ-2677 D4, `mint.ts`), and one pass
  * takes all its numbers with ONE write of the count file (R19). A number is taken only for a file
  * whose BYTES still need one: sweeps of one vault run one at a time, and each reads a file before
- * it counts it, so a file two index events both name takes one number. A note the index could not
- * read is not counted, so a note that can never take an id costs no number on each pass. An OLD
+ * it counts it, so a file two index events both name takes one number. A page the index could not
+ * read is not counted, so a page that can never take an id costs no number on each pass. An OLD
  * id is an id like any other here: it is kept, and never written over (R3).
  *
  * 🔒 ONE PASS AT A TIME FOR A VAULT, and a sync that brings many files is few passes: an index event
@@ -222,7 +222,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   if (answer !== true) return
   const now = Date.now()
   /**
-   * ONE VAULT PER NOTE (YAZ-4922 🔒 D1): a note under a folder that answers for itself — a vault inside this one —
+   * ONE VAULT PER PAGE (YAZ-4922 🔒 D1): a page under a folder that answers for itself — a vault inside this one —
    * is that vault's. This pass gives it nothing, changes nothing of it and settles nothing with it, nor with a
    * folder there; the vault still lists it.
    */
@@ -231,10 +231,10 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   /** The id the index held for `path` before the event that swept it. */
   const knew: Knew = (path) => (knews.find((k) => k.paths.has(path)) ?? knews[0]).knew(path)
   /** `id` as an ID of this vault (R5): the letters it had before read as the current ones, any other letters as none. */
-  const own = (id: string | undefined): string | undefined => vaultNoteId(id, letters)
+  const own = (id: string | undefined): string | undefined => vaultPageId(id, letters)
   // This sweep waited for the ones before it: what the index holds for a path NOW is what is swept.
   const among = await ownOnly([...new Map(events.map((r) => [r.path, records.get(r.path) ?? r])).values()], (r) => mine(r.path))
-  /** A note the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
+  /** A page the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
   const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.size <= MAX_FILE_BYTES
   // A card file from before decision A moves its title line into `title`, one time (YAZ-5044), before any number.
   await moveCardFileTitles(among.filter((r) => r.kind === 'card' && takes(r) && titleOf(r.properties, '') === ''), records, own)
@@ -245,7 +245,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
    */
   const give = (file: string, held: string | undefined, to: string, first?: (id: string) => Promise<void>): Promise<boolean> => {
     const write = (): Promise<string | undefined> => giveId(file, held, letters, () => to, first)
-    // A folder's carry takes the write turn itself, once for each note it writes.
+    // A folder's carry takes the write turn itself, once for each page it writes.
     return (first === undefined ? inTurn(write) : write()).then(
       (id) => id !== undefined,
       async (err: unknown) => {
@@ -263,7 +263,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
       ({ content, mtime }) => idHeld(content, letters) === held && !(held === undefined && isCardFileContent(content)) && !(refused.has(file) && refused.get(file) === mtime),
       () => false,
     )
-  // Every indexed holder of an id some note in `among` holds. With no letters of before, two
+  // Every indexed holder of an id some page in `among` holds. With no letters of before, two
   // records hold one id exactly when their `id` is one string: nothing is parsed for the others.
   const groups = new Map<string, IndexRecord[]>()
   const wanted: Wanted[] = []
@@ -279,7 +279,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
       const group = id === undefined ? undefined : groups.get(id)
       if (group !== undefined && !group.some((o) => o.path === r.path)) group.push(r)
     }
-    // A note of a vault inside this one that holds the same ID is no copy of this vault's note (D1).
+    // A page of a vault inside this one that holds the same ID is no copy of this vault's page (D1).
     for (const [id, holders] of groups) if (holders.length > 1) groups.set(id, await ownOnly(holders, (r) => mine(r.path)))
   }
   let counts: Counts | undefined
@@ -290,9 +290,9 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     const sharing = await onDisk(holders, swept)
     if (sharing.length < 2) continue
     const pair: Pair = { root, letters, id, sharing, knew, records }
-    // Two notes, one ID. The count files say whether two Macs each gave that number (R22): a clash.
+    // Two pages, one ID. The count files say whether two Macs each gave that number (R22): a clash.
     const held = await countFiles()
-    const number = noteIdNumber(id)
+    const number = pageIdNumber(id)
     const makers = number === undefined ? [] : makersOf(held.files, number, now)
     if (makers.length >= 2) await indexed?.()
     const book = await openDiary(root, held, letters, now)
@@ -305,10 +305,10 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
       if ((outcome.kind === 'later' || outcome.kind === 'theirs') && outcome.keeper !== undefined) result.kept.set(id, outcome.keeper)
       atOnce = outcome.kind === 'copy'
     }
-    // A copy (R30): the note the index knew first keeps the id — said at the first sight of the pair
-    // and kept in the diary (`myNote`), for the index holds both from then on — else the first in
-    // path order, the same on every Mac. Each other note of this sweep gets its own.
-    let keeper = makers.length >= 2 && !atOnce ? undefined : (myNote(book, pair, now) ?? sharing.find((o) => own(knew(o.path)) === id) ?? sharing[0])
+    // A copy (R30): the page the index knew first keeps the id — said at the first sight of the pair
+    // and kept in the diary (`myPage`), for the index holds both from then on — else the first in
+    // path order, the same on every Mac. Each other page of this sweep gets its own.
+    let keeper = makers.length >= 2 && !atOnce ? undefined : (myPage(book, pair, now) ?? sharing.find((o) => own(knew(o.path)) === id) ?? sharing[0])
     // A sync conflict copy never keeps the ID while a file at its own path holds it (YAZ-5056).
     const real = sharing.filter((o) => !isSyncConflictCopy(o.path))
     if (keeper !== undefined && isSyncConflictCopy(keeper.path) && real.length > 0) keeper = real.find((o) => own(knew(o.path)) === id) ?? real[0]
@@ -316,7 +316,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     if (keeper === undefined) continue
     for (const r of swept) if (r.path !== keeper.path && sharing.includes(r) && takes(r)) wanted.push({ file: r.path, held: id, record: r, ...(atOnce && { now: true }) })
   }
-  // A settings file the index holds is a record like any note, swept above. One it does not hold
+  // A settings file the index holds is a record like any page, swept above. One it does not hold
   // yet is read below: a folder that arrives WITH its file (a copy made in Finder) takes no number.
   for (const dir of dirs) {
     const file = path.join(dir, FOLDER_SETTINGS_FILE)
@@ -329,7 +329,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     const needing = await Promise.all(batch.map(({ file, held }) => needs(file, held)))
     needy.push(...batch.filter((_, j) => needing[j]))
   }
-  // The note cards of the pass that need a number (YAZ-4960); each write checks the bytes again.
+  // The cards of the pass that need a number (YAZ-4960); each write checks the bytes again.
   const cardWork = (await cardsToFix(records, among.filter(takes), own, mine, now, cardWaits, cardOver)).filter((w) => !(refused.has(w.record.path) && refused.get(w.record.path) === w.record.mtime))
   // R31: a Mac that is not first leaves each of them for the first Mac, for `ID_WAIT_MS` — a page whose cards need numbers too.
   let going = needy
@@ -350,8 +350,8 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   }
   const cardCount = cardsGoing.reduce((n, w) => n + w.fixes.length, 0)
   if (going.length === 0 && cardCount === 0) return
-  // The numbers of the whole pass — notes, folders and cards — saved with one write before any file is written (R18, R19).
-  // Higher than each number in the vault, so none is an id some indexed note or card holds (YAZ-2378).
+  // The numbers of the whole pass — pages, folders and cards — saved with one write before any file is written (R18, R19).
+  // Higher than each number in the vault, so none is an id some indexed page or card holds (YAZ-2378).
   const numbers = await mintIds(root, going.length + cardCount, highestNumber(records.values(), letters)).catch(() => null)
   if (numbers === null) return
   let next = going.length
@@ -365,18 +365,18 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
       }
       return false
     })
-    if (given !== false) given.forEach((fix, i) => fix.held !== null && !fix.history && result.copies.push({ title: `a note card on "${record.title}"`, id: ids[i] }))
+    if (given !== false) given.forEach((fix, i) => fix.held !== null && !fix.history && result.copies.push({ title: `a card on "${record.title}"`, id: ids[i] }))
   }
   for (const [i, { file, held, record }] of going.entries()) {
     // Asked before every write, so a no stops a pass that is running (YAZ-2523 🔒 V4).
     if (!(await givesIds(root))) return
     const to = numbers[i]
-    // A copied folder takes its id LAST, after its notes hold their values under it: a carry cut
+    // A copied folder takes its id LAST, after its pages hold their values under it: a carry cut
     // short (the app quit) leaves the folder still stale, so the next sweep finds and finishes it.
     const given = await give(file, held, to, held !== undefined && isFolderSettingsPath(file) ? (id) => carryFolderValues(path.dirname(file), held, id) : undefined)
     if (given && held !== undefined && record !== undefined) result.copies.push({ title: record.title, id: to })
     if (!given && held !== undefined) result.later.push(held)
-    if (record !== undefined) for (const copy of carried) if (file.startsWith(copy.dir + path.sep)) await carryNote(file, copy.from, copy.to)
+    if (record !== undefined) for (const copy of carried) if (file.startsWith(copy.dir + path.sep)) await carryPage(file, copy.from, copy.to)
   }
 }
 
@@ -387,7 +387,7 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
  * before it: a file that changed meanwhile is left for the next pass, and one that already has a `title` writes nothing.
  * The card line (its ID and reviews) and the rest of the card stay byte for byte. Its name already follows that title.
  *
- * A page `id:` on such a file is a stray one an old build gave (YAZ-5037), and goes in the same write when no note
+ * A page `id:` on such a file is a stray one an old build gave (YAZ-5037), and goes in the same write when no page
  * links to or embeds it; one that something links to stays (pick 6: a card file can answer to both IDs).
  */
 async function moveCardFileTitles(files: readonly IndexRecord[], records: ReadonlyMap<string, IndexRecord>, own: (id: string | undefined) => string | undefined): Promise<void> {
@@ -405,7 +405,7 @@ async function moveCardFileTitles(files: readonly IndexRecord[], records: Readon
   }
 }
 
-/** A page whose note cards the sweep gives new numbers (YAZ-4960). */
+/** A page whose cards the sweep gives new numbers (YAZ-4960). */
 interface CardWork {
   record: IndexRecord
   fixes: CardFix[]
@@ -419,7 +419,7 @@ interface CardWork {
  *   card the reviews it lacks and its own history empties; with another text its history stays (YAZ-4993: no review is
  *   ever dropped; the sweep cannot tell the original of two texts, so both keep theirs. The editor settles a user's
  *   paste at paste time, YAZ-4972);
- * - an ID a note holds: a new number, history kept (links point at the note);
+ * - an ID a page holds: a new number, history kept (links point at the page);
  * - an ID a card on ANOTHER page holds on disk: a cut and paste, or a copy. The page that took it last — the one this
  *   pass sweeps, or of two it sweeps the second in path order — waits `CARD_MOVE_WAIT_MS` (`cardWaits`), so a cut
  *   from the other page lands first. Still on both after the wait: a copy, settled once per ID in a pass, by the same
@@ -440,12 +440,12 @@ async function cardsToFix(
   const pages = among.filter((r) => r.cards !== undefined && r.cards.length > 0 && !isFolderSettingsPath(r.path)).sort((a, b) => (a.path < b.path ? -1 : 1))
   if (pages.length === 0) return []
   const swept = new Set(pages.map((r) => r.path))
-  // Who holds each ID, by the index: the notes, and the pages of the cards. Read once, and only for a pass with cards.
-  const notes = new Set<string>()
+  // Who holds each ID, by the index: the pages, and the pages of the cards. Read once, and only for a pass with cards.
+  const heldIds = new Set<string>()
   const holders = new Map<string, string[]>()
   for (const r of records.values()) {
     const id = own(r.id)
-    if (id !== undefined && !isFolderSettingsPath(r.path)) notes.add(id)
+    if (id !== undefined && !isFolderSettingsPath(r.path)) heldIds.add(id)
     for (const card of r.cards ?? []) {
       const cardId = own(card.id ?? undefined)
       if (cardId !== undefined) holders.set(cardId, [...(holders.get(cardId) ?? []), r.path])
@@ -471,7 +471,7 @@ async function cardsToFix(
         continue
       }
       seen.set(id, index)
-      if (notes.has(id)) {
+      if (heldIds.has(id)) {
         fixes.push({ index, held: card.id, history: true })
         continue
       }
@@ -509,7 +509,7 @@ async function cardsToFix(
 }
 
 /**
- * The note cards of the page at `file` take the IDs `ids` (one for each of `fixes`, in order), but only while each
+ * The cards of the page at `file` take the IDs `ids` (one for each of `fixes`, in order), but only while each
  * still holds what it held: a compare-and-set on the page's bytes and mtime, as `giveId`. False when nothing was written.
  *
  * NO REVIEW IS DROPPED (YAZ-4993, YAZ-4998). Each copy is settled by the one no-drop rule (`settleCardCopy`, the
@@ -561,11 +561,11 @@ export async function giveCardIds(file: string, fixes: readonly CardFix[], ids: 
 }
 
 /**
- * The notes of `holders` that are each ANOTHER file on disk right now, in path order. The index is
- * not asked, because it lags: a note moved or renamed outside the app is seen at its new path
- * before its old path is seen gone, and until then the index lists the one note twice. Counted as
- * a copy there, every moved note would lose its id — and every link to it. A case-only rename is
- * the same note under both spellings, which the inode tells: the spelling this sweep was started
+ * The pages of `holders` that are each ANOTHER file on disk right now, in path order. The index is
+ * not asked, because it lags: a page moved or renamed outside the app is seen at its new path
+ * before its old path is seen gone, and until then the index lists the one page twice. Counted as
+ * a copy there, every moved page would lose its id — and every link to it. A case-only rename is
+ * the same page under both spellings, which the inode tells: the spelling this sweep was started
  * for (`swept`) is the one kept.
  */
 async function onDisk(holders: readonly IndexRecord[], swept: readonly IndexRecord[]): Promise<IndexRecord[]> {
@@ -582,7 +582,7 @@ async function onDisk(holders: readonly IndexRecord[], swept: readonly IndexReco
 }
 
 /**
- * Does this vault give its notes IDs (YAZ-2523 🔒 V1, V10)? Only when its `ids.json` says yes: that
+ * Does this vault give its pages IDs (YAZ-2523 🔒 V1, V10)? Only when its `ids.json` says yes: that
  * `.yaseendocs/` exists means nothing, and a file that is missing, unreadable or not JSON has not
  * answered. Read straight off the disk (`vaultIds`). The ONE gate for every id the app writes on its own.
  */
@@ -594,7 +594,7 @@ export const givesIds = async (root: string): Promise<boolean> => (await vaultId
  * that said yes, never written over, never throws. A folder deleted whole has no directory to create it in.
  */
 export const restoreFolderId = async (root: string, file: string, id: string): Promise<void> => {
-  if (await givesIds(root)) await createDurable(file, setFrontmatterProperty('', NOTE_ID_KEY, id)).catch(() => undefined)
+  if (await givesIds(root)) await createDurable(file, setFrontmatterProperty('', PAGE_ID_KEY, id)).catch(() => undefined)
 }
 
 /** A page's bytes. A folder's settings file that is not there reads as empty, with no `mtime`, while its folder is. */
@@ -635,7 +635,7 @@ export async function giveId(
     ;({ content, mtime } = await readPage(file))
     if (!holds(content)) return
   }
-  const given = setFrontmatterProperty(content, NOTE_ID_KEY, id)
+  const given = setFrontmatterProperty(content, PAGE_ID_KEY, id)
   if (mtime === undefined) await createDurable(file, given)
   else await writeFile({ path: file, content: given, expectedMtime: mtime })
   return id
@@ -644,37 +644,37 @@ export async function giveId(
 /** The id `content` holds as an ID of the vault with `letters` (R5); undefined when it holds none, and null when its properties do not parse. */
 function idHeld(content: string, letters: readonly string[]): string | undefined | null {
   const { properties, error } = parseFrontmatter(splitFrontmatter(content).frontmatter)
-  return error === undefined ? vaultNoteId(properties[NOTE_ID_KEY], letters) : null
+  return error === undefined ? vaultPageId(properties[PAGE_ID_KEY], letters) : null
 }
 
 /** The door's next number for the vault at `root`, as `giveId` asks for it; none where the vault does not use IDs. */
 export const nextId = (root: string) => async (): Promise<string | undefined> => (await mintIds(root, 1))?.[0]
 
 /**
- * A copied folder's notes carry their values to the copy (D19): in every note under `dir`, at any
- * depth, the block of the folder id `from` — the original's, which the copy's notes still hold
+ * A copied folder's pages carry their values to the copy (D19): in every page under `dir`, at any
+ * depth, the block of the folder id `from` — the original's, which the copy's pages still hold
  * their values under — becomes the block of `to`, the copy's own (`moveFolderValues`). The
  * directory is walked as the index walks it; the index itself is not asked. On the sweep's terms:
- * each write a compare-and-set, never throws, and a second run writes nothing — a note that will
+ * each write a compare-and-set, never throws, and a second run writes nothing — a page that will
  * not parse or already holds a block for `to` is left as it is, and one that changed under the
  * write is read again, once.
  *
  * The copy is remembered while the app runs: a long copy is still arriving when its folder is given
- * its id, and the sweep carries each note that reaches `dir` afterwards.
+ * its id, and the sweep carries each page that reaches `dir` afterwards.
  *
  * The app's own copy calls this too, once the folder it made holds its fresh id (`fs/copy.ts`,
- * YAZ-2420 🔒 D21): its notes were written holding their values under the original's.
+ * YAZ-2420 🔒 D21): its pages were written holding their values under the original's.
  */
 export async function carryFolderValues(dir: string, from: string, to: string): Promise<void> {
   if (!carried.some((copy) => copy.dir === dir && copy.from === from && copy.to === to)) carried.push({ dir, from, to })
   const files: string[] = []
   await walk(dir, files).catch(() => undefined)
-  for (const file of files) await carryNote(file, from, to)
+  for (const file of files) await carryPage(file, from, to)
 }
 
 const carried: { dir: string; from: string; to: string }[] = []
 
-function carryNote(file: string, from: string, to: string): Promise<void> {
+function carryPage(file: string, from: string, to: string): Promise<void> {
   const carry = async (): Promise<void> => {
     const { content, mtime } = await readFile(file)
     const moved = moveFolderValues(content, from, to)

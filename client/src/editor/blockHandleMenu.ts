@@ -385,7 +385,7 @@ const lastTab = new Map<string, number>()
  * A flyout's content (`renderParent`): `row.children` as groups, a line between two, a small grey heading each
  * (`row.headings`); then the tabs (`row.tabs`, YAZ-4794 demo), the picked tab's switch (`bar`) and groups in a box of
  * their own, drawn again at a tab click. A `stay` row's picks go through `refresh`; others run and `close`. An empty
- * group is left out here, the one place (a caller hands its groups as they are). The note's right-click menu draws a
+ * group is left out here, the one place (a caller hands its groups as they are). The page's right-click menu draws a
  * parent's `panel` with it too (YAZ-4899: "Subheader row style ›" is the six-dot menu's "Subheader row ›", one panel).
  */
 export function fillFlyout(sub: HTMLElement, row: MenuRow, close: () => void, refresh?: (run: () => void) => void): void {
@@ -652,12 +652,12 @@ export function renderMenu(parent: HTMLElement | null, items: MenuItem[], close:
   return el
 }
 
-/** Each mounted editor's rows, for its note menu (`noteMenu.tsx`). */
+/** Each mounted editor's rows, for its page menu (`pageMenu.tsx`). */
 const providers = new WeakMap<EditorView, (target: HandleTarget) => MenuItem[]>()
 
 /**
  * The menu's rows and strips for `target` in `view` (YAZ-3727 D15): a right-click on a line's text shows them
- * too, in the note's own menu, so both menus come from one list of rows. No pickers: they stay on the handle.
+ * too, in the page's own menu, so both menus come from one list of rows. No pickers: they stay on the handle.
  */
 export function blockMenuItems(view: EditorView, target: HandleTarget): Array<MenuRow | MenuStrip> {
   return (providers.get(view)?.(target) ?? []).filter((item): item is MenuRow | MenuStrip => item.kind !== 'number' && item.kind !== 'choice')

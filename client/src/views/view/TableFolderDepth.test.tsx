@@ -1,6 +1,6 @@
 /**
  * A Folder level's Depth in a Table (YAZ-4918): ViewsPane mounted with react-dom in jsdom on the page `stages`, over
- * notes one to six folders down. With Depth All the subfolders' groups nest inside their folder's group on ONE view
+ * pages one to six folders down. With Depth All the subfolders' groups nest inside their folder's group on ONE view
  * level: a header's `--depth` is its place in the tree, a row's one more, and neither goes past four steps. A nested
  * header keeps a Folder group's parts: its count, its collapse (whole branch), its ↗, and its "+" born in that folder.
  * The `#` gutter restarts in every section. Full path is one flat header per folder, named by its path.
@@ -11,7 +11,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { IndexRecord } from '@shared/types'
 import { parseViews, type ParsedViews } from '../viewSchema'
 import { ViewsPane } from '../ViewsPane'
-import type { NewNoteSeed } from '../newNote'
+import type { NewPageSeed } from '../newPage'
 import { testFolderHost } from '../testFolderHost'
 import { groupPathKeyOf } from './GroupHeader'
 import { TEST_RECORDS } from '../testRecords'
@@ -43,7 +43,7 @@ const at = (path: string): IndexRecord => {
   const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
   return { ...TEST_RECORDS[0], path: `/vault/${path}`, name: `${basename}.md`, basename, title: basename, folder, properties: {} }
 }
-/** The page `stages`: notes one to six folders down, so the tree's deepest header sits five steps in. */
+/** The page `stages`: pages one to six folders down, so the tree's deepest header sits five steps in. */
 const RECORDS = [
   at('stages/Lead Gen.md'),
   at('stages/archive/Old.md'),
@@ -59,7 +59,7 @@ const FOLDERS = [
   { ...at('stages/archive/2019/q1/.folder.md'), title: 'Q1' },
 ]
 
-const create = vi.fn<(seed: NewNoteSeed, name?: string) => Promise<string>>()
+const create = vi.fn<(seed: NewPageSeed, name?: string) => Promise<string>>()
 const openFolderPage = vi.fn()
 
 let root: Root | null = null
@@ -115,7 +115,7 @@ afterEach(() => {
 })
 
 describe('a Table grouped by Folder with a Depth (YAZ-4918)', () => {
-  it('Depth All: the subfolders nest inside their folder, a header at its tree depth, a row one deeper, never past four steps; a folder\'s own notes come first; the # restarts per section', () => {
+  it('Depth All: the subfolders nest inside their folder, a header at its tree depth, a row one deeper, never past four steps; a folder\'s own pages come first; the # restarts per section', () => {
     const el = mount(VIEW('        depth: all\n'))
     expect(headers(el)).toEqual(['Stages@0', 'active@0', 'Archive@0', '2019@1', 'Q1@2', 'jan@3', 'w1@4'])
     expect(rows(el)).toEqual(['Lead Gen@1#1', 'Now@1#1', 'Old@1#1', 'Older@2#1', 'Deep@3#1', 'Deeper@4#1', 'Deepest@4#1'])
@@ -123,7 +123,7 @@ describe('a Table grouped by Folder with a Depth (YAZ-4918)', () => {
     expect([...el.querySelectorAll('.view-group__count')].map((c) => c.textContent)).toEqual(['1', '1', '5', '4', '3', '2', '1'])
   })
 
-  it('Depth 2 stops after the first subfolder: the deeper notes roll up into it, and the next folder page opens from its header', () => {
+  it('Depth 2 stops after the first subfolder: the deeper pages roll up into it, and the next folder page opens from its header', () => {
     const el = mount(VIEW('        depth: 2\n'))
     expect(headers(el)).toEqual(['Stages@0', 'active@0', 'Archive@0', '2019@1'])
     expect(rows(el)).toEqual(['Lead Gen@1#1', 'Now@1#1', 'Old@1#1', 'Older@2#1', 'Deep@2#2', 'Deeper@2#3', 'Deepest@2#4'])
@@ -133,7 +133,7 @@ describe('a Table grouped by Folder with a Depth (YAZ-4918)', () => {
 
   it('a nested header\'s "+" is born in THAT folder, and collapsing a folder hides its whole branch, remembered by the folder\'s path', () => {
     const el = mount(VIEW('        depth: all\n'))
-    act(() => byLabel(el, 'New note in group Q1').click())
+    act(() => byLabel(el, 'New page in group Q1').click())
     expect(create.mock.calls[0]).toEqual([{ properties: {}, folder: 'stages/archive/2019/q1' }, undefined])
 
     act(() => byLabel(el, 'Toggle group 2019').click())
@@ -150,7 +150,7 @@ describe('a Table grouped by Folder with a Depth (YAZ-4918)', () => {
 
   it('"Folder (All), then Status": the Status groups sit inside each deepest folder, on the next view level', () => {
     const el = mount(VIEW('        depth: all\n      - property: note.status\n'))
-    // Every note here has no status: each deepest folder gets one "No value" group; a folder with subfolders keeps its own notes direct.
+    // Every page here has no status: each deepest folder gets one "No value" group; a folder with subfolders keeps its own pages direct.
     expect(headers(el)).toEqual(['Stages@0', 'No value@1', 'active@0', 'No value@1', 'Archive@0', '2019@1', 'Q1@2', 'jan@3', 'w1@4', 'No value@4'])
     expect(rows(el)).toEqual(['Lead Gen@2#1', 'Now@2#1', 'Old@1#1', 'Older@2#1', 'Deep@3#1', 'Deeper@4#1', 'Deepest@4#1'])
   })

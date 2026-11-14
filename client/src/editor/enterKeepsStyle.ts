@@ -2,9 +2,9 @@
  * ENTER KEEPS THE TEXT STYLE (YAZ-3746 13AB): Enter at the end of a styled line, and the new line types in that style
  * (bold, italic, underline, strikethrough, colour, highlight), as in Google Docs. A link or code does not carry on.
  *
- * Settings › Editor › Typing › "Enter keeps the text style": one switch for notes (off, the editor's own way) and one
+ * Settings › Editor › Typing › "Enter keeps the text style": one switch for pages (off, the editor's own way) and one
  * for drawing text boxes (on: a box styled letter by letter then acts as a box styled as a whole, 13AA). App sets them
- * with `setEnterKeepsStyle`, so an open note or box follows at its next Enter.
+ * with `setEnterKeepsStyle`, so an open page or box follows at its next Enter.
  *
  * An `appendTransaction`, not an Enter key: Enter has many owners (lists, the outline, folds, tables), and each of them
  * ends with the caret on a new, empty line. The style is the old line's, at its end: what typing there would take.
@@ -16,16 +16,16 @@ import { $prose } from '@milkdown/kit/utils'
 /** The styles that carry to the new line; a link and inline code start fresh. */
 const CARRIED = new Set(['strong', 'emphasis', 'underline', 'strike_through', 'highlight', 'text_color'])
 
-let inNotes = false
+let inPages = false
 let inBoxes = true
 
 /** App, when Settings › Editor › Typing › "Enter keeps the text style" changes. */
-export function setEnterKeepsStyle(notes: boolean, boxes: boolean): void {
-  inNotes = notes
+export function setEnterKeepsStyle(pages: boolean, boxes: boolean): void {
+  inPages = pages
   inBoxes = boxes
 }
 
-export const enterKeepsStyleInNotes = () => inNotes
+export const enterKeepsStyleInPages = () => inPages
 export const enterKeepsStyleInBoxes = () => inBoxes
 
 export const enterKeepsStyle = (isOn: () => boolean) =>

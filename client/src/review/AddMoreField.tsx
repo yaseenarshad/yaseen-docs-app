@@ -72,7 +72,7 @@ export function AddMoreField({ kind, start, onAdd, onCancel, look }: AddMoreFiel
   const field = (
     <input
       ref={input}
-      className="note-card-inbox__add-number"
+      className="card-inbox__add-number"
       type="text"
       inputMode="numeric"
       aria-label={kind === 'new' ? 'How many new cards to add' : 'How many Up next cards to add'}
@@ -91,20 +91,20 @@ export function AddMoreField({ kind, start, onAdd, onCancel, look }: AddMoreFiel
   )
   if (look === 'menu')
     return (
-      <span className="note-card-inbox__add-field" data-kind={kind}>
+      <span className="card-inbox__add-field" data-kind={kind}>
         Add {field} {addWords(kind, 'menu', n)}
-        <span className="note-card-inbox__add-enter" aria-hidden="true">
+        <span className="card-inbox__add-enter" aria-hidden="true">
           Enter
         </span>
       </span>
     )
   return (
-    <span className="note-card-inbox__done-add" data-kind={kind}>
-      <button type="button" className="note-card-inbox__done-add-word" onMouseDown={(e) => e.preventDefault()} onClick={add}>
+    <span className="card-inbox__done-add" data-kind={kind}>
+      <button type="button" className="card-inbox__done-add-word" onMouseDown={(e) => e.preventDefault()} onClick={add}>
         Add
       </button>
       {field}
-      <button type="button" className="note-card-inbox__done-add-word" onMouseDown={(e) => e.preventDefault()} onClick={add}>
+      <button type="button" className="card-inbox__done-add-word" onMouseDown={(e) => e.preventDefault()} onClick={add}>
         {addWords(kind, 'done', n)}
       </button>
     </span>

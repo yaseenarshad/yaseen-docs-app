@@ -1,12 +1,12 @@
 /**
- * A read-only note in a folder's views (YAZ-3076 D6, S52-S58): the ONE guard every write the pane
- * makes for a note passes through — a cell's commit and a group move (`FolderHost.writeValues`), and
- * the Name cell's title edit (`FolderHost.retitle`). A write for a note whose index record says
- * `readonly: true` is refused with the words of the cell's tooltip; every other note's goes through,
+ * A read-only page in a folder's views (YAZ-3076 D6, S52-S58): the ONE guard every write the pane
+ * makes for a page passes through — a cell's commit and a group move (`FolderHost.writeValues`), and
+ * the Name cell's title edit (`FolderHost.retitle`). A write for a page whose index record says
+ * `readonly: true` is refused with the words of the cell's tooltip; every other page's goes through,
  * so a write that loops over rows skips the locked ones and still changes the rest (S54). The views
  * also gate their own UI on the same switch (`EditableCell`'s `readOnly`, the drag source), so the
  * guard is the backstop, never the only lock. Folder-wide actions — a column's rename or delete —
- * do not come here and still reach every note (S55).
+ * do not come here and still reach every page (S55).
  */
 import type { IndexRecord, PropertyDecl } from '@shared/types'
 import { isReadOnlyProperties } from '@shared/readOnly'
@@ -15,19 +15,19 @@ import { reservedKeys } from '../links/reservedKeys'
 import { canonicalKey } from './view/keys'
 import type { PropertyWrite } from './writeProperty'
 
-/** No read-only note: the default of every view's `readOnly` prop, one identity for all of them. */
+/** No read-only page: the default of every view's `readOnly` prop, one identity for all of them. */
 export const NO_READ_ONLY: ReadonlySet<string> = new Set()
 
 /** The keys the app owns in EVERY vault (`readonly`, `comments`, `reviews`): never a value a view writes. */
 const APP_KEYS = reservedKeys(false)
 
 /**
- * The bare note key a view may WRITE for column `key`, or null: a `file.*` / `formula.*` column, or a
- * key the app owns in every vault — `readonly` above all, whose cell would otherwise turn a note read
+ * The bare page key a view may WRITE for column `key`, or null: a `file.*` / `formula.*` column, or a
+ * key the app owns in every vault — `readonly` above all, whose cell would otherwise turn a page read
  * only from a table, and whose board would turn it on or off by a drop (S16, YAZ-3122). Such a column
  * shows its values and offers no editor, no drag and no group "+". So does a Linked mentions column of `columns`
- * (YAZ-4738 L1): the app works it out, and no note holds it — no paste, fill, clear or drop writes it. A tied one
- * (YAZ-4781 R2, `pair`) is written: the host turns its value into the linking notes' writes.
+ * (YAZ-4738 L1): the app works it out, and no page holds it — no paste, fill, clear or drop writes it. A tied one
+ * (YAZ-4781 R2, `pair`) is written: the host turns its value into the linking pages' writes.
  */
 export function writableKey(key: string, columns: Readonly<Record<string, PropertyDecl>>): string | null {
   const c = canonicalKey(key)
@@ -36,11 +36,11 @@ export function writableKey(key: string, columns: Readonly<Record<string, Proper
   return APP_KEYS.has(bare) || (Object.hasOwn(columns, bare) && columns[bare].kind === 'mentions' && columns[bare].pair !== true) ? null : bare
 }
 
-/** What a locked cell says when the human tries it, and what a refused write rejects with (S56), in the vault's word for a note (YAZ-4938). */
-export const readOnlyTip = (unit: UnitText = SAME_WORD): string => unit('This note is read only')
+/** What a locked cell says when the human tries it, and what a refused write rejects with (S56), in the vault's word for a page (YAZ-4938). */
+export const readOnlyTip = (unit: UnitText = SAME_WORD): string => unit('This page is read only')
 
 /**
- * The paths of the read-only notes among `records`, read off each note's OWN properties: a folder that
+ * The paths of the read-only pages among `records`, read off each page's OWN properties: a folder that
  * uses IDs shows its views the folder's block of `in` (D19), where the switch is not, so the host
  * reads it here before that projection and hands the set down.
  */

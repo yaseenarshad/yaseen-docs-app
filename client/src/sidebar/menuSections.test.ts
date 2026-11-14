@@ -77,8 +77,8 @@ const handlers = (over: Partial<MenuHandlers> = {}): MenuHandlers => ({
   onCopy: vi.fn(),
   onPaste: vi.fn(),
   onNotice: vi.fn(),
-  onNewNote: vi.fn(),
-  onNewDatedNote: vi.fn(),
+  onNewPage: vi.fn(),
+  onNewDatedPage: vi.fn(),
   onNewFolder: vi.fn(),
   onNewDatedFolder: vi.fn(),
   onNewDrawing: vi.fn(),
@@ -112,11 +112,11 @@ const leafOf = (sections: MenuSection[], label: string): MenuAction | undefined 
   const found = itemOf(sections, label)
   return found !== undefined && found.children === undefined ? found : undefined
 }
-/** Every leaf of every parent's list, flattened — "New dated note" lives in "New note ▸" now (YAZ-3085 D3). */
+/** Every leaf of every parent's list, flattened — "New dated page" lives in "New page ▸" now (YAZ-3085 D3). */
 const listLeavesOf = (sections: MenuSection[]): MenuAction[] => sections.flat().flatMap((i) => (i.children === undefined ? [] : i.children.flat()))
 /**
  * Select a LEAF by label: a top-level one first, else one in a parent's list. A parent's own label
- * names its list's first leaf (edge case 9: "New note" is both), so reaching for a parent is never
+ * names its list's first leaf (edge case 9: "New page" is both), so reaching for a parent is never
  * the leaf's select by accident — a label with no leaf anywhere is a test bug, so it throws.
  */
 const select = (sections: MenuSection[], label: string) => {
@@ -153,15 +153,15 @@ afterEach(() => {
 /** A Markdown FILE row inside no selection — the fullest singular menu there is. */
 const FILE_ROW: Partial<MenuSectionTargets> = {
   rowKind: 'file',
-  copyPath: '/v/Note.md',
-  clipPaths: ['/v/Note.md'],
-  newWindowPath: '/v/Note.md',
-  renamePath: '/v/Note.md',
-  deletePaths: ['/v/Note.md'],
-  revealPath: '/v/Note.md',
-  openVsCodePath: '/v/Note.md',
-  openDefaultPath: '/v/Note.md',
-  focusPaths: ['/v/Note.md'],
+  copyPath: '/v/Page.md',
+  clipPaths: ['/v/Page.md'],
+  newWindowPath: '/v/Page.md',
+  renamePath: '/v/Page.md',
+  deletePaths: ['/v/Page.md'],
+  revealPath: '/v/Page.md',
+  openVsCodePath: '/v/Page.md',
+  openDefaultPath: '/v/Page.md',
+  focusPaths: ['/v/Page.md'],
 }
 
 /** Blank space: every row-only target null, the root fallbacks in place (GRO-2273, GRO-2274). */
@@ -180,7 +180,7 @@ describe('the six groups (🔒 D7, amended; YAZ-3085 D3)', () => {
     expect(groupsOf(build(FILE_ROW))).toEqual([
       ['Open in new window', 'Add to focus'],
       ['Cut', 'Copy', 'Paste', 'Copy path'],
-      ['New note', 'New drawing', 'New folder'],
+      ['New page', 'New drawing', 'New folder'],
       ['Rename'],
       ['Open in'],
       ['Delete'],
@@ -190,7 +190,7 @@ describe('the six groups (🔒 D7, amended; YAZ-3085 D3)', () => {
   it('BLANK SPACE has no row to rename or delete: the this-row and Delete groups are empty, so the menu ends on "Open in"', () => {
     expect(groupsOf(build(BLANK))).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New drawing', 'New folder'],
+      ['New page', 'New drawing', 'New folder'],
       ['Open in'], // the root's own OS verbs — the one this-row item blank space has
     ])
   })
@@ -222,18 +222,18 @@ describe('the six groups (🔒 D7, amended; YAZ-3085 D3)', () => {
 
 /**
  * The create parents (YAZ-3085 D1, D3 — they replace YAZ-2249 🔒 E1's own dated group): three rows,
- * New note ▸ · New drawing ▸ · New folder ▸, in that order (Yasin moved the drawing above the
+ * New page ▸ · New drawing ▸ · New folder ▸, in that order (Yasin moved the drawing above the
  * folder). A row's click IS the first leaf of its list (edge case 1); the list holds that everyday
  * kind again with its dated twin — one hover away now, not one click — and the drawing list keeps
  * the two apps apart with a separator. No folder to create in → no leaf → no parent (edge case 2).
  * The group stays above the act-on-this-row group. Pinned here because the position IS the ruling.
  */
 describe('create parents (YAZ-3085 D1, D3)', () => {
-  const ROWS = ['New note', 'New drawing', 'New folder']
+  const ROWS = ['New page', 'New drawing', 'New folder']
 
   it('the Create group is the three parents in order — each a parent WITH a default — directly above the this-row group', () => {
     const sections = build(FILE_ROW)
-    expect(sections[2].map((i) => [i.id, i.label])).toEqual([['new-note-menu', 'New note'], ['new-drawing-menu', 'New drawing'], ['new-folder-menu', 'New folder']])
+    expect(sections[2].map((i) => [i.id, i.label])).toEqual([['new-page-menu', 'New page'], ['new-drawing-menu', 'New drawing'], ['new-folder-menu', 'New folder']])
     for (const label of ROWS) {
       expect(parentOf(sections, label), label).toBeDefined()
       expect(parentOf(sections, label)?.onSelect, label).toBeTypeOf('function')
@@ -241,9 +241,9 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
     expect(sections[3].map((i) => i.label)).toEqual(['Rename'])
   })
 
-  it('each list: note · dated note; Excalidraw · dated Excalidraw, a separator, draw.io; folder · dated folder — and no dated draw.io anywhere (YAZ-3028 D9)', () => {
+  it('each list: page · dated page; Excalidraw · dated Excalidraw, a separator, draw.io; folder · dated folder — and no dated draw.io anywhere (YAZ-3028 D9)', () => {
     const sections = build()
-    expect(listOf(sections, 'New note')).toEqual([['New note', 'New dated note']])
+    expect(listOf(sections, 'New page')).toEqual([['New page', 'New dated page']])
     expect(listOf(sections, 'New drawing')).toEqual([['New Excalidraw drawing', 'New dated Excalidraw drawing'], ['New draw.io diagram']])
     expect(listOf(sections, 'New folder')).toEqual([['New folder', 'New dated folder']])
     expect(parentOf(sections, 'New drawing')?.children.flat().map((i) => i.id)).toEqual(['new-drawing', 'new-dated-drawing', 'new-diagram'])
@@ -254,7 +254,7 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
   it('edge case 1: a row\'s click is the SAME function as its list\'s first leaf — the handler itself — so the two can never disagree', () => {
     const h = handlers()
     const sections = buildMenuSections(targets(), h)
-    const firsts = [h.onNewNote, h.onNewDrawing, h.onNewFolder]
+    const firsts = [h.onNewPage, h.onNewDrawing, h.onNewFolder]
     ROWS.forEach((label, n) => {
       const parent = parentOf(sections, label)
       expect(parent?.onSelect, label).toBe(parent?.children[0][0].onSelect)
@@ -263,7 +263,7 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
     for (const label of ROWS) parentOf(sections, label)?.onSelect?.()
     expect(firsts.map((fn) => vi.mocked(fn).mock.calls.length)).toEqual([1, 1, 1])
     // The row is the everyday kind only: no dated twin, no draw.io diagram ran.
-    for (const fn of [h.onNewDatedNote, h.onNewDatedDrawing, h.onNewDiagram, h.onNewDatedFolder]) expect(fn).not.toHaveBeenCalled()
+    for (const fn of [h.onNewDatedPage, h.onNewDatedDrawing, h.onNewDiagram, h.onNewDatedFolder]) expect(fn).not.toHaveBeenCalled()
   })
 
   it('every list item hands the click to its own handler, and to no other (YAZ-2242, YAZ-1604, YAZ-3028 D9)', () => {
@@ -271,8 +271,8 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
     const sections = buildMenuSections(targets(), h)
     const calls = () => Object.fromEntries(Object.entries(h).map(([name, fn]) => [name, vi.mocked(fn).mock.calls.length]))
     const pairs: [string, keyof MenuHandlers][] = [
-      ['New note', 'onNewNote'],
-      ['New dated note', 'onNewDatedNote'],
+      ['New page', 'onNewPage'],
+      ['New dated page', 'onNewDatedPage'],
       ['New Excalidraw drawing', 'onNewDrawing'],
       ['New dated Excalidraw drawing', 'onNewDatedDrawing'],
       ['New draw.io diagram', 'onNewDiagram'],
@@ -293,17 +293,17 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
     expect(allLabelsOf(sections).filter((l) => l.startsWith('New'))).toEqual([])
   })
 
-  it('"New card" (YAZ-5037) sits after "New note" and before "New drawing", a plain item, only where the vault makes cards (`cardDir`), and hands its folder over', () => {
+  it('"New card" (YAZ-5037) sits after "New page" and before "New drawing", a plain item, only where the vault makes cards (`cardDir`), and hands its folder over', () => {
     const onNewCard = vi.fn()
     expect(labelsOf(build(FILE_ROW))).not.toContain('New card')
     expect(labelsOf(build({ ...FILE_ROW, cardDir: null }))).not.toContain('New card')
     const sections = build({ ...FILE_ROW, cardDir: '/v' }, { onNewCard })
-    expect(sections[2].map((i) => [i.id, i.label])).toEqual([['new-note-menu', 'New note'], ['new-card', 'New card'], ['new-drawing-menu', 'New drawing'], ['new-folder-menu', 'New folder']])
+    expect(sections[2].map((i) => [i.id, i.label])).toEqual([['new-page-menu', 'New page'], ['new-card', 'New card'], ['new-drawing-menu', 'New drawing'], ['new-folder-menu', 'New folder']])
     expect(leafOf(sections, 'New card')).toBeDefined()
     select(sections, 'New card')
     expect(onNewCard).toHaveBeenCalledExactlyOnceWith('/v')
-    // The page's word does not reach it: a vault that says "note" still says "New card".
-    expect(labelsOf(build({ ...FILE_ROW, cardDir: '/v', unit: (text) => text.replace(/note/g, 'page') }))).toContain('New card')
+    // The page's word does not reach it: a vault that says "page" still says "New card".
+    expect(labelsOf(build({ ...FILE_ROW, cardDir: '/v', unit: (text) => text.replace(/page/g, 'page') }))).toContain('New card')
     // No folder to create in: no card either.
     expect(labelsOf(build({ targetDir: null, cardDir: '/v' }))).not.toContain('New card')
   })
@@ -313,9 +313,9 @@ describe('create parents (YAZ-3085 D1, D3)', () => {
     /** The `data-kind` of a row's icon, as the tree draws it; undefined: no icon. */
     const kindOf = (icon: unknown) => (icon === undefined ? undefined : /data-kind="([^"]+)"/.exec(renderToStaticMarkup(icon as ReactElement))?.[1])
     const top = Object.fromEntries(sections[2].map((i) => [i.label, kindOf(i.icon)]))
-    expect(top).toEqual({ 'New note': 'markdown', 'New card': 'card', 'New drawing': 'drawing', 'New folder': 'folder' })
-    const flyouts = Object.fromEntries(['New note', 'New drawing', 'New folder'].flatMap((label) => parentOf(sections, label)!.children.flat().map((c) => [c.label, kindOf(c.icon)])))
-    expect(flyouts).toEqual({ 'New note': 'markdown', 'New dated note': 'markdown', 'New Excalidraw drawing': 'drawing', 'New dated Excalidraw drawing': 'drawing', 'New draw.io diagram': 'diagram', 'New folder': 'folder', 'New dated folder': 'folder' })
+    expect(top).toEqual({ 'New page': 'markdown', 'New card': 'card', 'New drawing': 'drawing', 'New folder': 'folder' })
+    const flyouts = Object.fromEntries(['New page', 'New drawing', 'New folder'].flatMap((label) => parentOf(sections, label)!.children.flat().map((c) => [c.label, kindOf(c.icon)])))
+    expect(flyouts).toEqual({ 'New page': 'markdown', 'New dated page': 'markdown', 'New Excalidraw drawing': 'drawing', 'New dated Excalidraw drawing': 'drawing', 'New draw.io diagram': 'diagram', 'New folder': 'folder', 'New dated folder': 'folder' })
     // The label stays the bare words: the icon holds no text.
     expect(labelsOf(sections)).toContain('New card')
   })
@@ -418,7 +418,7 @@ describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
   })
 
   it('S26, S27, S34: with a target it is the FIRST item of the menu — before "Add to focus" on a file row, before "Open folder page" on a folder row — and the rest of the menu is as it was', () => {
-    const file = build({ ...FILE_ROW, showPath: '/v/Note.md' })
+    const file = build({ ...FILE_ROW, showPath: '/v/Page.md' })
     expect(file[0].map((i) => i.label)).toEqual(['Show in sidebar', 'Open in new window', 'Add to focus'])
     expect(labelsOf(file)).toEqual(['Show in sidebar', ...labelsOf(build(FILE_ROW))])
     const folder = build({ openPath: '/v/Projects', focusPaths: ['/v/Projects'], showPath: '/v/Projects' })
@@ -431,8 +431,8 @@ describe('"Show in sidebar" item (YAZ-2638 D1, D3)', () => {
 
   it('S29, S30, S36: a select hands the caller the row, and no other handler runs', () => {
     const h = handlers()
-    select(buildMenuSections(targets({ ...FILE_ROW, showPath: '/v/Note.md' }), h), 'Show in sidebar')
-    expect(h.onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
+    select(buildMenuSections(targets({ ...FILE_ROW, showPath: '/v/Page.md' }), h), 'Show in sidebar')
+    expect(h.onShowInSidebar).toHaveBeenCalledExactlyOnceWith('/v/Page.md')
     const others = Object.entries(h).filter(([name]) => name !== 'onShowInSidebar')
     for (const [name, fn] of others) expect(fn, name).not.toHaveBeenCalled()
   })
@@ -624,10 +624,10 @@ describe('review items (YAZ-2322, YAZ-4967)', () => {
     const onReviewPage = vi.fn()
     expect(labelsOf(build(FILE_ROW))).not.toContain('Review this page')
     expect(labelsOf(build(BLANK))).not.toContain('Review this page')
-    const sections = build({ ...FILE_ROW, reviewPage: '/v/Note.md' }, { onReviewPage })
+    const sections = build({ ...FILE_ROW, reviewPage: '/v/Page.md' }, { onReviewPage })
     expect(sections[3].map((i) => i.label)).toEqual(['Review this page', 'Rename'])
     select(sections, 'Review this page')
-    expect(onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/Note.md')
+    expect(onReviewPage).toHaveBeenCalledExactlyOnceWith('/v/Page.md')
     expect(labelsOf(sections).some((l) => l.startsWith('Turn review'))).toBe(false)
   })
 
@@ -672,40 +672,40 @@ describe('favorite toggle item (YAZ-1766 D3)', () => {
   })
 
   it('leads the "Open in ▸" group — the this-row group ends on Rename, and the toggle sits directly above the flyout', () => {
-    const sections = build({ ...FILE_ROW, favoritePaths: ['/v/Note.md'], favoriteIsOn: false })
+    const sections = build({ ...FILE_ROW, favoritePaths: ['/v/Page.md'], favoriteIsOn: false })
     expect(sections[3].map((i) => i.label)).toEqual(['Rename'])
     expect(sections[4].map((i) => i.label)).toEqual(['Add to favorites', 'Open in'])
   })
 })
 
 /**
- * "Add note shortcut" (YAZ-2290 D2): a FOLDER row's item and nobody else's — the Sidebar hands
+ * "Add page shortcut" (YAZ-2290 D2): a FOLDER row's item and nobody else's — the Sidebar hands
  * a target only for one folder row outside a plural selection. It sits under the favorite toggle.
  */
-describe('Add note shortcut item (YAZ-2290 D2)', () => {
+describe('Add page shortcut item (YAZ-2290 D2)', () => {
   it('is absent without a target — a file row, blank space, a 2+ selection', () => {
-    expect(itemOf(build(FILE_ROW), 'Add note shortcut')).toBeUndefined()
-    expect(itemOf(build(BLANK), 'Add note shortcut')).toBeUndefined()
-    expect(itemOf(build({ copyPaths: ['/v/a', '/v/b'], openTabPaths: ['/v/a', '/v/b'], favoritePaths: ['/v/a', '/v/b'] }), 'Add note shortcut')).toBeUndefined()
+    expect(itemOf(build(FILE_ROW), 'Add page shortcut')).toBeUndefined()
+    expect(itemOf(build(BLANK), 'Add page shortcut')).toBeUndefined()
+    expect(itemOf(build({ copyPaths: ['/v/a', '/v/b'], openTabPaths: ['/v/a', '/v/b'], favoritePaths: ['/v/a', '/v/b'] }), 'Add page shortcut')).toBeUndefined()
   })
 
   it('a folder row: directly under the favorite toggle, above the flyout, and it hands the caller the folder', () => {
     const onAddShortcut = vi.fn()
     const sections = build({ shortcutDir: '/v/Projects', favoritePaths: ['/v/Projects'], revealPath: '/v/Projects' }, { onAddShortcut })
-    expect(sections[4].map((i) => i.label)).toEqual(['Add to favorites', 'Add note shortcut', 'Open in'])
-    select(sections, 'Add note shortcut')
+    expect(sections[4].map((i) => i.label)).toEqual(['Add to favorites', 'Add page shortcut', 'Open in'])
+    select(sections, 'Add page shortcut')
     expect(onAddShortcut).toHaveBeenCalledExactlyOnceWith('/v/Projects')
   })
 })
 
 /**
- * A SHORTCUT row (YAZ-2290 E5): the note shown in a folder it does not live in. "Remove
+ * A SHORTCUT row (YAZ-2290 E5): the page shown in a folder it does not live in. "Remove
  * shortcut" stands where Delete would, and the file clipboard is withheld — the row is not a file
- * in this folder. Everything that acts on the note in its real place stays.
+ * in this folder. Everything that acts on the page in its real place stays.
  */
 describe('a shortcut row (YAZ-2290 E5)', () => {
   /** What the Sidebar pins for one: the file row's targets, minus Delete, Rename and the clip. */
-  const SHORTCUT_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, clipPaths: null, renamePath: null, deletePaths: null, removeShortcut: { path: '/v/Note.md', dir: '/v/Projects' } }
+  const SHORTCUT_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, clipPaths: null, renamePath: null, deletePaths: null, removeShortcut: { path: '/v/Page.md', dir: '/v/Projects' } }
 
   it('"Remove shortcut" stands LAST and alone where Delete would — no Delete, and nothing flagged danger', () => {
     const sections = build(SHORTCUT_ROW)
@@ -714,17 +714,17 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
     expect(sections.flat().some((i) => i.danger === true)).toBe(false)
   })
 
-  it('hands the caller the note and the folder it leaves', () => {
+  it('hands the caller the page and the folder it leaves', () => {
     const onRemoveShortcut = vi.fn()
     select(build(SHORTCUT_ROW, { onRemoveShortcut }), 'Remove shortcut')
-    expect(onRemoveShortcut).toHaveBeenCalledExactlyOnceWith('/v/Note.md', '/v/Projects')
+    expect(onRemoveShortcut).toHaveBeenCalledExactlyOnceWith('/v/Page.md', '/v/Projects')
   })
 
   it('withholds Cut, Copy and Paste — even with something clipped — and keeps the real-place items, the focus toggle among them (YAZ-2619 R8)', () => {
     expect(groupsOf(build({ ...SHORTCUT_ROW, clip: { count: 2, op: 'copy', paths: ['/v/a.md', '/v/b.md'] } }))).toEqual([
       ['Open in new window', 'Add to focus'],
       ['Copy path'],
-      ['New note', 'New drawing', 'New folder'],
+      ['New page', 'New drawing', 'New folder'],
       ['Open in'],
       ['Remove shortcut'],
     ])
@@ -743,7 +743,7 @@ describe('a shortcut row (YAZ-2290 E5)', () => {
  * it creates, pastes and focuses like a folder, and leaves the window instead of being deleted.
  */
 describe('the vault items (YAZ-2602)', () => {
-  const KNOWN = [{ path: '/w/Work', name: 'Work' }, { path: '/x/Archive', name: 'Old notes' }]
+  const KNOWN = [{ path: '/w/Work', name: 'Work' }, { path: '/x/Archive', name: 'Old pages' }]
   const flyoutOf = (sections: MenuSection[], label: string) => (itemOf(sections, label) as MenuParent | undefined)?.children
   /** A vault row: no target for Open, Cut, Copy, Rename, Delete, the favorite, the shortcut or a review — and none for "Default app". */
   // A vault row names no focus paths (A2): the Sidebar hands null, and the toggle is not built.
@@ -754,7 +754,7 @@ describe('the vault items (YAZ-2602)', () => {
     expect(sections).toHaveLength(6)
     expect(groupsOf(sections)).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New drawing', 'New folder'],
+      ['New page', 'New drawing', 'New folder'],
       ['Open in', 'Add vault to this window'],
     ])
   })
@@ -762,7 +762,7 @@ describe('the vault items (YAZ-2602)', () => {
   it('its flyout lists the known vaults in the order given, then "Open folder…" under a separator; each adds its vault, the last one runs the picker (S1 to S3)', () => {
     const h = handlers()
     const flyout = flyoutOf(buildMenuSections(targets({ ...BLANK, addVaults: KNOWN }), h), 'Add vault to this window')
-    expect(flyout?.map((section) => section.map((i) => i.label))).toEqual([['Work', 'Old notes'], ['Open folder…']])
+    expect(flyout?.map((section) => section.map((i) => i.label))).toEqual([['Work', 'Old pages'], ['Open folder…']])
     flyout?.[0][1].onSelect()
     expect(h.onAddVault).toHaveBeenCalledExactlyOnceWith('/x/Archive')
     flyout?.[1][0].onSelect()
@@ -788,7 +788,7 @@ describe('the vault items (YAZ-2602)', () => {
     const sections = build(VAULT_ROW)
     expect(groupsOf(sections)).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New drawing', 'New folder'],
+      ['New page', 'New drawing', 'New folder'],
       ['Open in'],
       ['Remove from this window'],
     ])
@@ -816,7 +816,7 @@ describe('Open by itself (YAZ-2858 D4, S15, S16)', () => {
     const sections = buildMenuSections(targets(VAULT_ROW), h)
     expect(groupsOf(sections)).toEqual([
       ['Paste', 'Copy path'],
-      ['New note', 'New drawing', 'New folder'],
+      ['New page', 'New drawing', 'New folder'],
       ['Open by itself', 'Open in'],
       ['Remove from this window'],
     ])
@@ -836,7 +836,7 @@ describe('Open by itself (YAZ-2858 D4, S15, S16)', () => {
 describe('Info item (YAZ-3028 D11)', () => {
   const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePaths: ['/v/Flow.drawio'], renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
 
-  it('is absent on a note, a folder, blank space and a selection — every menu without a target', () => {
+  it('is absent on a page, a folder, blank space and a selection — every menu without a target', () => {
     expect(labelsOf(build(FILE_ROW))).not.toContain('Info')
     expect(labelsOf(build(BLANK))).not.toContain('Info')
   })
@@ -855,7 +855,7 @@ describe('Info item (YAZ-3028 D11)', () => {
 describe('Version history item (YAZ-3039)', () => {
   const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/B.excalidraw', deletePaths: ['/v/B.excalidraw'], renamePath: '/v/B.excalidraw', infoPath: '/v/B.excalidraw' }
 
-  it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
+  it('is absent on a page and on blank space, and on a board row hands the caller the board', () => {
     expect(labelsOf(build(FILE_ROW))).not.toContain('Version history')
     expect(labelsOf(build(BLANK))).not.toContain('Version history')
     const onHistory = vi.fn()
@@ -868,7 +868,7 @@ describe('Version history item (YAZ-3039)', () => {
 describe('Share item (YAZ-3040)', () => {
   const BOARD_ROW: Partial<MenuSectionTargets> = { ...FILE_ROW, copyPath: '/v/Flow.drawio', deletePaths: ['/v/Flow.drawio'], renamePath: '/v/Flow.drawio', infoPath: '/v/Flow.drawio' }
 
-  it('is absent on a note and on blank space, and on a board row hands the caller the board', () => {
+  it('is absent on a page and on blank space, and on a board row hands the caller the board', () => {
     expect(labelsOf(build(FILE_ROW))).not.toContain('Share')
     expect(labelsOf(build(BLANK))).not.toContain('Share')
     const onShare = vi.fn()

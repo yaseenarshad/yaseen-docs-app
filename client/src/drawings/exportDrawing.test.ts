@@ -103,7 +103,7 @@ describe('standard fonts in an exported copy (YAZ-3943 D14)', () => {
     expect(elements.map((e) => (e as Record<string, unknown>).fontFamily)).toEqual([10, 11, 12, 13, 14, 5, undefined])
   })
 
-  it('without the flag (the note embed\'s sidecar, Share Link) every element and the appState go to the writer as they are', () => {
+  it('without the flag (the page embed\'s sidecar, Share Link) every element and the appState go to the writer as they are', () => {
     const { engine, serializeAsJSON } = stubEngine()
     const elements = [textEl('a', 10), textEl('e', 14)]
     const appState = { currentItemFontFamily: 11 }

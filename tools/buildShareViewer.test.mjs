@@ -99,7 +99,7 @@ describe.skipIf(!existsSync(VIEWER))("a shared diagram's page, drawn offline by 
       // The set came out of stencils.min.js: no per-set file is asked for, and none is published.
       expect(requested.filter((url) => url.includes('/stencils/'))).toEqual([])
       expect(requested.filter((url) => !url.startsWith(`${ORIGIN}/`))).toEqual([])
-      expect(window.document.getElementById('note')).toBeNull()
+      expect(window.document.getElementById('page')).toBeNull()
       expect(typeof window.document.getElementById('dl-drawio').onclick).toBe('function')
       // The viewer loads MathJax on every page: unpublished, a math label would show raw TeX.
       const mathJax = new URL(window.document.querySelector('script[src$="/startup.js"]').src)

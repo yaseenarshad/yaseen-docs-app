@@ -13,7 +13,7 @@
  *    segment is cut at its glyph centre by THREAD_STOP_CLASS. Contiguous full-height segments
  *    make one continuous line that ends at the active bullet.
  * Drawing is pure CSS (bulletThreading.css), gated by `data-threading`: the page cog's "Bullet threading" on the
- * note's host, else Settings' "Bullet threading default" on `:root` (YAZ-4432).
+ * page's host, else Settings' "Bullet threading default" on `:root` (YAZ-4432).
  */
 import type { Node as ProseNode, ResolvedPos } from '@milkdown/kit/prose/model'
 import { type EditorState, Plugin, PluginKey } from '@milkdown/kit/prose/state'

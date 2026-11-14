@@ -14,11 +14,11 @@ import { git, resolveGit } from './exec'
  * a token, and the question the page answers ("will GitHub take this, and what is making it
  * big?") is answered by what is on this machine.
  *
- * DOCS' BUCKETS (YAZ-3028 D12): `assets/` holds note images and drawings too (YAZ-852's
+ * DOCS' BUCKETS (YAZ-3028 D12): `assets/` holds page images and drawings too (YAZ-852's
  * `assets/drawings/`), not only Draw's picture store. So a board counts as a board wherever it
- * is, a non-board file in the top-level `assets/` is a picture, and everything else — notes
+ * is, a non-board file in the top-level `assets/` is a picture, and everything else — pages
  * first — is "other". Embedded pictures are measured only in drawings OUTSIDE `assets/`: those
- * are the ones "Move pictures out" moves. A note embed keeps its pictures inside (rule 28).
+ * are the ones "Move pictures out" moves. A page embed keeps its pictures inside (rule 28).
  *
  * A BOARD'S OWN PICTURES FOLDER (YAZ-4127 6B1): the picture files at the top of a folder that a board's block names
  * (`picturesFolder`) are pictures too, each file one time, however many boards name the folder. Only the names a board

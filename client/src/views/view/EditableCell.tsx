@@ -26,23 +26,23 @@ export interface EditableCellProps {
   editor: EditorKind | null
   /**
    * What the link, multi-link and text editors' `[[…]]` completion offers, each with what picking it writes. A folder
-   * page's cells: the note editor's rows, notes then folders (`cellLinkCandidates`, YAZ-4601 D49), or a link column's
+   * page's cells: the page editor's rows, pages then folders (`cellLinkCandidates`, YAZ-4601 D49), or a link column's
    * target folder (`belongsToTitles`); the properties panel: the titles (`titleCandidates`).
    */
   titles: readonly LinkCandidate[]
   /**
-   * The ONE write: the host's own. A folder's views write its block of the note
+   * The ONE write: the host's own. A folder's views write its block of the page
    * (`FolderHost.writeValues`, D19); the properties panel writes the row's group and moves its
    * belief of disk with it (⚡ YAZ-884). Resolves on success, rejects with the message to show.
    */
   onCommit: (next: unknown) => Promise<unknown>
   /**
    * The vault's resolver (YAZ-2293 D8): the display — and the chips editor's chips — read an id
-   * link as its note's title. Display ONLY: the editors' text and every commit stay the stored form.
+   * link as its page's title. Display ONLY: the editors' text and every commit stay the stored form.
    */
   resolve?: Resolver
   /**
-   * The note is read only (YAZ-3076 D6, S52, S56): the value shows with the tooltip "This note is read
+   * The page is read only (YAZ-3076 D6, S52, S56): the value shows with the tooltip "This page is read
    * only", with no `[data-edit]`, so a click, a double-click or a key opens nothing; a checkbox is
    * shown disabled. Nothing commits.
    */
@@ -90,7 +90,7 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
 
   // A lock ends the edit (YAZ-3124): the draft goes with the unmounted field, and no focus moves —
   // not `close()`, whose focus hand-back is for the human's own Enter or Esc. Without it the editor
-  // would reopen, and take the focus, the moment the note stopped being read only.
+  // would reopen, and take the focus, the moment the page stopped being read only.
   useEffect(() => {
     if (readOnly) setEditing(false)
   }, [readOnly])
@@ -396,7 +396,7 @@ interface LinkEditorProps {
 /**
  * Link editor: a text input whose unclosed trailing `[[fragment` offers index titles
  * (through the shared matcher, `links/completion.ts` — GRO-2191); ArrowUp/Down pick, Enter
- * completes to `[[id]]` — `[[basename]]` for a note without one, YAZ-2293 — (then Enter again
+ * completes to `[[id]]` — `[[basename]]` for a page without one, YAZ-2293 — (then Enter again
  * commits the string).
  */
 function LinkEditor({ initial, titles, label, onCommit, onDone }: LinkEditorProps) {

@@ -46,8 +46,8 @@ describe('gestureNotice (audit 9): the one sentence of a gesture over many items
   it('says what landed, then how many did not and the first of them; with nothing landed, the failure alone; null when nothing ran', () => {
     expect(gestureNotice('Moved 2 items', [], "Can't move")).toBe('Moved 2 items')
     expect(gestureNotice('Moved 2 items', ['Plan already exists', 'Trip — gone'], "Can't move")).toBe('Moved 2 items, skipped 2: Plan already exists')
-    expect(gestureNotice(null, ['Note — gone'], "Couldn't paste")).toBe("Couldn't paste: Note — gone")
-    expect(gestureNotice(null, ['Note — gone', 'Plan — gone'], "Can't undo")).toBe("Can't undo 2 items: Note — gone")
+    expect(gestureNotice(null, ['Page — gone'], "Couldn't paste")).toBe("Couldn't paste: Page — gone")
+    expect(gestureNotice(null, ['Page — gone', 'Plan — gone'], "Can't undo")).toBe("Can't undo 2 items: Page — gone")
     expect(gestureNotice(null, [], "Can't move")).toBeNull()
   })
 })
@@ -56,7 +56,7 @@ describe('namedItems (YAZ-3274 D22, YAZ-3293 D23): the items of a gesture by kin
   const file = (name: string) => ({ name, kind: 'file' as const })
   const folder = (name: string) => ({ name, kind: 'dir' as const })
 
-  it('1 folder says "1 folder" and its name (S76); notes say "files" with the extension (S77)', () => {
+  it('1 folder says "1 folder" and its name (S76); pages say "files" with the extension (S77)', () => {
     expect(NAMES_SHOWN).toBe(3)
     expect(namedItems([folder('Projects')])).toBe('1 folder (Projects)')
     expect(namedItems([file('Todo.md')])).toBe('1 file (Todo.md)')
@@ -93,6 +93,6 @@ describe('namedItems (YAZ-3274 D22, YAZ-3293 D23): the items of a gesture by kin
 
   it('the drag-out box names the items it asks about by kind and by name on disk (S76)', () => {
     expect(dragOutText({ paths: ['/v/Projects'], kinds: ['dir'], links: 0 })).toBe('Copied 1 folder (Projects) to Finder?')
-    expect(dragOutText({ paths: ['/v/A.md', '/v/B.md', '/v/C', '/v/D.md'], kinds: ['file', 'file', 'dir', 'file'], links: 2 })).toBe('Copied 1 folder and 3 files (A.md, B.md, C + 1 more) to Finder? 2 notes link to them.')
+    expect(dragOutText({ paths: ['/v/A.md', '/v/B.md', '/v/C', '/v/D.md'], kinds: ['file', 'file', 'dir', 'file'], links: 2 })).toBe('Copied 1 folder and 3 files (A.md, B.md, C + 1 more) to Finder? 2 pages link to them.')
   })
 })

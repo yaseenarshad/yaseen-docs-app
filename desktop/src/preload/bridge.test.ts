@@ -120,8 +120,8 @@ describe('preload bridge specials', () => {
     const { ipcRenderer, webUtils } = await import('electron')
     const { bridge } = await import('./index')
     vi.mocked(ipcRenderer.invoke).mockClear()
-    const file = { name: 'Note.md' } as unknown as File
-    expect(bridge.file.pathFor(file)).toBe('/Users/yasin/Downloads/Note.md')
+    const file = { name: 'Page.md' } as unknown as File
+    expect(bridge.file.pathFor(file)).toBe('/Users/yasin/Downloads/Page.md')
     expect(webUtils.getPathForFile).toHaveBeenCalledExactlyOnceWith(file)
     expect(ipcRenderer.invoke).not.toHaveBeenCalled()
   })

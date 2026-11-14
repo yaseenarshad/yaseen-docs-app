@@ -8,7 +8,7 @@ import { cssZoom } from '../lib/cssZoom'
 
 /** The narrowest card (px). The widest is the Inbox tab's width less its side margins. */
 export const CARD_MIN_WIDTH = 420
-/** The Inbox's side padding (px, `.note-card-inbox`): the card never goes under it. */
+/** The Inbox's side padding (px, `.card-inbox`): the card never goes under it. */
 export const CARD_SIDE_MARGIN = 16
 
 let width: number | null = null
@@ -54,13 +54,13 @@ export function useInboxCardWidth(column: RefObject<HTMLElement | null>, inbox: 
         window.removeEventListener('pointermove', move)
         window.removeEventListener('pointerup', end)
         window.removeEventListener('pointercancel', end)
-        document.body.classList.remove('note-card-inbox--sizing')
+        document.body.classList.remove('card-inbox--sizing')
         drag.current = null
       }
       drag.current?.()
       drag.current = end
       // The ew-resize cursor stays on the whole window while the drag runs, also off the edge.
-      document.body.classList.add('note-card-inbox--sizing')
+      document.body.classList.add('card-inbox--sizing')
       window.addEventListener('pointermove', move)
       window.addEventListener('pointerup', end)
       window.addEventListener('pointercancel', end)

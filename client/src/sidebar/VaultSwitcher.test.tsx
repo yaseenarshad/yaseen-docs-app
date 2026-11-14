@@ -1,3 +1,4 @@
+// rename-note-to-page: skip-file (its test vaults are named "Notes": a user's folder name, not the word)
 /**
  * The vault switcher (YAZ-1767): the sidebar header's trigger + panel. Pins the locked decisions —
  * D3 the current vault is a row (`aria-current`), D4 "Open folder…" last, D5 dead folders stay in

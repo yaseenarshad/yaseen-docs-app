@@ -217,7 +217,7 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
   /**
    * "Header row ›" (YAZ-4794): the View tab's Header row from the column header, ✓ at what the table shows. A pick is
    * one write of the view's own `headerRow` (`setHeaderRowPart`, the View tab's writer) and the menu stays open, so
-   * fill, strength, weight, text colour and align go in one visit, as a note table's "Header row ›".
+   * fill, strength, weight, text colour and align go in one visit, as a page table's "Header row ›".
    */
   const header = shownHeaderRow(view)
   const headerItem = (part: keyof HeaderRowOwn, value: string, swatch?: string) => (

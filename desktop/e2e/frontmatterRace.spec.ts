@@ -51,8 +51,8 @@ async function countWriteConflicts(a: ElectronApplication): Promise<() => Promis
   return () => a.evaluate(() => (globalThis as unknown as { writeConflicts: number }).writeConflicts)
 }
 
-/** Types a marker into the note body and returns it, with the file path; the autosave is left pending. */
-async function typeIntoNote(): Promise<{ win: Page; file: string; marker: string; conflicts: () => Promise<number> }> {
+/** Types a marker into the page body and returns it, with the file path; the autosave is left pending. */
+async function typeIntoPage(): Promise<{ win: Page; file: string; marker: string; conflicts: () => Promise<number> }> {
   const src = await buildFixtureVault()
   const vault = await copyVault(src)
   const userData = await mkdtemp(path.join(tmpdir(), 'fmrace-'))
@@ -85,7 +85,7 @@ async function writeFromPage(win: Page, file: string, edit: 'frontmatter' | 'bod
 // wins); the 450/550 ms of the 200 ms-settle days no longer reach the CONFLICT at all.
 for (const delayMs of [600, 630, 660]) {
   test(`a frontmatter write ${delayMs} ms after the last keystroke: no bar, and both edits on disk`, async () => {
-    const { win, file, marker, conflicts } = await typeIntoNote()
+    const { win, file, marker, conflicts } = await typeIntoPage()
     await win.waitForTimeout(delayMs)
     await writeFromPage(win, file, 'frontmatter')
     await expect.poll(async () => readFile(file, 'utf8'), { timeout: 10_000 }).toContain(marker)
@@ -100,7 +100,7 @@ for (const delayMs of [600, 630, 660]) {
   })
 
   test(`a BODY write ${delayMs} ms after the last keystroke still raises the bar`, async () => {
-    const { win, file, marker, conflicts } = await typeIntoNote()
+    const { win, file, marker, conflicts } = await typeIntoPage()
     await win.waitForTimeout(delayMs)
     await writeFromPage(win, file, 'body')
     await expect(win.locator('.conflict-bar')).toBeVisible({ timeout: 10_000 })

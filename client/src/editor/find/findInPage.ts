@@ -1,5 +1,5 @@
 /**
- * CMD+F find in the open note (YAZ-968) — the engine behind `FindChannel`.
+ * CMD+F find in the open page (YAZ-968) — the engine behind `FindChannel`.
  *
  * Design, the fold plugin's (outlineFolding.ts): the whole search lives in plugin state (query,
  * matches, active index, the items this search revealed — every position mapped through every
@@ -25,12 +25,12 @@
  * The thread (YAZ-3166): after a query or a step, bullet threading and section indent point at the
  * active match instead of the caret (`findThreadAnchor`); a caret move or an edit gives them back.
  *
- * Cell notes (YAZ-3818 D19): in the note view, the matches in the hidden cell notes count. When the active match is in
- * one, find opens that note as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
- * of it, as it does of the folds it opened. When the active match moves out of that note, find closes the card.
- * `close()` on a match in the note leaves the card open with the caret in it.
+ * Cell notes (YAZ-3818 D19): in the page view, the matches in the hidden cell notes count. When the active match is in
+ * one, find opens that cell note as a card beside its cell (`table/cellNoteCard.ts`; the caret stays), and keeps a record
+ * of it, as it does of the folds it opened. When the active match moves out of that cell note, find closes the card.
+ * `close()` on a match in the cell note leaves the card open with the caret in it.
  *
- * Pills (YAZ-3744 S9): a `[[link]]` the note draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
+ * Pills (YAZ-3744 S9): a `[[link]]` the page draws as a pill (`pillLinks`, the wikilink plugin's own drawing) hides
  * text. The matches that touch its hidden text (an ID, `.drawio`, folders, the brackets) are together ONE match, and each
  * match in the title an ID link shows is one. Each marks the whole pill: its shown text, and its title widget (a widget takes no
  * decoration, so the plugin view puts the classes on it). Such a match starts at the link's start, so `close()` lands
@@ -61,7 +61,7 @@ export const FIND_MATCH_CLASS = 'find-match'
 export const FIND_ACTIVE_CLASS = 'find-match--active'
 
 /** The cell note find opened as a card (D19): its position, mapped through every change. */
-type OpenedNote = number
+type OpenedCellNote = number
 
 /** An absolute document range: one match, or the zoomed subtree. */
 interface Match {
@@ -71,7 +71,7 @@ interface Match {
   pill?: PillLink
 }
 
-/** The links find reads as the note draws them (YAZ-3744 S9): the editor's own sources. */
+/** The links find reads as the page draws them (YAZ-3744 S9): the editor's own sources. */
 export interface FindLinks {
   wikilinks: WikilinkResolveSource
   viewOnly?: ViewOnlyLinkSource
@@ -87,10 +87,10 @@ interface FindState {
   /** The same, for heading sections (YAZ-1140) — kept apart: the two plugins own different positions. */
   revealedHeadings: ReadonlySet<number>
   /** The cell note THIS search opened, or null (D19). */
-  opened: OpenedNote | null
+  opened: OpenedCellNote | null
   /**
    * The thread points at the active match (YAZ-3166): true after a query or a step. False once the
-   * caret moves, the doc is edited, or a click or a key lands in the note (YAZ-3200). A doc change
+   * caret moves, the doc is edited, or a click or a key lands in the page (YAZ-3200). A doc change
    * that another plugin appends to find's own transaction keeps it.
    */
   onMatch: boolean
@@ -100,9 +100,9 @@ type FindMeta =
   | { type: 'query'; query: string }
   | { type: 'step'; delta: 1 | -1 }
   | { type: 'revealed'; revealed: ReadonlySet<number>; revealedHeadings: ReadonlySet<number> }
-  | { type: 'opened'; opened: OpenedNote | null }
+  | { type: 'opened'; opened: OpenedCellNote | null }
   | { type: 'clear' }
-  /** A click or a key in the note that sent no transaction of its own: the thread goes back to the caret (YAZ-3200). */
+  /** A click or a key in the page that sent no transaction of its own: the thread goes back to the caret (YAZ-3200). */
   | { type: 'release' }
 
 /** Shared across instances: a PluginKey only identifies the plugin within one EditorState. */
@@ -147,7 +147,7 @@ const occurrences = (haystack: string, needle: string): number[] => {
 /**
  * One textblock's matches (S9): a match that touches a pill's hidden text marks the pill; a title's matches too. A pill
  * counts once for its hidden text, however many matches that text holds, and not at all when its title counts it: the
- * title of a missing note shows the ID it hides (S10). Each match in a title counts, as in any text.
+ * title of a missing page shows the ID it hides (S10). Each match in a title counts, as in any text.
  */
 const blockMatches = (node: ProseNode, pos: number, needle: string, pills: readonly PillLink[]): Match[] => {
   const matches: Match[] = []
@@ -246,18 +246,18 @@ const nextActive = (previous: FindState, meta: FindMeta | undefined, matches: re
 const carryRevealed = (transaction: Transaction, reported: ReadonlySet<number> | undefined, previous: ReadonlySet<number>): ReadonlySet<number> =>
   reported ?? (transaction.docChanged ? new Set([...previous].map((pos) => transaction.mapping.map(pos, 1))) : previous)
 
-/** The opened note across a transaction: the freshly reported one, else the old one mapped; null once the note is gone. */
-const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedNote | null): OpenedNote | null => {
+/** The opened cell note across a transaction: the freshly reported one, else the old one mapped; null once the cell note is gone. */
+const carryOpened = (transaction: Transaction, meta: FindMeta | undefined, previous: OpenedCellNote | null): OpenedCellNote | null => {
   if (meta?.type === 'opened') return meta.opened
   if (previous === null || !transaction.docChanged) return previous
-  const note = transaction.mapping.mapResult(previous, 1)
-  return note.deleted ? null : note.pos
+  const cellNote = transaction.mapping.mapResult(previous, 1)
+  return cellNote.deleted ? null : cellNote.pos
 }
 
 /** The hidden cell note that holds `pos`, or null (D19). */
-const hiddenNoteAt = (state: EditorState, pos: number): number | null => {
-  const note = cellNoteAround(state.doc.resolve(pos))
-  return note !== null && isCellNoteHidden(state, note) ? note : null
+const hiddenCellNoteAt = (state: EditorState, pos: number): number | null => {
+  const cellNote = cellNoteAround(state.doc.resolve(pos))
+  return cellNote !== null && isCellNoteHidden(state, cellNote) ? cellNote : null
 }
 
 /** The engine behind the channel's commands. Every step is metadata-only, and synchronous. */
@@ -315,7 +315,7 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
     if (differs(revealed, previous.revealed) || differs(revealedHeadings, previous.revealedHeadings))
       dispatchMeta({ type: 'revealed', revealed, revealedHeadings })
     if (folds !== 'keep' && active !== null) openTableRun(active.from)
-    followNotes()
+    followCellNotes()
   }
   /**
    * A match in a folded table row (a collapsed subheader section, YAZ-4899 item 20, or a "Fold N rows" run) opens the
@@ -335,20 +335,20 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
    * D19: the card find opened closes when the active match is not in it; the hidden cell note that holds the active
    * match opens as a card. A card the reader closed meanwhile is no longer find's.
    */
-  const followNotes = (): void => {
+  const followCellNotes = (): void => {
     let { opened } = findState()
     const match = activeMatch()
     if (opened !== null && cellNoteCardKey.getState(view.state)?.pos !== opened) opened = null
     if (opened !== null) {
-      const note = view.state.doc.nodeAt(opened)!
-      if (match === null || match.from < opened || match.from >= opened + note.nodeSize) {
+      const cellNote = view.state.doc.nodeAt(opened)!
+      if (match === null || match.from < opened || match.from >= opened + cellNote.nodeSize) {
         closeCellNote(view, false)
         opened = null
       }
     }
-    const hidden = match === null ? null : hiddenNoteAt(view.state, match.from)
+    const hidden = match === null ? null : hiddenCellNoteAt(view.state, match.from)
     if (hidden !== null) {
-      // The note's cell: the one that holds its mark.
+      // The cell note's cell: the one that holds its mark.
       const mark = markPosOf(view.state.doc, view.state.doc.nodeAt(hidden)!.attrs.label as string)
       const cell = mark === null ? null : cellPosAround(view.state.doc.resolve(mark))
       if (cell !== null && openCellNote(view, cell, false)) opened = cellNoteCardKey.getState(view.state)?.pos ?? null
@@ -408,11 +408,11 @@ const createController = (view: EditorView, channel: FindChannel): FindControlle
   }
 }
 
-/** A modifier alone is not a key in the note: ⌘ on its way to a shortcut must not move the thread. */
+/** A modifier alone is not a key in the page: ⌘ on its way to a shortcut must not move the thread. */
 const MODIFIER_KEYS = new Set(['Shift', 'Meta', 'Alt', 'Control', 'CapsLock'])
 
 /**
- * A click or a key in the note gives the thread back to the caret (YAZ-3200), also when the caret
+ * A click or a key in the page gives the thread back to the caret (YAZ-3200), also when the caret
  * stays where it is and ProseMirror sends no transaction: a click on the caret's own spot, or an
  * arrow key at the end of the doc. A real caret move or edit clears it in `apply` anyway.
  */

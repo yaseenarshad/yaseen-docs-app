@@ -73,7 +73,7 @@ describe('RightPanel', () => {
     expect(el.querySelector('[aria-label="Close UP-001 - Abdul"]')).not.toBeNull()
   })
 
-  it('a board row has no icon, so it always names its kind: its extension shows after the name; a note shows none (YAZ-3536 D4, S29)', () => {
+  it('a board row has no icon, so it always names its kind: its extension shows after the name; a page shows none (YAZ-3536 D4, S29)', () => {
     const el = mount({ ...base(), items: ['/v/Flow.drawio', '/v/Beta.md'], expanded: null })
     expect([...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)).toEqual(['Flow.drawio', 'Beta'])
     expect(el.querySelector('.right-panel__label .name-ending')?.className).toBe('name-ending name-ending--always')
@@ -81,13 +81,13 @@ describe('RightPanel', () => {
   })
 
   it('a folder named like a file keeps its whole name once the Files tree says it is a folder (YAZ-2290)', async () => {
-    const el = mount({ ...base(), roots: ['/named'], items: ['/named/Notes.md', '/named/Plan.md'], expanded: null })
+    const el = mount({ ...base(), roots: ['/named'], items: ['/named/Pages.md', '/named/Plan.md'], expanded: null })
     const labels = () => [...el.querySelectorAll('.right-panel__label')].map((label) => label.textContent)
-    expect(labels()).toEqual(['Notes', 'Plan'])
-    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Notes.md', path: '/named/Notes.md', children: [] }], generatedAt: 1 })
+    expect(labels()).toEqual(['Pages', 'Plan'])
+    vi.mocked(api.tree).mockResolvedValueOnce({ root: '/named', tree: [{ type: 'dir', name: 'Pages.md', path: '/named/Pages.md', children: [] }], generatedAt: 1 })
     await act(async () => void (await fetchTree('/named')))
-    expect(labels()).toEqual(['Notes.md', 'Plan'])
-    expect(el.querySelector('[aria-label="Close Notes.md"]')).not.toBeNull()
+    expect(labels()).toEqual(['Pages.md', 'Plan'])
+    expect(el.querySelector('[aria-label="Close Pages.md"]')).not.toBeNull()
   })
 
   it('routes header, navigation, close, and hide gestures without coupling state', () => {

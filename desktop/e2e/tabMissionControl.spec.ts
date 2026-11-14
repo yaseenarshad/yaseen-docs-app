@@ -108,7 +108,7 @@ test('step 1 — the board opens with a frame for each window: "Show all windows
   app = await launchApp({ userData, seedState: state })
   w1 = await appWindow(app, 'w1')
   w2 = await appWindow(app, 'w2')
-  await expect(tabsOf(w1)).toHaveText(['Welcome note', 'Ideas', 'Roadmap'])
+  await expect(tabsOf(w1)).toHaveText(['Welcome page', 'Ideas', 'Roadmap'])
   await expect(tabsOf(w2)).toHaveText(['Old plan'])
 
   await openBoard(w1)
@@ -117,7 +117,7 @@ test('step 1 — the board opens with a frame for each window: "Show all windows
   await expect(frame(w1, 'w2')).toBeVisible()
   await expect(frame(w1, 'w1').locator('.taboverview__frame-here')).toHaveText('This window')
   await expect(frame(w1, 'w2').locator('.taboverview__frame-here')).toHaveCount(0)
-  await expect(cardTitles(w1, 'w1')).toHaveText(['Welcome note', 'Ideas', 'Roadmap'])
+  await expect(cardTitles(w1, 'w1')).toHaveText(['Welcome page', 'Ideas', 'Roadmap'])
   await expect(cardTitles(w1, 'w2')).toHaveText(['Old plan'])
   // Nothing is stored before the user moves something (D1).
   expect((await readState(userData)).tabCanvas.cards).toEqual([])
@@ -142,7 +142,7 @@ test('step 2 — a card of this window dragged to a new place stays there, and t
   expect(placed).not.toEqual(before)
   await expect.poll(() => placeOf(c)).toEqual(placed)
   // It moved no tab: both strips are as they were (S16).
-  await expect(tabsOf(w1)).toHaveText(['Welcome note', 'Ideas', 'Roadmap'])
+  await expect(tabsOf(w1)).toHaveText(['Welcome page', 'Ideas', 'Roadmap'])
   await expect(tabsOf(w2)).toHaveText(['Old plan'])
   // Only the card the user moved is stored (D16).
   expect((await readState(userData)).tabCanvas.cards.map((one) => path.basename(one.path))).toEqual(['Roadmap.md'])
@@ -184,7 +184,7 @@ test('step 4 — a card dropped in the other window\'s frame moves the tab there
 
   // The tab is in w2 now: its strip and the state file say so, and it left w1.
   await expect(tabsOf(w2)).toHaveText(['Old plan', 'Ideas'])
-  await expect(tabsOf(w1)).toHaveText(['Welcome note', 'Roadmap'])
+  await expect(tabsOf(w1)).toHaveText(['Welcome page', 'Roadmap'])
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === 'w2')?.tabs).toEqual([oldPlan, ideas])
   await expect.poll(async () => (await readState(userData)).windows.find((w) => w.id === 'w1')?.tabs).toEqual([welcome, roadmap])
   // A BACKGROUND tab (D20): w2 keeps its active tab, and main raised no window.
@@ -240,7 +240,7 @@ test('step 6 — a relaunch with the same user-data-dir keeps the moved cards\' 
   app = await launchApp({ userData }) // NO re-seed: the state is what the quit wrote
   w1 = await appWindow(app, 'w1')
   w2 = await appWindow(app, 'w2')
-  await expect(tabsOf(w1)).toHaveText(['Welcome note', 'Roadmap'])
+  await expect(tabsOf(w1)).toHaveText(['Welcome page', 'Roadmap'])
   await expect(tabsOf(w2)).toHaveText(['Old plan', 'Ideas'])
   await openBoard(w1)
   await expect.poll(() => placeOf(card(w1, 'w1', roadmap))).toEqual(placed)

@@ -1,15 +1,15 @@
 /**
  * Right-click a pill › "Pill style ›" (YAZ-4924 round 5): ONE link's own style, over the vault's look (Settings › Link
- * pills is the default of every link; this is the link). It is written into the note as the marks the page toolbar
+ * pills is the default of every link; this is the link). It is written into the page as the marks the page toolbar
  * writes, around the WHOLE link — `strong` (`**`), `emphasis` (`*`), `underline` (`<u>`), `highlight` (`==`, or
- * `<mark class="highlight-<name>">`) — so the note stays the Markdown it was, and other apps keep the style. No new
- * syntax: the marks are the schema's own, set with `addMark` / `removeMark` over the link's range. A note has no text
+ * `<mark class="highlight-<name>">`) — so the page stays the Markdown it was, and other apps keep the style. No new
+ * syntax: the marks are the schema's own, set with `addMark` / `removeMark` over the link's range. A page has no text
  * colour mark (`text_color` is a drawing text box's), so there is no Colour row (the blocker on YAZ-4924).
  *
  * The flyout is built as "Header row style ›" is (`tableRows.ts`): small grey headings, a ✓ at what the link has, and a
- * pick keeps it open (`stay`: `openMenuAt`'s `rebuild` draws the menu again from the note). Each pick is one
- * transaction, one undo. "↺ Back to the vault's look" takes those marks off this link only. A read-only note shows the
- * row disabled with the read-only reason: styling is a change to the note.
+ * pick keeps it open (`stay`: `openMenuAt`'s `rebuild` draws the menu again from the page). Each pick is one
+ * transaction, one undo. "↺ Back to the vault's look" takes those marks off this link only. A read-only page shows the
+ * row disabled with the read-only reason: styling is a change to the page.
  */
 import type { Mark, MarkType, Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { Transaction } from '@milkdown/kit/prose/state'

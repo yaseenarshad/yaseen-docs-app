@@ -8,7 +8,7 @@
  * this proves the one thing they cannot: the panel's state survives the real quit path and comes
  * back with the page mounted and its text on screen.
  *
- * The window is seeded 1500px wide so the panel docks beside the note instead of overlaying it
+ * The window is seeded 1500px wide so the panel docks beside the page instead of overlaying it
  * (App.tsx `rightOverlay`: sidebar + panel + 360px of main must fit).
  *
  * Serial (the suite's idiom): each step continues the last.

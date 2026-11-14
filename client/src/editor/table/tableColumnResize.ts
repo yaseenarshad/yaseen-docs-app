@@ -97,7 +97,7 @@ function headerResizing(): Plugin {
       ...spec.props,
       handleDOMEvents: {
         mousemove(view, event) {
-          // A read-only note has no grip, as the plugin's own mousemove says (`rightEdgeHandle` set it there).
+          // A read-only page has no grip, as the plugin's own mousemove says (`rightEdgeHandle` set it there).
           if (!view.editable) return false
           const state = columnResizingPluginKey.getState(view.state)
           const edge = state?.dragging ? null : rightEdgeHandle(view, event)

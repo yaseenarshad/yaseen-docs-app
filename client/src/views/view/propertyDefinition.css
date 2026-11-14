@@ -107,7 +107,7 @@
   cursor: pointer;
 }
 
-/* Shared value treatment across note properties, table cells and board cards. */
+/* Shared value treatment across page properties, table cells and board cards. */
 .property-empty {
   color: var(--fg-muted);
   opacity: .7;
@@ -201,7 +201,7 @@
 .frontmatter-property-menu__heading strong {
   font-weight: 500;
 }
-/* "Other folders' values for this note" (YAZ-4713 C9): its heading, and a line that parts it from the note's rows above. */
+/* "Other folders' values for this page" (YAZ-4713 C9): its heading, and a line that parts it from the page's rows above. */
 .frontmatter-property-context {
   font-size: 12px;
   color: var(--fg-muted);

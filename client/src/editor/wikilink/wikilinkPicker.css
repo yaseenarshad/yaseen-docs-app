@@ -53,7 +53,7 @@
   font-style: italic;
 }
 
-/* A note card's row (YAZ-5030): the card icon of a card pill (`wikilink.css`), before the title. */
+/* A card's row (YAZ-5030): the card icon of a card pill (`wikilink.css`), before the title. */
 .wikilink-picker__card-icon {
   display: inline-block;
   flex: none;

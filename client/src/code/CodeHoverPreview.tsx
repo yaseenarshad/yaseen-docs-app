@@ -1,6 +1,6 @@
 /**
  * A CODE FILE'S HOVER CARD (YAZ-3508; YAZ-3439 "Decision — Demo round 2"): the top of the file with its colours,
- * read only, in the note card's frame and place (`NotePreview`: the same box, header, portal and
+ * read only, in the card's frame and place (`PagePreview`: the same box, header, portal and
  * `pointer-events: none`). The places, their switches and the dwell are the hover preview's own (YAZ-3403):
  * `PreviewPanel` mounts this for a `text` kind file, `key={path}`.
  *
@@ -10,7 +10,7 @@
  * own chunk, with Monaco's: the hover host starts loading it when a code row's dwell starts.
  *
  * SMALL READS. `api.readTextHead` reads at most `TEXT_HEAD_READ_BYTES` off disk, so a rest on a 5 MB file sends a
- * few KB. A file the code tab cannot open (too big, not UTF-8, a NUL) shows "Preview unavailable", as a note
+ * few KB. A file the code tab cannot open (too big, not UTF-8, a NUL) shows "Preview unavailable", as a page
  * that cannot be read does.
  */
 import { useEffect, useState } from 'react'
@@ -50,7 +50,7 @@ export function colorizeHead(text: string, path: string): Promise<string> {
 
 export default function CodeHoverPreview({ root, path, name, anchor }: CodeHoverPreviewProps) {
   const theme = useAppliedTheme()
-  const placement = usePlacement(anchor, 'note')
+  const placement = usePlacement(anchor, 'page')
   const [card, setCard] = useState<Card>({ kind: 'loading' })
   // The app's colours for the `mtkN` classes: the same theme a code tab sets, again on each Appearance change.
   useEffect(() => {
@@ -78,7 +78,7 @@ export default function CodeHoverPreview({ root, path, name, anchor }: CodeHover
   if (placement === null) return null
   return createPortal(
     // No live region on the frame: it would read the code out on each rest. The header says which file.
-    <div className="board-preview note-preview code-hover" role="group" aria-label={`Preview of ${name}`} style={placement}>
+    <div className="board-preview page-preview code-hover" role="group" aria-label={`Preview of ${name}`} style={placement}>
       <div className="board-preview__header" role="status">
         <span className="board-preview__name">{name}</span>
         <span className="board-preview__folder">{boardFolder(root, path)}</span>

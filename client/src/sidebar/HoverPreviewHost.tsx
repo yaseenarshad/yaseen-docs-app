@@ -1,7 +1,7 @@
 /**
  * THE HOVER PREVIEW (Draw's YAZ-1800, ported by YAZ-3028 D11): a drawing or diagram row rested on
- * for the dwell opens a picture of the whole board beside the sidebar; a note row opens the top of
- * the note in the same box (YAZ-3075 D1); a code or text row the top of the file with its colours
+ * for the dwell opens a picture of the whole board beside the sidebar; a page row opens the top of
+ * the page in the same box (YAZ-3075 D1); a code or text row the top of the file with its colours
  * (YAZ-3508, `code/CodeHoverPreview.tsx`); an image or PDF row the picture or the first page (`MediaHoverPreview.tsx`;
  * D6 said never, Yaseen overturned it on 2026-11-08, YAZ-3746 13R; `hasHoverPreview`). The row is
  * pending until the dwell ends, then shown; only the row leaving the tree closes it. Every close
@@ -12,17 +12,17 @@
  * Tree. The Sidebar's half, `useHoverPreview`, lives here beside the panel it feeds.
  *
  * THE PICTURE'S KEY IS READ AT THE DWELL'S END (YAZ-3028): Docs reads the tree again only on a
- * structural change, never on a save (a note saves every 500 ms), so a board's tree `mtime` can be
+ * structural change, never on a save (a page saves every 500 ms), so a board's tree `mtime` can be
  * old. So the panel asks `fs:board-head` for the board's mtime when it opens — one small read — and
  * a board saved since its last picture is drawn again. While it shows, it listens on the vault's
  * watch feed (YAZ-3044 A41): a `change` of that board — a save, a sync pull, another window's
  * write — takes the event's mtime, and the picture is drawn again.
  *
- * A NOTE needs neither (YAZ-3075 D1, C26, C27): `NotePreview` reads the note itself on each open,
+ * A PAGE needs neither (YAZ-3075 D1, C26, C27): `PagePreview` reads the page itself on each open,
  * and a save while it shows does not draw it again — so no head read and no watch subscription.
  *
- * The panels themselves (`BoardPreview` with its picture cache, `NotePreview`, `CodeHoverPreview`, and their
- * CSS) load lazily, on the first dwell of their kind; a note's or a code file's chunk starts loading when its
+ * The panels themselves (`BoardPreview` with its picture cache, `PagePreview`, `CodeHoverPreview`, and their
+ * CSS) load lazily, on the first dwell of their kind; a page's or a code file's chunk starts loading when its
  * dwell STARTS (a code file's is Monaco's, so a window that never rests on one never loads it).
  */
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react'
@@ -40,17 +40,17 @@ import type { AnchorRect, PreviewAnchor, PreviewPopup } from './previewPlacement
 
 const BoardPreview = lazy(() => import('./BoardPreview'))
 /**
- * The note panel's chunk (YAZ-3087 A1): a note's dwell starts this load, so the chunk arrives during
+ * The page panel's chunk (YAZ-3087 A1): a page's dwell starts this load, so the chunk arrives during
  * the wait, and the module is kept once it lands. The host then renders it DIRECTLY: `lazy` suspends
  * on its first render even with the chunk loaded, and React holds a suspended reveal up to 300 ms
  * (`FALLBACK_THROTTLE_MS`) — the whole of the slow first hover. `lazy` stays for a chunk still on its
  * way at the dwell's end.
  */
-let notePreviewModule: typeof import('./NotePreview') | null = null
-export const loadNotePreview = () => import('./NotePreview').then((module) => (notePreviewModule = module))
-const LazyNotePreview = lazy(loadNotePreview)
+let pagePreviewModule: typeof import('./PagePreview') | null = null
+export const loadPagePreview = () => import('./PagePreview').then((module) => (pagePreviewModule = module))
+const LazyPagePreview = lazy(loadPagePreview)
 
-/** A code file's card (YAZ-3508), the same way as the note's: its dwell starts the load of Monaco's chunk. */
+/** A code file's card (YAZ-3508), the same way as the page's: its dwell starts the load of Monaco's chunk. */
 let codeHoverModule: typeof import('../code/CodeHoverPreview') | null = null
 export const loadCodeHoverPreview = () => import('../code/CodeHoverPreview').then((module) => (codeHoverModule = module))
 const LazyCodeHoverPreview = lazy(loadCodeHoverPreview)
@@ -62,7 +62,7 @@ const LazyMediaHoverPreview = lazy(loadMediaHoverPreview)
 
 /** The panel's chunk of `path`'s kind starts loading with the dwell. A failed load is the lazy panel's to meet. */
 export function preloadPreview(path: string): void {
-  if (isMarkdown(path)) loadNotePreview().catch(() => undefined)
+  if (isMarkdown(path)) loadPagePreview().catch(() => undefined)
   else if (isCodeHover(path)) loadCodeHoverPreview().catch(() => undefined)
   else if (isMediaHover(path)) loadMediaHoverPreview().catch(() => undefined)
 }
@@ -73,7 +73,7 @@ export interface HoverState {
   shown: boolean
 }
 
-/** How long the pointer (or focus) rests on a board or note row before its preview opens (Draw's YAZ-1800; one wait for both, YAZ-3075 D3). */
+/** How long the pointer (or focus) rests on a board or page row before its preview opens (Draw's YAZ-1800; one wait for both, YAZ-3075 D3). */
 export const HOVER_PREVIEW_DWELL_MS = 400
 
 export function useHoverPreview(blocked: boolean, activeFile: string | null) {
@@ -93,7 +93,7 @@ export function useHoverPreview(blocked: boolean, activeFile: string | null) {
       // The same row again (focus after the pointer, or back) keeps its dwell or its panel.
       if (node !== null && hover.getState().path === node.path) return
       closePreview()
-      // A board, a note, a code file, a picture or a PDF previews (YAZ-3075 D6, YAZ-3508, YAZ-3746 13R); a folder or any other file has none.
+      // A board, a page, a code file, a picture or a PDF previews (YAZ-3075 D6, YAZ-3508, YAZ-3746 13R); a folder or any other file has none.
       if (node === null || blockedRef.current || !hasHoverPreview(node.path)) return
       const id = hoverRequest.current
       const { path } = node
@@ -124,11 +124,11 @@ interface HoverPreviewHostProps {
   rootOf: (path: string) => string
   /** The watch feed of the vault that holds a path (A41); undefined when there is none. */
   watchOf?: (path: string) => WatchSource | undefined
-  /** The link source of the vault that holds a note (YAZ-3075 C21). */
+  /** The link source of the vault that holds a page (YAZ-3075 C21). */
   wikilinksOf: (path: string) => WikilinkResolveSource
-  /** A note's name as the tree shows it, its title (`pageName`): the note panel's header. */
+  /** A page's name as the tree shows it, its title (`pageName`): the page panel's header. */
   nameOf: (path: string) => string
-  /** The text formatting of the vault that holds a note (YAZ-3067 D12; YAZ-3075 C20). */
+  /** The text formatting of the vault that holds a page (YAZ-3067 D12; YAZ-3075 C20). */
   textVarsOf: (path: string) => CSSProperties
   /** The place's switch is on (Settings › Preview on hover › Sidebar, or › Search results while the Search tab shows). */
   enabled: boolean
@@ -195,9 +195,9 @@ export interface PreviewPanelProps {
   path: string
   /** The vault that holds the file: the header names its folder relative to it. */
   root: string
-  /** A note's name as the app shows it (its title): the note panel's header. */
+  /** A page's name as the app shows it (its title): the page panel's header. */
   name: string
-  /** One quiet line under the header: how to open it (a note's link, YAZ-3935: "⌘-click to open"). Absent → none. */
+  /** One quiet line under the header: how to open it (a page's link, YAZ-3935: "⌘-click to open"). Absent → none. */
   hint?: string
   wikilinks: WikilinkResolveSource
   textVars: CSSProperties
@@ -210,14 +210,14 @@ export interface PreviewPanelProps {
 }
 
 /**
- * ONE PREVIEW PANEL for a shown file (YAZ-3075, shared with the tab board by YAZ-3343): a note's top, or a board's
+ * ONE PREVIEW PANEL for a shown file (YAZ-3075, shared with the tab board by YAZ-3343): a page's top, or a board's
  * picture, the kind by its path; anything else shows nothing. The caller decides WHEN (a dwell, Space on the board)
  * and mounts it `key={path}`. A board reads its head once on open and follows the watch feed (see the module doc).
  */
 export function PreviewPanel({ path, root, name, hint, wikilinks, textVars, knownMtime = 0, watch, diagramDarkColors, anchor }: PreviewPanelProps) {
   const theme = useAppliedTheme()
   // The board's mtime as its file says now (see the module doc); the tree's until the read answers.
-  // A note has no head and no watch (C27): only a BOARD gets a `boardPath`.
+  // A page has no head and no watch (C27): only a BOARD gets a `boardPath`.
   const [head, setHead] = useState<{ path: string; mtime: number } | null>(null)
   const boardPath = isBoard(path) ? path : null
   useEffect(() => {
@@ -252,10 +252,10 @@ export function PreviewPanel({ path, root, name, hint, wikilinks, textVars, know
     )
   }
   if (isMarkdown(path)) {
-    const NotePreview = notePreviewModule?.default ?? LazyNotePreview
+    const PagePreview = pagePreviewModule?.default ?? LazyPagePreview
     return (
       <Suspense fallback={null}>
-        <NotePreview root={root} node={node} name={name} hint={hint} wikilinks={wikilinks} textVars={textVars} anchor={anchor} />
+        <PagePreview root={root} node={node} name={name} hint={hint} wikilinks={wikilinks} textVars={textVars} anchor={anchor} />
       </Suspense>
     )
   }

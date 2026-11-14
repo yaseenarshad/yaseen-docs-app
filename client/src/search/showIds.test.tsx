@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { idNumber } from '@shared/noteId'
-import { DEFAULT_SHOW_IDS, sanitizeShowIds, shownId, useAllPathIds, useNoteId, type PathIds } from './showIds'
+import { idNumber } from '@shared/pageId'
+import { DEFAULT_SHOW_IDS, sanitizeShowIds, shownId, useAllPathIds, usePageId, type PathIds } from './showIds'
 import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { IndexRecord } from '@shared/types'
 
@@ -75,12 +75,12 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     return { seen, unmount: () => act(() => root.unmount()) }
   }
 
-  it('`useNoteId` reads the note\'s ID off the index, follows a snapshot that changes it, and reads nothing with no source (the choice Off)', () => {
+  it('`usePageId` reads the page\'s ID off the index, follows a snapshot that changes it, and reads nothing with no source (the choice Off)', () => {
     const source = createWikilinkResolveSource()
     source.update(() => null, [record('/v/a.md', 'EMB-1'), record('/v/b.md')], [], true)
-    const a = probe(() => useNoteId(source, '/v/a.md'))
-    const b = probe(() => useNoteId(source, '/v/b.md'))
-    const off = probe(() => useNoteId(undefined, '/v/a.md'))
+    const a = probe(() => usePageId(source, '/v/a.md'))
+    const b = probe(() => usePageId(source, '/v/b.md'))
+    const off = probe(() => usePageId(undefined, '/v/a.md'))
     expect(a.seen.at(-1)).toBe('EMB-1')
     expect(b.seen.at(-1)).toBeUndefined()
     expect(off.seen.at(-1)).toBeUndefined()
