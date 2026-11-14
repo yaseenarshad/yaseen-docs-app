@@ -354,6 +354,16 @@
   width: min(40cqw, 18em);
   max-height: 64cqh;
 }
+/* A narrow stage shows less at once: the gears step out, and the calendar takes their room. */
+@container (max-width: 560px) {
+  .kit-dates__gears {
+    display: none;
+  }
+  .kit-dates__cal {
+    width: 56cqw;
+    max-height: 70cqh;
+  }
+}
 
 /* c3-18 */
 .kit-missed__inbox {

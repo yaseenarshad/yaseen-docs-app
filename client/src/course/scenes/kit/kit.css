@@ -334,7 +334,7 @@
 .kit-svg-page {
   fill: var(--fg-muted);
   font-family: var(--font);
-  font-size: max(13px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(13px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(13px * 1.5));
 }
 .kit-svg-page--accent,
 .kit-svg-label--accent {
@@ -343,7 +343,7 @@
 .kit-svg-label {
   fill: var(--fg);
   font-family: var(--font);
-  font-size: max(14px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(14px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(14px * 1.5));
   font-weight: 600;
 }
 .kit-svg-label.kit-svg-label--accent {
@@ -1063,7 +1063,7 @@
 .kit-medal__year {
   fill: #4a3a06;
   font-family: var(--font);
-  font-size: max(26px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(26px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(26px * 1.5));
   font-weight: 800;
 }
 .kit-medal__shine {
@@ -1480,11 +1480,11 @@
   stroke-width: 2.5;
 }
 .kit-web__label {
-  font-size: max(13px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(13px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(13px * 1.5));
 }
 .kit-web__node--card .kit-web__label,
 .kit-web__node--hub .kit-web__label {
-  font-size: max(12px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(12px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(12px * 1.5));
 }
 
 /* THE FOLDER */
@@ -1509,7 +1509,7 @@
 .kit-folder__card-title {
   fill: var(--fg);
   font-family: var(--font);
-  font-size: max(11.5px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(11.5px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(11.5px * 1.5));
   font-weight: 600;
 }
 .kit-folder__card-line {
@@ -1520,7 +1520,7 @@
 .kit-folder__label {
   fill: var(--fg);
   font-family: var(--font);
-  font-size: max(15px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(15px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(15px * 1.5));
   font-weight: 650;
 }
 
@@ -1842,7 +1842,7 @@
   stroke-linecap: round;
 }
 .kit-garden__label {
-  font-size: max(12px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(12px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(12px * 1.5));
 }
 .kit-garden__weed {
   fill: none;
@@ -1917,7 +1917,7 @@
 .kit-guess__value {
   fill: var(--fg);
   font-family: var(--font);
-  font-size: max(20px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(20px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(20px * 1.5));
   font-weight: 700;
 }
 .kit-guess__line {
@@ -1928,7 +1928,7 @@
 .kit-guess__label {
   fill: var(--danger);
   font-family: var(--font);
-  font-size: max(13px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(13px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(13px * 1.5));
   font-weight: 600;
 }
 .kit-guess__miss {
@@ -1983,7 +1983,7 @@
 .kit-clock__label {
   fill: var(--fg);
   font-family: var(--font);
-  font-size: max(24px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(24px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(24px * 1.5));
   font-weight: 700;
 }
 

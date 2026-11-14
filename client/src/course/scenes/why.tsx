@@ -424,7 +424,7 @@ function Experiments(props: SceneProps) {
   return (
     <Stage beat={b} label="One review of 317 experiments: spacing won">
       <Layer>
-        <div style={rise(b, century)}>
+        <div style={{ ...rise(b, century), display: 'grid', gap: '0.5em' }}>
           <Words size="kicker">More than a century of tests</Words>
           <Words size="display" style={{ fontVariantNumeric: 'tabular-nums' }}>
             1885 → {Math.round(lerp(1885, 2026, b.reduced ? 1 : ease.out(between(b, 0.04, 0.26))))}

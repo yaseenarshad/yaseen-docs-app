@@ -8,7 +8,7 @@
 .later-qmark {
   fill: var(--accent);
   font-family: var(--font);
-  font-size: max(34px, calc(var(--kit-min-text) / var(--svg-scale, 1)));
+  font-size: clamp(34px, calc(var(--kit-min-text) / var(--svg-scale, 1)), calc(34px * 1.5));
   font-weight: 700;
 }
 .later-headbox {
