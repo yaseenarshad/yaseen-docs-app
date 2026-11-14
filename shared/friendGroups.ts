@@ -682,6 +682,8 @@ export type GroupView =
   | { kind: 'needs-repair'; group: string; name: string }
   | { kind: 'newer-app'; group: string; name: string }
   | { kind: 'offline'; group: string; name: string }
+  /** YAZ-5236: my leave (or "Delete group") of this group waits; it finishes by itself. "Removing…" */
+  | { kind: 'removing'; group: string; name: string }
   | { kind: 'not-found' }
 
 /** Plain words for a group view that is not `ok` (round 14), or null. */
@@ -699,6 +701,8 @@ export function groupViewMessage(view: GroupView): string | null {
       return 'This group needs a newer app. Update Notecards.'
     case 'offline':
       return 'No connection.'
+    case 'removing':
+      return 'Removing…'
     default:
       return null
   }

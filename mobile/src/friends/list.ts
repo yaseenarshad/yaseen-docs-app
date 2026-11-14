@@ -1,4 +1,4 @@
-import { DESCRIPTIONS, INDEX_FILE, emptyNumbers, ensureFriendsFiles, findFriendsIndex, gistErrorCode, parseFriendsIndex, writeFriendsIndex, type GistsApi, type IndexHandle } from '@shared/friendGists'
+import { DESCRIPTIONS, INDEX_FILE, emptyNumbers, pointersOf, ensureFriendsFiles, findFriendsIndex, gistErrorCode, parseFriendsIndex, writeFriendsIndex, type GistsApi, type IndexHandle } from '@shared/friendGists'
 import { emptyBudget, recordUpdate, type GistBudget } from '@shared/friendSend'
 import {
   addMember,
@@ -44,6 +44,7 @@ import { PHONE, VaultClosedError, loadVaultList, vaultId, type TokenStore, type 
 import type { Clock } from '../sync/engine'
 import { openFriendsApi } from './friendsApi'
 import { friendsGuard } from './guard'
+import { drainQueue, enqueueRemove, queuedMines } from './removeQueue'
 import { SEND_STATE } from './sender'
 
 /**
@@ -272,9 +273,14 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     })
   }
 
-  const mapRemove = async (r: RemoveResult, vault: string) => {
+  const mapRemove = async (r: RemoveResult, vault: string, queue?: { mine: string; drop?: string[] }) => {
     await saveBudget(r.budget)
     await remember(r.handle)
+    // YAZ-5236: GitHub refused the first write: the list does not hold the remove yet, so the phone keeps it.
+    if (queue !== undefined && r.kind === 'paused' && pointersOf(r.handle.index).includes(queue.mine)) {
+      await enqueueRemove(phoneStore, { ...queue, at: now() })
+      return { kind: 'paused' as const, why: r.why, retryAt: r.retryAt }
+    }
     if (r.kind === 'done') return { kind: 'done' as const }
     if (r.kind === 'not-found') return { kind: 'not-found' as const }
     if (r.why === 'needs-repair') return { kind: 'needs-repair' as const }
@@ -345,8 +351,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     for (let i = 0; i < n; i++) b = recordUpdate(b, now(), null)
     await saveBudget(b)
   }
-  const leaveOutcome = async (r: LeaveResult, vault: string): Promise<LeaveOutcome | Unavailable> =>
-    r.kind === 'admin-cannot-leave' ? r : r.kind === 'not-found' && !('handle' in r) ? { kind: 'not-found' } : mapRemove(r as RemoveResult, vault)
+  const leaveOutcome = async (r: LeaveResult, vault: string, queue?: { mine: string; drop?: string[] }): Promise<LeaveOutcome | Unavailable> =>
+    r.kind === 'admin-cannot-leave' ? r : r.kind === 'not-found' && !('handle' in r) ? { kind: 'not-found' } : mapRemove(r as RemoveResult, vault, queue)
   let swept = false
 
   const groups: FriendsGroups = {
@@ -407,12 +413,16 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     leave: (group) =>
       withApi(async (api, login, vault) => {
         const h = await current(api, login)
-        return isHandle(h) ? leaveOutcome(await leaveGroup(api, h, group, await budget(), opts), vault) : h
+        if (!isHandle(h)) return h
+        const mine = h.index.groups.find((g) => g.group === group)?.mine
+        return leaveOutcome(await leaveGroup(api, h, group, await budget(), opts), vault, mine === undefined ? undefined : { mine })
       }),
     delete: (group) =>
       withApi(async (api, login, vault) => {
         const h = await current(api, login)
-        return isHandle(h) ? leaveOutcome(await deleteGroup(api, h, group, await budget(), opts), vault) : h
+        if (!isHandle(h)) return h
+        const mine = h.index.groups.find((g) => g.group === group && g.admin)?.mine
+        return leaveOutcome(await deleteGroup(api, h, group, await budget(), opts), vault, mine === undefined ? undefined : { mine, drop: [group] })
       }),
     read: (group) => withApi(async (api, login, vault) => readOne(api, login, vault, group)),
     all: () =>
@@ -436,6 +446,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   async function readOne(api: GistsApi, login: string, vault: string, group: string): Promise<GroupView | Unavailable> {
     const h = await current(api, login)
     if (!isHandle(h)) return h
+    const entry = h.index.groups.find((g) => g.group === group)
+    if (entry !== undefined && (await queuedMines(phoneStore)).has(entry.mine)) return { kind: 'removing' as const, group, name: entry.name }
     const view = await readGroup(api, h, group, cache, now())
     if (view.kind === 'ok' && view.firstSeen) {
       const marked = await markJoined(api, h, group, opts)
@@ -478,7 +490,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const h = await list(api, login, false)
         if (h === 'broken') return { kind: 'needs-repair' as const }
         if (h === null || h === 'newer') return { kind: 'not-found' as const }
-        return mapRemove(await removeFriend(api, h, mine, await budget(), opts), vault)
+        return mapRemove(await removeFriend(api, h, mine, await budget(), opts), vault, { mine })
       }),
     rows: () =>
       withApi(async (api, login, vault) => {
@@ -493,12 +505,20 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
           if (await guard.live()) await phoneStore.setState(PHONE, HAS, false)
           return { kind: 'ok' as const, rows: [], shared: [], repairs: [], held: [] }
         }
+        // YAZ-5236: the removes that wait on the phone run first, then a remove that waits in the list.
+        const drained = await drainQueue(api, h, phoneStore, await budget(), opts)
+        if (drained !== null) {
+          await mapRemove(drained, vault)
+          h = drained.handle
+        }
         if (pendingRemove(h) !== null) {
           const r = await finishRemove(api, h, await budget(), opts)
           await mapRemove(r, vault)
           h = r.handle
         }
         const read = await readFriends(api, h, cache, now())
+        const queued = await queuedMines(phoneStore)
+        for (const row of read.rows) if (queued.has(row.mine)) Object.assign(row, { state: 'removing' as const, label: 'Removing…', sendBack: null })
         // YAZ-5235: my shared links that a friend holds but does not use are deleted.
         if (read.held.length > 0) {
           h = await dropHeldShares(api, h, read.held, opts)
