@@ -20,7 +20,7 @@ import { copyText } from '../editor/linkMenu'
 import { isCardNode } from '../editor/card/cardBlockLine'
 import { cardBlockViewAt } from '../editor/card/cardBlockView'
 import type { CardTitleField } from '../editor/card/cardEditor'
-import { boxOffset, freezeScroll, scrollerOf, showBoxAt } from '../editor/pagePlace'
+import { freezeScroll, readSwapPlace, scrollerOf, showSwapPlace, type SwapPlace } from '../editor/pagePlace'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -209,7 +209,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
  * READ ⇄ EDIT CARD WITH NO JUMP AND NO FLASH (YAZ-5164, Yaseen: "every switch … must keep the same block at the same
  * spot", "it should just be so smooth"). The card on show stays until the other one is drawn under it, see-through
  * (`card-pane__incoming`), with the scroller held (`freezeScroll`: the editor's caret and focus would move it); then they
- * swap in one frame, the new card at the old card's spot. Edit card waits for the editor's card to open; Done waits for the
+ * swap in one frame, the same line of the card at the same spot (`readSwapPlace`), else the card at the old card's spot. Edit card waits for the editor's card to open; Done waits for the
  * read card's text, which draws in an effect. The card file tab, Explore's card window and the card window all show cards
  * through here.
  */
@@ -218,14 +218,14 @@ function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () =
   const editorRef = useRef<HTMLDivElement>(null)
   const [shown, setShown] = useState<'read' | 'edit'>(editing ? 'edit' : 'read')
   /** The card box on show as a switch starts: its scroller and its spot, put back on the incoming card. */
-  const held = useRef<{ scroller: Element; offset: number; thaw: () => void } | null>(null)
+  const held = useRef<{ scroller: Element; place: SwapPlace; thaw: () => void } | null>(null)
   const shownEditing = useRef(editing)
   if (shownEditing.current !== editing) {
     shownEditing.current = editing
     held.current?.thaw()
     const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
     const scroller = box === null ? null : scrollerOf(box)
-    held.current = box === null || scroller === null ? null : { scroller, offset: boxOffset(scroller, box), thaw: freezeScroll(scroller) }
+    held.current = box === null || scroller === null ? null : { scroller, place: readSwapPlace(scroller, box), thaw: freezeScroll(scroller) }
   }
   // The new card is on show: at the old card's spot, before it paints; the scroller is the person's again.
   useLayoutEffect(() => {
@@ -234,7 +234,7 @@ function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () =
     held.current = null
     hold.thaw()
     const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
-    if (box !== null) showBoxAt(hold.scroller, box, hold.offset)
+    if (box !== null) showSwapPlace(hold.scroller, box, hold.place)
   }, [shown, editing])
   useEffect(() => () => held.current?.thaw(), [])
   return {

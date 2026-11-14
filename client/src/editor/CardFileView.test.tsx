@@ -61,7 +61,7 @@ const converts = vi.hoisted(() => ({
 }))
 /** The card's place across Edit card and Done (YAZ-5164): jsdom draws no boxes, so the move is recorded; the real one is in pagePlace.test.ts. */
 const boxMoves = vi.hoisted(() => [] as Array<{ box: Element; offset: number }>)
-vi.mock('../editor/pagePlace', async (importOriginal) => ({ ...(await importOriginal<typeof import('./pagePlace')>()), scrollerOf: (e: Element) => e.closest('[data-card-file-body]'), boxOffset: () => 120, showBoxAt: (_s: Element, box: Element, offset: number) => void boxMoves.push({ box, offset }) }))
+vi.mock('../editor/pagePlace', async (importOriginal) => ({ ...(await importOriginal<typeof import('./pagePlace')>()), scrollerOf: (e: Element) => e.closest('[data-card-file-body]'), readSwapPlace: () => ({ offset: 120, text: '', nth: -1, line: 0 }), showSwapPlace: (_s: Element, box: Element, place: { offset: number }) => void boxMoves.push({ box, offset: place.offset }) }))
 vi.mock('../review/cardConvert', () => ({ ...converts, convertFailure: (err: unknown) => (err instanceof Error ? err.message : String(err)) }))
 vi.mock('../views/writeProperty', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../views/writeProperty')>()),

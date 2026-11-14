@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { holdPagePlace, readPagePlace, scrollerOf, showPagePlace } from './pagePlace'
+import { holdPagePlace, readPagePlace, readSwapPlace, scrollerOf, showPagePlace, showSwapPlace } from './pagePlace'
 
 /** A box at `top`, `height` tall, in window px; `drawn` false is a block folded away (no client rects). */
 function block(top: number, height: number, drawn = true): HTMLElement {
@@ -127,5 +127,63 @@ describe('holdPagePlace (a lock, an unlock, the caret given back)', () => {
     expect(scrollerOf(leaf)).toBe(outer)
     expect(scrollerOf(outer)).toBeNull()
     outer.remove()
+  })
+})
+
+/**
+ * A card file's read card and its card editor (YAZ-5164): two views of one card, with lines of other heights (the read
+ * card's lines are 40 px, the editor's 60 px, and the editor has a Title field on top). Holding the card's box kept the
+ * card in place but put another line at the top; the swap place keeps the SAME LINE at the same spot.
+ */
+describe('readSwapPlace / showSwapPlace (a card, read ⇄ Edit card)', () => {
+  /** A card box at window `top`, its lines `texts` drawn `line` px tall under a head `head` px tall; the scroller moves them all. */
+  function cardView(texts: string[], line: number, head: number, top: number, tag = 'p') {
+    const box = document.createElement('div')
+    const rows = texts.map((t) => box.appendChild(Object.assign(document.createElement(tag), { textContent: t })))
+    const place = (at: number) => {
+      box.getBoundingClientRect = block(at, head + rows.length * line).getBoundingClientRect
+      box.getClientRects = () => [box.getBoundingClientRect()] as unknown as DOMRectList
+      rows.forEach((r, i) => {
+        r.getBoundingClientRect = block(at + head + i * line, line).getBoundingClientRect
+        r.getClientRects = () => [r.getBoundingClientRect()] as unknown as DOMRectList
+      })
+    }
+    let at = top
+    place(at)
+    return { box, rows, top: () => at, scrollBy: (by: number) => place((at -= by)) }
+  }
+  function scrollerFor(view: { scrollBy: (by: number) => void }): HTMLElement {
+    const el = block(0, 500)
+    let st = 1000
+    Object.defineProperty(el, 'scrollTop', { get: () => st, set: (v: number) => (view.scrollBy(v - st), (st = v)) })
+    return el
+  }
+  const lines = Array.from({ length: 40 }, (_, i) => `Front line ${i}`)
+  // "Front line 3" twice: the place counts which one it was.
+  lines[30] = 'Front line 3'
+
+  it('the same line stays at the same spot; the card box alone would show another line there', () => {
+    // Reading, scrolled so "Front line 18" starts 12 px above the top edge (the card's top at -732).
+    const read = cardView(lines, 40, 0, -732)
+    const readScroller = scrollerFor(read)
+    const place = readSwapPlace(readScroller, read.box)
+    expect(place).toEqual({ offset: -732, text: 'Front line 18', nth: 0, line: -12 })
+    // Edit card, drawn with 60 px lines under a 50 px Title field, its card at the read card's spot: line 12 shows there.
+    const edit = cardView(lines, 60, 50, -732, 'p')
+    const editScroller = scrollerFor(edit)
+    showSwapPlace(editScroller, edit.box, place!)
+    expect(edit.rows[18].getBoundingClientRect().top).toBe(-12)
+  })
+
+  it('a line that is there twice: the one that was at the top; text not found: the card box keeps its spot', () => {
+    const read = cardView(lines, 40, 0, -1212)
+    const place = readSwapPlace(scrollerFor(read), read.box)
+    expect(place).toMatchObject({ text: 'Front line 3', nth: 1, line: -12 })
+    const edit = cardView(lines, 60, 50, 0)
+    showSwapPlace(scrollerFor(edit), edit.box, place!)
+    expect(edit.rows[30].getBoundingClientRect().top).toBe(-12)
+    const other = cardView(['nothing alike'], 60, 0, 0)
+    showSwapPlace(scrollerFor(other), other.box, place!)
+    expect(other.box.getBoundingClientRect().top).toBe(-1212)
   })
 })
