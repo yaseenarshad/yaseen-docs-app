@@ -14,7 +14,8 @@
  *   vault, a read-only vault, IDs off, Review off): the one line for the person, and nothing is written.
  * - `watchCards(folder, onCards)`: every card in the folder (card files, and cards inside a page there), at once and on
  *   each change of the vault's index. Returns the way to stop.
- * - `makeFirstCard(input)`: chapter 2's card file from what the person typed. A repeat makes a second file.
+ * - `makeFirstCard(input)`: chapter 2's card file from what the person typed, with their answer as its first review
+ *   (YAZ-5203: the review the Inbox writes for that answer). A repeat makes a second file.
  * - `coursePage()`: chapter 4's "Course page" in the folder, made when first needed.
  * - `readCard(card)`: the card's sides, to read it in the course (the AI step's "Read").
  * - `agentStep`: the AI step's state (chapter 8). It lives in the host, not in a scene: the layer unmounts a scene at
@@ -42,11 +43,15 @@ export interface CourseCard {
 /** A card's key: its path and its place in the file. */
 export const courseCardKey = (card: Pick<CourseCard, 'path' | 'index'>): string => `${card.path}#${card.index}`
 
-/** What the person did in chapter 2: the front they typed, the word they hid (as text, or where it stands in `front`), and the back line (none: ''). */
+/**
+ * What the person did in chapter 2: the front they typed, the word they hid (as text, or where it stands in `front`),
+ * the back line (none: ''), and their answer to "Did you remember it?" (YAZ-5203: the card's first review; absent: none).
+ */
 export interface FirstCardInput {
   front: string
   hidden: string | { start: number; end: number }
   back: string
+  answer?: 'forgot' | 'remembered'
 }
 
 /** A card the course wrote: its file and what a scene shows of it. */

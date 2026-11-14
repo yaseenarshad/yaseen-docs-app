@@ -453,7 +453,7 @@ function MakeCard(props: SceneProps) {
     if (answer !== null) return
     setAnswer(a)
     finish('c2-11')
-    void makeFirstCard(host, firstCardInput(words, hide, back ?? '')).then(setMade)
+    void makeFirstCard(host, { ...firstCardInput(words, hide, back ?? ''), answer: a }).then(setMade)
   }
 
   const order = ['c2-06', 'c2-07', 'c2-08', 'c2-09', 'c2-28', 'c2-10', 'c2-11', 'c2-12', 'c2-13']
@@ -542,7 +542,8 @@ function MakeCard(props: SceneProps) {
                   opacity: id === 'c2-12' ? since(b, 0, 0.6) : answer !== null ? 1 : 0,
                 }}
               >
-                {answer === 'forgot' ? 'Forgot' : 'Remembered'} · saved with the card
+                {answer === 'forgot' ? 'Forgot' : 'Remembered'}
+                {made !== null && 'path' in made ? ' · saved with the card' : ''}
               </p>
             </>
           ) : undefined

@@ -3,13 +3,14 @@
  * `createFile`, with a made-up ID door) and an index built by main's own scan (`scanFile`). Nothing here runs an agent:
  * the test writes the "agent's" card files itself.
  */
+import { readFileSync } from 'node:fs'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cardFileContent, cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
-import { EMPTY_CARD_LINE, findCards, withCardId, withCardNoTitle, withCardReview } from '@shared/cardLine'
-import { cardState } from '@shared/cardSchedule'
+import { EMPTY_CARD_LINE, cardReviewsOf, findCards, withCardId, withCardNoTitle, withCardReview } from '@shared/cardLine'
+import { cardState, previewAnswers } from '@shared/cardSchedule'
 import { cardPieces, cardSides } from '@shared/cardText'
 import type { CourseMade } from '@shared/courseState'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
@@ -283,6 +284,49 @@ describe('the first card (chapter 2)', () => {
       expect(record.cards).toHaveLength(1)
       // The host's title rule: the first sentence of the front, without its full stop.
       expect(record.cards?.[0]).toMatchObject({ title: 'Light from the Sun takes about eight minutes to reach Earth' })
+      // YAZ-5203: "The app saves it with the card." The answer is the card's first review, as the Inbox writes it.
+      const reviews = cardReviewsOf(shape.cards[0].line)
+      expect(reviews).toHaveLength(1)
+      expect(reviews[0]).toMatchObject({ rating: 'good', at: expect.stringMatching(/^\d{4}-\d\d-\d\dT\d\d:\d\dZ$/) })
+      expect(cardState(reviews, DEFAULT_REVIEW_SETTINGS).isNew).toBe(false)
+      await act(() => Promise.resolve())
+      expect(scene.el.querySelector('.card-inbox__last')?.textContent).toBe('Remembered · saved with the card')
+    } finally {
+      scene.unmount()
+    }
+  })
+
+  it('YAZ-5203: the first answer is a real first review, through the app`s own answer (Forgot: again; Remembered: good, back in the days the Inbox would say)', async () => {
+    const host = vaultCourseHost(vaultOf().view, depsOf().deps)
+    const forgot = (await host.makeFirstCard({ ...input, answer: 'forgot' })) as MadeCard
+    const line = (path: string) => findCards(splitFrontmatter(readFileSync(path, 'utf8')).body)[0].line
+    expect(cardReviewsOf(line(forgot.path)).map((r) => r.rating)).toEqual(['again'])
+    const now = Date.now()
+    const remembered = (await host.makeFirstCard({ ...input, answer: 'remembered' })) as MadeCard
+    const reviews = cardReviewsOf(line(remembered.path))
+    expect(reviews.map((r) => r.rating)).toEqual(['good'])
+    const inbox = previewAnswers([], DEFAULT_REVIEW_SETTINGS, now).find((a) => a.review.rating === 'good')!
+    expect(cardState(reviews, DEFAULT_REVIEW_SETTINGS).due).toBe(inbox.due)
+    // No answer (a test, or another caller): a new card, as before.
+    const none = (await host.makeFirstCard(input)) as MadeCard
+    expect(cardReviewsOf(line(none.path))).toEqual([])
+  })
+
+  it('YAZ-5203: a vault that refuses writes saves nothing, and the scene does not say the answer was saved', async () => {
+    ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+    const ch = COURSE.find((c) => c.id === 'first-card')!
+    const clip = (id: string) => ch.clips.find((c) => c.id === id)!
+    const host = vaultCourseHost(vaultOf({ readOnly: true }).view, depsOf().deps)
+    const { clock } = testClock(4)
+    const scene = mountScene(courseScenes('c2-11'), ch, { clock, done: () => undefined, host, waits: (c) => WAITING_CLIPS.has(c.id) })
+    try {
+      scene.render(clip('c2-11'))
+      act(() => [...scene.el.querySelectorAll<HTMLElement>('.card-inbox__answer')].find((b) => b.textContent?.includes('Remembered'))!.click())
+      scene.render(clip('c2-13'))
+      await vi.waitFor(() => expect(scene.el.querySelector('.kit-showonly')?.textContent).toBe(SHOW_ONLY.readOnly))
+      scene.render(clip('c2-12'))
+      expect(scene.el.querySelector('.card-inbox__last')?.textContent).toBe('Remembered')
+      expect(await top()).toEqual([])
     } finally {
       scene.unmount()
     }

@@ -17,8 +17,8 @@
  * - What the course made is kept in `AppState.course.made`, a record only: every file is in the sidebar.
  */
 import { NEW_CARD_TEXT, cardFileContent, cardFileName, isCardKind } from '@shared/cardFileFormat'
-import { EMPTY_CARD_LINE, findCards, withCardId, withCardNoTitle } from '@shared/cardLine'
-import { cardState } from '@shared/cardSchedule'
+import { EMPTY_CARD_LINE, cardTime, findCards, withCardId, withCardNext, withCardNoTitle, withCardReview, type CardReview } from '@shared/cardLine'
+import { cardState, previewAnswers } from '@shared/cardSchedule'
 import { cardSkillFolder } from '@shared/cardSkillFolder'
 import { cardSides, cardTitle } from '@shared/cardText'
 import type { CourseMade } from '@shared/courseState'
@@ -277,10 +277,25 @@ export const appDeps = (): CourseHostDeps => ({
   now: () => Date.now(),
 })
 
-/** Writes one card file in `dir`, as "New card" and `card new` do: a new ID, the name from the title, never over a file. */
-async function writeCardFile(disk: PageDisk, dir: string, title: string, text: string, titleHidden: boolean): Promise<MadeCard> {
+/**
+ * The review the Inbox writes for this answer now (YAZ-5203): the Inbox's own preview of its buttons (`previewAnswers`,
+ * the review `writeCardAnswer` puts on the line), Forgot as `again` and Remembered as `good`. The course does not time
+ * the answer, so the review has no seconds, as a review that nothing timed.
+ */
+export function firstReview(answer: 'forgot' | 'remembered', settings: ReviewSettings, now: number): CardReview {
+  const rating = answer === 'forgot' ? 'again' : 'good'
+  const found = previewAnswers([], settings, now).find((a) => a.review.rating === rating)
+  return found?.review ?? { at: cardTime(now), rating }
+}
+
+/**
+ * Writes one card file in `dir`, as "New card" and `card new` do: a new ID, the name from the title, never over a file.
+ * `review`: the card's first review, on its line in the same write (the line the Inbox's answer gives a new card).
+ */
+async function writeCardFile(disk: PageDisk, dir: string, title: string, text: string, titleHidden: boolean, review?: CardReview): Promise<MadeCard> {
   const id = await disk.mintId(dir)
-  const line = withCardNoTitle(withCardId(EMPTY_CARD_LINE, id), titleHidden)
+  const fresh = withCardNoTitle(withCardId(EMPTY_CARD_LINE, id), titleHidden)
+  const line = review === undefined ? fresh : withCardReview(withCardNext(fresh, false), review)
   const name = title.trim() === '' ? NEW_CARD_TEXT : title
   const path = `${dir}/${cardFileName(name, id)}`
   await disk.createFile({ path, content: cardFileContent(name, text, line) })
@@ -372,7 +387,8 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
       const at = await courseCards()
       if ('showOnly' in at) return at
       const card = firstCard(input)
-      const made = await writeCardFile(deps.disk, at.path, card.title, card.text, card.titleHidden)
+      const review = input.answer === undefined ? undefined : firstReview(input.answer, vault.review().settings, deps.now())
+      const made = await writeCardFile(deps.disk, at.path, card.title, card.text, card.titleHidden, review)
       remember((m) => ({ ...m, cards: [...m.cards, made.path] }))
       return made
     },
