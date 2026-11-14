@@ -1,5 +1,5 @@
 import { POINTER_FILE, gistErrorCode, gistErrorRate, gistErrorResetAt, readPointerFile, type GistsApi } from '@shared/friendGists'
-import { GIST_UPDATES_PER_HOUR, budgetLeft, emptyBudget, mayUpdate, recordUpdate, type GistBudget } from '@shared/friendSend'
+import { GIST_UPDATES_PER_HOUR, MARK_HEADROOM, budgetLeft, emptyBudget, mayUpdate, recordUpdate, type GistBudget } from '@shared/friendSend'
 import type { FriendMark } from '@shared/friendStats'
 import { recordGistsRefused } from '../../auth/friends'
 import type { FetchLike } from '../../github/client'
@@ -22,14 +22,18 @@ import { seeMark, type SeenMark } from './board'
  * The other side: what this phone has SEEN of a friend's mark (phone-only state, 3A; the gist does not change for it).
  */
 export type MarkKind = FriendMark['kind']
+/** Why a mark waits: the account's budget, the hourly cap of marks (YAZ-5258), no signal, GitHub's rate limit. */
+export type MarkWait = 'budget' | 'marks-limit' | 'offline' | 'rate-limited'
 
 export type MarkSend =
   | { kind: 'sent'; mark: FriendMark }
+  /** YAZ-5258: this friend already has this kind of mark from me today (one cheer and one nudge a day): no write. */
+  | { kind: 'already'; mark: FriendMark }
   /** Kept on the phone; it goes at `retryAt` (null: at the next read with a signal). */
   | {
       kind: 'waiting'
       mark: FriendMark
-      why: 'budget' | 'offline' | 'rate-limited'
+      why: MarkWait
       retryAt: number | null
     }
   | { kind: 'no-gists' }
@@ -44,12 +48,13 @@ export type MarkSend =
 export interface OutMark {
   mark: FriendMark
   state: 'sent' | 'waiting'
-  why?: 'budget' | 'offline' | 'rate-limited'
+  why?: MarkWait
   retryAt?: number | null
 }
 
 export interface Marks {
-  send(mine: string, kind: MarkKind): Promise<MarkSend>
+  /** `pointers`: my pointers in the list (one remove-reserve update each), for a phone where the sender has not counted them yet. */
+  send(mine: string, kind: MarkKind, pointers?: number): Promise<MarkSend>
   /** Sends each kept mark whose time has come. */
   flush(): Promise<void>
   /** By my pointer. */
@@ -63,6 +68,12 @@ export interface Marks {
 
 export const MARKS_OUT = 'friendsMarksOut'
 export const MARKS_SEEN = 'friendsMarksSeen'
+/** YAZ-5258: the times of my mark writes in the last hour, and the local day of the last cheer and nudge for each pointer. */
+export const MARKS_LOG = 'friendsMarksLog'
+interface MarksLog {
+  times: number[]
+  days: Record<string, Partial<Record<MarkKind, string>>>
+}
 
 export interface MarksOptions {
   store: VaultStore
@@ -74,6 +85,11 @@ export interface MarksOptions {
 }
 
 const HOUR = 3600_000
+const pad2 = (n: number) => String(n).padStart(2, '0')
+const dayOf = (t: number) => {
+  const d = new Date(t)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
 
 /**
  * When `need` updates may go and still leave `reserve`: the time the oldest of my updates leave the hour (and GitHub's
@@ -123,7 +139,7 @@ export function createMarks(options: MarksOptions): Marks {
   }
 
   /** One write of the mark into my pointer, under the friends lock. */
-  async function write(mine: string, mark: FriendMark): Promise<MarkSend> {
+  async function write(mine: string, mark: FriendMark, pointers: number): Promise<MarkSend> {
     if (!(await guard.live())) return { kind: 'no-account' }
     const session = await store.session(PHONE)
     const friends = await openFriendsApi(store, tokens, {
@@ -145,13 +161,19 @@ export function createMarks(options: MarksOptions): Marks {
             budget: b,
           })
       }
-      const wait = async (why: 'budget' | 'offline' | 'rate-limited', retryAt: number | null): Promise<MarkSend> => {
+      const wait = async (why: MarkWait, retryAt: number | null): Promise<MarkSend> => {
         await saveOut(session, mine, { mark, state: 'waiting', why, retryAt })
         return { kind: 'waiting', mark, why, retryAt }
       }
-      // The reserve for a remove stays: one update for each pointer (the sender's count at its last read).
-      const reserve = saved.pointers ?? 0
+      // The reserve for a remove stays: one update for each pointer (the sender's count, or the list's on a new phone).
+      const reserve = Math.max(saved.pointers ?? 0, pointers)
       const t = now()
+      const log = (await store.getState<MarksLog>(PHONE, MARKS_LOG)) ?? { times: [], days: {} }
+      // YAZ-5258: one cheer and one nudge a day for each friend; a second tap of the day makes no write.
+      if (log.days[mine]?.[mark.kind] === dayOf(t)) return { kind: 'already', mark: (await outbox())[mine]?.mark ?? mark }
+      // YAZ-5258: the 5 updates an hour kept for marks are a hard cap, so marks never take the numbers send's budget.
+      const hour = log.times.filter((x) => x > t - HOUR && x <= t).sort((a, b) => a - b)
+      if (hour.length >= MARK_HEADROOM) return wait('marks-limit', hour[hour.length - MARK_HEADROOM] + HOUR + 1)
       if (!mayUpdate(budget, t, 1, reserve)) return wait('budget', freeAt(budget, t, 1, reserve))
       try {
         const gist = await api.read(mine)
@@ -170,6 +192,11 @@ export function createMarks(options: MarksOptions): Marks {
         const answer = await api.update(mine, { [POINTER_FILE]: text })
         budget = recordUpdate(budget, now(), answer.rate)
         await saveBudget(budget)
+        if (await guard.live())
+          await session.setState(PHONE, MARKS_LOG, {
+            times: [...hour, now()],
+            days: { ...log.days, [mine]: { ...log.days[mine], [mark.kind]: dayOf(t) } },
+          } satisfies MarksLog)
         await saveOut(session, mine, { mark, state: 'sent' })
         return { kind: 'sent', mark }
       } catch (err) {
@@ -200,16 +227,22 @@ export function createMarks(options: MarksOptions): Marks {
     })
   }
 
-  function once(mine: string, mark: FriendMark): Promise<MarkSend> {
+  function once(mine: string, mark: FriendMark, pointers = 0): Promise<MarkSend> {
     const run = running.get(mine)
     if (run !== undefined) return run
-    const next = write(mine, mark).finally(() => running.delete(mine))
+    const next = write(mine, mark, pointers).finally(() => running.delete(mine))
     running.set(mine, next)
     return next
   }
 
   return {
-    send: (mine, kind) => once(mine, { kind, at: new Date(now()).toISOString() }),
+    async send(mine, kind, pointers) {
+      // A mark of this kind that already waits for this friend: no second one (it goes by itself).
+      const waiting = (await outbox())[mine]
+      if (waiting?.state === 'waiting' && waiting.mark.kind === kind && !running.has(mine))
+        return { kind: 'waiting', mark: waiting.mark, why: waiting.why ?? 'offline', retryAt: waiting.retryAt ?? null }
+      return once(mine, { kind, at: new Date(now()).toISOString() }, pointers)
+    },
     async flush() {
       const t = now()
       for (const [mine, out] of Object.entries(await outbox()))

@@ -518,6 +518,19 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     expect(statusText(h)).toContain('No connection. Your cheer goes when you are online.')
   })
 
+  it('YAZ-5258: a second cheer of the day makes no write and says so; the hourly cap of marks says when it goes', async () => {
+    let s: FakeService
+    ;({ h, s } = await open(demoBoard(NOW)))
+    s.markAnswer = async (_m, kind) => ({ kind: 'already', mark: { kind, at: new Date(NOW).toISOString() } })
+    await h.click(/^Number 1, Sam/)
+    await until(h, '.fr-week')
+    await h.click('Cheer')
+    expect(statusText(h)).toContain('You cheered Sam today. One cheer a day.')
+    s.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'marks-limit', retryAt: NOW + 600_000 })
+    await h.click('Nudge')
+    expect(statusText(h)).toMatch(/Cheers and nudges go out 5 an hour\. Your nudge goes at .+\./)
+  })
+
   it('a cheer that waits from before shows its state when the screen opens', async () => {
     const board = demoBoard(NOW)
     const sam = board.friends[0]

@@ -9,6 +9,7 @@ import { fakeClock, type FakeClock } from '../../sync/testing'
 import { createFriendsList, type FriendsList } from '../list'
 import { SEND_STATE } from '../sender'
 import { gistsFetch } from '../testing'
+import { mayUpdate, reserveFor } from '@shared/friendSend'
 import { createMarks, MARKS_OUT, type Marks } from './marks'
 
 /**
@@ -235,5 +236,51 @@ describe('Cheer and Nudge (decision 24)', () => {
     expect(await ali.marks.send(mine, 'cheer')).toEqual({ kind: 'no-account' })
     expect(world.calls.length).toBe(n)
     expect(await ali.store.getState(PHONE, MARKS_OUT)).toBeUndefined()
+  })
+
+  it('YAZ-5258: 50 taps on one friend: at most one cheer and one nudge a day; the rest make NO write', async () => {
+    const { clock, world, ali, mine } = await friends()
+    const answers = []
+    for (let i = 0; i < 50; i++) {
+      answers.push((await ali.marks.send(mine, i % 2 === 0 ? 'cheer' : 'nudge')).kind)
+      clock.advance(1000)
+    }
+    expect(updatesOf(world, mine)).toBe(2)
+    expect(answers.slice(0, 2)).toEqual(['sent', 'sent'])
+    expect(new Set(answers.slice(2))).toEqual(new Set(['already']))
+    // The next local day: one more of each.
+    clock.advance(86_400_000)
+    expect((await ali.marks.send(mine, 'cheer')).kind).toBe('sent')
+  })
+
+  it('YAZ-5258: the 5 updates an hour for marks are a hard cap; the rest wait, and the numbers send keeps its budget', async () => {
+    const clock = fakeClock(START)
+    const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' } }, now: clock.now })
+    const ali = await phone(world, clock, ALI, 'ali')
+    // Seven links that Ali shared: seven pointers of Ali to mark.
+    const pointers: string[] = []
+    for (let i = 0; i < 7; i++) {
+      const s = await ali.list.share()
+      if (s.kind !== 'ok') throw new Error(s.kind)
+      pointers.push(s.link.split('#')[1])
+    }
+    const kinds = []
+    for (const p of pointers) kinds.push((await ali.marks.send(p, 'cheer', pointers.length)).kind)
+    expect(kinds).toEqual(['sent', 'sent', 'sent', 'sent', 'sent', 'waiting', 'waiting'])
+    const saved = await ali.store.getState<{ budget: Parameters<typeof mayUpdate>[0] }>(PHONE, SEND_STATE)
+    expect(mayUpdate(saved!.budget, clock.now(), 1, reserveFor(pointers.length))).toBe(true)
+    const out = await ali.marks.outbox()
+    expect(out[pointers[5]]).toMatchObject({ state: 'waiting', why: 'marks-limit' })
+    // An hour later the waiting ones go.
+    clock.advance(3600_000 + 1000)
+    await ali.marks.flush()
+    expect((await ali.marks.outbox())[pointers[6]]).toMatchObject({ state: 'sent' })
+  })
+
+  it('YAZ-5258: a fresh phone (no count of pointers saved yet) keeps the remove reserve from the list', async () => {
+    const { ali, mine } = await friends()
+    const updates = Array.from({ length: 99 }, (_, i) => START - 50 * 60_000 + i)
+    await ali.store.setState(PHONE, SEND_STATE, { lastSentAt: null, lastKey: null, budget: { updates, seen: null, blockedUntil: null } })
+    expect((await ali.marks.send(mine, 'cheer', 1)).kind).toBe('waiting')
   })
 })

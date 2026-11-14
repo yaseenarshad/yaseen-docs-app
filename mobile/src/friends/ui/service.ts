@@ -132,6 +132,8 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
   const own: OwnNumbers = options.numbers ?? createOwnNumbers(store)
 
   let sender: FriendsSender | null = null
+  /** My pointers at the last read (one remove-reserve update each), for a mark on a phone the sender has not counted yet. */
+  let pointerCount = 0
   let stopped = false
   const onHidden = () => {
     if (document.visibilityState === 'hidden') void sender?.background()
@@ -225,6 +227,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         const all = await groups.all()
         const groupViews = Array.isArray(all) ? all : []
         const friends = rows.rows.map(entryOf)
+        pointerCount = rows.rows.length + rows.shared.length + groupViews.length
         const offline = rows.rows.some((r) => r.read?.kind === 'ok' && r.read.stale !== undefined) || rows.rows.some((r) => r.state === 'offline')
         await saveCopy({ friends, shared: rows.shared, groups: [] })
         return {
@@ -247,7 +250,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     share: () => list.share(),
     paste: (text) => list.pasteAny(text),
     remove: (mine) => list.remove(mine),
-    mark: (mine, kind) => marks.send(mine, kind),
+    mark: (mine, kind) => marks.send(mine, kind, pointerCount),
     see: (seen) => marks.see(seen),
     async stop() {
       stopped = true

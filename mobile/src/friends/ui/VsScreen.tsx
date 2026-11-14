@@ -207,7 +207,10 @@ function CheerNudge({
     switch (now.kind) {
       case 'sent':
         return `${now.mark.kind === 'cheer' ? 'Cheer' : 'Nudge'} sent at ${clockTime(Date.parse(now.mark.at))}. ${name} sees it in Friends.`
+      case 'already':
+        return now.mark.kind === 'cheer' ? `You cheered ${name} today. One cheer a day.` : `You nudged ${name} today. One nudge a day.`
       case 'waiting':
+        if (now.why === 'marks-limit') return `Cheers and nudges go out 5 an hour. Your ${what(now.mark)} goes at ${clockTime(now.retryAt ?? Date.now())}.`
         if (now.why === 'offline') return `No connection. Your ${what(now.mark)} goes when you are online.`
         return now.retryAt === null
           ? `Your ${what(now.mark)} waits. It goes by itself.`
