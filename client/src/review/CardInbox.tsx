@@ -109,6 +109,7 @@ import { TodayWork } from './TodayWork'
 import { todayCards } from './reviewTime'
 import { cssZoom } from '../lib/cssZoom'
 import { inboxRoom, readingScroll } from './inboxScroll'
+import { START, markOf, reveal, shownParts, type Reveal } from './cardSteps'
 import { SHOW_GAP, leastScroll } from '../editor/find/leastScroll'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
@@ -220,11 +221,9 @@ function ArchivedList({ session, nameOf, openPage, unarchive, backToAll }: { ses
   )
 }
 
-/** The step a card is at (D18): how many sides show, and how many hidden words, in page order over the card. */
-interface Step {
+/** The step a card is at (D18): how many sides show, which hidden words, and the marked blank (`cardSteps.ts`, round 4). */
+interface Step extends Reveal {
   key: string | null
-  sides: number
-  shown: number
 }
 
 export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage, editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace }: CardInboxProps) {
@@ -254,20 +253,22 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
 
   // The sides and their hidden words, once per card text.
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
-  const [stepState, setStep] = useState<Step>({ key: cardKey, sides: 1, shown: 0 })
-  const step = stepState.key === cardKey ? stepState : { key: cardKey, sides: 1, shown: 0 }
+  const [stepState, setStep] = useState<Step>({ ...START, key: cardKey })
+  const step: Step = stepState.key === cardKey ? stepState : { ...START, key: cardKey }
   // A card that goes and comes back (⌘Z after the last answer) starts again from its first step.
-  useEffect(() => setStep((s) => (s.key === cardKey ? s : { key: cardKey, sides: 1, shown: 0 })), [cardKey])
+  useEffect(() => setStep((s) => (s.key === cardKey ? s : { ...START, key: cardKey })), [cardKey])
   // The card's sound never outlives it (YAZ-5014): the next card, a hidden Inbox and its close stop it.
   useEffect(() => stopCardAudio, [cardKey, shown])
   const hiddenUpTo = (sides: number): number => counts.slice(0, sides).reduce((a, b) => a + b, 0)
-  const done = text !== null && step.sides >= counts.length && step.shown >= hiddenUpTo(counts.length)
+  const done = text !== null && step.sides >= counts.length && step.open.length >= hiddenUpTo(counts.length)
   // YAZ-5048: the next Space shows the next side (the sides that show have no hidden word left).
-  const nextSide = !done && text !== null && step.shown >= hiddenUpTo(step.sides)
+  const nextSide = !done && text !== null && step.open.length >= hiddenUpTo(step.sides)
+  // The blank the next Space shows (round 4: after a click, the next one still hidden after the clicked word).
+  const mark = markOf(step, hiddenUpTo(step.sides))
   // YAZ-5105 round 3 (Yaseen: "just show on the last side … regardless of it hidden words are all revealed or not"):
   // the card's last side shows, past its front. A one-side card's front IS its last side: past it means its first
   // Space has shown something, or it has nothing to show (fully shown at once).
-  const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.shown > 0 || done)
+  const onLastSide = text !== null && step.sides >= counts.length && (step.sides > 1 || step.open.length > 0 || done)
 
   // YAZ-5049 (Yaseen: "kinda like we have in the app our CMD F search"): the word a Space shows, or the side it adds,
   // comes into view, gliding; never centred. Only a step of the same card moves it. The card's render runs first.
@@ -278,7 +279,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   const lastStep = useRef<Step | null>(null)
   useEffect(() => {
     const before = lastStep.current
-    lastStep.current = { key: step.key, sides: step.sides, shown: step.shown }
+    lastStep.current = step
     const body = bodyRef.current
     const view = rootRef.current
     if (!shown || body === null || view === null) return
@@ -287,9 +288,12 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
       return
     }
     if (before === null) return
+    // Round 4 (Yaseen: "with mouse clicking, you are trying to unveil that current one"): a click shows that word and
+    // the view stays put, wherever the next blank is. The next Space follows from where the view is.
+    if (step.by === 'mouse') return
     // What the step showed: the new side (by its top: its first line, the line between the sides above it), or the word.
     const side = step.sides > before.sides ? body.querySelector(`.card__side[data-side="${step.sides - 1}"]`) : null
-    const word = side === null && step.shown > before.shown ? body.querySelector(`[data-hidden="${step.shown - 1}"]`) : null
+    const word = side === null && step.open.length > before.open.length && step.last !== null ? body.querySelector(`[data-hidden="${step.last}"]`) : null
     const showed = side ?? word
     if (showed === null) return
     const s = showed.getBoundingClientRect()
@@ -315,7 +319,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
     if (typeof view.scrollTo === 'function') view.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
     else view.scrollTop = top
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `done` follows the step: it changes only with it
-  }, [step.key, step.sides, step.shown, shown])
+  }, [step.key, step.sides, step.open.length, shown])
 
   // The buttons show with the card (YAZ-5010): their reviews are fixed now, so the hover and the write agree (D13). Again after a delete re-reads the card.
   // The page object, not its text (YAZ-5029): a card read again with the same text is a new page, and fixes again.
@@ -372,12 +376,22 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // dropped Space, and one more Space moves nothing but gives the answer buttons one soft ring — where to go now.
   // A new value each time, so the ring plays again; none on the next card.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
-  const advance = useCallback(() => {
+  // Round 4: `by` says what showed it — Space (a key) scrolls to follow the next blank, a mouse never moves the view.
+  const advance = useCallback((by: 'key' | 'mouse' = 'key') => {
     const { step, done, counts, card } = live.current
-    if (done && card?.page != null) return setNudge((v) => ({ key: step.key, n: v.key === step.key ? v.n + 1 : 1 }))
+    if (done && card?.page != null) return by === 'key' ? setNudge((v) => ({ key: step.key, n: v.key === step.key ? v.n + 1 : 1 })) : undefined
     if (done || card?.page == null) return
-    const before = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
-    setStep(step.shown < before ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
+    const upTo = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
+    const mark = markOf(step, upTo)
+    setStep(mark !== null ? { ...reveal(step, mark, upTo, by), key: step.key } : { ...step, sides: step.sides + 1, next: null, last: null, by })
+  }, [])
+  /** A click on a blank (round 4): THAT word shows, and the view stays put. A word that shows already: nothing new. */
+  const showWord = useCallback((word: number) => {
+    const { step, counts, card } = live.current
+    if (card?.page == null) return
+    const upTo = counts.slice(0, step.sides).reduce((a, b) => a + b, 0)
+    const next = reveal(step, word, upTo, 'mouse')
+    if (next !== step) setStep({ ...next, key: step.key })
   }, [])
 
   useEffect(() => {
@@ -534,8 +548,17 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
               text !== null &&
               card.page !== null && (
                 <>
-                  <div className="card card-screen card-inbox__card" onClick={(e) => e.target instanceof Element && e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) === null && advance()}>
-                    <CardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, shown: step.shown }} doors={doors} />
+                  <div
+                    className="card card-screen card-inbox__card"
+                    onClick={(e) => {
+                      if (!(e.target instanceof Element) || e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) !== null) return
+                      // Round 4: a blank shows that word; a shown word, nothing new; the rest of the card, the marked word. A mouse never scrolls.
+                      const word = e.target.closest<HTMLElement>('.card__blank, .card__hidden')
+                      if (word === null) return advance('mouse')
+                      if (word.classList.contains('card__blank')) showWord(Number(word.dataset.hidden))
+                    }}
+                  >
+                    <CardBody text={text} path={card.path} vault={vaultOf(card.path)} show={{ sides: step.sides, ...shownParts(step.open), next: mark ?? undefined }} doors={doors} />
                   </div>
                 </>
               )
