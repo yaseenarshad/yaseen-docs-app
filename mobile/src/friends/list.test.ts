@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, parseFriendsIndex } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, findFriendsIndex, makePointer, parseFriendsIndex, writeFriendsIndex } from '@shared/friendGists'
 import { fakeGistWorld, type FakeGistWorld } from '@shared/friendGistsFake'
 import { FRIEND_LINK_BASE, WHAT_FRIENDS_SEE } from '@shared/friendsList'
 import type { IndexRecord } from '@shared/types'
@@ -11,6 +11,8 @@ import { INDEX_STATE } from '../sync/phoneIndex'
 import { fakeClock, type FakeClock } from '../sync/testing'
 import { createFriendsList, type FriendsList } from './list'
 import { createFriendsSender } from './sender'
+import { gistsApi } from './gistsApi'
+import { githubClient } from '../github/client'
 import { gistsFetch } from './testing'
 
 /**
@@ -47,6 +49,8 @@ const setup = () => {
   const world = fakeGistWorld({ accounts: { [ALI]: { login: 'ali' }, [BEA]: { login: 'bea' }, [NOGISTS]: { login: 'ali', gists: false } }, now: clock.now })
   return { clock, world }
 }
+/** The same phone after a restart: a new list object on the same store and tokens. */
+const phone2 = async (world: FakeGistWorld, clock: FakeClock, p: Phone) => createFriendsList({ store: p.store, tokens: p.tokens, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
 const indexOf = (world: FakeGistWorld, login: string) => {
   const g = world.owned(login).find((x) => INDEX_FILE in x.files)
   const read = parseFriendsIndex(g ? world.text(g.id, INDEX_FILE) : null)
@@ -157,6 +161,111 @@ describe('createFriendsList (YAZ-5083)', () => {
     bea.list.stop()
     expect(await bea.list.share()).toEqual({ kind: 'no-account' })
     expect(world.owned('bea')).toHaveLength(0)
+  })
+
+  it('YAZ-5235: both share first; after the pair heals, rows() deletes the shared link the friend holds and does not use', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const bea = await phone(world, clock, BEA, 'bea')
+    const aShare = await ali.list.share()
+    const bShare = await bea.list.share()
+    if (aShare.kind !== 'ok' || bShare.kind !== 'ok') throw new Error('share')
+    const a = await ali.list.paste(bShare.link)
+    const b = await bea.list.paste(aShare.link)
+    if (a.kind !== 'added' || b.kind !== 'added') throw new Error('paste')
+    expect(await ali.list.paste(b.sendBack!)).toMatchObject({ kind: 'added', paired: true })
+    expect(await bea.list.rows()).toMatchObject({ kind: 'ok', rows: [{ state: 'ok' }], shared: [] })
+    expect(world.owned('bea').filter((g) => POINTER_FILE in g.files)).toHaveLength(1)
+  })
+
+  it('YAZ-5236: 30 removes with the hour used up are kept, show "Removing…", and are all done an hour later in ONE re-key', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const share = await ali.list.share()
+    if (share.kind !== 'ok') throw new Error(share.kind)
+    const api = gistsApi(githubClient(ALI, { fetch: gistsFetch(world).fetch, now: world.now }))
+    const found = await findFriendsIndex(api, { describe: () => 'notecards-test', sleep: async () => {} })
+    if (found.kind !== 'ok') throw new Error(found.kind)
+    const pointers: string[] = []
+    for (let i = 0; i < 30; i++) pointers.push(await makePointer(api, found.handle.index.stats!, { describe: () => 'notecards-test', sleep: async () => {} }))
+    await writeFriendsIndex(api, found.handle, { ...found.handle.index, friends: pointers.map((mine, i) => ({ name: `F${i}`, theirs: `abc${i}`, mine })) })
+    // The Mac used the hour: GitHub refuses each gist update now.
+    const stats = found.handle.index.stats!
+    while (world.updates('ali') < 100) await api.update(stats, { [NUMBERS_FILE]: world.text(stats, NUMBERS_FILE)! })
+    for (const mine of pointers) expect(await ali.list.remove(mine)).toMatchObject({ kind: 'paused' })
+    const rows = await ali.list.rows()
+    if (rows.kind !== 'ok') throw new Error(rows.kind)
+    expect(rows.rows).toHaveLength(30)
+    expect(rows.rows.every((r) => r.state === 'removing' && r.label === 'Removing…')).toBe(true)
+
+    clock.advance(61 * 60_000)
+    const restart = await phone2(world, clock, ali)
+    const after = await restart.rows()
+    expect(after).toMatchObject({ kind: 'ok', rows: [] })
+    expect(indexOf(world, 'ali').friends).toEqual([])
+    for (const p of pointers) expect(world.text(p, POINTER_FILE)).toBeNull()
+    expect(await ali.store.getState('', 'friendsRemoveQueue')).toBeUndefined()
+  })
+
+  it('YAZ-5236: the sender runs a remove that waits on the phone BEFORE it sends the numbers (a remove has priority)', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali')
+    const bea = await phone(world, clock, BEA, 'bea')
+    const share = await ali.list.share()
+    if (share.kind !== 'ok') throw new Error(share.kind)
+    const pasted = await bea.list.paste(share.link)
+    if (pasted.kind !== 'added') throw new Error(pasted.kind)
+    await ali.list.paste(pasted.sendBack!)
+    const old = indexOf(world, 'ali').stats!
+    const api = gistsApi(githubClient(BEA, { fetch: gistsFetch(world).fetch, now: world.now }))
+    void api
+    const mac = gistsApi(githubClient(ALI, { fetch: gistsFetch(world).fetch, now: world.now }))
+    while (world.updates('ali') < 100) await mac.update(old, { [NUMBERS_FILE]: world.text(old, NUMBERS_FILE)! })
+    const rows = await ali.list.rows()
+    if (rows.kind !== 'ok') throw new Error(rows.kind)
+    expect(await ali.list.remove(rows.rows[0].mine)).toMatchObject({ kind: 'paused' })
+    clock.advance(61 * 60_000)
+    const listeners = new Set<(e: SyncEvent) => void>()
+    const sender = createFriendsSender({ store: ali.store, tokens: ali.tokens, sync: { subscribe: (l) => (listeners.add(l), () => listeners.delete(l)) }, clock, fetch: gistsFetch(world).fetch, sleep: async () => {} })
+    const at = clock.now()
+    for (const l of listeners) l({ type: 'state', state: { status: 'synced', vault: null, problem: null, retryAt: null, progress: null, lastSyncedAt: clock.now(), ready: true } })
+    await sender.idle()
+    const index = indexOf(world, 'ali')
+    expect(index.friends).toEqual([])
+    expect(index.stats).not.toBe(old)
+    expect(world.calls.filter((c) => c.op === 'update' && c.id === old && c.at >= at)).toHaveLength(0)
+    // The only friend is gone, so there is nobody to send to (decision 22).
+    expect(sender.state().status).toBe('no-friends')
+    await sender.stop()
+  })
+
+  it('a Name change on a phone that holds only some of the vaults that count keeps the other vaults in the list', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali', ['ali/vault'])
+    await localFriends(ali.store).saveSettings({ vaults: null, nickname: null })
+    await ali.list.share()
+    const g = world.owned('ali').find((x) => INDEX_FILE in x.files)!
+    const o = JSON.parse(world.text(g.id, INDEX_FILE)!)
+    world.setFiles(g.id, { [INDEX_FILE]: JSON.stringify({ ...o, vaults: ['ali/vault', 'ali/macvault'] }) })
+    await ali.list.rows()
+    await ali.list.port.saveSettings({ ...(await ali.list.port.settings()), nickname: 'Al' })
+    expect(indexOf(world, 'ali').vaults).toEqual(['ali/vault', 'ali/macvault']) // now: ['ali/vault']
+  })
+
+  it('YAZ-5237: a change of the vaults on the phone changes only the phone`s vaults; the Name stays when only the vaults change', async () => {
+    const { clock, world } = setup()
+    const ali = await phone(world, clock, ALI, 'ali', ['ali/one', 'ali/two'])
+    await localFriends(ali.store).saveSettings({ vaults: null, nickname: 'Al' })
+    await ali.list.share()
+    const g = world.owned('ali').find((x) => INDEX_FILE in x.files)!
+    const o = JSON.parse(world.text(g.id, INDEX_FILE)!)
+    world.setFiles(g.id, { [INDEX_FILE]: JSON.stringify({ ...o, vaults: ['ali/mac', ...o.vaults], nickname: 'A'.repeat(150) }) })
+    await ali.list.rows()
+    const now = await ali.list.port.settings()
+    await ali.list.port.saveSettings({ ...now, vaults: [vaultId(ali.vaults[1])] })
+    const after = JSON.parse(world.text(g.id, INDEX_FILE)!)
+    expect(after.vaults).toEqual(['ali/mac', 'ali/two'])
+    expect(after.nickname).toBe('A'.repeat(150)) // kept whole: only the vaults changed
   })
 
   it('a token with no Gists permission: "no-gists" for each action, and nothing is made', async () => {

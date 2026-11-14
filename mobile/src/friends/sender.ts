@@ -33,6 +33,7 @@ import { PHONE, VaultClosedError, type TokenStore, type VaultStore } from '../st
 import type { Clock, SyncEvent } from '../sync/engine'
 import { countedVaults, openFriendsApi } from './friendsApi'
 import { friendsGuard } from './guard'
+import { drainQueue, loadQueue } from './removeQueue'
 
 /**
  * The phone's send of the numbers (YAZ-5082, 4E1). It listens to the sync engine (3B) and sends the person's ONE
@@ -235,6 +236,22 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       // YAZ-5191: a list that cannot be read: no send and no write; 4E4 shows LIST_NEEDS_REPAIR.
       if (handle === 'broken') return set({ status: 'needs-repair' })
       if (handle === null) return set({ status: 'no-friends' })
+      // YAZ-5236: removes that wait on the phone go first: a remove has priority over a numbers update.
+      if ((await loadQueue(session)).length > 0) {
+        const drained = await drainQueue(api, handle, session, saved.budget, { ...writeOptions, now: () => clock.now() })
+        if (drained !== null) {
+          saved.budget = drained.budget
+          await save({ budget: drained.budget })
+          index = drained.handle
+          handle = drained.handle
+          if (drained.kind === 'paused' && pendingRemove(drained.handle) === null) {
+            if (drained.why === 'offline') return set({ status: 'offline' })
+            const at = drained.retryAt ?? clock.now() + 60_000
+            schedule(at)
+            return set({ status: 'slowed', retryAt: at })
+          }
+        }
+      }
       // 4E2 (YAZ-5083): a remove waits in the list (the app closed, or the budget ran out). Finish it first; never
       // send to the old numbers gist while it waits, so the removed friend's last numbers do not change.
       if (pendingRemove(handle) !== null) {

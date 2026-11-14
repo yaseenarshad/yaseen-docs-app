@@ -72,7 +72,16 @@ export interface GroupFile {
   /** The admin's login. */
   admin: string
   members: GroupMember[]
+  /**
+   * YAZ-5240: the pointers the admin removed (the newest 200). A person whom the admin removed before their app ever
+   * read the group sees "removed" by this, not "waiting". Absent: none.
+   */
+  removed?: string[]
 }
+
+/** YAZ-5240: never added, this long after the ask: "The admin did not add you" (Yaseen to confirm the 7 days). */
+export const NOT_ADDED_AFTER_MS = 7 * 86400_000
+const REMOVED_MAX = 200
 
 export const groupLink = (group: string): string => `${GROUP_LINK_BASE}#${group.toLowerCase()}`
 export const joinLink = (group: string, pointer: string): string => `${JOIN_LINK_BASE}#${group.toLowerCase()}-${pointer.toLowerCase()}`
@@ -161,8 +170,13 @@ export function parseGroupFile(text: string | null | undefined): FileState<Group
   if (!isObject(raw)) return { kind: 'unreadable', why: 'the file is not an object' }
   if (typeof raw.v === 'number' && Number.isInteger(raw.v) && raw.v > 1) return { kind: 'newer' }
   if (raw.v !== 1) return { kind: 'unreadable', why: 'the file has another version' }
+  // YAZ-5241: a field there with the wrong shape makes the file unreadable, never an empty value that a write saves.
+  if ('members' in raw && !Array.isArray(raw.members)) return { kind: 'unreadable', why: 'members is not a list' }
+  for (const key of ['name', 'admin'] as const) if (key in raw && typeof raw[key] !== 'string') return { kind: 'unreadable', why: `${key} is not a text` }
+  if ('removed' in raw && !Array.isArray(raw.removed)) return { kind: 'unreadable', why: 'removed is not a list' }
+  const removed = Array.isArray(raw.removed) ? raw.removed.filter(isGistId).map((x) => x.toLowerCase()).slice(-REMOVED_MAX) : undefined
   const members = (Array.isArray(raw.members) ? raw.members : []).filter(memberOk).map((m) => ({ login: shown(m.login, ''), pointer: (m.pointer as string).toLowerCase() }))
-  return { kind: 'ok', value: { v: 1, name: shown(raw.name, 'Group'), admin: shown(raw.admin, ''), members }, raw }
+  return { kind: 'ok', value: { v: 1, name: shown(raw.name, 'Group'), admin: shown(raw.admin, ''), members, ...(removed !== undefined && { removed }) }, raw }
 }
 
 /** The text of a group file to write: the known fields over the unknown ones; each member keeps its own; bad ones stay. */
@@ -250,7 +264,11 @@ async function readGroupGist(api: GistsApi, group: string, etag: string | null =
 }
 
 /** The login and the name behind a pointer (from the numbers it names), or null when it is not a pointer. */
-async function whoIs(api: GistsApi, pointer: string): Promise<{ login: string; name: string } | 'not-found' | 'not-a-pointer' | 'newer-app'> {
+/**
+ * YAZ-5239: the login is the OWNER of the pointer gist, as GitHub gives it, never the `login` that the person wrote in
+ * their numbers. With no owner in GitHub's answer the request is `unverified`. The name is for the screen only.
+ */
+async function whoIs(api: GistsApi, pointer: string): Promise<{ login: string; name: string } | 'not-found' | 'not-a-pointer' | 'newer-app' | 'unverified'> {
   let gist: GistDoc | 'unchanged'
   try {
     gist = await api.read(pointer)
@@ -262,14 +280,16 @@ async function whoIs(api: GistsApi, pointer: string): Promise<{ login: string; n
   const p = readPointerFile(fileText(gist, POINTER_FILE))
   if (p.kind === 'newer') return 'newer-app'
   if (p.kind !== 'ok') return 'not-a-pointer'
+  const login = typeof gist.owner === 'string' && gist.owner !== '' ? gist.owner.slice(0, SHOWN_MAX) : null
+  if (login === null) return 'unverified'
   try {
     const numbers = await api.read(p.value.stats)
-    if (numbers === 'unchanged') return { login: '', name: 'Friend' }
+    if (numbers === 'unchanged') return { login, name: login }
     const s = readStatsFile(fileText(numbers, NUMBERS_FILE))
-    if (s.kind !== 'ok') return { login: '', name: 'Friend' }
-    return { login: s.value.login, name: s.value.name.trim() || s.value.login || 'Friend' }
+    if (s.kind !== 'ok') return { login, name: login }
+    return { login, name: s.value.name.trim() || login }
   } catch (err) {
-    if (gistErrorCode(err) === 'NOT_FOUND') return { login: '', name: 'Friend' }
+    if (gistErrorCode(err) === 'NOT_FOUND') return { login, name: login }
     throw err
   }
 }
@@ -340,7 +360,7 @@ export async function joinGroup(api: GistsApi, handle: IndexHandle, text: string
     const pointer = await makePointer(api, base.index.stats, opts)
     await opts.sleep(1000)
     base = await freshList(api, base, opts)
-    const next = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: file.value.name, group, mine: pointer, admin: false }] })
+    const next = await writeFriendsIndex(api, base, { ...base.index, groups: [...base.index.groups, { name: file.value.name, group, mine: pointer, admin: false, asked: new Date(opts.now()).toISOString() }] })
     return { kind: 'joined', name: file.value.name, group, sendToAdmin: joinLink(group, pointer), handle: next }
   } catch (err) {
     return failure(err)
@@ -390,8 +410,13 @@ export function joinMessage(result: JoinResult): string {
 // The admin: who asks to join, add, remove.
 
 export type JoinRequest =
+  /** `login` is the GitHub owner of the request (YAZ-5239); `name` is what they call themselves, for the screen only. */
   | { kind: 'request'; group: string; groupName: string; pointer: string; login: string; name: string }
   | { kind: 'already-member'; name: string }
+  /** YAZ-5239: this GitHub login is already in the group (a member or the admin): refused, nobody is replaced. */
+  | { kind: 'duplicate'; login: string; name: string }
+  /** YAZ-5239: GitHub's answer gave no owner, so the request cannot be trusted: refused. */
+  | { kind: 'unverified' }
   | { kind: 'not-your-group' }
   | { kind: 'not-a-join-link' }
   | { kind: 'not-found' }
@@ -415,7 +440,11 @@ export async function readJoinRequest(api: GistsApi, handle: IndexHandle, text: 
     if (who === 'not-found') return { kind: 'not-found' }
     if (who === 'newer-app') return { kind: 'newer-app' }
     if (who === 'not-a-pointer') return { kind: 'not-a-join-link' }
+    if (who === 'unverified') return { kind: 'unverified' }
     if (file.value.members.some((m) => m.pointer === link.pointer)) return { kind: 'already-member', name: who.name }
+    // A login that is already in the group (a member, or the admin): a duplicate, never a replace.
+    if (file.value.members.some((m) => m.login.toLowerCase() === who.login.toLowerCase()) || file.value.admin.toLowerCase() === who.login.toLowerCase())
+      return { kind: 'duplicate', login: who.login, name: who.name }
     return { kind: 'request', group: link.group, groupName: file.value.name, pointer: link.pointer, login: who.login, name: who.name }
   } catch (err) {
     const f = failure(err)
@@ -425,6 +454,8 @@ export async function readJoinRequest(api: GistsApi, handle: IndexHandle, text: 
 
 export type GroupChange =
   | { kind: 'done'; file: GroupFile }
+  | { kind: 'duplicate'; login: string }
+  | { kind: 'unverified' }
   | { kind: 'not-admin' }
   | { kind: 'not-found' }
   | { kind: 'not-a-member' }
@@ -454,10 +485,18 @@ export async function addMember(api: GistsApi, handle: IndexHandle, group: strin
     if (who === 'not-found') return { kind: 'not-found' }
     if (who === 'newer-app') return { kind: 'newer-app' }
     if (who === 'not-a-pointer') return { kind: 'not-a-join-link' }
+    if (who === 'unverified') return { kind: 'unverified' }
     const current = await adminFile(api, handle, group)
     if ('kind' in current) return current
-    const others = current.file.members.filter((m) => m.pointer !== link.pointer && (who.login === '' || m.login !== who.login))
-    const file: GroupFile = { ...current.file, members: [...others, { login: who.login, pointer: link.pointer }] }
+    if (current.file.members.some((m) => m.pointer === link.pointer)) return { kind: 'done', file: current.file }
+    // YAZ-5239: a login already in the group (a member, or the admin) is never replaced: a duplicate is refused.
+    const same = (l: string) => l.toLowerCase() === who.login.toLowerCase()
+    if (current.file.members.some((m) => same(m.login)) || same(current.file.admin)) return { kind: 'duplicate', login: who.login }
+    const file: GroupFile = {
+      ...current.file,
+      members: [...current.file.members, { login: who.login, pointer: link.pointer }],
+      ...(current.file.removed !== undefined && { removed: current.file.removed.filter((p) => p !== link.pointer) }),
+    }
     await api.update(group, { [GROUP_FILE]: groupFileText(file, current.raw) })
     void opts
     return { kind: 'done', file }
@@ -474,7 +513,11 @@ export async function removeMember(api: GistsApi, handle: IndexHandle, group: st
     const mine = handle.index.groups.find((g) => g.group === group)?.mine
     if (pointer === mine) return { kind: 'not-admin' } // the admin's way out is "Delete group"
     if (!current.file.members.some((m) => m.pointer === pointer)) return { kind: 'not-a-member' }
-    const file: GroupFile = { ...current.file, members: current.file.members.filter((m) => m.pointer !== pointer) }
+    const file: GroupFile = {
+      ...current.file,
+      members: current.file.members.filter((m) => m.pointer !== pointer),
+      removed: [...(current.file.removed ?? []).filter((p) => p !== pointer), pointer].slice(-REMOVED_MAX),
+    }
     await api.update(group, { [GROUP_FILE]: groupFileText(file, current.raw) })
     void opts
     return { kind: 'done', file }
@@ -507,23 +550,86 @@ export async function deleteGroup(api: GistsApi, handle: IndexHandle, group: str
 }
 
 /**
- * Deletes my gists that no list names (a stop between the steps of create, join or paste), when they are older than
- * `minAge` (another device may be at work on newer ones). It does nothing while a remove waits. Returns what it deleted.
+ * Deletes my gists that no list names (a stop between the steps of create, join or paste). YAZ-5238: only what is
+ * PROVABLY an orphan, and nothing at all when in doubt:
+ * (a) it is ours: the file name AND a content that reads as our exact format (a look-alike stays);
+ * (b) no list names it: the friends list and each group file of mine (any of my gists that holds one) are read FRESH,
+ *     right before the deletes; a group file with a member other than its admin is in use and stays (a lost write of
+ *     the list can leave a group that people joined);
+ * (c) GitHub's clock says it is older than `minAge`: its `created_at` against GitHub's time of the same answers
+ *     (`api.serverTime()`), never the device clock (`_deviceNow` is not used);
+ * (d) any read that fails, a list that needs repair, a remove that waits, or no GitHub time: delete NOTHING.
+ * Returns the deleted IDs.
  */
-export async function sweepOrphans(api: GistsApi, handle: IndexHandle, now: number, minAge = ORPHAN_AGE_MS): Promise<string[]> {
-  if (pendingRemove(handle) !== null) return []
-  const index = handle.index
-  const keep = new Set<string>([handle.id, ...(index.stats ? [index.stats] : []), ...pointersOf(index), ...index.groups.filter((g) => g.admin).map((g) => g.group)])
+export async function sweepOrphans(api: GistsApi, handle: IndexHandle, _deviceNow?: number, minAge = ORPHAN_AGE_MS): Promise<string[]> {
   const out: string[] = []
-  for (const g of await api.list()) {
-    const ours = g.files.some((f) => f === POINTER_FILE || f === GROUP_FILE || f === NUMBERS_FILE)
-    if (!ours || keep.has(g.id)) continue
-    const made = Date.parse(g.createdAt)
-    if (!Number.isFinite(made) || now - made < minAge) continue
-    await removeQuietly(api, g.id)
-    out.push(g.id)
+  try {
+    const items = await api.list()
+    const serverNow = api.serverTime?.() ?? null
+    if (serverNow === null || !Number.isFinite(serverNow)) return []
+    const listNow = async (): Promise<IndexHandle | null> => {
+      const gist = await api.read(handle.id)
+      if (gist === 'unchanged') return null
+      const read = parseFriendsIndex(fileText(gist, INDEX_FILE))
+      if (read.kind !== 'ok') return null
+      const h = { ...handle, index: read.value, raw: read.raw, etag: gist.etag }
+      return pendingRemove(h) === null ? h : null
+    }
+    const list = await listNow()
+    if (list === null) return []
+    const named = new Set<string>([handle.id, ...(list.index.stats ? [list.index.stats] : []), ...pointersOf(list.index), ...list.index.groups.map((g) => g.group)])
+    // Each of my gists with one of our files, read fresh.
+    const files = new Map<string, GistDoc>()
+    for (const g of items.filter((x) => x.files.some((f) => f === POINTER_FILE || f === GROUP_FILE || f === NUMBERS_FILE))) {
+      const gist = await api.read(g.id)
+      if (gist === 'unchanged') return []
+      files.set(g.id, gist)
+    }
+    const old = (gist: GistDoc) => {
+      const made = Date.parse(gist.createdAt)
+      return Number.isFinite(made) && serverNow - made >= minAge
+    }
+    // A group file that stays (the list names it, it is in use, it is new, or it is not provably ours) names its members'
+    // pointers too. A group file that is itself an orphan does not keep its own pointer.
+    for (const [id, gist] of files) {
+      if (fileText(gist, GROUP_FILE) === null) continue
+      const goes = !named.has(id) && old(gist) && isOurs(gist)
+      if (goes) continue
+      const file = parseGroupFile(fileText(gist, GROUP_FILE))
+      if (file.kind === 'ok') for (const m of file.value.members) named.add(m.pointer)
+    }
+    const orphans: string[] = []
+    for (const [id, gist] of files) if (!named.has(id) && old(gist) && isOurs(gist)) orphans.push(id)
+    if (orphans.length === 0) return []
+    // Right before the deletes: the list once more, fresh. A change, a failed read or a waiting remove: nothing goes.
+    const again = await listNow()
+    if (again === null) return []
+    const stillNamed = new Set([...pointersOf(again.index), ...(again.index.stats ? [again.index.stats] : []), ...again.index.groups.map((g) => g.group)])
+    for (const id of orphans) {
+      if (stillNamed.has(id)) continue
+      await removeQuietly(api, id)
+      out.push(id)
+    }
+    return out
+  } catch (err) {
+    if (gistErrorCode(err) === null) throw err
+    return out
   }
-  return out
+}
+
+/** The gist holds exactly one of our files, and it reads as our format; a group file only with its admin (not in use). */
+function isOurs(gist: GistDoc): boolean {
+  const names = Object.keys(gist.files)
+  if (names.length !== 1) return false
+  const [name] = names
+  const text = fileText(gist, name)
+  if (name === POINTER_FILE) return readPointerFile(text).kind === 'ok'
+  if (name === NUMBERS_FILE) return readStatsFile(text).kind === 'ok'
+  if (name === GROUP_FILE) {
+    const file = parseGroupFile(text)
+    return file.kind === 'ok' && file.value.members.every((m) => m.login === file.value.admin)
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -611,11 +717,15 @@ export type GroupView =
   /** `firstSeen`: I see myself in the file for the first time: call `markJoined` (then "not in it" later means removed). */
   | { kind: 'ok'; group: string; name: string; admin: string; iAmAdmin: boolean; members: GroupMemberRow[]; streak: number; firstSeen: boolean }
   | { kind: 'waiting'; group: string; name: string; sendToAdmin: string }
+  /** YAZ-5240: never added, `NOT_ADDED_AFTER_MS` after the ask. The way out: send the join link again, or Leave. */
+  | { kind: 'not-added'; group: string; name: string; sendToAdmin: string }
   | { kind: 'removed'; group: string; name: string }
   | { kind: 'gone'; group: string; name: string }
   | { kind: 'needs-repair'; group: string; name: string }
   | { kind: 'newer-app'; group: string; name: string }
   | { kind: 'offline'; group: string; name: string }
+  /** YAZ-5236: my leave (or "Delete group") of this group waits; it finishes by itself. "Removing…" */
+  | { kind: 'removing'; group: string; name: string }
   | { kind: 'not-found' }
 
 /** Plain words for a group view that is not `ok` (round 14), or null. */
@@ -633,6 +743,10 @@ export function groupViewMessage(view: GroupView): string | null {
       return 'This group needs a newer app. Update Notecards.'
     case 'offline':
       return 'No connection.'
+    case 'removing':
+      return 'Removing…'
+    case 'not-added':
+      return 'The admin did not add you. Send them your join link again, or tap Leave.'
     default:
       return null
   }
@@ -665,7 +779,10 @@ export async function readGroup(api: GistsApi, handle: IndexHandle, group: strin
   if (state.kind === 'unreadable') return { kind: 'needs-repair', ...base }
   const file = state.value
   if (!file.members.some((m) => m.pointer === entry.mine)) {
-    if (entry.admin || entry.joined) return { kind: 'removed', ...base }
+    // YAZ-5240: by state first: the file records the admin's removes. `joined`: I saw myself in it before.
+    if (entry.admin || entry.joined || (file.removed ?? []).includes(entry.mine)) return { kind: 'removed', ...base }
+    const asked = entry.asked === undefined ? NaN : Date.parse(entry.asked)
+    if (Number.isFinite(asked) && now - asked >= NOT_ADDED_AFTER_MS) return { kind: 'not-added', ...base, sendToAdmin: joinLink(group, entry.mine) }
     return { kind: 'waiting', ...base, sendToAdmin: joinLink(group, entry.mine) }
   }
   const today = localDay(now)

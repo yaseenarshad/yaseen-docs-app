@@ -70,6 +70,11 @@ export interface GistDoc {
   createdAt: string
   updatedAt: string
   etag: string | null
+  /**
+   * YAZ-5239: the login of the gist's owner, as GitHub gives it (`owner.login`): the only login the app trusts for a
+   * person. Optional: undefined when the adapter does not give it.
+   */
+  owner?: string | null
 }
 
 export interface GistListItem {
@@ -95,6 +100,12 @@ export interface GistsApi {
   /** Changes these files. Counts 1 on `gist_update`; `rate` is GitHub's count after it. */
   update(id: string, files: Record<string, string>): Promise<{ gist: GistDoc | null; rate: GistRate | null }>
   remove(id: string): Promise<void>
+  /**
+   * YAZ-5238: GitHub's time (ms) at its last answer, or null when it is not known: the `Date` header, or else a lower
+   * bound from the exposed `x-ratelimit-reset` of the core count (the reset is at most one hour after "now"). Never
+   * the device clock. Optional: an adapter without it makes the clean-up sweep delete nothing.
+   */
+  serverTime?(): number | null
 }
 
 /** The code of a failed call, or null when `err` is not a gist failure (a bug: the caller lets it throw). */
@@ -169,7 +180,7 @@ export interface FriendsIndex {
   stats: string | null
   friends: { name: string; theirs: string; mine: string }[]
   /** `joined` (4E3): this person has seen their pointer in the group file at least once (so "not in it" now means removed). */
-  groups: { name: string; group: string; mine: string; admin: boolean; joined?: true }[]
+  groups: { name: string; group: string; mine: string; admin: boolean; joined?: true; /** YAZ-5240: when I asked to join (ISO). */ asked?: string }[]
   /**
    * 4E2 (YAZ-5083): the links this person shared that no friend has used yet ("Share my link" made a pointer; the
    * friend's link has not been pasted). Each is a pointer like `mine`, so a remove updates it too. Absent: none.
@@ -201,6 +212,11 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
   const o = JSON.parse(text) as unknown
   if (!isObject(o)) return { ok: false, why: 'the file is not an object' }
   if (o.v !== 1) return { ok: false, why: 'the file has another version' }
+  // YAZ-5241: a field that is there with the wrong shape makes the whole file unreadable ("needs repair"). Reading it
+  // as an empty value would let the next write save that empty value over the real one.
+  for (const key of ['vaults', 'friends', 'groups', 'shared'] as const) if (key in o && !Array.isArray(o[key])) return { ok: false, why: `${key} is not a list` }
+  if (o.stats !== undefined && o.stats !== null && !isGistId(o.stats)) return { ok: false, why: 'stats is not a gist ID' }
+  if (o.nickname !== undefined && o.nickname !== null && typeof o.nickname !== 'string') return { ok: false, why: 'nickname is not a text' }
   return {
     ok: true,
     value: {
@@ -215,7 +231,7 @@ function parseIndex(text: string): { ok: true; value: FriendsIndex } | { ok: fal
         .map((f) => ({ name: shownName(f.name), theirs: f.theirs as string, mine: f.mine as string })),
       groups: list(o.groups)
         .filter(groupOk)
-        .map((g) => ({ name: shownName(g.name), group: g.group as string, mine: g.mine as string, admin: g.admin === true, ...(g.joined === true && { joined: true as const }) })),
+        .map((g) => ({ name: shownName(g.name), group: g.group as string, mine: g.mine as string, admin: g.admin === true, ...(g.joined === true && { joined: true as const }), ...(typeof g.asked === 'string' && g.asked.length <= 40 && { asked: g.asked }) })),
       ...(o.shared !== undefined && { shared: list(o.shared).filter(sharedOk).map((x) => ({ mine: x.mine as string, at: x.at as string })) }),
     },
   }
@@ -475,9 +491,10 @@ export async function relinkPointers(api: GistsApi, pointers: readonly string[],
     }
     if (gist === 'unchanged') continue
     const state = readPointerFile(fileText(gist, POINTER_FILE))
-    if (state.kind === 'newer') continue
-    if (state.kind === 'ok' && state.value.stats === stats) continue
-    const raw = state.kind === 'ok' ? state.raw : { v: 1 }
+    // YAZ-5241: a pointer this app cannot read (or a newer one) is never written over.
+    if (state.kind !== 'ok') continue
+    if (state.value.stats === stats) continue
+    const raw = state.raw
     await write(() => api.update(id, { [POINTER_FILE]: JSON.stringify({ ...raw, v: 1, stats }) }))
     updated.push(id)
   }

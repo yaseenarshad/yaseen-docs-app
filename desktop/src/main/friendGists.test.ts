@@ -12,6 +12,7 @@ import {
   makePointer,
   parseFriendsIndex,
   readFriend,
+  relinkPointers,
   replaceNumbersGist,
   updatedAgo,
   writeFriendsIndex,
@@ -57,8 +58,10 @@ describe('the friends list file (decision 15)', () => {
     // Only a file that is not a JSON object with `v: 1` is unreadable (YAZ-5191).
     for (const bad of ['', '{', 'null', '[]', '{"v":0}', '"text"']) expect(parseFriendsIndex(bad).kind).toBe('unreadable')
     // Entry by entry: a bad entry is left out of the value; the others stay.
-    const mixed = parseFriendsIndex(JSON.stringify({ ...index, friends: [{ name: 1 }, ...index.friends], stats: '../x' }))
-    expect(mixed).toMatchObject({ kind: 'ok', value: { friends: index.friends, stats: null } })
+    const mixed = parseFriendsIndex(JSON.stringify({ ...index, friends: [{ name: 1 }, ...index.friends] }))
+    expect(mixed).toMatchObject({ kind: 'ok', value: { friends: index.friends } })
+    // YAZ-5241: a FIELD of the wrong shape (here `stats`) makes the whole file unreadable.
+    expect(parseFriendsIndex(JSON.stringify({ ...index, stats: '../x' })).kind).toBe('unreadable')
   })
 })
 
@@ -201,6 +204,42 @@ describe('YAZ-5191: a friends list that this app cannot read is never written ov
     const listId = w.seed('yaseen', { [INDEX_FILE]: '{"v":1,"friends":[{"name":"Sam","theirs":"cc33","mine":"dd44"}],' })
     await ensureFriendsFiles(w.api(T1), seed, opts)
     expect(w.text(listId, INDEX_FILE)).toContain('"Sam"') // now: an empty list
+  })
+})
+
+describe('YAZ-5241: a field of the wrong shape makes the list "needs repair"; it is never written over', () => {
+  it('a list whose friends (or vaults) is not a list is never written over', async () => {
+    for (const bad of [
+      (s: string) => ({ v: 1, nickname: null, vaults: ['ali/vault'], stats: s, friends: { sam: { name: 'Sam', theirs: 'cc33', mine: 'dd44' } }, groups: [] }),
+      (s: string) => ({ v: 1, nickname: null, vaults: 'ali/vault', stats: s, friends: [{ name: 'Sam', theirs: 'cc33', mine: 'dd44' }], groups: [] }),
+    ]) {
+      const w = world()
+      const statsId = w.seed('yaseen', { [NUMBERS_FILE]: JSON.stringify(STATS) })
+      const text = JSON.stringify(bad(statsId))
+      const listId = w.seed('yaseen', { [INDEX_FILE]: text })
+      const found = await findFriendsIndex(w.api(T1), opts)
+      if (found.kind === 'ok') await writeFriendsIndex(w.api(T1), found.handle, { ...found.handle.index, nickname: 'x' })
+      expect(JSON.parse(w.text(listId, INDEX_FILE)!).friends).toEqual(JSON.parse(text).friends) // now: []
+      expect(JSON.parse(w.text(listId, INDEX_FILE)!).vaults).toEqual(JSON.parse(text).vaults) // now: []
+    }
+  })
+
+  it('each field of the wrong shape (groups, shared, stats, nickname) is "broken" too; absent fields are fine', () => {
+    const ok = { v: 1, nickname: null, vaults: [], stats: null, friends: [], groups: [] }
+    for (const bad of [{ groups: 'x' }, { shared: {} }, { stats: 'not a gist id!' }, { stats: 5 }, { nickname: 7 }, { vaults: null }, { friends: null }])
+      expect(parseFriendsIndex(JSON.stringify({ ...ok, ...bad })).kind, JSON.stringify(bad)).toBe('unreadable')
+    expect(parseFriendsIndex(JSON.stringify({ v: 1 })).kind).toBe('ok')
+  })
+
+  it('a pointer that cannot be read is never written over when the numbers gist moves', async () => {
+    const w = world()
+    const api = w.api(T1)
+    const made = await ensureFriendsFiles(api, seed, opts)
+    if (made.kind !== 'ok') throw new Error('no list')
+    const pointer = w.seed('yaseen', { [POINTER_FILE]: '{"v":1,"stats":' })
+    const result = await relinkPointers(api, [pointer], made.handle.index.stats!, opts)
+    expect(result.updated).toEqual([])
+    expect(w.text(pointer, POINTER_FILE)).toBe('{"v":1,"stats":')
   })
 })
 
