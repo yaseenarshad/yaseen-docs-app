@@ -5,7 +5,7 @@
  * resolution, the folder for a new page). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type CardWidth, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -152,6 +152,9 @@ export const SHOWN_HIDDEN_WORDS_OPTIONS: readonly Option<ShownHiddenWords>[] = [
   // YAZ-5053: Mochi's look — a grey box while hidden, the word in a light grey box once shown.
   { label: 'Box', value: 'box' },
 ]
+
+/** Settings › Review › Card width (YAZ-5144): the pages' Content width, or a step of its own; Card spacing's words. */
+export const cardWidthOptions = (unit: UnitText): readonly Option<CardWidth>[] => [{ label: unit('Same as pages'), value: 'pages' }, ...CONTENT_WIDTH_OPTIONS]
 
 /** Settings › Review › Card spacing (YAZ-5050): the pages' spacing, or the card's own. */
 export const cardSpacingOptions = (unit: UnitText): readonly Option<CardSpacing>[] => [

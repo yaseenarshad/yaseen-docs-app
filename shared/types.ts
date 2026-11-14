@@ -1371,6 +1371,18 @@ export function defaultRightPanelIdentity(): RightPanelIdentity {
 /** Global content-width presets, ordered exactly as shown in Settings (YAZ-1176). */
 export const CONTENT_WIDTHS = ['narrow', 'medium', 'full'] as const
 export type ContentWidth = (typeof CONTENT_WIDTHS)[number]
+/**
+ * Each Content width step as the widest the text gets, px; `null` is the whole window (YAZ-5144, Yaseen: "even though
+ * its set to "narrow" it doesnt look like there's a big change bw the options?"). The steps were the shell's 1040 px
+ * and 1440 px: at a 1180 px page (a 1440 px window less the sidebar) the text was 944 px, then 1084 px for Medium AND
+ * Full. Now: Narrow 640 px, about 75 letters of 16 px text, a book's line; Medium 900 px; Full the window. Each step
+ * is about 250 px apart at a common window. The pages' column adds its 48 px sides (`--content-max-width`); Card
+ * width uses the same steps for a card's text (`--card-text-width`).
+ */
+export const CONTENT_TEXT_WIDTHS: Readonly<Record<ContentWidth, number | null>> = { narrow: 640, medium: 900, full: null }
+/** Settings › Review › Card width (YAZ-5144): Same as pages (Appearance › Content width), or a step of its own. */
+export type CardWidth = 'pages' | ContentWidth
+export const CARD_WIDTHS: readonly CardWidth[] = ['pages', ...CONTENT_WIDTHS]
 
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
@@ -2079,7 +2091,7 @@ export interface SettingsState {
   foldingOnByDefault: boolean
   /** Appearance (Desktop K, GRO-2218): explicit values win; `system` tracks the OS live. */
   theme: Theme
-  /** Global reading surface width (YAZ-1176): 1040px, 1440px, or fluid within the workspace. */
+  /** Global reading surface width (YAZ-1176): its text at most `CONTENT_TEXT_WIDTHS` (YAZ-5144: 640 px, 900 px, or the window). */
   contentWidth: ContentWidth
   /** Files & Links (Links C2-, GRO-2240): where a BARE unresolved `[[link]]` creates its page. */
   newPageLocation: NewPageLocation
@@ -2165,6 +2177,13 @@ export interface SettingsState {
    * uses them, with Mochi's softer text, Inbox padding and line length (`data-card-clean` on `.app`); Custom keeps that look.
    */
   cardSpacing: CardSpacing
+  /**
+   * Settings › Review › Card width (YAZ-5144, Yaseen: "a global setting for card pages to have a certain width ... same as
+   * pages or select a different one"): how wide a card's text reads in the Inbox, the card window and a card file's
+   * tab. `pages` (the default) follows Content width; else that step (`CONTENT_TEXT_WIDTHS`). `--card-text-width` on `.app`.
+   * Card spacing's Clean sets it to Narrow, the step nearest Mochi's line.
+   */
+  cardWidth: CardWidth
   /** Card spacing, Custom (YAZ-5050): the card's line spacing, as `lineSpacing`. */
   cardLineSpacing: number
   /** Card spacing, Custom (YAZ-5050): the card's space between blocks, px per side, as `blockGap`. */
@@ -2909,6 +2928,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   markNextHidden: true,
   nextHiddenColour: null,
   cardSpacing: 'pages',
+  cardWidth: 'pages',
   ...CARD_SPACING_CLEAN,
   tableOfContents: 'auto',
   tocOnByDefault: true,
