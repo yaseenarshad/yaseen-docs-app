@@ -98,24 +98,32 @@ export function cardWithoutTitle(text: string): string {
   return text
 }
 
-/** A title line's own marks (YAZ-5037): a heading, a quote, a list item or a task, kept when the title is renamed. */
-const TITLE_MARKS_RE = /^[ \t]*(?:#{1,6}[ \t]+|>[ \t]?|[-*+][ \t]+(?:\[[ xX]\][ \t]+)?|\d+[.)][ \t]+)/
-
 /**
- * The card's text with its title (`cardTitle`'s line) now `title` (YAZ-5037: Rename of a card file): the line keeps its
- * marks (`###### `, `- `), its words are the new title. A card with no title takes `title` as a new first line.
+ * A card's title line taken out of its text (YAZ-5044, decision A): a card that becomes a CARD FILE keeps its title in
+ * the file's `title`, so its text no longer starts with it. `title` is `cardTitle`'s plain text; `text` is the card
+ * without that line and the blank lines after it (`cardWithoutTitle`). A line that holds a hidden word, or a code line,
+ * stays in the text: no hidden word and no code is ever lost. A card with no title is its text unchanged.
  */
-export function withCardTitle(text: string, title: string): string {
-  const clean = title.replace(/\s+/g, ' ').trim()
+export function cardTitleOut(text: string): { title: string; text: string } {
+  const title = cardTitle(text)
+  if (title === '') return { title, text }
   const lines = text.split('\n')
   const kinds = lineKinds(lines)
-  for (let i = 0; i < lines.length; i++) {
-    if (kinds[i] === 'text' && SIDE_BREAK_RE.test(lines[i])) break
-    if (kinds[i] !== 'text' || plainLine(lines[i]) === '') continue
-    lines[i] = (TITLE_MARKS_RE.exec(lines[i])?.[0] ?? '') + clean
-    return lines.join('\n')
-  }
-  return text.trim() === '' ? clean : `${clean}\n${text}`
+  const at = lines.findIndex((line) => plainLine(line) !== '')
+  return { title, text: kinds[at] !== 'text' || hiddenWords(lines[at]).length > 0 ? text : cardWithoutTitle(text) }
+}
+
+/**
+ * A card file's card with its `title` back as its first line (YAZ-5044): "Put back into this page" writes it, and review
+ * reads it so, so "Title on the front: Show / Hide" is one rule for both kinds. A blank line sets the title off from a
+ * front that has text; a card whose text starts with its side break takes the title right above it.
+ */
+export function cardWithTitle(title: string, text: string): string {
+  const clean = title.replace(/\s+/g, ' ').trim()
+  if (clean === '') return text
+  const body = text.replace(/^\s*\n/, '')
+  if (body.trim() === '') return clean
+  return SIDE_BREAK_RE.test(body.split('\n')[0]) ? `${clean}\n${body}` : `${clean}\n\n${body}`
 }
 
 /** One line of Markdown as plain text. */

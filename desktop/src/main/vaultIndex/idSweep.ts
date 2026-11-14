@@ -1,11 +1,12 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { isCardFileContent } from '@shared/cardFileFormat'
+import { cardFileTitleMoved, isCardFileContent } from '@shared/cardFileFormat'
 import { isSyncConflictCopy } from '@shared/syncConflict'
 import { cardIdOf, pageCards, rewritePageCards, settleCardCopy, withCardId, withCardOff, type CardLine } from '@shared/cardLine'
 import { moveFolderValues } from '@shared/folderValues'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, noteIdNumber, vaultNoteId } from '@shared/noteId'
+import { titleOf } from '@shared/noteName'
 import { FOLDER_SETTINGS_FILE, MAX_FILE_BYTES, isFolderSettingsPath, type IndexRecord } from '@shared/types'
 import { readFile, writeFile } from '../fs/file'
 import { BridgeFailure, createDurable } from '../fs/fsUtils'
@@ -234,6 +235,8 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
   const among = await ownOnly([...new Map(events.map((r) => [r.path, records.get(r.path) ?? r])).values()], (r) => mine(r.path))
   /** A note the index could not read (its YAML is invalid, or it is over the size limit) takes no id. */
   const takes = (r: IndexRecord): boolean => r.frontmatterError === undefined && r.size <= MAX_FILE_BYTES
+  // A card file from before decision A moves its title line into `title`, one time (YAZ-5044), before any number.
+  await moveCardFileTitles(among.filter((r) => r.kind === 'card' && takes(r) && titleOf(r.properties, '') === ''), records, own)
   /**
    * The sweep's one write of an id: `file` takes `to` while it still holds `held` (`giveId`). False
    * when it took none: it changed under the sweep, or cannot be written — and one that cannot be
@@ -373,6 +376,31 @@ async function sweep(root: string, { records, among: events, knews, dirs: asked,
     if (given && held !== undefined && record !== undefined) result.copies.push({ title: record.title, id: to })
     if (!given && held !== undefined) result.later.push(held)
     if (record !== undefined) for (const copy of carried) if (file.startsWith(copy.dir + path.sep)) await carryNote(file, copy.from, copy.to)
+  }
+}
+
+/**
+ * THE ONE-TIME MOVE OF A CARD FILE'S TITLE (YAZ-5044 point 9, decision A): each card file in `files` (`kind: card`, no
+ * `title` in the index) has its card's first line moved into `title` (`cardFileTitleMoved`), so a card file holds its
+ * title where a page does. One compare-and-set write for each file, in the sweep's write turn, on the bytes read just
+ * before it: a file that changed meanwhile is left for the next pass, and one that already has a `title` writes nothing.
+ * The card line (its ID and reviews) and the rest of the card stay byte for byte. Its name already follows that title.
+ *
+ * A page `id:` on such a file is a stray one an old build gave (YAZ-5037), and goes in the same write when no note
+ * links to or embeds it; one that something links to stays (pick 6: a card file can answer to both IDs).
+ */
+async function moveCardFileTitles(files: readonly IndexRecord[], records: ReadonlyMap<string, IndexRecord>, own: (id: string | undefined) => string | undefined): Promise<void> {
+  if (files.length === 0) return
+  const named = new Set<string>()
+  for (const r of records.values()) for (const target of [...r.links, ...r.embeds]) named.add(target.toUpperCase())
+  for (const r of files) {
+    const id = own(r.id)
+    const stray = id !== undefined && !named.has(id.toUpperCase())
+    await inTurn(async () => {
+      const { content, mtime } = await readPage(r.path)
+      const next = cardFileTitleMoved(content, stray)
+      if (next !== null) await writeFile({ path: r.path, content: next, ...(mtime !== undefined && { expectedMtime: mtime }) })
+    }).catch(() => undefined)
   }
 }
 

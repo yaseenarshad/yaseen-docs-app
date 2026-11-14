@@ -5,7 +5,9 @@ import {
   cardFileName,
   cardFileShape,
   cardFileTitle,
+  cardFileTitleMoved,
   cardFileWithBlock,
+  hasTitleProperty,
   indentBlock,
   isCardFileContent,
   isCardKind,
@@ -65,19 +67,23 @@ describe('YAZ-5037 the shape check', () => {
 })
 
 describe('YAZ-5037 a card file is built', () => {
-  it('with `kind: card` first, the other properties after, and one card; the fence is the one `cardBlock` writes', () => {
+  it('with `kind: card` first, its `title` (YAZ-5044), the other properties after, and one card of its sides only; the fence is the one `cardBlock` writes', () => {
     const line = parseCardLine('<!-- card: GEO-141 -->')!
-    const content = cardFileContent('Title', line, { tags: ['geo'] })
-    expect(content).toBe('---\nkind: card\ntags:\n  - geo\n---\n```card\nTitle\n```\n<!-- card: GEO-141 -->\n')
+    const content = cardFileContent('Capital of France', '---\nParis', line, { tags: ['geo'], title: 'ignored' })
+    expect(content).toBe('---\nkind: card\ntitle: Capital of France\ntags:\n  - geo\n---\n```card\n---\nParis\n```\n<!-- card: GEO-141 -->\n')
     expect(isCardFileContent(content)).toBe(true)
     expect(cardFileId(content)).toBe('GEO-141')
-    expect(cardFileTitle(content)).toBe('Title')
+    expect(cardFileTitle(content)).toBe('Capital of France')
+    expect(hasTitleProperty(content)).toBe(true)
+    // A new card with no text yet: the card is empty, the title is the file's.
+    expect(cardFileContent('Title', '', line)).toBe('---\nkind: card\ntitle: Title\n---\n```card\n\n```\n<!-- card: GEO-141 -->\n')
   })
 
-  it('from a block byte for byte: the card line and its reviews stay', () => {
+  it('from a block byte for byte: the card line and its reviews stay; with no `title` yet, the title reads off the card`s first line', () => {
     const content = cardFileWithBlock(CARD)
     expect(content).toBe(`---\nkind: card\n---\n${CARD}\n`)
     expect(pageCards(content)[0].text).toBe('What is the capital of **France**?\n---\nThe capital is {{Paris}}.')
+    expect(hasTitleProperty(content)).toBe(false)
     expect(cardFileTitle(content)).toBe('What is the capital of France?')
   })
 
@@ -96,5 +102,38 @@ describe('YAZ-5044 pick 1: a card file is named as a page is', () => {
     expect(cardFileName('Capital of France', 'GEO-140')).toBe('capital-of-france-geo-140.md')
     expect(cardFileName('Title', 'GEO-141')).toBe('geo-141.md')
     expect(cardFileName('', 'GEO-141')).toBe('geo-141.md')
+  })
+})
+
+describe('YAZ-5044 decision A: the one-time move of a card file`s title into `title`', () => {
+  it('moves the card`s first line into `title` (plain text); the card line, its reviews, the other properties and the rest of the card stay', () => {
+    const before = file(`${CARD}\n`, '# comments: - {by: <name>, body: <text>}\nkind: card\ntags: [geo]')
+    const after = cardFileTitleMoved(before)!
+    expect(after).toBe(`---\n# comments: - {by: <name>, body: <text>}\nkind: card\ntags: [geo]\ntitle: What is the capital of France?\n---\n\`\`\`card\n---\nThe capital is {{Paris}}.\n\`\`\`\n${CARD.split('\n').at(-1)}\n`)
+    expect(cardFileTitle(after)).toBe('What is the capital of France?')
+    expect(pageCards(after)[0].line).toEqual(pageCards(before)[0].line)
+    // One time only: a file with a `title` moves nothing more.
+    expect(cardFileTitleMoved(after)).toBeNull()
+  })
+
+  it('the blank lines after the title go with it; a placeholder "Title" leaves an empty card', () => {
+    expect(cardFileTitleMoved(file('```card\nLongest river\n\n---\nThe {{Nile}}.\n```\n<!-- card: GEO-205 -->\n'))).toBe(file('```card\n---\nThe {{Nile}}.\n```\n<!-- card: GEO-205 -->\n', 'kind: card\ntitle: Longest river'))
+    expect(cardFileTitleMoved(file('```card\nTitle\n```\n<!-- card: GEO-210 -->\n'))).toBe(file('```card\n\n```\n<!-- card: GEO-210 -->\n', 'kind: card\ntitle: Title'))
+  })
+
+  it('a title line with a hidden word, or a code line, stays in the card: nothing to answer is lost', () => {
+    const cloze = file('```card\nThe capital is {{Paris}}\n```\n<!-- card: GEO-9 -->\n')
+    expect(cardFileTitleMoved(cloze)).toBe(file('```card\nThe capital is {{Paris}}\n```\n<!-- card: GEO-9 -->\n', 'kind: card\ntitle: The capital is Paris'))
+  })
+
+  it('with `dropPageId` the stray page `id:` goes in the same write', () => {
+    expect(cardFileTitleMoved(file('```card\nTest\n```\n<!-- card: GEO-212 -->\n', 'kind: card\nid: GEO-198'), true)).toBe(file('```card\n\n```\n<!-- card: GEO-212 -->\n', 'kind: card\ntitle: Test'))
+  })
+
+  it('nothing to move: a page, a card file with a `title`, one with no card, or a card with no title', () => {
+    expect(cardFileTitleMoved(`${CARD}\n`)).toBeNull()
+    expect(cardFileTitleMoved(file(`${CARD}\n`, 'kind: card\ntitle: Kept'))).toBeNull()
+    expect(cardFileTitleMoved(file('Just words.\n'))).toBeNull()
+    expect(cardFileTitleMoved(file('```card\n---\nBack\n```\n'))).toBeNull()
   })
 })

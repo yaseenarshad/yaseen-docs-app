@@ -808,20 +808,20 @@ describe('note cards: due and card add (YAZ-4963)', () => {
 describe('card files (YAZ-5037)', () => {
   const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
 
-  it('card new writes a card file: kind: card, one card whose first line is the title, a blank line, then the body; the next number; named <kebab-title>-<id>.md', async () => {
+  it('card new writes a card file: kind: card, the title in `title:` (YAZ-5044), one card holding the body; the next number; named <kebab-title>-<id>.md', async () => {
     const root = await vault('cards', { 'geo/deck.md': `---\nid: YAZ-5\n---\n${card('In a page', 'YAZ-9')}` })
     const geo = path.join(root, 'geo')
     const made = await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '-'], 'The capital of {{France}}\n---\nParis\n')
     const file = path.join(geo, 'capital-of-france-yaz-10.md')
     expect(made).toEqual({ code: 0, out: `made ${file}\n`, err: '' })
-    expect(await readFile(file, 'utf8')).toBe('---\nkind: card\n---\n```card\nCapital of France\n\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-10 -->\n')
+    expect(await readFile(file, 'utf8')).toBe('---\nkind: card\ntitle: Capital of France\n---\n```card\nThe capital of {{France}}\n---\nParis\n```\n<!-- card: YAZ-10 -->\n')
     // The index reads it as a card file: no page id, the card's title, its card.
     expect(await scanFile(root, file)).toMatchObject({ kind: 'card', title: 'Capital of France', cards: [expect.objectContaining({ id: 'YAZ-10' })] })
     expect((await scanFile(root, file)).id).toBeUndefined()
-    // No --body: the title alone. --json gives the id, the path and the title.
+    // No --body: an empty card. --json gives the id, the path and the title.
     const json = await run(['card', 'new', geo, '--title', 'Lone', '--json'])
     expect(JSON.parse(json.out)).toEqual({ id: 'YAZ-11', path: path.join(geo, 'lone-yaz-11.md'), title: 'Lone' })
-    expect(await readFile(path.join(geo, 'lone-yaz-11.md'), 'utf8')).toBe('---\nkind: card\n---\n```card\nLone\n```\n<!-- card: YAZ-11 -->\n')
+    expect(await readFile(path.join(geo, 'lone-yaz-11.md'), 'utf8')).toBe('---\nkind: card\ntitle: Lone\n---\n```card\n\n```\n<!-- card: YAZ-11 -->\n')
     // The placeholder title of a new card keeps the `<id>.md` name, as the app's New card does.
     expect(JSON.parse((await run(['card', 'new', geo, '--title', 'Title', '--json'])).out).path).toBe(path.join(geo, 'yaz-12.md'))
   })

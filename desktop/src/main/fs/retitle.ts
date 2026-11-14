@@ -1,8 +1,7 @@
 import { lstat, stat } from 'node:fs/promises'
 import path from 'node:path'
-import { cardFileCard, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
-import { cardIdOf, changeCardText } from '@shared/cardLine'
-import { cardTitle, withCardTitle } from '@shared/cardText'
+import { cardFileCard, cardFileName, cardFileTitleMoved, isCardFileContent } from '@shared/cardFileFormat'
+import { cardIdOf } from '@shared/cardLine'
 import { FrontmatterWriteError, parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { TITLE_KEY, kebabTitle, noteFileName } from '@shared/noteName'
@@ -66,18 +65,17 @@ export async function retitle(root: string, req: unknown): Promise<RenameFileRes
 }
 
 /**
- * A card file's title edit (YAZ-5037, YAZ-5044 pick 1): its title is its card's first line, so the new words go there,
- * the line's marks kept (`withCardTitle`), and the file then takes the name built from them and the CARD's ID
- * (`cardFileName`). No page ID is given (D29 is for pages): the card's ID is the file's. A card with no ID yet keeps
- * its name; the sweep gives it one. A title the card already has is not written again: only the name follows it.
+ * A card file's title edit (YAZ-5037, YAZ-5044 decision A): its title is its `title` property, as a page's, so the new
+ * words go there (`writeTitle`), and the file then takes the name built from them and the CARD's ID (`cardFileName`).
+ * No page ID is given (D29 is for pages): the card's ID is the file's. A card file from before A has its old title
+ * line moved out first, in the same write (`cardFileTitleMoved`), so the title is never in two places. A card with no
+ * ID yet keeps its name; the sweep gives it one.
  */
 async function retitleCard(p: string, page: { content: string; mtime?: number }, title: string): Promise<RenameFileResponse> {
   const card = cardFileCard(page.content)
   if (card === null) throw new BridgeFailure('BAD_REQUEST', 'this card file has no card', { path: p })
   const id = cardIdOf(card.line)
-  // A title the card already has (Edit card's Done wrote it) writes nothing: the line keeps its own bold and links.
-  const next = cardTitle(card.text) === title ? page.content : changeCardText(page.content, id, withCardTitle(card.text, title), 0)
-  if (next !== page.content) await writeFile({ path: p, content: next, ...(page.mtime !== undefined && { expectedMtime: page.mtime }) })
+  await writeTitle(p, { content: cardFileTitleMoved(page.content) ?? page.content, mtime: page.mtime }, title)
   const newPath = id === null ? p : path.join(path.dirname(p), cardFileName(title, id))
   return newPath === p ? { oldPath: p, newPath, kind: 'file' } : renameFile({ oldPath: p, newPath })
 }

@@ -70,6 +70,9 @@ const BLOCK = ['```card', 'What is the capital of **France**?', '---', 'The capi
 const PAGE = '/v/geo/europe-geo-1.md'
 const CARD = '/v/geo/what-is-the-capital-of-france-geo-140.md'
 const page = `---\nid: GEO-1\n---\n# Europe\n\n- Capitals\n  ${BLOCK.split('\n').join('\n  ')}\n\nEnd.\n`
+/** The card as a card file holds it (YAZ-5044): its first line is the file's `title`; the card holds its sides only. */
+const FILE_BLOCK = ['```card', '---', 'The capital is {{Paris}}.', '```', LINE].join('\n')
+const TITLE = 'What is the capital of France?'
 
 const put = (path: string, content: string) => disk.files.set(path, { content, mtime: ++disk.clock })
 const text = (path: string) => disk.files.get(path)?.content
@@ -86,10 +89,10 @@ beforeEach(() => {
 })
 
 describe('Move to its own file', () => {
-  it('the card file in the page\'s folder holds the block byte for byte, with its ID and history; the page holds the embed at its indent', async () => {
+  it('the card file in the page\'s folder takes the card`s first line as its `title` (YAZ-5044) and the rest of the block, with its ID and history; the page holds the embed at its indent', async () => {
     put(PAGE, page)
     expect(await moveCardToFile(PAGE, 'GEO-140', 0)).toBe(CARD)
-    expect(text(CARD)).toBe(`---\nkind: card\n---\n${BLOCK}\n`)
+    expect(text(CARD)).toBe(`---\nkind: card\ntitle: ${TITLE}\n---\n${FILE_BLOCK}\n`)
     expect(reviews(CARD)).toEqual([['GEO-140', 2]])
     expect(text(PAGE)).toBe('---\nid: GEO-1\n---\n# Europe\n\n- Capitals\n  ![[GEO-140]]\n\nEnd.\n')
     // One compare-and-set each, both quiet (the index takes them at once): the new file at 0, the page at its read.
@@ -126,11 +129,11 @@ describe('Move to its own file', () => {
 })
 
 describe('Put back into this page', () => {
-  it('the embed becomes the block at its indent, and the card file goes to the Trash: Move then Put back gives the page back', async () => {
+  it('the embed becomes the block at its indent, the `title` its first line again, and the card file goes to the Trash: Move then Put back gives the page back (its title line plain text)', async () => {
     put(PAGE, page)
     await moveCardToFile(PAGE, 'GEO-140', 0)
     await putCardBackIntoPage(PAGE, CARD, 'GEO-140', 'GEO-140', 0)
-    expect(text(PAGE)).toBe(page)
+    expect(text(PAGE)).toBe(page.replace('**France**', 'France'))
     expect(disk.deleted).toEqual([CARD])
     expect(disk.files.has(CARD)).toBe(false)
   })
@@ -154,17 +157,17 @@ describe('Put back into this page', () => {
 })
 
 describe('Turn into a page, Turn into a card file', () => {
-  it('a card file: `kind: card` goes, `title:` is the card\'s title, then the page name rule (retitle)', async () => {
-    put(CARD, `---\nkind: card\n---\n${BLOCK}\n`)
+  it('a card file: `kind: card` goes, `title:` stays and is the card`s first line again (YAZ-5044), then the page name rule (retitle)', async () => {
+    put(CARD, `---\nkind: card\ntitle: ${TITLE}\n---\n${FILE_BLOCK}\n`)
     expect(await turnIntoPage(CARD)).toBe('/v/geo/what-is-the-capital-of-france-geo-150.md')
-    expect(text(CARD)).toBe(`---\ntitle: What is the capital of France?\n---\n${BLOCK}\n`)
+    expect(text(CARD)).toBe(`---\ntitle: ${TITLE}\n---\n${BLOCK.replace('**France**', 'France')}\n`)
     expect(api.file.retitle).toHaveBeenCalledWith({ path: CARD, title: 'What is the capital of France?' })
   })
 
   it('a page with one card: `kind: card`, its title in `aliases`, its `id:` kept, and the card\'s name; one with other text is refused', async () => {
     put(PAGE, `---\nid: GEO-1\ntitle: Capitals\n---\n${BLOCK}\n`)
     expect(await turnIntoCardFile(PAGE)).toBe(CARD)
-    expect(text(CARD)).toBe(`---\nid: GEO-1\nkind: card\naliases:\n  - Capitals\n---\n${BLOCK}\n`)
+    expect(text(CARD)).toBe(`---\nid: GEO-1\nkind: card\naliases:\n  - Capitals\ntitle: ${TITLE}\n---\n${FILE_BLOCK}\n`)
     expect(reviews(CARD)).toEqual([['GEO-140', 2]])
     put(PAGE, page)
     await expect(turnIntoCardFile(PAGE)).rejects.toBeInstanceOf(ConvertStopped)
@@ -180,7 +183,7 @@ describe('the notice\'s fixes', () => {
     put(CARD, many)
     expect(await splitIntoCardFiles(CARD)).toEqual(['/v/geo/what-is-the-capital-of-spain-geo-141.md'])
     expect(text(CARD)).toBe(`---\nkind: card\n---\n${BLOCK}\n`)
-    expect(text('/v/geo/what-is-the-capital-of-spain-geo-141.md')).toBe(`---\nkind: card\n---\n${second}\n`)
+    expect(text('/v/geo/what-is-the-capital-of-spain-geo-141.md')).toBe(`---\nkind: card\ntitle: What is the capital of Spain?\n---\n${FILE_BLOCK.replace('GEO-140', 'GEO-141')}\n`)
   })
 
   it('Split whose last write fails: every new file goes, the card file is as it was', async () => {
@@ -196,8 +199,8 @@ describe('the notice\'s fixes', () => {
     put(CARD, `---\nkind: card\n---\nAbove.\n\n${BLOCK}\n`)
     await moveIntoCard(CARD)
     expect(text(CARD)).toBe(`---\nkind: card\n---\n\`\`\`card\nAbove.\n\nWhat is the capital of **France**?\n---\nThe capital is {{Paris}}.\n\`\`\`\n${LINE}\n`)
-    put(CARD, '---\nkind: card\n---\nParis.\n')
+    put(CARD, '---\nkind: card\ntitle: Capital\n---\nParis.\n')
     await makeCardFromText(CARD)
-    expect(text(CARD)).toBe('---\nkind: card\n---\n```card\nParis.\n```\n')
+    expect(text(CARD)).toBe('---\nkind: card\ntitle: Capital\n---\n```card\nParis.\n```\n')
   })
 })

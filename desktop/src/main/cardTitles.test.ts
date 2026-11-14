@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { cardRecords, formatCardLine, isCardNoTitle, parseCardLine, withCardNoTitle, EMPTY_CARD_LINE } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders, makeCardResolver } from '@shared/cardLinks'
-import { cardPieces, cardSides, cardTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
+import { cardPieces, cardSides, cardTitle, cardTitleOut, cardWithTitle, cardWithoutTitle, hiddenCount } from '@shared/cardText'
 import { makeResolver } from '@shared/linkResolver'
 import type { IndexRecord } from '@shared/types'
 
@@ -56,6 +56,34 @@ describe('the title on the front: the card line part `notitle` (YAZ-5030)', () =
     // No title on the front (an empty first side): nothing comes out.
     expect(cardWithoutTitle('---\nBack')).toBe('---\nBack')
     expect(cardWithoutTitle('')).toBe('')
+  })
+})
+
+describe('the title swaps places between a card in a page and a card file (YAZ-5044, decision A)', () => {
+  it('out: the first line is the title, as plain text, and leaves the text with the blank lines after it', () => {
+    expect(cardTitleOut('What is the capital of **France**?\n---\nThe capital is {{Paris}}.')).toEqual({ title: 'What is the capital of France?', text: '---\nThe capital is {{Paris}}.' })
+    expect(cardTitleOut('Longest river\n\nWhich is it?\n---\nThe {{Nile}}.')).toEqual({ title: 'Longest river', text: 'Which is it?\n---\nThe {{Nile}}.' })
+    expect(cardTitleOut('Title')).toEqual({ title: 'Title', text: '' })
+    // No title: nothing comes out.
+    expect(cardTitleOut('---\nBack')).toEqual({ title: '', text: '---\nBack' })
+  })
+
+  it('out: a title line with a hidden word, or a code line, stays in the text (nothing to answer is lost)', () => {
+    const mochi = '###### {{Capital of France}}\n\nWhat is the capital?\n---\n{{Paris}}'
+    expect(cardTitleOut(mochi)).toEqual({ title: 'Capital of France', text: mochi })
+    expect(cardTitleOut('```js\nlet x = 1\n```\n---\nOne')).toEqual({ title: cardTitle('```js\nlet x = 1\n```\n---\nOne'), text: '```js\nlet x = 1\n```\n---\nOne' })
+  })
+
+  it('back: the title is the first line again, set off by a blank line from a front with text, right above a side break', () => {
+    expect(cardWithTitle('Capital of France', '---\nParis')).toBe('Capital of France\n---\nParis')
+    expect(cardWithTitle('Longest river', 'Which is it?\n---\nThe {{Nile}}.')).toBe('Longest river\n\nWhich is it?\n---\nThe {{Nile}}.')
+    expect(cardWithTitle('New one', '')).toBe('New one')
+    expect(cardWithTitle('', 'Q\n---\nA')).toBe('Q\n---\nA')
+    // Out and back again give the card its title line back.
+    const { title, text } = cardTitleOut('Capital of France\n---\nParis')
+    expect(cardWithTitle(title, text)).toBe('Capital of France\n---\nParis')
+    // Hide on the front (YAZ-5030) reads the card file`s card as it reads a card in a page.
+    expect(cardWithoutTitle(cardWithTitle('Capital of France', '---\nParis'))).toBe('---\nParis')
   })
 })
 

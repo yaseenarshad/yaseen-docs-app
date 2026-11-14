@@ -63,7 +63,7 @@ const CARD_FILE = '/v/cards/capital-of-france-geo-140.md'
 const EUROPE = '/v/geo/Europe.md'
 const PLAN = '/v/notes/plan.md'
 
-const cardFileText = '---\nkind: card\n---\n```card\nWhat is the capital of **France**?\n---\nParis\n```\n<!-- card: GEO-140 -->\n'
+const cardFileText = '---\nkind: card\ntitle: Capital of France\n---\n```card\nWhat is the capital of **France**?\n---\nParis\n```\n<!-- card: GEO-140 -->\n'
 const europeText = '# Europe\n\n```card\nLargest country?\n---\nRussia\n```\n<!-- card: GEO-1 -->\n\n```card\nSmallest country?\n---\nVatican City\n```\n<!-- card: GEO-2, off -->\n'
 
 const card = (id: string, title: string, over: Partial<NoteCardRecord> = {}): NoteCardRecord => ({ id, off: false, next: false, reviews: [], title, ...over })

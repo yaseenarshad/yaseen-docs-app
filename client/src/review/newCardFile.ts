@@ -1,12 +1,11 @@
 /**
  * NEW CARD (YAZ-5037, YAZ-5101): the sidebar's "New card" opens the name box as "New note" does; the typed name is the
  * card's TITLE. Then ONE ID from the vault's door (`takeNoteId`, as a new page takes its own), and the file named after
- * the title (`cardFileName`; the placeholder "Title" gives `<id>.md`) holding `kind: card` and one card — the title as
- * its first line, and the card line with that ID — in ONE `createFile`, which never overwrites. Main writes no page
- * `id:` into a card file: the card's ID is the file's.
+ * the title (`cardFileName`; the placeholder "Title" gives `<id>.md`) holding `kind: card`, the title in `title` as a
+ * page holds it (YAZ-5044), and one EMPTY card with the card line of that ID — in ONE `createFile`, which never
+ * overwrites. Main writes no page `id:` into a card file: the card's ID is the file's.
  *
- * The file's tab then opens in Edit card (`isNewCard`, read once by `CardFileView`): the caret after the title, or the
- * placeholder "Title" selected.
+ * The file's tab then opens in Edit card (`isNewCard`, read once by `CardFileView`), on the empty card.
  */
 import { NEW_CARD_TEXT, cardFileContent, cardFileName } from '@shared/cardFileFormat'
 import { EMPTY_CARD_LINE, withCardId } from '@shared/cardLine'
@@ -21,7 +20,7 @@ export async function createCardFile(dir: string, title = NEW_CARD_TEXT): Promis
   const text = title.trim() === '' ? NEW_CARD_TEXT : title.trim()
   const id = await takeNoteId(dir)
   const path = `${dir}/${cardFileName(text, id)}`
-  await api.createFile({ path, content: cardFileContent(text, withCardId(EMPTY_CARD_LINE, id)) })
+  await api.createFile({ path, content: cardFileContent(text, '', withCardId(EMPTY_CARD_LINE, id)) })
   fresh.add(path)
   return path
 }
