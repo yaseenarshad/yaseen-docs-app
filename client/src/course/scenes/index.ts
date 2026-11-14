@@ -8,14 +8,18 @@
 import { sceneRegistry, type ChapterScenes } from './registry'
 import { WHY_SCENES } from './why'
 import { FIRST_CARD_SCENES } from './firstCard'
+import { HABITS_SCENES } from './habits'
+import { LINKS_SCENES } from './links'
+import { CARE_SCENES } from './care'
+import { WHERE_THINGS_ARE_SCENES } from './whereThingsAre'
 import './scenes.css'
 
-export const CHAPTER_SCENES: readonly ChapterScenes[] = [WHY_SCENES, FIRST_CARD_SCENES]
+export const CHAPTER_SCENES: readonly ChapterScenes[] = [WHY_SCENES, FIRST_CARD_SCENES, HABITS_SCENES, LINKS_SCENES, CARE_SCENES, WHERE_THINGS_ARE_SCENES]
 
 /** The chapters whose every clip has a real scene. */
-export const BUILT_CHAPTERS: readonly string[] = ['why', 'first-card']
+export const BUILT_CHAPTERS: readonly string[] = ['why', 'first-card', 'habits', 'links', 'care', 'where-things-are']
 
 /** The chapters still on the placeholder (the next builders flip them). */
-export const NOT_BUILT_CHAPTERS: readonly string[] = ['inbox', 'where', 'compound', 'knowledge-base', 'good-card', 'ai', 'habits', 'links', 'care', 'where-things-are']
+export const NOT_BUILT_CHAPTERS: readonly string[] = ['inbox', 'where', 'compound', 'knowledge-base', 'good-card', 'ai']
 
 export const courseScenes = sceneRegistry(CHAPTER_SCENES)

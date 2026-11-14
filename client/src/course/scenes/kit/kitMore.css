@@ -1,0 +1,668 @@
+/*
+ * THE KIT'S PIECES FOR CHAPTERS 9 TO 12 (YAZ-5121): the habits, the web, the folder, the agent's chat, more of the
+ * app, the garden, the crowd and the dials. In the course's lazy chunk only. Every colour is an app token, so light and
+ * dark follow the app; sizes follow the stage (`cqmin`).
+ */
+
+/* THE HABITS */
+.kit-habits {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(14px, 7cqmin, 64px);
+}
+.kit-habit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(4px, 1.2cqmin, 10px);
+  min-width: 0;
+}
+.kit-habit__badge {
+  --kit-lit: 0;
+  display: grid;
+  place-items: center;
+  width: clamp(54px, 17cqmin, 120px);
+  aspect-ratio: 1;
+  border: 2px solid color-mix(in srgb, var(--accent) calc(30% + 70% * var(--kit-lit)), var(--border));
+  border-radius: 50%;
+  color: color-mix(in srgb, var(--accent) calc(100% * var(--kit-lit)), var(--fg-muted));
+  background: color-mix(in srgb, var(--accent-soft) calc(100% * var(--kit-lit)), var(--bg));
+  box-shadow: 0 0 calc(28px * var(--kit-lit)) color-mix(in srgb, var(--accent) calc(40% * var(--kit-lit)), transparent);
+}
+.kit-habits--small .kit-habit__badge {
+  width: clamp(36px, 9cqmin, 64px);
+}
+.kit-habit__glyph {
+  width: 56%;
+  height: 56%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.kit-habit__soft {
+  opacity: 0.45;
+}
+.kit-habit__pin {
+  fill: currentColor;
+  stroke: none;
+}
+.kit-habit__label {
+  font-size: clamp(13px, 3.4cqmin, 24px);
+  font-weight: 650;
+}
+.kit-habits--small .kit-habit__label {
+  font-size: clamp(11px, 2.4cqmin, 15px);
+}
+.kit-habit[data-lit] .kit-habit__label {
+  color: var(--accent);
+}
+.kit-habit__note {
+  max-width: 14ch;
+  font-size: clamp(11px, 2.3cqmin, 15px);
+  color: var(--fg-muted);
+  line-height: 1.25;
+}
+
+/* THE WEB */
+.kit-web,
+.kit-garden,
+.kit-seedling,
+.kit-profile,
+.kit-crowd,
+.kit-guess,
+.kit-folders {
+  width: min(92cqw, 150cqh);
+  max-height: 78cqh;
+  overflow: visible;
+}
+.kit-web__edge {
+  stroke: var(--kit-line);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.kit-web__edge--link {
+  stroke: color-mix(in srgb, var(--accent) 55%, var(--kit-line));
+  stroke-dasharray: 6 6;
+}
+.kit-web__edge--lit {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+.kit-web__pulse {
+  fill: var(--accent);
+}
+.kit-web__halo {
+  fill: var(--accent);
+}
+.kit-web__dot {
+  fill: var(--accent);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.kit-web__card {
+  fill: var(--bg);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.kit-web__card--hub {
+  stroke-width: 2.5;
+}
+.kit-web__label {
+  font-size: 13px;
+}
+.kit-web__node--card .kit-web__label,
+.kit-web__node--hub .kit-web__label {
+  font-size: 12px;
+}
+
+/* THE FOLDER */
+.kit-folder__back {
+  fill: color-mix(in srgb, var(--kind-folder, var(--accent)) 30%, var(--bg));
+  stroke: color-mix(in srgb, var(--kind-folder, var(--accent)) 60%, var(--border));
+  stroke-width: 1.5;
+}
+.kit-folder__front {
+  fill: color-mix(in srgb, var(--kind-folder, var(--accent)) 48%, var(--bg));
+  stroke: color-mix(in srgb, var(--kind-folder, var(--accent)) 70%, var(--border));
+  stroke-width: 1.5;
+}
+.kit-folder__glow {
+  fill: var(--accent-soft);
+}
+.kit-folder__card {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 1.5;
+}
+.kit-folder__card-title {
+  fill: var(--fg);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.kit-folder__card-line {
+  stroke: var(--kit-faint);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.kit-folder__label {
+  fill: var(--fg);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 650;
+}
+
+/* THE AGENT'S CHAT, AND THE TERMINAL */
+.kit-chat,
+.kit-term {
+  box-sizing: border-box;
+  width: min(92cqw, 34em);
+  overflow: hidden;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--kit-shadow);
+}
+.kit-chat__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-side);
+}
+.kit-chat__bar i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--kit-line);
+}
+.kit-chat__title {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.kit-chat__when {
+  margin-left: auto;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+.kit-chat__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 16px;
+  font-size: clamp(12px, 2.6cqmin, 15px);
+  line-height: 1.4;
+}
+.kit-chat__line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kit-chat__line--you {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+}
+.kit-chat__prompt {
+  color: var(--accent);
+  font-weight: 700;
+}
+.kit-chat__text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.kit-chat__line--agent .kit-chat__text {
+  color: var(--fg);
+}
+.kit-chat__ask {
+  display: flex;
+  flex: 1 0 100%;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent-soft) 35%, var(--bg));
+}
+.kit-chat__ask-title {
+  font-weight: 600;
+}
+.kit-chat__ask-title mark {
+  color: inherit;
+  background: linear-gradient(var(--mark-bg, rgba(255, 214, 0, 0.45)), var(--mark-bg, rgba(255, 214, 0, 0.45))) left / 0% 100% no-repeat;
+  border-radius: 2px;
+}
+.kit-chat__reason {
+  font-style: italic;
+  color: var(--fg-muted);
+}
+.kit-chat__buttons {
+  display: flex;
+  gap: 8px;
+}
+.kit-chat__btn {
+  padding: 3px 12px;
+  font-size: 0.9em;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+}
+.kit-chat__btn--yes[data-on] {
+  color: var(--bg);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.kit-chat__btn[data-on]:not(.kit-chat__btn--yes) {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.kit-term {
+  background: color-mix(in srgb, var(--fg) 4%, var(--bg));
+}
+.kit-term__body {
+  padding: 14px 16px 16px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: clamp(11px, 2.4cqmin, 14px);
+  line-height: 1.5;
+}
+.kit-term__body p {
+  margin: 0;
+}
+.kit-term__dollar {
+  color: var(--accent);
+}
+.kit-term__head {
+  margin-top: 8px !important;
+  font-weight: 700;
+}
+.kit-term__out {
+  color: var(--fg-muted);
+}
+
+/* MORE OF THE APP */
+.kit-picker.wikilink-picker {
+  position: relative;
+  display: block;
+  min-width: 220px;
+  max-width: 100%;
+  max-height: none;
+  padding: 4px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+.kit-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 5px;
+}
+.kit-picker__item .wikilink-picker__card-icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  background-color: var(--kind-card, var(--fg-muted));
+  mask: var(--card-link-icon) center / 0.9em 0.9em no-repeat;
+}
+.kit-picker__page {
+  margin-right: 2px;
+}
+.kit-pill.wikilink.wikilink--card {
+  display: inline;
+  padding: 1px 6px 1px 4px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 5px;
+  white-space: nowrap;
+}
+.kit-pill.wikilink.wikilink--card::before {
+  content: '';
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  padding: 0;
+  margin-right: 0.25em;
+  vertical-align: -0.12em;
+  background-color: currentColor;
+  mask: var(--card-link-icon) center / 0.9em 0.9em no-repeat;
+}
+.kit-pill .wikilink__card-id {
+  margin-left: 0.35em;
+  color: var(--fg-muted);
+  font-size: 0.8em;
+}
+.kit-mentions {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 8px 12px;
+  text-align: left;
+  border-top: 1px solid var(--border);
+  border-radius: 6px;
+}
+.kit-mentions__head {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fg-muted);
+}
+.kit-mentions__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kit-mentions__list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.kit-filter.ctx-menu {
+  position: relative;
+  min-width: 15em;
+  text-align: left;
+}
+.kit-filter__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.kit-filter__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.kit-filter__name svg {
+  flex: none;
+}
+.kit-filter__count {
+  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.kit-filter__sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+.kit-filter__field {
+  display: inline-block;
+  min-width: 2.2ch;
+  padding: 0 5px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.kit-filter__field[data-pressed] {
+  color: var(--bg);
+  background: var(--accent);
+}
+.kit-reviews {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  border-top: 1px solid var(--border);
+}
+.kit-reviews__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--fg-muted);
+}
+.kit-reviews__chev {
+  display: inline-block;
+}
+/* Reduced motion: the chevron is open, not turning. */
+.kit-reviews__chev[data-open] {
+  transform: rotate(90deg);
+}
+.kit-reviews__table {
+  overflow: hidden;
+}
+.kit-reviews__row,
+.kit-reviews__empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 4px 0 0 18px;
+  font-size: 13px;
+}
+.kit-reviews__empty {
+  color: var(--fg-muted);
+}
+.kit-reviews__when {
+  min-width: 6.5em;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.kit-reviews__answer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.kit-reviews__answer[data-rating='again'] {
+  color: var(--danger);
+}
+.kit-reviews__answer[data-rating='good'] {
+  color: var(--ok);
+}
+.kit-reviews__bin {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+
+/* THE GARDEN */
+.kit-garden__ground {
+  stroke: color-mix(in srgb, var(--fg) 30%, transparent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.kit-garden__trunk,
+.kit-garden__branch {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ok) 55%, var(--fg));
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.kit-garden__branch {
+  stroke-width: 2.5;
+}
+.kit-garden__leaf {
+  fill: var(--bg);
+  stroke: color-mix(in srgb, var(--ok) 70%, var(--border));
+  stroke-width: 1.5;
+}
+.kit-garden__leaf--accent {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.kit-garden__leaf-line {
+  stroke: var(--kit-faint);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.kit-garden__label {
+  font-size: 12px;
+}
+.kit-garden__weed {
+  fill: none;
+  stroke: color-mix(in srgb, var(--fg) 35%, transparent);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.kit-garden__link {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 5 6;
+  stroke-linecap: round;
+}
+.kit-seedling__soil {
+  fill: color-mix(in srgb, var(--fg) 22%, var(--bg));
+}
+.kit-seedling__stem {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ok) 70%, var(--fg));
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.kit-seedling__leaf {
+  fill: color-mix(in srgb, var(--ok) 55%, var(--bg));
+  stroke: color-mix(in srgb, var(--ok) 80%, var(--fg));
+  stroke-width: 1.5;
+}
+.kit-profile__head {
+  fill: color-mix(in srgb, var(--fg) 5%, var(--bg));
+}
+.kit-profile__line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--fg) 40%, transparent);
+  stroke-width: 2;
+}
+.kit-profile__glow-in {
+  stop-color: var(--accent);
+  stop-opacity: 0.55;
+}
+.kit-profile__glow-out {
+  stop-color: var(--accent);
+  stop-opacity: 0;
+}
+
+/* THE CROWD, AND GUESS AGAINST FACT */
+.kit-crowd__head,
+.kit-crowd__body {
+  fill: var(--fg-muted);
+}
+.kit-crowd__person[data-lit] .kit-crowd__head,
+.kit-crowd__person[data-lit] .kit-crowd__body {
+  fill: var(--accent);
+}
+.kit-crowd__stick {
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+}
+.kit-crowd__sign {
+  fill: var(--bg);
+  stroke: var(--danger);
+  stroke-width: 2;
+}
+.kit-crowd__sign-x {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.kit-crowd__bracket {
+  fill: none;
+  stroke: var(--danger);
+  stroke-width: 1.5;
+}
+.kit-crowd__bracket--won {
+  stroke: var(--accent);
+}
+.kit-crowd__doubt {
+  fill: var(--danger);
+}
+.kit-guess {
+  width: min(80cqw, 120cqh);
+}
+.kit-guess__bar {
+  fill: var(--accent);
+}
+.kit-guess__bar--b {
+  fill: color-mix(in srgb, var(--accent) 45%, var(--bg));
+}
+.kit-guess__value {
+  fill: var(--fg);
+  font-family: var(--font);
+  font-size: 20px;
+  font-weight: 700;
+}
+.kit-guess__line {
+  stroke: var(--danger);
+  stroke-width: 2;
+  stroke-dasharray: 7 6;
+}
+.kit-guess__label {
+  fill: var(--danger);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 600;
+}
+.kit-guess__miss {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.5;
+}
+
+/* THE DIALS */
+.kit-gauge,
+.kit-clock {
+  width: min(44cqw, 52cqh);
+  overflow: visible;
+}
+.kit-gauge__track {
+  fill: none;
+  stroke: var(--kit-faint);
+  stroke-width: 16;
+}
+.kit-gauge__low {
+  fill: none;
+  stroke: color-mix(in srgb, var(--danger) 45%, transparent);
+  stroke-width: 16;
+}
+.kit-gauge__needle {
+  stroke: var(--fg);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.kit-gauge__pin {
+  fill: var(--fg);
+}
+.kit-clock__face {
+  fill: var(--bg);
+  stroke: var(--border);
+  stroke-width: 2;
+}
+.kit-clock__tick {
+  stroke: var(--kit-line);
+  stroke-width: 2;
+}
+.kit-clock__arc {
+  fill: none;
+  stroke-width: 22;
+}
+.kit-clock__arc--accent {
+  stroke: var(--accent);
+}
+.kit-clock__arc--soft {
+  stroke: color-mix(in srgb, var(--accent) 45%, var(--bg));
+}
+.kit-clock__label {
+  fill: var(--fg);
+  font-family: var(--font);
+  font-size: 24px;
+  font-weight: 700;
+}
