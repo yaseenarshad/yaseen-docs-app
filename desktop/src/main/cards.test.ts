@@ -21,10 +21,10 @@ import {
   withoutCardReviews,
   type CardReview,
 } from '@shared/cardLine'
-import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, CARD_STEP, addStep, answerLabel, answerRatings, cardHistory, cardPlan, cardQueue, cardState, isCardDue, pageCardCounts, previewAnswers, recallChance } from '@shared/cardSchedule'
+import { CARD_LEARNING_STEPS, CARD_RELEARNING_STEPS, CARD_STEP, addStep, newCardFolders, answerLabel, answerRatings, cardHistory, cardPlan, cardQueue, cardState, isCardDue, pageCardCounts, previewAnswers, recallChance } from '@shared/cardSchedule'
 import { FSRS, Rating, createEmptyCard, generatorParameters } from 'ts-fsrs'
 import { cardPieces, cardSides, hiddenCount, markHidden } from '@shared/cardText'
-import { DEFAULT_CARD_WEIGHTS, DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings } from '@shared/reviews'
+import { DEFAULT_CARD_WEIGHTS, DEFAULT_REVIEW_SETTINGS, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 
 /** Cards' shared core (YAZ-4959): the card line, the card text, the FSRS schedule and the settings. */
 
@@ -473,7 +473,7 @@ describe('YAZ-5020: same-day steps — cards come back in the same session (Yase
 
 describe('the settings (D14)', () => {
   it('defaults to two buttons, 90%, 365 days, 10 new a day, fuzz on and the Mochi weights; each bad field falls back alone', () => {
-    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', fuzz: true, pauseAfter: 60, timeSoFar: 'hidden', weights: [...DEFAULT_CARD_WEIGHTS] })
+    expect(sanitizeReviewSettings(undefined)).toEqual({ enabled: true, buttons: 2, retention: 0.9, maxDays: 365, newPerDay: 10, upNextPerDay: null, newOrder: 'oldest', newFrom: [], fuzz: true, pauseAfter: 60, timeSoFar: 'hidden', weights: [...DEFAULT_CARD_WEIGHTS] })
     expect(DEFAULT_CARD_WEIGHTS).toHaveLength(21)
     const weights = Array.from({ length: 19 }, (_, i) => i / 10)
     expect(sanitizeReviewSettings({ enabled: false, buttons: 4, retention: 0.85, maxDays: 30, newPerDay: 0, fuzz: false, weights, algorithm: 'upkeep', baseDays: 3 })).toEqual({
@@ -484,6 +484,7 @@ describe('the settings (D14)', () => {
       newPerDay: 0,
       upNextPerDay: null,
       newOrder: 'oldest',
+      newFrom: [],
       fuzz: false,
       pauseAfter: 60,
       timeSoFar: 'hidden',
@@ -491,7 +492,7 @@ describe('the settings (D14)', () => {
     })
     // YAZ-5130: Time so far is hidden, shown or off; anything else is the default, hidden.
     expect(['shown', 'off', 'hidden', 'Shown', true, undefined].map((timeSoFar) => sanitizeReviewSettings({ timeSoFar }).timeSoFar)).toEqual(['shown', 'off', 'hidden', 'hidden', 'hidden', 'hidden'])
-    expect(sanitizeReviewSettings({ enabled: 'yes', buttons: 3, retention: 1.5, maxDays: 0.5, newPerDay: -1, newOrder: 'random', fuzz: 1, weights: [1, 2, 3] })).toEqual(sanitizeReviewSettings(null))
+    expect(sanitizeReviewSettings({ enabled: 'yes', buttons: 3, retention: 1.5, maxDays: 0.5, newPerDay: -1, newOrder: 'page', fuzz: 1, weights: [1, 2, 3] })).toEqual(sanitizeReviewSettings(null))
     // YAZ-4999 D1, D2: an emptied box is `null`, no limit — a missing field (no file) keeps 10; the order is oldest or newest.
     expect([sanitizeReviewSettings({ newPerDay: null }).newPerDay, sanitizeReviewSettings({}).newPerDay, sanitizeReviewSettings({ newPerDay: '' }).newPerDay]).toEqual([null, 10, 10])
     // YAZ-5028: Up next a day the same way, but a missing field is no limit.
@@ -501,6 +502,72 @@ describe('the settings (D14)', () => {
     expect([30, 60, 120, 300, 45, '60', 0, -30, null, 60.5].map((pauseAfter) => sanitizeReviewSettings({ pauseAfter }).pauseAfter)).toEqual([30, 60, 120, 300, 60, 60, 60, 60, 60, 60])
     expect(sanitizeReviewSettings({}).pauseAfter).toBe(60)
     expect(sanitizeReviewSettings({ weights: [...DEFAULT_CARD_WEIGHTS.slice(0, 20), Number.NaN] }).weights).toEqual([...DEFAULT_CARD_WEIGHTS])
+  })
+})
+
+describe('YAZ-5322: the new cards order (Random for the day) and the saved folder pick', () => {
+  const now = new Date(2026, 10, 14, 12, 0).getTime()
+  const at = (ms: number): string => cardTime(ms)
+  const card = (id: string, over: { next?: boolean; reviews?: CardReview[] } = {}) => ({ id, off: false, next: false, reviews: [] as CardReview[], ...over })
+  const overdue: CardReview[] = [{ at: at(now - 400 * DAY), rating: 'good' }]
+  const records = [
+    { path: '/v/spanish/verbs.md', folder: 'spanish', cards: [card('WI-1'), card('WI-4'), card('WI-7', { reviews: overdue })] },
+    { path: '/v/spanish/deep/more.md', folder: 'spanish/deep', cards: [card('WI-9')] },
+    { path: '/v/geo/europe.md', folder: 'geo', cards: [card('WI-2'), card('WI-3'), card('WI-8', { reviews: overdue }), card('WI-10', { next: true })] },
+    { path: '/v/work.md', folder: '', cards: [card('WI-5')] },
+  ]
+  const s: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 2 }
+  const ids = (settings: ReviewSettings, folder = '') => cardQueue(records, settings, now, folder).map((c) => c.id)
+
+  it('Random keeps one order for the whole day, and another day has another order', () => {
+    const all = { ...s, newPerDay: null, newOrder: 'random' as const }
+    const today = ids(all)
+    expect(ids(all)).toEqual(today)
+    expect(cardQueue(records, all, new Date(2026, 10, 14, 23, 50).getTime()).map((c) => c.id)).toEqual(today)
+    // Up next and the due cards keep their place; only the new cards are shuffled.
+    expect(today.slice(0, 3)).toEqual(['WI-10', 'WI-8', 'WI-7'])
+    expect([...today.slice(3)].sort()).toEqual(['WI-1', 'WI-2', 'WI-3', 'WI-4', 'WI-5', 'WI-9'])
+    const days = Array.from({ length: 6 }, (_, d) => cardQueue(records, all, now + d * DAY).map((c) => c.id).join())
+    expect(new Set(days).size).toBeGreaterThan(1)
+  })
+
+  it('the pick narrows only the new cards: due cards and Up next come from everywhere; a tick takes subfolders', () => {
+    const pick = { ...s, newFrom: ['spanish'] }
+    expect(ids(pick)).toEqual(['WI-10', 'WI-8', 'WI-7', 'WI-1', 'WI-4'])
+    expect(ids({ ...pick, newPerDay: null })).toEqual(['WI-10', 'WI-8', 'WI-7', 'WI-1', 'WI-4', 'WI-9'])
+    const plan = cardPlan(records, pick, now)
+    expect([plan.more.new, plan.newFallback]).toEqual([1, false])
+    // Two folders.
+    expect(ids({ ...pick, newPerDay: null, newFrom: ['spanish/deep', 'geo'] })).toEqual(['WI-10', 'WI-8', 'WI-7', 'WI-2', 'WI-3', 'WI-9'])
+    // "Review this folder" keeps its scope; the pick narrows its new cards too.
+    expect(ids({ ...pick, newPerDay: null }, 'spanish')).toEqual(['WI-7', 'WI-1', 'WI-4', 'WI-9'])
+  })
+
+  it('the fallback: no new cards left in the picked folders, new cards come from All folders and the plan says so', () => {
+    const pick = { ...s, newFrom: ['nothing-here'] }
+    expect(ids(pick)).toEqual(ids(s))
+    const plan = cardPlan(records, pick, now)
+    expect(plan.newFallback).toBe(true)
+    expect(plan.more.new).toBe(cardPlan(records, s, now).more.new)
+    expect(cardPlan(records, s, now).newFallback).toBe(false)
+  })
+
+  it('the picker counts the new cards of each folder with its subfolders, and the vault\'s in all', () => {
+    expect(newCardFolders(records, s)).toEqual({
+      all: 6,
+      folders: [
+        { folder: 'geo', count: 2 },
+        { folder: 'spanish', count: 3 },
+        { folder: 'spanish/deep', count: 1 },
+      ],
+    })
+  })
+
+  it('the settings: the order is oldest, newest or random; the pick is a list of folders, each one time, no subfolder of another', () => {
+    expect(['oldest', 'newest', 'random', 'Random', 'page'].map((newOrder) => sanitizeReviewSettings({ newOrder }).newOrder)).toEqual(['oldest', 'newest', 'random', 'oldest', 'oldest'])
+    expect(sanitizeReviewSettings({}).newFrom).toEqual([])
+    expect(sanitizeReviewSettings({ newFrom: 'spanish' }).newFrom).toEqual([])
+    expect(sanitizeReviewSettings({ newFrom: ['/spanish/', 'spanish', 'spanish/deep', '', 3, 'geo'] }).newFrom).toEqual(['spanish', 'geo'])
   })
 })
 

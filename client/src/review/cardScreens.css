@@ -1166,3 +1166,135 @@ body.card-inbox--sizing {
   color: var(--fg-muted);
   font-size: 12.5px;
 }
+/* YAZ-5322: where new cards come from. On the New cards row, between the name and the count: "from Spanish ›",
+   grey "from All folders ›" with no pick; its own click target. The chip by the filter while a folder is picked. */
+.card-inbox__new-from {
+  max-width: 160px;
+  overflow: hidden;
+  margin-left: 4px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-weight: 400;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.card-inbox__new-from[data-on] .card-inbox__new-from-name {
+  color: var(--fg);
+  font-weight: 500;
+}
+.card-inbox__new-from:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.card-inbox__pick-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  max-width: 220px;
+  gap: 2px;
+  padding: 2px 4px 2px 9px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg);
+  font-size: 12px;
+}
+.card-inbox__pick-chip-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-inbox__pick-chip-x {
+  padding: 0 4px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.card-inbox__pick-chip-x:hover {
+  color: var(--fg);
+}
+/* The picker: All folders, then each folder with a tick box and its new cards; a subfolder indented under its parent. */
+.card-inbox__picker {
+  min-width: 220px;
+  max-width: 320px;
+}
+.card-inbox__picker-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.card-inbox__picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 5px 8px;
+  border-radius: 5px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.card-inbox__picker-row:hover,
+.card-inbox__picker-row[data-on] {
+  background: var(--bg-hover);
+}
+.card-inbox__picker-row input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+.card-inbox__picker-name {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-inbox__picker-count {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.card-inbox__picker-sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+.card-inbox__picker-note {
+  margin: 4px 8px 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+/* The done pill's "from [Spanish ▾]": a quiet box inside the pill, the same picker. */
+.card-inbox__done-from {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.card-inbox__done-from-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 3px 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.card-inbox__done-from-name {
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.card-inbox__done-from:hover .card-inbox__done-from-box {
+  background: var(--bg-hover);
+}
+.card-inbox__done-fallback {
+  color: var(--fg);
+}

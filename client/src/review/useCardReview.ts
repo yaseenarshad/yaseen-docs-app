@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { isCardSeconds, withCardNext, withCardOff, type CardRating, type CardReview } from '@shared/cardLine'
-import { addStep, anyUpNext, cardPlan, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
+import { addStep, anyUpNext, cardPlan, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
@@ -74,6 +74,12 @@ import { cardsAddedToday, setCardsAdded, subscribeCardsAdded } from './cardsAdde
  * makes today 22. `resetCards` sets today back to the Settings number, never below what today already did
  * (`CardPlan.floor`): the cards it takes out of today that are not answered yet leave the session, the one on show
  * stays. A Reset is on the undo stack as an add is; its undo brings the cards back.
+ *
+ * Where new cards come from (YAZ-5322): `setNewFrom` saves the folder pick (`ReviewSettings.newFrom`, all folders when
+ * empty) until it is cleared. Only new cards follow it; due cards and Up next come from everywhere (`cardPlan`). A
+ * change of the pick changes the open session's new cards at once (`withNewCards`): its new cards no longer in today's
+ * queue leave (not the one on show, not a repeat), today's new cards not in it join at the end. It is a setting, so
+ * it is not on the undo stack. `newCardFolders` gives the picker its folders and counts.
  */
 
 /** Which cards of the session show (YAZ-5017). Each has a count of the session's queue. */
@@ -148,6 +154,17 @@ export interface CardReviewSession {
   upNext: boolean
   /** The add or Reset, while it is the last thing done (YAZ-5042): the line under the buttons says it; null otherwise. */
   lastAdd: { kind: AddKind; count: number; reset: boolean } | null
+  /** The saved folder pick for new cards (YAZ-5322), each with its name; empty for All folders. */
+  newFrom: Pick<NewCardFolder, 'folder' | 'label'>[]
+  /** The picked folders have no new card left in the scope, so new cards come from All folders (YAZ-5322). */
+  newFallback: boolean
+}
+
+/** A folder of the new-cards picker (YAZ-5322): root-relative, its name, and how many new cards it holds with its subfolders. */
+export interface NewCardFolder {
+  folder: string
+  label: string
+  count: number
 }
 
 export interface CardReviewApi {
@@ -189,6 +206,10 @@ export interface CardReviewApi {
   addCards: (kind: AddKind, count?: number) => void
   /** Sets today's number of `kind` back to the Settings number, never below today's work (YAZ-5042 round 2); `undo` takes it back. */
   resetCards: (kind: AddKind) => void
+  /** Saves the folders new cards come from (YAZ-5322); empty for All folders. The open session's new cards follow at once. */
+  setNewFrom: (folders: readonly string[]) => void
+  /** The picker's rows (YAZ-5322): every new card of the vault, and each folder with new cards (or picked), parents first. */
+  newCardFolders: () => { all: number; folders: NewCardFolder[] }
 }
 
 /** One part of a card's place (YAZ-5017 round 2): its name, and the path a click opens (the vault's or a folder's page, or the page). */
@@ -481,6 +502,36 @@ const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   return fitted({ ...s, queue, at: at === -1 ? Math.min(s.at, queue.length) : at, total, totals, marks, undo, turn: s.turn })
 }
 
+/**
+ * The session after the folder pick changed (YAZ-5322): `live` is the scope's queue with the new pick. A new card of the
+ * session no longer in it leaves (not the card on show, not a repeat); today's new cards not in the session join at the
+ * end, and on the done screen the first of them shows. Not on the undo stack: it is a setting.
+ */
+const withNewCards = (s: Session, live: readonly DueCard[]): Session => {
+  const plain = (c: QueueCard): boolean => c.isNew && !c.next && c.repeat !== true
+  const today = new Set(live.filter(plain).map(cardKey))
+  const inSession = new Set(s.queue.map(cardKey))
+  const head = s.queue[s.at]
+  const totals = { ...s.totals }
+  let total = s.total
+  const queue: QueueCard[] = []
+  let at = -1
+  for (const c of s.queue) {
+    if (plain(c) && c !== head && !today.has(cardKey(c))) {
+      totals.new--
+      total--
+      continue
+    }
+    if (c === head) at = queue.length
+    queue.push(c)
+  }
+  const joining = live.filter((c) => plain(c) && !inSession.has(cardKey(c)))
+  if (joining.length === 0 && queue.length === s.queue.length) return s
+  totals.new += joining.length
+  total += joining.length
+  return fitted({ ...s, queue: [...queue, ...joining], at: at === -1 ? queue.length : at, total, totals })
+}
+
 const reason = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 const sameCard = (a: DueCard, b: DueCard): boolean => a.path === b.path && a.id === b.id
 /** Is `card` the one on show? By path and ID: a mark the index changed (YAZ-5031) gives the card a new object. */
@@ -505,7 +556,15 @@ export function cardPlace(root: string, vault: string, folders: readonly IndexRe
   return records.find((r) => r.path === path)?.kind === 'card' ? top : [...top, { kind: 'page', label: titleOf(records, path), path }]
 }
 
-export function useCardReview(root: string | null, source: IndexSource, settings: ReviewSettings, onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void, vaultName?: string | null): CardReviewApi {
+export function useCardReview(
+  root: string | null,
+  source: IndexSource,
+  settings: ReviewSettings,
+  onNotice: (text: string, icon?: NoticeKind, type?: NoticeType, action?: NoticeAction) => void,
+  vaultName?: string | null,
+  /** The vault's settings save (`useReviewSettings`): the folder pick for new cards (YAZ-5322) is one of them. */
+  saveSettings?: (next: ReviewSettings) => void,
+): CardReviewApi {
   const records = useSyncExternalStore(source.subscribe, () => source.records)
   const [session, setSession] = useState<Session | null>(null)
   // The card showing, read from its page, and its fixed answers: each for one turn (`turnKey`).
@@ -541,6 +600,19 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       return withMarks(s, vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue)
     })
   }, [vaultQueue, records, settings, letters, taken, added])
+
+  // YAZ-5322: a change of the folder pick changes the open session's new cards at once.
+  const pickKey = settings.newFrom.join('\n')
+  const lastPick = useRef(pickKey)
+  useEffect(() => {
+    if (lastPick.current === pickKey) return
+    lastPick.current = pickKey
+    setSession((s) => {
+      if (s === null || !settings.enabled) return s
+      const vault = !s.scope.folder && s.scope.page === undefined
+      return withNewCards(s, vault ? vaultQueue : cardPlan(records, settings, Date.now(), s.scope.folder, s.scope.page, letters, taken, added).queue)
+    })
+  }, [pickKey, vaultQueue, records, settings, letters, taken, added])
 
   // The callbacks read the latest state at call time; their identities stay stable for memoised children.
   const live = useRef({ records, settings, session, loaded, fixed, taken, added })
@@ -897,6 +969,15 @@ export function useCardReview(root: string | null, source: IndexSource, settings
     [root, source],
   )
 
+  const setNewFrom = useCallback(
+    (picked: readonly string[]) => {
+      const { settings } = live.current
+      if (saveSettings === undefined || picked.join('\n') === settings.newFrom.join('\n')) return
+      saveSettings({ ...settings, newFrom: [...picked] })
+    },
+    [saveSettings],
+  )
+
   const turnOff = useCallback(async () => {
     const s0 = live.current.session
     const card = s0?.queue[s0.at]
@@ -914,6 +995,8 @@ export function useCardReview(root: string | null, source: IndexSource, settings
   }, [onNotice, forget])
 
   const folders = source.folders
+  /** A root-relative folder's name, as the breadcrumb says it (its title, else its last part). */
+  const folderLabelOf = useCallback((folder: string) => (root === null ? folder.slice(folder.lastIndexOf('/') + 1) : folderTitle(folders, `${root}/${folder}`)), [root, folders])
   // YAZ-5042: the open scope's plan, for what waits past today's number (the vault's is `vaultPlan`).
   const scope = session?.scope
   const scopePlan = useMemo(
@@ -963,9 +1046,21 @@ export function useCardReview(root: string | null, source: IndexSource, settings
       canReset: { new: (added.newCards > scopePlan.floor.new), next: (added.upNext > scopePlan.floor.next) },
       upNext,
       lastAdd: lastStep?.kind === 'add' ? { kind: lastStep.what, count: lastStep.count, reset: false } : lastStep?.kind === 'reset' ? { kind: lastStep.what, count: lastStep.count, reset: true } : null,
+      newFrom: settings.newFrom.map((folder) => ({ folder, label: folderLabelOf(folder) })),
+      newFallback: scopePlan.newFallback,
     }
     // `records`: a cached page is good only at its page's mtime.
-  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings, added, upNext])
+  }, [session, loaded, fixed, turnKey, root, vaultName, cached, records, folders, today, scopePlan, settings, added, upNext, folderLabelOf])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter, addCards, resetCards }
+  // YAZ-5322: the picker's rows, worked out when it opens: each folder with new cards, and each picked one (0 when empty).
+  const pickerFolders = useCallback(() => {
+    const { records, settings } = live.current
+    const { all, folders: found } = newCardFolders(records, settings)
+    const rows = new Map(found.map((f) => [f.folder, f.count]))
+    for (const folder of settings.newFrom) if (!rows.has(folder)) rows.set(folder, 0)
+    const list = [...rows].map(([folder, count]) => ({ folder, label: folderLabelOf(folder), count })).sort((a, b) => (a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0))
+    return { all, folders: list }
+  }, [folderLabelOf])
+
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter, addCards, resetCards, setNewFrom, newCardFolders: pickerFolders }
 }

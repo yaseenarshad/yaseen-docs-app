@@ -116,6 +116,8 @@ import { CardInboxHints } from './CardInboxHints'
 import { KeyLabel } from '../keys/KeyLabel'
 import { withKeys } from '@shared/keyLabel'
 import { AddMoreField } from './AddMoreField'
+import { newCardsFrom, pickLabel, useNewCardsPicker } from './NewCardsPicker'
+import { ChevronIcon } from './cardInboxIcons'
 import { useAnswerTimer } from './answerTimer'
 import { TodayWork } from './TodayWork'
 import { todayCards } from './reviewTime'
@@ -193,9 +195,12 @@ interface AnswerLine {
   count: number
 }
 
-/** What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for another day." */
-export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[]): string {
-  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? 'new' : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
+/**
+ * What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for
+ * another day." `from` (YAZ-5322): the folders new cards come from, "14 new Spanish cards"; empty for All folders.
+ */
+export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[], from = ''): string {
+  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? (from === '' ? 'new' : `new ${from}`) : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
   const one = kinds.length === 1 && more[kinds[0]] === 1
   return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
 }
@@ -372,16 +377,36 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
   const doors = useMemo(() => ({ openLayer, openTab: openLinkIn, onNotice }), [openLayer, openLinkIn, onNotice])
   // YAZ-5042: the kinds that wait past today's number, with an add; under a filter, only that filter's kind.
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
+  // YAZ-5322: the new cards' pill ends "from [Spanish ▾]" (where they really come from: "All folders" in the
+  // fallback); ▾ opens the cards menu's folder picker and changes the same saved pick. Up next never picks folders.
+  const picker = useNewCardsPicker(review, session)
+  const fromButton = (
+    <button type="button" className="card-inbox__done-from" aria-haspopup="dialog" aria-expanded={picker.isOpen} onMouseDown={(e) => e.preventDefault()} onClick={(e) => (picker.isOpen ? picker.close() : picker.open(e.currentTarget, 'below'))}>
+      {'from '}
+      <span className="card-inbox__done-from-box">
+        <span className="card-inbox__done-from-name">{newCardsFrom(session)}</span>
+        <ChevronIcon />
+      </span>
+    </button>
+  )
   const addButtons =
     addKinds.length === 0 ? null : (
       <div className="card-inbox__done-adds">
         {/* Round 2: the same field as the cards menu's, "Add [10] new cards"; the number starts at the Settings number. */}
         {addKinds.map((k) => (
-          <AddMoreField key={k} kind={k} look="done" start={session.adds[k]} onAdd={(n) => review.addCards(k, n)} />
+          <AddMoreField key={k} kind={k} look="done" start={session.adds[k]} onAdd={(n) => review.addCards(k, n)} after={k === 'new' ? fromButton : undefined} />
         ))}
+        {picker.picker}
       </div>
     )
-  const waits = addKinds.length > 0 && <p className="card-inbox__done-line">{waitingLine(session.more, addKinds)}</p>
+  const picked = pickLabel(session.newFrom)
+  const waits = addKinds.length > 0 && (
+    <>
+      {/* YAZ-5322, the fallback: said out loud, so a card's folder is never a surprise. */}
+      {session.newFallback && addKinds.includes('new') && <p className="card-inbox__done-line card-inbox__done-fallback">No new cards left in {picked}, so these come from All folders.</p>}
+      <p className="card-inbox__done-line">{waitingLine(session.more, addKinds, session.newFallback ? '' : picked)}</p>
+    </>
+  )
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
   // The band's title: once the card is fully shown where it waits (`notitle`).
@@ -413,6 +438,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         resetCards={review.resetCards}
         openPlace={(part) => (part.kind === 'page' ? (card !== null && part.path === card.path ? openCard(card, cardFile) : openFile(part.path)) : openPlace?.(part.path))}
         time={time}
+        pick={review}
         tools={<DocumentZoom value={zoom} onChange={setZoom} label="Inbox zoom" />}
       />
       <div ref={columnRef} className="card-inbox__column" style={width === null ? undefined : { width: `min(${width}px, 100%)` }}>

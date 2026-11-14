@@ -4,7 +4,7 @@
  * transforms to that vault, and `api.readFile` reads it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, cardTime, cardReviewsOf, pageCards, parseCardLine, type CardLine } from '@shared/cardLine'
 import { cardState } from '@shared/cardSchedule'
@@ -1000,5 +1000,36 @@ describe('YAZ-5046: an archived card is never reviewed', () => {
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     expect(review.session?.counts).toEqual({ all: 3, next: 0, due: 1, new: 2 })
     expect(review.session).not.toHaveProperty('archived')
+  })
+})
+
+describe('YAZ-5322: the folder pick for new cards', () => {
+  /** The vault's settings held as `useReviewSettings` holds them: a save is the new settings at once. */
+  function Saving() {
+    const [settings, setSettings] = useState<ReviewSettings>(S)
+    review = useCardReview(ROOT, source, settings, (text) => void notices.push(text), null, setSettings)
+    return null
+  }
+
+  it('a pick changes the open session\'s new cards at once (due cards stay); none left in it, new cards come from All folders and the session says so', async () => {
+    page('Spanish/Verbs.md', ['Hablar', 'WIKI-5'])
+    page('Spanish/Deep/More.md', ['Comer', 'WIKI-7'])
+    page('Work.md', ['Standup', 'WIKI-6'])
+    reindex()
+    root = createRoot(document.createElement('div'))
+    await act(async () => root?.render(<Saving />))
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ counts: { all: 5, due: 1, new: 4 }, newFrom: [], newFallback: false })
+    expect(review.newCardFolders()).toEqual({ all: 4, folders: [{ folder: 'Bio', label: 'Bio', count: 1 }, { folder: 'Spanish', label: 'Spanish', count: 2 }, { folder: 'Spanish/Deep', label: 'Deep', count: 1 }] })
+    await act(async () => review.setNewFrom(['Spanish']))
+    expect(review.settings.newFrom).toEqual(['Spanish'])
+    expect(review.session).toMatchObject({ counts: { all: 3, due: 1, new: 2 }, total: 3, newFrom: [{ folder: 'Spanish', label: 'Spanish' }], newFallback: false })
+    expect(review.session?.card?.id).toBe('WIKI-1')
+    // A folder with no new card left: All folders, said out loud; the pick stays (0 in the picker).
+    await act(async () => review.setNewFrom(['Empty']))
+    expect(review.session).toMatchObject({ counts: { all: 5, due: 1, new: 4 }, newFrom: [{ folder: 'Empty', label: 'Empty' }], newFallback: true })
+    expect(review.newCardFolders().folders.map((f) => [f.folder, f.count])).toEqual([['Bio', 1], ['Empty', 0], ['Spanish', 2], ['Spanish/Deep', 1]])
+    await act(async () => review.setNewFrom([]))
+    expect(review.session).toMatchObject({ counts: { all: 5, due: 1, new: 4 }, newFrom: [], newFallback: false })
   })
 })
