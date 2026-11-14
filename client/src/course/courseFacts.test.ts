@@ -5,7 +5,7 @@ import { defaultCourseState } from '@shared/courseState'
 import { DEFAULT_SETTINGS } from '@shared/types'
 import { COURSE } from './script'
 import { courseMinutes } from './courseTime'
-import { COURSE_HINT, COURSE_MINUTES, COURSE_NOTICE, offerInInbox, offerNotice } from './courseFacts'
+import { COURSE_HINT, COURSE_MINUTES, COURSE_NOTICE, newToCards, offerInInbox, offerNotice, type OfferVault } from './courseFacts'
 import { WAITING_CLIPS } from './waits'
 
 describe('the course facts the app has before the course loads (YAZ-5120)', () => {
@@ -15,22 +15,38 @@ describe('the course facts the app has before the course loads (YAZ-5120)', () =
     expect(COURSE_NOTICE).toBe(`New to cards? Take the ${courseMinutes(COURSE)}-minute course`)
   })
 
-  it('the empty Inbox offers the course only to a beginner, and Card tips off hides it', () => {
-    const c = defaultCourseState()
-    expect(offerInInbox(c, DEFAULT_SETTINGS, false)).toBe(true)
-    expect(offerInInbox(c, DEFAULT_SETTINGS, true)).toBe(false)
-    expect(offerInInbox({ ...c, done: true }, DEFAULT_SETTINGS, false)).toBe(false)
-    expect(offerInInbox({ ...c, dismissed: true }, DEFAULT_SETTINGS, false)).toBe(false)
-    expect(offerInInbox(c, { ...DEFAULT_SETTINGS, cardTips: false }, false)).toBe(false)
+  // YAZ-5272: both offers are for a person new to cards: the vault has cards on and holds no card yet.
+  const NEW: OfferVault = { cardsOn: true, hasCards: false }
+  const HAS_CARDS: OfferVault = { cardsOn: true, hasCards: true }
+  const CARDS_OFF: OfferVault = { cardsOn: false, hasCards: false }
+  const LOADING: OfferVault = { cardsOn: true, hasCards: null }
+
+  it('newToCards (YAZ-5272): cards on and no card yet; a vault whose index has not loaded is not new yet', () => {
+    expect(newToCards(NEW)).toBe(true)
+    expect(newToCards(HAS_CARDS)).toBe(false)
+    expect(newToCards(CARDS_OFF)).toBe(false)
+    expect(newToCards(LOADING)).toBe(false)
   })
 
-  it('the notice shows once, with Review on, Card tips on and the course not done', () => {
+  it('the empty Inbox offers the course only to a person new to cards, and Card tips off hides it', () => {
     const c = defaultCourseState()
-    expect(offerNotice(c, DEFAULT_SETTINGS, true)).toBe(true)
-    expect(offerNotice(c, DEFAULT_SETTINGS, false)).toBe(false)
-    expect(offerNotice({ ...c, offered: true }, DEFAULT_SETTINGS, true)).toBe(false)
-    expect(offerNotice({ ...c, done: true }, DEFAULT_SETTINGS, true)).toBe(false)
-    expect(offerNotice(c, { ...DEFAULT_SETTINGS, cardTips: false }, true)).toBe(false)
+    expect(offerInInbox(c, DEFAULT_SETTINGS, NEW)).toBe(true)
+    expect(offerInInbox(c, DEFAULT_SETTINGS, HAS_CARDS)).toBe(false)
+    expect(offerInInbox(c, DEFAULT_SETTINGS, CARDS_OFF)).toBe(false)
+    expect(offerInInbox({ ...c, done: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
+    expect(offerInInbox({ ...c, dismissed: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
+    expect(offerInInbox(c, { ...DEFAULT_SETTINGS, cardTips: false }, NEW)).toBe(false)
+  })
+
+  it('the notice shows once, to a person new to cards (YAZ-5272), with Card tips on and the course not done', () => {
+    const c = defaultCourseState()
+    expect(offerNotice(c, DEFAULT_SETTINGS, NEW)).toBe(true)
+    expect(offerNotice(c, DEFAULT_SETTINGS, HAS_CARDS)).toBe(false)
+    expect(offerNotice(c, DEFAULT_SETTINGS, CARDS_OFF)).toBe(false)
+    expect(offerNotice(c, DEFAULT_SETTINGS, LOADING)).toBe(false)
+    expect(offerNotice({ ...c, offered: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
+    expect(offerNotice({ ...c, done: true }, DEFAULT_SETTINGS, NEW)).toBe(false)
+    expect(offerNotice(c, { ...DEFAULT_SETTINGS, cardTips: false }, NEW)).toBe(false)
   })
 })
 

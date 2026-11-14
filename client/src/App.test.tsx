@@ -7824,6 +7824,40 @@ describe('App: the card course (YAZ-5120)', () => {
     expect(document.querySelector('.course')).toBeNull()
   })
 
+  // YAZ-5272: the offer is for a person new to cards (Yaseen): the vault in front has cards on and holds no card yet.
+  describe('YAZ-5272: only a person new to cards gets the offer', () => {
+    const cardIn = (path: string): IndexRecord => ({
+      path, name: 'cards.md', basename: 'cards', title: 'Cards', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
+      properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [] }],
+    })
+    const index = (b: ReturnType<typeof installBridge>) =>
+      void b.bridge.index.mockImplementation(async (root: string) => ({ root, records: root === '/a' ? [cardIn('/a/cards.md')] : [], folders: [], generatedAt: 1, ids: true }))
+
+    it('a vault with Review on and one card, `offered` false: no notice, nothing kept as offered, and no course line in its empty Inbox', async () => {
+      courseNoticeDue = true
+      const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } }, index)
+      await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
+      await act(async () => new Promise((r) => setTimeout(r, 50)))
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
+      act(() => captured.sidebar?.onOpenInbox())
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+      expect(el.querySelector('.course-offer')).toBeNull()
+    })
+
+    it('a window with a vault with cards in front and a vault with none: no notice; the vault with none in front: the notice, one time', async () => {
+      courseNoticeDue = true
+      const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
+      const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, index)
+      await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
+      await act(async () => new Promise((r) => setTimeout(r, 50)))
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
+      await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
+      expect((bridge.state.setCourse.mock.calls as unknown as [{ offered?: boolean }][]).filter(([patch]) => patch.offered === true)).toHaveLength(1)
+    })
+  })
+
   it('requestCourse(chapter) from any part opens the course at that chapter', async () => {
     const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
     expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain('New to cards?')

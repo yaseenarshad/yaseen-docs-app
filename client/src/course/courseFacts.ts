@@ -18,7 +18,7 @@ export const COURSE_MINUTES = 29
 /** Settings › Review › Card course: the row's hint. */
 export const COURSE_HINT = `About ${COURSE_MINUTES} minutes. Learn how cards work, and make your first ones.`
 
-/** The one notice, the first time this Mac shows a vault with Review on. */
+/** The one notice, the first time this Mac shows a person new to cards (`offerNotice`). */
 export const COURSE_NOTICE = `New to cards? Take the ${COURSE_MINUTES}-minute course`
 
 /** The empty Inbox's line (YAZ-5059 suggestion 24). */
@@ -30,10 +30,23 @@ export const COURSE_INBOX_LINE = 'No cards yet. Take the course, or make a card.
  */
 export const cardTipsOn = (settings: SettingsState): boolean => settings.cardTips !== false
 
-/** The empty Inbox offers the course only to a beginner (Yaseen): the vault has no card, the course is not done, and no "Don't show again". */
-export const offerInInbox = (course: CourseState, settings: SettingsState, vaultHasCards: boolean): boolean =>
-  cardTipsOn(settings) && !vaultHasCards && !course.done && !course.dismissed
+/** The vault the offer reads (YAZ-5272): its cards are on, and whether it holds a card (null: its index has not loaded). */
+export interface OfferVault {
+  cardsOn: boolean
+  hasCards: boolean | null
+}
 
-/** The notice shows once per Mac: the first time a window shows a vault with Review on, while the course is not done. */
-export const offerNotice = (course: CourseState, settings: SettingsState, reviewOn: boolean): boolean =>
-  reviewOn && cardTipsOn(settings) && !course.offered && !course.done
+/**
+ * New to cards (YAZ-5272; Yaseen: the offer "is for someone completely brand new, they don't have any cards"): the vault
+ * has cards on and holds no card yet, no card file and no card in a page, by the vault's own index. A vault whose
+ * index has not loaded is not new yet.
+ */
+export const newToCards = (vault: OfferVault): boolean => vault.cardsOn && vault.hasCards === false
+
+/** The empty Inbox's line: only for a person new to cards in the Inbox's vault, the course not done, no "Don't show again". */
+export const offerInInbox = (course: CourseState, settings: SettingsState, vault: OfferVault): boolean =>
+  cardTipsOn(settings) && newToCards(vault) && !course.done && !course.dismissed
+
+/** The notice: once per Mac, for a person new to cards in the vault in front, while the course is not done. */
+export const offerNotice = (course: CourseState, settings: SettingsState, vault: OfferVault): boolean =>
+  newToCards(vault) && cardTipsOn(settings) && !course.offered && !course.done

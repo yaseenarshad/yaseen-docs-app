@@ -42,7 +42,7 @@ import { storage } from './lib/storage'
 import { FORMATS_CHAPTER_TITLE, courseLostLine, courseStartOverLabel, courseVaultAt, onCourseRequest, requestCourseChapter } from './course/openCourse'
 import { courseVaultView, type LiveCourseVault } from './course/courseVaultView'
 import { onTourShow } from './course/tourBus'
-import { COURSE_NOTICE, offerInInbox, offerNotice } from './course/courseFacts'
+import { COURSE_NOTICE, offerInInbox, offerNotice, type OfferVault } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
@@ -1527,20 +1527,26 @@ export function App() {
     courseVault.changed()
     return courseIndex.subscribe(() => courseVault.changed())
   }, [courseVault, courseIndex])
-  // The one notice (YAZ-5120): the first time this Mac shows a vault whose Review is on, once its settings are read.
-  const reviewOnHere = root !== null && active.reviewSettings.ready === true && active.reviewSettings.settings.enabled
+  // The offers (YAZ-5120, YAZ-5272): only for a person new to cards. A vault is read once its Review settings and its
+  // index have loaded: cards on, and no card in the index (`cards` holds the cards of card files and of pages).
+  const offerVaultOf = (scope: typeof active): OfferVault => ({
+    cardsOn: scope.root !== null && scope.reviewSettings.ready === true && scope.reviewSettings.settings.enabled,
+    hasCards: scope.ids === undefined ? null : scope.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0),
+  })
+  // The one notice: once per Mac, for the vault in front.
+  const front = offerVaultOf(active)
+  const noticeDue = offerNotice(course, settings, front)
   useEffect(() => {
-    if (!offerNotice(course, settings, reviewOnHere)) return
+    if (!noticeDue) return
     storage.setCourse({ offered: true })
     notify(COURSE_NOTICE, 'info', undefined, { label: 'Open the course', run: () => openCourse() })
-  }, [course, settings, reviewOnHere, notify, openCourse])
-  // The empty Inbox's line (suggestion 24): only for a beginner, once the vault's index says it has no card.
-  const offerVault = reviewer ?? first
-  // `ids` is undefined until the vault's index has loaded: until then the vault counts as having cards (no offer).
-  const vaultHasCards = offerVault.ids === undefined || offerVault.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0)
+  }, [noticeDue, notify, openCourse])
+  // The empty Inbox's line (suggestion 24): for the Inbox's vault.
+  const inboxVault = offerVaultOf(reviewer ?? first)
+  const inboxOffered = offerInInbox(course, settings, inboxVault)
   const inboxCourseOffer = useMemo(
-    () => (offerInInbox(course, settings, vaultHasCards) ? { onOpen: () => openCourse(), onDismiss: () => storage.setCourse({ dismissed: true }) } : undefined),
-    [course, settings, vaultHasCards, openCourse],
+    () => (inboxOffered ? { onOpen: () => openCourse(), onDismiss: () => storage.setCourse({ dismissed: true }) } : undefined),
+    [inboxOffered, openCourse],
   )
   // YAZ-4615: what every comment block reads — your profile (D2), where resolved threads go (D5), and
   // the composer's way to Settings › You (D7, the first page of the dialog).
