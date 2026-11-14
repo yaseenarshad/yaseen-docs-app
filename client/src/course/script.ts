@@ -49,6 +49,9 @@ export const COURSE: CourseChapter[] = [
       // An old notebook page of nonsense syllables ("DAX", "BOK", "YAT"); the year 1885.
       // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
       { id: 'c1-02', text: 'In the 1880s, Hermann Ebbinghaus measured this on himself. After one day, relearning a list took him about two thirds of the original time.' },
+      // The old curve from 1885 and a new one from 2015 slide over each other; they match.
+      // SOURCE: Murre & Dros 2015, "Replication and Analysis of Ebbinghaus' Forgetting Curve", PLOS ONE 10(7): "We conclude that the Ebbinghaus forgetting curve has indeed been replicated."
+      { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.' },
       // A review just before the curve drops; the curve lifts and falls slower.
       { id: 'c1-03', text: 'But review it again before you forget, and it sticks longer.' },
       // Three reviews; the gaps label "1 day", "1 week", "1 month" on the marks. (Approved sample, unchanged.)
@@ -60,9 +63,9 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.' },
       // Behind the curve, small gears turn; a date lights up on a calendar just before the curve drops. The words "Spaced repetition algorithm" settle under it. (Yaseen's line, from the doc YAS-2084.)
       { id: 'c1-16', text: 'The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.' },
-      // A wall of small study tiles fills in, "317 experiments"; spaced study beats crammed study.
+      // A wall of small study tiles fills in, "317 experiments"; spaced reviews beat reviews done all at once.
       // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
-      { id: 'c1-06', text: 'It is one of the most tested ideas about memory: one review of 317 experiments found that spacing beats cramming.' },
+      { id: 'c1-06', text: 'Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.' },
       // A paper index card drops onto the stage.
       { id: 'c1-07', text: 'So how do you store each thing you learn in the app? Answer: on a card.' },
       // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
@@ -92,7 +95,7 @@ export const COURSE: CourseChapter[] = [
       // The ridge's peak moves for each card; a marker follows it, card by card.
       { id: 'c1-21', text: 'The algorithm finds that moment for every card, precisely for you, by studying your memory.' },
       // The chapter list lights up, 1 to 12.
-      { id: 'c1-13', text: 'This course takes about twenty-seven minutes, in twelve short chapters.' },
+      { id: 'c1-13', text: 'This course takes about twenty-eight minutes, in twelve short chapters.' },
       // The "Try it in the app" button, with "Optional" beside it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
@@ -206,11 +209,15 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-04', text: 'The Inbox is in the sidebar. The number beside it is how many cards are due now.' },
       // The real Inbox on sample cards: one card in the middle, "1 of 4".
       { id: 'c3-05', text: 'The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.' },
-      // Two bars: "Tested themselves 61%", "Re-read 40%", one week later.
-      // SOURCE: Roediger & Karpicke 2006, "Test-enhanced learning", Psychological Science, Experiment 2: 61% (STTT) vs 40% (SSSS) after 1 week.
-      { id: 'c3-06', text: 'Trying to recall is what makes it stick. In one study, students who tested themselves remembered 61 percent of a text a week later.' },
-      // The second bar fills: "Re-read 40%".
-      { id: 'c3-07', text: 'Students who only re-read it remembered 40 percent.' },
+      // The cover of the journal Science, 15 February 2008; a paper slides out: "The Critical Importance of Retrieval for Learning"; one sentence is highlighted.
+      // SOURCE: Karpicke & Roediger 2008, "The Critical Importance of Retrieval for Learning", Science 319(5865):966-968.
+      { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.' },
+      // Two bars rise, one week later: "Kept testing themselves: 80%", "Kept re-reading, no testing: 36%".
+      // SOURCE: the same paper, Fig. 2 and text: about 80% recalled in the repeated-testing conditions (ST, SnT); 36% in the repeated-study, no-more-testing condition (STn).
+      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36.' },
+      // Under the bars: "Rounds of practice: 237 and 243".
+      // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
+      { id: 'c3-22', text: 'About the same amount of work. More than double the memory.' },
       // Space; the hidden word shows, then the back.
       { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.' },
       // Forgot and Remembered show under the card.
@@ -354,7 +361,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c6-07', text: 'To digest is to think it through, until you can say it simply.' },
       // A shallow glance versus a deep look; the deep one leaves a lasting mark.
       // SOURCE: Craik & Lockhart 1972, "Levels of processing: A framework for memory research", Journal of Verbal Learning and Verbal Behavior.
-      { id: 'c6-08', text: 'Memory researchers call this depth of processing. The more you think about what something means, the longer you keep it.' },
+      { id: 'c6-08', text: 'Memory researchers call this depth of processing. It is one of the most cited ideas in the science of memory: the more you think about what something means, the longer you keep it.' },
       // Someone else's deck is copied in; the cards stay grey.
       { id: 'c6-09', text: "That is why copying someone else's cards makes no sense: it skips the thinking that makes you learn." },
       // A phone note: a quick line written down while someone talks. (rename-note-to-page: keep)
@@ -424,9 +431,12 @@ export const COURSE: CourseChapter[] = [
       { id: 'c7-09', text: 'The second one. The first card hides everything that matters, so there is no clue to recall from.' },
       // Rule 1 as a title; card B's front shows, the answer hidden.
       { id: 'c7-10', text: 'So, rule one. Hide the answer, not the clue. The front must still make sense with the blank in it.' },
-      // A card with nothing hidden; under it, "Re-reading: low" and "Testing yourself: high".
-      // SOURCE: Dunlosky, Rawson, Marsh, Nathan & Willingham 2013, "Improving students' learning with effective learning techniques", Psychological Science in the Public Interest.
-      { id: 'c7-11', text: 'Reading is not recalling. A large review of study methods rated re-reading and highlighting low, and testing yourself high.' },
+      // A report card with ten rows, the ten ways to learn; "Re-reading" and "Highlighting" get the lowest grade.
+      // SOURCE: Dunlosky, Rawson, Marsh, Nathan & Willingham 2013, "Improving students' learning with effective learning techniques", Psychological Science in the Public Interest 14(1): ten techniques; rereading and highlighting rated low utility.
+      { id: 'c7-11', text: 'Reading is not recalling. Researchers graded ten of the most common ways to learn. Re-reading and highlighting got the lowest grade.' },
+      // Two rows light up with the top grade: "Testing yourself", "Spacing it out"; a card sits on both.
+      // SOURCE: the same review: practice testing and distributed practice rated high utility.
+      { id: 'c7-29', text: 'Only two got the top grade: testing yourself, and spacing it out over time. A card does both.' },
       // Rule 2; "{{It}} is a system." with a question mark, then "DNS stands for {{Domain Name System}}." with a tick.
       { id: 'c7-12', text: 'Rule two. Leave enough in view to point to one answer. A blank that could be many things teaches you nothing.' },
       // Rule 3; a sentence with three scattered blanks, then one blank over a whole phrase.
@@ -496,11 +506,14 @@ export const COURSE: CourseChapter[] = [
       { id: 'c9-02', text: 'It has three habits: making cards, reviewing cards, and tending cards. Tending means fixing and improving the cards you have.' },
       // The Inbox icon lights up; a sunrise.
       { id: 'c9-03', text: 'Reviewing is the daily one. You open the Inbox, and the app picks the cards.' },
-      // Two bars: "Spacing worked better: 90%", "Believed cramming worked better: 72%".
-      // SOURCE: Kornell 2009, "Optimising learning using flashcards: Spacing is more effective than cramming", Applied Cognitive Psychology.
-      { id: 'c9-04', text: 'Trust the schedule, even when it feels slow. In one study, spacing worked better than cramming for 90 percent of learners.' },
-      // The second bar fills: "Believed cramming worked better: 72%".
-      { id: 'c9-05', text: 'Yet 72 percent of them believed cramming had worked better.' },
+      // A person with a thought bubble: "I am sure that worked"; a gauge beside it reads the opposite.
+      { id: 'c9-04', text: 'Trust the schedule, even when it feels slow. Your gut is a poor judge of your own memory.' },
+      // Ten figures: nine light up, "Spacing won"; then seven of the ten hold a sign, "I think it lost".
+      // SOURCE: Kornell 2009, "Optimising learning using flashcards: Spacing is more effective than cramming", Applied Cognitive Psychology 23: spacing was more effective for 90% of participants; 72% believed the opposite.
+      { id: 'c9-05', text: 'In one experiment, spacing won for nine people out of ten. Yet seven out of ten walked away sure it had lost.' },
+      // The Science paper again; a highlighted line: everyone predicted "about 50%"; the real bars: 80% and 36%.
+      // SOURCE: Karpicke & Roediger 2008, Science 319: in all four conditions people predicted they would recall about 50% of the pairs; actual recall was about 80% or about a third.
+      { id: 'c9-11', text: 'In the Science study, everyone guessed they would remember about half. Some kept 80 percent. Some kept a third. Nobody saw it coming.' },
       // The shears icon lights up, inside the Inbox: a card with a small fix.
       { id: 'c9-06', text: 'Tending needs no time of its own. It happens while you review.' },
       // Thought bubbles over a card, "Not clear", "Needs a link"; a short message goes to the agent; the review goes on.

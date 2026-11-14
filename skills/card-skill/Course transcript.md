@@ -6,6 +6,8 @@ Say you learn something today. A week from now, your brain will have forgotten m
 
 In the 1880s, Hermann Ebbinghaus measured this on himself. After one day, relearning a list took him about two thirds of the original time.
 
+In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.
+
 But review it again before you forget, and it sticks longer.
 
 Each time, the gap grows. A day. A week. A month.
@@ -16,7 +18,7 @@ Each review, near the point where you would forget, pushes the memory further in
 
 The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.
 
-It is one of the most tested ideas about memory: one review of 317 experiments found that spacing beats cramming.
+Scientists have tested this for more than a century. One review alone covered 317 experiments, and spacing won.
 
 So how do you store each thing you learn in the app? Answer: on a card.
 
@@ -40,7 +42,7 @@ And yes, there is a best moment to review. A study of more than 1,300 people fou
 
 The algorithm finds that moment for every card, precisely for you, by studying your memory.
 
-This course takes about twenty-seven minutes, in twelve short chapters.
+This course takes about twenty-eight minutes, in twelve short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
@@ -130,9 +132,11 @@ The Inbox is in the sidebar. The number beside it is how many cards are due now.
 
 The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.
 
-Trying to recall is what makes it stick. In one study, students who tested themselves remembered 61 percent of a text a week later.
+Trying to recall is what makes it stick. A study in the journal Science put it to the test.
 
-Students who only re-read it remembered 40 percent.
+People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36.
+
+About the same amount of work. More than double the memory.
 
 Press Space to show the hidden words, one at a time, and then the back.
 
@@ -259,7 +263,7 @@ But you do have to digest it first.
 
 To digest is to think it through, until you can say it simply.
 
-Memory researchers call this depth of processing. The more you think about what something means, the longer you keep it.
+Memory researchers call this depth of processing. It is one of the most cited ideas in the science of memory: the more you think about what something means, the longer you keep it.
 
 That is why copying someone else's cards makes no sense: it skips the thinking that makes you learn.
 
@@ -321,7 +325,9 @@ The second one. The first card hides everything that matters, so there is no clu
 
 So, rule one. Hide the answer, not the clue. The front must still make sense with the blank in it.
 
-Reading is not recalling. A large review of study methods rated re-reading and highlighting low, and testing yourself high.
+Reading is not recalling. Researchers graded ten of the most common ways to learn. Re-reading and highlighting got the lowest grade.
+
+Only two got the top grade: testing yourself, and spacing it out over time. A card does both.
 
 Rule two. Leave enough in view to point to one answer. A blank that could be many things teaches you nothing.
 
@@ -383,9 +389,11 @@ It has three habits: making cards, reviewing cards, and tending cards. Tending m
 
 Reviewing is the daily one. You open the Inbox, and the app picks the cards.
 
-Trust the schedule, even when it feels slow. In one study, spacing worked better than cramming for 90 percent of learners.
+Trust the schedule, even when it feels slow. Your gut is a poor judge of your own memory.
 
-Yet 72 percent of them believed cramming had worked better.
+In one experiment, spacing won for nine people out of ten. Yet seven out of ten walked away sure it had lost.
+
+In the Science study, everyone guessed they would remember about half. Some kept 80 percent. Some kept a third. Nobody saw it coming.
 
 Tending needs no time of its own. It happens while you review.
 
