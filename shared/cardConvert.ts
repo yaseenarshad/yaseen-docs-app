@@ -17,11 +17,15 @@
  *    card's first line is its new `title`.
  *  - The notice's fixes: Split (`splitCardFile`), Move into the card (`moveTextIntoCard`), Make a card from the text
  *    (`cardFromText`).
+ *
+ * EACH FILE KEEPS ITS OWN LINE END (YAZ-5146): each action reads its files with `\n` alone (`lineEnds`) and writes a
+ * file it changes with the line end it had, `\r\n` or `\n`. A NEW card file is written with `\n`.
  */
 import { cardFileCard, cardFileName, cardFileShape, cardFileWithBlock, CARD_KIND, CARD_KIND_KEY, indentBlock, isCardFileContent, NEW_CARD_TEXT, unindentBlock } from './cardFileFormat'
 import { CardNotFoundError, EMPTY_CARD_LINE, cardBlock, cardIdOf, changeCardText, findCards, type CardBlock } from './cardLine'
 import { cardTitle, cardWithTitle, cardWithoutTitle, hiddenCount } from './cardText'
 import { lineKinds } from './fences'
+import { inLineEnds, lineEnds, withLf } from './lineEnds'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 import { PAGE_ID_KEY } from './pageId'
 import { TITLE_KEY, titleOf } from './pageName'
@@ -65,13 +69,15 @@ export function cardTitleOut(text: string): { title: string; text: string } {
  * move: not a card file, a `title` already there, no card, or a card with no title.
  */
 export function cardFileTitleMoved(content: string, dropPageId = false): string | null {
-  if (!isCardFileContent(content) || hasTitleProperty(content)) return null
-  const card = cardFileCard(content)
-  if (card === null) return null
-  const { title, text } = cardTitleOut(card.text)
-  if (title === '') return null
-  const moved = setFrontmatterProperty(changeCardText(content, null, text, 0), TITLE_KEY, title)
-  return dropPageId ? setFrontmatterProperty(moved, PAGE_ID_KEY, undefined) : moved
+  return inLineEnds(content, (file) => {
+    if (!isCardFileContent(file) || hasTitleProperty(file)) return null
+    const card = cardFileCard(file)
+    if (card === null) return null
+    const { title, text } = cardTitleOut(card.text)
+    if (title === '') return null
+    const moved = setFrontmatterProperty(changeCardText(file, null, text, 0), TITLE_KEY, title)
+    return dropPageId ? setFrontmatterProperty(moved, PAGE_ID_KEY, undefined) : moved
+  })
 }
 
 /** A card that leaves its page or its card file: the new card file's bytes, its name, its ID and its title. */
@@ -109,12 +115,13 @@ export const cardEmbedText = (id: string): string => `![[${id}]]`
  * `CardNotFoundError` (no card holds `id`).
  */
 export function moveCardOut(content: string, id: string, index?: number): { page: string; card: CardFileOut } {
-  const { frontmatter, body } = splitFrontmatter(content)
+  const { text, back } = lineEnds(content)
+  const { frontmatter, body } = splitFrontmatter(text)
   const lines = body.split('\n')
   const card = cardOf(findCards(body), id, index)
   const out = cardOut(lines, card)
   lines.splice(card.open, (card.lineAt ?? card.close) - card.open + 1, card.indent + cardEmbedText(out.id))
-  return { page: frontmatter + lines.join('\n'), card: out }
+  return { page: back(frontmatter + lines.join('\n')), card: out }
 }
 
 /**
@@ -139,18 +146,22 @@ export function embedLine(body: string, inner: string, nth: number): number {
  * Throws `CardNotFoundError` when the card file has no such card, an Error when the page holds no such embed (it changed since).
  */
 export function putCardBack(page: string, inner: string, nth: number, cardFile: string, id: string): string {
-  const held = splitFrontmatter(cardFile).body
+  // The block takes the PAGE's line end: the card file's own does not come with it.
+  const file = withLf(cardFile)
+  const held = splitFrontmatter(file).body
   const cards = findCards(held)
   const card = cardOf(cards, id)
   const raw = unindentBlock(held.split('\n'), card)
-  const block = card === cards[0] && hasTitleProperty(cardFile) ? changeCardText(raw, null, cardWithTitle(cardFileTitle(cardFile), card.text), 0) : raw
-  const { frontmatter, body } = splitFrontmatter(page)
-  const at = embedLine(body, inner, nth)
-  if (at === -1) throw new Error('the embed is no longer on its own line in this page')
-  const lines = body.split('\n')
-  const indent = /^[ \t]*/.exec(lines[at])![0]
-  lines[at] = indentBlock(block, indent)
-  return frontmatter + lines.join('\n')
+  const block = card === cards[0] && hasTitleProperty(file) ? changeCardText(raw, null, cardWithTitle(cardFileTitle(file), card.text), 0) : raw
+  return inLineEnds(page, (text) => {
+    const { frontmatter, body } = splitFrontmatter(text)
+    const at = embedLine(body, inner, nth)
+    if (at === -1) throw new Error('the embed is no longer on its own line in this page')
+    const lines = body.split('\n')
+    const indent = /^[ \t]*/.exec(lines[at])![0]
+    lines[at] = indentBlock(block, indent)
+    return frontmatter + lines.join('\n')
+  })
 }
 
 /**
@@ -159,11 +170,14 @@ export function putCardBack(page: string, inner: string, nth: number, cardFile: 
  * card line stays byte for byte. The page's own ID and name come after (`retitle`).
  */
 export function cardFileAsPage(content: string): { content: string; title: string } {
-  const card = findCards(splitFrontmatter(content).body)[0]
   const title = cardFileTitle(content)
-  const back = card !== undefined && hasTitleProperty(content) ? changeCardText(content, null, cardWithTitle(title, card.text), 0) : content
-  const titled = title === '' ? back : setFrontmatterProperty(back, TITLE_KEY, title)
-  return { content: setFrontmatterProperty(titled, CARD_KIND_KEY, undefined), title }
+  const page = inLineEnds(content, (file) => {
+    const card = findCards(splitFrontmatter(file).body)[0]
+    const back = card !== undefined && hasTitleProperty(file) ? changeCardText(file, null, cardWithTitle(title, card.text), 0) : file
+    const titled = title === '' ? back : setFrontmatterProperty(back, TITLE_KEY, title)
+    return setFrontmatterProperty(titled, CARD_KIND_KEY, undefined)
+  })
+  return { content: page, title }
 }
 
 /**
@@ -182,18 +196,19 @@ export function canBeCardFile(content: string): boolean {
  */
 export function pageAsCardFile(content: string): { content: string; name: string } | null {
   if (!canBeCardFile(content)) return null
-  const card = findCards(splitFrontmatter(content).body)[0]
-  const { properties } = parseFrontmatter(splitFrontmatter(content).frontmatter)
+  const { text, back } = lineEnds(content)
+  const card = findCards(splitFrontmatter(text).body)[0]
+  const { properties } = parseFrontmatter(splitFrontmatter(text).frontmatter)
   const raw = properties[TITLE_KEY]
   const title = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : ''
-  let next = setFrontmatterProperty(content, CARD_KIND_KEY, CARD_KIND)
+  let next = setFrontmatterProperty(text, CARD_KIND_KEY, CARD_KIND)
   if (raw !== undefined) {
     const held = properties.aliases
     const aliases: unknown[] = Array.isArray(held) ? [...held] : held === undefined || held === null || held === '' ? [] : [held]
     if (title !== '' && !aliases.includes(title)) aliases.push(title)
     next = setFrontmatterProperty(setFrontmatterProperty(next, TITLE_KEY, undefined), 'aliases', aliases.length === 0 ? undefined : aliases)
   }
-  return { content: cardFileTitleMoved(next) ?? next, name: cardFileName(cardTitle(card.text), cardIdOf(card.line)!) }
+  return { content: back(cardFileTitleMoved(next) ?? next), name: cardFileName(cardTitle(card.text), cardIdOf(card.line)!) }
 }
 
 /**
@@ -202,7 +217,8 @@ export function pageAsCardFile(content: string): { content: string; name: string
  * that leaves has no ID yet (the sweep gives it one first).
  */
 export function splitCardFile(content: string): { keep: string; cards: CardFileOut[] } | null {
-  const { frontmatter, body } = splitFrontmatter(content)
+  const { text, back } = lineEnds(content)
+  const { frontmatter, body } = splitFrontmatter(text)
   const cards = findCards(body)
   if (cards.length < 2 || cards.slice(1).some((c) => cardIdOf(c.line) === null)) return null
   const lines = body.split('\n')
@@ -213,7 +229,7 @@ export function splitCardFile(content: string): { keep: string; cards: CardFileO
     const blank = lines[card.open - 1]?.trim() === '' && lines[end + 1]?.trim() === '' ? 1 : 0
     lines.splice(card.open, end - card.open + 1 + blank)
   }
-  return { keep: frontmatter + lines.join('\n'), cards: out }
+  return { keep: back(frontmatter + lines.join('\n')), cards: out }
 }
 
 /**
@@ -222,14 +238,16 @@ export function splitCardFile(content: string): { keep: string; cards: CardFileO
  * when there is no such text, or not exactly one card.
  */
 export function moveTextIntoCard(content: string): string | null {
-  const { frontmatter, body } = splitFrontmatter(content)
-  const shape = cardFileShape(body)
-  if (shape.problem !== 'outside') return null
-  const card = shape.cards[0]
-  const lines = body.split('\n')
-  const only = frontmatter + lines.slice(card.open, (card.lineAt ?? card.close) + 1).join('\n') + '\n'
-  const text = [shape.before, card.text.replace(/\n+$/, ''), shape.after].filter((t) => t !== '').join('\n\n')
-  return changeCardText(only, cardIdOf(card.line), text, 0)
+  return inLineEnds(content, (file) => {
+    const { frontmatter, body } = splitFrontmatter(file)
+    const shape = cardFileShape(body)
+    if (shape.problem !== 'outside') return null
+    const card = shape.cards[0]
+    const lines = body.split('\n')
+    const only = frontmatter + lines.slice(card.open, (card.lineAt ?? card.close) + 1).join('\n') + '\n'
+    const text = [shape.before, card.text.replace(/\n+$/, ''), shape.after].filter((t) => t !== '').join('\n\n')
+    return changeCardText(only, cardIdOf(card.line), text, 0)
+  })
 }
 
 /**
@@ -238,9 +256,11 @@ export function moveTextIntoCard(content: string): string | null {
  * title "Title", as New card starts. Its properties stay. Null when it holds a card.
  */
 export function cardFromText(content: string): string | null {
-  const { frontmatter, body } = splitFrontmatter(content)
-  const shape = cardFileShape(body)
-  if (shape.problem !== 'none') return null
-  const made = `${frontmatter}${cardBlock(shape.before === '' ? NEW_CARD_TEXT : shape.before, EMPTY_CARD_LINE)}\n`
-  return cardFileTitleMoved(made) ?? made
+  return inLineEnds(content, (file) => {
+    const { frontmatter, body } = splitFrontmatter(file)
+    const shape = cardFileShape(body)
+    if (shape.problem !== 'none') return null
+    const made = `${frontmatter}${cardBlock(shape.before === '' ? NEW_CARD_TEXT : shape.before, EMPTY_CARD_LINE)}\n`
+    return cardFileTitleMoved(made) ?? made
+  })
 }

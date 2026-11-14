@@ -13,8 +13,8 @@
 export type LineKind = 'text' | 'fence' | 'code' | 'card'
 
 const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/
-/** The fence of a card: the language `card` and nothing else (`cardLine.ts` `isCardFence`). */
-const CARD_FENCE_RE = /^[ \t]*(`{3,}|~{3,})[ \t]*card[ \t]*$/
+/** The fence of a card: the language `card` and nothing else (`cardLine.ts` `isCardFence`), a Windows line end's `\r` allowed (YAZ-5146). */
+const CARD_FENCE_RE = /^[ \t]*(`{3,}|~{3,})[ \t]*card[ \t]*\r?$/
 const CODE_SPAN_RE = /(`+)[\s\S]*?\1/g
 
 /** Does `line` close a block opened by `fence`? Same character, at least as long, nothing after it. */

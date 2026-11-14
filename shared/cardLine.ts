@@ -2,6 +2,7 @@ import { splitFrontmatter } from './frontmatter'
 import { closesFence, fenceOf } from './fences'
 import { canonicalPageId, isNumberId } from './pageId'
 import { cardTitle } from './cardText'
+import { inLineEnds, withLf } from './lineEnds'
 
 /**
  * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
@@ -285,10 +286,13 @@ export function settleCardCopy(keeper: CardSide | null, copy: CardSide): CardCop
 
 // ---------- cards in a page ----------
 
-/** A fence that opens a card: three or more backticks or tildes, then the language `card` and nothing else. */
-const CARD_FENCE_RE = /^([ \t]*)(`{3,}|~{3,})[ \t]*card[ \t]*$/
+/**
+ * A fence that opens a card: three or more backticks or tildes, then the language `card` and nothing else. The `\r` of
+ * a Windows line end (YAZ-5146) may end it: a reader splits on `\n` alone.
+ */
+const CARD_FENCE_RE = /^([ \t]*)(`{3,}|~{3,})[ \t]*card[ \t]*\r?$/
 /** A cheap first look: no page without a card fence pays for the line walk. */
-const ANY_CARD_FENCE_RE = /^[ \t]*(?:`{3,}|~{3,})[ \t]*card[ \t]*$/m
+const ANY_CARD_FENCE_RE = /^[ \t]*(?:`{3,}|~{3,})[ \t]*card[ \t]*\r?$/m
 
 /** Is `line` the opening fence of a card? (The line numbers read the card line as its block's comment.) */
 export const isCardFence = (line: string): boolean => CARD_FENCE_RE.test(line)
@@ -311,7 +315,9 @@ export interface CardBlock {
 
 /**
  * Every card in `text` (a page's body, or the whole file), in page order. A code block of any other language is
- * skipped whole, so a ```` ```card ```` written inside a ```` ```markdown ```` block is no card.
+ * skipped whole, so a ```` ```card ```` written inside a ```` ```markdown ```` block is no card. A page with Windows
+ * line ends (`\r\n`, YAZ-5146) has the same cards at the same line numbers, and each card's `text` has `\n` alone, so
+ * the rest of the app reads the same text for both kinds of page.
  */
 export function findCards(text: string): CardBlock[] {
   if (!ANY_CARD_FENCE_RE.test(text)) return []
@@ -338,6 +344,7 @@ export function findCards(text: string): CardBlock[] {
         get text() {
           return lines
             .slice(from, to)
+            .map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l))
             .map((l) => (l.startsWith(indent) ? l.slice(indent.length) : l.trimStart()))
             .join('\n')
         },
@@ -388,11 +395,16 @@ export function cardBlock(text: string, line: CardLine): string {
 /** The cards of a whole page (a Markdown file's text): those of its body, as the index reads them (`cardRecords` of the body). */
 export const pageCards = (content: string): CardBlock[] => findCards(splitFrontmatter(content).body)
 
-/** `rewriteCardLines` over a whole page: its properties block is never read for cards, and is kept byte for byte. */
+/**
+ * `rewriteCardLines` over a whole page: its properties block is never read for cards, and is kept byte for byte. It
+ * writes the page's own line end (YAZ-5146, `inLineEnds`): `change` gets the cards of the page read with `\n`.
+ */
 export function rewritePageCards(content: string, change: (card: CardBlock, index: number) => CardLine | undefined): string {
-  const { frontmatter, body } = splitFrontmatter(content)
-  const next = rewriteCardLines(body, change)
-  return next === body ? content : frontmatter + next
+  return inLineEnds(content, (page) => {
+    const { frontmatter, body } = splitFrontmatter(page)
+    const next = rewriteCardLines(body, change)
+    return next === body ? page : frontmatter + next
+  })
 }
 
 /** Thrown when a page holds no card with the ID asked for: the card was deleted, or the page changed under the caller. */
@@ -407,15 +419,19 @@ export class CardNotFoundError extends Error {
  * The page `content` with the TEXT of one card replaced by `text` (YAZ-5003: Edit card in the card window): card `id`
  * (the one at `index` when it holds `id`, else the first), or with no ID the card at `index`. The fence, its indent and
  * the card line stay; the fence grows when the new text holds a fence as long, so the text can never close the card.
- * The same text writes nothing new. Throws `CardNotFoundError`.
+ * The same text writes nothing new. The page keeps its own line end (YAZ-5146). Throws `CardNotFoundError`.
  */
 export function changeCardText(content: string, id: string | null, text: string, index = -1): string {
+  return inLineEnds(content, (page) => changedCardText(page, id, text, index))
+}
+
+function changedCardText(content: string, id: string | null, text: string, index: number): string {
   const { frontmatter, body } = splitFrontmatter(content)
   const cards = findCards(body)
   const at = id === null ? index : cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((card) => cardIdOf(card.line) === id)
   const card = cards[at]
   if (card === undefined) throw new CardNotFoundError(id ?? `#${index + 1}`)
-  const wanted = text.replace(/\n+$/, '')
+  const wanted = withLf(text).replace(/\n+$/, '')
   if (card.text === wanted) return content
   const lines = body.split('\n')
   const open = /^[ \t]*(`{3,}|~{3,})/.exec(lines[card.open])![1]
