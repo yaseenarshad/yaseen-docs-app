@@ -5,7 +5,8 @@ export const TRANSCRIPT_FIRST_LINE = 'The words of the card course.'
 
 /**
  * Pure: the page `Course transcript.md` of the card skill, made from the course script (YAZ-5119, suggestion 22).
- * One heading for each chapter, each clip's text as a paragraph, then the chapter's "Try it in the app" lines; last, a hidden
+ * One heading for each chapter, each clip's text as a paragraph, then the chapter's "Try it in the app" lines and the coach
+ * lines of its live steps ("In the app", YAZ-5366); last, a hidden
  * line that tells the rename tool to leave the page alone.
  */
 export function courseTranscript(course: readonly CourseChapter[]): string {
@@ -16,6 +17,12 @@ export function courseTranscript(course: readonly CourseChapter[]): string {
     if (chapter.tryIt !== undefined && chapter.tryIt.length > 0) {
       parts.push('### Try it in the app')
       parts.push(chapter.tryIt.map((step, n) => `${n + 1}. ${step.say}`).join('\n'))
+    }
+    // The coach lines of the live steps (YAZ-5366), in the order the course shows them.
+    const live = chapter.clips.flatMap((clip) => (clip.live ?? []).flatMap((step) => (step.say === undefined ? [] : [step.say])))
+    if (live.length > 0) {
+      parts.push('### In the app')
+      parts.push(live.map((say, n) => `${n + 1}. ${say}`).join('\n'))
     }
   })
   // The words are spoken English ("a note on your phone"), not the app's word for a page: the rename tool leaves this page alone. rename-note-to-page: keep

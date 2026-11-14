@@ -25,16 +25,20 @@
  * Yaseen approves each chapter's words before its voice is made (issue 6D). `skills/card-skill/Course transcript.md` is
  * made from this file: run `UPDATE_COURSE_TRANSCRIPT=1 npx vitest run client/src/course/script.test.ts` after a change.
  */
-import type { TourStep } from './tour'
+import type { LiveStep, TourStep } from './tour'
 import type { CourseDock } from '@shared/courseState'
 
 /** One spoken line: its clip, its caption, and the moments in it that a scene waits for. */
 /**
- * One clip. `dock` (YAZ-5365, the seam for phase 2): a clip that names a size starts a new PART of the course; the
- * player asks for that size there (`requestSize`), and the person's own choice of the part before ends. No clip names
- * one yet.
+ * One clip.
+ * - `dock` (YAZ-5365, YAZ-5366): the course's size for the clip: `full` for a lesson, `side` for "show and do" (the real
+ *   app beside the course, its controls lit on George's words), `corner` while the person does a step. A clip without
+ *   one keeps the size of the clip before it; a chapter starts in full. A run of clips with the same size is one PART:
+ *   the course asks for its size when it starts, and the person's own choice wins until the next part (`live.ts`).
+ * - `live` (YAZ-5366): the real controls the clip lights in the app, in order (`LiveStep` in `tour.ts`): on the clip's
+ *   mark at `mark`, or when its words end. A step with `done` is a do step: the clip holds until the real action.
  */
-export interface CourseClip { id: string; text: string; marks?: number[]; dock?: CourseDock }
+export interface CourseClip { id: string; text: string; marks?: number[]; dock?: CourseDock; live?: LiveStep[] }
 
 /** One chapter: what is shown, then the optional steps to try in the real app. */
 export interface CourseChapter { id: string; title: string; clips: CourseClip[]; tryIt?: TourStep[] }
@@ -109,91 +113,82 @@ export const COURSE: CourseChapter[] = [
     title: 'The card: the hub of an idea',
     clips: [
       // The paper index card from chapter 1, and the calendar behind it.
-      { id: 'c2-01', text: 'Quick recap: each thing you learn goes on a card. Now, what a card really is, and how to make one.' },
+      { id: 'c2-01', text: 'Quick recap: each thing you learn goes on a card. Now, what a card really is, and how to make one.', dock: 'full' },
       // The small paper index card with one short line of handwriting on it.
-      { id: 'c2-02', text: 'When most people hear "card", they picture a line or two on a small piece of paper.' },
+      { id: 'c2-02', text: 'When most people hear "card", they picture a line or two on a small piece of paper.', dock: 'full' },
       // The paper card becomes a dot in the middle of the stage; short lines reach out from it, like spokes. The word "Hub".
-      { id: 'c2-03', text: 'Think of it another way. A card is the hub of one idea: the centre where what you know about it comes together.' },
+      { id: 'c2-03', text: 'Think of it another way. A card is the hub of one idea: the centre where what you know about it comes together.', dock: 'full' },
       // A REAL CARD fills the stage, in the app's own look. Title: "Protein, carbs and fat". The front lights up:
       //   "The three things food is mostly made of are {{protein, carbs and fat}}."
       //   "Your body builds and repairs with {{protein}}, and gets its quick energy from {{carbs}}."
       // The hidden parts show as blanks.
-      { id: 'c2-04', text: 'Here is a real one. The front is the short version: the idea in a sentence or two, with the key part hidden.' },
+      { id: 'c2-04', text: 'Here is a real one. The front is the short version: the idea in a sentence or two, with the key part hidden.', dock: 'full' },
       // The same card turns to its back; three parts light up in turn, each under a thin line:
       //   "Protein builds and repairs. Carbs are quick energy. Fat is slow energy, stored."
       //   EXAMPLE: "An egg is mostly protein and fat. Bread is mostly carbs."
       //   MEMORY HOOK: "Protein is the bricks. Carbs are the kindling. Fat is the logs."
-      { id: 'c2-05', text: 'The back has the details: how it works, an example, a hook to remember it by.', marks: [0.325, 0.493, 0.687] },
+      { id: 'c2-05', text: 'The back has the details: how it works, an example, a hook to remember it by.', marks: [0.325, 0.493, 0.687], dock: 'full' },
       // The bottom of the back: CONNECTIONS, with one link pill and a few grey words after it.
-      { id: 'c2-22', text: 'And at the bottom, links to the cards it connects to. You will make those in chapter 10.' },
+      { id: 'c2-22', text: 'And at the bottom, links to the cards it connects to. You will make those in chapter 10.', dock: 'full' },
       // A SECOND REAL CARD, for a word. Title: "candid". The front lights up, two lines, the word a blank in both:
       //   "I asked for {{candid}} feedback, and she told me plainly what did not work."
       //   "Honest and direct, even when it is hard to hear, is {{candid}}."
-      { id: 'c2-30', text: 'Here is another, for a new word. The front has a sentence that uses the word, then what it means. The word is hidden in both.' },
+      { id: 'c2-30', text: 'Here is another, for a new word. The front has a sentence that uses the word, then what it means. The word is hidden in both.', dock: 'full' },
       // The word card turns to its back; its sections light up in turn:
       //   "Candid means open and honest, with nothing held back."
       //   PRONUNCIATION: "KAN-did". MEMORY HOOK: "A candid photo is one nobody posed for." EXAMPLES: two more sentences.
-      { id: 'c2-31', text: 'Its back has the details too: how to say it, where it comes from, more examples.', marks: [0.372, 0.53, 0.719] },
+      { id: 'c2-31', text: 'Its back has the details too: how to say it, where it comes from, more examples.', marks: [0.372, 0.53, 0.719], dock: 'full' },
       // Three sizes side by side: one bare line, the real card, a full page of text. The real card gets the check; "Front: the short version", "Back: the details".
-      { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. The short version on the front, the details on the back.' },
+      { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. The short version on the front, the details on the back.', dock: 'full' },
       // The lesson highlights the blanks on the front of the example card.
-      { id: 'c2-24', text: 'Keep the front simple. A simple front is easier to remember.' },
+      { id: 'c2-24', text: 'Keep the front simple. A simple front is easier to remember.', dock: 'full' },
       // The real card with a short back; a second and a third part join the back over time. It stays one card.
-      { id: 'c2-25', text: 'A card is never finished. It starts light, and it grows as you learn more.' },
+      { id: 'c2-25', text: 'A card is never finished. It starts light, and it grows as you learn more.', dock: 'full' },
       // All the cards together form one growing set, labelled "Card base"; cards slide together in new groups, like pieces that fit many ways.
-      { id: 'c2-26', text: 'All your cards together are your card base. Each card is one idea, so cards can be mixed and matched, wherever you need them.' },
+      { id: 'c2-26', text: 'All your cards together are your card base. Each card is one idea, so cards can be mixed and matched, wherever you need them.', dock: 'full' },
       // A blank card in the middle of the stage.
-      { id: 'c2-06', text: 'Your turn. Think of something you learned this week.' },
+      { id: 'c2-06', text: 'Your turn. Think of something you learned this week.', dock: 'full' },
       // An empty card with a blinking caret. WAITS: the person types a sentence or two.
-      { id: 'c2-07', text: 'Type the short version of it, in a sentence or two.' },
+      { id: 'c2-07', text: 'Type the short version of it, in a sentence or two.', dock: 'full' },
       // The words become buttons. WAITS: the person taps the word to hide.
-      { id: 'c2-08', text: 'Now tap the word you want to hide.' },
+      { id: 'c2-08', text: 'Now tap the word you want to hide.', dock: 'full' },
       // The word turns into a blank; the card takes its frame; the label "Front".
-      { id: 'c2-09', text: "That's the front. The hidden word is the part you will try to recall." },
+      { id: 'c2-09', text: "That's the front. The hidden word is the part you will try to recall.", dock: 'full' },
       // A line labelled "Side 2" appears under the front, with a caret. WAITS: the person types a line (or skips).
-      { id: 'c2-28', text: 'Now the back. Add one detail: how it works, or an example.' },
+      { id: 'c2-28', text: 'Now the back. Add one detail: how it works, or an example.', dock: 'full' },
       // The card, front only. WAITS: the person taps the card to show the word, then the back.
-      { id: 'c2-10', text: 'Tap the card to check yourself.' },
+      { id: 'c2-10', text: 'Tap the card to check yourself.', dock: 'full' },
       // Forgot and Remembered under the card. WAITS: the person picks one.
-      { id: 'c2-11', text: 'Did you remember it?' },
+      { id: 'c2-11', text: 'Did you remember it?', dock: 'full' },
       // The answer's quiet line under the card.
-      { id: 'c2-12', text: 'Either answer is fine. The app saves it with the card.' },
+      { id: 'c2-12', text: 'Either answer is fine. The app saves it with the card.', dock: 'full' },
       // The sidebar: the folder "Course Cards" opens and shows the new card file.
-      { id: 'c2-13', text: 'Your card is now a real file, in a folder called Course Cards, at the top of your vault.' },
+      { id: 'c2-13', text: 'Your card is now a real file, in a folder called Course Cards, at the top of your vault.', marks: [0.557], dock: 'side', live: [{ target: 'sidebar-course-cards', mark: 0 }] },
       // A folder's right-click menu, "New card"; the name box in the sidebar; a title is typed, Enter; the card's tab opens in Edit card, empty.
       // APP: client/src/sidebar/menuSections.ts (`newCard`, "New card"), client/src/sidebar/CreateInline.tsx (Enter), client/src/review/newCardFile.ts (the typed name is the title; the tab opens in Edit card).
-      { id: 'c2-15', text: 'In the app, right-click a folder and choose New card. Type the title, press Enter, then the front.' },
+      { id: 'c2-15', text: 'In the app, right-click a folder and choose New card. Type the title, press Enter, then the front.', marks: [0.122, 0.378, 0.551, 0.898], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } }, { target: 'new-card', mark: 1, say: 'Choose New card.', done: 'click' }, { target: 'new-card-name', mark: 2, say: 'Type a title, and press Enter.', done: { event: 'card-file-created' }, example: { text: 'Protein', enter: true } }, { target: 'card-editor', mark: 3, say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' }, example: { text: 'Your body builds and repairs with protein.' } }] },
       // A word is selected; the toolbar shows over it; the braces button "Hide word" is clicked; then the key row "Cmd + L hide word".
       // APP: client/src/editor/card/cardEditor.ts (`hideWordButton`: "Hide word", ⌘L, right after H1 H2 H3 T), client/src/editor/card/cardBlockView.ts (`CARD_EDIT_KEYS`, written "Cmd + L" by client/src/keys/keyWords.ts).
-      { id: 'c2-16', text: 'To hide a word, select it, and click Hide word in the toolbar. The key is Command L.' },
+      { id: 'c2-16', text: 'To hide a word, select it, and click Hide word in the toolbar. The key is Command L.', marks: [0.19, 0.44], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: 'Select one word. In the toolbar above it, click Hide word.', done: { event: 'card-word-hidden' } }] },
       // "/" opens the menu; "New side" is chosen; a line labelled "Side 2" splits the card; then the key row "Cmd + Shift + Enter new side".
       // APP: client/src/editor/card/cardEditor.ts (`newSideSlashRow`: "New side", ⌘⇧↵), client/src/editor/card/card.css ("Side 2" label, YAZ-5103). The toolbar has no side button.
-      { id: 'c2-17', text: 'For the back, type slash, and choose New side. The key is Command Shift Enter.' },
+      { id: 'c2-17', text: 'For the back, type slash, and choose New side. The key is Command Shift Enter.', marks: [0.179, 0.474], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: 'Type slash, and choose New side. Then add one detail.', done: { event: 'card-side-added' }, example: { text: 'An egg is mostly protein and fat.', newSide: true } }] },
       // On the back, three stars are typed on an empty line; they turn into a thin line; "EXAMPLE" is typed under it. Yaseen's word for each part is a section.
       // APP: client/src/editor/card/cardEditor.ts (three stars on an empty line stay a line, an hr; three dashes are a new side).
-      { id: 'c2-29', text: 'You can add sections to the back. Type three stars on an empty line, and they turn into a line. Sections break up the details, so they are easier to take in.' },
+      { id: 'c2-29', text: 'You can add sections to the back. Type three stars on an empty line, and they turn into a line. Sections break up the details, so they are easier to take in.', dock: 'corner' },
       // Esc, or the Done button in the card's head; the card shows again, saved.
       // APP: client/src/editor/card/cardBlockView.ts (the edit button reads "Done" while editing; "Cmd + Enter / Esc Done").
-      { id: 'c2-20', text: 'Press Escape, or click Done, and the card saves.' },
+      { id: 'c2-20', text: 'Press Escape, or click Done, and the card saves.', marks: [0.02, 0.479], dock: 'corner', live: [{ target: 'card-done', mark: 0, say: 'Press Escape, or click Done, to save your card.', done: { event: 'card-edit-done' } }] },
       // The card file's tab: the big title at the top; a click, new words, Enter; the tab and the sidebar take the new name.
       // APP: shared/cardFileFormat.ts (the title is on the card line, `title "…"`, YAZ-5308; the file is named after it), client/src/editor/CardFileView.tsx (`PageTitle`: click, type, Enter; `retitle` writes the title, then renames the file). A card INSIDE a page has its title on its card line too.
-      { id: 'c2-14', text: "The title sits at the top of the card's tab. Click it to change it, and the file's name follows." },
+      { id: 'c2-14', text: "The title sits at the top of the card's tab. Click it to change it, and the file's name follows.", dock: 'side' },
       // The card's ⋯ menu: "Title on the front · Show"; a click; it reads "Hide".
       // APP: client/src/review/cardPane.tsx (`cardMenuSections`: "Title on the front", Show / Hide).
-      { id: 'c2-21', text: "If the title gives the answer away, set Title on the front to Hide, in the card's menu." },
+      { id: 'c2-21', text: "If the title gives the answer away, set Title on the front to Hide, in the card's menu.", marks: [0.46, 0.862], dock: 'side', live: [{ target: 'card-menu', mark: 1 }] },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c2-18', text: 'To make one in the real app now, choose Try it in the app.' },
+      { id: 'c2-18', text: 'To make one in the real app now, choose Try it in the app.', dock: 'full' },
       // The real card as a hub, with its spokes; then the sidebar's Inbox row glows softly.
-      { id: 'c2-19', text: 'A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.' },
-    ],
-    tryIt: [
-      { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } },
-      { target: 'new-card', say: 'Choose New card.', done: 'click' },
-      { target: 'new-card-name', say: 'Type a title, and press Enter.', done: { event: 'card-file-created' }, example: { text: 'Protein', enter: true } },
-      { target: 'card-editor', say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' }, example: { text: 'Your body builds and repairs with protein.' } },
-      { target: 'card-editor', say: 'Select one word. In the toolbar above it, click Hide word.', done: { event: 'card-word-hidden' } },
-      { target: 'card-editor', say: 'Type slash, and choose New side. Then add one detail.', done: { event: 'card-side-added' }, example: { text: 'An egg is mostly protein and fat.', newSide: true } },
-      { target: 'card-done', say: 'Press Escape, or click Done, to save your card.', done: { event: 'card-edit-done' } },
+      { id: 'c2-19', text: 'A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.', dock: 'full' },
     ],
   },
   {
@@ -201,61 +196,54 @@ export const COURSE: CourseChapter[] = [
     title: 'The Inbox, each day',
     clips: [
       // The card from chapter 2, in the Course Cards folder.
-      { id: 'c3-01', text: 'You made your first card. Here is the daily habit that brings it back.', marks: [0.6, 0.771] },
+      { id: 'c3-01', text: 'You made your first card. Here is the daily habit that brings it back.', marks: [0.6, 0.771], dock: 'full' },
       // A calendar with many cards on many days; it fades.
-      { id: 'c3-02', text: 'So which card do you look at, and when?', marks: [0.705] },
+      { id: 'c3-02', text: 'So which card do you look at, and when?', marks: [0.705], dock: 'full' },
       // The real sidebar; the Inbox row lights up.
-      { id: 'c3-03', text: 'The app keeps track of the dates for you. All you do is open the Inbox every day.', marks: [0.636, 0.802] },
+      { id: 'c3-03', text: 'The app keeps track of the dates for you. All you do is open the Inbox every day.', marks: [0.636, 0.802], dock: 'side', live: [{ target: 'sidebar-inbox', mark: 0 }] },
       // The Inbox row's number, "4".
-      { id: 'c3-04', text: 'The Inbox is in the sidebar. The number beside it is how many cards are due now.', marks: [0.439, 0.798] },
+      { id: 'c3-04', text: 'The Inbox is in the sidebar. The number beside it is how many cards are due now.', marks: [0.439, 0.798], dock: 'side', live: [{ target: 'sidebar-inbox', mark: 0 }] },
       // The real Inbox on sample cards: one card in the middle, "1 of 4".
-      { id: 'c3-05', text: 'The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.', marks: [0.182, 0.752] },
+      { id: 'c3-05', text: 'The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.', marks: [0.182, 0.752], dock: 'full' },
       // The cover of the journal Science, 2008; a paper slides out: "The Critical Importance of Retrieval for Learning"; one sentence is highlighted.
       // SOURCE: Karpicke & Roediger 2008, "The Critical Importance of Retrieval for Learning", Science 319(5865):966-968.
-      { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.', marks: [0.613, 0.801] },
+      { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.', marks: [0.613, 0.801], dock: 'full' },
       // Two bars rise, one week later: "Kept testing themselves: 80%", "Kept re-reading, no testing: 36%".
       // SOURCE: the same paper, Fig. 2 and text: about 80% recalled in the repeated-testing conditions (ST, SnT); 36% in the repeated-study, no-more-testing condition (STn).
-      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.', marks: [0.256, 0.827] },
+      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.', marks: [0.256, 0.827], dock: 'full' },
       // Under the bars: "Rounds of practice: 237 and 243".
       // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
-      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617] },
+      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617], dock: 'full', live: [{ target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder.', done: { event: 'folder-menu-open' } }, { target: 'review-folder', say: 'Choose Review this folder.', done: 'click' }] },
       // Space; the hidden word shows, then the back.
-      { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.', marks: [0.062, 0.477, 0.777] },
+      { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.', marks: [0.062, 0.477, 0.777], dock: 'corner', live: [{ target: 'inbox-card', mark: 0, say: 'Look at the card, and try to recall the hidden word. Then press Space.', done: { event: 'inbox-step-shown' } }] },
       // Forgot and Remembered show under the card.
-      { id: 'c3-09', text: 'Then choose Forgot or Remembered. Be honest. It only helps you.', marks: [0.14, 0.336] },
+      { id: 'c3-09', text: 'Then choose Forgot or Remembered. Be honest. It only helps you.', marks: [0.14, 0.336], dock: 'corner', live: [{ target: 'inbox-answers', mark: 0, say: 'Now choose Forgot or Remembered.', done: { event: 'inbox-answered' } }] },
       // The hover on Remembered: "Remembered · 9 days".
-      { id: 'c3-10', text: 'Hold the pointer on a button to see when the card comes back.', marks: [0.291, 0.54] },
+      { id: 'c3-10', text: 'Hold the pointer on a button to see when the card comes back.', marks: [0.291, 0.54], dock: 'side', live: [{ target: 'inbox-answers', mark: 0 }] },
       // The key row: 1 and 2 on the buttons; ⌘Z.
-      { id: 'c3-11', text: 'You can also press 1 for Forgot and 2 for Remembered. Command Z takes back the last answer.', marks: [0.155, 0.371, 0.629, 0.774] },
+      { id: 'c3-11', text: 'You can also press 1 for Forgot and 2 for Remembered. Command Z takes back the last answer.', marks: [0.155, 0.371, 0.629, 0.774], dock: 'side', live: [{ target: 'inbox-answers', mark: 0 }] },
       // The calendar again, under the card.
-      { id: 'c3-12', text: 'Based on that, the app moves the calendar for you.', marks: [0.442] },
+      { id: 'c3-12', text: 'Based on that, the app moves the calendar for you.', marks: [0.442], dock: 'full' },
       // Forgot; the card's date moves closer.
-      { id: 'c3-13', text: 'If you forgot, the card comes back sooner, so you can learn it again.', marks: [0.122, 0.455] },
+      { id: 'c3-13', text: 'If you forgot, the card comes back sooner, so you can learn it again.', marks: [0.122, 0.455], dock: 'full' },
       // The forgotten card goes to the end of the queue and comes round again.
-      { id: 'c3-14', text: 'In fact, a card you forgot comes back later in the same review, until you remember it.', marks: [0.283, 0.713] },
+      { id: 'c3-14', text: 'In fact, a card you forgot comes back later in the same review, until you remember it.', marks: [0.283, 0.713], dock: 'full' },
       // Remembered; the card's date moves further, a bigger gap each time.
-      { id: 'c3-15', text: 'If you remembered, the card waits longer. Each time you remember it, the wait grows.', marks: [0.276, 0.605, 0.776] },
+      { id: 'c3-15', text: 'If you remembered, the card waits longer. Each time you remember it, the wait grows.', marks: [0.276, 0.605, 0.776], dock: 'full' },
       // A new card: two check marks, then it leaves for a later day.
-      { id: 'c3-16', text: 'A new card needs two Remembered in a row. Then it leaves for a day or more.', marks: [0.227, 0.352, 0.63] },
+      { id: 'c3-16', text: 'A new card needs two Remembered in a row. Then it leaves for a day or more.', marks: [0.227, 0.352, 0.63], dock: 'full' },
       // The dates fill in by themselves.
-      { id: 'c3-17', text: 'You never set a date. The app works out each date from your answers.', marks: [0.183, 0.766] },
+      { id: 'c3-17', text: 'You never set a date. The app works out each date from your answers.', marks: [0.183, 0.766], dock: 'full' },
       // A few days pass on the calendar; the due cards wait in the Inbox.
-      { id: 'c3-18', text: "Missed a day? That's fine. The cards that are due wait in the Inbox until you come back.", marks: [0.069, 0.664] },
+      { id: 'c3-18', text: "Missed a day? That's fine. The cards that are due wait in the Inbox until you come back.", marks: [0.069, 0.664], dock: 'full' },
       // "New cards a day: 10" in Settings › Cards.
-      { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.', marks: [0.399, 0.776] },
+      { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.', marks: [0.399, 0.776], dock: 'full' },
       // The done screen: "Inbox complete."
-      { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today.", marks: [0.157, 0.451] },
+      { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today.", marks: [0.157, 0.451], dock: 'full' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.', marks: [0.649] },
+      { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.', marks: [0.649], dock: 'corner', live: [{ target: 'sidebar-inbox', say: 'From tomorrow, start here. Click Inbox to see what is due.', done: 'click' }] },
       // A page of text, with a space between two paragraphs.
-      { id: 'c3-22', text: 'A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.', marks: [0.221, 0.483, 0.809] },
-    ],
-    tryIt: [
-      { target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder.', done: { event: 'folder-menu-open' } },
-      { target: 'review-folder', say: 'Choose Review this folder.', done: 'click' },
-      { target: 'inbox-card', say: 'Look at the card, and try to recall the hidden word. Then press Space.', done: { event: 'inbox-step-shown' } },
-      { target: 'inbox-answers', say: 'Now choose Forgot or Remembered.', done: { event: 'inbox-answered' } },
-      { target: 'sidebar-inbox', say: 'From tomorrow, start here. Click Inbox to see what is due.', done: 'click' },
+      { id: 'c3-22', text: 'A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.', marks: [0.221, 0.483, 0.809], dock: 'full' },
     ],
   },
   {
@@ -263,46 +251,40 @@ export const COURSE: CourseChapter[] = [
     title: 'Where a card lives',
     clips: [
       // The card file and the Inbox, side by side.
-      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your pages.', marks: [0.336, 0.714] },
+      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your pages.', marks: [0.336, 0.714], dock: 'full' },
       // Three empty frames side by side: "By itself", "In a page", "Embedded".
-      { id: 'c4-02', text: 'A card can live in three places. The review works the same in each one.', marks: [0.22, 0.535] },
+      { id: 'c4-02', text: 'A card can live in three places. The review works the same in each one.', marks: [0.22, 0.535], dock: 'full' },
       // The card file from chapter 2 in its own tab.
-      { id: 'c4-03', text: "First, a card by itself. That's the card file you made: one file, one card.", marks: [0.453, 0.657, 0.793] },
+      { id: 'c4-03', text: "First, a card by itself. That's the card file you made: one file, one card.", marks: [0.453, 0.657, 0.793], dock: 'side', live: [{ target: 'sidebar-course-cards', mark: 0 }] },
       // A page of text with a card between two paragraphs.
-      { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.', marks: [0.193, 0.783] },
+      { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.', marks: [0.193, 0.783], dock: 'full' },
       // A "/card" typed in a page; a new, empty card opens for editing, its Title field has the keyboard (YAZ-5308).
       // APP: client/src/editor/card/cardBlockView.ts (`edit('title')`), client/src/editor/card/cardEditor.ts (`selectTitle`, placeholder "Title").
-      { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.', marks: [0.446, 0.652] },
+      { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.', marks: [0.446, 0.652], dock: 'full' },
       // A card in a page with its ⋯ menu, its Reviews, and the Inbox behind it.
-      { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.', marks: [0.336, 0.595, 0.784] },
+      { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.', marks: [0.336, 0.595, 0.784], dock: 'full' },
       // A page's right-click menu: "Review this page".
-      { id: 'c4-07', text: 'To review only the cards of one page, right-click the page, and choose Review this page.', marks: [0.424, 0.724] },
+      { id: 'c4-07', text: 'To review only the cards of one page, right-click the page, and choose Review this page.', marks: [0.424, 0.724], dock: 'full' },
       // A page shows a card that lives in another file; an arrow back to the card file.
-      { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.', marks: [0.545, 0.853] },
+      { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.', marks: [0.545, 0.853], dock: 'full' },
       // The card's ⋯ menu, "Copy card link"; a paste in the page, a pill; a right-click on the pill, "Show as embed".
       // APP: client/src/review/cardPane.tsx ("Copy card link" copies `[[ID]]`, on the card file tab), client/src/editor/linkMenu.ts ("Show as embed"),
       // client/src/editor/card/cardEmbed.test.ts. The paste chip's "Embed" shows only for a pasted card file PATH (client/src/editor/pathPaste.ts), not for `[[ID]]`.
-      { id: 'c4-09', text: "To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.", marks: [0.183, 0.391, 0.624, 0.841] },
+      { id: 'c4-09', text: "To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.", marks: [0.183, 0.391, 0.624, 0.841], dock: 'corner', live: [{ target: 'card-menu', mark: 0, say: "Open your card's menu: the three dots in its head.", done: 'click' }, { target: 'card-copy-link', mark: 1, say: 'Choose Copy card link.', done: 'click' }, { target: 'course-page', mark: 2, say: 'Now open Course page, in the Course Cards folder.', done: 'click' }, { target: 'page-editor', mark: 3, say: 'Click in the page, and paste with Command V. Then right-click the link, and choose Show as embed.', done: { event: 'card-embedded' } }] },
       // A short message to the agent: "Embed my protein card in the Food page"; the embed appears in the page.
-      { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.', marks: [0.393, 0.861] },
+      { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.', marks: [0.393, 0.861], dock: 'full' },
       // The embed's head: ↗ Embedded from "…" · ID.
-      { id: 'c4-10', text: "The embed has a small head that says Embedded from, with the card's title.", marks: [0.446, 0.802] },
+      { id: 'c4-10', text: "The embed has a small head that says Embedded from, with the card's title.", marks: [0.446, 0.802], dock: 'full' },
       // Edit card on the embed; the card file changes too.
-      { id: 'c4-11', text: 'Edit an embed, and you change the one real card. Its history stays with it.', marks: [0.404, 0.659] },
+      { id: 'c4-11', text: 'Edit an embed, and you change the one real card. Its history stays with it.', marks: [0.404, 0.659], dock: 'full' },
       // A card moves between the three frames; its history line follows.
-      { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.', marks: [0.221, 0.669] },
+      { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.', marks: [0.221, 0.669], dock: 'full' },
       // Two labels: "A fact on its own" under the card file, "Part of your pages" under the page.
-      { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.', marks: [0.211, 0.744] },
+      { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.', marks: [0.211, 0.744], dock: 'full' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.', marks: [0.621] },
+      { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.', marks: [0.621], dock: 'full' },
       // One card shown in three pages at once; lines lead back to it. Then the stage widens.
-      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.', marks: [0.278, 0.475, 0.798] },
-    ],
-    tryIt: [
-      { target: 'card-menu', say: "Open your card's menu: the three dots in its head.", done: 'click' },
-      { target: 'card-copy-link', say: 'Choose Copy card link.', done: 'click' },
-      { target: 'course-page', say: 'Now open Course page, in the Course Cards folder.', done: 'click' },
-      { target: 'page-editor', say: 'Click in the page, and paste with Command V. Then right-click the link, and choose Show as embed.', done: { event: 'card-embedded' } },
+      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.', marks: [0.278, 0.475, 0.798], dock: 'full' },
     ],
   },
   {
@@ -559,83 +541,75 @@ export const COURSE: CourseChapter[] = [
     title: 'Links: how cards connect',
     clips: [
       // The four step icons; then two cards, a thin line drawn between them.
-      { id: 'c10-01', text: 'Quick recap: you capture, create, review and improve. Now, how your cards connect, and why that beats folders.', marks: [0.634, 0.879] },
+      { id: 'c10-01', text: 'Quick recap: you capture, create, review and improve. Now, how your cards connect, and why that beats folders.', marks: [0.634, 0.879], dock: 'full' },
       // A computer's folders: one file goes into one folder, and the folder closes.
-      { id: 'c10-02', text: 'Most of us keep things in files and folders. Computers taught us: one thing, one place.', marks: [0.24, 0.7] },
+      { id: 'c10-02', text: 'Most of us keep things in files and folders. Computers taught us: one thing, one place.', marks: [0.24, 0.7], dock: 'full' },
       // A new card hovers over three folders; a question mark: "Where does this go?"
-      { id: 'c10-03', text: 'So when you make a card, you ask: where does this go?', marks: [0.22, 0.61] },
+      { id: 'c10-03', text: 'So when you make a card, you ask: where does this go?', marks: [0.22, 0.61], dock: 'full' },
       // An old office: a filing cabinet; one sheet of paper goes into one drawer, and the drawer shuts. Then the same picture as computer folders.
-      { id: 'c10-30', text: 'Computers copied the paper office, where a sheet of paper sits in one drawer.', marks: [0.14, 0.265, 0.53, 0.811] },
+      { id: 'c10-30', text: 'Computers copied the paper office, where a sheet of paper sits in one drawer.', marks: [0.14, 0.265, 0.53, 0.811], dock: 'full' },
       // The drawer fades; a head in profile with ideas as dots and lines; then the app, with cards loose and linked, no folder required. (Yaseen: a "but" before the app's choice.)
-      { id: 'c10-31', text: 'But that is not how your brain works. And the app does not make you work that way.', marks: [0.235, 0.542, 0.77] },
+      { id: 'c10-31', text: 'But that is not how your brain works. And the app does not make you work that way.', marks: [0.235, 0.542, 0.77], dock: 'full' },
       // The folders step aside: all the cards in one open box, or in folders. "Not required", then "Your choice".
-      { id: 'c10-04', text: 'That is why the app does not require folders. It leaves the choice to you.', marks: [0.492, 0.723] },
+      { id: 'c10-04', text: 'That is why the app does not require folders. It leaves the choice to you.', marks: [0.492, 0.723], dock: 'full' },
       // The advice as a card of its own: "Few folders. Many links." A pile of nested folders fades; a few cards with lines between them stay.
-      { id: 'c10-28', text: 'But with great power comes great responsibility. Our advice: keep folders few, and rely on links.', marks: [0.1, 0.657, 0.921] },
+      { id: 'c10-28', text: 'But with great power comes great responsibility. Our advice: keep folders few, and rely on links.', marks: [0.1, 0.657, 0.921], dock: 'full' },
       // One folder is made, slowly and on purpose; the rest of the cards stay loose, joined by links.
-      { id: 'c10-29', text: 'Make a folder only when you truly need one.', marks: [0.204, 0.536, 0.663] },
+      { id: 'c10-29', text: 'Make a folder only when you truly need one.', marks: [0.204, 0.536, 0.663], dock: 'full' },
       // A line goes from one card to another; the words "Link: points to another card"; the protein card of chapter 7 and its line back to the umbrella.
-      { id: 'c10-05', text: 'Links hold them together. You have seen one: the protein card, linked to its umbrella.', marks: [0.16, 0.57, 0.84] },
+      { id: 'c10-05', text: 'Links hold them together. You have seen one: the protein card, linked to its umbrella.', marks: [0.16, 0.57, 0.84], dock: 'full' },
       // A head in profile; inside it, ideas as dots with lines between them, not boxes.
-      { id: 'c10-06', text: 'Your mind works by association: one idea calls up another.', marks: [0.147, 0.335, 0.555, 0.727] },
+      { id: 'c10-06', text: 'Your mind works by association: one idea calls up another.', marks: [0.147, 0.335, 0.555, 0.727], dock: 'full' },
       // One dot lights up; the light spreads along its lines to the dots linked to it.
       // SOURCE: Collins & Loftus 1975, "A spreading-activation theory of semantic processing", Psychological Review 82(6): memory as a network of linked concepts; activation spreads from one to the ones linked to it (priming).
-      { id: 'c10-07', text: 'Researchers describe memory as a web of linked ideas. Think of one, and the ones linked to it come to mind more easily.', marks: [0.14, 0.49, 0.62] },
+      { id: 'c10-07', text: 'Researchers describe memory as a web of linked ideas. Think of one, and the ones linked to it come to mind more easily.', marks: [0.14, 0.49, 0.62], dock: 'full' },
       // A new dot joins the web where it fits, next to dots already there; it stays lit.
       // SOURCE: van Kesteren, Ruiter, Fernández & Henson 2012, "How schema and novelty augment memory formation", Trends in Neurosciences 35(4); Brod, Werkle-Bergner & Shing 2013, "The influence of prior knowledge on memory", Frontiers in Behavioral Neuroscience 7.
-      { id: 'c10-08', text: 'And researchers found that new facts are usually remembered better when they fit with something you already know.', marks: [0.22, 0.65] },
+      { id: 'c10-08', text: 'And researchers found that new facts are usually remembered better when they fit with something you already know.', marks: [0.22, 0.65], dock: 'full' },
       // The food tree of chapter 7 on the left; a second small tree on the right, "Exercise". A dotted line wants to cross between them.
-      { id: 'c10-23', text: 'A tree has branches. But ideas also connect across trees, and a folder cannot show that.', marks: [0.29, 0.48, 0.75] },
+      { id: 'c10-23', text: 'A tree has branches. But ideas also connect across trees, and a folder cannot show that.', marks: [0.29, 0.48, 0.75], dock: 'full' },
       // A "What if" frame: the card "Protein" goes into a folder "Food".
-      { id: 'c10-09', text: 'An easy example. Say you did sort your cards into folders. Your protein card would sit in Food.', marks: [0.25, 0.698, 0.831, 0.886] },
+      { id: 'c10-09', text: 'An easy example. Say you did sort your cards into folders. Your protein card would sit in Food.', marks: [0.25, 0.698, 0.831, 0.886], dock: 'full' },
       // Still "What if": a card "How muscle grows" goes into a folder "Exercise".
-      { id: 'c10-10', text: 'And your card on how muscle grows would sit in Exercise.', marks: [0.277, 0.673] },
+      { id: 'c10-10', text: 'And your card on how muscle grows would sit in Exercise.', marks: [0.277, 0.673], dock: 'full' },
       // An arm lifts a weight; small protein blocks move into the muscle.
-      { id: 'c10-11', text: 'They belong together: your body builds muscle out of protein.', marks: [0.44, 0.59] },
+      { id: 'c10-11', text: 'They belong together: your body builds muscle out of protein.', marks: [0.44, 0.59], dock: 'full' },
       // The two folders stay shut, each card inside its own; then a line runs from the protein card straight to the muscle card.
-      { id: 'c10-12', text: 'A card can live in only one folder, so the folders keep them apart. A link joins them.', marks: [0.235, 0.568, 0.772] },
+      { id: 'c10-12', text: 'A card can live in only one folder, so the folders keep them apart. A link joins them.', marks: [0.235, 0.568, 0.772], dock: 'full' },
       // Two questions side by side: "Folders: where does this go?" and "Links: what does this connect to?"
-      { id: 'c10-13', text: 'Folders ask: where does this go? Links ask: what does this connect to?', marks: [0.22, 0.47, 0.67] },
+      { id: 'c10-13', text: 'Folders ask: where does this go? Links ask: what does this connect to?', marks: [0.22, 0.47, 0.67], dock: 'full' },
       // A card links to a card file, a card in a page, and a page.
       // APP: docs/CONTRACTS.md "Links to a card" (YAZ-5030); client/src/links/completion.ts (`cardLinkCandidates`: cards in files and in pages, after the pages).
-      { id: 'c10-14', text: 'A card can link to any card, wherever it lives, and to any page.', marks: [0.23, 0.4, 0.72] },
+      { id: 'c10-14', text: 'A card can link to any card, wherever it lives, and to any page.', marks: [0.23, 0.4, 0.72], dock: 'full' },
       // The agent's window: "These two cards connect: Protein and How muscle grows. Add the link?"
-      { id: 'c10-26', text: "Ask your agent to suggest connections in chat and explain why the cards belong together.", marks: [0.19, 0.42] },
+      { id: 'c10-26', text: "Ask your agent to suggest connections in chat and explain why the cards belong together.", marks: [0.19, 0.42], dock: 'full' },
       // The agent shows the link and its reason in the chat; the person reads it and says yes; only then does the card change. The word "Handmade".
-      { id: 'c10-27', text: "Read each suggestion. If the connection makes sense to you, tell the agent to add that link.", marks: [0.03, 0.12, 0.36, 0.62] },
+      { id: 'c10-27', text: "Read each suggestion. If the connection makes sense to you, tell the agent to add that link.", marks: [0.03, 0.12, 0.36, 0.62], dock: 'full' },
       // After the pill, a few grey words: "muscle is built from protein". The pill and its reason sit on one line.
-      { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.', marks: [0.11, 0.34, 0.64] },
+      { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.', marks: [0.11, 0.34, 0.64], dock: 'full' },
       // Edit card on the protein card; the caret at the end of a line; "[[" and "mus" are typed; the list opens.
       // APP: client/src/editor/card/cardEditorFeatures.ts (pills and the `[[` picker are on in Edit card), client/src/editor/wikilink/wikilinkPicker.ts.
-      { id: 'c10-15', text: "To link by hand, edit the card. Type two square brackets, then a few letters of the other card's title.", marks: [0.2, 0.46, 0.7] },
+      { id: 'c10-15', text: "To link by hand, edit the card. Type two square brackets, then a few letters of the other card's title.", marks: [0.2, 0.46, 0.7], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Open the Course Cards folder, and click one of your cards.', done: { event: 'card-file-open' } }, { target: 'card-edit', mark: 0, say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } }, { target: 'card-editor', mark: 1, say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' }, example: { text: '[[', lineEnd: true } }] },
       // The list: pages, then cards with the card icon; the card row is clicked.
       // APP: client/src/links/completion.ts (card rows have the card icon and insert `[[ID]]`; a card file is one row, YAZ-5134).
-      { id: 'c10-16', text: 'A list shows what matches. Click the one with the card icon.', marks: [0.07, 0.5, 0.7] },
+      { id: 'c10-16', text: 'A list shows what matches. Click the one with the card icon.', marks: [0.07, 0.5, 0.7], dock: 'corner', live: [{ target: 'link-picker', mark: 1, say: 'Click the row with the card icon.', done: { event: 'card-link-added' } }] },
       // `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
       // APP: docs/CONTRACTS.md "Links to a card": the pill shows the title, then the ID small and grey, with the card icon (`wikilink--card`).
-      { id: 'c10-17', text: "The link turns into a pill: the other card's title, with its ID small beside it.", marks: [0.21, 0.41, 0.66] },
+      { id: 'c10-17', text: "The link turns into a pill: the other card's title, with its ID small beside it.", marks: [0.21, 0.41, 0.66], dock: 'corner', live: [{ target: 'card-done', say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } }] },
       // A click on the pill; the muscle card opens in the card window; under it, "Linked mentions (1)" lists the protein card.
       // APP: client/src/editor/createCrepe.ts (a card pill's plain click opens the card window), client/src/review/cardPane.tsx ("Linked mentions (n)"), shared/cardLinks.ts (`cardBacklinks`), shared/fences.ts (a card's text counts).
-      { id: 'c10-18', text: 'Click the pill, and that card opens. Under it, Linked mentions lists what links to it.', marks: [0.07, 0.27, 0.55] },
+      { id: 'c10-18', text: 'Click the pill, and that card opens. Under it, Linked mentions lists what links to it.', marks: [0.07, 0.27, 0.55], dock: 'corner', live: [{ target: 'card-link-pill', mark: 0, say: 'Click the pill. The other card opens, and Linked mentions lists your first card.', done: 'click' }] },
       // One card with many lines coming in to it, "Linked mentions (12)"; it glows as a hub, like the dot of chapter 2.
-      { id: 'c10-25', text: 'Some cards end up with many links pointing to them. Those are your hubs: the ideas the rest leans on.', marks: [0.23, 0.55] },
+      { id: 'c10-25', text: 'Some cards end up with many links pointing to them. Those are your hubs: the ideas the rest leans on.', marks: [0.23, 0.55], dock: 'full' },
       // In Edit card, the caret after the pill; Backspace; the pill goes.
       // APP: client/src/editor/wikilink/idLinkCaret.ts (Backspace removes the whole link), client/src/editor/linkMenu.ts ("Remove link" on a right-click).
-      { id: 'c10-19', text: 'To remove a link, edit the card, and delete the pill like a word.', marks: [0.26, 0.53, 0.7] },
+      { id: 'c10-19', text: 'To remove a link, edit the card, and delete the pill like a word.', marks: [0.26, 0.53, 0.7], dock: 'full' },
       // A loose pile of cards; lines join them one by one, until it is one connected web.
-      { id: 'c10-20', text: 'Your card base is your knowledge base. Links make it a base, not a pile.', marks: [0.52, 0.72, 0.83] },
+      { id: 'c10-20', text: 'Your card base is your knowledge base. Links make it a base, not a pile.', marks: [0.52, 0.72, 0.83], dock: 'full' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c10-21', text: 'To link two of your Course Cards, choose Try it in the app.', marks: [0.59] },
+      { id: 'c10-21', text: 'To link two of your Course Cards, choose Try it in the app.', marks: [0.59], dock: 'full' },
       // The protein card and the muscle card with their line; then the garden from chapter 9.
-      { id: 'c10-22', text: 'Ask what a card connects to, not where it goes. Next: how to keep your tree alive.', marks: [0.31, 0.6] },
-    ],
-    tryIt: [
-      { target: 'sidebar-course-cards', say: 'Open the Course Cards folder, and click one of your cards.', done: { event: 'card-file-open' } },
-      { target: 'card-edit', say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } },
-      { target: 'card-editor', say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' }, example: { text: '[[', lineEnd: true } },
-      { target: 'link-picker', say: 'Click the row with the card icon.', done: { event: 'card-link-added' } },
-      { target: 'card-done', say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } },
-      { target: 'card-link-pill', say: 'Click the pill. The other card opens, and Linked mentions lists your first card.', done: 'click' },
+      { id: 'c10-22', text: 'Ask what a card connects to, not where it goes. Next: how to keep your tree alive.', marks: [0.31, 0.6], dock: 'full' },
     ],
   },
   {
@@ -643,48 +617,43 @@ export const COURSE: CourseChapter[] = [
     title: 'Be a gardener',
     clips: [
       // The trees of cards with their links; then the Inbox with a card, and the Improve icon from chapter 9.
-      { id: 'c11-01', text: 'Your cards form trees, joined by links. Now, how to improve them as you review.', marks: [0.331, 0.562] },
+      { id: 'c11-01', text: 'Your cards form trees, joined by links. Now, how to improve them as you review.', marks: [0.331, 0.562], dock: 'full' },
       // A garden: a gardener clears weeds and prunes a branch; the garden fills out.
-      { id: 'c11-02', text: 'Think of a gardener. A garden does well when someone clears it and prunes it.', marks: [0.33, 0.65, 0.8] },
+      { id: 'c11-02', text: 'Think of a gardener. A garden does well when someone clears it and prunes it.', marks: [0.33, 0.65, 0.8], dock: 'full' },
       // A card is reworded; a small glow over it.
-      { id: 'c11-03', text: 'That is not a chore. Each fix makes you think about the idea again, and that is learning too.', marks: [0.26, 0.82] },
+      { id: 'c11-03', text: 'That is not a chore. Each fix makes you think about the idea again, and that is learning too.', marks: [0.26, 0.82], dock: 'full' },
       // A card that keeps turning red; a magnifying glass over its wording.
-      { id: 'c11-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.', marks: [0.13, 0.31, 0.55, 0.71] },
+      { id: 'c11-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.', marks: [0.13, 0.31, 0.55, 0.71], dock: 'full' },
       // A short message to the agent: "Make this card's clue clearer"; the card file changes.
-      { id: 'c11-06', text: "If you know exactly what you want changed, tell your agent to make that edit. If you want its help deciding, ask it to show you the proposed wording first.", marks: [0.25, 0.69, 0.88] },
+      { id: 'c11-06', text: "If you know exactly what you want changed, tell your agent to make that edit. If you want its help deciding, ask it to show you the proposed wording first.", marks: [0.25, 0.69, 0.88], dock: 'full' },
       // Edit card on a card; then E in the Inbox.
-      { id: 'c11-05', text: 'Or do it yourself: click Edit card, or press E in the Inbox. Press Escape when you are done.', marks: [0.3, 0.53, 0.79] },
+      { id: 'c11-05', text: 'Or do it yourself: click Edit card, or press E in the Inbox. Press Escape when you are done.', marks: [0.3, 0.53, 0.79], dock: 'side', live: [{ target: 'card-edit', mark: 0 }] },
       // A clock; an agent's window wakes on its own each morning and reads the card base. Not the app: the person's own agent tool.
-      { id: 'c11-15', text: 'Some agent tools can run by themselves at set times: a scheduled agent.', marks: [0.25, 0.48, 0.72] },
+      { id: 'c11-15', text: 'Some agent tools can run by themselves at set times: a scheduled agent.', marks: [0.25, 0.48, 0.72], dock: 'full' },
       // The agent writes a short list: "Make this clue clearer", "Link Protein to How muscle grows". Nothing in the card base changes.
-      { id: 'c11-16', text: "Set it up to read your card base and leave you a list of suggested fixes and links.", marks: [0.17, 0.49, 0.77] },
+      { id: 'c11-16', text: "Set it up to read your card base and leave you a list of suggested fixes and links.", marks: [0.17, 0.49, 0.77], dock: 'full' },
       // The person reads the list, approves one change, and skips another. Only the approved one lands.
-      { id: 'c11-17', text: "Make this a rule for yourself. An agent should never make changes to your card base on its own. Tell it to wait, then read each suggestion and decide what it can change.", marks: [0.77, 0.84, 0.92] },
+      { id: 'c11-17', text: "Make this a rule for yourself. An agent should never make changes to your card base on its own. Tell it to wait, then read each suggestion and decide what it can change.", marks: [0.77, 0.84, 0.92], dock: 'full' },
       // A branch is cut; the plant looks better for it.
-      { id: 'c11-07', text: 'Some cards no longer earn their place. Pruning is part of it.', marks: [0.62] },
+      { id: 'c11-07', text: 'Some cards no longer earn their place. Pruning is part of it.', marks: [0.62], dock: 'full' },
       // The card's ⋯ menu, "Archive card"; the card turns muted.
-      { id: 'c11-08', text: 'To stop reviewing a card, open its menu and choose Archive card. It keeps its history.', marks: [0.27, 0.52, 0.74] },
+      { id: 'c11-08', text: 'To stop reviewing a card, open its menu and choose Archive card. It keeps its history.', marks: [0.27, 0.52, 0.74], dock: 'corner', live: [{ target: 'card-menu', mark: 0, say: 'Open the menu of one of your Course Cards.', done: 'click' }, { target: 'card-menu-archive', mark: 1, say: 'Choose Archive card.', done: 'click' }, { target: 'card-menu-unarchive', say: "Open the card's menu again. Choose Unarchive card to bring it back.", done: 'click' }] },
       // A card's back has grown long on one part; that part lifts off into its own card, and a line joins the two.
-      { id: 'c11-20', text: 'Growing is improving too. When one part of a card keeps growing, give it its own card, and link the two.', marks: [0.474, 0.671, 0.8] },
+      { id: 'c11-20', text: 'Growing is improving too. When one part of a card keeps growing, give it its own card, and link the two.', marks: [0.474, 0.671, 0.8], dock: 'full' },
       // Two cards side by side; a line is drawn between them.
-      { id: 'c11-18', text: 'Links need care too. When you notice two cards belong together, link them.', marks: [0.458, 0.808] },
+      { id: 'c11-18', text: 'Links need care too. When you notice two cards belong together, link them.', marks: [0.458, 0.808], dock: 'full' },
       // A link between two cards that no longer fit is cut, as a branch is.
-      { id: 'c11-19', text: 'When a link no longer helps, delete it like a word.', marks: [0.45, 0.68] },
+      { id: 'c11-19', text: 'When a link no longer helps, delete it like a word.', marks: [0.45, 0.68], dock: 'full' },
       // Reviews under a card opens: each answer with its bin; then ⋯ › Reset history, and the card shows New.
       // APP: client/src/review/cardParts.tsx (the table's delete, on the card tab and the card window; not in the Inbox), client/src/review/cardPane.tsx ("Reset history").
-      { id: 'c11-11', text: 'Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.', marks: [0.16, 0.43, 0.67, 0.83] },
+      { id: 'c11-11', text: 'Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.', marks: [0.16, 0.43, 0.67, 0.83], dock: 'full' },
       // The All cards menu: the row "New cards 10 / 48"; a click on the count turns it into "Add [10] more new cards"; Enter.
       // APP: client/src/review/CardInboxBar.tsx, client/src/review/AddMoreField.tsx (YAZ-5042 round 2). The menu has no plain "Add" button.
-      { id: 'c11-12', text: 'Want more new cards today? Click their count in the All cards menu, and press Enter.', marks: [0.42, 0.79] },
+      { id: 'c11-12', text: 'Want more new cards today? Click their count in the All cards menu, and press Enter.', marks: [0.42, 0.79], dock: 'full' },
       // The "Try it in the app" button and "Next chapter".
-      { id: 'c11-13', text: 'To try Archive on your own card, choose Try it in the app.', marks: [0.12, 0.617] },
+      { id: 'c11-13', text: 'To try Archive on your own card, choose Try it in the app.', marks: [0.12, 0.617], dock: 'full' },
       // The garden, full and tidy; then a calendar page for the week ahead.
-      { id: 'c11-14', text: 'Grow a branch here, prune one there, and your card base stays true. Next: your first week.', marks: [0.05, 0.2, 0.52, 0.72] },
-    ],
-    tryIt: [
-      { target: 'card-menu', say: 'Open the menu of one of your Course Cards.', done: 'click' },
-      { target: 'card-menu-archive', say: 'Choose Archive card.', done: 'click' },
-      { target: 'card-menu-unarchive', say: "Open the card's menu again. Choose Unarchive card to bring it back.", done: 'click' },
+      { id: 'c11-14', text: 'Grow a branch here, prune one there, and your card base stays true. Next: your first week.', marks: [0.05, 0.2, 0.52, 0.72], dock: 'full' },
     ],
   },
   {
@@ -692,55 +661,48 @@ export const COURSE: CourseChapter[] = [
     title: 'Where things are, and your first week',
     clips: [
       // The four step icons, then the real sidebar.
-      { id: 'c12-01', text: 'To finish: where things are, and your first week.', marks: [0.29, 0.71] },
+      { id: 'c12-01', text: 'To finish: where things are, and your first week.', marks: [0.29, 0.71], dock: 'full' },
       // The real sidebar; the card skill's row at the bottom lights up.
-      { id: 'c12-02', text: 'The card skill is at the bottom of the sidebar.', marks: [0.47] },
+      { id: 'c12-02', text: 'The card skill is at the bottom of the sidebar.', marks: [0.47], dock: 'corner', live: [{ target: 'card-skill-row', mark: 0, say: 'This is the card skill. Click it to open it.', done: 'click' }] },
       // The card skill opens: Start here, the rules, Formats, Course transcript.
-      { id: 'c12-03', text: 'It is a short guide for you and your agent: the rules, the formats with examples, and the words of this course.', marks: [0.38, 0.54, 0.76] },
+      { id: 'c12-03', text: 'It is a short guide for you and your agent: the rules, the formats with examples, and the words of this course.', marks: [0.38, 0.54, 0.76], dock: 'side' },
       // The lock on the skill; right-click › "Duplicate into …".
-      { id: 'c12-04', text: 'It is read only. To change it, duplicate it into your vault, and make it your own.', marks: [0.07, 0.44, 0.77] },
+      { id: 'c12-04', text: 'It is read only. To change it, duplicate it into your vault, and make it your own.', marks: [0.07, 0.44, 0.77], dock: 'side' },
       // The duplicate in the vault; an update arrow on the built-in skill.
-      { id: 'c12-05', text: 'Your copy syncs with your vault. The built-in skill still gets each update of the app.', marks: [0.12, 0.44, 0.79] },
+      { id: 'c12-05', text: 'Your copy syncs with your vault. The built-in skill still gets each update of the app.', marks: [0.12, 0.44, 0.79], dock: 'side' },
       // A terminal: `yaseendocs card guide` prints the skill's first page.
-      { id: 'c12-06', text: 'Your agent can find it too. One command prints its first page.', marks: [0.47, 0.63] },
+      { id: 'c12-06', text: 'Your agent can find it too. One command prints its first page.', marks: [0.47, 0.63], dock: 'side' },
       // Settings › Cards: "Card skill in the sidebar" and "Open the course".
-      { id: 'c12-07', text: 'In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.', marks: [0.168, 0.267, 0.691] },
+      { id: 'c12-07', text: 'In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.', marks: [0.168, 0.267, 0.691], dock: 'corner', live: [{ target: 'settings-review', mark: 0, say: 'Now press Command comma to open Settings, and click Cards.', done: 'click' }, { target: 'settings-card-skill', mark: 1, say: 'This switch shows or hides the card skill in the sidebar.' }, { target: 'settings-course', mark: 2, say: 'And this button brings you back to the course, at any time.' }] },
       // Settings › Cards opens in full; the section title glows. (YAZ-5331, Yaseen's words.)
-      { id: 'c12-17', text: 'Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.', marks: [0.163, 0.274, 0.437, 0.893] },
+      { id: 'c12-17', text: 'Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.', marks: [0.163, 0.274, 0.437, 0.893], dock: 'side', live: [{ target: 'settings-cards-section', mark: 0, say: 'Look around. Hidden words, card width, tables and new cards a day are all here.' }] },
       // The Card look group lights up row by row: Shown hidden words, Card width, Card tables.
-      { id: 'c12-18', text: 'You can change how hidden words look, how wide a card is, and how tables show on a card.', marks: [0.162, 0.412, 0.674] },
+      { id: 'c12-18', text: 'You can change how hidden words look, how wide a card is, and how tables show on a card.', marks: [0.162, 0.412, 0.674], dock: 'side' },
       // The Daily limits group lights up: New cards a day, New cards first. The folder choice is shown as an idea, not as a row a person could look for: it is not in the app yet (Yaseen keeps it on purpose, YAZ-5331).
-      { id: 'c12-19', text: 'You can set how many new cards come each day, and whether the oldest or the newest come first or select which folder you want your new cards to be selected from.', marks: [0.112, 0.357, 0.439, 0.711] },
+      { id: 'c12-19', text: 'You can set how many new cards come each day, and whether the oldest or the newest come first or select which folder you want your new cards to be selected from.', marks: [0.112, 0.357, 0.439, 0.711], dock: 'side' },
       // Each row shows a small "Recommended" mark beside its default.
-      { id: 'c12-20', text: 'Each one starts at what we recommend. If you know what you want, change it. If not, keep the defaults.', marks: [0.2, 0.546, 0.861] },
+      { id: 'c12-20', text: 'Each one starts at what we recommend. If you know what you want, change it. If not, keep the defaults.', marks: [0.2, 0.546, 0.861], dock: 'side' },
       // The Scheduling group, with a quiet amber warning edge.
-      { id: 'c12-21', text: 'One warning: be careful with the scheduling settings. They decide when each card comes back.', marks: [0.046, 0.321, 0.784] },
+      { id: 'c12-21', text: 'One warning: be careful with the scheduling settings. They decide when each card comes back.', marks: [0.046, 0.321, 0.784], dock: 'side' },
       // A week of seven days appears.
-      { id: 'c12-08', text: 'Now, your first week.', marks: [0.33] },
+      { id: 'c12-08', text: 'Now, your first week.', marks: [0.33], dock: 'full' },
       // Day 1: one card, made from something the person already understands.
-      { id: 'c12-09', text: 'Today, make one card, from something you already understand well.', marks: [0.28, 0.67] },
+      { id: 'c12-09', text: 'Today, make one card, from something you already understand well.', marks: [0.28, 0.67], dock: 'full' },
       // Each day ticks: the Inbox row lights up.
-      { id: 'c12-10', text: 'Each day, open the Inbox, and answer what is due.', marks: [0.21, 0.56] },
+      { id: 'c12-10', text: 'Each day, open the Inbox, and answer what is due.', marks: [0.21, 0.56], dock: 'full' },
       // A capture note fills during the week; on one day, a desk and a few new cards. (rename-note-to-page: keep)
-      { id: 'c12-11', text: 'Keep one place to capture things as you hear them. Once this week, set time aside to create a few cards from it.', marks: [0.041, 0.588, 0.753] },
+      { id: 'c12-11', text: 'Keep one place to capture things as you hear them. Once this week, set time aside to create a few cards from it.', marks: [0.041, 0.588, 0.753], dock: 'full' },
       // A new card; a line from it to a card already there.
-      { id: 'c12-16', text: 'For each new card, ask what it connects to, and link it.', marks: [0.36, 0.74] },
+      { id: 'c12-16', text: 'For each new card, ask what it connects to, and link it.', marks: [0.36, 0.74], dock: 'full' },
       // In the Inbox, a small fix to a card.
-      { id: 'c12-12', text: 'As you review, fix what is unclear. That is improving, and it is how your card base stays yours.', marks: [0.156, 0.468, 0.801] },
+      { id: 'c12-12', text: 'As you review, fix what is unclear. That is improving, and it is how your card base stays yours.', marks: [0.156, 0.468, 0.801], dock: 'full' },
       // A small seedling in fresh soil.
       // A common saying, not a study. Ryan Holiday uses it in video UBdlprawTkA; the name is left out, because the saying is not his.
-      { id: 'c12-13', text: 'The best time to start was years ago. The second best time is now.', marks: [0.37, 0.53, 0.83] },
+      { id: 'c12-13', text: 'The best time to start was years ago. The second best time is now.', marks: [0.37, 0.53, 0.83], dock: 'full' },
       // One new card, then a calendar page turns to tomorrow and the Inbox lights up.
-      { id: 'c12-14', text: "That's the whole course. Make one card today. Open the Inbox tomorrow.", marks: [0.32, 0.65, 0.73] },
+      { id: 'c12-14', text: "That's the whole course. Make one card today. Open the Inbox tomorrow.", marks: [0.32, 0.65, 0.73], dock: 'full' },
       // The course's end screen: cards made, and when they come back.
-      { id: 'c12-15', text: 'Your card base is your knowledge base. Build it one card at a time, and what you learn becomes part of who you are.', marks: [0.19, 0.34, 0.55, 0.74] },
-    ],
-    tryIt: [
-      { target: 'card-skill-row', say: 'This is the card skill. Click it to open it.', done: 'click' },
-      { target: 'settings-review', say: 'Now press Command comma to open Settings, and click Cards.', done: 'click' },
-      { target: 'settings-cards-section', say: 'Look around. Hidden words, card width, tables and new cards a day are all here.', done: { event: 'tour-next' } },
-      { target: 'settings-card-skill', say: 'This switch shows or hides the card skill in the sidebar.', done: { event: 'tour-next' } },
-      { target: 'settings-course', say: 'And this button brings you back to the course, at any time.', done: { event: 'tour-next' } },
+      { id: 'c12-15', text: 'Your card base is your knowledge base. Build it one card at a time, and what you learn becomes part of who you are.', marks: [0.19, 0.34, 0.55, 0.74], dock: 'full' },
     ],
   },
 ]

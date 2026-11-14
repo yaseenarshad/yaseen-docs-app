@@ -11,6 +11,16 @@
  * - A tour whose precondition cannot be met (no Course Cards folder, no card yet) is `blocked`: one line, and the way
  *   back to the course.
  * - Skip on the last step, "Back to the course" and Esc leave the tour (`left`); the last step done finishes it.
+ *
+ * LIVE STEPS (YAZ-5366): the same engine runs a clip's live steps, with two more rules.
+ * - `reached`: how many of the steps have had their moment (the clip's mark, or the end of its words). A step past it
+ *   is not shown yet (`shownStep` is null: no light, no coach), but the person's real action still counts for it, so
+ *   a person who is ahead of the voice is never left waiting for an action already done.
+ * - A show step (`done: 'show'`) takes no action: it moves on when the next step's moment comes (`reach`).
+ *
+ * THE SAFE EXAMPLE (YAZ-5366): "Use an example" types only into Course Cards. `exampleSafe` says yes only for the name
+ * box of the course's own folder (its menu was the last folder menu opened) and for the editor of a card file in that
+ * folder (the last card file opened or made).
  */
 import type { TourStep } from './tour'
 import type { TourPlaces } from './tourBus'
@@ -31,6 +41,12 @@ export interface TourState {
   missingSince: number | null
   /** A typing step ends at this time, unless more typing comes first. */
   settleAt: number | null
+  /** How many steps have had their moment (live steps); a tour has them all at once. */
+  reached: number
+  /** The folder whose menu was opened last, wherever it is (the safe example). */
+  lastMenu: string | null
+  /** The card file opened or made last, wherever it is (the safe example). */
+  lastFile: string | null
 }
 
 export type TourAction =
@@ -41,6 +57,8 @@ export type TourAction =
   | { type: 'frame'; at: number; onScreen: boolean }
   | { type: 'skip' }
   | { type: 'leave' }
+  /** Live steps: this many steps have had their moment now. */
+  | { type: 'reach'; count: number }
 
 /** After this long with the target not on screen, the coach offers "Show me". */
 export const SHOW_ME_AFTER_MS = 4000
@@ -52,15 +70,33 @@ const SETTLE_EVENTS = new Set(['card-text-changed'])
 const FOLDER_EVENTS = new Set(['folder-menu-open'])
 const FILE_IN_FOLDER_EVENTS = new Set(['card-file-created', 'card-file-open'])
 
-export function startTour(steps: readonly TourStep[]): TourState {
-  return { steps, index: 0, status: steps.length === 0 ? 'finished' : 'checking', blocked: null, places: { folder: null, page: null }, lastCard: null, missingSince: null, settleAt: null }
+export function startTour(steps: readonly TourStep[], reached = Number.POSITIVE_INFINITY): TourState {
+  return { steps, index: 0, status: steps.length === 0 ? 'finished' : 'checking', blocked: null, places: { folder: null, page: null }, lastCard: null, missingSince: null, settleAt: null, reached, lastMenu: null, lastFile: null }
 }
 
+/** The step whose action the tour waits for now. */
 export const currentStep = (s: TourState): TourStep | null => (s.status === 'running' ? (s.steps[s.index] ?? null) : null)
+/** The step the layer lights now: the current step, once its moment has come. */
+export const shownStep = (s: TourState): TourStep | null => (s.index < s.reached ? currentStep(s) : null)
 
-const advance = (s: TourState): TourState => {
+/** Show steps whose next step's moment has come move on by themselves. */
+const settleShows = (s: TourState): TourState => {
+  let next = s
+  while (next.status === 'running' && next.steps[next.index]?.done === 'show' && next.reached > next.index + 1) next = advance(next)
+  return next
+}
+function advance(s: TourState): TourState {
   const index = s.index + 1
-  return { ...s, index, status: index >= s.steps.length ? 'finished' : 'running', missingSince: null, settleAt: null }
+  return settleShows({ ...s, index, status: index >= s.steps.length ? 'finished' : 'running', missingSince: null, settleAt: null })
+}
+
+/** Pure: may "Use an example" type into this step's field? Only into Course Cards (see the head of this file). */
+export function exampleSafe(s: TourState, step: TourStep): boolean {
+  const folder = s.places.folder
+  if (folder === null || step.example === undefined) return false
+  if (step.target === 'new-card-name') return s.lastMenu === folder
+  if (step.target === 'card-editor') return s.lastFile !== null && s.lastFile.startsWith(`${folder}/`)
+  return false
 }
 
 /** Does this event, with its path, count for the tour's places? */
@@ -75,9 +111,13 @@ export function tourStep(s: TourState, a: TourAction): TourState {
   if (s.status === 'finished' || s.status === 'left') return s
   if (a.type === 'leave') return { ...s, status: 'left' }
   if (s.status === 'checking') {
-    if (a.type === 'ready') return { ...s, status: 'running', places: a.places }
+    if (a.type === 'ready') return settleShows({ ...s, status: 'running', places: a.places })
     if (a.type === 'blocked') return { ...s, status: 'blocked', blocked: a.reason }
     return s
+  }
+  if (a.type === 'reach') {
+    const reached = Math.max(0, a.count)
+    return reached === s.reached ? s : settleShows({ ...s, reached, missingSince: s.index < reached ? s.missingSince : null })
   }
   if (s.status === 'blocked') return s
   const step = s.steps[s.index]
@@ -85,14 +125,21 @@ export function tourStep(s: TourState, a: TourAction): TourState {
     case 'click':
       return step.done === 'click' && a.target === step.target ? advance(s) : s
     case 'event': {
-      if (!eventCounts(a.name, a.detail, s.places)) return s
-      const seen = a.detail !== undefined && FILE_IN_FOLDER_EVENTS.has(a.name) ? { ...s, lastCard: a.detail } : s
-      if (step.done === 'click' || step.done.event !== a.name) return seen
+      // Where the person is, for the safe example: every folder menu and every card file, in the folder or not.
+      const where =
+        a.detail === undefined ? s
+        : FOLDER_EVENTS.has(a.name) ? (s.lastMenu === a.detail ? s : { ...s, lastMenu: a.detail })
+        : FILE_IN_FOLDER_EVENTS.has(a.name) ? (s.lastFile === a.detail ? s : { ...s, lastFile: a.detail })
+        : s
+      if (!eventCounts(a.name, a.detail, s.places)) return where
+      const seen = a.detail !== undefined && FILE_IN_FOLDER_EVENTS.has(a.name) ? { ...where, lastCard: a.detail } : where
+      if (step.done === 'click' || step.done === 'show' || step.done.event !== a.name) return seen
       return SETTLE_EVENTS.has(a.name) ? { ...seen, settleAt: a.at + SETTLE_MS } : advance(seen)
     }
     case 'frame': {
       if (s.settleAt !== null && a.at >= s.settleAt) return advance(s)
-      const missingSince = a.onScreen ? null : (s.missingSince ?? a.at)
+      // A step whose moment has not come is not looked for.
+      const missingSince = a.onScreen || s.index >= s.reached ? null : (s.missingSince ?? a.at)
       return missingSince === s.missingSince ? s : { ...s, missingSince }
     }
     case 'skip':
@@ -103,7 +150,7 @@ export function tourStep(s: TourState, a: TourAction): TourState {
 }
 
 /** Is the coach looking for the target (not on screen)? Does it offer "Show me" yet? */
-export const lookingFor = (s: TourState): boolean => s.status === 'running' && s.missingSince !== null
+export const lookingFor = (s: TourState): boolean => s.status === 'running' && s.index < s.reached && s.missingSince !== null
 export const offersShowMe = (s: TourState, now: number): boolean => lookingFor(s) && now - (s.missingSince ?? now) >= SHOW_ME_AFTER_MS
 
 // ---- geometry (pure) ----

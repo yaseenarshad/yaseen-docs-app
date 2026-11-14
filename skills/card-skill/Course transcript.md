@@ -110,7 +110,7 @@ To make one in the real app now, choose Try it in the app.
 
 A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.
 
-### Try it in the app
+### In the app
 
 1. Right-click the Course Cards folder in the sidebar.
 2. Choose New card.
@@ -168,7 +168,7 @@ To answer your own card in the real app, choose Try it in the app.
 
 A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.
 
-### Try it in the app
+### In the app
 
 1. Right-click the Course Cards folder.
 2. Choose Review this folder.
@@ -210,7 +210,7 @@ To embed your first card in a page, choose Try it in the app.
 
 This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.
 
-### Try it in the app
+### In the app
 
 1. Open your card's menu: the three dots in its head.
 2. Choose Copy card link.
@@ -503,7 +503,7 @@ To link two of your Course Cards, choose Try it in the app.
 
 Ask what a card connects to, not where it goes. Next: how to keep your tree alive.
 
-### Try it in the app
+### In the app
 
 1. Open the Course Cards folder, and click one of your cards.
 2. Click Edit card, or press E.
@@ -550,7 +550,7 @@ To try Archive on your own card, choose Try it in the app.
 
 Grow a branch here, prune one there, and your card base stays true. Next: your first week.
 
-### Try it in the app
+### In the app
 
 1. Open the menu of one of your Course Cards.
 2. Choose Archive card.
@@ -600,12 +600,12 @@ That's the whole course. Make one card today. Open the Inbox tomorrow.
 
 Your card base is your knowledge base. Build it one card at a time, and what you learn becomes part of who you are.
 
-### Try it in the app
+### In the app
 
 1. This is the card skill. Click it to open it.
 2. Now press Command comma to open Settings, and click Cards.
-3. Look around. Hidden words, card width, tables and new cards a day are all here.
-4. This switch shows or hides the card skill in the sidebar.
-5. And this button brings you back to the course, at any time.
+3. This switch shows or hides the card skill in the sidebar.
+4. And this button brings you back to the course, at any time.
+5. Look around. Hidden words, card width, tables and new cards a day are all here.
 
 <!-- rename-note-to-page: skip-file -->

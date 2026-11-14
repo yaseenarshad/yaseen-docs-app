@@ -20,10 +20,18 @@
  *   it, or from the app when nothing nearer wants Esc (a menu, a dialog, Explore, text). The corner shows only Play /
  *   Pause, Back, Next, the size switch and Close. Clips and scenes ask for a size with `requestSize` (`CourseDockApi`);
  *   the person's choice wins until the next part.
+ * - LIVE STEPS (YAZ-5366, `live.ts`): each clip has a size (`CourseClip.dock`), and the course asks for it when its part
+ *   starts (a run of clips with one size; a chapter starts in full); the person's own choice wins until the next part.
+ *   A clip's live steps (`CourseClip.live`) run in the tour layer (`TourLayer`, `variant: 'live'`, in `document.body`):
+ *   the light lands on the real control on the clip's mark, and a do step holds the clip at the end of its words until
+ *   the person's real action (`ctx.waits`), with the coach line beside the light. A do step asks for the corner. In
+ *   full size nothing is drawn over the app; a held clip says "This step is in the app" with a way to dock. Next always
+ *   goes on, and Skip in the coach card does too.
  * - The seams: `scenes` (6C: `scenes/index.ts`; a span of clips keeps one scene mounted), `voice` (6D1: per chapter, downloaded when needed), `tour` (6E), `host` (6F). Each has a
  *   default: the course's scenes, silence, the real tour (`appTour`), and the host (the real one once App gives the vault's view, else one that makes nothing and says why).
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { COURSE_SPEEDS, type CourseSpeed } from '@shared/courseState'
 import { storage } from '../lib/storage'
 import { COURSE, type CourseChapter, type CourseClip } from './script'
@@ -42,6 +50,8 @@ import { readEscapeFacts } from '../lib/escapeOrder'
 import { CourseDockContext, cornerAvoiding, dockBox, dockStep, startDock, type CourseDockApi, type DockAction, type DockCorner, type DockSize, type DockState, type SizeAnswer, type View } from './dock'
 import { onLitBox, setCourseArea } from './dockArea'
 import { CornerGrip, SideEdge, SizeSwitch } from './CourseDock'
+import { hasLive, holdsLive, liveOf, liveReached, partAt, tourStepsOf } from './live'
+import { TourLayer } from './TourLayer'
 import type { Box } from './tourEngine'
 import type { SceneClock, SceneFor, SceneTime } from './scene'
 import './course.css'
@@ -94,6 +104,9 @@ const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), textare
 const NO_SIDEBAR = { aside: null, searchShown: false, canClose: false }
 /** The element App renders into: in the side size it gives the course its right part (the app moves over, live). */
 const APP_ROOT_ID = 'root'
+/** A held live step while the course fills the window (YAZ-5366): the line, and the way to dock. */
+export const LIVE_IN_APP_LINE = 'This step is in the app.'
+export const LIVE_IN_APP_BUTTON = 'Do it in the app'
 /** What a screen reader hears when the course itself changes its size (phase 2). */
 const SIZE_SAID: Record<DockSize, string> = { full: 'The course fills the window.', side: 'The course moved to the side.', corner: 'The course moved to the corner.' }
 
@@ -200,8 +213,14 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   const soundNowRef = useRef(soundNow)
   soundNowRef.current = soundNow
 
+  /** The clip whose live do steps hold it at the end of its words (YAZ-5366), until they are done or cannot run. */
+  const liveHold = useRef<{ clip: string; on: boolean }>({ clip: '', on: false })
   const ctx: PlayerContext = useMemo(
-    () => ({ course, seconds: (clip: CourseClip) => clipSeconds(clip, soundNowRef.current(clip)?.seconds ?? null), waits: (clip: CourseClip) => WAITING_CLIPS.has(clip.id) }),
+    () => ({
+      course,
+      seconds: (clip: CourseClip) => clipSeconds(clip, soundNowRef.current(clip)?.seconds ?? null),
+      waits: (clip: CourseClip) => WAITING_CLIPS.has(clip.id) || (liveHold.current.on && liveHold.current.clip === clip.id),
+    }),
     [course],
   )
   const ctxRef = useRef(ctx)
@@ -210,10 +229,18 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   // The player: in a ref, so a frame changes no React state; `version` renders what the eye needs (not each frame).
   const player = useRef<PlayerState>(null as unknown as PlayerState)
   if (player.current === null) player.current = startState(ctx, storage.getCourse(), openAt)
-  // The clip the course opens at: when it names a size, its part starts now (before the first paint).
-  useLayoutEffect(() => {
+  if (liveHold.current.clip === '') {
     const first = course[player.current.chapter].clips[player.current.clip]
-    if (first.dock !== undefined) dockDispatch({ type: 'part', part: first.id, size: first.dock, reason: `clip ${first.id}` })
+    liveHold.current = { clip: first.id, on: holdsLive(first) }
+  }
+  /** Each clip start, so a clip started again mounts its live steps again. */
+  const entries = useRef(0)
+  // The clip the course opens at: its part starts now (before the first paint). A size a clip names is asked for; a
+  // chapter's start with none keeps the person's saved size.
+  useLayoutEffect(() => {
+    const part = partAt(course[player.current.chapter], player.current.clip)
+    if (part.named) dockDispatch({ type: 'part', part: part.id, size: part.size, reason: `clip ${part.id}` })
+    else dockDispatch({ type: 'part', part: part.id })
     // Only at the open: later clips start their parts on `enter`.
   }, [])
   const enteredChapter = useRef(course[player.current.chapter].id)
@@ -426,9 +453,13 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       for (const e of events) {
         if (e.kind === 'mark') clockRef.current.mark(e.index)
         else if (e.kind === 'enter') {
-          // A clip that names a size starts a part (phase 2): the course asks for its size there.
-          const named = clipById.get(e.clip)?.dock
-          if (named !== undefined) dockDispatch({ type: 'part', part: e.clip, size: named, reason: `clip ${e.clip}` })
+          // A new part (YAZ-5366): the course asks for its size there; within a part the person's choice holds.
+          const p = player.current
+          const part = partAt(ctxRef.current.course[p.chapter], p.clip)
+          dockDispatch({ type: 'part', part: part.id, size: part.size, reason: part.named ? `clip ${part.id}` : 'a lesson' })
+          const entered = clipById.get(e.clip)
+          liveHold.current = { clip: e.clip, on: entered !== undefined && holdsLive(entered) }
+          entries.current += 1
           const newChapter = e.chapter !== enteredChapter.current
           // Asked before the clip freezes its sound: a sound that is here already is used from the first word.
           if (newChapter) startChapter(e.chapter)
@@ -628,6 +659,24 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
       })
   }, [tour])
 
+  // ---- live steps (YAZ-5366): the clip's real controls, lit in the app on George's words ----
+  /** How many of the playing clip's live steps have had their moment: its marks fired, or its words ended. */
+  const readReached = useCallback(() => {
+    const p = player.current
+    if (p.phase !== 'clip') return 0
+    const c = ctxRef.current.course[p.chapter].clips[p.clip]
+    return liveReached(liveOf(c), p.marks, p.t >= ctxRef.current.seconds(c))
+  }, [])
+  /** The clip's do steps are done, skipped, or cannot run here: the hold ends, and the course goes on. */
+  const endLive = useCallback((clipId: string) => {
+    if (liveHold.current.clip !== clipId || !liveHold.current.on) return
+    liveHold.current = { clip: clipId, on: false }
+    const p = player.current
+    if (p.phase === 'clip' && ctxRef.current.course[p.chapter].clips[p.clip].id === clipId) keys.current.dispatch({ type: 'release' })
+  }, [])
+  /** A do step lights up: the course asks for the corner, so the app is free to do it in. */
+  const askCorner = useCallback(() => void dockDispatch({ type: 'request', size: 'corner', reason: 'a live step' }), [dockDispatch])
+
   // ---- the docked layer and the rest of the window ----
   const shown = !(touring && size === 'full')
   // The tour layer leaves the docked course out of its dim and puts its coach beside it (`dockArea`).
@@ -669,11 +718,31 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
   const clip = chapter.clips[s.clip]
   const Scene = scenes(clip.id)
   const goNext = useCallback(() => dispatch({ type: 'next' }), [dispatch])
-  const waits = ctx.waits(clip)
+  // The scene's own steps only: a live step's hold is the course's (YAZ-5366).
+  const waits = WAITING_CLIPS.has(clip.id)
   const done = useCallback(() => keys.current.dispatch({ type: 'release' }), [])
   const finished = new Set(s.finished)
   const last = s.chapter === ctx.course.length - 1
   const caption = s.phase === 'clip' ? clip.text : s.phase === 'chapter-end' ? `Chapter ${s.chapter + 1} done. Next: ${ctx.course[s.chapter + 1].title}.` : "That's the whole course."
+  const liveSteps = useMemo(() => tourStepsOf(clip), [clip])
+  const liveLayer =
+    s.phase === 'clip' && hasLive(clip) && !touring
+      ? createPortal(
+          <TourLayer
+            key={`${clip.id}#${entries.current}`}
+            variant="live"
+            chapter={chapter}
+            steps={liveSteps}
+            host={host}
+            visible={docked}
+            reached={readReached}
+            onDoStep={askCorner}
+            onEnd={() => endLive(clip.id)}
+          />,
+          document.body,
+        )
+      : null
+  const heldInFull = !docked && s.phase === 'clip' && holdsLive(clip) && liveHold.current.on && waitingForPerson(ctx, s)
   const tourButton = hasTour(chapter) && (
     <button type="button" className="course__btn course__btn--try" onClick={tryIt}>
       Try it in the app
@@ -773,6 +842,14 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
             {page}
           </p>
         )}
+        {heldInFull && (
+          <p className="course__note" role="status">
+            {LIVE_IN_APP_LINE}{' '}
+            <button type="button" className="course__btn" onClick={() => chooseSize(clip.dock !== undefined && clip.dock !== 'full' ? clip.dock : 'corner')}>
+              {LIVE_IN_APP_BUTTON}
+            </button>
+          </p>
+        )}
         {lost !== undefined && (
           <p className="course__note" role="status">
             {lost.line}
@@ -849,6 +926,7 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
           )}
         </div>
       </div>
+      {liveLayer}
     </div>
     </CourseDockContext.Provider>
   )
