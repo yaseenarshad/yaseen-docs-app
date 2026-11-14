@@ -680,7 +680,7 @@ describe('resume in the middle of a chapter: the voice plays for that clip (YAZ-
     await settle()
   }
   const played = () => vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.map((el) => (el as HTMLAudioElement).src)
-  const notes = () => [...document.querySelectorAll('.course__note')].map((p) => p.textContent ?? '')
+  const statusLines = () => [...document.querySelectorAll('.course__note')].map((p) => p.textContent ?? '')
   const O2 = /^app:\/\/course-voice\/one\/o2\.m4a\?v=[0-9a-f]{8}$/
 
   afterEach(async () => {
@@ -697,7 +697,7 @@ describe('resume in the middle of a chapter: the voice plays for that clip (YAZ-
     frames(50)
     // Five seconds: still the clip's first frame, the line, no sound yet, and the clip is not given up.
     expect(caption()).toBe('The middle line of chapter one.')
-    expect(notes()).toContain(`${VOICE_LOADING_LINE} ${PLAY_WITHOUT_SOUND}`)
+    expect(statusLines()).toContain(`${VOICE_LOADING_LINE} ${PLAY_WITHOUT_SOUND}`)
     expect(played()).toEqual([])
     net.release()
     await settle()
@@ -705,7 +705,7 @@ describe('resume in the middle of a chapter: the voice plays for that clip (YAZ-
     // The voice of THAT clip, from its start, with no change of clip.
     expect(played().at(-1)).toMatch(O2)
     expect(caption()).toBe('The middle line of chapter one.')
-    expect(notes()).toEqual([])
+    expect(statusLines()).toEqual([])
     // The sound moves: the clip follows it (never put aside as broken by the wait).
     const el = vi.mocked(HTMLMediaElement.prototype.play).mock.contexts.at(-1) as HTMLAudioElement
     let at = 0
@@ -728,7 +728,7 @@ describe('resume in the middle of a chapter: the voice plays for that clip (YAZ-
     act(() => button('Play')!.click())
     frames(1)
     expect(played().at(-1)).toMatch(O2)
-    expect(notes()).toEqual([])
+    expect(statusLines()).toEqual([])
   })
 
   it('Mute: no hold; the clip plays on its estimate at once', async () => {
@@ -738,7 +738,7 @@ describe('resume in the middle of a chapter: the voice plays for that clip (YAZ-
     act(() => button('Play')!.click())
     frames(40)
     expect(caption()).toBe('Last line of one.')
-    expect(notes()).toEqual([])
+    expect(statusLines()).toEqual([])
   })
 
   it('offline: no hold, silent with captions, and "Try again"', async () => {
