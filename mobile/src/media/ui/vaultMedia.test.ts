@@ -198,14 +198,58 @@ describe('a sound in a card (YAZ-5079)', () => {
   })
 })
 
+describe('a file opened from a link (YAZ-5280)', () => {
+  const typed = (type: string): VaultMedia => ({ show: async (path) => ({ status: 'ready', path, url: `blob:media/${path}`, type }) })
+  it('an SVG, an HTML file and a text file are never opened as a blob page', async () => {
+    for (const [path, type] of [
+      ['docs/logo.svg', 'image/svg+xml'],
+      ['docs/page.html', 'text/html'],
+      ['docs/notes.txt', 'text/plain'],
+      ['docs/data.xml', 'application/xml'],
+      ['docs/x.xhtml', 'application/xhtml+xml'],
+      // A type that lies: a PDF name with an SVG inside, an SVG name typed as a PDF.
+      ['docs/trick.svg', 'application/pdf'],
+      ['docs/trick.pdf', 'image/svg+xml'],
+      ['docs/unknown.bin', 'application/octet-stream'],
+    ]) {
+      const opened: string[] = []
+      const saved: string[] = []
+      const words = await openFile(typed(type), path, (url) => (opened.push(url), true), async (_url, name) => void saved.push(name))
+      expect([path, opened]).toEqual([path, []])
+      expect([path, saved, words]).toEqual([path, [path.slice(path.lastIndexOf('/') + 1)], null])
+    }
+  })
+
+  it('a PDF, a raster picture, a sound and a video open in the viewer', async () => {
+    for (const [path, type] of [
+      ['docs/Guide.pdf', 'application/pdf'],
+      ['a/p.png', 'image/png'],
+      ['a/p.jpg', 'image/jpeg'],
+      ['a/s.mp3', 'audio/mpeg'],
+      ['a/v.mp4', 'video/mp4'],
+    ]) {
+      const opened: string[] = []
+      expect(await openFile(typed(type), path, (url) => (opened.push(url), true), async () => undefined)).toBeNull()
+      expect(opened).toEqual([`blob:media/${path}`])
+    }
+  })
+
+  it('a file that cannot be saved either: "Open this file on the Mac"', async () => {
+    expect(await openFile(typed('image/svg+xml'), 'x/logo.svg', () => true, async () => Promise.reject(new Error('no')))).toBe('logo.svg · Open this file on the Mac')
+  })
+})
+
 describe('files and object URLs (YAZ-5079)', () => {
-  it("a PDF opens in the iPhone's own viewer from its blob; another type says it can't open yet", async () => {
+  it("a PDF opens in the iPhone's own viewer from its blob; another type is saved as a download", async () => {
     const media = fakeMedia()
     const opened: string[] = []
     const open = (url: string) => (opened.push(url), true)
     expect(await openFile(media, 'docs/Guide.pdf', open)).toBeNull()
     expect(opened).toEqual(['blob:media/docs/Guide.pdf'])
-    expect(await openFile(media, 'docs/data.zip', open)).toBe("data.zip · Can't open on the phone yet")
+    // YAZ-5280: another type never opens as a page: it is saved as a download.
+    const saved: string[] = []
+    expect(await openFile(media, 'docs/data.zip', open, async (_u, name) => void saved.push(name))).toBeNull()
+    expect(saved).toEqual(['data.zip'])
     media.online = false
     expect(await openFile(media, 'docs/Other.pdf', open)).toBe('File · Other.pdf · Needs a connection')
   })

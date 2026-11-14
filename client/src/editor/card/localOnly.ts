@@ -95,13 +95,38 @@ export const NAMES_A_HOST = (value: string): boolean => {
   return kind === 'web' || (kind === 'none' && /^[a-z][a-z0-9+.-]*:/i.test(value.replace(/[\t\n\r]/g, '').trim()) && !/^[a-z][a-z0-9+.-]*:\s/i.test(value.trim()))
 }
 
-/** The phone's own marks: a text may not bring them (YAZ-5243). They are set only here, after the check. */
-const RESERVED = [LOCAL_SRC, WEB_SRC, 'data-vault-src', 'data-vault-sound']
+/**
+ * THE ONE RULE FOR `data-*` (YAZ-5280): no `data-*` attribute of the text survives. The app's own marks are not read
+ * from the text: a renderer of the app (`pageRender.ts`, `renderCard`) writes each one under a secret name that this
+ * page load made (`localMark`), the allow list keeps only those, and gives them their real names AFTER the clean
+ * (`restoreMarks`). Text cannot guess the secret, so it cannot write `data-open`, `data-path`, `data-card-link`, or any
+ * mark the app adds later.
+ */
+const SECRET = (() => {
+  const bytes = new Uint8Array(8)
+  crypto.getRandomValues(bytes)
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+})()
+const MARK_PREFIX = `data-m${SECRET}-`
+
+/** `data-<name>` as a renderer of the app writes it into the HTML it gives `cleanLocal`. */
+export const localMark = (name: string): string => `${MARK_PREFIX}${name.replace(/^data-/, '')}`
+
+/** Each mark of the app gets its real name back (`data-<name>`), after the clean. */
+function restoreMarks(root: DocumentFragment): void {
+  for (const el of root.querySelectorAll('*'))
+    for (const { name, value } of [...el.attributes])
+      if (name.startsWith(MARK_PREFIX)) {
+        el.removeAttribute(name)
+        el.setAttribute(`data-${name.slice(MARK_PREFIX.length)}`, value)
+      }
+}
 
 /** The allow list for one element's attributes (a DOMPurify hook: it runs on the inert document). */
 function keepLocal(node: Element): void {
   const tag = node.tagName
-  for (const name of RESERVED) node.removeAttribute(name)
+  // The one rule for `data-*` (above): only the app's marks under the secret name stay.
+  for (const { name } of [...node.attributes]) if (name.startsWith('data-') && !name.startsWith(MARK_PREFIX)) node.removeAttribute(name)
   for (const { name, value } of [...node.attributes]) {
     if (name === 'href') {
       const { kind, href } = urlOf(value)
@@ -191,5 +216,6 @@ export function cleanLocal(html: string): DocumentFragment {
   }
   const root = purifier.sanitize(html, CONFIG)
   finish(root)
+  restoreMarks(root)
   return root
 }

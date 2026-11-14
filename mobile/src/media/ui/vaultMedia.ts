@@ -44,9 +44,9 @@ export const mediaFits = (media: MediaAhead): VaultMedia => media
 // `lazyMedia` is in its own small file, so the first load (`main.tsx`) takes nothing else from here.
 export { lazyMedia } from './lazyMedia'
 
-const SOUND_MIME: Record<string, string> = { mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg' }
+const SOUND_MIME: Record<string, string> = { mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm' }
 
-/** The MIME type of a vault file by its name: a picture, a sound, a PDF; else `application/octet-stream`. */
+/** The MIME type of a vault file by its name: a raster picture, a sound, a video, a PDF; else `application/octet-stream`. */
 export function fileType(path: string): string {
   const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
   if (ext === 'pdf') return 'application/pdf'
@@ -97,18 +97,68 @@ export function missingWords(kind: 'Picture' | 'Sound' | 'File', path: string, s
   return `${kind} · ${nameOf(path)} · Can't show it now`
 }
 
-/** Types the iPhone's own viewer shows (round 12, items 11 and 12). Any other: "Can't open on the phone yet". */
-const VIEWABLE = /^(application\/pdf|image\/|audio\/|video\/|text\/)/
+/**
+ * THE TYPES THAT MAY OPEN AS A PAGE (YAZ-5280). A `blob:` page has the APP'S OWN origin, where the token is kept. So the
+ * iPhone's viewer opens only a type that cannot run script there:
+ *  - `application/pdf`: WebKit draws a PDF with its own viewer, which runs no script of the file.
+ *  - `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, `image/bmp`: raster pictures; pixels only.
+ *  - `audio/mpeg`, `audio/mp4`, `audio/wav`, `audio/ogg`; `video/mp4`, `video/quicktime`, `video/webm`: the media
+ *    player; sound and frames only.
+ * Both the file's name and the type 3D gives must be on the list, so a type that lies changes nothing. Anything else
+ * (SVG, HTML, XML, `text/*`, an unknown type) never opens as a page: it is saved as a download, typed
+ * `application/octet-stream` (no browser draws or runs that), or, if that fails, "Open this file on the Mac". An SVG in a
+ * page or a card shows only through `<img>`, where it cannot run script.
+ */
+const OPENS_AS_PAGE = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'image/avif',
+  'image/bmp',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/ogg',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+])
+
+/** Saves the file's bytes as a download that no browser draws: a new blob typed `application/octet-stream`. */
+async function saveAsDownload(url: string, name: string): Promise<void> {
+  const bytes = await (await fetch(url)).arrayBuffer()
+  const safe = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }))
+  const a = document.createElement('a')
+  a.href = safe
+  a.download = name
+  a.rel = 'noopener'
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(safe), 60_000)
+}
 
 /**
- * Opens a vault file in the iPhone's own viewer from its stored blob (a PDF: round 12, item 11), or says why it cannot
- * (item 12). Returns the words to show, or null when the viewer opened.
+ * Opens a vault file in the iPhone's own viewer from its stored blob (a PDF: round 12, item 11), when its type is on
+ * `OPENS_AS_PAGE`; else saves it as a download (item 12; YAZ-5280). Returns the words to show, or null when it opened or saved.
  */
-export async function openFile(media: VaultMedia, path: string, open: (url: string) => boolean = (url) => window.open(url, '_blank') !== null): Promise<string | null> {
+export async function openFile(
+  media: VaultMedia,
+  path: string,
+  open: (url: string) => boolean = (url) => window.open(url, '_blank') !== null,
+  save: (url: string, name: string) => Promise<void> = saveAsDownload,
+): Promise<string | null> {
   const show = await media.show(path)
   if (show.status !== 'ready') return missingWords('File', path, show)
-  if (!VIEWABLE.test(show.type) || !open(show.url)) return `${nameOf(path)} · Can't open on the phone yet`
-  return null
+  const name = nameOf(path)
+  const type = show.type.split(';')[0].trim().toLowerCase()
+  if (OPENS_AS_PAGE.has(type) && OPENS_AS_PAGE.has(fileType(path))) return open(show.url) ? null : `${name} · Can't open on the phone yet`
+  try {
+    await save(show.url, name)
+    return null
+  } catch {
+    return `${name} · Open this file on the Mac`
+  }
 }
 
 /** Each element that waits for bytes, found in `root`. */

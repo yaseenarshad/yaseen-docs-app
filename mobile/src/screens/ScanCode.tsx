@@ -36,7 +36,7 @@ export function ScanCode({ vault }: { vault?: string }) {
     setHint(null)
     setHelp(null)
     try {
-      const outcome = vault === undefined ? await app.addVault({ repo: found.repo, branch: found.branch, token: found.token, expiresAt: found.expiresAt }) : await app.replaceToken(vault, found.token)
+      const outcome = vault === undefined ? await app.addVault({ repo: found.repo, branch: found.branch, token: found.token, expiresAt: found.expiresAt }) : await app.replaceToken(vault, found.token, found.expiresAt)
       if (!outcome.ok) {
         setHelp(signInHelp(outcome.error))
         setOpenId(outcome.error.kind === 'already-added' ? vaultId(outcome.error) : null)

@@ -64,12 +64,13 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
 /**
  * Row N6: the vault's token stopped working (`UNAUTHORIZED`, red status). A new token is checked against the same
  * repo and branch, then replaces the old one. The local copy, the checkpoint and the waiting answers stay. When the
- * check fails, nothing changes.
+ * check fails, nothing changes. `expiresAt`: the token's end date, from the Mac's code ("Scan a code").
  */
-export async function signInAgain(vault: string, token: string, deps: SignInDeps): Promise<SignInOutcome> {
+export async function signInAgain(vault: string, token: string, deps: SignInDeps, expiresAt?: string | null): Promise<SignInOutcome> {
   const known = (await loadVaultList(deps.store)).vaults.find((v) => vaultId(v) === vault)
   if (known === undefined) throw new Error(`${vault} is not on this phone`)
-  const checked = await checkSignIn({ repo: known.repo, branch: known.branch, token }, deps)
+  // YAZ-5281: the end date that a scanned code holds is kept with the new token, as at a first sign-in.
+  const checked = await checkSignIn({ repo: known.repo, branch: known.branch, token, expiresAt }, deps)
   if (!checked.ok) return checked
   await deps.tokens.write(vault, checked.token)
   await saveAccount(deps.store, vault, checked.vault.account)

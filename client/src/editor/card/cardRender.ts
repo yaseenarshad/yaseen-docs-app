@@ -39,7 +39,7 @@ import { parseAlt } from '../image/imageSrc'
 import { cardPillSpan } from '../wikilink/cardPill'
 import { linkClickAction } from '../linkGesture'
 import { cardSafety } from './cardSafety'
-import { cleanLocal, LOCAL_SRC, urlOf } from './localOnly'
+import { cleanLocal, LOCAL_SRC, localMark, urlOf } from './localOnly'
 import { audioPlayer, boardPicture, isAudioRef, isBoardRef, missingBoard, CARD_AUDIO_ATTR, CARD_BOARD_ATTR, type CardBoardLook } from './cardMedia'
 
 /** How much of the card shows (the Inbox's steps, D18). Absent: everything, as in the page. */
@@ -81,6 +81,12 @@ const OPEN = ''
 const CLOSE = ''
 const PLACEHOLDER_RE = /(\d+)/g
 
+/**
+ * The name a mark of this renderer is written under. The Mac: its own name. The phone (YAZ-5280): the secret name of the
+ * one allow list, which drops every `data-*` of the text and gives the renderer's marks their names back after the clean.
+ */
+const mark = (attr: string): string => (cardSafety.local ? localMark(attr) : attr)
+
 const escapeHtml = (text: string): string => text.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
 interface LinkToken extends Tokens.Generic {
@@ -103,9 +109,9 @@ const wikilinks: TokenizerAndRendererExtension = {
   renderer(token) {
     const { inner, embed, raw } = token as LinkToken
     // A sound or a board: a marker span DOMPurify keeps as text, built into its DOM after (`applyLook`).
-    if (embed && isAudioRef(inner)) return `<span ${CARD_AUDIO_ATTR}="${escapeHtml(inner.split('|')[0].trim())}">${escapeHtml(raw)}</span>`
-    if (embed && isBoardRef(inner)) return `<span ${CARD_BOARD_ATTR}="${escapeHtml(inner)}">${escapeHtml(raw)}</span>`
-    return embed ? escapeHtml(raw) : `<span class="wikilink" ${CARD_LINK_ATTR}="${escapeHtml(inner)}">${escapeHtml(inner)}</span>`
+    if (embed && isAudioRef(inner)) return `<span ${mark(CARD_AUDIO_ATTR)}="${escapeHtml(inner.split('|')[0].trim())}">${escapeHtml(raw)}</span>`
+    if (embed && isBoardRef(inner)) return `<span ${mark(CARD_BOARD_ATTR)}="${escapeHtml(inner)}">${escapeHtml(raw)}</span>`
+    return embed ? escapeHtml(raw) : `<span class="wikilink" ${mark(CARD_LINK_ATTR)}="${escapeHtml(inner)}">${escapeHtml(inner)}</span>`
   },
 }
 

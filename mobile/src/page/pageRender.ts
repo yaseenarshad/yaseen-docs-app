@@ -1,5 +1,5 @@
 import { isAudioRef } from '@client/editor/card/cardMedia'
-import { LOCAL_SRC, cleanLocal, urlOf } from '@client/editor/card/localOnly'
+import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/localOnly'
 import { parseAlt } from '@client/editor/image/imageSrc'
 import { cardIdOf, parseCardLine } from '@shared/cardLine'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
@@ -108,7 +108,7 @@ const wikilinks: TokenizerAndRendererExtension = {
   },
   renderer(token) {
     const { inner, embed } = token as LinkToken
-    return embed ? `<span data-page-embed="${escapeHtml(inner)}"></span>` : `<a data-page-link="${escapeHtml(inner)}"></a>`
+    return embed ? `<span ${localMark('page-embed')}="${escapeHtml(inner)}"></span>` : `<a ${localMark('page-link')}="${escapeHtml(inner)}"></a>`
   },
 }
 
@@ -195,11 +195,11 @@ const markdown = new Marked({ gfm: true, breaks: true })
 markdown.use({
   extensions: [blockMath, footnoteDef, wikilinks, footnoteRef, highlight],
   renderer: {
-    checkbox: ({ checked }) => `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" data-checked="${checked}"></span> `,
+    checkbox: ({ checked }) => `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"></span> `,
     code(token) {
       if (token.lang?.trim() !== 'card') return false
       parse.cards.push({ text: token.text, id: null })
-      return `<div data-page-card="${parse.cards.length - 1}"></div>`
+      return `<div ${localMark('page-card')}="${parse.cards.length - 1}"></div>`
     },
     html({ text }) {
       // A comment shows nothing. A card line (`<!-- card: ID, … -->`) under a card gives that card its ID.

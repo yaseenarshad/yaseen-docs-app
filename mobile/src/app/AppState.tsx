@@ -64,7 +64,7 @@ export interface AppModel {
   /** The sign-in form (decision 13), typed or scanned. On success, the new vault opens. */
   addVault(input: SignInInput): Promise<SignInOutcome>
   /** A new token for a vault on the phone (row N6, "Replace token"). Its files and waiting answers stay. */
-  replaceToken(vault: string, token: string): Promise<SignInOutcome>
+  replaceToken(vault: string, token: string, expiresAt?: string | null): Promise<SignInOutcome>
   /** Decision 7: a tap switches the open vault. Only the open vault polls. */
   switchVault(vault: string): Promise<void>
   /** The vault, its token and its stored files leave the phone. */
@@ -221,8 +221,8 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   )
 
   const replaceToken = useCallback(
-    async (vault: string, token: string) => {
-      const outcome = await signInAgain(vault, token, deps)
+    async (vault: string, token: string, expiresAt?: string | null) => {
+      const outcome = await signInAgain(vault, token, deps, expiresAt)
       if (outcome.ok) {
         const wasWaiting = loaded.phase === 'sign-in-again'
         await load(true)

@@ -151,14 +151,24 @@ export function createAnswers(options: AnswersOptions): Answers {
     void sendNow()
   }
 
+  /**
+   * YAZ-5282: ALL the state that belongs to one vault, set back for the next one, in ONE place: a new field goes here,
+   * so no vault starts with the waits or the problem of the one before.
+   */
+  function forgetVaultState() {
+    afterglow = []
+    shownAt = new Map()
+    slowedInRow = 0
+    staleInRow = 0
+    state = { ...state, problem: null, retryAt: null, lastSentAt: null }
+  }
+
   function follow(next: string | null) {
     if (next === vault) return
     clearTimer()
     vault = next
     box = null
-    afterglow = []
-    shownAt = new Map()
-    state = { ...state, problem: null, retryAt: null, lastSentAt: null }
+    forgetVaultState()
     const id = next
     loading = (async () => {
       if (id === null) return setState({})

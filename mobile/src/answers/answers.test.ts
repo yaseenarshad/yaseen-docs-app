@@ -192,6 +192,24 @@ describe('errors: the answers stay', () => {
     expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null })
   })
 
+  it('a new vault starts with no wait count (YAZ-5282)', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    t.s.github.interrupt = (call) => (call.method !== 'GET' ? new Response(JSON.stringify({ message: 'You have exceeded a secondary rate limit' }), { status: 403 }) : undefined)
+    await t.tick(SEND_AFTER_MS)
+    for (let i = 0; i < 3; i++) await t.tick(t.answers.state().retryAt! - t.clock.now())
+    // The person opens another vault (none here), then this one again: a new start for the list.
+    await t.engine.open(null)
+    await t.answers.idle()
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    // The list sends its waiting answer at once on the new start; GitHub still says "slow down": the first wait again.
+    await t.answers.idle()
+    const { problem, retryAt } = t.answers.state()
+    expect(problem).toBe('RATE_LIMITED')
+    expect(retryAt! - t.clock.now()).toBe(60_000)
+  })
+
   it('a card that is gone: "1 answer could not be saved" with its title; the other answers go; Discard removes it', async () => {
     const t = await answersSetup()
     await t.add(answer('NC-2', 1))
