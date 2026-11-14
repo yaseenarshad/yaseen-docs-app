@@ -21,7 +21,10 @@ const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/M
 const mobile = new URL('..', import.meta.url).pathname
 const PORT = Number(process.env.PROOF_PORT ?? 8917)
 const DEBUG = 9339
-const ORIGIN = `http://127.0.0.1:${PORT}`
+// PROOF_URL: check the LIVE site instead (read-only). Steps 1 to 3 and 6 run; "offline" is Chrome's own offline mode;
+// the deploy steps (4, 5) need a host of our own and are skipped.
+const LIVE = process.env.PROOF_URL?.replace(/\/+$/, '')
+const ORIGIN = LIVE ?? `http://127.0.0.1:${PORT}`
 const work = mkdtempSync(join(tmpdir(), 'notecards-proof-'))
 const out = process.env.PROOF_DIR ?? mkdtempSync(join(tmpdir(), 'notecards-proof-pictures-'))
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -32,8 +35,8 @@ const record = (step: string, ok: boolean, detail = '') => {
 }
 
 // ---- three deploys: v1 = the build; v2 = a new version; v3 = a broken deploy (one chunk missing) ----
-const v1 = join(work, 'v1')
-cpSync(join(mobile, 'dist'), v1, { recursive: true })
+const v1 = LIVE ? join(mobile, 'dist') : join(work, 'v1')
+if (!LIVE) cpSync(join(mobile, 'dist'), v1, { recursive: true })
 const swVersion = (dir: string) => /version:"([0-9a-z-]+)"/.exec(readFileSync(join(dir, 'sw.js'), 'utf8'))![1]
 const deploy = (from: string, name: string, change: (dir: string) => void) => {
   const dir = join(work, name)
@@ -43,14 +46,17 @@ const deploy = (from: string, name: string, change: (dir: string) => void) => {
   change(dir)
   return dir
 }
-const v2 = deploy(v1, 'v2', (dir) => {
+const v2 = LIVE ? '' : deploy(v1, 'v2', (dir) => {
   const html = join(dir, 'index.html')
   writeFileSync(html, readFileSync(html, 'utf8').replace('<title>', '<meta name="proof" content="v2" /><title>'))
 })
-const engine = readdirSync(join(v1, 'assets')).find((f) => f.startsWith('engine-'))!
+// The worker file that the checked site serves (live: fetched; local: the build).
+const swText = LIVE ? await fetch(`${LIVE}/sw.js`).then((r) => r.text()) : readFileSync(join(v1, 'sw.js'), 'utf8')
+const shellList = JSON.parse(/\bfiles:(\[[^\]]*\])/.exec(swText)![1]) as string[]
+const engine = shellList.find((f) => f.startsWith('/assets/engine-'))!.slice('/assets/'.length)
 // A broken deploy: its worker lists a NEW chunk that the host does not have (a chunk the phone already has, by its
 // hashed name, is copied from the kept version and is no fault).
-const v3 = deploy(v2, 'v3', (dir) => {
+const v3 = LIVE ? '' : deploy(v2, 'v3', (dir) => {
   const sw = join(dir, 'sw.js')
   writeFileSync(sw, readFileSync(sw, 'utf8').replace(`"/assets/${engine}"`, '"/assets/engine-NOTONHOST.js"'))
   unlinkSync(join(dir, 'assets', engine))
@@ -67,8 +73,12 @@ const portTaken = () =>
     const socket = connect({ host: '127.0.0.1', port: PORT }, () => (socket.destroy(), resolve(true)))
     socket.on('error', () => resolve(false))
   })
-if (await portTaken()) throw new Error(`port ${PORT} is taken by another program: set PROOF_PORT`)
+if (!LIVE && (await portTaken())) throw new Error(`port ${PORT} is taken by another program: set PROOF_PORT`)
 async function host(dir: string | null) {
+  if (LIVE) {
+    await send('Network.emulateNetworkConditions', { offline: dir === null, latency: 0, downloadThroughput: -1, uploadThroughput: -1 }, page)
+    return
+  }
   if (server) {
     const s = server
     server = null
@@ -190,7 +200,7 @@ try {
   const active = await until(`navigator.serviceWorker.ready.then(r => r.active && r.active.state === 'activated')`)
   const controlled = await until(`navigator.serviceWorker.controller !== null`)
   const kept = await evaluate(`${shellCaches}.then(async ks => ks.length ? (await (await caches.open(ks[0])).keys()).length : 0)`)
-  const expected = JSON.parse(/\bfiles:(\[[^\]]*\])/.exec(readFileSync(join(v1, 'sw.js'), 'utf8'))![1]).length
+  const expected = shellList.length
   record('1c the service worker installs, takes the page, keeps the whole shell', active && controlled && kept === expected, `${kept} of ${expected} files`)
   record('1d zero CSP violations, zero errors (page and worker)', csp().length === 0 && errors().length === 0, `${csp().length} CSP, ${errors().length} errors`)
   await shot('1-online-light')
@@ -216,6 +226,7 @@ try {
   await shot('3-offline-app')
 
   if (process.env.PROOF_TRACE) console.log('versions so far:', versions.slice(-6).join(' '))
+  if (!LIVE) {
   // 4. A new deploy.
   if (process.env.PROOF_TRACE) console.log('--- v2 up')
   await host(v2)
@@ -250,6 +261,7 @@ try {
   await open(`${ORIGIN}/`)
   record('5c and offline too', await until(`!!document.querySelector('meta[name=proof]') && document.body.innerText.includes('Connect vault')`))
 
+  }
   // 6. Dark mode.
   await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] }, page)
   await open(`${ORIGIN}/`)
