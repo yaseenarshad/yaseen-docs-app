@@ -82,13 +82,11 @@ describe("the tour's events are real moments (YAZ-5123)", () => {
 
 /**
  * YAZ-5271: the course names only the Settings sections the app has. The demo branch renamed Settings › Review to
- * Settings › Cards (YAZ-5154). Two spoken lines still say "Review"; they are voiced, and a change waits for the owner's
- * OK and a new take. They are listed here by name, so any other line that names a section the app has not fails.
+ * Settings › Cards (YAZ-5154). The owner approved the new words of `c12-07` and chapter 12's tour step, and `c12-07`
+ * has its new take (YAZ-5122), so every line must name a section the app has.
  */
 describe('the course names the Settings sections the app has (YAZ-5271)', () => {
   const sections = new Set(SETTINGS_SECTIONS.map((s) => s.title))
-  /** The spoken lines that wait for the owner: the clip `c12-07`, and chapter 12's tour step on `settings-review`. */
-  const WAITING_FOR_OWNER = new Set(['c12-07', 'where-things-are:settings-review'])
   /** Each section a line names: "Settings, under <Name>", "Settings › <Name>", "click <Name>" (the tour's Settings step). */
   const named = (line: string): string[] => [
     ...[...line.matchAll(/Settings(?:,| ›) (?:under )?([A-Z]\w*(?: & [A-Z]\w*)?)/g)].map((m) => m[1]),
@@ -101,13 +99,12 @@ describe('the course names the Settings sections the app has (YAZ-5271)', () => 
     expect(lines.filter((l) => /Settings/.test(l)).length).toBeGreaterThan(0)
   })
 
-  it('the clips and the tour`s steps name real sections, but for the two spoken lines that wait for the owner', () => {
-    const clips = COURSE.flatMap((ch) => ch.clips).filter((c) => !WAITING_FOR_OWNER.has(c.id))
-    const tour = COURSE.flatMap((ch) => (ch.tryIt ?? []).filter((s) => !WAITING_FOR_OWNER.has(`${ch.id}:${s.target}`)).map((s) => s.say))
+  it('the clips and the tour`s steps name real sections', () => {
+    const clips = COURSE.flatMap((ch) => ch.clips)
+    const tour = COURSE.flatMap((ch) => (ch.tryIt ?? []).map((s) => s.say))
     expect([...clips.map((c) => c.text), ...tour].flatMap(named).filter((n) => !sections.has(n))).toEqual([])
-    // The two lines that wait still say "Review": when the owner's new take lands, take them out of WAITING_FOR_OWNER.
-    const waiting = [...COURSE.flatMap((ch) => ch.clips).filter((c) => WAITING_FOR_OWNER.has(c.id)).map((c) => c.text), ...COURSE.flatMap((ch) => (ch.tryIt ?? []).filter((s) => WAITING_FOR_OWNER.has(`${ch.id}:${s.target}`)).map((s) => s.say))]
-    expect(waiting.map(named)).toEqual([['Review'], ['Review']])
+    // c12-07 and chapter 12's Settings step name Cards (both checked above, so neither can fall back to "Review").
+    expect(named(clips.find((c) => c.id === 'c12-07')!.text)).toEqual(['Cards'])
   })
 
   it('chapter 12`s drawn Settings lists and lights the section the app has', () => {

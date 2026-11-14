@@ -42,7 +42,7 @@ The app keeps a calendar for every card. On the day a card is due, it shows it t
 
 You try to recall the hidden part, then check. And you answer: forgot, or remembered.
 
-This course takes about twenty-eight minutes, in twelve short chapters.
+This course takes about half an hour, in twelve short chapters.
 
 Some chapters let you try the steps in the real app. That part is always your choice.
 
@@ -229,7 +229,7 @@ Say you make five cards a day. In a year, that is more than 1,800 small things y
 
 And known cards come back less often, so the daily review stays small as the pile grows.
 
-Follow one card you keep remembering. It comes back after two days. Then eleven. Then about six weeks. Then about five months.
+Follow one card you keep remembering. It comes back after a few days. Then about two weeks. Then about six weeks. Then about four months.
 
 So a couple of months in, that card is already months away.
 
@@ -538,7 +538,7 @@ Your copy syncs with your vault. The built-in skill still gets each update of th
 
 Your agent can find it too. One command prints its first page.
 
-In Settings, under Review, one switch shows or hides the card skill. Open the course brings you back here.
+In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.
 
 Now, your first week.
 
@@ -561,6 +561,6 @@ Your card base is your knowledge base. Build it one card at a time, and what you
 ### Try it in the app
 
 1. This is the card skill. Click it to open it.
-2. Now press Command comma to open Settings, and click Review.
+2. Now press Command comma to open Settings, and click Cards.
 3. This switch shows or hides the card skill in the sidebar.
 4. And this button brings you back to the course, at any time.

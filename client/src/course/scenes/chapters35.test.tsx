@@ -126,9 +126,9 @@ describe('the stage of chapters 1 to 5 (YAZ-5121)', () => {
     expect(seen).toEqual([])
   })
 
-  it("chapter 5's path is the app's own: gaps of 2, 11, 46 and 163 days, then the longest gap", () => {
+  it("chapter 5's path is the app's own: gaps of about 4, 14, 45 and 135 days, then the longest gap", () => {
     const days = COMPOUND_FACTS.reviewDays
-    expect(days.slice(1).map((d, i) => d - days[i])).toEqual([2, 11, 46, 163])
+    expect(days.slice(1).map((d, i) => d - days[i])).toEqual([4, 14, 45, 135])
     expect(COMPOUND_FACTS.maxDays).toBe(DEFAULT_REVIEW_SETTINGS.maxDays)
   })
 
