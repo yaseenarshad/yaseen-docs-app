@@ -150,6 +150,23 @@ describe('the `[[` picker lists cards (YAZ-5030)', () => {
     expect(rowsFor('demo-127', candidates, ['DEMO'])[0]).toMatchObject({ insert: 'DEMO-127', card: true })
   })
 
+  it('a card file is ONE row (YAZ-5134): its card, with the card icon, inserting the card`s ID; no page row of the same file', () => {
+    const CARD_FILE = '/vault/the-four-agreements-demo-150.md'
+    const records = [...RECORDS, rec(CARD_FILE, { kind: 'card', title: 'The Four Agreements', cards: [{ id: 'DEMO-150', off: false, next: false, reviews: [], title: 'The Four Agreements' }] })]
+    const rows = rowsFor('four agreements', [...linkCandidates(records, true), ...cardLinkCandidates(records)], ['DEMO']).filter((r) => !r.create)
+    expect(rows.map((r) => [r.label, r.insert, r.card === true, r.path])).toEqual([['The Four Agreements', 'DEMO-150', true, CARD_FILE]])
+    // Its card's ID finds it too, once.
+    expect(rowsFor('150', [...linkCandidates(records, true), ...cardLinkCandidates(records)], ['DEMO']).filter((r) => !r.create).map((r) => r.insert)).toEqual(['DEMO-150'])
+    // A card in a page stays its card's row, and its page the page's row.
+    expect(rowsFor('verbs', [...linkCandidates(records, true), ...cardLinkCandidates(records)], ['DEMO']).filter((r) => !r.create).map((r) => [r.insert, r.card === true])).toEqual([['DEMO-1', false]])
+  })
+
+  it('a card file whose card has no ID yet, or a vault without cards rows: the file`s page row, once', () => {
+    const CARD_FILE = '/vault/the-four-agreements.md'
+    const unswept = [...RECORDS, rec(CARD_FILE, { kind: 'card', title: 'The Four Agreements', cards: [{ id: null, off: false, next: false, reviews: [], title: 'The Four Agreements' }] })]
+    expect(rowsFor('four agreements', [...linkCandidates(unswept, true), ...cardLinkCandidates(unswept)], ['DEMO']).filter((r) => !r.create).map((r) => [r.insert, r.card === true])).toEqual([['The Four Agreements', false]])
+  })
+
   it('a card titled as typed is no page of that name: Create still makes the page', () => {
     const rows = rowsFor('Ser', candidates, ['DEMO'])
     expect(rows[0]).toMatchObject({ insert: 'DEMO-126', card: true })
