@@ -145,6 +145,7 @@ listeners.push((m) => {
   if (m.method === 'Runtime.consoleAPICalled' && process.env.PROOF_TRACE) console.log('  console:', m.params.args.map((a: any) => a.value ?? a.description).join(' '))
   if (m.method === 'Runtime.consoleAPICalled') log.push({ where, level: m.params.type, text: m.params.args.map((a: any) => a.value ?? a.description).join(' ') })
   if (m.method === 'Runtime.exceptionThrown') log.push({ where, level: 'exception', text: m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text })
+  if (process.env.PROOF_TRACE && (m.method === 'Log.entryAdded' || m.method === 'Runtime.exceptionThrown')) console.log(`  ${new Date().toISOString().slice(14, 23)} [${where}] ${(m.params.entry?.text ?? m.params.exceptionDetails?.exception?.description ?? '').slice(0, 160)}`)
   if (m.method === 'Log.entryAdded') log.push({ where, level: m.params.entry.level, text: m.params.entry.text })
 })
 const csp = () => log.filter((l) => /Content Security Policy/i.test(l.text))
@@ -214,7 +215,8 @@ try {
     const liveEntry = /src="(\/assets\/index-[^"]+\.js)"/.exec(await fetch(`${ORIGIN}/`).then((r) => r.text()))![1]
     await open(`${ORIGIN}/`)
     const before = await evaluate(`[navigator.serviceWorker.controller !== null, document.querySelector('script[src*="/assets/index-"]').getAttribute('src')]`)
-    record('0a the profile runs the previous build from its worker', before[0] === true && before[1] !== liveEntry, `page ${before[1]}, live ${liveEntry}`)
+    if (process.env.PROOF_TRACE) console.log('  caches at 0a:', JSON.stringify(await evaluate(`caches.keys()`)))
+  record('0a the profile runs the previous build from its worker', before[0] === true && before[1] !== liveEntry, `page ${before[1]}, live ${liveEntry}`)
     // The old app asks for a new version at its start; the new one installs and waits (the open page stays old).
     const waits = await until(`navigator.serviceWorker.getRegistration().then(r => !!r.waiting && r.waiting.state === 'installed')`, 30_000)
     record('0b the new build installs in the background and waits', waits)

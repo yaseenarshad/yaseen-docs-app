@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { audioPlayer } from '@client/editor/card/cardMedia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { memoryBackend, openVaultStore } from '../../store'
@@ -213,10 +215,9 @@ describe('a file opened from a link (YAZ-5280)', () => {
       ['docs/unknown.bin', 'application/octet-stream'],
     ]) {
       const opened: string[] = []
-      const saved: string[] = []
-      const words = await openFile(typed(type), path, (url) => (opened.push(url), true), async (_url, name) => void saved.push(name))
+      const words = await openFile(typed(type), path, (url) => (opened.push(url), true))
       expect([path, opened]).toEqual([path, []])
-      expect([path, saved, words]).toEqual([path, [path.slice(path.lastIndexOf('/') + 1)], null])
+      expect([path, words]).toEqual([path, `${path.slice(path.lastIndexOf('/') + 1)} · Open this file on the Mac`])
     }
   })
 
@@ -229,27 +230,33 @@ describe('a file opened from a link (YAZ-5280)', () => {
       ['a/v.mp4', 'video/mp4'],
     ]) {
       const opened: string[] = []
-      expect(await openFile(typed(type), path, (url) => (opened.push(url), true), async () => undefined)).toBeNull()
+      expect(await openFile(typed(type), path, (url) => (opened.push(url), true))).toBeNull()
       expect(opened).toEqual([`blob:media/${path}`])
     }
   })
 
-  it('a file that cannot be saved either: "Open this file on the Mac"', async () => {
-    expect(await openFile(typed('image/svg+xml'), 'x/logo.svg', () => true, async () => Promise.reject(new Error('no')))).toBe('logo.svg · Open this file on the Mac')
+  it('the follow-up (live run): a type that cannot open goes straight to the words, with no attempt: its bytes are not even read', async () => {
+    let shows = 0
+    const media: VaultMedia = { show: async (path) => (shows++, { status: 'ready', path, url: `blob:media/${path}`, type: 'image/svg+xml' }) }
+    expect(await openFile(media, 'x/logo.svg', () => true)).toBe('logo.svg · Open this file on the Mac')
+    expect(shows).toBe(0)
+  })
+
+  it('the follow-up: this file makes no fetch (the CSP allows connections to GitHub only; a fetch of a blob: address is refused)', () => {
+    const code = readFileSync(join(import.meta.dirname, 'vaultMedia.ts'), 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+    expect(code).not.toMatch(/\bfetch\(|XMLHttpRequest/)
   })
 })
 
 describe('files and object URLs (YAZ-5079)', () => {
-  it("a PDF opens in the iPhone's own viewer from its blob; another type is saved as a download", async () => {
+  it("a PDF opens in the iPhone's own viewer from its blob; another type is not opened", async () => {
     const media = fakeMedia()
     const opened: string[] = []
     const open = (url: string) => (opened.push(url), true)
     expect(await openFile(media, 'docs/Guide.pdf', open)).toBeNull()
     expect(opened).toEqual(['blob:media/docs/Guide.pdf'])
-    // YAZ-5280: another type never opens as a page: it is saved as a download.
-    const saved: string[] = []
-    expect(await openFile(media, 'docs/data.zip', open, async (_u, name) => void saved.push(name))).toBeNull()
-    expect(saved).toEqual(['data.zip'])
+    // YAZ-5280: another type never opens as a page; the phone says to open it on the Mac.
+    expect(await openFile(media, 'docs/data.zip', open)).toBe('data.zip · Open this file on the Mac')
     media.online = false
     expect(await openFile(media, 'docs/Other.pdf', open)).toBe('File · Other.pdf · Needs a connection')
   })

@@ -105,9 +105,8 @@ export function missingWords(kind: 'Picture' | 'Sound' | 'File', path: string, s
  *  - `audio/mpeg`, `audio/mp4`, `audio/wav`, `audio/ogg`; `video/mp4`, `video/quicktime`, `video/webm`: the media
  *    player; sound and frames only.
  * Both the file's name and the type 3D gives must be on the list, so a type that lies changes nothing. Anything else
- * (SVG, HTML, XML, `text/*`, an unknown type) never opens as a page: it is saved as a download, typed
- * `application/octet-stream` (no browser draws or runs that), or, if that fails, "Open this file on the Mac". An SVG in a
- * page or a card shows only through `<img>`, where it cannot run script.
+ * (SVG, HTML, XML, `text/*`, an unknown type) never opens as a page: the phone says "Open this file on the Mac", with no
+ * attempt. An SVG in a page or a card shows only through `<img>`, where it cannot run script.
  */
 const OPENS_AS_PAGE = new Set([
   'application/pdf',
@@ -126,39 +125,21 @@ const OPENS_AS_PAGE = new Set([
   'video/webm',
 ])
 
-/** Saves the file's bytes as a download that no browser draws: a new blob typed `application/octet-stream`. */
-async function saveAsDownload(url: string, name: string): Promise<void> {
-  const bytes = await (await fetch(url)).arrayBuffer()
-  const safe = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }))
-  const a = document.createElement('a')
-  a.href = safe
-  a.download = name
-  a.rel = 'noopener'
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(safe), 60_000)
-}
-
 /**
  * Opens a vault file in the iPhone's own viewer from its stored blob (a PDF: round 12, item 11), when its type is on
- * `OPENS_AS_PAGE`; else saves it as a download (item 12; YAZ-5280). Returns the words to show, or null when it opened or saved.
+ * `OPENS_AS_PAGE` (YAZ-5280). Any other file gets "<name> · Open this file on the Mac" at once, with no attempt
+ * (round 12, item 12; the follow-up of the live run): the download path read the blob with `fetch`, which the CSP's
+ * `connect-src` (GitHub only) refuses, so it never worked on the site. Returns the words to show, or null when it opened.
  */
-export async function openFile(
-  media: VaultMedia,
-  path: string,
-  open: (url: string) => boolean = (url) => window.open(url, '_blank') !== null,
-  save: (url: string, name: string) => Promise<void> = saveAsDownload,
-): Promise<string | null> {
+export async function openFile(media: VaultMedia, path: string, open: (url: string) => boolean = (url) => window.open(url, '_blank') !== null): Promise<string | null> {
+  const name = nameOf(path)
+  const onMac = `${name} · Open this file on the Mac`
+  if (!OPENS_AS_PAGE.has(fileType(path))) return onMac
   const show = await media.show(path)
   if (show.status !== 'ready') return missingWords('File', path, show)
-  const name = nameOf(path)
   const type = show.type.split(';')[0].trim().toLowerCase()
-  if (OPENS_AS_PAGE.has(type) && OPENS_AS_PAGE.has(fileType(path))) return open(show.url) ? null : `${name} · Can't open on the phone yet`
-  try {
-    await save(show.url, name)
-    return null
-  } catch {
-    return `${name} · Open this file on the Mac`
-  }
+  if (!OPENS_AS_PAGE.has(type)) return onMac
+  return open(show.url) ? null : `${name} · Can't open on the phone yet`
 }
 
 /** Each element that waits for bytes, found in `root`. */
