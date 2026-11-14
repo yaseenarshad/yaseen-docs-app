@@ -80,7 +80,7 @@ describe('friendStats (YAZ-5069)', () => {
     expect(s.totals).toMatchObject({ cards: 4, inReview: 2, newLeft: 1 })
     expect(s.v).toBe(1)
     expect(s.at).toBe('2026-11-13T20:00:00.000Z')
-    expect('mark' in s || 'reads' in s).toBe(false)
+    expect('mark' in s || 'reads' in s).toBe(false) // round 16: they live in the pointer gist
   })
 
   it('`mature`: the next gap is 21 days or more', () => {
