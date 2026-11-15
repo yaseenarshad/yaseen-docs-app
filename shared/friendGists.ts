@@ -1,4 +1,4 @@
-import { isTimeZone, parseFriendPointer, parseFriendStats, type FriendPointer, type FriendStats } from './friendStats'
+import { isTimeZone, parseFriendPointer, parseFriendStats, type FriendPointer, type FriendStats } from './friendStatsFormat'
 import type { ListStore } from './friendListHome'
 import type { ListMemory, RepoPort } from './friendListStore'
 

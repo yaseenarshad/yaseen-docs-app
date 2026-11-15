@@ -1,5 +1,5 @@
 import { Worker } from 'node:worker_threads'
-import type { FriendStats, FriendVault } from '@shared/friendStats'
+import type { FriendStats, FriendVault } from '@shared/friendStatsFormat'
 
 /**
  * The Mac's card count OFF the main thread (YAZ-5250): `friendStats` of 20,000 cards takes most of a second of CPU, and
