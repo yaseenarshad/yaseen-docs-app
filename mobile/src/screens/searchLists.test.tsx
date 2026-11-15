@@ -5,13 +5,15 @@ import { READER_FILES, READER_ID, seedReaderVault, writeVaultFiles } from '../de
 import { forgetListFolds } from '../search/ListTree'
 import { forgetLists } from '../search/lists'
 import { forgetSearch } from '../search/searchState'
+import { forgetIdsForms } from '../search/showIds'
 import { mount, newPhone, type Harness } from './testing'
 
 /**
  * YAZ-5452: Search's list filters. Favorites shows the vault's own `favorites.json`, as the Mac's Favorites tab: the
  * Mac's order, the tree's icons, a folder that opens in place, a path that is gone hidden; a missing or corrupt file is
  * a plain line; typed text finds only inside the list, in the folder tree; a sync's new file shows at once.
- * YAZ-5453: Focus, the newest valid `focus.<mac id>.json`, and the folders of the Focus and Favorites tabs. Made-up vault.
+ * YAZ-5453: Focus, the newest valid `focus.<mac id>.json`, and the folders of the Focus and Favorites tabs.
+ * YAZ-5454: the trees follow the vault's "Show IDs in the files list" (`show-ids.json`). Made-up vault.
  */
 let h: Harness | null = null
 beforeEach(() => {
@@ -24,6 +26,7 @@ afterEach(() => {
   forgetSearch()
   forgetLists()
   forgetListFolds()
+  forgetIdsForms()
 })
 
 async function waitFor(x: Harness, done: () => boolean, ms = 3000): Promise<void> {
@@ -215,5 +218,45 @@ describe('the Focus filter (YAZ-5453)', () => {
     expect(tree(h)).toEqual(['0:group:Reading', '1:markdown:Café notes', '0:markdown:Trip plan'])
     await typeQuery(h, 'caf')
     await waitFor(h, () => [...h!.host.querySelectorAll('.search__found .tree__label')].map((l) => l.textContent).join() === 'Café notes')
+  })
+})
+
+/** Each row's name and the ID at its right end. */
+const withIds = (x: Harness) => [...x.host.querySelectorAll<HTMLElement>('.tree .tree__row')].map((r) => `${r.querySelector('.tree__label')?.textContent}${r.querySelector('.tree__id') ? ` ${r.querySelector('.tree__id')?.textContent}` : ''}`)
+const showIds = (files: unknown) => ({ '.yaseendocs/show-ids.json': JSON.stringify({ search: 'always', title: true, files }) })
+
+describe('Show IDs in the files list (YAZ-5454)', () => {
+  it('no file, or Off: no ID on any row', async () => {
+    h = await openSearch()
+    expect(h.host.querySelector('.tree__id')).toBeNull()
+    h.unmount()
+    forgetSearch()
+    h = await openSearch(showIds('off'))
+    await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
+    expect(h.host.querySelector('.tree__id')).toBeNull()
+  })
+
+  it('Number: each page row ends with its ID number, folders none; Full: the whole ID; Favorites and Focus rows too', async () => {
+    h = await openSearch({ ...showIds('number'), ...favs(['Trip plan.md', 'git']) })
+    await waitFor(h, () => h!.host.querySelector('.tree__id') !== null)
+    expect(withIds(h)).toEqual(['cards', 'git', 'Café notes #4', 'Spanish words #1', 'Trip plan #3'])
+    await h.click('Favorites')
+    await waitFor(h, () => withIds(h!)[0] === 'Trip plan #3')
+    await h.click(/^git, folder/)
+    expect(withIds(h)).toEqual(['Trip plan #3', 'git', 'Git cheat sheet #2'])
+    h.unmount()
+    forgetSearch()
+    forgetLists()
+    h = await openSearch(showIds('full'))
+    await waitFor(h, () => h!.host.querySelector('.tree__id') !== null)
+    expect(withIds(h)).toContain('Spanish words DEMO-1')
+  })
+
+  it('a sync that brings a new show-ids.json changes the rows at once', async () => {
+    h = await openSearch()
+    expect(h.host.querySelector('.tree__id')).toBeNull()
+    const index = await writeVaultFiles(h.store, { ...READER_FILES, ...showIds('number') }, {}, 'c2')
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: ['.yaseendocs/show-ids.json'], diff: { added: ['.yaseendocs/show-ids.json'], changed: [], removed: [], renamed: [] }, index })
+    await waitFor(h, () => withIds(h!).includes('Trip plan #3'))
   })
 })

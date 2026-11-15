@@ -12,6 +12,7 @@ import { ICON_KIND, RowIcon } from './rowIcon'
 import { buildTree, visibleRows, type TreeRow } from './vaultTree'
 import type { Scope } from './lists'
 import { ListTree } from './ListTree'
+import { rowId, useIdsForm } from './showIds'
 
 export { SearchBar } from './SearchBar'
 
@@ -34,6 +35,8 @@ export default function SearchTree({ data, cards, shown, onMore, scope }: { data
 /** The whole vault's tree (YAZ-5438). */
 function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: boolean; shown: number; onMore: () => void }) {
   const app = useApp()
+  // YAZ-5454: the vault's "Show IDs in the files list", as the Mac's Files tree.
+  const ids = useIdsForm(data)
   useEffect(forgetFlips, [])
   const open = openFoldersOf(app.vaultKey)
   const [turn, setTurn] = useState(0)
@@ -65,6 +68,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
               <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               <RowIcon kind={row.kind} open={row.open === true} />
               <span className="tree__label">{row.label}</span>
+              <TreeId id={row.kind === 'folder' ? null : rowId(data, row.path, ids)} />
             </button>
           </li>
         ))}
@@ -205,4 +209,9 @@ export function ShowMore({ onMore }: { onMore: () => void }) {
       Show more
     </button>
   )
+}
+
+/** A row's ID at its right end (YAZ-5454, the Mac's `tree__id`): "In the files list" on, a page with an ID. */
+export function TreeId({ id }: { id: string | null }) {
+  return id === null ? null : <span className="tree__id">{id}</span>
 }

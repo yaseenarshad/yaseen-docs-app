@@ -225,3 +225,14 @@
 .search .focus-folder__icon {
   color: var(--fg-muted);
 }
+
+/* YAZ-5454: a page row's ID (the vault's "Show IDs in the files list"), as the Mac's `.tree__id`: quiet, at the
+   right end so the IDs line up; a long name is cut before it. */
+.search .tree__id {
+  flex: none;
+  padding-left: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}

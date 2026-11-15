@@ -12,7 +12,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'search-favorites', 'search-focus'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'search-favorites', 'search-focus', 'search-ids'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -88,7 +88,9 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                   '.yaseendocs/focus.bbbbbbbbbbbb.json': JSON.stringify({ version: 1, at: '2026-11-02T10:00:00Z', focus: ['Trip plan.md', 'git'] }),
                   '.yaseendocs/focus-folders.bbbbbbbbbbbb.json': JSON.stringify({ version: 1, at: '2026-11-02T10:00:00Z', self: 'vault', folders: [{ id: 'f1', name: 'Spanish study', created: 1, at: 1, items: [{ vault: 'vault', path: 'Spanish words.md' }, { vault: 'vault', path: 'cards' }] }] }),
                 }
-              : {}
+              : name === 'search-ids'
+                ? { '.yaseendocs/show-ids.json': JSON.stringify({ search: 'always', title: true, files: 'number' }) } // YAZ-5454: "#12" at each page row's end
+                : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -187,6 +189,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await until(() => document.querySelector('[role="tree"][aria-label="Focus"]') !== null)
       press(/^cards, folder/)
       await wait(80)
+      break
+    case 'search-ids':
+      press(/^git, folder/)
+      await until(() => document.querySelector('.tree__id') !== null)
       break
     case 'search-clear':
       document.querySelector<HTMLInputElement>('input[name="search"]')?.focus()

@@ -6,7 +6,8 @@ import { useApp } from '../app/AppState'
 import { vaultNodes, type VaultNodes } from './foundTree'
 import type { ListFolder, ListKind, Scope } from './lists'
 import { ICON_KIND, RowIcon } from './rowIcon'
-import { ShowMore, treeRoute } from './SearchTree'
+import { ShowMore, TreeId, treeRoute } from './SearchTree'
+import { rowId, useIdsForm } from './showIds'
 import type { VaultData } from './vaultData'
 import { fileKind, type TreeKind } from './vaultTree'
 
@@ -93,6 +94,8 @@ export function listRows(vault: VaultNodes, folders: readonly ListFolder[], top:
 export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope }) {
   const app = useApp()
   const [, setTurn] = useState(0)
+  // YAZ-5454: the vault's "Show IDs in the files list": the Mac's Favorites and Focus rows show it too.
+  const ids = useIdsForm(data)
   if (scope.loading === true) return null
   const words = WORDS[scope.kind]
   const open = foldsOf(app.vaultKey, scope.kind)
@@ -120,6 +123,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
               <span className={row.kind === 'folder' || row.kind === 'group' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               {row.kind === 'group' ? <StackIcon /> : <RowIcon kind={row.kind} open={row.open === true} />}
               <span className="tree__label">{row.label}</span>
+              <TreeId id={row.kind === 'folder' || row.kind === 'group' ? null : rowId(data, row.path, ids)} />
             </button>
           </li>
         ))}

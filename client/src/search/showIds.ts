@@ -12,32 +12,12 @@
  * `id`; a title or a files-list row reads the index's cached path map, never the file.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { idNumber } from '@shared/pageId'
+import { DEFAULT_SHOW_IDS, SHOW_IDS_FILE, idInFiles, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type ShowIdsSettings } from '@shared/showIds'
 import { api } from '../api'
 import { pathInfo } from '../editor/wikilink/linkPillLook'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 
-export const SHOW_IDS_FILE = 'show-ids.json'
-export type IdsInSearch = 'always' | 'match'
-/** "In the files list": Off, the ID's number ("#12"), or the full ID ("EMB-12"). */
-export type IdsInFiles = 'off' | 'number' | 'full'
-export interface ShowIdsSettings {
-  search: IdsInSearch
-  /** The ID after the page's title (On, the default). */
-  title: boolean
-  /** The ID at the right end of a page's row in the sidebar's files list (Off, the default). */
-  files: IdsInFiles
-}
-export const DEFAULT_SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off' }
-
-/**
- * What the file holds, or the default for anything else: an old file (`search` alone) reads as title On, files list
- * Off; round 2's boolean files list reads `true` as Number, `false` as Off.
- */
-export function sanitizeShowIds(raw: unknown): ShowIdsSettings {
-  const held = typeof raw === 'object' && raw !== null ? (raw as { search?: unknown; title?: unknown; files?: unknown }) : {}
-  return { search: held.search === 'match' ? 'match' : 'always', title: held.title !== false, files: held.files === true || held.files === 'number' ? 'number' : held.files === 'full' ? 'full' : 'off' }
-}
+export { DEFAULT_SHOW_IDS, SHOW_IDS_FILE, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type ShowIdsSettings } from '@shared/showIds'
 
 export interface ShowIdsState {
   settings: ShowIdsSettings
@@ -102,12 +82,6 @@ export function usePageId(source: WikilinkResolveSource | undefined, path: strin
   return useSyncExternalStore(subscribe, () => (source === undefined ? undefined : pathInfo(source.records, source.folders).get(path)?.id))
 }
 
-/** The ID as Number shows it: "#" and its number ("EMB-12" → "#12", `idNumber`); an ID with no number, in full. */
-const numberShown = (id: string): string => {
-  const number = idNumber(id)
-  return number === undefined ? id : `#${number}`
-}
-
 /** Every page's ID by its absolute path (YAZ-4940 "In the files list"), as its vault chose to show it ("#12" or "EMB-12"). */
 export type PathIds = ReadonlyMap<string, string>
 
@@ -148,7 +122,7 @@ export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | unde
     const built = new Map<string, string>()
     infos.forEach((info, i) => {
       const number = sources[i].form === 'number'
-      for (const [path, { id }] of info) if (id !== undefined) built.set(path, number ? numberShown(id) : id)
+      for (const [path, { id }] of info) if (id !== undefined) built.set(path, idInFiles(id, number ? 'number' : 'full'))
     })
     held.current = { infos, forms, ids: sameIds(last.ids, built) ? last.ids : built }
     return held.current.ids
