@@ -252,6 +252,8 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
     if (found.kind === 'none' || found.kind === 'no-vault') return 'none'
     if (found.kind === 'elsewhere') return { elsewhere: found.home }
     if (found.kind === 'newer' || found.kind === 'broken') return found.kind
+    // YAZ-5399: the home vault repo is gone on GitHub: the Mac sends nothing (the phone offers the way out).
+    if (found.kind === 'home-gone') throw new ListError('NO_LIST_ACCESS', 'The vault of the friends list is gone')
     return (index = found.handle)
   }
 

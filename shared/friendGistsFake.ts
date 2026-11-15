@@ -256,7 +256,7 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
       return id
     },
     async http(method, path, query, token, body, etag, accept = null) {
-      if (path.startsWith('/repos/') && world.repos !== null) {
+      if ((path.startsWith('/repos/') || path.startsWith('/repositories/')) && world.repos !== null) {
         if (world.offline) return undefined
         const who = token === null ? undefined : accounts.get(token)
         if (token !== null && who === undefined) return { status: 401, body: { message: 'Bad credentials' }, headers: { date: new Date(now()).toUTCString() } }

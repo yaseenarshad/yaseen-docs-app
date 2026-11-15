@@ -22,7 +22,13 @@ export function gistsFetch(world: FakeGistWorld): GistsFetch {
       if (!url.startsWith(`${GITHUB_API}/`)) throw new TypeError('the fake answers api.github.com only')
       const address = new URL(url)
       const token = headers.get('authorization')?.replace(/^Bearer /, '') ?? null
-      const answer = await world.http(method, address.pathname, address.searchParams, token, body, headers.get('if-none-match'), headers.get('accept'))
+      let answer = await world.http(method, address.pathname, address.searchParams, token, body, headers.get('if-none-match'), headers.get('accept'))
+      // A browser's `fetch` follows GitHub's redirect of a renamed repo by itself (YAZ-5399), on the same host only.
+      for (let hop = 0; answer !== undefined && [301, 302, 307, 308].includes(answer.status) && init.redirect !== 'manual' && hop < 3; hop++) {
+        const next = new URL(answer.headers.location ?? '', url)
+        if (next.origin !== new URL(GITHUB_API).origin) break
+        answer = await world.http(method, next.pathname, next.searchParams, token, body, headers.get('if-none-match'), headers.get('accept'))
+      }
       if (answer === undefined) throw new TypeError('Load failed')
       const noBody = answer.status === 204 || answer.status === 304
       // YAZ-5083: a raw file of the vault repo (`contents` with the raw media type) is the file's bytes, not JSON.

@@ -23,7 +23,7 @@ import type { Clock, SyncEvent } from '../sync/engine'
 import { countedVaults, openFriendsApi } from './friendsApi'
 import type { OwnNumbers } from './ownNumbers'
 import { friendsGuard } from './guard'
-import { deviceTag } from './deviceTag'
+import { deviceTag, keepListSeen, listSeen } from './deviceTag'
 import { drainQueue, loadQueue } from './removeQueue'
 
 /**
@@ -201,7 +201,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     if (found.kind === 'newer') return 'newer'
     if (found.kind === 'broken') return 'broken'
     if (found.kind === 'elsewhere') return 'elsewhere'
-    if (found.kind === 'no-vault') return 'no-access'
+    // YAZ-5399: the home vault is gone: nothing is sent; the Friends tab shows the way out.
+    if (found.kind === 'no-vault' || found.kind === 'home-gone') return 'no-access'
     return (index = found.handle)
   }
 
@@ -215,6 +216,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     const session = await store.session(PHONE)
     // YAZ-5083: this phone's tag in the list's steps (stable across restarts).
     writeOptions.device ??= await deviceTag(session)
+    // YAZ-5398: the newest list this phone wrote or read (shared with the Friends list in this run of the app).
+    writeOptions.memory ??= await listSeen(store)
     // YAZ-5195: after an erase or a stop, nothing of the friends state is stored again.
     const save = async (patch: Partial<Saved>) => {
       if (await guard.live()) await session.setState(PHONE, SEND_STATE, { ...saved, ...patch })
@@ -395,6 +398,8 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         default:
           return set({ status: 'failed' })
       }
+    } finally {
+      if (await guard.live()) await keepListSeen(store, session).catch(() => undefined)
     }
   }
 

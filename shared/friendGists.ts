@@ -1,6 +1,6 @@
 import { isTimeZone, parseFriendPointer, parseFriendStats, type FriendPointer, type FriendStats } from './friendStats'
 import type { ListStore } from './friendListHome'
-import type { RepoPort } from './friendListStore'
+import type { ListMemory, RepoPort } from './friendListStore'
 
 /**
  * THE FRIENDS GISTS (YAZ-5082, 4E1; decisions 14 as changed in round 16, 15, 16 and 17 on YAZ-5057). Pure logic that the
@@ -621,6 +621,9 @@ export interface IndexHandle {
   store?: ListStore
   /** YAZ-5083: the list file's fields that this app does not know (kept on each write). */
   extra?: Record<string, unknown>
+  /** YAZ-5398: the list's write count at `sha`, and when (this device's clock) this copy was read or written. */
+  rev?: number
+  seenAt?: number
 }
 
 /**
@@ -628,7 +631,15 @@ export interface IndexHandle {
  * `elsewhere` (YAZ-5083): the list is in the vault `home`, which this device does not have: it says so, and writes
  * nothing. `no-vault`: this device has no vault on the friends account to hold a new list.
  */
-export type IndexFind = { kind: 'none' } | { kind: 'newer'; id: string } | { kind: 'broken'; id: string } | { kind: 'ok'; handle: IndexHandle } | { kind: 'elsewhere'; home: string } | { kind: 'no-vault' }
+export type IndexFind =
+  | { kind: 'none' }
+  | { kind: 'newer'; id: string }
+  | { kind: 'broken'; id: string }
+  | { kind: 'ok'; handle: IndexHandle }
+  | { kind: 'elsewhere'; home: string }
+  | { kind: 'no-vault' }
+  /** YAZ-5399: GitHub answers 404 for the home vault repo (deleted, or no access at all). The way out: `restartList`. */
+  | { kind: 'home-gone'; home: string }
 
 /** How a write is labelled and spaced. `describe` gives the gist's description (the live test starts it "notecards-test"). */
 export interface WriteOptions {
@@ -640,6 +651,11 @@ export interface WriteOptions {
    * before a stop. Absent: one tag for this run of the app.
    */
   device?: string
+  /**
+   * YAZ-5398: the newest list this device wrote or read in each repo. A read older than it is a stale read of GitHub
+   * and is never trusted (`readGuarded`). Absent: only the handle in hand counts.
+   */
+  memory?: ListMemory
 }
 
 /** Default descriptions: what a person sees in their own gist list on GitHub. */

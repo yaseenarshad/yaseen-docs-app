@@ -33,9 +33,12 @@ import {
   listErrorCode,
   listFileText,
   noteText,
-  readAt,
+  readGuarded,
   readNote,
   readRepoList,
+  repoKey,
+  staleReadError,
+  type ReadGuard,
   type RepoListRead,
   type RepoListSnapshot,
   type RepoPort,
@@ -56,7 +59,13 @@ import {
 export interface ListStore {
   readonly port: RepoPort
   readonly note: string | null
+  /** YAZ-5398: this device's memory, clock and wait for each read of the list (never older than its own writes). */
+  readonly guard?: ReadGuard
 }
+
+/** The read guard of a device's options (YAZ-5398). */
+export const guardOf = (opts: Partial<Pick<WriteOptions, 'memory' | 'now' | 'sleep'>> | undefined): ReadGuard | undefined =>
+  opts === undefined || opts.sleep === undefined ? undefined : { memory: opts.memory, now: opts.now ?? Date.now, sleep: opts.sleep }
 
 /** The commit subject of a list write, in AutoSync's form (`sync (phone): …`), so the vault's history reads the same. */
 export const LIST_COMMIT = 'friends (phone): friends.json'
@@ -79,7 +88,8 @@ async function removeQuietly(api: GistsApi, id: string): Promise<void> {
 /** The handle of a list read from the repo. */
 export function handleOf(store: ListStore, snap: RepoListSnapshot, owner: string | null): IndexHandle {
   const { read } = snap
-  return { id: store.note ?? '', index: read.value, raw: read.raw, etag: snap.etag, createdAt: '', files: read.files, state: read.list, owner, sha: snap.sha, store, extra: snap.extra }
+  const seenAt = (store.guard?.now ?? Date.now)()
+  return { id: store.note ?? '', index: read.value, raw: read.raw, etag: snap.etag, createdAt: '', files: read.files, state: read.list, owner, sha: snap.sha, store, extra: snap.extra, rev: snap.rev, seenAt }
 }
 
 /** The repo ports of the device (its vaults on the friends account), or none. */
@@ -90,13 +100,16 @@ async function portsOf(api: GistsApi): Promise<readonly RepoPort[]> {
 /**
  * The list as it is on GitHub now (an ETag read of the branch: free when nothing changed). A list that is gone or cannot
  * be read throws (`BrokenList`: nothing is written to it, YAZ-5191); a newer one throws `NewerList`.
+ * YAZ-5398: never a list OLDER than this copy or than what this device wrote or read (a stale read of GitHub): such a
+ * read is made again, and if it stays older, this throws `GITHUB_DOWN` (quiet). So a step never goes back.
  */
 export async function latestList(handle: IndexHandle): Promise<IndexHandle> {
   const store = handle.store
   if (store === undefined || handle.sha === undefined) throw new Error('This list is not in a vault yet')
-  const head = await store.port.head(handle.etag)
-  if (head === 'unchanged' || head.sha === handle.sha) return head === 'unchanged' ? handle : { ...handle, etag: head.etag }
-  return fromRead(store, await readAt(store.port, head.sha, head.etag), handle.owner ?? null)
+  const r = await readGuarded(store.port, store.guard, { etag: handle.etag, known: handle.sha, min: handle.rev ?? 0, minAt: handle.seenAt })
+  if (r.kind === 'unchanged') return r.etag === handle.etag ? handle : { ...handle, etag: r.etag }
+  if (r.stale) throw staleReadError()
+  return fromRead(store, r.read, handle.owner ?? null)
 }
 
 function fromRead(store: ListStore, read: RepoListRead, owner: string | null): IndexHandle {
@@ -121,9 +134,11 @@ export async function updateList<T>(handle: IndexHandle, op: ListOp<T>, opts: Pi
     const { patch, result } = op(base)
     if (patch === null || Object.keys(patch).length === 0) return { handle: base, result }
     const files = applyPatch(base.files ?? {}, patch)
+    // YAZ-5398: each write adds 1 to the list's write count; a read with a lower count is a stale read.
+    const rev = (base.rev ?? 0) + 1
     let sha: string
     try {
-      sha = await store.port.commit(base.sha!, LIST_PATH, listFileText(files, base.extra ?? {}), opts.message ?? LIST_COMMIT)
+      sha = await store.port.commit(base.sha!, LIST_PATH, listFileText(files, base.extra ?? {}, rev), opts.message ?? LIST_COMMIT)
     } catch (err) {
       if (listErrorCode(err) === 'STALE_HEAD') {
         if (attempt >= MAX_STALE_WRITES) throw Object.assign(new Error('The friends list kept changing on GitHub'), { code: 'GITHUB_DOWN' })
@@ -133,8 +148,11 @@ export async function updateList<T>(handle: IndexHandle, op: ListOp<T>, opts: Pi
       }
       throw err
     }
+    const seenAt = (store.guard?.now ?? Date.now)()
+    store.guard?.memory?.saw(repoKey(store.port), rev, seenAt)
     const read = readListFiles(files)
-    return { handle: read.kind !== 'ok' ? { ...base, sha, etag: null } : { ...base, sha, etag: null, index: read.value, raw: read.raw, files: read.files, state: read.list }, result }
+    const at = { sha, etag: null, rev, seenAt }
+    return { handle: read.kind !== 'ok' ? { ...base, ...at } : { ...base, ...at, index: read.value, raw: read.raw, files: read.files, state: read.list }, result }
   }
 }
 
@@ -181,30 +199,59 @@ function legacyHandle(g: NoteGist): IndexFind {
   return { kind: 'ok', handle: { id: g.id, index: read.value, raw: read.raw, etag: g.gist.etag, createdAt: g.createdAt, files: read.files, state: read.list, owner: g.owner } }
 }
 
-/** The list in the vault the note names, if this device has it. */
-async function atHome(api: GistsApi, ports: readonly RepoPort[], home: string, note: string | null, owner: string | null): Promise<IndexFind> {
+/** YAZ-5399: GitHub answered 404 for the repo itself (deleted, or this token lost all access to it). */
+const repoGone = (err: unknown): boolean => listErrorCode(err) === 'NO_LIST_ACCESS' && (err as { gone?: unknown }).gone === true
+
+/**
+ * The list in the vault the note names, if this device has it.
+ * - YAZ-5399: a home repo that GitHub does not know any more (deleted, or no access at all: GitHub answers 404 for a
+ *   private repo it hides) is `home-gone`: the person gets a way out (`restartList`).
+ * - YAZ-5399: a RENAMED or TRANSFERRED repo: GitHub's repo API redirects the old name to the repo, and the port carries
+ *   the new name. A device that may write (`renote`) writes the new name into the note at once.
+ * - YAZ-5398: the note proves that the list file was there (the note is written after it), so a head with no list file
+ *   is first taken as a stale read and read again; only a file that stays missing is "needs repair".
+ */
+async function atHome(api: GistsApi, ports: readonly RepoPort[], home: string, note: string | null, owner: string | null, guard: ReadGuard | undefined, renote = false): Promise<IndexFind> {
   // A vault of this device, or (with the same token) the repo the note names, also one this device has not added.
-  const port = ports.find((p) => p.repo === home) ?? (api.repo === undefined ? undefined : await api.repo(home))
+  let port: RepoPort | undefined
+  try {
+    port = ports.find((p) => p.repo === home) ?? (api.repo === undefined ? undefined : await api.repo(home))
+  } catch (err) {
+    if (repoGone(err)) return { kind: 'home-gone', home }
+    throw err
+  }
   if (port === undefined) return { kind: 'elsewhere', home }
-  const read = await readRepoList(port)
-  if (read.kind === 'ok') return { kind: 'ok', handle: handleOf({ port, note }, read.snap, owner) }
+  let r: Awaited<ReturnType<typeof readGuarded>>
+  try {
+    r = await readGuarded(port, guard, { min: 1 })
+  } catch (err) {
+    if (repoGone(err)) return { kind: 'home-gone', home }
+    throw err
+  }
+  if (r.kind === 'unchanged') throw new Error('a head read with no ETag cannot be unchanged')
+  const read = r.read
+  if (read.kind === 'ok') {
+    // The repo has a new name (GitHub followed its redirect): the note names it from now on.
+    if (renote && note !== null && port.repo !== home) await api.update(note, { [INDEX_FILE]: noteText(port.repo) })
+    return { kind: 'ok', handle: handleOf({ port, note, guard }, read.snap, owner) }
+  }
   if (read.kind === 'newer') return { kind: 'newer', id: note ?? '' }
   // The note names this vault and the file is gone (deleted by hand) or broken: nothing is written (YAZ-5191).
   return { kind: 'broken', id: note ?? '' }
 }
 
 /** A list file in one of the device's vaults with no note (the note was deleted, or a stop before it was written). */
-async function findOrphanList(ports: readonly RepoPort[], owner: string | null): Promise<IndexFind | null> {
+async function findOrphanList(ports: readonly RepoPort[], owner: string | null, guard: ReadGuard | undefined): Promise<IndexFind | null> {
   for (const port of ports) {
     let read: RepoListRead
     try {
-      read = await readRepoList(port)
+      read = await readRepoList(port, guard)
     } catch (err) {
       if (listErrorCode(err) === 'NO_LIST_ACCESS') continue
       throw err
     }
     if (read.kind === 'missing') continue
-    if (read.kind === 'ok') return { kind: 'ok', handle: handleOf({ port, note: null }, read.snap, owner) }
+    if (read.kind === 'ok') return { kind: 'ok', handle: handleOf({ port, note: null, guard }, read.snap, owner) }
     return read.kind === 'newer' ? { kind: 'newer', id: '' } : { kind: 'broken', id: '' }
   }
   return null
@@ -214,14 +261,15 @@ async function findOrphanList(ports: readonly RepoPort[], owner: string | null):
  * Finds the list, and writes NOTHING (the Mac's sender). An old gist list that is not moved yet comes back as a handle
  * with no `store` (read only). `elsewhere`: the list is in a vault this device does not have.
  */
-export async function findFriendsIndex(api: GistsApi, _opts?: WriteOptions): Promise<IndexFind> {
+export async function findFriendsIndex(api: GistsApi, opts?: WriteOptions): Promise<IndexFind> {
+  const guard = guardOf(opts)
   const ports = await portsOf(api)
   const gists = await listGists(api)
   const first = gists[0]
-  if (first === undefined) return (await findOrphanList(ports, null)) ?? { kind: 'none' }
+  if (first === undefined) return (await findOrphanList(ports, null, guard)) ?? { kind: 'none' }
   switch (first.read.kind) {
     case 'note':
-      return atHome(api, ports, first.read.home, first.id, first.owner)
+      return atHome(api, ports, first.read.home, first.id, first.owner, guard)
     case 'legacy':
       return legacyHandle(first)
     case 'newer':
@@ -256,12 +304,13 @@ export function chooseHome(ports: readonly RepoPort[], preferred: readonly strin
  * `none`. Never makes a second list: a list file that a vault of this device already holds is used.
  */
 export async function openFriendsList(api: GistsApi, opts: WriteOptions, seed: ListSeed | null = null): Promise<IndexFind> {
+  const guard = guardOf(opts)
   const ports = await portsOf(api)
   const gists = await listGists(api)
   const first = gists[0]
   if (first !== undefined) {
     if (first.read.kind === 'note') {
-      const found = await atHome(api, ports, first.read.home, first.id, first.owner)
+      const found = await atHome(api, ports, first.read.home, first.id, first.owner, guard, true)
       if (found.kind === 'ok') await tidyOldGist(api, first.gist)
       return found
     }
@@ -270,7 +319,7 @@ export async function openFriendsList(api: GistsApi, opts: WriteOptions, seed: L
     return moveOldList(api, ports, first, opts, gists.slice(1))
   }
   // No note: a list file already in one of my vaults (adopted), or a new list.
-  const orphan = await findOrphanList(ports, null)
+  const orphan = await findOrphanList(ports, null, guard)
   if (orphan !== null) {
     if (orphan.kind !== 'ok') return orphan
     return withNote(api, orphan.handle, ports, opts)
@@ -295,14 +344,15 @@ async function makeList(api: GistsApi, ports: readonly RepoPort[], seed: ListSee
   const now = opts.now ?? Date.now
   const numbers = await api.create(opts.describe('numbers'), { [NUMBERS_FILE]: JSON.stringify(seed.numbers ?? emptyNumbers(now())) })
   await opts.sleep(1000)
-  const made = await createRepoList(home, newListFiles(seed, numbers.id), LIST_COMMIT, opts.sleep)
+  const guard = guardOf(opts)
+  const made = await createRepoList(home, newListFiles(seed, numbers.id), LIST_COMMIT, opts.sleep, guard)
   if (made.kind !== 'ok') {
     await removeQuietly(api, numbers.id)
     return made.kind === 'newer' ? { kind: 'newer', id: '' } : { kind: 'broken', id: '' }
   }
   // Another device made the list at the same moment: its numbers gist is the one; mine goes.
   if (made.snap.read.value.stats !== numbers.id) await removeQuietly(api, numbers.id)
-  return withNote(api, handleOf({ port: home, note: null }, made.snap, null), ports, opts)
+  return withNote(api, handleOf({ port: home, note: null, guard }, made.snap, null), ports, opts)
 }
 
 /**
@@ -322,9 +372,9 @@ async function withNote(api: GistsApi, handle: IndexHandle, ports: readonly Repo
   // A twin note of mine (the same vault) goes; the oldest stays.
   for (const g of gists.slice(1)) if (g.read.kind === 'note' && g.read.home === home && g.owner === first.owner) await removeQuietly(api, g.id).catch(() => undefined)
   if (first.read.kind === 'note') {
-    if (first.read.home === home) return { kind: 'ok', handle: { ...handle, id: first.id, owner: first.owner, store: { port: handle.store!.port, note: first.id } } }
+    if (first.read.home === home) return { kind: 'ok', handle: { ...handle, id: first.id, owner: first.owner, store: { port: handle.store!.port, note: first.id, guard: guardOf(opts) } } }
     // The oldest note names another vault: that list is the one (a new list that lost the race is left empty).
-    return atHome(api, ports, first.read.home, first.id, first.owner)
+    return atHome(api, ports, first.read.home, first.id, first.owner, guardOf(opts), true)
   }
   if (first.read.kind === 'legacy') return moveOldList(api, ports, first, opts)
   return first.read.kind === 'newer' ? { kind: 'newer', id: first.id } : { kind: 'broken', id: first.id }
@@ -341,18 +391,19 @@ async function moveOldList(api: GistsApi, ports: readonly RepoPort[], old: NoteG
   const legacy = legacyHandle(old)
   if (legacy.kind !== 'ok') return legacy
   const h = legacy.handle
-  let target = await findOrphanList(ports, old.owner)
+  const guard = guardOf(opts)
+  let target = await findOrphanList(ports, old.owner, guard)
   if (target === null) {
     const home = chooseHome(ports, h.index.vaults)
     if (home === null) return { kind: 'no-vault' }
     const files = await movedFiles(api, h, opts)
-    const made = await createRepoList(home, files, LIST_COMMIT, opts.sleep)
-    target = made.kind === 'ok' ? { kind: 'ok', handle: handleOf({ port: home, note: old.id }, made.snap, old.owner) } : made.kind === 'newer' ? { kind: 'newer', id: '' } : { kind: 'broken', id: '' }
+    const made = await createRepoList(home, files, LIST_COMMIT, opts.sleep, guard)
+    target = made.kind === 'ok' ? { kind: 'ok', handle: handleOf({ port: home, note: old.id, guard }, made.snap, old.owner) } : made.kind === 'newer' ? { kind: 'newer', id: '' } : { kind: 'broken', id: '' }
   }
   if (target.kind !== 'ok') return target
   const port = target.handle.store!.port
   await api.update(old.id, { [INDEX_FILE]: noteText(port.repo) })
-  let handle: IndexHandle = { ...target.handle, id: old.id, owner: old.owner, store: { port, note: old.id } }
+  let handle: IndexHandle = { ...target.handle, id: old.id, owner: old.owner, store: { port, note: old.id, guard } }
   // An older app may have written the old list between this move's read and the note (after the note it reads "a
   // newer list" and stops). Its entry and tombstone FILES of that moment join the moved list: a tombstone above all,
   // so a remove it began is finished here (never lost). What it wrote into an old head's arrays cannot be told apart.

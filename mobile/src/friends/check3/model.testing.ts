@@ -60,6 +60,12 @@ interface Device {
    */
   repoList: Record<string, string> | null
   repoSha: string | null
+  /**
+   * YAZ-5398 (round 5): every commit at which this device read the list (or wrote it), with the list there. A stale read
+   * of GitHub that the app does not trust (it reads again) moves `repoSha`, yet the app writes on the commit of the read
+   * it DID trust: that is no lost update. A write on a commit this device never read is one (I7), as before.
+   */
+  repoReads?: Map<string, Record<string, string> | null>
 }
 
 export interface Stats {
@@ -270,20 +276,25 @@ export class Model {
         this.st.listWrites++
         const parent = this.world.repos!.parents(`${login}/vault`, refBody.sha)[0] ?? ''
         if (parent !== head) this.st.i7.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n}'s list write is not a fast forward of the head`)
-        if (d.repoSha !== parent) this.st.i7.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n} wrote the list on ${parent.slice(0, 6)}, but last read it at ${d.repoSha?.slice(0, 6) ?? 'nothing'} (a lost update)`)
+        const readParent = d.repoReads?.has(parent) === true
+        if (d.repoSha !== parent && !readParent) this.st.i7.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n} wrote the list on ${parent.slice(0, 6)}, but last read it at ${d.repoSha?.slice(0, 6) ?? 'nothing'} (a lost update)`)
         const saved = d.lastList
-        d.lastList = d.repoList
+        d.lastList = d.repoSha !== parent && readParent ? (d.repoReads!.get(parent) ?? null) : d.repoList
         this.checkI4(d, before ?? {}, after ?? {})
         d.lastList = saved
       }
       d.repoList = after
       d.repoSha = refBody.sha
+      this.noteRead(d, refBody.sha, after)
     }
     if (method === 'GET' && /\/contents\/\.yaseendocs\/friends\.json$/.test(new URL(url).pathname)) {
       const ref = new URL(url).searchParams.get('ref')
-      if (res.status === 200 || res.status === 404) {
+      // YAZ-5398: a 404 "No commit found" is a replica that lags (the app reads again), not a read of the list.
+      const lag = res.status === 404 && /No commit found/.test(await res.clone().text())
+      if ((res.status === 200 || res.status === 404) && !lag) {
         d.repoSha = ref
         d.repoList = res.status === 200 ? this.repoFiles(LOGIN[d.actor], ref) : null
+        if (ref !== null) this.noteRead(d, ref, d.repoList)
       }
     }
     const text = await res.clone().text()
@@ -318,6 +329,14 @@ export class Model {
       }
     }
     return res
+  }
+
+  /** YAZ-5398: a commit at which device `d` read (or wrote) the list; the last 32 are kept. */
+  noteRead(d: Device, sha: string, files: Record<string, string> | null) {
+    const reads = (d.repoReads ??= new Map())
+    reads.delete(sha)
+    reads.set(sha, files)
+    if (reads.size > 32) reads.delete(reads.keys().next().value!)
   }
 
   foreign: string[] = []
@@ -363,6 +382,7 @@ export class Model {
       d.lastList = null
       d.repoList = null
       d.repoSha = null
+      d.repoReads = undefined
       this.arm(d)
       d.list = this.newList(d)
       this.log.push(`  ${d.actor}${d.n} ${name}: app closed; restarted`)

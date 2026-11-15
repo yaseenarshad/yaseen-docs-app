@@ -13,7 +13,9 @@ import { githubRemote } from '../sync/githubRemote'
 export function listRepo(client: GithubClient, repo: string, branch: string): RepoPort {
   const remote = githubRemote(client, repo, branch)
   const noAccess = (err: unknown): never => {
-    if (err instanceof GithubError && (err.code === 'NOT_FOUND' || err.code === 'NO_ACCESS' || err.code === 'READ_ONLY')) throw new ListError('NO_LIST_ACCESS', 'The token cannot use the vault of the friends list')
+    // YAZ-5399: a 404 on the repo is "gone" (deleted, or this token has no access at all: GitHub hides a private repo).
+    if (err instanceof GithubError && err.code === 'NOT_FOUND') throw Object.assign(new ListError('NO_LIST_ACCESS', 'The vault of the friends list is not on GitHub for this token'), { gone: true })
+    if (err instanceof GithubError && (err.code === 'NO_ACCESS' || err.code === 'READ_ONLY')) throw new ListError('NO_LIST_ACCESS', 'The token cannot use the vault of the friends list')
     throw err
   }
   return {
@@ -31,6 +33,8 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
         const res = await client.request(repoPath(repo, 'contents', path), { query: { ref: commit }, accept: 'application/vnd.github.raw+json', raw: true })
         return new TextDecoder().decode(res.data as Uint8Array)
       } catch (err) {
+        // YAZ-5398: GitHub's 404 "No commit found" is a commit its replica does not have yet (a stale read), not a missing file.
+        if (err instanceof GithubError && err.code === 'NOT_FOUND' && /^No commit found/.test(err.said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
         // The file is not there at that commit (the commit itself was just read: the repo is there).
         if (err instanceof GithubError && err.code === 'NOT_FOUND') return null
         return noAccess(err)
@@ -38,7 +42,8 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
     },
     async commit(parent, path, text, message) {
       try {
-        return await remote.commit(parent, [text === null ? { path, delete: true } : { path, content: text }], message)
+        // Never a delete: GitHub refuses `sha: null` for a path that the base tree does not have (round 5).
+        return await remote.commit(parent, [{ path, content: text }], message)
       } catch (err) {
         if (err instanceof GithubError && err.code === 'STALE_HEAD') throw new ListError('STALE_HEAD', 'The branch moved')
         return noAccess(err)

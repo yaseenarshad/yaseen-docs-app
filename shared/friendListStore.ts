@@ -57,11 +57,20 @@ export interface RepoPort {
   head(etag?: string | null): Promise<{ sha: string; etag: string | null } | 'unchanged'>
   /** The text of `path` at `commit`, or null when the file is not there. */
   read(commit: string, path: string): Promise<string | null>
-  /** ONE commit on `parent` that writes `path` (`null` deletes it), then the ref `PATCH` with `force: false`. */
-  commit(parent: string, path: string, text: string | null, message: string): Promise<string>
+  /**
+   * ONE commit on `parent` that writes `path`, then the ref `PATCH` with `force: false`. It never deletes a path: GitHub
+   * refuses `sha: null` for a path that the base tree does not have (422 "GitRPC::BadObjectState"), and the list app
+   * never needs a delete (a list is never taken out of the vault).
+   */
+  commit(parent: string, path: string, text: string, message: string): Promise<string>
 }
 
-export type ListErrorCode = 'STALE_HEAD' | 'NO_LIST_ACCESS'
+/**
+ * `STALE_HEAD`: the branch moved (the ref `PATCH` was refused). `NO_LIST_ACCESS`: the token cannot read or write the
+ * repo. `STALE_READ` (YAZ-5398): GitHub answered with an object older than one this device already wrote or read (a read
+ * replica that lags for a moment, for example `contents` at a commit that it does not have yet).
+ */
+export type ListErrorCode = 'STALE_HEAD' | 'NO_LIST_ACCESS' | 'STALE_READ'
 /** A failure of the repo calls that is not a gist failure. */
 export class ListError extends Error {
   constructor(
@@ -74,7 +83,7 @@ export class ListError extends Error {
 }
 export const listErrorCode = (err: unknown): ListErrorCode | null => {
   const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined
-  return code === 'STALE_HEAD' || code === 'NO_LIST_ACCESS' ? code : null
+  return code === 'STALE_HEAD' || code === 'NO_LIST_ACCESS' || code === 'STALE_READ' ? code : null
 }
 
 /** The list was written by a newer app: this app writes nothing to it. */
@@ -95,7 +104,10 @@ export function recordKey(file: string): string | null {
 }
 export const recordFile = (key: string): string => (key === 'head' ? INDEX_FILE : `${PREFIX}${key}.json`)
 
-export type ListFileRead = { kind: 'ok'; files: Record<string, string>; extra: Record<string, unknown> } | { kind: 'newer' } | { kind: 'unreadable'; why: string }
+export type ListFileRead = { kind: 'ok'; files: Record<string, string>; extra: Record<string, unknown>; rev: number } | { kind: 'newer' } | { kind: 'unreadable'; why: string }
+
+/** YAZ-5398: the list's write count (`rev`): each write of the list adds 1. A file with no count (an older build) is 0. */
+const revOf = (v: unknown): number => (typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : 0)
 
 /** The list file's text as version 2 files (`readListFiles` reads them). Never throws. */
 export function parseListFile(text: string): ListFileRead {
@@ -118,12 +130,15 @@ export function parseListFile(text: string): ListFileRead {
     if (!isObject(value)) return { kind: 'unreadable', why: `the record ${key.slice(0, 40)} is not an object` }
     files[file] = JSON.stringify(value)
   }
-  const { v: _v, about: _about, head: _head, records: _records, ...extra } = o
-  return { kind: 'ok', files, extra }
+  const { v: _v, about: _about, rev, head: _head, records: _records, ...extra } = o
+  return { kind: 'ok', files, extra, rev: revOf(rev) }
 }
 
-/** The list file's text from version 2 files: one record on each line, keys in order. */
-export function listFileText(files: Record<string, string>, extra: Record<string, unknown> = {}): string {
+/**
+ * The list file's text from version 2 files: one record on each line, keys in order. `rev` (YAZ-5398) is the write
+ * count of this version of the file: the writer gives the count it read plus 1.
+ */
+export function listFileText(files: Record<string, string>, extra: Record<string, unknown> = {}, rev = 0): string {
   const head = files[INDEX_FILE]
   if (head === undefined) throw new Error('A list has a head')
   const keys = Object.keys(files)
@@ -133,7 +148,7 @@ export function listFileText(files: Record<string, string>, extra: Record<string
   const one = (text: string) => JSON.stringify(JSON.parse(text) as unknown)
   const lines = keys.map(([key, file]) => `    ${JSON.stringify(key)}: ${one(files[file])}`)
   const extras = Object.entries(extra).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},\n`).join('')
-  return `{\n  "v": ${LIST_FILE_VERSION},\n  "about": ${JSON.stringify(ABOUT)},\n${extras}  "head": ${one(head)},\n  "records": {${lines.length === 0 ? '' : `\n${lines.join(',\n')}\n  `}}\n}\n`
+  return `{\n  "v": ${LIST_FILE_VERSION},\n  "about": ${JSON.stringify(ABOUT)},\n  "rev": ${revOf(rev)},\n${extras}  "head": ${one(head)},\n  "records": {${lines.length === 0 ? '' : `\n${lines.join(',\n')}\n  `}}\n}\n`
 }
 
 /** Applies a patch of version 2 files (`null` deletes one; a missing one is no error, unlike a gist, YAZ-5351). */
@@ -181,15 +196,123 @@ export interface RepoListSnapshot {
   etag: string | null
   read: ListRead & { kind: 'ok' }
   extra: Record<string, unknown>
+  /** YAZ-5398: the list's write count at this commit. */
+  rev: number
 }
 
 export type RepoListRead = { kind: 'ok'; snap: RepoListSnapshot } | { kind: 'missing'; sha: string; etag: string | null } | { kind: 'newer' } | { kind: 'unreadable'; why: string }
 
-/** The list at the branch head (a fresh read). */
-export async function readRepoList(port: RepoPort): Promise<RepoListRead> {
-  const head = await port.head()
-  if (head === 'unchanged') throw new Error('a head read with no ETag cannot be unchanged')
-  return readAt(port, head.sha, head.etag)
+/**
+ * YAZ-5398: ONE RULE FOR EVERY READ OF THE LIST. GitHub does not promise read-after-write for the ref API: for a short
+ * time after a ref move, a read may give the head BEFORE the move (a read replica that lags). So a device could see its
+ * own tombstone vanish, and answer "done" for a remove that still waits.
+ *
+ * The rule: a read is trusted only when it is at or after the newest list that THIS device wrote or read in that repo.
+ * Each write of the list adds 1 to the file's `rev` (the CAS writer is its only writer, and every write is a fast
+ * forward, so `rev` never goes down along the branch). A device keeps the highest `rev` it wrote or read, per repo
+ * (`ListMemory`; the phone keeps it in its own state, so a restart keeps it too). A read with a LOWER `rev` is a stale
+ * read: the device reads again after a short wait, at most `MAX_STALE_READS` times, and then stops with `GITHUB_DOWN`
+ * (quiet; the next run tries again). A "done" or a "prove" step therefore never comes from a stale read.
+ *
+ * A lag is seconds. A `rev` that is still lower after `STALE_WINDOW_MS` is a real change on GitHub (a person restored an
+ * older file by hand): it is taken, and the device's memory goes down to it. So a device never stops for good.
+ */
+export interface ListMemory {
+  /** The highest `rev` this device wrote or read in `key` (`owner/name@branch`), and when (ms), or null. */
+  floor(key: string): { rev: number; at: number } | null
+  /** Records a `rev` this device wrote or read now; with `lower`, also a lower one (a real change, see above). */
+  saw(key: string, rev: number, at: number, lower?: boolean): void
+}
+
+/** What a read of the list needs besides the port: this device's memory, its clock, and its wait. */
+export interface ReadGuard {
+  memory?: ListMemory | undefined
+  now: () => number
+  sleep: (ms: number) => Promise<void>
+}
+
+/** How long a lower `rev` counts as a stale read (a replica lag); after it, a lower `rev` is a real change. */
+export const STALE_WINDOW_MS = 10 * 60_000
+/** A stale read is tried again at most this often (the waits add up to about 8 seconds), then `GITHUB_DOWN`. */
+export const MAX_STALE_READS = 6
+
+/** A memory in a plain object (the phone stores `dump()` in its state, and gives it back at the next start). */
+export function listMemory(saved: unknown = null): ListMemory & { dump(): Record<string, { rev: number; at: number }> } {
+  const map = new Map<string, { rev: number; at: number }>()
+  if (isObject(saved))
+    for (const [k, v] of Object.entries(saved)) {
+      if (!isObject(v) || typeof v.at !== 'number' || !Number.isFinite(v.at)) continue
+      map.set(k, { rev: revOf(v.rev), at: v.at })
+    }
+  return {
+    floor: (key) => map.get(key) ?? null,
+    saw(key, rev, at, lower = false) {
+      const was = map.get(key)
+      if (was === undefined || rev > was.rev || (lower && rev < was.rev)) map.set(key, { rev, at })
+      else if (rev === was.rev) map.set(key, { rev, at: Math.max(at, was.at) })
+    },
+    dump: () => Object.fromEntries(map),
+  }
+}
+
+export const repoKey = (port: RepoPort): string => `${port.repo}@${port.branch}`
+
+const realSleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms))
+const defaultGuard = (): ReadGuard => ({ now: Date.now, sleep: realSleep })
+
+/** The error of a read that stayed stale: quiet (`GITHUB_DOWN`), as a server error; never a "done". */
+export const staleReadError = (): Error => Object.assign(new Error('GitHub kept giving an older friends list'), { code: 'GITHUB_DOWN' })
+
+/** The `rev` that `read` has, for the rule: a missing file is 0; a newer or unreadable file has none (no rule). */
+const readRev = (read: RepoListRead): number | null => (read.kind === 'ok' ? read.snap.rev : read.kind === 'missing' ? 0 : null)
+
+/**
+ * A guarded read of the branch head and the list there (YAZ-5398). `min`: a `rev` that the caller already holds (its
+ * handle, read at `minAt`). `etag` and `known`: the caller's copy; an unchanged branch (a 304, or the same commit) is
+ * `'unchanged'`. `stale: true`: every try gave an older list (the last read is given; the caller decides).
+ */
+export async function readGuarded(
+  port: RepoPort,
+  guard: ReadGuard | undefined,
+  have: { etag?: string | null; known?: string; min?: number; minAt?: number } = {},
+): Promise<{ kind: 'unchanged'; etag: string | null } | { kind: 'read'; read: RepoListRead; stale: boolean }> {
+  const g = guard ?? defaultGuard()
+  const key = repoKey(port)
+  let last: RepoListRead | null = null
+  for (let attempt = 0; ; attempt++) {
+    const head = await port.head(have.etag ?? null)
+    if (head === 'unchanged') return { kind: 'unchanged', etag: have.etag ?? null }
+    if (have.known !== undefined && head.sha === have.known) return { kind: 'unchanged', etag: head.etag }
+    let read: RepoListRead | null = null
+    try {
+      read = await readAt(port, head.sha, head.etag)
+    } catch (err) {
+      if (listErrorCode(err) !== 'STALE_READ') throw err
+    }
+    const now = g.now()
+    const rev = read === null ? null : readRev(read)
+    const floor = g.memory?.floor(key) ?? null
+    const fresh = (at: number | undefined) => at === undefined || Math.abs(now - at) < STALE_WINDOW_MS
+    const need = Math.max(have.min !== undefined && fresh(have.minAt) ? have.min : 0, floor !== null && fresh(floor.at) ? floor.rev : 0)
+    if (read !== null && (rev === null || rev >= need)) {
+      if (rev !== null) g.memory?.saw(key, rev, now, floor !== null && rev < floor.rev)
+      return { kind: 'read', read, stale: false }
+    }
+    if (read !== null) last = read
+    if (attempt + 1 >= MAX_STALE_READS) {
+      if (last === null) throw staleReadError()
+      return { kind: 'read', read: last, stale: true }
+    }
+    await g.sleep(backoff(attempt))
+  }
+}
+
+/** The list at the branch head (a fresh read, guarded: never older than what this device wrote or read). */
+export async function readRepoList(port: RepoPort, guard?: ReadGuard): Promise<RepoListRead> {
+  const r = await readGuarded(port, guard)
+  if (r.kind === 'unchanged') throw new Error('a head read with no ETag cannot be unchanged')
+  if (r.stale) throw staleReadError()
+  return r.read
 }
 
 export async function readAt(port: RepoPort, sha: string, etag: string | null): Promise<RepoListRead> {
@@ -199,26 +322,35 @@ export async function readAt(port: RepoPort, sha: string, etag: string | null): 
   if (file.kind !== 'ok') return file
   const read = readListFiles(file.files)
   if (read.kind !== 'ok') return read
-  return { kind: 'ok', snap: { sha, etag, read, extra: file.extra } }
+  return { kind: 'ok', snap: { sha, etag, read, extra: file.extra, rev: file.rev } }
 }
 
 /**
  * Makes the list file when the branch does not have it yet. Never writes over one that is there (another device made
- * it a moment ago): then that one is read and kept. Returns the list as it is on GitHub after the call.
+ * it a moment ago): then that one is read and kept. Returns the list as it is on GitHub after the call: after its own
+ * commit, the list AT that commit (a read of the head right after could be stale, YAZ-5398). A branch that keeps
+ * moving ends in `GITHUB_DOWN` (quiet), never the raw `STALE_HEAD` (round 5, nit 1).
  */
-export async function createRepoList(port: RepoPort, files: Record<string, string>, message: string, sleep: (ms: number) => Promise<void>): Promise<RepoListRead> {
+export async function createRepoList(port: RepoPort, files: Record<string, string>, message: string, sleep: (ms: number) => Promise<void>, guard?: ReadGuard): Promise<RepoListRead> {
+  const g: ReadGuard = guard ?? { now: Date.now, sleep }
   for (let attempt = 0; ; attempt++) {
-    const now = await readRepoList(port)
+    const now = await readRepoList(port, g)
     if (now.kind !== 'missing') return now
+    let sha: string
     try {
-      await port.commit(now.sha, LIST_PATH, listFileText(files), message)
+      sha = await port.commit(now.sha, LIST_PATH, listFileText(files, {}, 1), message)
     } catch (err) {
-      if (listErrorCode(err) === 'STALE_HEAD' && attempt < MAX_STALE_WRITES) {
+      if (listErrorCode(err) === 'STALE_HEAD') {
+        if (attempt >= MAX_STALE_WRITES) throw Object.assign(new Error('The friends list kept changing on GitHub'), { code: 'GITHUB_DOWN' })
         await sleep(backoff(attempt))
         continue
       }
       throw err
     }
+    g.memory?.saw(repoKey(port), 1, g.now())
+    const read = readListFiles(files)
+    if (read.kind !== 'ok') throw new Error('A new list reads as a list')
+    return { kind: 'ok', snap: { sha, etag: null, read, extra: {}, rev: 1 } }
   }
 }
 

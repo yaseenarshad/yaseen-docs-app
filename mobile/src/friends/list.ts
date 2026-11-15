@@ -51,7 +51,7 @@ import { PHONE, VaultClosedError, loadVaultList, vaultId, type TokenStore, type 
 import type { Clock } from '../sync/engine'
 import { openFriendsApi } from './friendsApi'
 import { friendsGuard } from './guard'
-import { deviceTag } from './deviceTag'
+import { deviceTag, keepListSeen, listSeen } from './deviceTag'
 import { dequeueRemove, drainQueue, enqueueRemove, queuedMines } from './removeQueue'
 import { SEND_STATE } from './sender'
 
@@ -274,6 +274,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     phoneStore = await store.session(PHONE)
     // YAZ-5083: this phone's tag in the list's steps (stable across restarts).
     opts.device ??= await deviceTag(phoneStore)
+    // YAZ-5398: the newest list this phone wrote or read (a stale read of GitHub is never trusted).
+    opts.memory ??= await listSeen(store)
     const friends = await openFriendsApi(store, tokens, { fetch: guard.fetch, now })
     if (friends.kind !== 'ok') return { kind: friends.kind }
     return lock('notecards-friends', async () => {
@@ -306,6 +308,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
           default:
             throw err
         }
+      } finally {
+        if (await guard.live()) await keepListSeen(store, phoneStore).catch(() => undefined)
       }
     })
   }

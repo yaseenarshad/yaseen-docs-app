@@ -134,7 +134,11 @@ it.runIf(live)('YAZ-5083 live: two list commits at once compose (one 422), the f
     const now = await port.head()
     if (now !== 'unchanged') {
       const text = await port.read(now.sha, LIST_PATH)
-      if (text !== original) await port.commit(now.sha, LIST_PATH, original, 'demo: reset the friends test list')
+      // The list port never deletes (YAZ-5083 round 5: GitHub refuses `sha: null` for a path that is not there); the reset
+      // of a file that IS there goes through 3B's commit itself.
+      if (text !== original)
+        if (original !== null) await port.commit(now.sha, LIST_PATH, original, 'demo: reset the friends test list')
+        else if (text !== null) await githubRemote(client, REPO, branch).commit(now.sha, [{ path: LIST_PATH, delete: true }], 'demo: reset the friends test list')
     }
     const end = await readRepoList(port)
     say(`demo vault at the end: list file ${end.kind}`)

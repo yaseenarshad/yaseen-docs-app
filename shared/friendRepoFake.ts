@@ -17,7 +17,23 @@ import { ListError, type RepoPort } from './friendListStore'
  * - only a token of the repo's owner (or one given access) reads; only one with write access writes (403 else). The
  *   owner's login is compared as written, so a test can give two accounts that differ only in letter case.
  * `observe` sees each ref move (the model checker's I4 and I7: every list write is a fast forward of what its writer read).
+ *
+ * Round 5 (YAZ-5083, YAZ-5398, YAZ-5399), as GitHub too:
+ * - `stale`: a read REPLICA that lags. With that mode on, a read of a branch head may give one of the heads BEFORE the
+ *   newest move (`chance` for each read; `staleNext` forces the next reads), and `contents` at the newest commit may give
+ *   404 "No commit found for the ref …" (`contents404`). GitHub does not promise read-after-write for the ref API.
+ * - a tree entry `sha: null` for a path that the base tree does not have: 422 "GitRPC::BadObjectState" (seen live).
+ * - `rename` (a renamed or transferred repo): the old name answers 301 with the repo's `/repositories/<id>` address,
+ *   for every path under it; `remove` (a deleted repo): every call is 404.
  */
+export interface StaleMode {
+  /** The chance that one head read gives an older head (0 to 1). */
+  chance: number
+  /** The chance that `contents` at the newest commit gives 404 "No commit found" (0 to 1). */
+  contents404?: number
+  /** The random source (the model's seeded one). */
+  rand: () => number
+}
 export interface FakeRepoWorld {
   /** The repos (`owner/name`, lower case) that `login` owns or was given access to. */
   owned(login: string): string[]
@@ -36,6 +52,16 @@ export interface FakeRepoWorld {
   push(fullName: string, files: Record<string, string | null>, branch?: string, message?: string): string
   /** Each ref move, as it lands. */
   observe: ((move: { repo: string; branch: string; from: string; to: string; parent: string; token: string | null; path: string | null }) => void) | null
+  /** YAZ-5398: stale reads (off: null). */
+  stale: StaleMode | null
+  /** YAZ-5398: the next this many head reads give the head before the newest move (any mode). */
+  staleNext: number
+  /** How many stale answers the fake gave (head reads and `contents` 404s). */
+  staleGiven: number
+  /** YAZ-5399: the repo has a new name (a rename or a transfer); the old name redirects. */
+  rename(from: string, to: string, owner?: string): void
+  /** YAZ-5399: the repo is deleted. */
+  remove(fullName: string): void
   /** Consulted on each call: a status makes THAT call fail so (then it clears itself). */
   failNext: ((call: { method: string; path: string }) => number | undefined) | null
   offline: boolean
@@ -47,6 +73,10 @@ export interface FakeRepoWorld {
 }
 
 interface Repo {
+  id: number
+  full: string
+  /** The heads of each branch, oldest first (the last few), for a stale read. */
+  history: Map<string, string[]>
   owner: string
   access: Map<string, 'read' | 'write'>
   refs: Map<string, string>
@@ -57,6 +87,11 @@ interface Repo {
 
 export function fakeRepoWorld(setup: { logins: (token: string) => string | null; now?: () => number; /** A repo `<login>/<name>` that its owner reads is made on the spot (the person's vaults exist on GitHub). */ autoRepos?: boolean }): FakeRepoWorld {
   const repos = new Map<string, Repo>()
+  /** Old names of renamed repos → the repo id. */
+  const moved = new Map<string, number>()
+  /** Deleted repos (an `autoRepos` world does not make them again). */
+  const deleted = new Set<string>()
+  let nextId = 1000
   /** The branches with a ref move in flight. */
   const moving = new Set<string>()
   let n = 0
@@ -106,16 +141,38 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
     return seen
   }
 
+  const moveRef = (r: Repo, branch: string, sha: string) => {
+    r.refs.set(branch, sha)
+    const h = r.history.get(branch) ?? []
+    h.push(sha)
+    if (h.length > 4) h.shift()
+    r.history.set(branch, h)
+  }
   const world: FakeRepoWorld = {
     observe: null,
+    stale: null,
+    staleNext: 0,
+    staleGiven: 0,
+    rename(from, to, owner) {
+      const r = get(from)!
+      repos.delete(from.toLowerCase())
+      r.full = to.toLowerCase()
+      if (owner !== undefined) r.owner = owner
+      repos.set(to.toLowerCase(), r)
+      moved.set(from.toLowerCase(), r.id)
+    },
+    remove(full) {
+      repos.delete(full.toLowerCase())
+      deleted.add(full.toLowerCase())
+    },
     failNext: null,
     offline: false,
     calls: [],
     create(full, owner, files = {}, branch = 'main') {
-      const r: Repo = { owner, access: new Map(), refs: new Map(), commits: new Map(), trees: new Map(), blobs: new Map() }
+      const r: Repo = { id: nextId++, full: full.toLowerCase(), history: new Map(), owner, access: new Map(), refs: new Map(), commits: new Map(), trees: new Map(), blobs: new Map() }
       repos.set(full.toLowerCase(), r)
       const t = tree(r, new Map(Object.entries(files).map(([p, text]) => [p, blob(r, text)])))
-      r.refs.set(branch, commit(r, t, [], 'first'))
+      moveRef(r, branch, commit(r, t, [], 'first'))
     },
     grant(full, login, access) {
       get(full)!.access.set(login.toLowerCase(), access)
@@ -141,7 +198,7 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
         else entries.set(p, blob(r, text))
       }
       const c = commit(r, tree(r, entries), [head], message)
-      r.refs.set(branch, c)
+      moveRef(r, branch, c)
       world.observe?.({ repo: full.toLowerCase(), branch, from: head, to: c, parent: head, token: null, path: null })
       return c
     },
@@ -157,22 +214,42 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
         world.failNext = null
         return record(json(forced, { message: forced === 403 ? 'API rate limit exceeded' : 'forced' }, forced === 403 ? { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.ceil((now() + 600_000) / 1000)) } : {}))
       }
-      const parts = path.split('/').filter(Boolean).map(decodeURIComponent)
+      let parts = path.split('/').filter(Boolean).map(decodeURIComponent)
+      // GitHub's address of a repo by its id (where a renamed repo's old name redirects).
+      if (parts[0] === 'repositories' && parts.length >= 2) {
+        const byId = [...repos.values()].find((x) => String(x.id) === parts[1])
+        if (byId === undefined) return record(notFound())
+        parts = ['repos', ...byId.full.split('/'), ...parts.slice(2)]
+      }
       if (parts[0] !== 'repos' || parts.length < 3) return record(notFound())
       const full = `${parts[1]}/${parts[2]}`.toLowerCase()
+      // YAZ-5399: a renamed or transferred repo: the old name answers 301 with the repo's address by id, for every path.
+      if (!repos.has(full) && moved.has(full)) {
+        const location = `https://api.github.com/repositories/${moved.get(full)}${parts.length > 3 ? `/${parts.slice(3).map(encodeURIComponent).join('/')}` : ''}${[...query].length > 0 ? `?${query.toString()}` : ''}`
+        return record(json(method === 'GET' ? 301 : 307, { message: 'Moved Permanently', url: location }, { location }))
+      }
       const login = token === null ? null : setup.logins(token)
-      if (setup.autoRepos === true && login !== null && !repos.has(full) && parts[1].toLowerCase() === login.toLowerCase()) world.create(`${login}/${parts[2]}`, login, { 'a.md': '# A page\n' })
+      if (setup.autoRepos === true && login !== null && !repos.has(full) && !deleted.has(full) && !moved.has(full) && parts[1].toLowerCase() === login.toLowerCase()) world.create(`${login}/${parts[2]}`, login, { 'a.md': '# A page\n' })
       const r = repos.get(full)
       if (token !== null && login === null) return record(json(401, { message: 'Bad credentials' }))
       const access = login === null ? undefined : login === r?.owner ? 'write' : r?.access.get(login.toLowerCase())
       if (r === undefined || access === undefined) return record(notFound())
       const rest = parts.slice(3)
       const b = (body ?? {}) as Record<string, unknown>
-      if (method === 'GET' && rest.length === 0) return record(json(200, { full_name: full, private: true, default_branch: r.refs.has('main') ? 'main' : [...r.refs.keys()][0] }))
+      if (method === 'GET' && rest.length === 0) return record(json(200, { id: r.id, full_name: r.full, private: true, default_branch: r.refs.has('main') ? 'main' : [...r.refs.keys()][0] }))
       if (method !== 'GET' && access !== 'write') return record(json(403, { message: 'Resource not accessible by personal access token' }))
       if (method === 'GET' && rest[0] === 'git' && rest[1] === 'ref' && rest[2] === 'heads') {
-        const head = r.refs.get(rest.slice(3).join('/'))
+        let head = r.refs.get(rest.slice(3).join('/'))
         if (head === undefined) return record(notFound())
+        // YAZ-5398: a read replica that lags gives a head from before the newest move.
+        const past = r.history.get(rest.slice(3).join('/')) ?? []
+        if (past.length >= 2 && (world.staleNext > 0 || (world.stale !== null && world.stale.rand() < world.stale.chance))) {
+          const forced = world.staleNext > 0
+          if (forced) world.staleNext--
+          const back = forced || world.stale === null ? 1 : 1 + Math.floor(world.stale.rand() * Math.min(2, past.length - 1))
+          head = past[past.length - 1 - back]
+          world.staleGiven++
+        }
         const tag = `W/"${head.slice(0, 32)}"`
         if (etag === tag) return record(json(304, null, { etag: tag }))
         return record(json(200, { ref: `refs/heads/${rest.slice(3).join('/')}`, object: { sha: head, type: 'commit' } }, { etag: tag }))
@@ -181,6 +258,12 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
         const ref = query.get('ref') ?? r.refs.get('main') ?? ''
         const c = r.commits.has(ref) ? ref : r.refs.get(ref)
         if (c === undefined) return record(json(404, { message: `No commit found for the ref ${ref}` }))
+        // YAZ-5398: a replica that does not have the newest commit yet.
+        const newest = [...r.refs.values()].includes(c)
+        if (newest && world.stale !== null && (world.stale.contents404 ?? 0) > 0 && world.stale.rand() < (world.stale.contents404 ?? 0)) {
+          world.staleGiven++
+          return record(json(404, { message: `No commit found for the ref ${ref}` }))
+        }
         const text = textAt(r, c, rest.slice(1).join('/'))
         if (text === null) return record(notFound())
         if ((accept ?? '').includes('raw')) return record({ ...json(200, null), raw: text })
@@ -202,6 +285,8 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
         const entries = new Map(base)
         for (const e of (b.tree ?? []) as { path: string; sha?: string | null; content?: string }[]) {
           if (typeof e.content === 'string') entries.set(e.path, blob(r, e.content))
+          // Round 5 (seen live): GitHub refuses `sha: null` for a path the base tree does not have.
+          else if (e.sha === null && !base.has(e.path)) return record(json(422, { message: 'GitRPC::BadObjectState', documentation_url: 'https://docs.github.com/rest/git/trees#create-a-tree', status: '422' }))
           else if (e.sha === null) entries.delete(e.path)
           else if (typeof e.sha === 'string' && r.blobs.has(e.sha)) entries.set(e.path, e.sha)
           else return record(json(422, { message: 'Invalid tree info' }))
@@ -233,7 +318,7 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
           moving.delete(key)
         }
         if (r.refs.get(name) !== head) return record(json(422, { message: 'Update is not a fast forward', status: '422' }))
-        r.refs.set(name, sha)
+        moveRef(r, name, sha)
         const cm = r.commits.get(sha)!
         const before = r.trees.get(r.commits.get(head)!.tree)!
         const after = r.trees.get(cm.tree)!
@@ -260,7 +345,9 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
     return a
   }
   const fail = (status: number): never => {
-    if (status === 404 || status === 403) throw new ListError('NO_LIST_ACCESS', `GitHub answered ${status}`)
+    // YAZ-5399: a 404 on the repo is "gone" (deleted, or no access at all); a 403 is a token with too little permission.
+    if (status === 404) throw Object.assign(new ListError('NO_LIST_ACCESS', `GitHub answered ${status}`), { gone: true })
+    if (status === 403) throw new ListError('NO_LIST_ACCESS', `GitHub answered ${status}`)
     if (status === 401) throw new GistError('UNAUTHORIZED', 'GitHub answered 401')
     if (status >= 500) throw new GistError('GITHUB_DOWN', `GitHub answered ${status}`)
     throw new GistError('UNEXPECTED', `GitHub answered ${status}`)
@@ -276,6 +363,8 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
     },
     async read(commit, path) {
       const a = await call('GET', `${base}/contents/${path}`, { ref: commit }, undefined, null, 'application/vnd.github.raw+json')
+      // YAZ-5398: GitHub's 404 for a commit that its replica does not have yet is not a missing file.
+      if (a.status === 404 && /^No commit found/.test((a.body as { message?: string } | null)?.message ?? '')) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
       if (a.status === 404) return null
       if (a.status !== 200) return fail(a.status)
       return a.raw ?? ''
@@ -283,7 +372,7 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
     async commit(parent, path, text, message) {
       const c = await call('GET', `${base}/git/commits/${parent}`)
       if (c.status !== 200) return fail(c.status)
-      const t = await call('POST', `${base}/git/trees`, {}, { base_tree: (c.body as { tree: { sha: string } }).tree.sha, tree: [text === null ? { path, mode: '100644', type: 'blob', sha: null } : { path, mode: '100644', type: 'blob', content: text }] })
+      const t = await call('POST', `${base}/git/trees`, {}, { base_tree: (c.body as { tree: { sha: string } }).tree.sha, tree: [{ path, mode: '100644', type: 'blob', content: text }] })
       if (t.status !== 201) return fail(t.status)
       const m = await call('POST', `${base}/git/commits`, {}, { message, tree: (t.body as { sha: string }).sha, parents: [parent] })
       if (m.status !== 201) return fail(m.status)
