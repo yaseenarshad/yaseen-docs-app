@@ -1,0 +1,72 @@
+/* The vault's link pills on the phone (YAZ-5455): the palette the Mac's pill colours name (`table.css`, YAZ-3817), which
+   `linkPillVars` reads (`--table-fill-solid-*` for a box, `--table-text-*` for a part), on the reader only. The pill's own
+   rules are the Mac's `wikilink.css`. */
+.reader {
+  --table-text-red: #c0392b;
+  --table-text-orange: #b45309;
+  --table-text-yellow: #a16207;
+  --table-text-green: #2e7d32;
+  --table-text-teal: #0f766e;
+  --table-text-blue: #1d5fbf;
+  --table-text-purple: #7b3fbf;
+  --table-text-pink: #c2185b;
+  --table-text-grey: #6b6b6b;
+  --table-text-brown: #8b5a2b;
+  --table-fill-solid-red: rgb(255, 90, 80);
+  --table-fill-solid-orange: rgb(255, 150, 50);
+  --table-fill-solid-yellow: rgb(255, 213, 0);
+  --table-fill-solid-green: rgb(80, 200, 120);
+  --table-fill-solid-teal: rgb(40, 190, 180);
+  --table-fill-solid-blue: rgb(80, 160, 255);
+  --table-fill-solid-purple: rgb(160, 110, 255);
+  --table-fill-solid-pink: rgb(255, 120, 180);
+  --table-fill-solid-grey: rgb(150, 150, 150);
+  --table-fill-solid-brown: rgb(170, 120, 70);
+}
+@media (prefers-color-scheme: dark) {
+  .reader {
+    --table-text-red: #ff7b72;
+    --table-text-orange: #f0a35e;
+    --table-text-yellow: #e3c04a;
+    --table-text-green: #6fd47f;
+    --table-text-teal: #4fd1c5;
+    --table-text-blue: #79b8ff;
+    --table-text-purple: #c39bff;
+    --table-text-pink: #ff8fc0;
+    --table-text-grey: #a0a0a0;
+    --table-text-brown: #c99a6e;
+  }
+}
+
+/* A page link with the format's ends (`{id}`, `{folder}`, `{mark}` …): the `<a>` holds the Mac's three pieces, the head,
+   the name and the tail, each drawn by `wikilink.css`; the `<a>` itself draws nothing. */
+.reader__body a.page-pill {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The vault's heading sizes, weight and underline (`text-formatting.json`, the Mac's `--hN-*`); else the phone's own. */
+.reader__body h1 {
+  font-size: var(--h1-size, 1.5em);
+}
+.reader__body h2 {
+  font-size: var(--h2-size, 1.3em);
+}
+.reader__body h3 {
+  font-size: var(--h3-size, 1.12em);
+}
+.reader__body h4 {
+  font-size: var(--h4-size, 1em);
+}
+.reader__body h5 {
+  font-size: var(--h5-size, 1em);
+}
+.reader__body h6 {
+  font-size: var(--h6-size, 1em);
+}
+.reader__body h1 { font-weight: var(--h1-weight, 700); text-decoration: var(--h1-decoration, none); }
+.reader__body h2 { font-weight: var(--h2-weight, 700); text-decoration: var(--h2-decoration, none); }
+.reader__body h3 { font-weight: var(--h3-weight, 700); text-decoration: var(--h3-decoration, none); }
+.reader__body h4 { font-weight: var(--h4-weight, 700); text-decoration: var(--h4-decoration, none); }
+.reader__body h5 { font-weight: var(--h5-weight, 700); text-decoration: var(--h5-decoration, none); }
+.reader__body h6 { font-weight: var(--h6-weight, 700); text-decoration: var(--h6-decoration, none); }

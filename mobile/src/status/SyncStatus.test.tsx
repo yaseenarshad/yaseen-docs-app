@@ -69,7 +69,7 @@ describe('the dot in the top bar: always shown (decision 12)', () => {
     const bar = [...h.host.querySelector('.topbar')!.children].map((e) => e.className)
     // YAZ-5415: on the Review tab the bar is one line: the dot, the Review count in the middle, the gear; the vault's
     // name stays for VoiceOver.
-    expect(bar).toEqual(['topbar__title sr-only', 'sync-status sync-status--dot', 'topbar__review', 'icon-btn'])
+    expect(bar).toEqual(['topbar__title sr-only', 'sync-status sync-status--dot', 'topbar__review', 'icon-btn topbar__gear'])
   })
 
   it('each engine state: blue while a pass runs, grey with no signal, amber on "slow down", red on 401', async () => {

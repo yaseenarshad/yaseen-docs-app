@@ -94,6 +94,16 @@ const FIXTURES = [
   'card-next',
   'page-tables',
   'page-table-full',
+  // YAZ-5455, YAZ-5456, YAZ-5459, YAZ-5467: links and "Linked from", the vault's pills, the ⋯ tools, find, the headings,
+  // the properties panel, the jump pill.
+  'page-links',
+  'page-linked-from',
+  'page-pills',
+  'page-tools',
+  'page-find',
+  'page-headings',
+  'page-properties',
+  'page-jump',
   // Last: it makes this page's navigator say iPhone.
   'sign-in-iphone',
 ]

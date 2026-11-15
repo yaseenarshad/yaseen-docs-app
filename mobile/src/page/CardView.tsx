@@ -13,6 +13,9 @@ import { openFile } from '../media/ui/vaultMedia'
 import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
 import { PageArrows } from './pageNav'
+import { ScrollJump } from './ScrollJump'
+import { openLink } from './openLink'
+import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
 
@@ -38,6 +41,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const { store, sync } = app.services
   const vault = app.vaultKey!
   const data = useVaultData()
+  // YAZ-5455: the vault's link pills (their CSS variables) and its "Clicking a link".
+  const look = useVaultLook(app.services.store, data)
   const [text, setText] = useState<string | null | undefined>(undefined)
   const [reads, setReads] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
@@ -98,15 +103,16 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
     if (tap === null) return void guardLink(event)
     event.preventDefault()
-    if (tap.kind === 'go') app.go(tap.action)
-    else if (tap.kind === 'missing') setNotice(tap.text)
+    if (tap.kind === 'go') openLink({ go: app.go, click: look?.click ?? 'open' }, tap.target)
+    // A missing page's link, or a heading of a page (a card has none), does nothing (YAZ-5455).
+    else if (tap.kind === 'none' || tap.kind === 'heading') return
     else setNotice(await openFile(media, tap.path))
   }
 
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
-      <article className="reader card-view" aria-label={label}>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
+      <article className="reader card-view" aria-label={label} style={look?.style}>
         <h2 className="reader__title reader__title--same">
           {title}
           <span className="card-view__id"> · {card?.id ?? id}</span>
@@ -125,6 +131,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
         <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
+        <ScrollJump scroller={host} closest=".screen" />
         {card !== null && data !== null && (
           <>
             <p className="card-view__facts">{facts === null ? 'New card' : `${cardDueWords(cardNextReview(facts.due, facts.inSteps, now))}${facts.recall === null ? '' : ` · ${Math.round(facts.recall * 100)}% chance you remember it`}`}</p>

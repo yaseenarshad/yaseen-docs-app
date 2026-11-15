@@ -9,12 +9,21 @@ import { useDrawings } from '../drawing/useDrawings'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
+import { headingTarget, landOn } from './headings'
+import { LinkedFrom } from './LinkedFrom'
+import { openLink, type LinkDoor } from './openLink'
+import { resolveSourceOf } from './pageLook'
+import { useVaultLook } from './vaultLook'
+import { usePageTools } from './PageTools'
+import { PropertiesTab } from './PropertiesTab'
+import { vaultName } from '../screens/Frame'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
 import { PageComments } from './comments/PageComments'
 import { useTables } from './useTables'
+import { ScrollJump } from './ScrollJump'
 
 /**
  * A PAGE, READ ONLY (YAZ-5079, 4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
@@ -29,7 +38,7 @@ import { useTables } from './useTables'
 /** YAZ-5211: where each page was read last (phone memory only), so Back shows a page at its place. */
 const readingPlace = new Map<string, number>()
 
-export default function PageView({ path: opened, at }: { path: string; at?: string }) {
+export default function PageView({ path: opened, at, heading }: { path: string; at?: string; heading?: string }) {
   const app = useApp()
   const { store, sync } = app.services
   const vault = app.vaultKey!
@@ -49,6 +58,13 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
   // YAZ-5471: its wide tables: the shadows at their sides, and ⤢ to open one full screen.
   useTables(host)
 
+  // YAZ-5455: the vault's own look (link pills, heading sizes) and its "Clicking a link", for the link door.
+  const look = useVaultLook(store, data)
+  const door: LinkDoor = { go: app.go, click: look?.click ?? 'open' }
+  const doorRef = useRef(door)
+  doorRef.current = door
+  // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk).
+  const tools = usePageTools(host)
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
 
@@ -84,19 +100,20 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
   }, [store, vault, path, reads])
 
   // Draw it, in slices; again when the text or the vault's index changes, at the same reading place (R3).
-  const drawn = useRef<{ text: string; version: number } | null>(null)
+  const drawn = useRef<{ text: string; version: number; look: object } | null>(null)
   const everDrawn = useRef(false)
   useEffect(() => {
     const el = host.current
-    if (el === null || data === null || typeof text !== 'string') return
-    if (drawn.current !== null && drawn.current.text === text && drawn.current.version === data.version) return
+    if (el === null || data === null || typeof text !== 'string' || look === undefined) return
+    if (drawn.current !== null && drawn.current.text === text && drawn.current.version === data.version && drawn.current.look === look) return
+    resolveSourceOf(data).setLook(look.pills, vaultName(app.vault?.repo ?? ''))
     let live = true
     const scroller = el.closest('.screen')
     const top = scroller?.scrollTop ?? 0
     // The first draw of this view (a redraw after R3 keeps the place it had).
     const first = !everDrawn.current
     everDrawn.current = true
-    drawn.current = { text, version: data.version }
+    drawn.current = { text, version: data.version, look }
     void (async () => {
       // YAZ-5436: a REDRAW (the sync changed the page or the vault) is drawn off the screen, its cards in place, then
       // swapped in at once. Before, the page shrank to its first slice under the finger, the scroll place jumped, and
@@ -105,7 +122,7 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       await renderPage(splitFrontmatter(text).body, pageLook(data, path), into, uiSlicer(), () => live)
       if (!live) return
       if (!first) {
-        await fillCardEmbeds(into, data, store, app.go, () => live)
+        await fillCardEmbeds(into, data, store, doorRef.current, () => live)
         if (!live) return
         el.replaceChildren(...into.childNodes)
       }
@@ -113,15 +130,21 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
       if (scroller !== null && !first) scroller.scrollTop = top
       // YAZ-5211: back on a page read before, at its reading place (a card asked for by `at` comes first).
-      if (scroller !== null && first && at === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
+      if (scroller !== null && first && at === undefined && heading === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
+      // YAZ-5455: a link that named a heading (`[[Page#Goals]]`) lands on it; one the page lacks opens it at its top.
+      if (first && heading !== undefined) {
+        const target = headingTarget(el, heading)
+        if (target !== null) landOn(target)
+        else if (scroller !== null) scroller.scrollTop = 0
+      }
       if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
-      if (first) await fillCardEmbeds(el, data, store, app.go, () => live)
+      if (first) await fillCardEmbeds(el, data, store, doorRef.current, () => live)
     })()
     return () => {
       live = false
       drawn.current = null
     }
-  }, [text, data, path, at, store, app.go, title])
+  }, [text, data, look, path, at, heading, store, app.go, app.vault, title])
 
   // YAZ-5211: the reading place of this page, kept as the person scrolls.
   useEffect(() => {
@@ -138,8 +161,18 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
     // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
     if (tap === null) return void guardLink(event)
     event.preventDefault()
-    if (tap.kind === 'go') app.go(tap.action)
-    else if (tap.kind === 'missing') setNotice(tap.text)
+    // A link to this same page (`[[This page#Goals]]`) lands here: it opens no second copy of the page.
+    const self = tap.kind === 'go' && tap.target.kind === 'page' && tap.target.path === path ? tap.target : null
+    if (self !== null) {
+      const target = self.heading === undefined || host.current === null ? null : headingTarget(host.current, self.heading)
+      if (target !== null) landOn(target)
+      else host.current?.closest('.screen')?.scrollTo?.({ top: 0 })
+    } else if (tap.kind === 'go') openLink(door, tap.target)
+    // YAZ-5455: a heading of this page lands there; a missing page's link does nothing.
+    else if (tap.kind === 'heading') {
+      const target = host.current === null ? null : headingTarget(host.current, tap.heading)
+      if (target !== null) landOn(target)
+    } else if (tap.kind === 'none') return
     else setNotice(await openFile(media, tap.path))
   }
 
@@ -152,10 +185,13 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       gear
       tabs
       reader
+      kind="page"
+      tools={tools.button}
+      notice={tools.bar}
       chip={pageId !== null && <PageIdChip id={pageId} path={path} />}
       foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
     >
-      <article className="reader" aria-label={title}>
+      <article className="reader" aria-label={title} style={look?.style}>
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
         {notice !== null && (
           <p className="reader__notice" role="status">
@@ -167,6 +203,10 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
         {/* YAZ-5461: the page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
+        <ScrollJump scroller={host} closest=".screen" />
+        {tools.sheet}
+        <PropertiesTab record={record} data={data} door={door} />
+        {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
       </article>
     </Frame>
   )

@@ -4,12 +4,17 @@ import { vaultPageId } from '@shared/pageId'
 import type { AppModel } from '../app/AppState'
 import type { Route } from '../app/nav'
 import type { VaultData } from '../search/vaultData'
+import { KIND_WORD, KindIcon, type FileKind } from '../screens/Frame'
 import { buildTree, fileKind, levelOf, type TreeFolder } from '../search/vaultTree'
 import './pageNav.css'
 
 /**
  * THE PAGE ARROWS AND THE PAGE ID CHIP (YAZ-5449, YAZ-5450; option A of the approved mockup). In the reader's chunk:
  * the first load does not carry them.
+ *
+ * ONE FOLDER (YAZ-5468): the arrows count and step through the open page's own folder only (its direct folder, not
+ * the folders under it): "2 / 5" is the second of the 5 pages in this folder, and each side is dim at the folder's ends.
+ * The card view keeps the same rule: the cards of the files in the open card's folder.
  *
  * ORDER: the Mac sidebar's tree order, which the phone's Search tree already draws (YAZ-5438, `vaultTree.ts`): each
  * level folders first, then files, by the name the row shows. The walk is depth-first, every folder open:
@@ -24,6 +29,8 @@ import './pageNav.css'
 export interface Stop {
   route: Route
   label: string
+  /** YAZ-5475: the kind of file the stop opens (a small glyph before its title). */
+  kind: FileKind
 }
 
 /** The files of `root`, depth-first, in the tree's order. */
@@ -43,12 +50,35 @@ export function vaultOrder(data: VaultData): { pages: Stop[]; cards: Stop[] } {
   const pages: Stop[] = []
   const cards: Stop[] = []
   for (const record of walkFiles(buildTree(data.records, data.folders))) {
-    if (fileKind(record) === 'page') pages.push({ route: { kind: 'page', path: record.path }, label: record.title.trim() !== '' ? record.title : record.basename })
+    if (fileKind(record) === 'page') pages.push({ route: { kind: 'page', path: record.path }, label: record.title.trim() !== '' ? record.title : record.basename, kind: 'page' })
     for (const card of record.cards ?? [])
-      if (card.id !== null) cards.push({ route: { kind: 'card', path: record.path, id: card.id }, label: card.title?.trim() || card.id })
+      if (card.id !== null) cards.push({ route: { kind: 'card', path: record.path, id: card.id }, label: card.title?.trim() || card.id, kind: record.kind === 'card' ? 'card-file' : 'card' })
   }
   orders.set(data, (order = { pages, cards }))
   return order
+}
+
+/** The folder of a vault path ('' at the root). */
+const folderOfPath = (path: string): string => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+
+const routePath = (route: Route): string => (route.kind === 'page' || route.kind === 'card' ? route.path : '')
+
+const byFolder = new WeakMap<readonly Stop[], Map<string, Stop[]>>()
+
+/** YAZ-5468: the stops of `stops` in the folder `folder` (its direct files only), in the same order; built once per list. */
+export function folderStops(stops: readonly Stop[], folder: string): readonly Stop[] {
+  let map = byFolder.get(stops)
+  if (map === undefined) {
+    map = new Map()
+    for (const stop of stops) {
+      const key = folderOfPath(routePath(stop.route))
+      const list = map.get(key)
+      if (list === undefined) map.set(key, [stop])
+      else list.push(stop)
+    }
+    byFolder.set(stops, map)
+  }
+  return map.get(folder) ?? []
 }
 
 const same = (a: Route, b: Route): boolean =>
@@ -70,17 +100,20 @@ export function stepTo(go: AppModel['go'], route: Route): void {
 /** The thin bar over the tabs: "‹ page before", the place, "page after ›". At the first or the last, that side is dim and does nothing. */
 export function PageArrows({ data, at, go, noun }: { data: VaultData | null; at: Route; go: AppModel['go']; noun: 'page' | 'card' }) {
   if (data === null) return null
-  const near = neighbours(vaultOrder(data)[noun === 'page' ? 'pages' : 'cards'], at)
+  const near = neighbours(folderStops(vaultOrder(data)[noun === 'page' ? 'pages' : 'cards'], folderOfPath(routePath(at))), at)
   if (near === null || near.count < 2) return null
   const side = (stop: Stop | null, after: boolean) => (
     <button
       type="button"
       className={after ? 'page-arrows__go page-arrows__go--after' : 'page-arrows__go'}
       disabled={stop === null}
-      aria-label={stop === null ? (after ? `Last ${noun}` : `First ${noun}`) : `${after ? 'Next' : 'Previous'} ${noun}: ${stop.label}`}
+      aria-label={stop === null ? (after ? `Last ${noun}` : `First ${noun}`) : `${after ? 'Next' : 'Previous'}: ${KIND_WORD[stop.kind]}, ${stop.label}`}
       onClick={() => stop !== null && stepTo(go, stop.route)}
     >
-      {after ? `${stop?.label ?? `Last ${noun}`} ›` : `‹ ${stop?.label ?? `First ${noun}`}`}
+      {/* YAZ-5475: a very small kind glyph before the title ("‹ ▤ Trip plan", "▣ Café notes ›"). */}
+      {after ? '' : '‹ '}
+      {stop !== null && <KindIcon kind={stop.kind} className="page-arrows__kind" hidden />}
+      {after ? `${stop?.label ?? `Last ${noun}`} ›` : (stop?.label ?? `First ${noun}`)}
     </button>
   )
   return (

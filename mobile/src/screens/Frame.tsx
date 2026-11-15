@@ -20,6 +20,8 @@ export function Frame({
   review = false,
   reader = false,
   chip,
+  kind,
+  tools,
   foot,
   children,
 }: {
@@ -38,6 +40,10 @@ export function Frame({
   review?: boolean
   /** A page or a card (YAZ-5436): no scroll bar; a soft fade at the bottom, as the Review card. */
   reader?: boolean
+  /** YAZ-5475: the kind of the open file, a small glyph just before the title (the Mac sidebar's; VoiceOver says it). */
+  kind?: FileKind
+  /** YAZ-5456: the page's tools (its "⋯"), before the dot. */
+  tools?: ReactNode
   /** After the title: the page's ID chip (YAZ-5450). */
   chip?: ReactNode
   /** Over the tab bar: the page arrows (YAZ-5449). */
@@ -57,12 +63,14 @@ export function Frame({
             ←
           </button>
         )}
+        {kind !== undefined && <KindIcon kind={kind} className="topbar__kind" />}
         <h1 className={review ? 'topbar__title sr-only' : 'topbar__title'}>{title}</h1>
         {chip}
+        {tools}
         {gear && <SyncStatus />}
         {review && <div ref={setReviewTop} className="topbar__review" />}
         {gear && (
-          <button type="button" className="icon-btn" aria-label="Settings" onClick={() => app.go({ type: 'open', route: { kind: 'settings' } })}>
+          <button type="button" className="icon-btn topbar__gear" aria-label="Settings" onClick={() => app.go({ type: 'open', route: { kind: 'settings' } })}>
             ⚙
           </button>
         )}
@@ -88,6 +96,21 @@ export function Frame({
         </nav>
       )}
     </div>
+  )
+}
+
+/** YAZ-5475: the kinds of file the reader opens, and their words. (The phone opens no drawing file alone: a drawing is in a page.) */
+export type FileKind = 'page' | 'card' | 'card-file'
+export const KIND_WORD: Record<FileKind, string> = { page: 'page', card: 'card', 'card-file': 'card file' }
+
+/** The Mac sidebar's glyph of a kind (`styles.css`): a page's, or the card's for a card and a card file. */
+export function KindIcon({ kind, className, hidden = false }: { kind: FileKind; className?: string; hidden?: boolean }) {
+  return (
+    <span
+      className={className === undefined ? 'file-icon' : `file-icon ${className}`}
+      data-kind={kind === 'page' ? 'markdown' : 'card'}
+      {...(hidden ? { 'aria-hidden': true } : { role: 'img', 'aria-label': KIND_WORD[kind] })}
+    />
   )
 }
 

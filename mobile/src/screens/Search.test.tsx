@@ -216,7 +216,7 @@ describe('a page, read only (YAZ-5079)', () => {
     expect(asked.length).toBe(before)
   })
 
-  it('links: a page link opens that page; a broken link says so; a PDF opens in the iPhone viewer', async () => {
+  it('links: a page link opens that page; a broken link does nothing (YAZ-5455); a PDF opens in the iPhone viewer', async () => {
     h = await openSearch()
     await openPage(h, 'Spanish words')
     const opened: string[] = []
@@ -225,7 +225,8 @@ describe('a page, read only (YAZ-5079)', () => {
       return {} as Window
     })
     await h.click('Missing page · Nowhere yet')
-    expect(h.host.querySelector('.reader__notice')?.textContent).toBe('Missing page · Nowhere yet. It is not in the vault.')
+    expect(h.host.querySelector('.reader__notice')).toBeNull()
+    expect(h.host.querySelector('.reader__title')?.textContent).toBe('Spanish words')
     await h.click('Guide.pdf')
     expect(opened).toEqual([expect.stringMatching(/^blob:phone\//)])
     expect(h.host.querySelector('a[href="https://example.com/madrid"]')?.getAttribute('target')).toBe('_blank')

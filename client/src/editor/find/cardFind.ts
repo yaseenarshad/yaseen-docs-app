@@ -42,12 +42,12 @@ interface Run {
 }
 
 /** The region's text as runs: adjacent text in one block; a `<br>` or a new block starts the next run. */
-function runsOf(region: Element): Run[] {
+function runsOf(region: Element, skip: string = NOT_TEXT): Run[] {
   const runs: Run[] = []
   let current: Run | null = null
   let block: Element | null = null
   const walker = region.ownerDocument.createTreeWalker(region, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => (node instanceof Element && node.matches(NOT_TEXT) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+    acceptNode: (node) => (node instanceof Element && node.matches(skip) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   })
   for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
     if (node instanceof Element) {
@@ -78,9 +78,9 @@ function pointAt(run: Run, offset: number, end: boolean): [Text, number] {
 }
 
 /** Each case-insensitive literal occurrence of `needle` (already lower case) in the region, as DOM ranges in order. */
-function regionMatches(region: Element, needle: string): Range[] {
+function regionMatches(region: Element, needle: string, skip?: string): Range[] {
   const ranges: Range[] = []
-  for (const run of runsOf(region)) {
+  for (const run of runsOf(region, skip)) {
     const haystack = run.text.toLowerCase()
     for (let i = haystack.indexOf(needle); i !== -1; i = haystack.indexOf(needle, i + needle.length)) {
       const range = region.ownerDocument.createRange()
@@ -90,6 +90,16 @@ function regionMatches(region: Element, needle: string): Range[] {
     }
   }
   return ranges
+}
+
+/**
+ * Every match of `query` in ALL the text under `region`, by the same rule (case-insensitive, literal, within one block),
+ * skipping a card's controls and whatever else `skip` names too: the phone's read-only page (YAZ-5456), which has no
+ * editor, finds in its drawn page with it.
+ */
+export function textMatches(region: Element, query: string, skip?: string): Range[] {
+  const needle = query.toLowerCase()
+  return needle === '' ? [] : regionMatches(region, needle, skip === undefined ? NOT_TEXT : `${NOT_TEXT}, ${skip}`)
 }
 
 /** Every match of `query` in the card text under `root` (a card, an embed, a card file tab), in reading order. */

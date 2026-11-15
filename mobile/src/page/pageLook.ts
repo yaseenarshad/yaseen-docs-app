@@ -1,7 +1,9 @@
 import { isAudioRef, isBoardRef } from '@client/editor/card/cardMedia'
 import { onlyLocalMedia } from '@client/editor/card/cardSafety'
-import { cardLinkTitle, createWikilinkResolveSource, linkCard, linkPageName, linkPath, linksAsShown, missingId, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
+import { cardLinkTitle, createWikilinkResolveSource, linkCard, linkPageName, linkPath, linkSplit, linksAsShown, missingId, type MutableWikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
+import { pathInfo, pillParts, pillsNeedInfo } from '@client/editor/wikilink/linkPillLook'
 import { makeAssetResolver } from '@shared/assetLookup'
+import { NO_LINK_PILLS } from '@shared/linkPills'
 import type { CardLink } from '@shared/cardLinks'
 import { fileKind } from '@shared/fileKind'
 import { makeResolver } from '@shared/linkResolver'
@@ -31,8 +33,8 @@ import './reader.css'
 // The reader draws cards with local media only (YAZ-5209), also when it is the first to draw one (`main.tsx` sets it too).
 onlyLocalMedia()
 
-const sources = new WeakMap<VaultData, WikilinkResolveSource>()
-export function resolveSourceOf(data: VaultData): WikilinkResolveSource {
+const sources = new WeakMap<VaultData, MutableWikilinkResolveSource>()
+export function resolveSourceOf(data: VaultData): MutableWikilinkResolveSource {
   let source = sources.get(data)
   if (source === undefined) {
     const made = createWikilinkResolveSource()
@@ -111,14 +113,20 @@ export function pageLook(data: VaultData, holder: string): PageLook {
       const card = inner.includes('|') ? null : linkCard(inner, source)
       if (card !== null) return { label: cardLinkTitle(card), open: { kind: 'card', path: card.path, id: card.id } }
       const label = linksAsShown(`[[${inner}]]`, source)
-      const path = linkPath(inner, source, undefined)
-      if (path !== null) return { label, open: { kind: 'page', path } }
+      // YAZ-5455: a `#heading` goes with the page (`[[Page#Goals]]`); alone (`[[#Goals]]`) it is this page's heading.
+      const heading = linkSplit(inner, source).hash.replace(/^#/, '')
       const page = linkPageName(inner, source)
+      if (page === '' && heading !== '') return { label, open: { kind: 'heading', heading } }
+      const path = linkPath(inner, source, undefined)
+      // The vault's pill format (YAZ-5455): the ends the Mac's page draws, with no file icon (the phone has none).
+      const ends = (resolved: string | null) =>
+        source.pills === NO_LINK_PILLS ? undefined : pillParts(source.pills, { info: resolved !== null && pillsNeedInfo(source.pills) ? pathInfo(data.records, data.folders).get(resolved) : undefined, otherVault: null }, source.vault, false)
+      if (path !== null) return { label, open: { kind: 'page', path, ...(heading !== '' && { heading }) }, ends: ends(path) }
       // A link to a file of the vault that is no page (a PDF, a picture): by the asset rule.
       const file = page === '' ? null : assetsOf(data)(page, folderOf(holder))
-      if (file !== null) return { label, open: fileKind(file) === 'markdown' ? { kind: 'page', path: file } : { kind: 'file', path: file } }
+      if (file !== null) return { label, open: fileKind(file) === 'markdown' ? { kind: 'page', path: file, ...(heading !== '' && { heading }) } : { kind: 'file', path: file } }
       const id = missingId(inner, source)
-      return { label, open: null, missing: id === undefined ? `Missing page · ${page}` : `Missing page · ${id}` }
+      return { label, open: null, missing: id === undefined ? `Missing page · ${page}` : `Missing page · ${id}`, ends: ends(null) }
     },
     embed(inner): EmbedShow {
       const page = linkPageName(inner, source)

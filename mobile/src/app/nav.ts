@@ -28,8 +28,11 @@ export type Route =
   | { kind: 'scan'; vault?: string }
   /** A new token for a vault: "Replace token" in Settings, or "Sign in again" (row N6). */
   | { kind: 'replace-token'; vault: string }
-  /** 4C (YAZ-5079): a page, read only. `at`: the ID of a card on it to show first ("Open page" of a card). */
-  | { kind: 'page'; path: string; at?: string }
+  /**
+   * 4C (YAZ-5079): a page, read only. `at`: the ID of a card on it to show first ("Open page" of a card). `heading`: the
+   * `#part` a link named (YAZ-5455): the page opens at that heading.
+   */
+  | { kind: 'page'; path: string; at?: string; heading?: string }
   /** 4C (round 12, item 10): a card alone, read only: the card, its review history, "Open page" for a card in a page. */
   | { kind: 'card'; path: string; id: string }
   /** 4E4 (decision 23): "You vs <friend>". `theirs`: the friend's pointer; or `group` and `pointer`: a member of a group. */

@@ -15,13 +15,14 @@ import { TABLE_PAGE } from './tableFixtures'
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  * YAZ-5449 to YAZ-5451: `page` has the ID chip, the dot alone and the page arrows; `page-copied` the toast after a tap
  * on the chip; `page-copy-by-hand` the path to copy by hand (the clipboard says no); `page-last` the last page (its
- * "next" side dim); `card-next` a card after one step of its arrows. The clipboard is a fake: nothing reaches the
+ * "next" side dim); `card-next` a card after one step of its arrows. YAZ-5468: `page-folder` the arrows of a page in a folder of
+ * two pages ("1 / 2": the folder's pages only). YAZ-5467: `page-jump` a long page just scrolled, the ⤒ ⤓ pill at the right edge. The clipboard is a fake: nothing reaches the
  * phone's real one.
  * YAZ-5474: `search-collapsed` the tree after "Collapse all folders" in the box, its Expand all icon at the right end.
  * YAZ-5471: `page-tables` a page of made-up tables in the real shapes (`tableFixtures.ts`), at its six-column table;
  * `page-table-full` that table full screen (its ⤢).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -132,7 +133,28 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 ? { '.yaseendocs/show-ids.json': JSON.stringify({ search: 'always', title: true, files: 'number' }) } // YAZ-5454: "#12" at each page row's end
                 : name === 'page-comments'
                   ? { 'Review notes.md': COMMENTED }
-                  : {}
+          : name === 'page-links' || name === 'page-linked-from'
+            ? {
+                'Links.md': `---\ntitle: Links\nid: DEMO-7\n---\n\n# Links\n\nBy words: [[Trip plan|the trip]]. By ID: [[DEMO-4]]. To a heading: [[Spanish words#Places]].\n\nA card: [[DEMO-40]]. Missing: [[No such page]]. Web: [a site](https://example.com/x).\n\nRelative: [the guide](notes/Folder%20guide.md#step-two).\n`,
+                'notes/Folder guide.md': '---\ntitle: Folder guide\n---\n\n# Folder guide\n\n## Step one\n\nOne.\n\n## Step two\n\nDone.\n',
+              }
+          : name === 'page-properties'
+            ? {
+                'Trip notes.md':
+                  '---\ntitle: Trip notes\nid: DEMO-8\nstatus: Planning\ndue: 2026-12-01\nstarts: 2026-12-01T09:30\nbudget: 1250.5\nbooked: true\npacked: false\ntags: [spain, trains]\nsee: "[[Trip plan]]"\nnote: Read [[Café notes]] first\naliases: [Viaje]\n---\n\nThe notes.\n',
+              }
+          : name === 'page-pills'
+            ? {
+                '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { shape: 'underline' }, parts: { id: { bold: true } } }),
+                '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 }, h2: { underline: true } }),
+              }
+          : name === 'page-jump' || name === 'page-headings'
+            ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
+          : name === 'page-folder'
+            ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
+          : name === 'page-drawing'
+            ? DRAWING_FILES
+            : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -183,6 +205,65 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       press(/Copy the path$/)
       await until(() => document.querySelector('.page-toast') !== null)
       break
+    case 'page-jump': {
+      await typed('long notes')
+      await open(/^Long notes/, '.reader__body h2')
+      const screen = document.querySelector<HTMLElement>('.screen--reader')
+      if (screen !== null) screen.scrollTop = 600
+      await until(() => document.querySelector('.scroll-jump[data-on]') !== null)
+      break
+    }
+    case 'page-tools':
+    case 'page-find':
+      await open(/^Spanish words/, '.reader__body h1')
+      press('Page tools')
+      await wait(50)
+      if (name === 'page-find') {
+        press(/Find in page/)
+        await until(() => document.querySelector('.find-line__input') !== null)
+        const box = document.querySelector<HTMLInputElement>('.find-line__input')!
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box, 'spa')
+        box.dispatchEvent(new Event('input', { bubbles: true }))
+        await wait(200)
+        press('Next match')
+      }
+      break
+    case 'page-headings':
+      await typed('long notes')
+      await open(/^Long notes/, '.reader__body h2')
+      press('Page tools')
+      await wait(50)
+      press(/Headings/)
+      await until(() => document.querySelector('.headings-sheet__row') !== null)
+      break
+    case 'page-properties':
+      await typed('trip notes')
+      await open(/^Trip notes/, '.reader__body p')
+      press('Properties')
+      await until(() => document.querySelector('.props__panel[data-shown]') !== null)
+      await wait(300)
+      break
+    case 'page-pills':
+      await open(/^Spanish words/, '.reader__body h1')
+      break
+    case 'page-links':
+      await typed('links')
+      await open(/^Links/, '.reader__body h1')
+      break
+    case 'page-linked-from':
+      await typed('trip plan')
+      await open(/^Trip plan/, '.linked-from')
+      press(/^Linked from/)
+      await until(() => document.querySelectorAll('.linked-from__line').length >= 2)
+      document.querySelector('.linked-from')?.scrollIntoView({ block: 'start' })
+      break
+    case 'page-folder':
+      if (!/Git cheat sheet/.test(document.querySelector('.tree')?.textContent ?? '')) {
+        press(/^git, folder/)
+        await wait(80)
+      }
+      await open(/^Git cheat sheet/, '.page-arrows')
+      break
     case 'page-last':
       await open(/^Trip plan/, '.page-arrows')
       break
@@ -192,7 +273,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         await wait(80)
       }
       await open(/^Capital of Spain/, '.page-arrows')
-      press(/^Next card:/)
+      press(/^Next: card/)
       await until(() => document.querySelector('.topbar__title')?.textContent === 'Two cards in one')
       await wait(300)
       break
