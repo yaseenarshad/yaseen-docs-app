@@ -151,3 +151,14 @@ it('the list code never sends `sha: null`: every tree entry of a whole list life
   for (const e of entries) expect(e).toMatchObject({ path: LIST_PATH, content: expect.any(String) })
   expect(entries.some((e) => (e as { sha?: unknown }).sha === null)).toBe(false)
 })
+
+it('YAZ-5399: the way out never runs while the home vault answers (a working list is never replaced)', async () => {
+  const { w, opts } = setup()
+  const h0 = await open(w, opts)
+  w.repos!.create('ali/notes', 'ali', { 'a.md': '# A\n' })
+  const { restartList } = await import('@shared/friendListHome')
+  const r = await restartList(w.api('ali'), 'ali/notes', { vaults: ['ali/notes'], nickname: null }, opts)
+  expect(r.kind).toBe('home-is-there')
+  expect(w.repos!.file('ali/notes', LIST_PATH)).toBeNull()
+  expect((await latestList(h0)).index.stats).toBe(h0.index.stats)
+})

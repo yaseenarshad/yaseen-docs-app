@@ -254,6 +254,18 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     expect(plain(h.text())).toContain('No connection. Your friends show when you are online.')
   })
 
+  it('YAZ-5399: the vault of the list is gone: plain words, the way out for each other vault, its effect asked first', async () => {
+    const o = await open({ kind: 'home-gone', home: 'ali/vault', vaults: ['ali/notes'] })
+    h = o.h
+    const s = o.s
+    expect(plain(h.text())).toContain('Your friends list was in the vault ali/vault. GitHub does not have that vault for your account any more')
+    await tap(h, 'Start the friends list again in ali/notes')
+    expect(plain(h.text())).toContain('This stops sharing with everyone.')
+    expect(s.calls.restart).toEqual([])
+    await tap(h, 'Start again')
+    expect(s.calls.restart).toEqual(['ali/notes'])
+  })
+
   it('no signal: the last numbers, each with "updated … ago"', async () => {
     ;({ h } = await open(demoBoard(NOW, { offline: true })))
     expect(plain(h.text())).toContain('No connection. These are the last numbers the app read.')

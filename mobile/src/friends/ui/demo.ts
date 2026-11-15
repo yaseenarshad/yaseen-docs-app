@@ -218,6 +218,8 @@ export interface FakeCalls {
   share: number
   paste: string[]
   remove: string[]
+  /** YAZ-5399: the vaults of each "Start the friends list again in …". */
+  restart: string[]
   mark: { mine: string; kind: MarkKind }[]
   see: string[]
   groups: string[]
@@ -239,6 +241,7 @@ export function fakeService(board: Board, options: { groups?: boolean } = {}): F
     share: 0,
     paste: [],
     remove: [],
+    restart: [],
     mark: [],
     see: [],
     groups: [],
@@ -298,6 +301,10 @@ export function fakeService(board: Board, options: { groups?: boolean } = {}): F
       calls.remove.push(mine)
       const set = service.answers.friend
       return (set !== undefined ? await set() : { kind: 'done' }) as never
+    },
+    async restart(vault) {
+      calls.restart.push(vault)
+      return { kind: 'done', vault }
     },
     async mark(mine, kind) {
       calls.mark.push({ mine, kind })

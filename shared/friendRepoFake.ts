@@ -340,7 +340,12 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
   const [owner, name] = full.split('/')
   const base = `/repos/${owner}/${name}`
   const call = async (method: string, path: string, query: Record<string, string> = {}, body?: unknown, etag: string | null = null, accept: string | null = null) => {
-    const a = await world.http(method, path, new URLSearchParams(query), token, body, etag, accept)
+    let a = await world.http(method, path, new URLSearchParams(query), token, body, etag, accept)
+    // As a client's `fetch`: GitHub's redirect of a renamed or transferred repo is followed (YAZ-5399).
+    for (let hop = 0; a !== undefined && [301, 302, 307, 308].includes(a.status) && typeof a.headers.location === 'string' && hop < 3; hop++) {
+      const next = new URL(a.headers.location)
+      a = await world.http(method, next.pathname, next.searchParams, token, body, etag, accept)
+    }
     if (a === undefined) throw new GistError('OFFLINE', 'No connection to GitHub')
     return a
   }
@@ -368,6 +373,11 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
       if (a.status === 404) return null
       if (a.status !== 200) return fail(a.status)
       return a.raw ?? ''
+    },
+    async canonical() {
+      const a = await call('GET', base)
+      if (a.status !== 200) return fail(a.status)
+      return String((a.body as { full_name: string }).full_name).toLowerCase()
     },
     async commit(parent, path, text, message) {
       const c = await call('GET', `${base}/git/commits/${parent}`)

@@ -114,6 +114,12 @@ export function macRepoPort(token: string, fetch: FetchLike, repo: string, branc
       if (res.status !== 200) throw failure(res)
       return res.text()
     },
+    async canonical() {
+      const res = await call(token, fetch, base)
+      if (res.status !== 200) throw failure(res)
+      const name = ((await res.json().catch(() => null)) as { full_name?: unknown } | null)?.full_name
+      return typeof name === 'string' && name.includes('/') ? name.toLowerCase() : repo.toLowerCase()
+    },
     async commit() {
       throw new MacNeverWrites()
     },

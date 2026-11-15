@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
-import { NO_LIST_ACCESS, listElsewhereMessage, pasteMessage, type PasteResult } from '@shared/friendsList'
+import { NO_LIST_ACCESS, homeGoneMessage, listElsewhereMessage, pasteMessage, restartAction, restartWarning, type PasteResult } from '@shared/friendsList'
 import { useApp } from '../../app/AppState'
 import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
@@ -65,7 +65,7 @@ export default function FriendsTab() {
       </section>
     )
   if (service === null || board === null) return <section aria-label="Friends">{alert ?? <Empty service={null} />}</section>
-  if (board.kind !== 'ok') return <section aria-label="Friends">{alert ?? <Unreadable board={board} refresh={refresh} />}</section>
+  if (board.kind !== 'ok') return <section aria-label="Friends">{alert ?? <Unreadable board={board} refresh={refresh} service={service} />}</section>
   return (
     <section aria-label="Friends">
       {alert}
@@ -75,9 +75,11 @@ export default function FriendsTab() {
 }
 
 /** Words for a board that cannot show (decision 17, round 13 item 4, YAZ-5191). */
-function Unreadable({ board, refresh }: { board: Unavailable; refresh: () => Promise<void> }) {
+function Unreadable({ board, refresh, service }: { board: Unavailable; refresh: () => Promise<void>; service: FriendsService }) {
   const app = useApp()
   switch (board.kind) {
+    case 'home-gone':
+      return <HomeGone home={board.home} vaults={board.vaults} service={service} refresh={refresh} />
     case 'needs-repair':
       return <Problem message={LIST_NEEDS_REPAIR} action="Try again" onAction={() => void refresh()} />
     case 'newer-app':
@@ -117,6 +119,50 @@ function Unreadable({ board, refresh }: { board: Unavailable; refresh: () => Pro
     default:
       return <Problem message="Your friends could not be read." action="Try again" onAction={() => void refresh()} />
   }
+}
+
+/**
+ * YAZ-5399: the vault that held the friends list is gone on GitHub. The tab says what happened, and offers the way out
+ * for each other vault of this phone: "Start the friends list again in <vault>", after a confirm that says its effect.
+ */
+function HomeGone({ home, vaults, service, refresh }: { home: string; vaults: readonly string[]; service: FriendsService; refresh: () => Promise<void> }) {
+  const [asking, setAsking] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [said, setSaid] = useState<string | null>(null)
+  const run = async () => {
+    if (asking === null || service.restart === undefined) return
+    setBusy(true)
+    try {
+      const r = await service.restart(asking)
+      setSaid(r.kind === 'done' ? null : r.kind === 'home-is-there' ? 'Your friends list vault answers again. Nothing was changed.' : (UNAVAILABLE_WORDS[r.kind as Unavailable['kind']] ?? 'Something went wrong. Try again.'))
+    } finally {
+      setBusy(false)
+      setAsking(null)
+      await refresh()
+    }
+  }
+  return (
+    <div>
+      <Problem message={homeGoneMessage(home)} />
+      {vaults.length === 0 ? (
+        <p className="muted">Add another of your vaults on this phone to start the friends list again there.</p>
+      ) : (
+        <div className="stack">
+          {vaults.map((v) => (
+            <button key={v} type="button" className="btn btn--wide" disabled={busy || service.restart === undefined} onClick={() => setAsking(v)}>
+              {restartAction(v)}
+            </button>
+          ))}
+        </div>
+      )}
+      {said !== null && (
+        <p role="status" className="fr-line">
+          {said}
+        </p>
+      )}
+      {asking !== null && <Confirm question={restartWarning(asking)} yes="Start again" busy={busy} onYes={() => void run()} onNo={() => setAsking(null)} />}
+    </div>
+  )
 }
 
 /** No friend and no group yet: the two steps of decision 20, and one time what a friend sees (decision 22). */
@@ -550,6 +596,7 @@ const UNAVAILABLE_WORDS: Record<Unavailable['kind'], string> = {
   'needs-repair': LIST_NEEDS_REPAIR,
   'list-elsewhere': 'Your friends list is in another of your vaults. Add that vault on this phone to use Friends here.',
   'no-list-access': NO_LIST_ACCESS,
+  'home-gone': 'The vault that held your friends list is gone on GitHub. Open Friends to start the list again.',
   failed: 'Something went wrong. Try again.',
 }
 

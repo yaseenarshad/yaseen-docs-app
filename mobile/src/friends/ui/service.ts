@@ -69,6 +69,8 @@ export interface FriendsService {
   share(): Promise<ShareResult | Unavailable>
   paste(text: string): Promise<PasteAnswer>
   remove(mine: string): Promise<{ kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'not-found' } | Unavailable>
+  /** YAZ-5399: the way out when the home vault is gone (`FriendsList.restart`). */
+  restart?(vault: string): ReturnType<FriendsList['restart']>
   mark(mine: string, kind: MarkKind): Promise<MarkSend>
   see(marks: readonly { theirs: string; mark: FriendMark }[]): Promise<void>
   groups: GroupsPort | null
@@ -278,6 +280,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     share: () => list.share(),
     paste: async (text) => cleanAnswer(await list.pasteAny(text)),
     remove: (mine) => list.remove(mine),
+    restart: (vault) => list.restart(vault),
     mark: (mine, kind) => marks.send(mine, kind, pointerCount),
     see: (seen) => marks.see(seen),
     async stop() {

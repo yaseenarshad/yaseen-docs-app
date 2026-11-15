@@ -20,7 +20,7 @@ import {
   type IndexHandle,
 } from './friendGists'
 import { BrokenList, ListError, NewerList, latestList, listErrorCode, openFriendsList, writeList } from './friendListHome'
-import { Elsewhere, pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
+import { Elsewhere, HomeGone, pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
 import type { GistBudget } from './friendSend'
 import type { FriendDay, FriendStats } from './friendStats'
 
@@ -265,7 +265,7 @@ type Failure = { kind: 'offline' } | { kind: 'rate-limited'; retryAt: number | n
 function failure(err: unknown): Failure | { kind: 'needs-repair' } | { kind: 'newer-app' } | { kind: 'not-found' } {
   if (err instanceof Stop) return { kind: err.kind }
   // YAZ-5083: the list in a vault this device does not have, or one the token cannot write: nothing is written.
-  if (err instanceof Elsewhere || listErrorCode(err) === 'NO_LIST_ACCESS' || err instanceof ListError) return { kind: 'failed' }
+  if (err instanceof Elsewhere || err instanceof HomeGone || listErrorCode(err) === 'NO_LIST_ACCESS' || err instanceof ListError) return { kind: 'failed' }
   switch (gistErrorCode(err)) {
     case 'OFFLINE':
     case 'GITHUB_DOWN':

@@ -40,6 +40,16 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
         return noAccess(err)
       }
     },
+    async canonical() {
+      try {
+        // `fetch` follows GitHub's redirect of a renamed or transferred repo: the answer names the repo as it is now.
+        const res = await client.request(repoPath(repo))
+        const name = (res.data as { full_name?: unknown } | null)?.full_name
+        return typeof name === 'string' && name.includes('/') ? name.toLowerCase() : repo.toLowerCase()
+      } catch (err) {
+        return noAccess(err)
+      }
+    },
     async commit(parent, path, text, message) {
       try {
         // Never a delete: GitHub refuses `sha: null` for a path that the base tree does not have (round 5).

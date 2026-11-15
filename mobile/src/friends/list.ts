@@ -1,5 +1,5 @@
 import { DESCRIPTIONS, emptyNumbers, gistErrorCode, listPatch, type EntryKind, type GistsApi, type IndexHandle } from '@shared/friendGists'
-import { BrokenList, NewerList, latestList, listErrorCode, openFriendsList, writeList } from '@shared/friendListHome'
+import { BrokenList, NewerList, latestList, listErrorCode, openFriendsList, restartList, writeList } from '@shared/friendListHome'
 import { emptyBudget, recordUpdate, type GistBudget } from '@shared/friendSend'
 import { deviceZone } from '@shared/friendStats'
 import {
@@ -22,6 +22,7 @@ import {
 } from '@shared/friendGroups'
 import {
   Elsewhere,
+  HomeGone,
   WHAT_FRIENDS_SEE,
   dropHeldShares,
   kindOf,
@@ -78,6 +79,12 @@ export type Unavailable =
   | { kind: 'list-elsewhere'; home: string }
   /** YAZ-5083: the token cannot read or write the vault that holds my friends list (Contents permission). */
   | { kind: 'no-list-access' }
+  /**
+   * YAZ-5399: GitHub does not have the vault `home` of my friends list for this account any more (deleted, or no access).
+   * Show `homeGoneMessage(home)` and, for each of `vaults` (this phone's other vaults on the friends account), the way
+   * out: `restartAction(vault)`, which runs `restart(vault)` after `restartWarning(vault)`.
+   */
+  | { kind: 'home-gone'; home: string; vaults: string[] }
   | { kind: 'failed' }
 
 export interface ShareResult {
@@ -103,6 +110,11 @@ export interface FriendsList {
   stop(): void
   /** 4E3 (YAZ-5084): groups run by an admin. */
   groups: FriendsGroups
+  /**
+   * YAZ-5399, the way out when the home vault is gone: ends ALL sharing (every pointer and numbers gist of mine is
+   * deleted) and starts a new, empty list in `vault` (`restartList`). Refused while the home vault answers.
+   */
+  restart(vault: string): Promise<{ kind: 'done'; vault: string } | { kind: 'home-is-there' } | { kind: 'bad-target' } | Unavailable>
   /** One paste box for each kind of link: a friend link (`paste`), a group link (`groups.join`), a join request (`groups.request`). */
   pasteAny(text: string): Promise<PasteResult | JoinResult | JoinRequest | Unavailable>
 }
@@ -253,9 +265,17 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         return { kind: 'needs-repair' }
       case 'elsewhere':
         return { kind: 'list-elsewhere', home: found.home }
+      case 'home-gone':
+        return homeGone(api, found.home)
       default:
         return { kind: 'no-list-access' }
     }
+  }
+  /** YAZ-5399: the home is gone; the vaults where the list can start again (this phone's, on the friends account). */
+  async function homeGone(api: GistsApi, home: string): Promise<Unavailable> {
+    handle = null
+    const vaults = ((await api.repos?.()) ?? []).map((p) => p.repo).filter((r) => r !== home)
+    return { kind: 'home-gone', home, vaults: [...new Set(vaults)] }
   }
   const isHandle = (x: IndexHandle | Unavailable | null): x is IndexHandle => x !== null && 'index' in x
 
@@ -287,8 +307,15 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (err instanceof NewerList) return { kind: 'newer-app' as const }
         if (err instanceof BrokenList) return { kind: 'needs-repair' as const }
         if (err instanceof Elsewhere) return { kind: 'list-elsewhere' as const, home: err.home }
+        if (err instanceof HomeGone) return homeGone(friends.api, err.home)
         if (listErrorCode(err) === 'NO_LIST_ACCESS') {
           handle = null
+          // YAZ-5399: GitHub answered 404 for the repo of this session's list: open the list again by its note, which
+          // tells "the home vault is gone" (with the way out) from "this token cannot write there".
+          if ((err as { gone?: unknown }).gone === true) {
+            const again = await list(friends.api, friends.account.login, false).catch(() => null)
+            if (again !== null && !isHandle(again) && again.kind === 'home-gone') return again
+          }
           return { kind: 'no-list-access' as const }
         }
         switch (gistErrorCode(err)) {
@@ -332,6 +359,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     if (r.why === 'needs-repair') return { kind: 'needs-repair' as const }
     if (r.why === 'list-elsewhere') return { kind: 'failed' as const }
     if (r.why === 'no-list-access') return { kind: 'no-list-access' as const }
+    if (r.why === 'home-gone') return { kind: 'failed' as const }
     if (r.why === 'refused') {
       if (await guard.live()) await recordGistsRefused(store, vault)
       return { kind: 'no-gists' as const }
@@ -551,6 +579,21 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         return { kind: 'ok' as const, link: shared.link, ...shareText(shared.link), whatFriendsSee: WHAT_FRIENDS_SEE }
       }),
     paste: (text) => pasteText(text),
+    restart: (vault) =>
+      withApi(async (api, login, account) => {
+        const settings = await local.settings()
+        const acc = await loadAccount(store, account)
+        const numbers = { ...emptyNumbers(now()), login, name: settings.nickname ?? acc?.name ?? login, avatar: acc?.avatarUrl ?? '' }
+        const copy = await store.getState<ListCopy>(PHONE, COPY)
+        const vaults = [...new Set([vault.toLowerCase(), ...(copy?.vaults ?? []).filter((v) => v !== vault.toLowerCase())])]
+        const seed = { vaults, nickname: copy?.nickname ?? settings.nickname, numbers, zone: copy?.zone ?? settings.zone ?? deviceZone() }
+        const r = await restartList(api, vault, seed, opts)
+        if (r.kind !== 'ok') return r.kind === 'newer' ? { kind: 'newer-app' as const } : { kind: r.kind }
+        // Nothing of the old list waits on this phone any more: its pointers are gone.
+        for (const mine of await queuedMines(phoneStore)) await dequeueRemove(phoneStore, mine)
+        await remember(r.handle)
+        return { kind: 'done' as const, vault: r.handle.store!.port.repo }
+      }),
     remove: (mine) =>
       withApi(async (api, login, vault) => {
         const h0 = await list(api, login, false)

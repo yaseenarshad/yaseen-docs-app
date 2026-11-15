@@ -1,8 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { expect, it } from 'vitest'
-import { INDEX_FILE, POINTER_FILE, readListFiles } from '@shared/friendGists'
+import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, readListFiles } from '@shared/friendGists'
 import { LIST_PATH, parseListFile } from '@shared/friendListStore'
-import { friendLink } from '@shared/friendsList'
+import { friendLink, homeGoneMessage } from '@shared/friendsList'
+import { saveAccount } from '../../auth/account'
+import { loadVaultList, saveVaultList, vaultId } from '../../store'
 import { noRealWaits } from '../check4/run4.testing'
 import { Model5 } from './model5.testing'
 
@@ -27,28 +29,131 @@ async function world(nA = 2) {
   return m
 }
 const listA = (m: Model5) => m.listOf('A')!
+/** A's list where A's note says it is (YAZ-5399: after a start again, another vault). */
+const listAt = (m: Model5) => {
+  const note = m.world.owned('ali').find((g) => INDEX_FILE in g.files)!
+  const home = (JSON.parse(note.files[INDEX_FILE]) as { home: string }).home
+  const file = parseListFile(m.world.repos!.file(home, LIST_PATH)!)
+  if (file.kind !== 'ok') throw new Error(file.kind)
+  const read = readListFiles(file.files)
+  if (read.kind !== 'ok') throw new Error(read.kind)
+  return { home, index: read.value }
+}
 const bMine = (m: Model5) => m.bEntries()[0].mine
 const stats = (m: Model5) => listA(m).index.stats!
 
+/** A second vault of A on the phone (the same account), where the list can start again (YAZ-5399). */
+async function addVault(d: any, repo: string) {
+  const v = { repo, branch: 'main', addedAt: Date.parse('2026-11-14T15:00:00Z') }
+  const list = await loadVaultList(d.store)
+  await saveVaultList(d.store, { vaults: [...list.vaults, v], open: list.open })
+  await d.tokens.write(vaultId(v), `github_pat_11CHECK3_${'ali'.padEnd(70, '0')}`)
+  await saveAccount(d.store, vaultId(v), { login: 'ali', name: 'ALI', avatarUrl: '', gists: 'yes', expiresAt: null, checkedAt: Date.parse('2026-11-14T15:00:00Z') })
+}
+const pointerStats = (m: Model5, id: string) => {
+  const p = m.gist(id)?.files[POINTER_FILE]
+  return p === undefined ? null : (JSON.parse(p) as { stats: string }).stats
+}
+const notes = (m: Model5) => m.world.owned('ali').filter((g) => INDEX_FILE in g.files).map((g) => JSON.parse(g.files[INDEX_FILE]) as { v: number; home?: string })
+
+// CHECKER round 5 (YAZ-5399), with the way out of the decision on YAZ-5399 (builder of the round 5 fixes): the checker's
+// version expected that a person can still stop sharing with B; it failed with
+// `{"rows":"no-list-access","remove":"no-list-access","share":"no-list-access","bPointerAlive":true,"namesCurrent":true}`.
 it('H1: the home vault repo is deleted on GitHub: what the phone says, and can it still stop sharing with B?', async () => {
   const m = await world(1)
   const a = m.devs.A[0] as any
   const mine = bMine(m)
-  // The repo is gone: every call under /repos/ali/vault is 404 (GitHub's answer for a deleted repo).
-  const real = a.list
-  const f = m.fetchFor(a)
-  const gone = async (url: string, init: any) => (new URL(url).pathname.startsWith('/repos/ali/vault') ? new Response(JSON.stringify({ message: 'Not Found' }), { status: 404, headers: { 'content-type': 'application/json' } }) : f(url, init))
-  const { createFriendsList } = await import('../list')
-  a.list = createFriendsList({ store: a.store, tokens: a.tokens, clock: m.clock, fetch: gone as any, sleep: async () => {} })
-  void real
+  const oldStats = stats(m)
+  await addVault(a, 'ali/notes')
+  // The repo is gone: GitHub answers 404 for every call under /repos/ali/vault.
+  m.world.repos!.remove('ali/vault')
   const rows = await a.list.rows()
   const rem = await a.list.remove(mine)
   const share = await a.list.share()
-  // Does B still read A's numbers through A's pointer?
-  const p = m.gist(mine)?.files[POINTER_FILE]
-  const named = p === undefined ? null : (JSON.parse(p) as { stats: string }).stats
-  console.log('H1', JSON.stringify({ rows: rows.kind, remove: rem.kind, why: (rem as any).why, share: share.kind, bPointerAlive: p !== undefined, namesCurrent: named === stats(m) }))
-  expect(rem.kind === 'done' || p === undefined).toBe(true)
+  console.log('H1', JSON.stringify({ rows, remove: rem.kind, share: share.kind, bPointerAlive: m.gist(mine) !== undefined }))
+  // Plain words: what happened, and where the list can start again.
+  expect(rows).toEqual({ kind: 'home-gone', home: 'ali/vault', vaults: ['ali/notes'] })
+  expect(homeGoneMessage('ali/vault')).toMatch(/ali\/vault.*deleted, or your token lost access/)
+  expect(rem.kind).toBe('home-gone')
+  expect(share.kind).toBe('home-gone')
+  // The way out never runs while the home answers, nor into the gone vault itself.
+  expect((await a.list.restart('ali/vault')).kind).toBe('bad-target')
+  const r = await a.list.restart('ali/notes')
+  expect(r).toEqual({ kind: 'done', vault: 'ali/notes' })
+  // B cannot reach A's numbers in any way: the pointer is gone, the old numbers gist is gone, the new one is unknown to B.
+  expect(m.gist(mine)).toBeUndefined()
+  expect(m.gist(oldStats)).toBeUndefined()
+  const now = listAt(m)
+  expect(m.bfs('B', now.index.stats).hit).toBe(false)
+  // B still KNOWS the old numbers gist's ID (it read it before), but that gist is deleted (above): it reads nothing.
+  // ONE note, naming the new vault; the list there is new and empty; no other pointer or numbers gist of A is left.
+  expect(notes(m)).toEqual([{ v: 3, home: 'ali/notes', about: expect.any(String) } as never])
+  expect(now.home).toBe('ali/notes')
+  expect(now.index.friends).toEqual([])
+  const left = m.world.owned('ali').filter((g) => POINTER_FILE in g.files || (NUMBERS_FILE in g.files && g.id !== now.index.stats))
+  expect(left).toEqual([])
+  // Friends work again: A shares, B pastes, and B reads A's NEW numbers.
+  expect((await a.list.rows()).kind).toBe('ok')
+  const s = await a.list.share()
+  expect(s.kind).toBe('ok')
+  const p = await (m.devs.B[0] as any).list.paste(s.link)
+  expect(p.kind).toBe('added')
+  expect(pointerStats(m, s.link.split('#')[1])).toBe(listAt(m).index.stats)
+})
+
+it('H1b (YAZ-5399): the home vault repo is RENAMED (or transferred) on GitHub: GitHub`s redirect is followed, the note names the new name, nothing stops', async () => {
+  const m = await world(2)
+  const [a0, a1] = m.devs.A as any[]
+  const mine = bMine(m)
+  m.world.repos!.rename('ali/vault', 'ali/vault-2024')
+  // In the running session, the list's calls follow the redirect: nothing stops.
+  expect((await a0.list.rows()).kind).toBe('ok')
+  // The next open of the list (a new session) reads the repo's new name and writes it into the note.
+  a0.list = m.newList(a0)
+  expect((await a0.list.rows()).kind).toBe('ok')
+  expect(notes(m)).toEqual([expect.objectContaining({ v: 3, home: 'ali/vault-2024' })])
+  // The other phone (its vault still under the old name) follows the note and the redirect; a remove finishes.
+  const r = await a1.list.remove(mine)
+  expect(r.kind).toBe('done')
+  expect(m.gist(mine)).toBeUndefined()
+  expect(m.bfs('B', listAt(m).index.stats).hit).toBe(false)
+})
+
+it('H1c (YAZ-5399): the way out stops half way (after its deletes): the app offers it again, and the second run ends it', async () => {
+  const m = await world(1)
+  const a = m.devs.A[0] as any
+  const mine = bMine(m)
+  await addVault(a, 'ali/notes')
+  m.world.repos!.remove('ali/vault')
+  expect((await a.list.rows()).kind).toBe('home-gone')
+  // The phone stops at its first list commit in the new vault (the new numbers gist is made, the note not yet).
+  const repos = m.world.repos!
+  const prev = repos.observe!
+  let killed = false
+  repos.observe = (mv) => {
+    prev(mv)
+    if (!killed && mv.repo === 'ali/notes' && repos.fileAt('ali/notes', mv.to, LIST_PATH) !== null) {
+      killed = true
+      a.dead = true
+      a.fireCrash()
+    }
+  }
+  expect(await Promise.race([a.list.restart('ali/notes'), a.crashed])).toBe('crash')
+  repos.observe = prev
+  // The stopped run's calls after the stop never answer (the app is closed); let it reach its next call first.
+  for (let i = 0; i < 200; i++) await null
+  expect(notes(m)).toEqual([expect.objectContaining({ home: 'ali/vault' })])
+  expect(m.gist(mine)).toBeUndefined()
+  a.dead = false
+  a.lock = undefined
+  m.arm(a)
+  a.list = m.newList(a)
+  expect((await a.list.rows()).kind).toBe('home-gone')
+  expect((await a.list.restart('ali/notes')).kind).toBe('done')
+  const now = listAt(m)
+  expect(notes(m)).toEqual([expect.objectContaining({ home: 'ali/notes' })])
+  expect(m.world.owned('ali').filter((g) => NUMBERS_FILE in g.files).map((g) => g.id)).toEqual([now.index.stats])
+  expect((await a.list.rows()).kind).toBe('ok')
 })
 
 it('H2: the device that holds the intent is lost forever: another phone finishes the remove after the lease', async () => {

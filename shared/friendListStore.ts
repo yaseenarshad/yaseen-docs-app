@@ -63,6 +63,11 @@ export interface RepoPort {
    * never needs a delete (a list is never taken out of the vault).
    */
   commit(parent: string, path: string, text: string, message: string): Promise<string>
+  /**
+   * YAZ-5399: the repo's name as GitHub gives it now (`full_name`, lower case). A renamed or transferred repo answers its
+   * old name with a redirect, which the read follows; this says the new name. Optional (a port without it: unknown).
+   */
+  canonical?(): Promise<string>
 }
 
 /**

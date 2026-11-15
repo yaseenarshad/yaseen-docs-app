@@ -153,6 +153,7 @@ async function latest(api: GistsApi, handle: IndexHandle, opts: WriteOptions): P
   if (found.kind === 'ok' && found.handle.store !== undefined) return found.handle
   if (found.kind === 'newer') throw new NewerList()
   if (found.kind === 'elsewhere') throw new Elsewhere(found.home)
+  if (found.kind === 'home-gone') throw new HomeGone(found.home)
   if (found.kind === 'ok' || found.kind === 'broken') throw new BrokenList()
   throw Object.assign(new Error('The friends list is gone'), { code: 'NOT_FOUND' })
 }
@@ -161,6 +162,13 @@ async function latest(api: GistsApi, handle: IndexHandle, opts: WriteOptions): P
 export class Elsewhere extends Error {
   constructor(readonly home: string) {
     super('The friends list is in another vault')
+  }
+}
+
+/** YAZ-5399: the list's home vault is gone on GitHub (deleted, or no access at all). The way out: `restartList`. */
+export class HomeGone extends Error {
+  constructor(readonly home: string) {
+    super('The vault of the friends list is gone')
   }
 }
 
@@ -348,6 +356,8 @@ export type PasteResult =
   | { kind: 'list-elsewhere'; home: string }
   /** YAZ-5083: the token cannot read or write the vault that holds my friends list. */
   | { kind: 'no-list-access' }
+  /** YAZ-5399: the vault that held my friends list is gone on GitHub. The way out: start the list again. */
+  | { kind: 'home-gone'; home: string }
   | { kind: 'offline' }
   | { kind: 'rate-limited'; retryAt?: number | null }
   | { kind: 'refused' }
@@ -386,6 +396,8 @@ export function pasteMessage(result: PasteResult): string {
       return listElsewhereMessage(result.home)
     case 'no-list-access':
       return NO_LIST_ACCESS
+    case 'home-gone':
+      return homeGoneMessage(result.home)
     case 'unauthorized':
       return 'Sign in again, then paste the link.'
     default:
@@ -397,12 +409,21 @@ export function pasteMessage(result: PasteResult): string {
 export const listElsewhereMessage = (home: string): string => `Your friends list is in the vault ${home}. Add that vault on this device to use Friends here.`
 /** YAZ-5083: the words when the token cannot read or write the vault that holds the list. */
 export const NO_LIST_ACCESS = 'Your token cannot write to the vault that holds your friends list. Give the token Contents (read and write) on that vault, then try again.'
+/** YAZ-5399: the words when the home vault is gone on GitHub (what happened, and what it means). */
+export const homeGoneMessage = (home: string): string =>
+  `Your friends list was in the vault ${home}. GitHub does not have that vault for your account any more: it was deleted, or your token lost access to it. The list cannot be read, so no friend can be changed or removed.`
+/** YAZ-5399: the way out, as a button. */
+export const restartAction = (vault: string): string => `Start the friends list again in ${vault}`
+/** YAZ-5399: what the way out does, said before it runs (its privacy effect). */
+export const restartWarning = (vault: string): string =>
+  `This stops sharing with everyone. Notecard deletes every friend link, group link and numbers file that you made, so no old friend or group can read your numbers. Then it makes a new, empty friends list in ${vault}. To share again, send your link to each friend.`
 
 /** A thrown failure as a paste result. */
 function failureResult(err: unknown): PasteResult {
   if (err instanceof NewerList) return { kind: 'newer-app' }
   if (err instanceof BrokenList) return { kind: 'needs-repair' }
   if (err instanceof Elsewhere) return { kind: 'list-elsewhere', home: err.home }
+  if (err instanceof HomeGone) return { kind: 'home-gone', home: err.home }
   if (listErrorCode(err) === 'NO_LIST_ACCESS') return { kind: 'no-list-access' }
   switch (gistErrorCode(err)) {
     case 'OFFLINE':
@@ -748,7 +769,7 @@ export type RemoveResult =
    * write, or the entry is not of the kind asked for any more (a shared link that a friend now uses).
    * `busy` (YAZ-5083): another device of mine makes the new numbers gist of this remove now.
    */
-  | { kind: 'paused'; handle: IndexHandle; budget: GistBudget; why: 'budget' | 'rate-limited' | 'offline' | 'refused' | 'unauthorized' | 'needs-repair' | 'busy' | 'list-elsewhere' | 'no-list-access'; retryAt: number | null; took?: string[] }
+  | { kind: 'paused'; handle: IndexHandle; budget: GistBudget; why: 'budget' | 'rate-limited' | 'offline' | 'refused' | 'unauthorized' | 'needs-repair' | 'busy' | 'list-elsewhere' | 'no-list-access' | 'home-gone'; retryAt: number | null; took?: string[] }
   | { kind: 'not-found'; handle: IndexHandle; budget: GistBudget }
 
 /**
@@ -857,6 +878,7 @@ function pauseOn(err: unknown, handle: IndexHandle, budget: GistBudget, now: num
   if (err instanceof NewerList) return paused(handle, budget, 'refused', null)
   if (err instanceof BrokenList) return paused(handle, budget, 'needs-repair', null)
   if (err instanceof Elsewhere) return paused(handle, budget, 'list-elsewhere', null)
+  if (err instanceof HomeGone) return paused(handle, budget, 'home-gone', null)
   if (listErrorCode(err) === 'NO_LIST_ACCESS') return paused(handle, budget, 'no-list-access', null)
   switch (gistErrorCode(err)) {
     case 'OFFLINE':
