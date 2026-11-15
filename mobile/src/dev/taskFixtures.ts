@@ -58,3 +58,28 @@ export const NUMBERED_TASKS_PAGE = [
   '11. [ ] Fix the latch',
   '',
 ].join('\n')
+
+/**
+ * YAZ-5618: a made-up planning table like Yaseen's daily page: a day column, a plan column whose cells hold the Mac's
+ * cell lists (a bold highlighted head, numbered jobs, tasks nested under a task, some done, `[X]` too), a notes column,
+ * and a second row with the same words ("Laundry") in its cells. For `page/cellTasks.test.ts` and the screen fixtures
+ * `page-cell-tasks` (the page) and `page-cell-tasks-full` (the table full screen).
+ */
+export const CELL_TASKS_PAGE = [
+  '---',
+  'title: Week plan',
+  '---',
+  '# Week plan',
+  '',
+  'The week, cell by cell.',
+  '',
+  '| Day | Plan | Notes |',
+  '| --- | ---- | ----- |',
+  '|     | <ul><li>**==Plans==**<ul><li>[ ] 1- Look back on the week (1hr)</li><li>[ ] 2- Plan the next week (1hr)</li><li>[ ] 3- Weekly reset (30min)<ul><li>[ ] Laundry</li><li>[x] Pills</li><li>[X] Trash</li></ul></li></ul></li></ul> | Quiet day, mostly at home. |',
+  '| Mon | <ul><li>[ ] Laundry</li><li>[x] Call the garage about the brakes before noon</li></ul> | <ul><li>Bring the receipt</li></ul> |',
+  '',
+  '- [ ] Laundry',
+  '',
+  'After the table.',
+  '',
+].join('\n')

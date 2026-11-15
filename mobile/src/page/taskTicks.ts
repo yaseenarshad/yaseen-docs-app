@@ -16,7 +16,8 @@ import { TASK_REFUSED_WORDS, taskFor, taskLines, tickOf, type TaskTick } from '.
  *
  * WHERE: a box the page renderer drew with its line (`data-task`, its core, and `data-task-line`, its line in the
  * body; `pageRender.ts`): a task of the page's own text, in a list, a nested list or a quote, as the reader's parser
- * reads it (`pageMarked.ts`). The tap finds the task on THAT line of the stored page with the same parser,
+ * reads it (`pageMarked.ts`); YAZ-5618: a task in a table cell's list too (`cellTasks.ts`: its line is the row's, its core
+ * names its column and its place in the cell; a tap in the table full screen ticks the page's box, `tableView.ts`). The tap finds the task on THAT line of the stored page with the same parser,
  * so the line it writes is the box's own, never a line of code or HTML that reads the same. A card's box (a card block in the page, an embedded card, Review) is the Mac's
  * card look, a glyph that the Mac does not tick either: it has no `data-task`, so it is never a control. The tap area
  * is 44 px around the box (`reader.css`); the box's look does not change.

@@ -8,7 +8,8 @@ import { DEFAULT_BAND, watchBand, type BandLook } from './rowBand'
  * A TABLE, FULL SCREEN: the ⤢ under a wide table opens it here, in a chunk of its own. The whole table, every
  * column at its widest (`tables.css`), first fitted to the screen's width (not smaller than `READ_MIN`, so its words
  * stay readable; pinch out to see it all); pinch (or double-tap) to zoom, drag to move. It turns with the phone: the
- * fit is counted again. ✕, Escape or a swipe down from the top closes it. It shows a copy of the table: nothing is saved.
+ * fit is counted again. ✕, Escape or a swipe down from the top closes it. It shows a copy of the table: nothing is saved,
+ * except a tick of a task in a cell, which the page's own box takes (YAZ-5618).
  *
  * The frozen rows (the file's, else the header row) stay at the top of the view and the frozen columns at its
  * left, as in the page. The table is scaled, so `position: sticky` would put them at the wrong place: each frozen cell
@@ -29,6 +30,9 @@ export interface PinBox {
   padTop: number
   padLeft: number
 }
+
+/** A task's box in a cell, with its line: a tap ticks it (`taskTicks.ts`). */
+const TASK_BOX = '.page-task[data-task][data-task-line]'
 
 /** A frozen block taller (or wider) than this share of the view scrolls with the table. */
 const PIN_MAX = 0.45
@@ -228,6 +232,23 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null, band: Ban
     if (back?.isConnected) back.focus()
   }
   close.addEventListener('click', done)
+  // YAZ-5618: a task's box in the copy ticks the page's own box (the page's tick, `taskTicks.ts`), and shows its state.
+  const tickBox = (e: Event) => {
+    if (e instanceof KeyboardEvent && e.key !== ' ' && e.key !== 'Enter') return
+    const shown = (e.target as Element | null)?.closest?.<HTMLElement>(TASK_BOX)
+    if (shown === null || shown === undefined || !copy.contains(shown)) return
+    e.preventDefault()
+    e.stopPropagation()
+    const own = [...box.querySelectorAll<HTMLElement>(TASK_BOX)].find((b) => b.dataset.task === shown.dataset.task && b.dataset.taskLine === shown.dataset.taskLine)
+    if (own === undefined || !own.isConnected) return
+    own.click()
+    for (const name of ['data-checked', 'aria-checked', 'aria-label']) {
+      const value = own.getAttribute(name)
+      if (value !== null) shown.setAttribute(name, value)
+    }
+  }
+  copy.addEventListener('click', tickBox)
+  copy.addEventListener('keydown', tickBox)
   document.addEventListener('keydown', key)
   // An overlay of the app's one stack: a Back (Safari's swipe, the app's) closes the table, and the page stays.
   const leave = openOverlay(done)

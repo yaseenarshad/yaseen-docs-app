@@ -10,7 +10,8 @@ import { cardMoreButton } from '../cardMenu/moreButton'
 import { applyTableFile, readTableComment } from './tableFile'
 import { applyTableLook, type PhoneTableLook } from './tableLook'
 import { layoutTables } from './tableLayout'
-import { BLOCK_MATH, markTasks, pageMarked, readerText, type PageLinkToken, type TaskItem } from './pageMarked'
+import type { CellTaskTag } from './cellTasks'
+import { BLOCK_MATH, markTasks, pageMarked, readerText, type PageLinkToken, type PageTask, type TaskItem } from './pageMarked'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -26,7 +27,7 @@ import { BLOCK_MATH, markTasks, pageMarked, readerText, type PageLinkToken, type
  *
  * What the page shows, as on the Mac:
  *  - Headings, paragraphs, bold, italic, strike, code, `==highlight==`, `<u>`, lists, task boxes (each with its line,
- *    `data-task`: a tap in a page ticks it, YAZ-5494, `taskTicks.ts`), tables (in a box that scrolls sideways, with column widths
+ *    `data-task`: a tap in a page ticks it, YAZ-5494, `taskTicks.ts`; YAZ-5618 a task in a table cell too, `cellTasks.ts`), tables (in a box that scrolls sideways, with column widths
  *    from their text: `tableLayout.ts`), code blocks, quotes, rules.
  *  - A callout (`> [!tip] Title`): a box with its title. The Mac's page shows it as a quote; the phone draws it as
  *    Obsidian and GitHub do (the brief lists callouts; recorded on YAZ-5079).
@@ -165,6 +166,11 @@ let parse: Parse = { cards: [] }
 const markdown = pageMarked
 /** The task item being drawn, for its box (`listitem`, `checkbox`). */
 let taskItem: TaskItem | null = null
+/** A task's box; with its core and line (`data-task`, `data-task-line`) when it is a task the Mac reads (a tap ticks it). */
+function taskBox(checked: boolean, task: PageTask | null): string {
+  const mark = task === null ? '' : ` ${localMark('task')}="${escapeHtml(task.core)}" ${localMark('task-line')}="${task.line}"`
+  return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${mark}></span>`
+}
 /** A table token with the body of the table comment after it (`table: …`; YAZ-5480, `tableFile.ts`). */
 type FiledTable = Tokens.Table & { fileComment?: string }
 
@@ -207,15 +213,18 @@ markdown.use({
       taskItem = null
       const task = item?.pageTask
       if (item !== null && task === null) return escapeHtml(/\[[ xX]\]/.exec(item.raw)?.[0] ?? (checked ? '[x]' : '[ ]'))
-      const mark = task === undefined || task === null ? '' : ` ${localMark('task')}="${escapeHtml(task.core)}" ${localMark('task-line')}="${task.line}"`
-      return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${mark}></span> `
+      return `${taskBox(checked, task ?? null)} `
     },
     code(token) {
       if (token.lang?.trim() !== 'card') return false
       parse.cards.push({ text: token.text, id: null, title: '', lined: false })
       return `<div ${localMark('page-card')}="${parse.cards.length - 1}"></div>`
     },
-    html({ text }) {
+    html(token) {
+      // YAZ-5618: a task in a table cell (`cellTasks.ts`): its box right after its `<li>`, as a task of the page.
+      const cellTask = (token as CellTaskTag).cellTask
+      if (cellTask !== undefined) return `<li>${taskBox(cellTask.checked, cellTask)}`
+      const { text } = token
       // A comment shows nothing. A card line (`<!-- card: ID, title "…", … -->`) under a card gives that card its ID, its
       // title and its marks.
       if (/^\s*<!--\s*card:[\s\S]*?-->\s*$/.test(text)) {

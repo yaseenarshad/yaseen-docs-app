@@ -113,11 +113,14 @@ export function tickOf(content: string, core: string, nth: number, checked: bool
   return { core, nth, of: same.length, checked, twins: same.map((t) => placeOf(lines, t.line, twinLines)) }
 }
 
-/** The body's lines as the parser counts them (LF, CRLF or CR), each read with its box as `[ ]` and no end. */
+/**
+ * The body's lines as the parser counts them (LF, CRLF or CR), each read with its boxes as `[ ]` and no end: every box
+ * (YAZ-5618: a table row holds many, so the Mac's tick of another task in a row next to it changes nothing).
+ */
 function bodyLines(content: string): string[] {
   return withoutBom(splitFrontmatter(content).body)
     .split(/\r\n|\r|\n/)
-    .map((l) => l.replace(/\[[xX ]\]/, '[ ]'))
+    .map((l) => l.replace(/\[[xX ]\]/g, '[ ]'))
 }
 
 /**
