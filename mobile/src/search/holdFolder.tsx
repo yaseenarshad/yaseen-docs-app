@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type SyntheticEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
+import { useOverlay } from '../app/browserHistory'
 import { openFile } from '../explore/openFile'
 
 /**
@@ -78,6 +79,8 @@ function FolderMenu({ folder, onClose }: { folder: { path: string; label: string
   const app = useApp()
   const [copied, setCopied] = useState<string | null>(null)
   const first = useRef<HTMLButtonElement>(null)
+  // YAZ-5518: an overlay of the app's one stack: a Back closes the menu, and Search stays.
+  useOverlay(true, onClose)
   useEffect(() => {
     first.current?.focus({ preventScroll: true })
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()

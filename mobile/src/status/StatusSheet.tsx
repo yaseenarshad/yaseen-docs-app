@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { NO_STORAGE_MESSAGE } from '../App'
 import { useApp } from '../app/AppState'
+import { useOverlay } from '../app/browserHistory'
 import { syncHelp } from '../app/help'
 import type { TokenEndWarning } from '../auth/expiry'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
@@ -17,6 +18,8 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
   const app = useApp()
   const close = useRef<HTMLButtonElement>(null)
   const nav = useRef(app.nav)
+  // YAZ-5518: an overlay of the app's one stack: a Back closes the sheet, and the screen under stays.
+  useOverlay(true, onClose)
 
   useEffect(() => {
     close.current?.focus()

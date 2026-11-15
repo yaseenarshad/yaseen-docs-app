@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { useOverlay } from '../app/browserHistory'
 import { Toast, useToast } from '../screens/Toast'
 import { MenuTitle, isCut } from './menuTitle'
 import './find/pageTools.css'
@@ -49,6 +50,9 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const [cut, setCut] = useState(false)
   const [said, say] = useToast()
   const box = useRef<HTMLDivElement>(null)
+  // YAZ-5518: the menu and the open tool are overlays: a Back closes them, one at a time, and the page stays.
+  useOverlay(menu, () => setMenu(false))
+  useOverlay(tool !== null, () => setTool(null))
   useEffect(() => {
     if (!menu) return
     const away = (e: Event) => {

@@ -157,3 +157,100 @@ describe('YAZ-5518 M3: the left-edge swipe closes a sheet from the very edge (th
     expect(h.host.querySelector('.tree')).not.toBeNull()
   })
 })
+
+describe('YAZ-5518 S1: Back closes only the top overlay of a page', { timeout: 30_000 }, () => {
+  it('historyBack_closesOverlayFirst_tableFullPropertiesHeadingsFind', async () => {
+    h = await open(READER_FILES)
+    await toSearch(h)
+    await h.click(/^Spanish words/)
+    await waitFor(h, () => title(h!) === 'Spanish words' && h!.host.querySelector('.reader__body h1') !== null)
+    await h.settle()
+    const page = async () => {
+      await act(async () => void (await sleep(20)))
+      await browserBack()
+      await h!.settle()
+      expect(title(h!)).toBe('Spanish words')
+      expect(h!.button('Back')).not.toBeNull()
+    }
+
+    // The ⋯ menu.
+    await h.click('Page tools')
+    await waitFor(h, () => h!.host.querySelector('[role="menu"]') !== null)
+    await page()
+    expect(h.host.querySelector('[role="menu"]')).toBeNull()
+
+    // Find in page.
+    await h.click('Page tools')
+    await h.click(/Find in page/)
+    await waitFor(h, () => h!.host.querySelector('.find-line') !== null)
+    await page()
+    expect(h.host.querySelector('.find-line')).toBeNull()
+
+    // Headings.
+    await h.click('Page tools')
+    await h.click(/Headings/)
+    await waitFor(h, () => document.querySelector('[role="dialog"][aria-label="Headings"]') !== null)
+    await page()
+    expect(document.querySelector('[role="dialog"][aria-label="Headings"]')).toBeNull()
+
+    // The properties panel.
+    await h.click('Properties')
+    await waitFor(h, () => document.querySelector('[role="dialog"][aria-label="Properties"]') !== null)
+    await page()
+    expect(document.querySelector('[role="dialog"][aria-label="Properties"]')).toBeNull()
+
+    // A table, full screen.
+    await act(async () => h!.host.querySelector<HTMLElement>('[data-table-open]')!.click())
+    await waitFor(h, () => document.querySelector('.table-view') !== null)
+    await page()
+    expect(document.querySelector('.table-view')).toBeNull()
+
+    // Then the page itself.
+    await browserBack()
+    await waitFor(h, () => onTabs(h!))
+  })
+
+  it('the app\'s own Back (the edge swipe, ←) closes the top overlay first, then the page', async () => {
+    h = await open(READER_FILES, true)
+    await toSearch(h)
+    await h.click(/^Spanish words/)
+    await waitFor(h, () => title(h!) === 'Spanish words')
+    const app = h.host.querySelector('.app')!
+    const edge = async () =>
+      act(async () => {
+        // The finger comes down (a menu shuts on it), then moves right.
+        app.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+        touch(app, 'touchstart', 5)
+        for (let x = 20; x <= 305; x += 15) touch(app, 'touchmove', x)
+        touch(app, 'touchend', 305)
+        await sleep(260)
+      })
+    // The ⋯ menu: the touch that shuts it is its Back; the page stays.
+    await h.click('Page tools')
+    await waitFor(h, () => h!.host.querySelector('[role="menu"]') !== null)
+    await edge()
+    await act(async () => void (await sleep(80)))
+    expect(h.host.querySelector('[role="menu"]')).toBeNull()
+    expect(title(h)).toBe('Spanish words')
+    await h.click('Properties')
+    await waitFor(h, () => document.querySelector('[role="dialog"][aria-label="Properties"]') !== null)
+    await edge()
+    await waitFor(h, () => document.querySelector('[role="dialog"][aria-label="Properties"]') === null)
+    await act(async () => void (await sleep(80)))
+    expect(title(h)).toBe('Spanish words')
+    // A table full screen is over the frame: the swipe from its edge closes it too.
+    await act(async () => h!.host.querySelector<HTMLElement>('[data-table-open]')!.click())
+    await waitFor(h, () => document.querySelector('.table-view') !== null)
+    const view = document.querySelector('.table-view')!
+    await act(async () => {
+      touch(view, 'touchstart', 2)
+      for (let x = 17; x <= 302; x += 15) touch(view, 'touchmove', x)
+      touch(view, 'touchend', 302)
+    })
+    await waitFor(h, () => document.querySelector('.table-view') === null)
+    await act(async () => void (await sleep(80)))
+    expect(title(h)).toBe('Spanish words')
+    await h.click('Back')
+    await waitFor(h, () => onTabs(h!))
+  })
+})

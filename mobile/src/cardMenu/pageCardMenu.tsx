@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { useOverlay } from '../app/browserHistory'
 import type { Answers } from '../answers/answers'
 import { Toast, useToast } from '../screens/Toast'
 import { CardMenuFor } from './lazy'
@@ -15,6 +16,8 @@ import './cardMenu.css'
 export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { path: string; answers: Answers | null; upNext: boolean }): ReactNode {
   const [said, say] = useToast(2500)
   const [open, setOpen] = useState<{ id: string; button: HTMLElement } | null>(null)
+  // YAZ-5518: the open menu is an overlay of the app's one stack: a Back closes it, and the page stays.
+  useOverlay(open !== null, () => setOpen(null))
   const menu = useRef<HTMLDivElement>(null)
   // The ⋯ of a card: the page's DOM is drawn by `renderPage`, so one listener on the page's box.
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
+import { useOverlay } from '../app/browserHistory'
 import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { swipeIsOurs } from '../app/edgeSwipe'
 import { useVaultData, type VaultData } from '../search/vaultData'
@@ -85,6 +86,8 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
   const [counts, setCounts] = useState<LinkCounts | null>(null)
   const isTop = depth === 0
   const isNew = useRef(sheet.scroll === 0)
+  // YAZ-5518: the ⋯ menu is an overlay of its own: a Back closes it, and the sheet stays.
+  useOverlay(menu, () => setMenu(false))
 
   // The top sheet's motion; the one under it gets it when the top one goes.
   useLayoutEffect(() => {
