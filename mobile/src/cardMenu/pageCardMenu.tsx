@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import type { Answers } from '../answers/answers'
 import { Toast, useToast } from '../screens/Toast'
@@ -52,6 +52,18 @@ export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { 
       document.removeEventListener('keydown', key)
     }
   }, [open])
+  // S6 (sweep1): a card low on the screen opened its menu under the screen's end (over the tab bar, cut off). It opens
+  // upward when it has no room below; placed again as its rows come in (they are a lazy chunk).
+  useLayoutEffect(() => {
+    const el = menu.current
+    if (open === null || el === null) return
+    const place = () => placeMenu(el, open.button)
+    place()
+    if (typeof ResizeObserver !== 'function') return
+    const watch = new ResizeObserver(place)
+    watch.observe(el)
+    return () => watch.disconnect()
+  }, [open])
   const box = open?.button.parentElement ?? null
   const toast = said !== null && <Toast text={said} />
   if (open === null || box === null || !box.isConnected) return toast
@@ -66,4 +78,23 @@ export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { 
       )}
     </>
   )
+}
+
+/**
+ * Where a card's menu opens (S6): under its ⋯ when it fits above the screen's end (the scroller `.screen`, which ends
+ * over the page arrows and the tab bar), else upward when there is more room above. Neither fits (a short screen in
+ * landscape): the screen scrolls the menu in.
+ */
+export function placeMenu(menu: HTMLElement, button: HTMLElement): void {
+  const screen = button.closest<HTMLElement>('.screen')
+  if (screen === null) return
+  const view = screen.getBoundingClientRect()
+  const at = button.getBoundingClientRect()
+  const below = view.bottom - at.bottom
+  const above = at.top - view.top
+  const height = menu.getBoundingClientRect().height
+  if (height > below && above > below) menu.dataset.place = 'up'
+  else delete menu.dataset.place
+  const now = menu.getBoundingClientRect()
+  if (now.bottom > view.bottom || now.top < view.top) menu.scrollIntoView?.({ block: 'nearest' })
 }

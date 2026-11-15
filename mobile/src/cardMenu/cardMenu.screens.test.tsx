@@ -181,6 +181,44 @@ describe('a page card\'s ⋯ (YAZ-5504)', () => {
     expect((await t.s.git.filesAt(t.head()))['Rivers.md']).toBe(RIVERS.replace('<!-- card: RV-2 -->', '<!-- card: RV-2, off -->'))
   })
 
+  it('cardMenu_staysInsideViewport_aboveTabbar: the ⋯ of a card low on the screen opens its menu upward (S6)', async () => {
+    await app()
+    await typeQuery('rivers')
+    await waitFor(() => h!.button(/^Rivers, page/) !== null)
+    await h!.click(/^Rivers, page/)
+    await waitFor(() => h!.host.querySelectorAll('.reader__body .page-card').length === 3)
+    // jsdom has no layout: the sweep's numbers on a 375 x 664 phone. The screen (the scroller) ends at 619, over the
+    // tab bar; the third card's ⋯ at 576 to 620; its menu 190 tall. (The measured check is proveLayout's "card menu".)
+    const rect = (top: number, bottom: number) => ({ top, bottom, left: 0, right: 375, width: 375, height: bottom - top, x: 0, y: top, toJSON() {} }) as DOMRect
+    const real = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.classList.contains('screen')) return rect(57, 619)
+      if (this.classList.contains('card__more')) return rect(576, 620)
+      if (this.classList.contains('card-menu')) return this.dataset.place === 'up' ? rect(384, 574) : rect(622, 812)
+      return real.call(this)
+    }
+    try {
+      const third = h!.host.querySelector<HTMLElement>('[data-card-id="RV-3"]')!
+      await tap(third.querySelector<HTMLElement>('.card__more')!)
+      await waitFor(() => third.querySelector('[data-action="off"]') !== null)
+      expect(third.querySelector<HTMLElement>('.card-menu')?.dataset.place).toBe('up')
+      await tap(third.querySelector<HTMLElement>('.card__more')!)
+      // A card high on the screen: under its ⋯, as before.
+      HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+        if (this.classList.contains('screen')) return rect(57, 619)
+        if (this.classList.contains('card__more')) return rect(120, 164)
+        if (this.classList.contains('card-menu')) return rect(166, 356)
+        return real.call(this)
+      }
+      const first = h!.host.querySelector<HTMLElement>('[data-card-id="RV-1"]')!
+      await tap(first.querySelector<HTMLElement>('.card__more')!)
+      await waitFor(() => first.querySelector('[data-action="off"]') !== null)
+      expect(first.querySelector<HTMLElement>('.card-menu')?.dataset.place).toBeUndefined()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = real
+    }
+  })
+
   it('a tap outside the menu closes it, and nothing is written', async () => {
     const t = await app()
     await typeQuery('rivers')
