@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { useOverlay } from '../app/browserHistory'
+import { useMenuToggle } from '../app/menuToggle'
 import type { Answers } from '../answers/answers'
 import { Toast, useToast } from '../screens/Toast'
 import { CardMenuFor } from './lazy'
@@ -16,8 +16,6 @@ import './cardMenu.css'
 export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { path: string; answers: Answers | null; upNext: boolean }): ReactNode {
   const [said, say] = useToast(2500)
   const [open, setOpen] = useState<{ id: string; button: HTMLElement } | null>(null)
-  // YAZ-5518: the open menu is an overlay of the app's one stack: a Back closes it, and the page stays.
-  useOverlay(open !== null, () => setOpen(null))
   const menu = useRef<HTMLDivElement>(null)
   // The ⋯ of a card: the page's DOM is drawn by `renderPage`, so one listener on the page's box.
   useEffect(() => {
@@ -35,27 +33,21 @@ export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { 
     el.addEventListener('click', click)
     return () => el.removeEventListener('click', click)
   }, [host])
-  // aria-expanded on the ⋯; a tap outside the menu (and not on its ⋯) or Escape closes it.
+  // aria-expanded on the ⋯. The app's one rule for menus (YAZ-5552): the ⋯ again, a tap outside the menu (only
+  // that), Escape (the ⋯ takes the focus back) or Back closes it.
   useEffect(() => {
     if (open === null) return
     open.button.setAttribute('aria-expanded', 'true')
-    const away = (e: Event) => {
-      if (!(e.target instanceof Node) || menu.current?.contains(e.target) === true || open.button.contains(e.target)) return
-      setOpen(null)
-    }
-    const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      setOpen(null)
-      open.button.focus()
-    }
-    document.addEventListener('pointerdown', away)
-    document.addEventListener('keydown', key)
-    return () => {
-      open.button.setAttribute('aria-expanded', 'false')
-      document.removeEventListener('pointerdown', away)
-      document.removeEventListener('keydown', key)
-    }
+    return () => open.button.setAttribute('aria-expanded', 'false')
   }, [open])
+  useMenuToggle(
+    open !== null,
+    (why) => {
+      setOpen(null)
+      if (why === 'escape') open?.button.focus()
+    },
+    (target) => menu.current?.contains(target) === true || open?.button.contains(target) === true,
+  )
   // S6 (sweep1): a card low on the screen opened its menu under the screen's end (over the tab bar, cut off). It opens
   // upward when it has no room below; placed again as its rows come in (they are a lazy chunk).
   useLayoutEffect(() => {

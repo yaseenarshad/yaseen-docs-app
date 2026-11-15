@@ -48,7 +48,7 @@ export function SyncStatus() {
   useFitWords(button, loud, dot)
   const lastAt = useLastSync(app.services.store, app.vaultKey, app.sync.lastSyncedAt, answers.state?.lastSentAt)
   const tap = () => {
-    if (loud) return setOpen(true)
+    if (loud) return setOpen((o) => !o)
     setBusy(true)
     const sync = app.services.sync
     // The events of this pass: the `changed` ones say how many files came in.

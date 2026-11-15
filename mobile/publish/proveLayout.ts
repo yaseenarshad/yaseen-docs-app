@@ -83,9 +83,12 @@ import { freePort } from './freePort'
  *  - the Explore panel's top (`#fixture=explore-one`, `explore-stack`, YAZ-5540), light and dark, at 375 px, the safe-area inset 0 and
  *    47 px, and on a small phone on its side (667x375, YAZ-5522 N7, side insets 0 and 47 px): each sheet at the inset +
  *    12 px + 8 px a step (on its side too: ~363 px tall), a strip of the dim above, the top sheet's head whole below the inset.
+ *  - every menu with a real finger (YAZ-5552) at 375 px: Page tools ⋯, a page card's ⋯, Search's Type chip, an Explore
+ *    sheet's ⋯, Review's deck button and ⋯: a tap opens it, a tap on its button again closes it; a tap outside closes it
+ *    and does nothing else.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -1297,6 +1300,52 @@ if (process.env.LAYOUT_PANEL_TOP !== 'no') {
   }
   await send('Emulation.setSafeAreaInsetsOverride', { insets: {} }, page)
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5552: every menu with a real finger (the DevTools touch events), at 375 px: a tap on its button opens it, a tap
+// on it again closes it, a third opens it; a tap outside closes it and does nothing else (`what` reads the same).
+const CENTRE = (sel: string) => `(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (el === null) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: Math.round(r.left + Math.min(r.width / 2, 20)), y: Math.round(r.top + r.height / 2) } })()`
+const MENUS: { fixture: string; name: string; button: string; menu: string; outside: string; what: string }[] = [
+  { fixture: 'page', name: 'Page tools ⋯', button: '.page-tools__btn', menu: '.page-tools__menu', outside: '.reader__body h1', what: `document.querySelector('.topbar__title')?.textContent` },
+  { fixture: 'page', name: 'a page card\'s ⋯', button: '.reader__body .page-card .card__more', menu: '.card-menu', outside: '.reader__body h1', what: `document.querySelector('.topbar__title')?.textContent` },
+  { fixture: 'search-tree', name: 'Search\'s Type chip', button: '.search__type-chip', menu: '.search__menu', outside: '.tree__row--dir', what: `document.querySelector('.tree__row--dir')?.closest('li')?.getAttribute('aria-expanded')` },
+  { fixture: 'explore-mentions', name: 'an Explore sheet\'s ⋯', button: '.explore-sheet:last-of-type .explore-sheet__more', menu: '.explore-sheet__menu', outside: '.explore-sheet:last-of-type .linked-mentions__header', what: `[document.querySelectorAll('.explore-sheet').length, document.querySelector('.explore-sheet:last-of-type .linked-mentions__header')?.getAttribute('aria-expanded')].join()` },
+  { fixture: 'review-mochi-menus', name: 'Review\'s deck button', button: '.review__count-btn', menu: '.review__sheet', outside: '.review__card', what: `document.querySelector('.review__card')?.textContent` },
+  { fixture: 'review-mochi-menus', name: 'Review\'s ⋯', button: '.review__more', menu: '.review__menu--more', outside: '.review__card', what: `document.querySelector('.review__card')?.textContent` },
+]
+if (process.env.LAYOUT_MENUS !== 'no') {
+  const tap = async (at: { x: number; y: number }) => {
+    await touch('touchStart', at.x, at.y)
+    await wait(60)
+    await touch('touchEnd', at.x, at.y)
+    await wait(450)
+  }
+  for (const m of MENUS) {
+    const file = await open(m.fixture, 375, 667)
+    await wait(600) // past Review's tap guard (YAZ-5226)
+    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page)
+    const isOpen = async () => (await evaluate(`document.querySelector(${JSON.stringify(m.menu)}) !== null`)) as boolean
+    const button = await evaluate(CENTRE(m.button))
+    const seen: boolean[] = []
+    let before: unknown = null
+    let after: unknown = null
+    let closedOutside = false
+    if (button !== null) {
+      for (let i = 0; i < 3; i++) {
+        await tap((await evaluate(CENTRE(m.button))) ?? button)
+        seen.push(await isOpen())
+      }
+      writeFileSync(file.replace('.png', `-menu-${MENUS.indexOf(m)}.png`), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      before = await evaluate(m.what)
+      const out = await evaluate(CENTRE(m.outside))
+      if (out !== null) await tap(out)
+      closedOutside = !(await isOpen())
+      after = await evaluate(m.what)
+    }
+    await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page)
+    const ok = seen.join() === 'true,false,true' && closedOutside && before === after
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  menu toggle (YAZ-5552): ${m.name} (#fixture=${m.fixture}) at 375x667, real touch: taps on its button -> ${button === null ? 'NO BUTTON' : seen.map((o) => (o ? 'open' : 'closed')).join(', ')}; a tap outside -> ${closedOutside ? 'closed' : 'STILL OPEN'}, ${before === after ? 'nothing else changed' : `CHANGED ${JSON.stringify(before)} -> ${JSON.stringify(after)}`}  ${file}`)
+  }
 }
 chrome.kill()
 server.close()

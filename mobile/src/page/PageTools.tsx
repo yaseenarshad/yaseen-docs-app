@@ -1,6 +1,7 @@
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { lazy, Suspense, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useOverlay } from '../app/browserHistory'
+import { useMenuToggle } from '../app/menuToggle'
 import { useCopyPath } from '../screens/copyPath'
 import { MenuTitle, isCut } from './menuTitle'
 import './find/pageTools.css'
@@ -48,22 +49,10 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const [tool, setTool] = useState<PageTool>(null)
   const [cut, setCut] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  // YAZ-5518: the menu and the open tool are overlays: a Back closes them, one at a time, and the page stays.
-  useOverlay(menu, () => setMenu(false))
+  // YAZ-5518: the open tool is an overlay: a Back closes it, and the page stays. The menu: the app's one rule for
+  // menus (YAZ-5552): ⋯ again, a tap outside (only that), Escape or Back closes it.
   useOverlay(tool !== null, () => setTool(null))
-  useEffect(() => {
-    if (!menu) return
-    const away = (e: Event) => {
-      if (!(e.target instanceof Node) || box.current?.contains(e.target) !== true) setMenu(false)
-    }
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false)
-    document.addEventListener('pointerdown', away)
-    document.addEventListener('keydown', key)
-    return () => {
-      document.removeEventListener('pointerdown', away)
-      document.removeEventListener('keydown', key)
-    }
-  }, [menu])
+  useMenuToggle(menu, () => setMenu(false), (target) => box.current?.contains(target) === true)
   const pick = (next: PageTool) => {
     setMenu(false)
     setTool(next)
