@@ -19,7 +19,8 @@ import { keyFold } from './propertyKeys'
  * rating (`again | hard | good | easy`, D5), and how long the answer took when that is known (YAZ-5033: whole active
  * seconds, `2026-11-12T14:05Z good 13s`; an older review has none). `off` takes the card out of review. `next` puts it at the top of the Inbox
  * (YAZ-4999 D3, "Up next"): its first answer removes it, in the same write. `notitle` hides the card's title on the
- * Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows.
+ * Inbox's front (YAZ-5030, "Title on the front: Hide"); absent, the title shows. `fix` marks the card "Fix later"
+ * (YAZ-5097): it has a mistake to fix at the desk; it stays in review.
  *
  * THE TITLE (YAZ-5308, decision D: "a card's facts always live in its card line"): `title "Capital of France"`, right
  * after the ID. A card's text is only its sides: no line of it is ever read as its title, and a card file's title is
@@ -67,6 +68,7 @@ export type CardPart =
   | { kind: 'off' }
   | { kind: 'next' }
   | { kind: 'notitle' }
+  | { kind: 'fix' }
   | { kind: 'other'; text: string }
 
 /** What a card line holds. `parts` keeps every part in place; the getters below read it. */
@@ -91,6 +93,8 @@ export interface CardRecord {
   title?: string
   /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
   notitle?: true
+  /** The card is marked "Fix later" (the line's `fix`, YAZ-5097): the To fix list; absent: no mark. */
+  fix?: true
   /** The card's own properties (its line's property parts, YAZ-5379, `cardPropertiesOf`); absent for a card with none. */
   properties?: Record<string, CardPropertyValue>
 }
@@ -110,8 +114,8 @@ export const cardTime = (ms: number): string => `${new Date(ms).toISOString().sl
 /** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteText`). */
 const TITLE_RE = /^title[ \t]+("(?:[^"\\]|\\.)*")$/
 
-/** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle` or an ID. */
-const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || isNumberId(text)
+/** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
+const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || text === 'fix' || isNumberId(text)
 
 /**
  * The parts of a line's body, split on its commas: a comma inside a quoted text (a title, a property's value) splits
@@ -183,14 +187,14 @@ const unquoteText = (quoted: string): string =>
 // read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
 
 /** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
-const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle'])
+const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix'])
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
 const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
 
 /**
  * Can `name` be a card property's name (YAZ-5379)? A property name (`isPropertyName`: not empty, no space at either
- * end, no line break) that is none of the card line's words (`title`, `off`, `next`, `notitle`), in any capitals.
+ * end, no line break) that is none of the card line's words (`title`, `off`, `next`, `notitle`, `fix`), in any capitals.
  */
 export function isCardPropertyName(name: unknown): name is string {
   return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name) && !CARD_LINE_WORDS.has(name.toLowerCase())
@@ -252,6 +256,7 @@ export function parseCardLine(value: string): CardLine | null {
     } else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
+    else if (text === 'fix') parts.push({ kind: 'fix' })
     else if (!id && isNumberId(text)) {
       id = true
       parts.push({ kind: 'id', id: canonicalPageId(text) })
@@ -306,6 +311,7 @@ const cardRecordOf = (line: CardLine): CardRecord => {
     reviews: cardReviewsOf(line),
     ...(title !== '' && { title }),
     ...(isCardNoTitle(line) && { notitle: true as const }),
+    ...(isCardFix(line) && { fix: true as const }),
     ...(Object.keys(properties).length > 0 && { properties }),
   }
 }
@@ -435,6 +441,28 @@ export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
   let i = afterHead(line)
   while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next') i++
   return { parts: [...line.parts.slice(0, i), { kind: 'notitle' }, ...line.parts.slice(i)] }
+}
+
+/**
+ * The "Fix later" mark (YAZ-5097; round 10, addition 3 of YAZ-5055): the word `fix` on the card line, its own part kind
+ * as `off`, `next` and `notitle` are. The phone writes it (YAZ-5073, the `fix` action), the Mac's ⋯ menus and the Cards
+ * table's Card fix status (YAZ-5430) too; the To fix list reads it off the index (`CardRecord.fix`). An older build
+ * reads it as the unknown part `fix` and keeps it as its text, in its place (the older-app rule, addition 17): the
+ * bytes on disk are the same for both. It is a card-line word, never a property's name (`CARD_LINE_WORDS`).
+ */
+export const CARD_FIX = 'fix'
+export const isCardFix = (line: CardLine): boolean => line.parts.some((p) => p.kind === 'fix')
+
+/**
+ * Fix later on or off: `fix` goes after the ID, the title (YAZ-5309: the card's head, `afterHead`) and any `off` /
+ * `next` / `notitle` right after them, or first; off removes every `fix`.
+ */
+export function withCardFix(line: CardLine, on: boolean): CardLine {
+  if (isCardFix(line) === on) return line
+  if (!on) return { parts: line.parts.filter((p) => p.kind !== 'fix') }
+  let i = afterHead(line)
+  while (line.parts[i]?.kind === 'off' || line.parts[i]?.kind === 'next' || line.parts[i]?.kind === 'notitle') i++
+  return { parts: [...line.parts.slice(0, i), { kind: 'fix' }, ...line.parts.slice(i)] }
 }
 
 /** The place among the line's parts of its `next` part, or -1 when the card is not up next. */
