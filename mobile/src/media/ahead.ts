@@ -7,7 +7,7 @@ import { StorageFullError, kindOnPhone, type Checkpoint, type VaultStore } from 
 import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { isEager } from '../sync/plan'
-import { uiSlicer, yieldToUi as defaultYield } from '../sync/yieldToUi'
+import { uiSlicer, whenIdle as idleSoon, yieldToUi as defaultYield } from '../sync/yieldToUi'
 import { aheadPlan, type DayNumbers } from './plan'
 import { folderOf, mediaTarget } from './refs'
 
@@ -89,6 +89,8 @@ export interface MediaAheadOptions {
   /** Default `URL.createObjectURL`. */
   makeUrl?: (bytes: Uint8Array, type: string) => string
   revokeUrl?: (url: string) => void
+  /** YAZ-5596 (7): runs the round after a pass at an idle moment. Default: `whenIdle` (requestIdleCallback, 2 s at most). */
+  whenIdle?: (fn: () => void) => void
 }
 
 export interface MediaAhead {
@@ -285,11 +287,29 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     return round
   }
 
+  /**
+   * YAZ-5596 (7): the round after a pass starts at an idle moment, not with the pass's own events: the return to the
+   * app draws and takes taps first. `soon`: a round waits for that moment (`idle()` waits for it too).
+   */
+  const whenIdle = options.whenIdle ?? ((fn: () => void) => void idleSoon(fn))
+  let soon: Promise<void> | null = null
+  const kickWhenIdle = () => {
+    if (soon !== null || stopped) return
+    let resolve!: () => void
+    const waiting = new Promise<void>((r) => (resolve = r))
+    soon = waiting
+    whenIdle(() => {
+      if (soon === waiting) soon = null
+      resolve()
+      if (!stopped) void kick()
+    })
+  }
+
   const unsubscribe = engine.subscribe((event) => {
     if (stopped) return
     if (event.type === 'state') {
       if (event.state.vault !== state.vault) switchTo(event.state.vault)
-      if (event.state.status === 'synced') void kick()
+      if (event.state.status === 'synced') kickWhenIdle()
     } else if (event.vault === state.vault && event.sizes !== undefined) sizesFromPass = { vault: event.vault, commit: event.commit, sizes: event.sizes }
   })
   switchTo(engine.state().vault)
@@ -642,7 +662,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
       return kick()
     },
     async idle() {
-      while (round !== null) await round
+      while (round !== null || soon !== null) await (round ?? soon)
     },
     resolve,
     show,

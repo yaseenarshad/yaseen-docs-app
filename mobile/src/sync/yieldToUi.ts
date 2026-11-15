@@ -26,3 +26,16 @@ export function uiSlicer(yieldFn: () => Promise<void> = yieldToUi, sliceMs = 8, 
     return pending ?? Promise.resolve()
   }
 }
+
+/**
+ * YAZ-5596 (7): runs `fn` at the browser's next idle moment (`requestIdleCallback`, at the latest after `timeout`), else
+ * (Safari has none) after `fallbackMs`: work that can wait lets the screen draw and take taps first. Returns a cancel.
+ */
+export function whenIdle(fn: () => void, timeout = 2000, fallbackMs = 200): () => void {
+  if (typeof requestIdleCallback === 'function') {
+    const id = requestIdleCallback(() => fn(), { timeout })
+    return () => cancelIdleCallback(id)
+  }
+  const id = setTimeout(fn, fallbackMs)
+  return () => clearTimeout(id)
+}

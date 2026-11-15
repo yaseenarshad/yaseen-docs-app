@@ -6,6 +6,7 @@ import { PageView } from '../screens/PageScreen'
 import { Toast, useToast } from '../screens/Toast'
 import type { VaultStore } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
+import { whenIdle } from '../sync/yieldToUi'
 
 const load = () => import('./today')
 
@@ -99,14 +100,18 @@ export function TodayTab() {
     }
     const idle = typeof requestIdleCallback === 'function'
     const later = idle ? requestIdleCallback(readAhead, { timeout: 2000 }) : setTimeout(readAhead, 500)
+    // YAZ-5596 (7): after a sync change, at the next idle moment (1 s at most): the pass's own screens draw first.
+    let cancelAfterSync: (() => void) | null = null
     const off = sync.subscribe((event) => {
       if (event.type !== 'changed' || event.vault !== vault) return
       aheadOn.delete(store)
-      readAhead()
+      cancelAfterSync?.()
+      cancelAfterSync = whenIdle(readAhead, 1000)
     })
     return () => {
       live = false
       off()
+      cancelAfterSync?.()
       if (idle) cancelIdleCallback(later as number)
       else clearTimeout(later)
     }
