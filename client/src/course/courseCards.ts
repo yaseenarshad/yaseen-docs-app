@@ -20,10 +20,15 @@
  * - The AI step copies a prompt and watches the folder through the vault's index. The app runs no agent and sends
  *   nothing anywhere. Nothing grades the agent's cards: the person reads each.
  * - What the course made is kept in `AppState.course.made`, a record only: every file is in the sidebar.
+ * - Chapter 3's Inbox steps need a card in the Inbox (YAZ-5412): right before "Click Inbox in the sidebar"
+ *   (`INBOX_CARD_CLIP`), when the vault's Inbox has no card to show today (`cardPlan`, the Inbox's own queue, with its
+ *   new-card limit, today's taken Up next and today's added numbers), the course writes chapter 2's example card
+ *   (`INBOX_EXAMPLE`) in its folder, as a new card. Only when a new card would show today, and only once: never when a
+ *   "Protein" card is in the folder already. The Inbox's order is its own: the course marks nothing up next.
  */
 import { cardFileContent, cardFileName, isCardKind } from '@shared/cardFileFormat'
 import { EMPTY_CARD_LINE, cardTime, cardTitleOf, findCards, withCardId, withCardNext, withCardNoTitle, withCardReview, type CardReview } from '@shared/cardLine'
-import { cardState, previewAnswers } from '@shared/cardSchedule'
+import { cardPlan, cardState, previewAnswers } from '@shared/cardSchedule'
 import { cardSkillFolder } from '@shared/cardSkillFolder'
 import { cardSides } from '@shared/cardText'
 import type { CourseMade } from '@shared/courseState'
@@ -36,6 +41,8 @@ import { typedFolders } from '@shared/linkResolver'
 import { storage } from '../lib/storage'
 import { bridgeDisk } from '../views/scaffold'
 import { cardSkillPrompt } from '../vault/cardSkill'
+import { cardsAddedToday } from '../review/cardsAdded'
+import { upNextTakenToday } from '../review/upNextTaken'
 import {
   courseCardKey,
   givenAfter,
@@ -133,6 +140,20 @@ export const EXAMPLE_CARDS: readonly { title: string; text: string }[] = [
     ].join('\n'),
   },
 ]
+
+/** The clip whose live step is "Click Inbox in the sidebar": the Inbox gets its card right before it (YAZ-5412). */
+export const INBOX_CARD_CLIP = 'c3-23'
+
+/** The card chapter 3's Inbox shows when it has none (YAZ-5412): chapter 2's example (`example` on c2-15, c2-16, c2-17). */
+export const INBOX_EXAMPLE = {
+  title: 'Protein',
+  front: 'Your body builds and repairs with protein.',
+  hidden: 'protein',
+  back: 'An egg is mostly protein and fat.',
+} as const
+
+/** How long `inboxCard` waits for the index to show the card it wrote (the tour's check reads the index). */
+const INDEX_WAIT_MS = 3000
 
 // ---------------------------------------------------------------------------------------------------------------
 // Pure parts
@@ -327,6 +348,9 @@ async function writeCardFile(disk: PageDisk, dir: string, title: string, text: s
   return { path, title: name, text, titleHidden }
 }
 
+/** The Inbox card being written for each vault (YAZ-5412): a second ask while one runs waits for it. */
+const inboxWrites = new Map<string, Promise<MadeCard | null | { showOnly: string }>>()
+
 /** The AI step of each vault, kept for the session: a course closed in this step opens at it with its text and cards. */
 const steps = new Map<string, { step: AgentStep; host: { current: VaultHost }; attach(): void }>()
 
@@ -437,6 +461,56 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
     })
   }
 
+  /** Would the vault's Inbox show a card today? The Inbox's own queue (`useCardReview`'s vault plan), for these records. */
+  const inboxShows = (records: Parameters<typeof cardPlan>[0], now: number): boolean =>
+    cardPlan(records, vault.review().settings, now, '', undefined, undefined, upNextTakenToday(root, now), cardsAddedToday(root, now)).queue.length > 0
+
+  /** Is a "Protein" card in the folder already: in the index, or one the course wrote that the index has not read yet? */
+  const hasInboxExample = async (folder: string): Promise<boolean> => {
+    const named = (title: string | undefined): boolean => title?.trim().toLowerCase() === INBOX_EXAMPLE.title.toLowerCase()
+    if (cardsIn(vault.index.records, root, folder).some((c) => named(c.title))) return true
+    for (const path of madeHere()?.cards ?? []) {
+      if (!path.startsWith(`${folder}/`)) continue
+      const content = await deps.disk.read(path).catch(() => null)
+      if (content !== null && named(cardTextOf(content, 0)?.title)) return true
+    }
+    return false
+  }
+
+  /** Waits (at most `INDEX_WAIT_MS`) until the index holds the card at `path`. */
+  const untilIndexed = (path: string): Promise<void> =>
+    new Promise((resolve) => {
+      const there = (): boolean => vault.index.records.some((r) => r.path === path && (r.cards?.length ?? 0) > 0)
+      if (there()) return resolve()
+      let stop: () => void = () => undefined
+      const timer = setTimeout(() => finish(), INDEX_WAIT_MS)
+      function finish(): void {
+        clearTimeout(timer)
+        stop()
+        resolve()
+      }
+      stop = vault.index.subscribe(() => {
+        if (there()) finish()
+      })
+    })
+
+  const writeInboxCard = async (): Promise<MadeCard | null | { showOnly: string }> => {
+    const now = deps.now()
+    if (inboxShows(vault.index.records, now)) return null
+    // The day's new cards are used up (or Settings brings none): a new card would not show today either.
+    const probe = { path: `${root}/(a new card)`, folder: '', cards: [{ id: 'PROBE-1', off: false, next: false, reviews: [] }] }
+    if (!inboxShows([...vault.index.records, probe], now)) return null
+    const at = await courseCards()
+    if ('showOnly' in at) return at
+    if (await hasInboxExample(at.path)) return null
+    const card = firstCard({ front: INBOX_EXAMPLE.front, hidden: INBOX_EXAMPLE.hidden, back: INBOX_EXAMPLE.back })
+    // The title says the hidden word, so it is hidden on the front (`notitle`), as chapter 2 does.
+    const made = await writeCardFile(deps.disk, at.path, INBOX_EXAMPLE.title, card.text, true)
+    remember((m) => ({ ...m, cards: [...m.cards, made.path] }))
+    await untilIndexed(made.path)
+    return made
+  }
+
   const host: VaultHost = {
     vault: root,
     vaultView: vault,
@@ -475,6 +549,15 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
     },
     get agentStep(): AgentStep {
       return agentStepOf(host)
+    },
+    inboxCard() {
+      const reason = showOnlyReason(vault)
+      if (reason !== null) return Promise.resolve({ showOnly: reason })
+      const running = inboxWrites.get(root)
+      if (running !== undefined) return running
+      const run = writeInboxCard().finally(() => inboxWrites.delete(root))
+      inboxWrites.set(root, run)
+      return run
     },
     summary() {
       // The course's own folder only (YAZ-5202): a "Course Cards" of the person's is not the course's.

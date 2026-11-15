@@ -92,6 +92,7 @@ export function memoryHost(vault = '/demo'): MemoryHost {
       stop: () => undefined,
     },
     summary: () => ({ folder, cards: host.cards.map((c) => ({ path: c.path, title: c.title, due: null })) }),
+    inboxCard: () => Promise.resolve(null),
     arrive(card, text = 'A {{card}}\n---\nIts back') {
       host.cards = [...host.cards, card]
       texts.set(courseCardKey(card), text)

@@ -20,6 +20,10 @@
  * - `readCard(card)`: the card's sides, to read it in the course (the AI step's "Read").
  * - `agentStep`: the AI step's state (chapter 8). It lives in the host, not in a scene: the layer unmounts a scene at
  *   the end of each clip, and the text, the copied prompt and the Read ticks must last from `c8-11` to `c8-16`.
+ * - `inboxCard()` (YAZ-5412): right before chapter 3's "Click Inbox in the sidebar" (`INBOX_CARD_CLIP`): when the
+ *   vault's Inbox has no card to show today, and a new card would show, one example card ("Protein", chapter 2's
+ *   example) in the folder, once. null: nothing written (the Inbox has a card, the example is there already, or the
+ *   day's new cards are used up).
  * - `summary()`: the end screen's numbers: the cards in the folder and when each comes back, from the real schedule.
  */
 import type { ReviewSettings } from '@shared/reviews'
@@ -141,6 +145,7 @@ export interface CourseHost {
   readCard(card: Pick<CourseCard, 'path' | 'index'>): Promise<CourseCardText | null>
   agentStep: AgentStep
   summary(): CourseSummary
+  inboxCard(): Promise<MadeCard | null | { showOnly: string }>
 }
 
 /**
@@ -213,5 +218,6 @@ export function showOnlyHost(vault: string | null, reason: string): CourseHost {
     readCard: () => Promise.resolve(null),
     agentStep: showOnlyStep(reason),
     summary: () => EMPTY_SUMMARY,
+    inboxCard: () => Promise.resolve({ showOnly: reason }),
   }
 }

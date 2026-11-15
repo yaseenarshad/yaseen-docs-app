@@ -61,6 +61,11 @@ export interface TourLayerProps {
   visible?: boolean
   /** Live: a do step lights up now (the course asks for the corner). */
   onDoStep?: () => void
+  /**
+   * What must happen in the vault before the check (YAZ-5412: chapter 3's Inbox gets its card, `CourseHost.inboxCard`).
+   * Read once, when the layer mounts; a failure is passed over, and the check runs as ever.
+   */
+  prepare?: () => Promise<unknown>
 }
 
 /** The coach waits this long before it says where a control is, so a menu that opens a moment late does not flash it. */
@@ -192,7 +197,7 @@ const NOTHING_SEEN: Seen = { target: null, course: null, holes: [], view: { widt
 const sameSeen = (a: Seen, b: Seen): boolean => JSON.stringify(a) === JSON.stringify(b)
 const round = (b: Box): Box => ({ left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width), height: Math.round(b.height) })
 
-export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour', reached, visible = true, onDoStep }: TourLayerProps) {
+export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour', reached, visible = true, onDoStep, prepare }: TourLayerProps) {
   const live = variant === 'live'
   const reducedMotion = useReducedMotion()
   const layer = useRef<HTMLDivElement>(null)
@@ -204,6 +209,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
   /** The real title of the course's folder (YAZ-5202), for the help lines. */
   const [folderTitle, setFolderTitle] = useState(COURSE_CARDS)
   const ended = useRef(false)
+  const prepareRef = useRef(prepare)
   const doors = useRef({ onEnd, alive, reached, visible, onDoStep })
   doors.current = { onEnd, alive, reached, visible, onDoStep }
 
@@ -223,16 +229,19 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
   // ---- the check: the Course Cards folder and its cards (6F's host) ----
   useEffect(() => {
     let live = true
-    void checkTour(chapter.id, host).then(
-      (r) => {
-        if (!live) return
-        if ('blocked' in r) return dispatch({ type: 'blocked', reason: r.blocked })
-        setFolderTitle(r.folderTitle ?? COURSE_CARDS)
-        setTourPlaces(r.places)
-        dispatch({ type: 'ready', places: r.places })
-      },
-      () => live && dispatch({ type: 'blocked', reason: 'The course could not find its Course Cards folder.' }),
-    )
+    const before = prepareRef.current?.().catch(() => undefined) ?? Promise.resolve()
+    void before
+      .then(() => checkTour(chapter.id, host))
+      .then(
+        (r) => {
+          if (!live) return
+          if ('blocked' in r) return dispatch({ type: 'blocked', reason: r.blocked })
+          setFolderTitle(r.folderTitle ?? COURSE_CARDS)
+          setTourPlaces(r.places)
+          dispatch({ type: 'ready', places: r.places })
+        },
+        () => live && dispatch({ type: 'blocked', reason: 'The course could not find its Course Cards folder.' }),
+      )
     return () => {
       live = false
       setTourPlaces(null)

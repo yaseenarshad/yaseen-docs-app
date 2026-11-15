@@ -341,6 +341,30 @@ describe('live steps (YAZ-5366)', () => {
   })
 })
 
+describe("chapter 3's Inbox card (YAZ-5412)", () => {
+  it('"Click Inbox in the sidebar" asks the host for the Inbox card before its check; the next clips do not ask again', async () => {
+    const order: string[] = []
+    const watch = host.watchCards
+    const inboxCard = vi.fn(() => (order.push('inboxCard'), Promise.resolve(null)))
+    host.inboxCard = inboxCard
+    host.watchCards = (folder, onCards) => (order.push('watch'), watch(folder, onCards))
+    const target = control('sidebar-inbox')
+    control('inbox-card')
+    await mount({ chapter: 'inbox', clip: 'c3-23' }, { course: SCRIPT })
+    click(button('Play'))
+    const clip = SCRIPT.find((ch) => ch.id === 'inbox')!.clips.find((c) => c.id === 'c3-23')!
+    await play(seconds(clip) + 1)
+    expect(coachSay()).toBe('Click Inbox in the sidebar.')
+    expect(inboxCard).toHaveBeenCalledTimes(1)
+    expect(order[0]).toBe('inboxCard')
+    expect(order).toContain('watch')
+    act(() => target.click())
+    await play(2)
+    expect(caption()).toBe(SCRIPT.find((ch) => ch.id === 'inbox')!.clips.find((c) => c.id === 'c3-08')!.text)
+    expect(inboxCard).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('the hands-on chapters walk from their first to their last clip on fake real actions (YAZ-5366)', () => {
   const HANDS_ON = ['first-card', 'inbox', 'where', 'links', 'care', 'where-things-are']
   const targets = [...new Set(SCRIPT.flatMap((ch) => ch.clips.flatMap((c) => (c.live ?? []).map((s) => s.target))))]

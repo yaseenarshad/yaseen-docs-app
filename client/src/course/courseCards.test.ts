@@ -9,8 +9,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cardFileContent, cardFileShape, isCardFileContent } from '@shared/cardFileFormat'
-import { EMPTY_CARD_LINE, cardReviewsOf, cardTitleOf, findCards, isCardNoTitle, withCardId, withCardNoTitle, withCardReview } from '@shared/cardLine'
-import { cardState, previewAnswers } from '@shared/cardSchedule'
+import { EMPTY_CARD_LINE, cardReviewsOf, cardTitleOf, findCards, isCardNoTitle, withCardId, withCardNoTitle, withCardOff, withCardReview } from '@shared/cardLine'
+import { cardPlan, cardState, previewAnswers } from '@shared/cardSchedule'
 import { cardPieces, cardSides } from '@shared/cardText'
 import type { CourseMade } from '@shared/courseState'
 import { parseFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
@@ -34,6 +34,8 @@ import {
   COURSE_PAGE_LINE,
   EXAMPLE_CARDS,
   EXAMPLE_TEXT,
+  INBOX_CARD_CLIP,
+  INBOX_EXAMPLE,
   NO_CARDS_YET_MS,
   STILL_WORKING_MS,
   SHOW_ONLY,
@@ -644,13 +646,13 @@ describe('the seam', () => {
   it('the test double and the frame host have every member of the real host, and of its AI step', () => {
     const real = vaultCourseHost(vaultOf().view, depsOf().deps)
     const keys = (o: object): string[] => [...new Set([...Object.keys(o), ...Object.getOwnPropertyNames(Object.getPrototypeOf(o))])].filter((k) => k !== 'constructor').sort()
-    const members = (h: CourseHost): string[] => ['vault', 'courseCards', 'watchCards', 'makeFirstCard', 'coursePage', 'readCard', 'agentStep', 'summary'].filter((k) => k in h)
+    const members = (h: CourseHost): string[] => ['vault', 'courseCards', 'watchCards', 'makeFirstCard', 'coursePage', 'readCard', 'agentStep', 'summary', 'inboxCard'].filter((k) => k in h)
     for (const host of [memoryHost(), showOnlyHost('/v', SHOW_ONLY.readOnly)]) {
       expect(members(host)).toEqual(members(real))
       expect(keys(host.agentStep)).toEqual(keys(real.agentStep))
       expect(Object.keys(host.agentStep.state()).sort()).toEqual(Object.keys(real.agentStep.state()).sort())
     }
-    expect(members(real)).toHaveLength(8)
+    expect(members(real)).toHaveLength(9)
   })
 })
 
@@ -696,6 +698,98 @@ describe('chapter 4\'s tour and its Course page (YAZ-5123 with YAZ-5124)', () =>
     await rm(join(root, 'course-cards'), { recursive: true })
     const locked = vaultCourseHost(vaultOf({ readOnly: true }).view, depsOf().deps)
     expect(await checkTour('where', locked)).toEqual({ blocked: SHOW_ONLY.readOnly })
+    expect(await top()).toEqual([])
+  })
+})
+
+describe("chapter 3's Inbox card (YAZ-5412)", () => {
+  const folder = (): string => join(root, 'course-cards')
+  /** `inboxCard()` while the index reads the vault again, as the app's watcher does after a write. */
+  async function inboxCardOf(host: CourseHost, vault: ReturnType<typeof vaultOf>) {
+    const writing = host.inboxCard()
+    const result = await Promise.race([writing, new Promise<'waiting'>((resolve) => setTimeout(() => resolve('waiting'), 50))])
+    if (result !== 'waiting') return result
+    await vault.refresh()
+    return writing
+  }
+  const inboxQueue = (vault: ReturnType<typeof vaultOf>) => cardPlan(vault.view.index.records, DEFAULT_REVIEW_SETTINGS, Date.now()).queue
+
+  it('the example is chapter 2\'s, and the card comes right before "Click Inbox in the sidebar"', () => {
+    const clips = COURSE.flatMap((ch) => ch.clips)
+    const examples = (id: string) => (clips.find((c) => c.id === id)?.live ?? []).flatMap((st) => (st.example === undefined ? [] : [st.example.text]))
+    expect(examples('c2-15')).toEqual([INBOX_EXAMPLE.title, INBOX_EXAMPLE.front])
+    expect(examples('c2-17')).toEqual([INBOX_EXAMPLE.back])
+    const clip = clips.find((c) => c.id === INBOX_CARD_CLIP)
+    expect(clip?.live?.map((st) => [st.target, st.done])).toEqual([['sidebar-inbox', 'click']])
+    expect(clips[clips.indexOf(clip!) + 1].live?.[0].target).toBe('inbox-card')
+  })
+
+  it('an empty Inbox: one "Protein" card file in Course Cards, as "New card" writes it, new in the Inbox; written once', async () => {
+    const vault = vaultOf()
+    await vault.refresh()
+    const { deps, made } = depsOf()
+    const host = vaultCourseHost(vault.view, deps)
+    const card = (await inboxCardOf(host, vault)) as MadeCard
+    expect(card.title).toBe('Protein')
+    expect(card.path.startsWith(`${folder()}/`)).toBe(true)
+    const content = await readFile(card.path, 'utf8')
+    expect(isCardFileContent(content)).toBe(true)
+    expect(parseFrontmatter(splitFrontmatter(content).frontmatter).properties).toEqual({ kind: 'card' })
+    const [found] = findCards(splitFrontmatter(content).body)
+    expect(cardTitleOf(found.line)).toBe('Protein')
+    expect(isCardNoTitle(found.line)).toBe(true)
+    expect(cardReviewsOf(found.line)).toEqual([])
+    expect(cardSides(found.text)).toEqual(['Your body builds and repairs with {{protein}}.', 'An egg is mostly protein and fat.'])
+    expect(made()[0].cards).toEqual([card.path])
+    expect(inboxQueue(vault).map((c) => c.path)).toEqual([card.path])
+
+    // Replay, resume (a new host), and two asks at once: nothing more is written.
+    expect(await host.inboxCard()).toBeNull()
+    expect(await vaultCourseHost(vault.view, deps).inboxCard()).toBeNull()
+    expect(await Promise.all([host.inboxCard(), host.inboxCard()])).toEqual([null, null])
+    expect(await cardFilesIn(folder())).toHaveLength(1)
+  })
+
+  it('two asks before the index has the card: one file', async () => {
+    const vault = vaultOf()
+    await vault.refresh()
+    const host = vaultCourseHost(vault.view, depsOf().deps)
+    const both = Promise.all([host.inboxCard(), host.inboxCard()])
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    await vault.refresh()
+    const [a, b] = await both
+    expect(a).toEqual(b)
+    expect(await cardFilesIn(folder())).toHaveLength(1)
+  })
+
+  it('the Inbox has a card (anywhere in the vault): nothing is written, and no folder is made', async () => {
+    await mkdirP(join(root, 'food'))
+    await writeFile(join(root, 'food', 'bread.md'), cardFileContent('Bread', 'Bread rises because {{yeast}} makes gas.', withCardId(EMPTY_CARD_LINE, 'TST-90')))
+    const vault = vaultOf()
+    await vault.refresh()
+    expect(inboxQueue(vault)).toHaveLength(1)
+    expect(await vaultCourseHost(vault.view, depsOf().deps).inboxCard()).toBeNull()
+    expect(await top()).toEqual(['food'])
+  })
+
+  it('a "Protein" card in Course Cards already (archived, so the Inbox is empty): no second one', async () => {
+    const vault = vaultOf()
+    const host = vaultCourseHost(vault.view, depsOf().deps)
+    const at = await host.courseCards()
+    if ('showOnly' in at) throw new Error(at.showOnly)
+    await writeFile(join(at.path, 'protein.md'), cardFileContent('Protein', 'Your body builds and repairs with {{protein}}.', withCardOff(withCardId(EMPTY_CARD_LINE, 'TST-91'), true)))
+    await vault.refresh()
+    expect(inboxQueue(vault)).toEqual([])
+    expect(await host.inboxCard()).toBeNull()
+    expect(await cardFilesIn(at.path)).toEqual(['protein.md'])
+  })
+
+  it("no new card would show today (the day's new-card number is 0): nothing is written; a read-only vault only shows", async () => {
+    const vault = vaultOf()
+    vault.view.review = () => ({ ready: true, on: true, settings: { ...DEFAULT_REVIEW_SETTINGS, newPerDay: 0 } })
+    await vault.refresh()
+    expect(await vaultCourseHost(vault.view, depsOf().deps).inboxCard()).toBeNull()
+    expect(await vaultCourseHost(vaultOf({ readOnly: true }).view, depsOf().deps).inboxCard()).toEqual({ showOnly: SHOW_ONLY.readOnly })
     expect(await top()).toEqual([])
   })
 })
