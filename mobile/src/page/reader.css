@@ -643,8 +643,10 @@
 /* FOLDING (YAZ-5568, option A; `folds.ts`): the Mac's chevron (`headingFolding.css`, `outlineFolding.css`), 14 px and
    muted, always shown (a phone has no hover), turned right when folded. Each is a 44 px button: a heading's in the left
    margin on its first line (it runs over the first letters; a tap there folds), a bullet's one step left of its dot,
-   the arrow and the dot together. A task's stops at its box, so a tap on the box still ticks it. No count. A hidden
-   block is `display: none`: off the screen and out of VoiceOver's reading order. */
+   the arrow and the dot together. A task's stops where its box's 44 px tap area starts (YAZ-5568: a tap on or near
+   the box always ticks it), so it only has the room left of that: on a top-level task the strip from the screen's
+   edge, on a nested one up to 44 px. No count. A hidden block is `display: none`: off the screen and out of
+   VoiceOver's reading order. */
 .reader__body [data-fold-hidden] {
   display: none !important;
 }
@@ -671,10 +673,14 @@
   touch-action: manipulation;
 }
 .fold-btn svg {
+  /* The Mac's 14 px chevron (24 units), its box cut to the stroke (`folds.ts`: units 5 to 19), so a box drawn in a
+     narrow strip stays on the screen; the lefts below add the cut back (`--arrow-cut`). A tap on it is its button's. */
+  --arrow-cut: calc(14px * 5 / 24);
   position: absolute;
-  top: 15px;
-  width: 14px;
-  height: 14px;
+  top: calc(15px + var(--arrow-cut));
+  width: calc(14px * 14 / 24);
+  height: calc(14px * 14 / 24);
+  pointer-events: none;
   transition: transform 0.12s;
 }
 .fold-btn[aria-expanded='false'] svg {
@@ -690,7 +696,7 @@
   top: calc(2px + 0.65em - 22px);
 }
 .fold-btn--heading svg {
-  left: 0;
+  left: var(--arrow-cut);
 }
 /* A bullet's: the arrow 16 px left of the dot's middle; the button from there over the dot. */
 .reader__body li > .fold-btn--bullet {
@@ -698,17 +704,18 @@
   top: calc(var(--page-gap) + var(--page-line) * 0.5em - 22px);
 }
 .fold-btn--bullet svg {
-  left: 7px;
+  left: calc(7px + var(--arrow-cut));
 }
-/* A task's: the arrow 9 px left of its box; the button ends at the box. */
+/* A task's (YAZ-5568): the button ends where the box's tap area starts (the box's middle less 22 px), the arrow's
+   middle 2 px inside it, so the two never share a point. Its left part may run off the screen. */
 .reader__body li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) > .fold-btn--bullet {
-  left: calc((var(--list-gutter) + 1.125em) / -2 - var(--list-label-gap) - 44px);
+  left: calc(var(--list-gutter) / -2 - var(--list-label-gap) - 66px);
 }
 .reader__body ol > li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) > .fold-btn--bullet {
-  left: calc((var(--list-gutter) + 1.125em) / -2 - var(--list-label-gap) - 44px + 0.3em);
+  left: calc(var(--list-gutter) / -2 - var(--list-label-gap) - 66px + 0.3em);
 }
 .reader__body li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) > .fold-btn--bullet svg {
-  left: 28px;
+  left: calc(42px - 14px * 7 / 24);
 }
 
 /* A box with its line (`data-task`) is a check box a tap ticks (`taskTicks.ts`): its tap area is 44 px around
