@@ -5,6 +5,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@shared': fileURLToPath(new URL('../shared', import.meta.url)),
+      // The phone's name for this folder, for phone modules a client test loads (see tsconfig.json).
+      '@client': fileURLToPath(new URL('./src', import.meta.url)),
     },
     // The engine is a workspace link (YAZ-3574): its imports resolve from the app's node_modules, as in the build.
     preserveSymlinks: true,

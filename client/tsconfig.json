@@ -6,7 +6,9 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "types": ["vite/client"],
-    "paths": { "@shared/*": ["../shared/*"] }
+    // `@client/*` is the phone's name for this folder: a client test that loads phone code (YAZ-5618's
+    // `cellTasksPhone.test.ts`) reads the phone modules that import `@client/...` (YAZ-5568's `pageMarked.ts`).
+    "paths": { "@shared/*": ["../shared/*"], "@client/*": ["./src/*"] }
   },
   "include": ["src", "../shared", "vitest.config.ts"]
 }
