@@ -79,7 +79,8 @@ const ASKS = process.env.LAYOUT_ONLY === 'tables' ? [] : ['c4erase-3-friends-rem
 process.env.NOTECARDS_SERVE = 'no'
 const { serveDist } = await import('./serve')
 const server = await serveDist(DIST, PORT)
-setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 240_000).unref()
+// YAZ-5524: 28 more top-bar cases (pages with no ID chip): the budget grows with them.
+setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 420_000).unref()
 const profile = mkdtempSync(join(tmpdir(), 'notecards-layout-profile-'))
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
 let browserWs = ''
