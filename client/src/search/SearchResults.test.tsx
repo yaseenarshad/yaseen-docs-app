@@ -10,6 +10,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import type { SearchCandidate } from './searchCandidates'
 import { SearchResults } from './SearchResults'
 import { rowIcon } from '../sidebar/rowIcons'
+import { placeOf } from '../test-placeName'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -76,6 +77,8 @@ describe('SearchResults (YAZ-803)', () => {
     const { el } = render([cand('Root page'), cand('Nested', 'Docs/Deep')])
     expect(rows(el)[0].querySelector('.search-results__folder')).toBeNull()
     expect(rows(el)[1].querySelector('.search-results__folder')?.textContent).toBe('Docs/Deep')
+    // YAZ-5402: the folder icon before it; the tooltip says the kind and the path.
+    expect(placeOf(rows(el)[1].querySelector('.search-results__folder'))).toEqual({ kind: 'folder', icon: 'folder', title: 'Folder: Docs / Deep' })
   })
 
   it('rows are anchored by aria-label (what the e2e run clicks)', () => {

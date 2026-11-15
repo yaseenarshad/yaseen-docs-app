@@ -31,6 +31,7 @@ import { readPagePlace, showPagePlace } from '../editor/pagePlace'
 import { registerPageView } from '../lib/pageView'
 import { tellReadOnlyEdit } from '../editor/readOnlyEdit'
 import { confirmResetHistory } from '../editor/card/testResetHistory'
+import { placeOf } from '../test-placeName'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -3232,9 +3233,13 @@ describe('YAZ-5164: cards inside pages in Explore', () => {
     expect(rows()).toEqual(['River of Paris'])
     expect(rowEls()[0].querySelector('.file-icon')?.getAttribute('data-kind')).toBe('card')
     expect(rowEls()[0].querySelector('.search-results__folder')?.textContent).toBe('Geography')
+    // YAZ-5402: the slot holds the card's PAGE here: the page icon, and the tooltip says so.
+    expect(placeOf(rowEls()[0].querySelector('.search-results__folder'))).toEqual({ kind: 'page', icon: 'markdown', title: 'Page: Geography' })
     // Its page is a row of its own too, by its title.
     await typeQuery('geogr')
     expect(rows()).toEqual(['Geography'])
+    // ...at the vault's top: the slot says "Vault root", a folder.
+    expect(placeOf(rowEls()[0].querySelector('.search-results__folder'))).toEqual({ kind: 'folder', icon: 'folder', title: 'Folder: Vault root' })
     await typeQuery('river')
     await openResult()
     expect(layers().map((l) => l.dataset.kind)).toEqual(['search', 'page'])

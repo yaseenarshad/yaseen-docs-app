@@ -77,7 +77,9 @@ export type CardPart =
  * text as `raw`, so a write that does not change the title writes its bytes back (YAZ-5309: an answer on the phone
  * never changes a title); a new title (`withCardTitle`) is written in the app's own form. A title with a raw comma
  * keeps no `raw`: a write encodes its commas (YAZ-5393), so an older build never splits it. A property part keeps its
- * text as `raw` the same way (YAZ-5349: `tags  "a"`, `ratio 2.50`, `[ "a" ]`), until a write changes it.
+ * text as `raw` the same way (YAZ-5349: `tags  "a"`, `ratio 2.50`, `[ "a" ]`), until a write changes it; one with a
+ * raw comma in its quotes keeps none, as a title. The phone never writes the line with this writer alone: it splices
+ * its own part in and keeps every other part's bytes (`mobile/src/answers/splice.ts`, YAZ-5409).
  */
 export interface CardLine {
   parts: CardPart[]
@@ -118,8 +120,8 @@ const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2
 /** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
 export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
 
-/** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteTitle`). */
-const TITLE_RE = /^title[ \t]+"((?:[^"\\]|\\.)*)"$/
+/** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteText`). */
+const TITLE_RE = /^title[ \t]+("(?:[^"\\]|\\.)*")$/
 
 /** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
 const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || text === 'fix' || isNumberId(text)
@@ -164,22 +166,25 @@ function splitParts(body: string): string[] {
 export const cleanCardTitle = (title: string): string => title.replace(/\s+/g, ' ').trim()
 
 /**
- * The title part's text as the line writes it, quotes and all: `\` and `"` escaped, and `>` so no `-->` can end the
- * line. A comma is written `&#44;` (YAZ-5393, decision: encode commas): a build from before YAZ-5308 splits the line on
- * every comma, also inside the quotes, so with none in it the title stays ONE part there, kept byte for byte, and no
- * word of it can read as `next`, `off` or a review. An `&` that starts `&#44;` or `&#38;` is written `&#38;`, so a
- * title that holds those letters reads back as it was; every other `&` stays as it is. A build of YAZ-5308 before this
- * reads `&#44;` as those letters and writes them back the same.
+ * A text of the card line as the line writes it, quotes and all: a title, a property's value, a quoted name. `\` and
+ * `"` escaped, `>` so no `-->` can end the line, and a line break as `\n` (a title has none). A comma is written `&#44;`
+ * (YAZ-5393, decision: encode commas): a build from before YAZ-5308 splits the line on every comma, also inside the
+ * quotes, so with none in it the text stays ONE part there, kept byte for byte, and no word of it can read as `next`,
+ * `off` or a review. An `&` that starts `&#44;` or `&#38;` is written `&#38;`, so a text that holds those letters reads
+ * back as it was; every other `&` stays as it is. A build of YAZ-5308 before this reads `&#44;` as those letters and
+ * writes them back the same. The ONE quote: the title and the properties share it (the phone's too, through this file).
  */
-const quoteTitle = (title: string): string =>
-  `"${title
+const quoteText = (text: string): string =>
+  `"${text
+    .replace(/\r/g, '')
     .replace(/&(?=#(?:44|38);)/g, '&#38;')
     .replace(/,/g, '&#44;')
-    .replace(/[\\">]/g, (c) => `\\${c}`)}"`
-/** The title part's text read back (`quoteTitle`'s escapes, in one pass); a raw comma (an older line) reads as itself. */
-const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)|&#(44|38);/g, (_, c: string | undefined, code: string | undefined) => c ?? (code === '44' ? ',' : '&'))
+    .replace(/[\\">\n]/g, (c) => (c === '\n' ? '\\n' : `\\${c}`))}"`
+/** A quoted text read back, quotes and all (`quoteText`'s escapes, in one pass); a raw comma (an older or a hand's line) reads as itself. */
+const unquoteText = (quoted: string): string =>
+  quoted.slice(1, -1).replace(/\\(.)|&#(44|38);/g, (_, c: string | undefined, code: string | undefined) => (c === undefined ? (code === '44' ? ',' : '&') : c === 'n' ? '\n' : c))
 /** The title part as this app writes it. */
-const titlePart = (title: string): string => `title ${quoteTitle(title)}`
+const titlePart = (title: string): string => `title ${quoteText(title)}`
 
 // ---------- properties (YAZ-5379, YAZ-5349 option A) ----------
 //
@@ -195,7 +200,7 @@ const titlePart = (title: string): string => `title ${quoteTitle(title)}`
 /** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
 const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix'])
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
-const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
+const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
 
 /**
@@ -206,10 +211,8 @@ export function isCardPropertyName(name: unknown): name is string {
   return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name) && !CARD_LINE_WORDS.has(name.toLowerCase())
 }
 
-const quoteValue = (text: string): string => `"${text.replace(/\r/g, '').replace(/[\\">\n]/g, (c) => (c === '\n' ? '\\n' : `\\${c}`))}"`
-const unquoteValue = (quoted: string): string => quoted.slice(1, -1).replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c))
-const formatScalar = (v: CardPropertyScalar): string => (typeof v === 'string' ? quoteValue(v) : String(v))
-const formatName = (name: string): string => (BARE_NAME_RE.test(name) ? name : quoteValue(name))
+const formatScalar = (v: CardPropertyScalar): string => (typeof v === 'string' ? quoteText(v) : String(v))
+const formatName = (name: string): string => (BARE_NAME_RE.test(name) ? name : quoteText(name))
 
 /** A property part as the line writes it: a list of none or one in brackets, so it reads back as a list. */
 const formatProperty = (name: string, value: CardPropertyValue): string => {
@@ -232,11 +235,11 @@ function parseProperty(text: string): { name: string; value: CardPropertyValue }
   const inner = open ? [all[0].slice(1), ...all.slice(1)] : all
   if (open) inner[inner.length - 1] = inner[inner.length - 1].slice(0, -1)
   const rest = inner.filter((t) => t !== '')
-  const name = head.startsWith('"') ? unquoteValue(head) : BARE_NAME_RE.test(head) ? head : null
+  const name = head.startsWith('"') ? unquoteText(head) : BARE_NAME_RE.test(head) ? head : null
   if (name === null || !isCardPropertyName(name)) return null
   const values: CardPropertyScalar[] = []
   for (const t of rest) {
-    if (t.startsWith('"')) values.push(unquoteValue(t))
+    if (t.startsWith('"')) values.push(unquoteText(t))
     else if (NUMBER_RE.test(t)) values.push(Number(t))
     else if (t === 'true' || t === 'false') values.push(t === 'true')
     else return null
@@ -258,9 +261,9 @@ export function parseCardLine(value: string): CardLine | null {
     const title = titled ? null : TITLE_RE.exec(text)
     if (review !== null && (seconds === undefined || seconds <= CARD_SECONDS_MAX))
       parts.push({ kind: 'review', review: seconds === undefined ? { at: review[1], rating: review[2] as CardRating } : { at: review[1], rating: review[2] as CardRating, seconds } })
-    else if (title !== null && cleanCardTitle(unquoteTitle(title[1])) !== '') {
+    else if (title !== null && cleanCardTitle(unquoteText(title[1])) !== '') {
       titled = true
-      const clean = cleanCardTitle(unquoteTitle(title[1]))
+      const clean = cleanCardTitle(unquoteText(title[1]))
       // Its own bytes are kept (`raw`) unless they are the app's form, or hold a raw comma: an older build splits there,
       // so a write puts the title in the app's form, its commas `&#44;` (YAZ-5393).
       parts.push(text === titlePart(clean) || text.includes(',') ? { kind: 'title', title: clean } : { kind: 'title', title: clean, raw: text })
@@ -273,8 +276,11 @@ export function parseCardLine(value: string): CardLine | null {
       parts.push({ kind: 'id', id: canonicalPageId(text) })
     } else {
       const property = parseProperty(text)
-      // A property in a form this app does not write (`tags  "a"`, `ratio 2.50`, `[ "a" ]`) keeps its bytes (`raw`), as a title does.
-      parts.push(property === null ? { kind: 'other', text } : formatProperty(property.name, property.value) === text ? { kind: 'property', ...property } : { kind: 'property', ...property, raw: text })
+      // A property in a form this app does not write (`tags  "a"`, `ratio 2.50`, `[ "a" ]`) keeps its bytes (`raw`), as a title
+      // does; one with a raw comma in its quotes keeps none: a write encodes it (`&#44;`), as a title's (YAZ-5393).
+      parts.push(
+        property === null ? { kind: 'other', text } : formatProperty(property.name, property.value) === text || text.includes(',') ? { kind: 'property', ...property } : { kind: 'property', ...property, raw: text },
+      )
     }
   }
   return { parts }

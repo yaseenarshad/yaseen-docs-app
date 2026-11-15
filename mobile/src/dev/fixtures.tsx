@@ -4,6 +4,7 @@ import type { AppServices } from '../app/AppState'
 import { saveAccount, type VaultAccount } from '../auth/account'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
+import { fakeGithub } from '../github/testing'
 import { fakeFriends, fakeScanner, fakeSync } from './fakes'
 import { isReaderFixture, mountReaderFixture } from './readerFixtures'
 
@@ -21,6 +22,25 @@ const ACCOUNT: VaultAccount = { login: 'demo', name: 'Demo Person', avatarUrl: '
 const FAKE_TOKEN = 'github_pat_11FIXTURE0' + 'f'.repeat(72)
 
 const refuseAll: FetchLike = async () => new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })
+
+/** YAZ-5408: the repo picker's made-up GitHub (`repo-*` fixtures): a token that reaches 3 repos, 14, or none. */
+const PICK_REPOS = [
+  { fullName: 'demo/demo-vault', pushedAt: '2026-11-10T00:00:00Z' },
+  { fullName: 'demo/work-wiki', pushedAt: '2026-10-02T00:00:00Z' },
+  { fullName: 'demo/a-rather-long-repository-name-for-the-narrow-screen', vault: false, pushedAt: '2026-11-12T00:00:00Z' },
+  { fullName: 'demo/website', vault: false, private: false, pushedAt: '2026-11-11T00:00:00Z' },
+  ...['budget', 'recipes', 'scripts', 'dotfiles', 'talks', 'thesis', 'photos', 'garden', 'letters', 'old-notes'].map((n, i) => ({ fullName: `demo/${n}`, vault: false, pushedAt: `2026-0${(i % 9) + 1}-01T00:00:00Z` })),
+]
+const pickGithub = (name: string) =>
+  fakeGithub({
+    tokens: {
+      [FAKE_TOKEN]: {
+        login: 'demo',
+        repos: Object.fromEntries((name === 'repo-none' ? [] : name === 'repo-pick-many' ? PICK_REPOS : PICK_REPOS.slice(0, 4)).map((r) => [r.fullName, 'write' as const])),
+      },
+    },
+    repos: PICK_REPOS,
+  })
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const press = (name: string) => {
@@ -55,7 +75,10 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
-  const signedIn = name !== 'sign-in' && name !== 'sign-in-error' && name !== 'guide' && name !== 'scan'
+  // The install hint as Safari on an iPhone shows it (the steps, the ☰ picture, the data note).
+  if (name === 'sign-in-iphone')
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1' })
+  const signedIn = !['sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'scan', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
   if (signedIn) {
     for (const v of name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1)) {
       await tokens.write(vaultId(v), FAKE_TOKEN)
@@ -64,12 +87,25 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     await saveVaultList(store, { vaults: name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1), open: vaultId(VAULTS[0]) })
   }
   const sync = fakeSync({ download: name === 'download' })
-  const services: AppServices = { store, tokens, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll }
+  const services: AppServices = { store, tokens, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
   root.render(<App services={services} />)
   await wait(50)
 
   switch (name) {
+    case 'sign-in-typed':
+      press('Type the repo name')
+      break
+    case 'repo-pick':
+    case 'repo-pick-many':
+    case 'repo-none':
+      fill('token', FAKE_TOKEN)
+      await wait(10)
+      press('Show my repos')
+      for (let i = 0; i < 100 && document.querySelector('.repo-row, .problem') === null; i++) await wait(20)
+      break
     case 'sign-in-error':
+      press('Type the repo name')
+      await wait(10)
       fill('repo', 'demo/demo-vault')
       fill('token', FAKE_TOKEN)
       await wait(10)

@@ -57,6 +57,8 @@ export type SignInError =
   /** The token can read but not write (the row "only read access"), or the repo is archived. */
   | { kind: 'read-only'; repo: string }
   | { kind: 'already-added'; repo: string; branch: string }
+  /** YAZ-5408: the token's list of repos (`GET /user/repos`) is empty. The token was given no repo. */
+  | { kind: 'no-repos' }
   | { kind: 'offline' }
   | { kind: 'github-down' }
   | { kind: 'rate-limited'; resetAt: number | null }
@@ -155,7 +157,8 @@ async function gistsAccess(client: GithubClient, userHeaders: Headers): Promise<
   }
 }
 
-function fromGithub(error: GithubError): SignInError {
+/** A GitHub failure that is not about one repo, as a sign-in result (also for the token's list of repos, YAZ-5408). */
+export function fromGithub(error: GithubError): SignInError {
   switch (error.code) {
     case 'UNAUTHORIZED':
       return { kind: 'unauthorized' }
@@ -195,6 +198,8 @@ export function signInMessage(error: SignInError): string {
       return `Your token can read ${error.repo} but not change it. Make a token with Contents: Read and write on this repo.`
     case 'already-added':
       return `${error.repo} (${error.branch}) is already on this phone.`
+    case 'no-repos':
+      return "This token can't see any repository. On GitHub, edit the token and choose the repository of your vault."
     case 'offline':
       return 'No internet connection. Connect, then try again.'
     case 'github-down':

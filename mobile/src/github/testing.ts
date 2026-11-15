@@ -29,6 +29,8 @@ export interface FakeRepo {
   archived?: boolean
   /** The repo has a vault at its top (a `.yaseendocs` folder). Default true. */
   vault?: boolean
+  /** `pushed_at` in `GET /user/repos` (ISO). Default: 2026-01-01. */
+  pushedAt?: string
   /** The repo's files and history, for the git calls of 3B (`fakeGit`). Without it, the git reads answer 404. */
   git?: FakeGit
 }
@@ -115,6 +117,30 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
         if (who.kind === 'classic') headers['x-oauth-scopes'] = ['repo', ...(who.gists ? ['gist'] : [])].join(', ')
         if (who.expires) headers['github-authentication-token-expiration'] = who.expires
         return json(200, { login: who.login, id: 1, name: who.name ?? null, avatar_url: `https://avatars.githubusercontent.com/u/1?v=4` }, headers)
+      }
+
+      // YAZ-5408: the repos this token can reach, as GitHub pages them (`per_page`, `page`, the `Link` header). A
+      // fine-grained token lists the repos it was given; a classic token lists every repo of its user.
+      if (method === 'GET' && path[1] === 'user' && path[2] === 'repos' && path.length === 3) {
+        const query = new URL(url).searchParams
+        const size = Math.min(100, Number(query.get('per_page') ?? 30))
+        const page = Math.max(1, Number(query.get('page') ?? 1))
+        const given = (r: FakeRepo) => Object.keys(who.repos ?? {}).some((k) => k.toLowerCase() === r.fullName.toLowerCase())
+        const mine = (r: FakeRepo) => r.fullName.split('/')[0].toLowerCase() === who.login.toLowerCase()
+        const all = setup.repos.filter((r) => given(r) || (who.kind === 'classic' && mine(r)))
+        const last = Math.max(1, Math.ceil(all.length / size))
+        const link = (n: number, rel: string) => `<${GITHUB_API}/user/repos?per_page=${size}&page=${n}>; rel="${rel}"`
+        const links = [...(page < last ? [link(page + 1, 'next'), link(last, 'last')] : []), ...(page > 1 ? [link(1, 'first'), link(page - 1, 'prev')] : [])]
+        const body = all.slice((page - 1) * size, page * size).map((r) => ({
+          full_name: r.fullName,
+          name: r.fullName.split('/')[1],
+          owner: { login: r.fullName.split('/')[0] },
+          private: r.private !== false,
+          archived: r.archived ?? false,
+          default_branch: r.defaultBranch ?? 'main',
+          pushed_at: r.pushedAt ?? '2026-01-01T00:00:00Z',
+        }))
+        return json(200, body, links.length > 0 ? { link: links.join(', ') } : {})
       }
 
       if (path[1] === 'gists' && path.length === 2 && method === 'POST') {

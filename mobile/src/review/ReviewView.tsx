@@ -162,7 +162,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
   if (!settings.enabled)
     return (
       <div className="review review--off">
-        <p className="muted">Review is off in this vault. Turn it on in Settings › Review on the Mac.</p>
+        <p className="muted">Review is off in this vault. Turn it on in Settings › Cards on the Mac.</p>
       </div>
     )
   if (session === null) return <Waiting />

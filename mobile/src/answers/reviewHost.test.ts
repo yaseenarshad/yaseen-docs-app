@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CardNotFoundError, withCardNext, withCardNoTitle, withCardOff, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, withCardFix, withCardNext, withCardNoTitle, withCardOff, type CardLine, type CardReview } from '@shared/cardLine'
 import { openVaultStore, memoryBackend, newMemoryDisk } from '../store'
 import { SEND_AFTER_MS } from '../sync/cadence'
 import { VAULT, pageText } from '../sync/testing'
@@ -61,7 +61,7 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     await t.tick(SEND_AFTER_MS)
     expect(await t.remoteReviews()).toEqual([R.at])
     await t.host.undoCardAnswer('a.md', 'NC-2', R.at, next)
-    expect(t.answers.waiting().map((w) => w.op)).toEqual([{ kind: 'unreview', id: 'NC-2', at: R.at, rating: R.rating }, { kind: 'next', id: 'NC-2', on: true }])
+    expect(t.answers.waiting().map((w) => w.op)).toEqual([{ kind: 'unreview', id: 'NC-2', at: R.at, rating: R.rating }, { kind: 'next', id: 'NC-2', on: true, at: 1 }])
     expect(await t.host.readCard('a.md', 'NC-2')).toMatchObject({ next: true, reviews: [] })
     await t.tick(SEND_AFTER_MS)
     expect((await t.s.git.filesAt(t.head()))['a.md']).toBe(FILES['a.md'])
@@ -110,6 +110,99 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     const t = await setup()
     expect(t.host.vaultName(VAULT)).toBe('yaseen/vault')
   })
+})
+
+/**
+ * YAZ-5409: an action changes ONLY its own part of a person's card line. Every other part keeps its bytes AND its
+ * place, in the base's order, in an older build's order (`next` / `off` before the properties) and in a person's own
+ * order. Each step is SENT, and the line is read on GitHub.
+ */
+describe('YAZ-5409: each action and its Undo change only their own part of the card line', () => {
+  const R0 = '2026-11-01T09:00Z good'
+  const page = (line: string) => `---\ntitle: P\n---\n\n# P\n\n\`\`\`card\nQ?\n---\nA\n\`\`\`\n${line}\n\nend\n`
+  /** The parts of a card line as written (commas in quotes stay). */
+  const pieces = (content: string): string[] => {
+    const body = /<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->/.exec(content)![1]
+    return body.match(/(?:"(?:\\.|[^"\\])*"|[^,])+/g)!.map((x) => x.trim())
+  }
+  async function sentHost(line: string) {
+    const t = await answersSetup({ files: { 'p.md': page(line) } })
+    const days = await openPhoneDays(t.store, VAULT, t.clock.now)
+    const host = phoneReviewHost({ answers: t.answers, days, vaultName: () => 'v' })
+    /** GitHub's text of the page after every waiting action is sent. */
+    const sent = async () => {
+      await t.tick(SEND_AFTER_MS)
+      expect(t.answers.waiting()).toEqual([])
+      return (await t.s.git.filesAt(t.head()))['p.md']
+    }
+    return { t, host, sent }
+  }
+
+  it.each([
+    `<!-- card: NC-1, title "x", next, tags "a", ${R0} -->`, // a build from before YAZ-5349
+    `<!-- card: NC-1, next, title "x", ${R0} -->`, // a phone from before YAZ-5308
+    `<!-- card: NC-1, title "x", tags "a", ${R0}, next -->`, // by hand
+    `<!-- card: NC-1, title "x", tags "a", next, ${R0} -->`, // the writer's form
+    `<!-- card: NC-1, fix, ${R0}, tags "a", next, title "x", off -->`, // a person's own order, every mark
+    // Parts the shared writer re-forms: a raw comma in a title and a value (an older build, a hand), small letters in
+    // the ID, odd spaces. The phone keeps them byte for byte; only the Mac's own writes give the app's form.
+    `<!-- card: nc-1, title "1,000 islands", level "A2, B1", next, ${R0} -->`,
+    `<!--card: NC-1, title "a, b", next, tags  "a"   "b", ${R0}-->`,
+  ])('answer, a send, Undo: GitHub has the line back byte for byte: %s', async (line) => {
+    const { host, sent } = await sentHost(line)
+    const next = await host.writeCardAnswer('p.md', 'NC-1', R)
+    const answered = await sent()
+    expect(pieces(answered).filter((x) => x !== 'next' && !x.startsWith(R.at))).toEqual(pieces(page(line)).filter((x) => x !== 'next'))
+    await host.undoCardAnswer('p.md', 'NC-1', R.at, next)
+    expect(await sent()).toBe(page(line))
+  })
+
+  it('odd spaces around the commas: each other part keeps its bytes, its order and the spaces before it', async () => {
+    const line = `<!--card:NC-1 ,title "a, b",  next,tags  "a"   "b",${R0}-->`
+    const { host, sent } = await sentHost(line)
+    const next = await host.writeCardAnswer('p.md', 'NC-1', R)
+    expect(await sent()).toBe(page(`<!--card:NC-1 ,title "a, b",tags  "a"   "b",${R0}, ${R.at} good 7s-->`))
+    await host.undoCardAnswer('p.md', 'NC-1', R.at, next)
+    // `next` comes back at its place with the writer's comma: only its own comma and spaces differ.
+    expect(await sent()).toBe(page(`<!--card:NC-1 ,title "a, b", next,tags  "a"   "b",${R0}-->`))
+  })
+
+  const ORDERS = {
+    new: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", tags "a", off, next, fix, ${R0}`],
+    older: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", off, next, fix, tags "a", ${R0}`],
+    own: [`${R0}, tags "a", title "x", NC-1`, `NC-1, fix, ${R0}, tags "a", next, title "x", off`],
+    raw: [`nc-1,title "a, b" ,level "A2, B1",${R0}`, `nc-1,title "a, b" ,off,next,fix,level "A2, B1",${R0}`],
+  }
+  const MARKS: [string, (l: CardLine, on: boolean) => CardLine][] = [
+    ['off', withCardOff],
+    ['next', withCardNext],
+    ['fix', withCardFix],
+  ]
+  for (const [order, [bare, marked]] of Object.entries(ORDERS))
+    for (const [mark, set] of MARKS) {
+      it(`${order} order: ${mark} on, sent, then its Undo, sent: only \`${mark}\` changes`, async () => {
+        const line = `<!-- card: ${bare} -->`
+        const { host, sent } = await sentHost(line)
+        await host.changeCardLine('p.md', 'NC-1', (l) => set(l, true))
+        const on = await sent()
+        expect(pieces(on).filter((x) => x !== mark)).toEqual(pieces(page(line)))
+        expect(pieces(on)).toContain(mark)
+        await host.changeCardLine('p.md', 'NC-1', (l) => set(l, false))
+        expect(await sent()).toBe(page(line))
+      })
+      it(`${order} order: ${mark} off, sent, then its Undo, sent: only \`${mark}\` changes`, async () => {
+        const line = `<!-- card: ${marked} -->`
+        const { host, sent } = await sentHost(line)
+        await host.changeCardLine('p.md', 'NC-1', (l) => set(l, false))
+        const off = await sent()
+        expect(pieces(off)).toEqual(pieces(page(line)).filter((x) => x !== mark))
+        await host.changeCardLine('p.md', 'NC-1', (l) => set(l, true))
+        // The mark comes back (the ⋯ menu gives no place: the writer's place); every other part keeps its bytes and order.
+        const back = await sent()
+        expect(pieces(back).filter((x) => x !== mark)).toEqual(pieces(page(line)).filter((x) => x !== mark))
+        expect(pieces(back)).toContain(mark)
+      })
+    }
 })
 
 describe('decision 9: the two day numbers stay on the phone', () => {

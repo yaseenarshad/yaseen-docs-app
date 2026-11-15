@@ -20,9 +20,11 @@ const round = (text: string) => formatCardLine(line(text))
 
 describe('property parts on the card line (YAZ-5379)', () => {
   it('reads the mockup line: tags as a list, level and source as text; the line writes back byte for byte', () => {
-    const text = '<!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", source "Atlas, chapter 3", 2026-11-11T09:12Z good -->'
+    const text = '<!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", source "Atlas&#44; chapter 3", 2026-11-11T09:12Z good -->'
     expect(cardPropertiesOf(line(text))).toEqual({ tags: ['europe', 'capitals'], level: 'A2', source: 'Atlas, chapter 3' })
     expect(round(text)).toBe(text)
+    // A raw comma in a value (a hand's, or a line from before the value escape) reads as itself; the write encodes it, as a title's (YAZ-5393).
+    expect(round(text.replace('&#44;', ','))).toBe(text)
   })
 
   it('each type: text, number, checkbox, list, date, and an empty value', () => {
@@ -109,5 +111,17 @@ describe('property parts on the card line (YAZ-5379)', () => {
     const [a, b] = cardRecords(page)
     expect(a.properties).toEqual({ tags: ['x', 'y'], level: 2 })
     expect(b).not.toHaveProperty('properties')
+  })
+})
+
+describe('YAZ-5410: a number the writer puts in exponent form reads back as that number', () => {
+  it.each([1e-7, 1e21, 2 ** 70, -3.5e-9, 0.0000001])('%s', (v) => {
+    const text = formatCardLine(withCardProperty(EMPTY_CARD_LINE, 'n', v))!
+    expect(cardPropertiesOf(parseCardLine(text)!)).toEqual({ n: v })
+    expect(formatCardLine(parseCardLine(text)!)).toBe(text)
+  })
+
+  it('a hand-written exponent reads as a number too; a word that only looks like one stays an unknown part', () => {
+    expect(cardPropertiesOf(line('<!-- card: NC-1, a 1E5, b 2e+3, c 1e -->'))).toEqual({ a: 1e5, b: 2e3 })
   })
 })

@@ -7,19 +7,23 @@
  * The file's tab then opens in Edit card (`isNewCard`, read once by `CardFileView`), on the empty card.
  */
 import { NEW_CARD_TITLE, cardFileContent, cardFileName } from '@shared/cardFileFormat'
-import { EMPTY_CARD_LINE, withCardId } from '@shared/cardLine'
+import { EMPTY_CARD_LINE, withCardId, type CardLine } from '@shared/cardLine'
 import { api } from '../api'
 import { takePageId } from '../views/scaffold'
 
 /** The card files this window just made, whose tab has not opened yet. */
 const fresh = new Set<string>()
 
-/** Makes a new card file in `dir`, its card titled `title`, and resolves its path. A failure (no ID, a name taken) propagates; nothing is made then. */
-export async function createCardFile(dir: string, title = NEW_CARD_TITLE): Promise<string> {
+/**
+ * Makes a new card file in `dir`, its card titled `title`, and resolves its path. `line` shapes its card line in the
+ * same write: a Cards table's "+ New" seeds the card's properties there (YAZ-5349 follow-up). A failure (no ID, a name
+ * taken, a property the line cannot hold) propagates; nothing is made then.
+ */
+export async function createCardFile(dir: string, title = NEW_CARD_TITLE, line: (line: CardLine) => CardLine = (l) => l): Promise<string> {
   const named = title.trim() === '' ? NEW_CARD_TITLE : title.trim()
   const id = await takePageId(dir)
   const path = `${dir}/${cardFileName(named, id)}`
-  await api.createFile({ path, content: cardFileContent(named, '', withCardId(EMPTY_CARD_LINE, id)) })
+  await api.createFile({ path, content: cardFileContent(named, '', line(withCardId(EMPTY_CARD_LINE, id))) })
   fresh.add(path)
   return path
 }

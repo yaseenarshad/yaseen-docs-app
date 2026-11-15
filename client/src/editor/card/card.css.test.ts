@@ -43,9 +43,23 @@ it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word an
   expect(underline[0].body).toMatch(/text-decoration:\s*underline/)
   expect(underline[0].body).toMatch(/text-decoration-color:\s*var\(--accent\)/)
   // It beats the highlight rule it replaces.
-  expect(beats(specificity(underline[0].selector), specificity('.card .card__hidden'))).toBe(true)
+  expect(beats(specificity(underline[0].selector.split(',')[0]!.trim()), specificity('.card .card__hidden'))).toBe(true)
   // Underline leaves the blank as it is (Box, YAZ-5053, is the one look that draws the blank too).
   expect(rules(cardCss, '.card__blank').every((r) => !r.selector.includes("data-shown-hidden-words='underline'"))).toBe(true)
+})
+
+it('YAZ-5378 round 2: while ⌘F has a query, a shown hidden word in Highlight takes the Underline look — the SAME rule, in the page and in Edit card; Box and Underline do not change', () => {
+  for (const word of ['.card__hidden', '.card__cloze']) {
+    const underline = rules(cardCss, `[data-shown-hidden-words='underline'] .card ${word}`)
+    expect(underline, word).toHaveLength(1)
+    const selectors = underline[0].selector.split(/,(?![^(]*\))/).map((s) => s.trim())
+    // One rule, two selectors: the setting's Underline, and Highlight in a view find is searching (`data-find-query`).
+    expect(selectors).toEqual([`[data-shown-hidden-words='underline'] .card ${word}`, `[data-shown-hidden-words='highlight'] [data-find-query] .card ${word}`])
+    for (const selector of selectors) expect(beats(specificity(selector), specificity(`.card ${word}`)), selector).toBe(true)
+    // No other rule reads the find attribute: Box keeps its look.
+    expect(rules(cardCss, 'data-find-query').filter((r) => r.selector.includes(word))).toEqual(underline)
+  }
+  expect(rules(cardCss, 'data-find-query').every((r) => !r.selector.includes("'box'"))).toBe(true)
 })
 
 it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same horizontal padding in both looks — and the word in a blank is invisible and not selectable', () => {
@@ -273,12 +287,12 @@ it('YAZ-5387: the title band reads Card title size over the card text, and its t
   expect(beats(specificity(title.selector), specificity(h1.selector))).toBe(true)
   // No "H1" tag after the title (headingLevelTag.css), however the page is set.
   expect(rules(cardCss, '.card-band.card-band.card-band .page-title__text::after')[0]?.body).toMatch(/content:\s*none/)
-  // The band: a step of the card's text. The card: Custom's px, else its parent's size.
-  expect(rules(cardCss, '.card-band').find((r) => r.selector === '.card-band')?.body).toMatch(/font-size:\s*calc\(1em \* var\(--card-title-scale, 1\.125\)\)/)
+  // The band: Card title size's Custom px, else Default, 1.125× the card's text. The card: Custom's px, else its parent's size.
+  expect(rules(cardCss, '.card-band').find((r) => r.selector === '.card-band')?.body).toMatch(/font-size:\s*var\(--card-title-size, calc\(1em \* 1\.125\)\)/)
   expect(rules(cardCss, '.card').find((r) => r.selector === '.card')?.body).toMatch(/font-size:\s*var\(--card-text-size, 1em\)/)
   // The Inbox and Preview: the card's text, and the band beside it (not inside it) from the same two variables.
   const screens = read('../../review/cardScreens.css')
   expect(rules(screens, '.card.card-inbox__card')[0]?.body).toMatch(/font-size:\s*var\(--card-text-size, 1\.05em\)/)
-  expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*calc\(var\(--card-text-size, 1\.05em\) \* var\(--card-title-scale, 1\.125\)\)/)
+  expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*var\(--card-title-size, calc\(var\(--card-text-size, 1\.05em\) \* 1\.125\)\)/)
   expect(rules(screens, '.card-inbox__card').filter((r) => r.selector === '.card-inbox__card').some((r) => /font-size/.test(r.body))).toBe(false)
 })

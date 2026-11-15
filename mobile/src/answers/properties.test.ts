@@ -52,8 +52,9 @@ describe('applyOps keeps every card-line part byte for byte: title, properties, 
     const line = raw.replace(/^GEO-197/, 'NC-1')
     const page = pageWith(line)
     const before = pageCards(page)[0].line
-    // The line reads back as it is written: the test starts from bytes the parser keeps.
-    expect(lineOf(page)).toBe(`<!-- card: ${line} -->`)
+    // The line reads back as it is written: the test starts from bytes the parser keeps. A raw comma in quotes is the
+    // exception: the shared writer encodes it (`&#44;`, YAZ-5393), and the phone's splice keeps it (YAZ-5409).
+    if (!/"[^"]*,[^"]*"/.test(line)) expect(lineOf(page)).toBe(`<!-- card: ${line} -->`)
     for (const [name, ops] of PAIRS) {
       if (isNoop(before, ops[0])) continue
       expect(applyOps(page, ops).content, name).toBe(page)

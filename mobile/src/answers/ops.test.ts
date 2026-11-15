@@ -183,3 +183,15 @@ describe('opsBetween: a change of one card line as actions (the review host\'s â
     expect(() => opsBetween('NC-2', line('<!-- card: NC-2 -->'), line('<!-- card: NC-2, notitle -->'))).toThrow(/cannot send/)
   })
 })
+
+describe('YAZ-5409: `next` with a place', () => {
+  const pg = (body: string) => pageText('Page', 'NC-1', ['NC-2']).replace('<!-- card: NC-2 -->', `<!-- card: ${body} -->`)
+  it('goes back at its place; with no place (a list stored before YAZ-5409) it goes to the writer\'s place', () => {
+    expect(applyOps(pg('NC-2, title "x", tags "a"'), [{ kind: 'next', id: 'NC-2', on: true, at: 2 }]).content).toBe(pg('NC-2, title "x", next, tags "a"'))
+    expect(applyOps(pg('NC-2, title "x", tags "a"'), [{ kind: 'next', id: 'NC-2', on: true }]).content).toBe(pg('NC-2, title "x", tags "a", next'))
+  })
+  it('is idempotent: a line that holds `next` already changes nothing, wherever it is', () => {
+    const before = pg('NC-2, next, title "x", tags "a"')
+    expect(applyOps(before, [{ kind: 'next', id: 'NC-2', on: true, at: 3 }]).content).toBe(before)
+  })
+})

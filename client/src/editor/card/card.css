@@ -282,7 +282,8 @@
   padding: 0 2px;
   background: var(--mark-bg);
 }
-[data-shown-hidden-words='underline'] .card .card__cloze {
+[data-shown-hidden-words='underline'] .card .card__cloze,
+[data-shown-hidden-words='highlight'] [data-find-query] .card .card__cloze {
   border-radius: 0;
   background: none;
   text-decoration: underline;
@@ -609,8 +610,11 @@
   background: var(--mark-bg);
 }
 /* Settings › Review › Shown hidden words: Underline (YAZ-5005, app-wide, on `.app`): no highlight, a line under the
-   word in the accent colour, light and dark. The blanks (words not shown yet) do not change. */
-[data-shown-hidden-words='underline'] .card .card__hidden {
+   word in the accent colour, light and dark. The blanks (words not shown yet) do not change.
+   Highlight while ⌘F has a query (YAZ-5378 round 2, `data-find-query` on the searched view, FindBar): the same look,
+   so a hidden word's yellow is never taken for a find match. Box and Underline do not change. */
+[data-shown-hidden-words='underline'] .card .card__hidden,
+[data-shown-hidden-words='highlight'] [data-find-query] .card .card__hidden {
   border-radius: 0;
   background: none;
   text-decoration: underline;
@@ -694,9 +698,9 @@
    darker than the bar), the title bold, a line under it. A long title WRAPS: never cut off, never wider than the card.
    Only Edit card has the small "TITLE" label and the field. The title is the page title's own component (`PageTitle`):
    a click renames it. While Edit card is open, its band (in the editor) holds the title, so the card's own band hides. */
-/* Card look › Card title size (YAZ-5387, Yaseen: "the title is massive"): a step of the card's text
-   (`--card-title-scale`, `review/cardText.ts`): Small 1×, Medium 1.125× (the default), Large 1.375×. The band sits in
-   the card, so 1em is the card's text; the Inbox's band sits beside its card and says so itself (`cardScreens.css`). */
+/* Card look › Card title size (YAZ-5387 round 2, Yaseen: "default or custom"): Custom's px (`--card-title-size`,
+   `review/cardText.ts`), else Default, 1.125× the card's text (`CARD_TITLE_SCALE`). The band sits in the card, so 1em is
+   the card's text; the Inbox's band sits beside its card and says so itself (`cardScreens.css`). */
 .card-band {
   display: block;
   box-sizing: border-box;
@@ -704,7 +708,7 @@
   border-bottom: 1px solid var(--border);
   background: var(--card-title-band);
   color: var(--fg);
-  font-size: calc(1em * var(--card-title-scale, 1.125));
+  font-size: var(--card-title-size, calc(1em * 1.125));
   font-weight: 700;
   line-height: 1.35;
   overflow-wrap: anywhere;

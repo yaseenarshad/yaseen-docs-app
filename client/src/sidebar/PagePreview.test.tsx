@@ -13,6 +13,7 @@ import { createWikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import PagePreview, { PAGE_PREVIEW_CHARS } from './PagePreview'
 import { IconsContext } from './FileIcon'
 import { NO_ROW_ICONS } from './rowIcons'
+import { placeOf } from '../test-placeName'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -104,6 +105,7 @@ describe('PagePreview', () => {
     expect(panel.classList.contains('board-preview')).toBe(true)
     expect(panel.querySelector('.board-preview__name')?.textContent).toBe('Plan')
     expect(panel.querySelector('.board-preview__folder')?.textContent).toBe('pages')
+    expect(placeOf(panel.querySelector('.board-preview__folder'))).toEqual({ kind: 'folder', icon: 'folder', title: 'Folder: pages' })
     expect(panel.style.getPropertyValue('--text-size')).toBe('18px')
     expect(readFile).toHaveBeenCalledExactlyOnceWith('/v/pages/Plan.md')
     expect(crepes).toHaveLength(1)

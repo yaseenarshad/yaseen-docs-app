@@ -11,6 +11,7 @@ import { allPropertyKeys } from './view/properties'
 import { exprToRule, inferType, propertyValues, ruleToExpr } from './view/filterRows'
 import { columnTyping } from './editorType'
 import { setViewOrder } from './view/columnOrder'
+import { cardLensOn, throughCardLens } from './cardView'
 
 /**
  * YAZ-5319: a table that lists cards. One row per card under the folder (a card file's card, each card with an ID in
@@ -93,13 +94,16 @@ describe('YAZ-5319: card rows', () => {
 
   it('hide and show write the view\'s own card columns, so the pages\' columns come back as they were; a page\'s view shows no card column', () => {
     const def: ViewSet = { views: [{ ...CARDS, order: ['file.name', 'note.status'] }] }
-    setViewOrder(def, 0, ['file.name', 'card.status'])
-    expect(def.views[0]).toMatchObject({ order: ['file.name', 'note.status'], cardOrder: ['file.name', 'card.status'] })
-    expect(propertyKeys(def, def.views[0], [])).toEqual(['file.name', 'card.status'])
+    // Through the card lens (`cardView.ts`), as `ViewsPane` writes a view that lists cards.
+    throughCardLens(0, (d) => setViewOrder(d, 0, ['file.name', 'card.status']))(def)
+    expect(def.views[0]).toMatchObject({ order: ['file.name', 'note.status'], cardView: { order: ['file.name', 'card.status'] } })
+    const seen = cardLensOn(def, 0)
+    expect(propertyKeys(seen, seen.views[0], [])).toEqual(['file.name', 'card.status'])
     const pages = { ...def.views[0], rows: undefined }
     expect(propertyKeys(def, pages, PAGES)).toEqual(['file.name', 'note.status'])
-    // A page's column in the card columns never shows there.
-    expect(propertyKeys(def, { ...CARDS, cardOrder: ['file.name', 'note.status', 'card.id'] }, [])).toEqual(['file.name', 'card.id'])
+    // A page's column in the card columns never shows there; a YAZ-5319 `cardOrder` reads as the cards' order.
+    const legacy = cardLensOn({ views: [{ ...CARDS, cardOrder: ['file.name', 'note.status', 'card.id'] }] }, 0)
+    expect(propertyKeys(legacy, legacy.views[0], [])).toEqual(['file.name', 'card.id'])
   })
 
   it('YAZ-5385: a card`s own properties are its row`s: a column each, after the card columns, that filters and sorts; the page`s never', () => {
@@ -116,7 +120,7 @@ describe('YAZ-5319: card rows', () => {
     // By default: the name, the card columns, then each card property (no "Page tags": the page's own are not a card's).
     expect(propertyKeys(DEF, CARDS, rows)).toEqual(['file.name', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.level', 'note.tags'])
     // A view with its own card order keeps a card property it holds, and the menus offer the rest.
-    const own: ViewDef = { ...CARDS, cardOrder: ['file.name', 'note.level'] }
+    const own: ViewDef = { ...CARDS, order: ['file.name', 'note.level'] }
     expect(propertyKeys({ views: [own] }, own, rows)).toEqual(['file.name', 'note.level'])
     expect(allPropertyKeys({ views: [own] }, own, rows)).toEqual(['file.name', 'note.level', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.tags', 'file.folder'])
     // Filter and sort as a page's column.
@@ -134,9 +138,10 @@ describe('YAZ-5319: card rows', () => {
     expect(() => cardLineChange([{ key: 'next', value: 'x' }])(line)).toThrow()
   })
 
-  it('offers the card columns, the Folder and the formulas; no page property (YAZ-5349 scopes card properties)', () => {
-    const keys = allPropertyKeys({ views: [CARDS], formulas: { x: '1' } }, CARDS, cardRowRecords(PAGES), { status: { kind: 'text' } })
-    expect(keys).toEqual(['file.name', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'file.folder', 'formula.x'])
+  it('offers the card columns, the cards\' declared columns, the Folder and the formulas; no page property (YAZ-5349 scopes card properties)', () => {
+    // `columns` is the Cards table's: the card columns' types through the card lens, never the page's.
+    const keys = allPropertyKeys({ views: [CARDS], formulas: { x: '1' } }, CARDS, cardRowRecords(PAGES), { level: { kind: 'text' } })
+    expect(keys).toEqual(['file.name', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.level', 'file.folder', 'formula.x'])
   })
 
   it('only a Table lists cards this round; the setting is on the view for a Board or a Calendar later', () => {

@@ -1603,17 +1603,41 @@ describe('SettingsDialog: the Review section saves through the vault (YAZ-4967, 
     expect(back.onChange).toHaveBeenLastCalledWith({ ...custom, cardTextSize: 16 })
   })
 
-  it('YAZ-5387: Card title size is Small · Medium (the default) · Large; a value a main process refused (absent) shows Medium, never the refused pick', () => {
+  it('YAZ-5387 round 2: Card title size is Default · Custom px, 12–40; Custom starts at Default\'s px for the card text, Reset goes back to it; a refused value shows Default', () => {
     const { el, onChange } = mountOn('Cards', DEFAULT_SETTINGS, undefined, S)
     expect(row(el, 'cardTitleSize')?.querySelector('.setting__label')?.textContent).toBe('Card title size')
-    expect(rowButtons(el, 'cardTitleSize').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Small', 'false'], ['Medium', 'true'], ['Large', 'false']])
-    act(() => rowButtons(el, 'cardTitleSize')[2].click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, cardTitleSize: 'large' })
+    expect(rowButtons(el, 'cardTitleSize').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Default', 'true'], ['Custom', 'false']])
+    act(() => rowButtons(el, 'cardTitleSize')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, cardTitleSize: 18 })
+    unmount()
+    // Custom from a Custom card text of 20 px starts at 23 px (20 × 1.125, whole).
+    const bigText = mountOn('Cards', { ...DEFAULT_SETTINGS, cardTextSize: 20 }, undefined, S)
+    act(() => rowButtons(bigText.el, 'cardTitleSize')[1].click())
+    expect(bigText.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, cardTextSize: 20, cardTitleSize: 23 })
+    unmount()
+    const custom = { ...DEFAULT_SETTINGS, cardTitleSize: 30 }
+    const back = mountOn('Cards', custom, undefined, S)
+    expect(rowButtons(back.el, 'cardTitleSize').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', null])
+    const px = row(back.el, 'cardTitleSize')!.querySelector<HTMLInputElement>('input[aria-label="Card title size in px"]')!
+    expect(px.value).toBe('30')
+    type(px, '50')
+    pressEnter(px)
+    expect(back.onChange).toHaveBeenLastCalledWith({ ...custom, cardTitleSize: 40 })
+    type(px, '8')
+    blur(px)
+    expect(back.onChange).toHaveBeenLastCalledWith({ ...custom, cardTitleSize: 12 })
+    act(() => rowButtons(back.el, 'cardTitleSize').find((b) => b.textContent === 'Reset')!.click())
+    expect(back.onChange).toHaveBeenLastCalledWith({ ...custom, cardTitleSize: 18 })
+    act(() => rowButtons(back.el, 'cardTitleSize')[0].click())
+    expect(back.onChange).toHaveBeenLastCalledWith({ ...custom, cardTitleSize: null })
     unmount()
     const { cardTitleSize: _t, cardTextSize: _s, ...old } = DEFAULT_SETTINGS
     const stale = mountOn('Cards', old as SettingsState, undefined, S)
-    expect(rowButtons(stale.el, 'cardTitleSize').map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false'])
+    expect(rowButtons(stale.el, 'cardTitleSize').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
     expect(rowButtons(stale.el, 'cardTextSize').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+    unmount()
+    const round1 = mountOn('Cards', { ...DEFAULT_SETTINGS, cardTitleSize: 'large' as never }, undefined, S)
+    expect(rowButtons(round1.el, 'cardTitleSize').map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
   })
 
   it('YAZ-5144 round 2: Custom shows its px, typed and kept on Enter, held to 400–1600; Reset goes back to 640; Same as pages goes back', () => {

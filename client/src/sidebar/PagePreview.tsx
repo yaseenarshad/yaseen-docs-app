@@ -14,7 +14,8 @@ import { useContext, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import { ReadOnlyPage } from '../editor/ReadOnlyPage'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
-import { boardFolder } from '../lib/paths'
+import { boardFolder, dirname } from '../lib/paths'
+import { PlaceName } from './PlaceName'
 import { IconsContext } from './FileIcon'
 import { portalTarget, usePlacement, type PreviewAnchor } from './previewPlacement'
 import './boardPreview.css'
@@ -49,7 +50,7 @@ export default function PagePreview({ root, node, name, hint, wikilinks, textVar
       <div className="board-preview__header" role="status">
         {card && <span className="card-file-icon" aria-hidden />}
         <span className="board-preview__name">{name}</span>
-        <span className="board-preview__folder">{boardFolder(root, node.path)}</span>
+        <PlaceName className="board-preview__folder" path={dirname(node.path)} kind="folder" label={boardFolder(root, node.path)} />
       </div>
       {hint !== undefined && <div className="board-preview__hint">{hint}</div>}
       <ReadOnlyPage className="page-preview__body" path={node.path} wikilinks={wikilinks} maxChars={PAGE_PREVIEW_CHARS} unreadable="Preview unavailable" />

@@ -198,17 +198,26 @@ describe('one review logic (decision 3): the Mac host and the phone host give th
     const [macFiles, phoneFiles] = [await mac.files(), await phone.files()]
     phone.stop()
     expect(phoneSeen).toEqual(macSeen)
-    expect(phoneLines).toEqual(macLines)
-    expect(phoneFiles).toEqual(macFiles)
+    // YAZ-5409: the phone changes only its own parts. A part that an older build or a hand wrote with a raw comma keeps
+    // its bytes on the phone (its splice); the Mac's write encodes it (YAZ-5393). Every other byte is the same.
+    const RAW: [string, string][] = [
+      ['source "Atlas&#44; chapter 3"', 'source "Atlas, chapter 3"'],
+      ['title "a \\> b&#44; by hand"', 'title "a > b, by hand"'],
+    ]
+    const asPhone = (texts: Record<string, string>) => Object.fromEntries(Object.entries(texts).map(([k, v]) => [k, RAW.reduce((t, [mac, raw]) => t.replace(mac, raw), v)]))
+    expect(phoneLines).toEqual(asPhone(macLines))
+    expect(phoneFiles).toEqual(asPhone(macFiles))
+    expect(phoneLines).not.toEqual(macLines)
     // The titles showed, and each title part is where it was, with its bytes, on both.
     expect(macSeen.join('\n')).toContain('PA-2 "Hola, "mundo" --> \\ ñandú 🙂" {"source":"Atlas, chapter 3","say":"\\"hi\\""}')
     expect(macSeen.join('\n')).toContain('"Speed of light"')
     for (const [id, part] of [
       ['PA-1', 'title "Viejo", tags "europe" "capitals", level "A2"'],
-      ['PA-2', 'title "Hola&#44; \\"mundo\\" --\\> \\\\ ñandú 🙂", source "Atlas, chapter 3", say "\\"hi\\""'],
+      // A raw comma in a value: the Mac's first write encodes it, as a title's (YAZ-5393, the one escape).
+      ['PA-2', 'title "Hola&#44; \\"mundo\\" --\\> \\\\ ñandú 🙂", source "Atlas&#44; chapter 3", say "\\"hi\\""'],
       ['PA-3', `tags ["x"], none [], ${TWENTY}`],
       ['PA-4', 'title "Speed of light", note "x&#44;y", ratio 2.50'],
-      // An older build's raw comma: the first write encodes it, on both hosts (YAZ-5393); the hand-written property keeps its bytes.
+      // An older build's raw comma: the Mac's first write encodes it (YAZ-5393); the hand-written property keeps its bytes.
       ['PA-5', 'title "a \\> b&#44; by hand", tags  "a"   "b"'],
       ['PA-6', 'title ""'],
     ])

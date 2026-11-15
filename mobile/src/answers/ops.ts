@@ -2,11 +2,11 @@ import {
   cardIdOf,
   cardReviewKey,
   cardReviewsOf,
+  formatCardLine,
   isCardFix,
   isCardNext,
   isCardOff,
   pageCards,
-  rewritePageCards,
   withCardFix,
   withCardNext,
   withCardOff,
@@ -16,6 +16,9 @@ import {
   type CardRating,
   type CardReview,
 } from '@shared/cardLine'
+import { splitFrontmatter } from '@shared/frontmatter'
+import { inLineEnds } from '@shared/lineEnds'
+import { spliceCardLine } from './splice'
 
 /**
  * One thing the person did on the phone, kept until GitHub has it (decision 2 of YAZ-5055). It is applied by card ID to
@@ -35,7 +38,12 @@ export type CardOp =
    */
   | { kind: 'unreview'; id: string; at: string; rating: CardRating; nth?: number }
   | { kind: 'off'; id: string; on: boolean } // archive, unarchive
-  | { kind: 'next'; id: string; on: boolean } // Up next
+  /**
+   * Up next. `at` (YAZ-5409): the part place to put `next` back at, from `cardNextIndex` before the answer that took it
+   * off; the Undo of a SENT answer gives it, as the Mac's Undo does. So `next` goes back where it was, in any order of
+   * the line. Absent (Up next from the ⋯ menu, or a list stored before YAZ-5409): the writer's place.
+   */
+  | { kind: 'next'; id: string; on: boolean; at?: number }
   | { kind: 'fix'; id: string; on: boolean } // Fix later (round 10, YAZ-5097)
 
 /**
@@ -64,7 +72,7 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
     case 'off':
       return withCardOff(line, op.on)
     case 'next':
-      return withCardNext(line, op.on)
+      return withCardNext(line, op.on, op.on ? op.at : undefined)
     case 'fix':
       return withCardFix(line, op.on)
   }
@@ -73,7 +81,7 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
 /**
  * Pure: `ops` applied, in their order, to a page's text (a page, or a card file: its properties stay byte for byte).
  * A card is found as `changeCard` finds it: the first card of the body whose line holds the ID (`pageCards`); the page
- * is read ONE time and written ONE time (`rewritePageCards`, which keeps the page's line end). An action whose card
+ * is read ONE time and written ONE time (as `rewritePageCards`: the page's line end kept; each line spliced, YAZ-5409). An action whose card
  * this text does not hold (deleted, moved away, or only embedded here with `![[ID]]`) comes back in `lost`; it is
  * never dropped silently. No change at all gives back the same string.
  */
@@ -97,8 +105,21 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
   }
   const changed = [...lines].filter(([n, line]) => line !== cards[n].line)
   if (changed.length === 0) return { content, lost }
-  const next = new Map(changed)
-  return { content: rewritePageCards(content, (_card, n) => next.get(n)), lost }
+  // YAZ-5409: each changed line is SPLICED (`spliceCardLine`): the parts the actions kept keep their bytes and places.
+  // As `rewritePageCards` does otherwise: one read, one write, the page's line end kept, back to front.
+  const out = inLineEnds(content, (page) => {
+    const { frontmatter, body } = splitFrontmatter(page)
+    const rows = body.split('\n')
+    for (const [n, line] of changed.sort((a, b) => b[0] - a[0])) {
+      const card = cards[n]
+      const written = card.lineAt === null ? formatCardLine(line) : spliceCardLine(rows[card.lineAt], card.line, line)
+      const row = written === null ? [] : [card.lineAt === null ? card.indent + written : written]
+      if (card.lineAt !== null) rows.splice(card.lineAt, 1, ...row)
+      else rows.splice(card.close + 1, 0, ...row)
+    }
+    return frontmatter + rows.join('\n')
+  })
+  return { content: out, lost }
 }
 
 /** A line change the phone cannot send as actions (stage one sends answers and marks only). */
