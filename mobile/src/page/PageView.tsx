@@ -14,6 +14,7 @@ import { LinkedFrom } from './LinkedFrom'
 import { openLink, type LinkDoor } from './openLink'
 import { resolveSourceOf } from './pageLook'
 import { useVaultLook } from './vaultLook'
+import { usePageTools } from './PageTools'
 import { vaultName } from '../screens/Frame'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
@@ -57,6 +58,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const door: LinkDoor = { go: app.go, click: look?.click ?? 'open' }
   const doorRef = useRef(door)
   doorRef.current = door
+  // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk).
+  const tools = usePageTools(host)
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
 
@@ -178,6 +181,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       tabs
       reader
       kind="page"
+      tools={tools.button}
+      notice={tools.bar}
       chip={pageId !== null && <PageIdChip id={pageId} path={path} />}
       foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
     >
@@ -192,6 +197,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
         <ScrollJump scroller={host} closest=".screen" />
+        {tools.sheet}
         {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
       </article>
     </Frame>

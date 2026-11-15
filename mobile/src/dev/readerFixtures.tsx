@@ -17,7 +17,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * two pages ("1 / 2": the folder's pages only). YAZ-5467: `page-jump` a long page just scrolled, the ⤒ ⤓ pill at the right edge. The clipboard is a fake: nothing reaches the
  * phone's real one.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -100,7 +100,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { fill: 'green', shape: 'square' } }),
                 '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 }, h2: { underline: true } }),
               }
-          : name === 'page-jump'
+          : name === 'page-jump' || name === 'page-headings'
             ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
           : name === 'page-folder'
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
@@ -165,6 +165,29 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await until(() => document.querySelector('.scroll-jump[data-on]') !== null)
       break
     }
+    case 'page-tools':
+    case 'page-find':
+      await open(/^Spanish words/, '.reader__body h1')
+      press('Page tools')
+      await wait(50)
+      if (name === 'page-find') {
+        press(/Find in page/)
+        await until(() => document.querySelector('.find-line__input') !== null)
+        const box = document.querySelector<HTMLInputElement>('.find-line__input')!
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box, 'spa')
+        box.dispatchEvent(new Event('input', { bubbles: true }))
+        await wait(200)
+        press('Next match')
+      }
+      break
+    case 'page-headings':
+      await typed('long notes')
+      await open(/^Long notes/, '.reader__body h2')
+      press('Page tools')
+      await wait(50)
+      press(/Headings/)
+      await until(() => document.querySelector('.headings-sheet__row') !== null)
+      break
     case 'page-pills':
       await open(/^Spanish words/, '.reader__body h1')
       break

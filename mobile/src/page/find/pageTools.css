@@ -1,0 +1,165 @@
+/* The page's tools (YAZ-5456): the ⋯ menu, the find line under the top bar, the headings sheet. The paint of a match is
+   the Mac's (`find.css`): a see-through yellow, the current one solid. */
+:root {
+  --find-match-bg: rgba(255, 213, 0, 0.35);
+  --find-match-active-bg: #ffd400;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --find-match-bg: rgba(255, 213, 0, 0.22);
+    --find-match-active-bg: #e6bf00;
+  }
+}
+::highlight(find-match) {
+  background-color: var(--find-match-bg);
+}
+::highlight(find-match-active) {
+  background-color: var(--find-match-active-bg);
+  color: #1f1f1f;
+}
+
+.page-tools {
+  position: relative;
+  flex: none;
+}
+.page-tools__btn {
+  font-size: 20px;
+}
+.page-tools__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+.page-tools__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg);
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+.page-tools__item:active {
+  background: var(--bg-side);
+}
+
+.find-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.find-line--wait {
+  min-height: calc(var(--tap) + 12px);
+}
+.find-line__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--control-border, var(--border));
+  border-radius: 10px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font-size: 16px; /* 16 px: Safari does not zoom the page on focus */
+}
+.find-line__count {
+  flex: none;
+  min-width: 4.5em;
+  padding: 0 4px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.find-line__btn {
+  flex: none;
+  width: var(--tap);
+  height: var(--tap);
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  font-size: 18px;
+  cursor: pointer;
+}
+.find-line__btn:disabled {
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+
+.headings-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.28);
+}
+.headings-sheet__panel {
+  width: 100%;
+  max-height: 70%;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: 16px 16px 0 0;
+  background: var(--bg);
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.18);
+}
+.headings-sheet__head {
+  display: flex;
+  align-items: center;
+  padding: 6px 6px 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.headings-sheet__title {
+  flex: 1;
+  margin: 0;
+  font-size: 17px;
+}
+.headings-sheet__list {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.headings-sheet__row {
+  display: block;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 8px 16px 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--fg);
+  font-size: 15px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.headings-sheet__row[data-level='1'] {
+  font-weight: 600;
+}
+.headings-sheet__row[aria-current='location'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.headings-sheet__none {
+  padding: 16px;
+}
