@@ -20,7 +20,14 @@ import { TASK_REFUSED_WORDS, taskLines, type TaskTick } from '../comments/taskWr
  * so the line it writes is the box's own, never a line of code or HTML that reads the same. A card's box (a card block in the page, an embedded card, Review) is the Mac's
  * card look, a glyph that the Mac does not tick either: it has no `data-task`, so it is never a control. The tap area
  * is 44 px around the box (`reader.css`); the box's look does not change.
+ *
+ * THE HOLD (YAZ-5522 N11): a tick waits `TICK_HOLD_MS` before its send, and the ticks tapped in that time join it (one
+ * commit, `sender.ts`). A tap that undoes a tick not sent yet (tick, then untick, of the same box) takes that tick out
+ * of the list: nothing is written. The box shows the tap's state at once either way. The hold never loses a tick: it is
+ * in IndexedDB from the tap, and it goes at once when the page closes (`flushTicks`), the app goes to the background or
+ * is closed (`followAnswers`), or a sync begins (`sender.ts`).
  */
+export const TICK_HOLD_MS = 3000
 
 const BOX = '.page-task[data-task][data-task-line]'
 
@@ -150,7 +157,10 @@ export function useTaskTicks(
       const tick = tickOfBox(t, box, box.dataset.checked !== 'true')
       if (tick === null) return tell(TASK_REFUSED_WORDS.changed)
       showBox(box, tick.checked)
-      void p.add({ path: at, body: '', task: tick }).catch(() => {
+      // YAZ-5522 N11: the opposite tick of this box, not tried yet: out of the list, and nothing is written.
+      const undone = p.waiting(at).find((c) => c.task !== undefined && c.refused === undefined && c.tried !== true && c.task.core === tick.core && c.task.nth === tick.nth && c.task.checked !== tick.checked)
+      const add = () => p.add({ path: at, body: '', task: tick, holdMs: TICK_HOLD_MS })
+      void (undone === undefined ? add() : p.undo(undone.id).then((gone) => (gone ? undefined : add()))).catch(() => {
         showBox(box, !tick.checked)
         tell('The phone could not save the tick. Nothing was changed.')
       })
@@ -162,6 +172,9 @@ export function useTaskTicks(
       el.removeEventListener('keydown', tap, true)
     }
   }, [host])
+
+  // YAZ-5522 N11: the page closes (or another page opens here): its held ticks go now.
+  useEffect(() => () => void latest.current.port?.flushTicks?.().catch(() => {}), [path])
 
   return { paint }
 }

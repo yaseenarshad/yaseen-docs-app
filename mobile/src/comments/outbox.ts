@@ -65,6 +65,8 @@ export interface CommentBox {
   discard(id: string): Promise<boolean>
   /** Just before a commit: resolves with the ids it marked (one that Undo took meanwhile is not there). */
   markTried(ids: readonly string[]): Promise<string[]>
+  /** YAZ-5522 N11: held ticks of `ids` not tried yet are due at `at` (the app goes to the background, a sync, the page closes). */
+  hurry(ids: readonly string[], at: number): Promise<void>
   /** The commit a try made for `ids`, before the branch moves to it (`commit` above). */
   noteCommit(ids: readonly string[], commit: { sha: string; parent: string }): Promise<void>
   /** After a send: `done` leave (GitHub holds them); `refused` stay, marked, never sent again. */
@@ -123,6 +125,13 @@ export async function openCommentBox(store: VaultStore, vault: string): Promise<
         const marked = b.waiting.filter((w) => want.has(w.id)).map((w) => w.id)
         return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.id) ? { ...w, tried: true as const } : w)) }, out: marked }
       }, [] as string[]),
+    hurry: (ids, at) =>
+      change((b) => {
+        const want = new Set(ids)
+        const held = (w: WaitingComment) => want.has(w.id) && w.tried !== true && w.notBefore > at
+        if (!b.waiting.some(held)) return null
+        return { next: { ...b, waiting: b.waiting.map((w) => (held(w) ? { ...w, notBefore: at } : w)) }, out: undefined }
+      }, undefined),
     noteCommit: (ids, commit) =>
       change((b) => {
         const want = new Set(ids)

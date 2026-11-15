@@ -14,6 +14,8 @@ export interface CommentsPort {
   add(input: NewCommentInput): Promise<WaitingComment>
   undo(id: string): Promise<boolean>
   discard(id: string): Promise<boolean>
+  /** YAZ-5522 N11: the held ticks go now (the page closes). Loads nothing: with no sender loaded no tick waits. */
+  flushTicks?(): Promise<void>
   /** The list changed (a comment went in, out, or was refused), or a send began or ended. */
   subscribe(listener: () => void): () => void
 }
@@ -84,6 +86,9 @@ export function withComments(answers: Answers, options: AnswersOptions, load: ()
     add: async (input) => (await ensure()).add(input),
     undo: async (id) => (await ensure()).undo(id),
     discard: async (id) => (await ensure()).discard(id),
+    flushTicks: async () => {
+      if (loading !== null) await (await loading).flushTicks()
+    },
     subscribe(listener) {
       portListeners.add(listener)
       return () => void portListeners.delete(listener)

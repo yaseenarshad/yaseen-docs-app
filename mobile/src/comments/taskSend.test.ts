@@ -205,3 +205,87 @@ describe('a tick from the phone reaches the page', () => {
     expect(await t.remote(PAGE)).toContain('- [x] Buy seeds')
   })
 })
+
+describe('YAZ-5522 N11: the hold: ticks wait about 3 s and go together; none is ever lost', () => {
+  const HOLD = 3000
+  const tick = (line: string, checked = true) => ({ path: PAGE, body: '', task: tickFor(TASKS_PAGE, line, checked), holdMs: HOLD })
+
+  it('ticks_withinHold_oneCommit: three ticks within the hold make ONE commit when the first one\'s hold ends', async () => {
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    await t.port.add(tick('- [ ] Buy seeds'))
+    await t.tick(1000)
+    await t.port.add(tick('* [ ] Call Sam about the fence'))
+    await t.tick(1500)
+    await t.port.add(tick('1. [ ] Sweep the shed'))
+    await t.tick(400)
+    expect(t.patches()).toBe(0)
+    expect(t.answers.state().ticks).toBe(3)
+    await t.tick(200)
+    expect(t.patches()).toBe(1)
+    const page = (await t.remote(PAGE))!
+    expect(page).toContain('- [x] Buy seeds\n')
+    expect(page).toContain('* [x] Call Sam about the fence\n')
+    expect(page).toContain('1. [x] Sweep the shed\n')
+    expect(t.port.waiting()).toEqual([])
+    // A tick after the commit has a hold of its own.
+    await t.port.add(tick('- [ ] Buy seeds', false))
+    await t.tick(2900)
+    expect(t.patches()).toBe(1)
+    await t.tick(200)
+    expect(t.patches()).toBe(2)
+  })
+
+  it('taskSend_tickUntickBeforeSend_makesNoCommit: Undo of the held tick takes it out; nothing is written', async () => {
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    const on = await t.port.add(tick('+ [ ] Water the beans'))
+    await t.tick(1000)
+    expect(await t.port.undo(on.id)).toBe(true)
+    await t.tick(5000)
+    expect(t.patches()).toBe(0)
+    expect(await t.remote(PAGE)).toBe(TASKS_PAGE)
+  })
+
+  it('ticks_flushOnHide: the app goes to the background (or the page is closed): the held ticks go at once', async () => {
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    await t.port.add(tick('- [ ] Buy seeds'))
+    await t.port.add(tick('1. [ ] Sweep the shed'))
+    t.answers.setVisible(false)
+    await t.settle()
+    await t.settle()
+    expect(t.patches()).toBe(1)
+    expect(await t.remote(PAGE)).toContain('- [x] Buy seeds\n')
+    expect(t.port.waiting()).toEqual([])
+  })
+
+  it('ticks_flushBeforeSync: a sync begins (or "Try now"): the held ticks go; the stored list keeps them until GitHub has them', async () => {
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    await t.port.add(tick('- [ ] Buy seeds'))
+    void t.engine.syncNow()
+    await t.settle()
+    await t.settle()
+    expect(t.patches()).toBe(1)
+    expect(await t.remote(PAGE)).toContain('- [x] Buy seeds\n')
+    await t.port.add(tick('1. [ ] Sweep the shed'))
+    await t.answers.sendNow()
+    await t.settle()
+    expect(t.patches()).toBe(2)
+  })
+
+  it('ticks_neverLost: no signal at the flush: the ticks stay in IndexedDB, due, and go when the signal is back', async () => {
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    t.s.github.offline = true
+    await t.port.add(tick('- [ ] Buy seeds'))
+    t.answers.setVisible(false)
+    await t.settle()
+    expect(t.patches()).toBe(0)
+    const stored = await t.s.store.getState<{ waiting: { notBefore: number }[] }>('yaseen/vault@main', 'comments')
+    expect(stored?.waiting).toHaveLength(1)
+    expect(stored!.waiting[0]!.notBefore).toBeLessThanOrEqual(t.clock.now())
+    t.s.github.offline = false
+    t.answers.online()
+    await t.settle()
+    expect(t.patches()).toBe(1)
+    expect(await t.remote(PAGE)).toContain('- [x] Buy seeds\n')
+  })
+})
+

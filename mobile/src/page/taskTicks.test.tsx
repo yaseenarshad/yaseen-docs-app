@@ -12,7 +12,7 @@ import { TASKS_PAGE } from '../dev/taskFixtures'
 import { renderPage, renderPiece, type PageLook } from './pageRender'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { useTaskTicks } from './taskTicks'
+import { TICK_HOLD_MS, useTaskTicks } from './taskTicks'
 
 /**
  * YAZ-5494: the tap on a task's box in a page. The box shows its new state at once (struck through by the reader's
@@ -40,7 +40,7 @@ const PATH = 'home/Weekend jobs.md'
 function fakePort() {
   const list: WaitingComment[] = []
   const listeners = new Set<() => void>()
-  const port: CommentsPort & { list: WaitingComment[]; refuse(id: string): void; settle(id: string): void } = {
+  const port: CommentsPort & { list: WaitingComment[]; refuse(id: string): void; settle(id: string): void; flushTicks: () => Promise<void> } = {
     list,
     ready: async () => {},
     waiting: (path) => list.filter((c) => path === undefined || c.path === path),
@@ -49,7 +49,14 @@ function fakePort() {
       list.push(c)
       return c
     }),
-    undo: async () => false,
+    // As the list's Undo: out unless a send has tried it.
+    undo: vi.fn(async (id: string) => {
+      const at = list.findIndex((c) => c.id === id && c.tried !== true)
+      if (at >= 0) list.splice(at, 1)
+      for (const l of [...listeners]) l()
+      return at >= 0
+    }),
+    flushTicks: vi.fn(async () => {}),
     discard: vi.fn(async (id: string) => {
       const at = list.findIndex((c) => c.id === id)
       if (at >= 0) list.splice(at, 1)
@@ -138,13 +145,39 @@ describe('a tap ticks (YAZ-5494)', () => {
     await tap(seeds)
     expect(seeds.dataset.checked).toBe('true')
     expect(seeds.getAttribute('aria-checked')).toBe('true')
-    expect(port.add).toHaveBeenCalledWith({ path: PATH, body: '', task: { core: '- [ ] Buy seeds', nth: 0, of: 1, checked: true } })
+    expect(port.add).toHaveBeenCalledWith({ path: PATH, body: '', task: { core: '- [ ] Buy seeds', nth: 0, of: 1, checked: true }, holdMs: TICK_HOLD_MS })
     // The tick it names finds the same task in the stored page and changes one byte.
     expect(applyTask(TASKS_PAGE, port.list[0]!.task!)).toMatchObject({ kind: 'ticked' })
-    // Again: unticked, a second entry (applied in order: the page ends as it began).
+    // YAZ-5522 N11: again before the send: the tick leaves the list (nothing will be written); the box shows it at once.
+    await tap(seeds)
+    expect(seeds.dataset.checked).toBe('false')
+    expect(port.list).toEqual([])
+    expect(port.add).toHaveBeenCalledTimes(1)
+  })
+
+  it('tickUntick_withinHold_cancels (YAZ-5522 N11): a tick a send has tried is not undone: the untick is its own entry', async () => {
+    const port = fakePort()
+    const p = await page(TASKS_PAGE, port)
+    const seeds = p.box('Buy seeds')
+    await tap(seeds)
+    port.list[0]!.tried = true
     await tap(seeds)
     expect(seeds.dataset.checked).toBe('false')
     expect(port.list.map((c) => c.task!.checked)).toEqual([true, false])
+    // A third tap undoes the untick (not tried): only the tried tick stays.
+    await tap(seeds)
+    expect(seeds.dataset.checked).toBe('true')
+    expect(port.list.map((c) => c.task!.checked)).toEqual([true])
+  })
+
+  it('ticks_flushOnPageClose (YAZ-5522 N11): the page closes: its held ticks go now', async () => {
+    const port = fakePort()
+    const p = await page(TASKS_PAGE, port)
+    await tap(p.box('Buy seeds'))
+    expect(port.flushTicks).not.toHaveBeenCalled()
+    act(() => root?.unmount())
+    root = null
+    expect(port.flushTicks).toHaveBeenCalledTimes(1)
   })
 
   it('a done task in a quote and a nested [X] untick; an ordered one ticks', async () => {
