@@ -254,3 +254,29 @@ describe('YAZ-5518 S1: Back closes only the top overlay of a page', { timeout: 3
     await waitFor(h, () => onTabs(h!))
   })
 })
+
+describe('YAZ-5518 S7: a double tap opens one sheet', { timeout: 20_000 }, () => {
+  it('doubleTap_opensOneSheet', async () => {
+    h = await open(EXPLORE)
+    await toSearch(h)
+    const row = h.button(/^Trip plan/)!
+    await act(async () => {
+      row.click()
+      await sleep(120)
+      row.click()
+    })
+    await waitFor(h, () => sheets().length >= 1)
+    await act(async () => void (await sleep(50)))
+    expect(sheetStack().length).toBe(1)
+    // A link in the sheet, tapped twice: one more sheet.
+    await waitFor(h, () => [...(sheets().at(-1)?.querySelectorAll<HTMLElement>('a, [data-open]') ?? [])].some((a) => a.textContent?.trim() === 'Spanish words'))
+    const link = [...sheets().at(-1)!.querySelectorAll<HTMLElement>('a, [data-open]')].find((a) => a.textContent?.trim() === 'Spanish words')!
+    await act(async () => {
+      link.click()
+      await sleep(120)
+      link.click()
+    })
+    await act(async () => void (await sleep(50)))
+    expect(sheetStack().length).toBe(2)
+  })
+})

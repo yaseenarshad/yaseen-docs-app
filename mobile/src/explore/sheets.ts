@@ -12,7 +12,8 @@ import type { Route } from '../app/nav'
  * It is a plain store, not React state, so a caller with no React (the reader's `openLink`) can push a sheet.
  *
  * YAZ-5518: each sheet is one overlay of the app's ONE overlay stack (`openOverlay`): one history entry, so Safari's
- * Back in a tab and the app's Back close the top sheet first.
+ * Back in a tab and the app's Back close the top sheet first. A second open of the route already on top (a double tap,
+ * Today tapped again) opens nothing.
  */
 
 /** What a sheet can show: a page, a card (in a page, or a card file), a drawing file (YAZ-5473), or a folder's page (YAZ-5460). */
@@ -71,9 +72,13 @@ export function preloadSheets(): void {
   void loadSheetLayer().catch(() => undefined)
 }
 
-/** Pushes a sheet with `route` on top of the stack. */
+const sameRoute = (a: SheetRoute, b: SheetRoute): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/** Pushes a sheet with `route` on top of the stack; nothing when the top sheet (not one closing) already shows it. */
 export function openSheet(route: SheetRoute): void {
   preloadSheets()
+  const top = [...sheets].reverse().find((s) => !closing.has(s.id))
+  if (top !== undefined && sameRoute(top.route, route)) return
   const id = nextId++
   overlayDone.set(id, openOverlay(() => closeSheet(id)))
   set([...sheets, { id, route, scroll: 0 }].slice(-MAX_SHEETS))
