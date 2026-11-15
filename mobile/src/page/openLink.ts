@@ -5,7 +5,7 @@ import { openFile } from '../explore/openFile'
 /**
  * THE ONE DOOR OF A LINK TAP IN THE READER (YAZ-5455). Every tap that opens a page, a card or a drawing from the reader
  * comes here: a `[[link]]` or a Markdown link in a page, a pill in a card (the page's own cards, an embedded card, the
- * card view), an embed's "Embedded from", a "Linked from" row, a properties link, a link in an Explore sheet.
+ * card view), an embed's "Embedded from", a "Linked mentions" row, a properties link, a link in an Explore sheet.
  *
  * A link is always tapped INSIDE a page, a card or a panel, so it opens with `from: 'inside'` (YAZ-5472 Q4: only a
  * tab screen's first open is always a full page). It hands the route to the app's ONE door, `openFile`: the vault's "Clicking a link"

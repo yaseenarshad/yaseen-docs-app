@@ -6,12 +6,12 @@ import { forgetSearch } from '../search/searchState'
 import type { VaultData } from '../search/vaultData'
 import { phoneRecord } from '../sync/phoneIndex'
 import { mount, newPhone, type Harness } from '../screens/testing'
-import { LINKED_FROM_PAGE, linkedFromCount, moreStep } from './LinkedFrom'
+import { LINKED_MENTIONS_PAGE, linkedMentionsCount, moreStep } from './LinkedMentions'
 
 /**
- * YAZ-5455: links work, and "Linked from". A `[[link]]` (with words, a heading, an ID) and a relative Markdown link open
+ * YAZ-5455: links work, and "Linked mentions". A `[[link]]` (with words, a heading, an ID) and a relative Markdown link open
  * their page, at the heading they name; a card link opens the card; a missing page's link is plain, dim and does
- * nothing; a web link opens Safari; Back returns to the page. At a page's end, "Linked from": the Mac's "Linked
+ * nothing; a web link opens Safari; Back returns to the page. At a page's end, "Linked mentions": the Mac's "Linked
  * mentions", from the phone's index. Made-up vault only (`readerVault.ts`).
  */
 const page = (props: string, body: string) => `---\n${props}---\n\n${body}\n`
@@ -145,20 +145,20 @@ describe('YAZ-5455: links open their page', () => {
   })
 })
 
-describe('YAZ-5455: "Linked from" at the end of a page', () => {
+describe('YAZ-5455: "Linked mentions" at the end of a page', () => {
   it('collapsed with its count; open, each linking page once with its lines, the mention marked; a tap opens it', async () => {
     h = await openLinks()
     await tap(h, 'the trip')
-    await waitFor(h, () => title(h!) === 'Trip plan' && h!.host.querySelector('.linked-from') !== null)
+    await waitFor(h, () => title(h!) === 'Trip plan' && h!.host.querySelector('.linked-mentions') !== null)
     // Trip plan is linked from Links and from Spanish words.
-    const header = h.host.querySelector<HTMLButtonElement>('.linked-from__header')!
-    expect(header.textContent).toBe('Linked from (2)')
+    const header = h.host.querySelector<HTMLButtonElement>('.linked-mentions__header')!
+    expect(header.textContent).toBe('Linked mentions (2)')
     expect(header.getAttribute('aria-expanded')).toBe('false')
-    expect(h.host.querySelector('.linked-from__list')).toBeNull()
+    expect(h.host.querySelector('.linked-mentions__list')).toBeNull()
     await act(async () => header.click())
-    await waitFor(h, () => h!.host.querySelectorAll('.linked-from__line').length === 2)
-    expect([...h.host.querySelectorAll('.linked-from__page')].map((b) => b.textContent)).toEqual(['Links', 'Spanish words'])
-    expect([...h.host.querySelectorAll('.linked-from__match')].map((m) => m.textContent)).toEqual(['the trip', 'Trip plan'])
+    await waitFor(h, () => h!.host.querySelectorAll('.linked-mentions__line').length === 2)
+    expect([...h.host.querySelectorAll('.linked-mentions__page')].map((b) => b.textContent)).toEqual(['Links', 'Spanish words'])
+    expect([...h.host.querySelectorAll('.linked-mentions__match')].map((m) => m.textContent)).toEqual(['the trip', 'Trip plan'])
     await h.click('Links')
     await waitFor(h, () => title(h!) === 'Links')
     await h.click('Back')
@@ -169,12 +169,12 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     h = await openLinks()
     await tap(h, 'Café notes')
     await waitFor(h, () => title(h!) === 'Café notes' && h!.host.querySelector('.reader__body p') !== null)
-    expect(h.host.querySelector('.linked-from__header')?.textContent).toBe('Linked from (1)')
+    expect(h.host.querySelector('.linked-mentions__header')?.textContent).toBe('Linked mentions (1)')
     await h.click('Back')
     await waitFor(h, () => title(h!) === 'Links' && h!.host.querySelector('.reader__body h2') !== null)
     await tap(h, 'the guide')
     await waitFor(h, () => title(h!) === 'Folder guide' && h!.host.querySelector('.reader__body p') !== null)
-    expect(h.host.querySelector('.linked-from')).toBeNull()
+    expect(h.host.querySelector('.linked-mentions')).toBeNull()
   })
 
   it('linkedFrom_drawsFirst20_thenMore: 47 linking pages draw 20, then "Show all 47" (S4; YAZ-5521)', async () => {
@@ -187,11 +187,11 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     await h.click(/^Links, page/)
     await waitFor(h, () => h!.host.querySelector('.reader__body h2') !== null)
     await tap(h, 'the trip')
-    await waitFor(h, () => title(h!) === 'Trip plan' && h!.host.querySelector('.linked-from') !== null)
-    expect(h.host.querySelector('.linked-from__header')?.textContent).toBe('Linked from (47)')
-    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
-    const entries = () => h!.host.querySelectorAll('.linked-from__entry').length
-    const more = () => h!.host.querySelector<HTMLButtonElement>('.linked-from__more')
+    await waitFor(h, () => title(h!) === 'Trip plan' && h!.host.querySelector('.linked-mentions') !== null)
+    expect(h.host.querySelector('.linked-mentions__header')?.textContent).toBe('Linked mentions (47)')
+    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-mentions__header')!.click())
+    const entries = () => h!.host.querySelectorAll('.linked-mentions__entry').length
+    const more = () => h!.host.querySelector<HTMLButtonElement>('.linked-mentions__more')
     expect(entries()).toBe(20)
     // YAZ-5521 (sweep2 nit 1): then all of them in one tap, when 100 or fewer are left.
     expect(more()?.textContent).toBe('Show all 47')
@@ -199,14 +199,14 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     expect(entries()).toBe(47)
     expect(more()).toBeNull()
     // Closed and opened again: the first 20 again.
-    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
-    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
+    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-mentions__header')!.click())
+    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-mentions__header')!.click())
     expect(entries()).toBe(20)
   })
 
   it('linkedFrom_showMore_growsInLargerSteps: 1,301 linking pages: 20, then 100 at a time, then all of what is left (sweep2 nit 1)', () => {
     const steps: string[] = []
-    let shown = LINKED_FROM_PAGE
+    let shown = LINKED_MENTIONS_PAGE
     for (let more = moreStep(shown, 1301); more !== null; more = moreStep(shown, 1301)) {
       steps.push(more.label)
       shown += more.count
@@ -227,12 +227,12 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     const byPath = Object.fromEntries(records.map((r) => [r.path, r]))
     const data: VaultData = { vault: 'v', commit: 'c', byPath, records, folders: [], files: records.map((r) => r.path), letters: ['DEMO'], ids: true, review: {} as VaultData['review'], version: 1 }
     const t0 = performance.now()
-    expect(linkedFromCount(data, 'notes/1/Page 1.md')).toBe(2)
+    expect(linkedMentionsCount(data, 'notes/1/Page 1.md')).toBe(2)
     const first = performance.now() - t0
     const t1 = performance.now()
-    for (let i = 0; i < 100; i++) linkedFromCount(data, `notes/${i % 20}/Page ${i}.md`)
+    for (let i = 0; i < 100; i++) linkedMentionsCount(data, `notes/${i % 20}/Page ${i}.md`)
     const next = (performance.now() - t1) / 100
-    console.log(`[YAZ-5455] Linked from on 1,300 pages: first page ${first.toFixed(1)} ms (resolver + reverse map), each page after ${next.toFixed(3)} ms`)
+    console.log(`[YAZ-5455] Linked mentions on 1,300 pages: first page ${first.toFixed(1)} ms (resolver + reverse map), each page after ${next.toFixed(3)} ms`)
     expect(first).toBeLessThan(400)
     expect(next).toBeLessThan(2)
   })

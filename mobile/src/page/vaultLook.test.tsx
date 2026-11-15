@@ -135,9 +135,9 @@ describe('YAZ-5455: the vault look and the link door', () => {
     expect(opened).toEqual([{ click: 'open', target: { kind: 'page', path: 'Trip plan.md' } }])
     await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Trip plan')
     expect(document.querySelector('.explore-sheet')).toBeNull()
-    // "Linked from" goes through it too.
-    await h.click(/^Linked from/)
-    await waitFor(h, () => h!.host.querySelector('.linked-from__page') !== null)
+    // "Linked mentions" goes through it too.
+    await h.click(/^Linked mentions/)
+    await waitFor(h, () => h!.host.querySelector('.linked-mentions__page') !== null)
     await h.click('Spanish words')
     expect(opened[1]).toEqual({ click: 'open', target: { kind: 'page', path: 'Spanish words.md' } })
   })

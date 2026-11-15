@@ -443,10 +443,10 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       break
     case 'page-linked-from':
       await typed('trip plan')
-      await open(/^Trip plan/, '.linked-from')
-      press(/^Linked from/)
-      await until(() => document.querySelectorAll('.linked-from__line').length >= 2)
-      document.querySelector('.linked-from')?.scrollIntoView({ block: 'start' })
+      await open(/^Trip plan/, '.linked-mentions')
+      press(/^Linked mentions/)
+      await until(() => document.querySelectorAll('.linked-mentions__line').length >= 2)
+      document.querySelector('.linked-mentions')?.scrollIntoView({ block: 'start' })
       break
     case 'page-folder':
       if (!/Git cheat sheet/.test(document.querySelector('.tree')?.textContent ?? '')) {

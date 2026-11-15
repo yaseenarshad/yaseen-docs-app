@@ -15,6 +15,7 @@ import { UNTITLED_CARD, drawCard, pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
 import { headingTarget, landOn } from '../page/headings'
 import { openLink, type LinkDoor } from '../page/openLink'
+import { LinkedMentions } from '../page/LinkedMentions'
 import { boardKindOf, boardLabel } from '../drawing/boardFiles'
 import type { SheetRoute } from './sheets'
 
@@ -145,6 +146,8 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       )}
       {content === null && <p className="muted">{app.unit('This page is not on the phone.')}</p>}
       <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
+      {/* YAZ-5535: the end of the page, the full page's own component; a row opens another panel (the sheet's door). */}
+      {data !== null && content !== undefined && <LinkedMentions path={path} data={data} store={app.services.store} door={door} />}
     </article>
   )
 }

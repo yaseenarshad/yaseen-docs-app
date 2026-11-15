@@ -87,11 +87,11 @@ describe('Explore on the phone (YAZ-5472)', () => {
     // The page is still there, the same element: nothing under the sheet was replaced.
     expect(h.host.querySelector('.reader__body')).toBe(page)
     expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Spanish words')
-    // The head (the page's name: it has no folder), ⋯, and the foot.
+    // The head (the page's name: it has no folder) and ⋯; no foot (YAZ-5535): "Linked mentions" ends the page.
     expect(topSheet()?.querySelector('.explore-sheet__where')?.textContent).toBe('Trip plan')
-    await waitFor(h, () => /Backlinks? · \d+ References?/.test(topSheet()?.querySelector('.explore-sheet__foot')?.textContent ?? ''))
-    // "Spanish words" links to "Trip plan"; "Trip plan" links back to it.
-    expect(topSheet()?.querySelector('.explore-sheet__foot')?.textContent).toBe('1 Backlink · 1 Reference')
+    expect(topSheet()?.querySelector('.explore-sheet__foot')).toBeNull()
+    // "Spanish words" links to "Trip plan".
+    await waitFor(h, () => topSheet()?.querySelector('.linked-mentions__header')?.textContent === 'Linked mentions (1)')
 
     // A link in the sheet: another sheet on top; the one under steps back.
     await tap(inTop(/^Spanish words$/))
@@ -215,5 +215,78 @@ describe('Explore on the phone (YAZ-5472)', () => {
     expect(back).not.toBe(first)
     await waitFor(h, () => (back.querySelector('.reader__body')?.textContent ?? '').includes('Words for a trip'))
     await waitFor(h, () => back.scrollTop === 250)
+  })
+})
+
+describe('YAZ-5535: no sticky foot; "Linked mentions" at the end of a panel\'s page, as on the full page', () => {
+  const fans = Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`many/Fan ${String(i).padStart(2, '0')}.md`, `---\ntitle: Fan ${String(i).padStart(2, '0')}\n---\n\nBack to [[Trip plan]].\n`]))
+
+  it('panel_linkedMentions_collapsedOpensClosesAndRowsOpenPanels: in the page\'s scroll, never sticky; a row opens a panel on top', async () => {
+    h = await openSearch()
+    await h.click(/^Trip plan/)
+    await waitFor(h, () => sheets().length === 1)
+    await drawn(h, 'Madrid, May 3 to 10')
+    // No foot of any kind under the body.
+    expect(topSheet()?.querySelector('.explore-sheet__foot')).toBeNull()
+    expect(topSheet()?.querySelector('.explore-sheet__box')?.lastElementChild?.classList.contains('explore-sheet__body')).toBe(true)
+    await waitFor(h, () => topSheet()?.querySelector('.linked-mentions') !== null)
+    const section = topSheet()!.querySelector<HTMLElement>('.linked-mentions')!
+    // In the page's own column, after its text: it scrolls with the page; not sticky, not fixed.
+    expect(section.closest('.explore-sheet__body .reader')).not.toBeNull()
+    expect(section.previousElementSibling?.classList.contains('reader__body')).toBe(true)
+    expect(['sticky', 'fixed']).not.toContain(getComputedStyle(section).position)
+    // Collapsed, with its count.
+    const header = section.querySelector<HTMLButtonElement>('.linked-mentions__header')!
+    expect(header.textContent).toBe('Linked mentions (1)')
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(section.querySelector('.linked-mentions__list')).toBeNull()
+    // A tap drops it open in place; another closes it.
+    await tap(header)
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    await waitFor(h, () => section.querySelectorAll('.linked-mentions__line').length === 1)
+    expect([...section.querySelectorAll('.linked-mentions__page')].map((b) => b.textContent)).toEqual(['Spanish words'])
+    await tap(header)
+    expect(section.querySelector('.linked-mentions__list')).toBeNull()
+    // Open again; a row opens through the link door: another panel on top.
+    await tap(header)
+    await waitFor(h, () => section.querySelector('.linked-mentions__page') !== null)
+    await tap(section.querySelector<HTMLElement>('.linked-mentions__page'))
+    await waitFor(h, () => sheets().length === 2)
+    await drawn(h, 'Words for a trip')
+    expect(topSheet()?.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Spanish words')
+    // A line opens the page too.
+    await act(async () => closeTop())
+    await waitFor(h, () => sheets().length === 1)
+    await waitFor(h, () => topSheet()?.querySelector('.linked-mentions__line') !== null)
+    await tap(topSheet()!.querySelector<HTMLElement>('.linked-mentions__line'))
+    await waitFor(h, () => sheets().length === 2)
+    expect(topSheet()?.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Spanish words')
+  })
+
+  it('panel_linkedMentions_pages: 46 linking pages draw 20, then "Show all 46"; closed and opened, 20 again', async () => {
+    h = await openSearch({ ...EXPLORE, ...fans })
+    await h.click(/^Trip plan/)
+    await waitFor(h, () => sheets().length === 1)
+    await drawn(h, 'Madrid, May 3 to 10')
+    await waitFor(h, () => topSheet()?.querySelector('.linked-mentions__header')?.textContent === 'Linked mentions (46)')
+    const header = topSheet()!.querySelector<HTMLButtonElement>('.linked-mentions__header')!
+    const entries = () => topSheet()!.querySelectorAll('.linked-mentions__entry').length
+    const more = () => topSheet()!.querySelector<HTMLButtonElement>('.linked-mentions__more')
+    await tap(header)
+    expect(entries()).toBe(20)
+    expect(more()?.textContent).toBe('Show all 46')
+    await tap(more())
+    expect(entries()).toBe(46)
+    expect(more()).toBeNull()
+    await tap(header)
+    await tap(header)
+    expect(entries()).toBe(20)
+  })
+
+  it('panel_card_noFoot: a card in a panel has no foot either', async () => {
+    h = await openSearch()
+    await act(async () => openSheet({ kind: 'card', path: 'cards/capital-of-spain-demo-40.md', id: 'DEMO-40' }))
+    await waitFor(h, () => sheets().length === 1)
+    expect(topSheet()?.querySelector('.explore-sheet__foot')).toBeNull()
   })
 })

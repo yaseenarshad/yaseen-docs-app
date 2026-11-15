@@ -4,9 +4,9 @@ import type { VaultData } from '../search/vaultData'
 import { resolveSourceOf } from './pageLook'
 
 /**
- * The pages that link to `path`, as "Linked from" lists them (YAZ-5455): the Mac's `backlinksFor` over the phone's index,
- * by the reader's resolver, less any file the phone cannot open (a folder's `.folder.md`). ONE source for the reader's
- * "Linked from" and an Explore sheet's "N Backlinks" (YAZ-5472), so the two never disagree.
+ * The pages that link to `path`, as "Linked mentions" lists them (YAZ-5455): the Mac's `backlinksFor` over the phone's index,
+ * by the reader's resolver, less any file the phone cannot open (a folder's `.folder.md`). The ONE list of "Linked
+ * mentions" at the end of a page, on the full page and in an Explore panel (YAZ-5535).
  */
 export function linkedFromOf(path: string, data: VaultData): IndexRecord[] {
   const resolve = resolveSourceOf(data).resolve

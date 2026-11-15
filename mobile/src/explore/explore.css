@@ -138,7 +138,8 @@
   overscroll-behavior: none;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
-  padding: 0 16px 24px;
+  /* YAZ-5535: the sheet runs to the screen's foot (no sticky foot under it now): the end of the page clears the home bar. */
+  padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
 }
 
 /* The 1 px mark that says the body is at its top. */
@@ -148,15 +149,6 @@
 
 .explore-sheet__reader .reader__title {
   margin-top: 10px;
-}
-
-/* "N Backlinks · N References" (Mochi's foot). */
-.explore-sheet__foot {
-  margin: 0;
-  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px);
-  border-top: 1px solid var(--border);
-  font-size: 14px;
-  color: var(--fg-muted);
 }
 
 @media (prefers-reduced-motion: reduce) {

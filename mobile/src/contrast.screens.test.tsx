@@ -105,7 +105,7 @@ const FIXTURES = [
   'card-next',
   'page-tables',
   'page-table-full',
-  // YAZ-5455, YAZ-5456, YAZ-5459: links and "Linked from", the vault's pills, the ⋯ tools, find, the headings,
+  // YAZ-5455, YAZ-5456, YAZ-5459: links and "Linked mentions", the vault's pills, the ⋯ tools, find, the headings,
   // the properties panel.
   'page-links',
   'page-linked-from',
@@ -124,6 +124,7 @@ const FIXTURES = [
   // YAZ-5472: Explore's sheets.
   'explore-one',
   'explore-stack',
+  'explore-mentions',
   // YAZ-5460: a held folder's menu, the folder page and its views, in a sheet too.
   'folder-hold',
   'folder-page',

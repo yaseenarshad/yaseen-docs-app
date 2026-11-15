@@ -14,6 +14,8 @@ import { openSheet } from './sheets'
  *    three sheets over it: a card file, a page, a page (the vault says "explore");
  *  - `explore-review`: one sheet over Review (a card), and `explore-today`: the Today button opens today's daily page
  *    full screen (Q4), and a link in it opens a sheet (YAZ-5518: Safari's Back in a tab closes the sheet, then the page).
+ *  - `explore-mentions` (YAZ-5535): a long made-up page ("Road trip") in a sheet over Search, scrolled to its end:
+ *    "Linked mentions (2)", collapsed, in the page's scroll (no sticky foot under the sheet).
  * Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
 const refuseAll: FetchLike = async () => new Response('{}', { status: 401 })
@@ -33,7 +35,12 @@ export async function mountExploreFixture(root: Root, name: string): Promise<voi
   const d = new Date()
   const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const daily = { '.yaseendocs/daily-pages.json': JSON.stringify({ enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false }), [`Daily/${day}.md`]: '# Made-up day\n\nToday words. See [[Trip plan]].\n' }
-  const explore = { ...READER_FILES, '.yaseendocs/link-click.json': '{"click":"explore"}', ...(name === 'explore-today' && daily) }
+  const mentions = {
+    'Road trip.md': `---\ntitle: Road trip\n---\n\n${Array.from({ length: 14 }, (_, i) => `Day ${i + 1}: a made-up stop on the road, with a walk and a long lunch.`).join('\n\n')}\n`,
+    'Packing list.md': '---\ntitle: Packing list\n---\n\nWhat to pack for the [[Road trip]]: shoes, a hat.\n',
+    'Budget.md': '---\ntitle: Budget\n---\n\nFuel and food for [[Road trip]].\n',
+  }
+  const explore = { ...READER_FILES, '.yaseendocs/link-click.json': '{"click":"explore"}', ...(name === 'explore-today' && daily), ...(name === 'explore-mentions' && mentions) }
   await seedReaderVault(store, tokens, name === 'explore-one' ? READER_FILES : explore)
   const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll }
   root.render(<App services={services} />)
@@ -57,6 +64,12 @@ export async function mountExploreFixture(root: Root, name: string): Promise<voi
     await wait(200)
     ;[...document.querySelectorAll<HTMLElement>('.reader__body a, .reader__body [data-open]')].find((a) => /Trip plan/.test(a.textContent ?? ''))?.click()
     await until(() => /Madrid, May 3/.test(topText()))
+  } else if (name === 'explore-mentions') {
+    openSheet({ kind: 'page', path: 'Road trip.md' })
+    await until(() => document.querySelector('.explore-sheet:last-of-type .linked-mentions') !== null)
+    await wait(700)
+    const body = document.querySelector('.explore-sheet:last-of-type .explore-sheet__body')
+    if (body !== null) body.scrollTop = body.scrollHeight
   } else if (name === 'explore-one') {
     press(/^Spanish words/)
     await until(() => document.querySelector('.reader__body h1') !== null)

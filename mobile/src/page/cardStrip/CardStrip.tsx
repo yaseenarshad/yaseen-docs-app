@@ -26,7 +26,7 @@ import './cardStrip.css'
  *    YAZ-5528): when the card is due on the left ("Due in 144 days (Apr 8, 2027)", a new card "Due today"), "100% chance
  *    you remember it" on the right (none for a new card). Properties: the card's own properties in the
  *    page properties panel's rows (YAZ-5459). Linked mentions / Embedded in: the Mac's list, one page a row, its name and
- *    its folder (`cardBacklinks`, `cardEmbedders`: the same lists "Linked from" reads, off the phone's index); a tap opens it.
+ *    its folder (`cardBacklinks`, `cardEmbedders`: the same lists "Linked mentions" reads, off the phone's index); a tap opens it.
  *
  * Where it shows, as on the Mac: the card view (a card file: all four parts; a card in a page: no "Embedded in", as the
  * Mac's card window), and a card in a page or a card embed (`pageStrips.tsx`: Reviews and Properties). Review off: none.
