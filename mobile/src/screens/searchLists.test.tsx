@@ -254,6 +254,23 @@ describe('Show IDs in the files list (YAZ-5454)', () => {
     expect(withIds(h)).toContain('Spanish words DEMO-1')
   })
 
+  it('a card file row (kind: card, its ID on the card line, no id: property) shows its card\'s ID: Number and Full', async () => {
+    h = await openSearch(showIds('number'))
+    await waitFor(h, () => h!.host.querySelector('.tree__id') !== null)
+    await h.click(/^cards, folder/)
+    await waitFor(h, () => withIds(h!).includes('Capital of Spain #40'))
+    expect(withIds(h)).toContain('Two cards in one #41')
+    h.unmount()
+    forgetSearch()
+    forgetLists()
+    forgetListFolds()
+    h = await openSearch(showIds('full'))
+    await waitFor(h, () => h!.host.querySelector('.tree__id') !== null)
+    await h.click(/^cards, folder/)
+    await waitFor(h, () => withIds(h!).includes('Capital of Spain DEMO-40'))
+    expect(withIds(h)).toContain('Two cards in one DEMO-41')
+  })
+
   it('a sync that brings a new show-ids.json changes the rows at once', async () => {
     h = await openSearch()
     expect(h.host.querySelector('.tree__id')).toBeNull()
