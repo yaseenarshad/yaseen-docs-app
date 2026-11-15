@@ -12,13 +12,14 @@
  *    it on every card that holds it; "Delete column and clear N values" takes the property off each card's line, and
  *    its Undo puts them back.
  *  - "+ New" makes a card file in the folder (`createCardFile`), its card line seeded as a page's front matter is: a
- *    card is what a row of this table is.
+ *    card is what a row of this table is. A read-only vault asks first, as a page's New does (YAZ-5411).
  */
 import { withCardProperty, withoutCardProperty, type CardLine } from '@shared/cardLine'
 import { NEW_CARD_TITLE } from '@shared/cardFileFormat'
 import type { IndexRecord } from '@shared/types'
 import { cardLineChange, cardRowOfRecord, type CardRow } from './cardRows'
 import { CARD_COLUMNS, cardColumnsOf } from './cardView'
+import { CHANGE_CANCELLED } from './confirmChanges'
 import { pruneColumnFromViews, pruneColumnLabel } from './deleteColumn'
 import { propertyLabel } from './engine'
 import type { ColumnDecl } from './folderSettings'
@@ -147,7 +148,9 @@ export function cardFolderHost(pages: FolderHost, parts: CardHostParts): FolderH
       report(await eachCard(cleared.map((c) => c.row), () => (l) => withoutCardProperty(l, name), changeLine), 'value')
     },
     valueCount: (key) => holding(bareOf(key)).length,
-    create: (seed, name) => {
+    // A new card file is a New (YAZ-5411): a read-only vault asks first, as a page's New does; Cancel makes nothing.
+    create: async (seed, name) => {
+      if (pages.allowFileAction !== undefined && !(await pages.allowFileAction())) throw CHANGE_CANCELLED
       const writes = Object.entries(seed.properties).map(([key, value]) => ({ key, value }))
       return createCard(dir, name ?? NEW_CARD_TITLE, writes.length === 0 ? (l) => l : cardLineChange(writes))
     },
