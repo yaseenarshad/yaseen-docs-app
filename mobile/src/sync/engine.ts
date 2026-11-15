@@ -251,7 +251,8 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       blob: (sha) => call(() => remote.blob(sha)),
       // A commit is up to 5 requests in a row, and its files go UP with no sign (YAZ-5199): the time they need at the
       // client's floor speed is added, as the client adds it for each request.
-      commit: (parent, changes, message) => call(() => remote.commit(parent, changes, message), REQUEST_TIMEOUT_MS * 5 + uploadAllowanceMs(changeBytes(changes))),
+      commit: (parent, changes, message, made) => call(() => remote.commit(parent, changes, message, made), REQUEST_TIMEOUT_MS * 5 + uploadAllowanceMs(changeBytes(changes))),
+      contains: (commit, head) => call(() => remote.contains(commit, head)),
     }
   }
 

@@ -29,6 +29,28 @@ describe('GithubRemote: the four calls, on the one client of 3E', () => {
     expect(calls.map((c) => c.url)).toEqual(Array(3).fill(`https://api.github.com/repos/yaseen/vault/git/ref/heads/main`))
   })
 
+  it('YAZ-5514 contains: the head and its ancestors yes; a commit the branch never took, or an unknown SHA, no; `made` hears the SHA before the ref move', async () => {
+    const s = await syncSetup({ 'a.md': 'A' })
+    const first = s.git.branches.get(BRANCH)!
+    let heard: string | null = null
+    let headWhenHeard: string | null = null
+    const mine = await s.remote.commit(first, [{ path: 'a.md', content: 'A2' }], 'phone', async (sha) => {
+      heard = sha
+      headWhenHeard = s.git.branches.get(BRANCH)!
+    })
+    expect(heard).toBe(mine)
+    expect(headWhenHeard).toBe(first)
+    const mac = await s.git.push({ 'b.md': 'B' })
+    expect(await s.remote.contains(mine, mac)).toBe(true)
+    expect(await s.remote.contains(mac, mac)).toBe(true)
+    expect(await s.remote.contains(first, mac)).toBe(true)
+    // A commit made on the old head that never moved the branch.
+    const stale = await failure(s.remote.commit(first, [{ path: 'a.md', content: 'A3' }], 'phone', async (sha) => void (heard = sha)))
+    expect(stale.code).toBe('STALE_HEAD')
+    expect(await s.remote.contains(heard!, mac)).toBe(false)
+    expect(await s.remote.contains('0'.repeat(40), mac)).toBe(false)
+  })
+
   it('head of a branch with slashes keeps them', async () => {
     const s = await syncSetup({ 'a.md': 'A' })
     await s.git.push({ 'b.md': 'B' }, 'feat/phone')

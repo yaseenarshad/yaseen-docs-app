@@ -393,3 +393,65 @@ describe('YAZ-5514 W2: two files share a card ID (a copied page the Mac has not 
     expect(p.box.lost()).toMatchObject([{ op: answer('NC-2', 1), why: 'two-files' }])
   })
 })
+
+describe('YAZ-5514 W3: a resend after a lost reply never undoes a later Mac change', () => {
+  /** The ref move reaches GitHub, its answer is lost; `then` runs before the phone hears (the Mac pulls and changes). */
+  const lostReply = (t: Awaited<ReturnType<typeof setup>>, then: () => Promise<unknown>): FetchLike => {
+    let lose = true
+    return async (url, init) => {
+      const res = await t.s.github.fetch(url, init)
+      if ((init.method ?? 'GET') === 'PATCH' && lose) {
+        lose = false
+        await then()
+        throw new TypeError('Load failed')
+      }
+      return res
+    }
+  }
+
+  it('after a lost reply, a retry whose commit is already in the branch history writes nothing (the Mac removed the review)', async () => {
+    const t = await setup(FILES)
+    const p = await phone(t.s, lostReply(t, () => t.s.git.push({ 'a.md': FILES['a.md'] })))
+    await p.add(answer('NC-2', 1))
+    expect(await p.send()).toMatchObject({ result: 'offline' })
+    const before = t.head()
+    const writes = t.s.count('write')
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 1, commit: null })
+    expect(t.s.count('write')).toBe(writes)
+    expect(t.head()).toBe(before)
+    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([])
+    expect(p.box.waiting()).toEqual([])
+  })
+
+  it('after a lost reply, the Mac unarchived the card: the retry does not archive it again', async () => {
+    const t = await setup(FILES)
+    const p = await phone(t.s, lostReply(t, () => t.s.git.push({ 'a.md': FILES['a.md'] })))
+    await p.add({ kind: 'off', id: 'NC-3', on: true }, { kind: 'next', id: 'NC-2', on: true })
+    expect(await p.send()).toMatchObject({ result: 'offline' })
+    const before = t.head()
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2 })
+    expect(t.head()).toBe(before)
+    expect((await t.remoteFiles())['a.md']).toBe(FILES['a.md'])
+  })
+
+  it('a commit that never reached the branch (the ref move refused or never sent) is still sent, on the newest text', async () => {
+    const t = await setup(FILES)
+    let drop = true
+    const dies: FetchLike = async (url, init) => {
+      if ((init.method ?? 'GET') === 'PATCH' && drop) {
+        drop = false
+        await t.s.git.push({ 'b.md': pageText('B', 'NC-4', ['NC-5'], 'A Mac edit.\n\n') })
+        throw new TypeError('Load failed')
+      }
+      return t.s.github.fetch(url, init)
+    }
+    const p = await phone(t.s, dies)
+    await p.add(answer('NC-2', 1), { kind: 'off', id: 'NC-3', on: true })
+    expect(await p.send()).toMatchObject({ result: 'offline' })
+    expect(p.box.waiting().every((w) => w.tried === true)).toBe(true)
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2 })
+    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([at(1)])
+    expect((await t.remoteFiles())['a.md']).toContain('<!-- card: NC-3, off -->')
+    expect((await t.remoteFiles())['b.md']).toContain('A Mac edit.')
+  })
+})

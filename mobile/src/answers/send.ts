@@ -63,7 +63,8 @@ export interface SendReport {
  *  3. `applyOps` on each file's stored text. A card that the newest head does not hold: the action is lost (it moves to
  *     the lost list and never blocks the others).
  *  4. No file changed: GitHub already holds every action (a send that reached GitHub but whose answer was lost). They
- *     leave the list with no write. Else ONE commit with every changed file (`remote.commit`: blobs, tree with
+ *     leave the list with no write. Before the plan (YAZ-5514, W3): an action whose last commit the branch holds is
+ *     done, with no write, whatever the newest text shows: so a resend never undoes a change the Mac made since. Else ONE commit with every changed file (`remote.commit`: blobs, tree with
  *     `base_tree`, commit, `PATCH` the ref with `force: false`).
  *  5. GitHub refuses the move when the branch moved first (422 "Update is not a fast forward": `STALE_HEAD`): repeat
  *     from step 1, at most `MAX_STALE_HEADS` times.
@@ -78,20 +79,35 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
   const pass = options.pass ?? (() => syncPass({ remote, store, vault, now, yieldToUi: options.yieldToUi }))
   const report: SendReport = { result: 'nothing', commit: null, sent: 0, lost: 0, staleHeads: 0, files: [], stored: false }
   if (outbox.waiting().length === 0) return report
+  /** Commits of this send that GitHub refused (`STALE_HEAD`): never on the branch, so not asked about again. */
+  const refused = new Set<string>()
+  let landed = 0
   try {
     for (;;) {
       await pass()
       await outbox.refresh()
+      // YAZ-5514 (W3): actions whose commit the branch already holds (the ref moved, its answer was lost) are done:
+      // they leave with NO write, even when the newest text no longer shows them (the Mac changed it since).
+      const held = await heldByBranch(remote, store, vault, outbox.waiting(), refused)
+      if (held.length > 0) {
+        await outbox.settle(held, [], now())
+        landed += held.length
+      }
       const plan = await planSend(store, vault, outbox.waiting())
       if (plan.changes.length > 0) {
         // YAZ-5180: from here GitHub may hold these actions, so Undo may no longer remove them. An action that Undo
         // removed after the plan was made is not marked: plan again without it.
         const marked = await outbox.markTried(plan.done.map((w) => w.seq))
         if (marked.length < plan.done.length) continue
+        const made: { sha: string | null } = { sha: null }
         try {
-          report.commit = await remote.commit(plan.parent, plan.changes, commitSubject(plan.changes.map((c) => c.path)))
+          report.commit = await remote.commit(plan.parent, plan.changes, commitSubject(plan.changes.map((c) => c.path)), async (sha) => {
+            made.sha = sha
+            await outbox.markCommit(marked, sha)
+          })
         } catch (error) {
           if (error instanceof GithubError && error.code === 'STALE_HEAD' && report.staleHeads < MAX_STALE_HEADS) {
+            if (made.sha !== null) refused.add(made.sha)
             report.staleHeads++
             continue
           }
@@ -108,15 +124,26 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
         }
       } else report.stored = true
       await outbox.settle(plan.done.map((w) => w.seq), plan.lost.map((w) => w.seq), now(), plan.why)
-      report.sent = plan.done.length
+      report.sent = landed + plan.done.length
       report.lost = plan.lost.length
-      report.result = plan.done.length > 0 ? 'sent' : 'nothing'
+      report.result = report.sent > 0 ? 'sent' : 'nothing'
       return report
     }
   } catch (error) {
     if (error instanceof GithubError && (error.code === 'OFFLINE' || error.code === 'GITHUB_DOWN')) return { ...report, result: 'offline', commit: null }
     throw error
   }
+}
+
+/** YAZ-5514 (W3): the waiting actions whose commit the branch's head (the stored copy's, after the pass) holds. */
+async function heldByBranch(remote: GithubRemote, store: VaultStore, vault: string, waiting: readonly WaitingAnswer[], refused: ReadonlySet<string>): Promise<number[]> {
+  const commits = new Set(waiting.flatMap((w) => (w.commit === undefined || refused.has(w.commit) ? [] : [w.commit])))
+  if (commits.size === 0) return []
+  const head = (await store.checkpoint(vault))?.commit
+  if (head === undefined) return []
+  const held = new Set<string>()
+  for (const commit of commits) if (await remote.contains(commit, head)) held.add(commit)
+  return waiting.filter((w) => w.commit !== undefined && held.has(w.commit)).map((w) => w.seq)
 }
 
 interface SendPlan {

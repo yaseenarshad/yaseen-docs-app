@@ -22,8 +22,17 @@ export interface GithubRemote {
   /** Every path and its blob SHA at `commit`, in one request. Rejects `TREE_TRUNCATED` when GitHub cut it short (F6). */
   tree(commit: string): Promise<RemoteTree>
   blob(sha: string): Promise<Uint8Array>
-  /** One atomic commit; rejects `STALE_HEAD` when GitHub has moved past `parent`. Resolves with the new commit SHA. */
-  commit(parent: string, changes: Change[], message: string): Promise<string>
+  /**
+   * One atomic commit; rejects `STALE_HEAD` when GitHub has moved past `parent`. Resolves with the new commit SHA.
+   * `made` (YAZ-5514) hears the new commit's SHA once it exists and BEFORE the ref move, and the move waits for it: a
+   * caller keeps the SHA, so after a lost answer it can ask whether the branch took that commit (`contains`).
+   */
+  commit(parent: string, changes: Change[], message: string, made?: (sha: string) => Promise<void>): Promise<string>
+  /**
+   * YAZ-5514: does the history of `head` hold `commit` (the head itself, or one of its ancestors)? False for a commit
+   * that never reached the branch, or that GitHub does not know. One request (`GET compare/{commit}...{head}`).
+   */
+  contains(commit: string, head: string): Promise<boolean>
 }
 
 /** GitHub's answer when the ref `PATCH` (force: false) is refused because the branch moved (proof 1B, YAZ-5063). */
@@ -83,7 +92,16 @@ export function githubRemote(client: GithubClient, repo: string, branch: string)
       return res.data as Uint8Array
     },
 
-    async commit(parent, changes, message) {
+    async contains(commit, head) {
+      if (commit === head) return true
+      const res = await client.request(repoPath(repo, 'compare', `${commit}...${head}`), { allow: [404] })
+      if (res.status === 404) return false
+      const status = (res.data as { status?: unknown } | null)?.status
+      // `ahead`: head is ahead of the commit (holds it); `identical`: the same. `behind` / `diverged`: it does not.
+      return status === 'ahead' || status === 'identical'
+    },
+
+    async commit(parent, changes, message, made) {
       if (changes.length === 0) throw new Error('A commit needs at least one change')
       const base = await client.request(git('commits', parent))
       const baseTree = (base.data as { tree?: { sha?: unknown } } | null)?.tree?.sha
@@ -98,8 +116,9 @@ export function githubRemote(client: GithubClient, repo: string, branch: string)
         }
       }
       const tree = await client.request(git('trees'), { method: 'POST', body: { base_tree: baseTree, tree: entries } })
-      const made = await client.request(git('commits'), { method: 'POST', body: { message, tree: (tree.data as { sha: string }).sha, parents: [parent] } })
-      const sha = (made.data as { sha: string }).sha
+      const created = await client.request(git('commits'), { method: 'POST', body: { message, tree: (tree.data as { sha: string }).sha, parents: [parent] } })
+      const sha = (created.data as { sha: string }).sha
+      await made?.(sha)
       const moved = await client.request(git('refs', 'heads', branch), { method: 'PATCH', body: { sha, force: false }, allow: [409, 422] })
       if (moved.status === 422 || moved.status === 409) {
         const said = typeof (moved.data as { message?: unknown } | null)?.message === 'string' ? (moved.data as { message: string }).message : ''
