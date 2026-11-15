@@ -59,7 +59,7 @@ mobile/
   vite.config.ts        the build: aliases, one React, the import guard
   vitest.config.ts      the `mobile` test project (uses vite.config.ts)
   importRules.ts        what the phone never imports
-  wrangler.jsonc        the preview site's Worker (static files only)
+  wrangler.jsonc        the phone app's Worker, docs.yaseenarshad.com (static files only)
   publish/              the build check, the service worker build, the headers, the icons, the headless check
   scripts/              opt-in runs against the scratch vault repo (`live*.ts`); never in `npm test`
   src/
@@ -202,10 +202,10 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
 
 ## How to publish
 
-The preview site is `https://preview.docs.yaseenarshad.com` (YAZ-5476), and the old `https://preview.notecard.yaseenarshad.com`
-still answers with the same build: both are custom domains of ONE Worker (`yaseen-notecards-preview`, `wrangler.jsonc`), so
-one publish updates both. The old address stays until Yaseen has moved: a phone keeps its token, vault copy and waiting
-answers per address.
+The phone app is at `https://docs.yaseenarshad.com` (YAZ-5579), a custom domain of ONE Worker (`yaseen-notecards-preview`,
+`wrangler.jsonc`; the name stays from the preview days). The old preview addresses (`preview.docs.yaseenarshad.com`,
+`preview.notecard.yaseenarshad.com`) no longer serve the app; links made on them still paste. A phone keeps its token,
+vault copy and waiting answers per address, so an app installed from an old address must be added again from the new one.
 Publish only when Yaseen says so (round 15). From the repo root, signed in to Cloudflare (`npx wrangler whoami`):
 
 ```
@@ -224,7 +224,7 @@ ours, so nothing logs an address. The real address `docs.yaseenarshad.com` is a 
 
 ## If a bad version ships
 
-Decide which part is bad, then do ONE of these. Publish to the preview only, as above.
+Decide which part is bad, then do ONE of these. Publish as above.
 
 **1. The page or a screen is bad; the update works.** Roll the Worker back to the last good version. The phones see a
 new `sw.js` (its version differs) and take the old build as a new version at their next open.

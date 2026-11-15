@@ -151,17 +151,13 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
   const jsonc = (text: string) => JSON.parse(text.replace(/^\s*\/\/.*$/gm, ''))
   const config = jsonc(read('wrangler.jsonc'))
 
-  it('the PREVIEW Worker only: static files, no script, no workers.dev, its own address', () => {
+  it('the phone Worker: static files, no script, no workers.dev, the real address only', () => {
     expect(config.name).toBe('yaseen-notecards-preview')
     expect(config.account_id).toBe('06ed69083fae875c626d37f9c05405a3')
     expect(config.workers_dev).toBe(false)
     expect(config.preview_urls).toBe(false)
-    // YAZ-5579: the real address, docs.yaseenarshad.com, on the same Worker as the two preview addresses (for now).
-    expect(config.routes).toEqual([
-      { pattern: 'preview.notecard.yaseenarshad.com', custom_domain: true },
-      { pattern: 'preview.docs.yaseenarshad.com', custom_domain: true },
-      { pattern: 'docs.yaseenarshad.com', custom_domain: true },
-    ])
+    // YAZ-5579: one address, the real one; the preview addresses are detached.
+    expect(config.routes).toEqual([{ pattern: 'docs.yaseenarshad.com', custom_domain: true }])
     expect(config.assets).toEqual({ directory: './dist', not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
     expect(config.main).toBeUndefined()
     expect(config.assets.binding).toBeUndefined()
