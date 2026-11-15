@@ -6,7 +6,7 @@ import MATHS from './diagrams/maths.drawio?raw'
 import MULTIPAGE from './diagrams/multipage.drawio?raw'
 
 /**
- * Made-up plain draw.io diagrams (YAZ-5533), for the screen fixture `#fixture=page-diagrams` and the headless proofs
+ * Made-up plain draw.io diagrams, for the screen fixture `#fixture=page-diagrams` and the headless proofs
  * (`publish/proveDiagrams.ts`): a flowchart (HTML labels, Inter, draw.io's flowchart shapes, a cylinder, a note), AWS
  * shapes with a Cisco router, three pages, a compressed file of two pages, maths labels (left out on the phone: raw
  * TeX) and a hostile file whose labels try to run script. Only tests and the `--mode fixtures` build reach this file.

@@ -1,7 +1,7 @@
 import { SUN_PNG } from './readerVault'
 
 /**
- * A made-up page with drawings (YAZ-5440), for the tests and the screen fixture `#fixture=page-drawing`: an Excalidraw
+ * A made-up page with drawings, for the tests and the screen fixture `#fixture=page-drawing`: an Excalidraw
  * drawing with text and a picture from `assets/`, a draw.io picture (`.drawio.svg`), a plain draw.io file and a broken
  * drawing. Only tests and the `--mode fixtures` build reach this file.
  */

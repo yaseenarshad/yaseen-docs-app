@@ -4,7 +4,7 @@ import { gitBlobSha } from '../sync/gitSha'
 import { INDEX_RULES, INDEX_STATE, phoneRecord, type PhoneIndex } from '../sync/phoneIndex'
 
 /**
- * A made-up vault for the reader (4C, YAZ-5079): the tests and the screen fixtures put it on a phone as 3B would leave it
+ * A made-up vault for the reader (4C): the tests and the screen fixtures put it on a phone as 3B would leave it
  * after a first download (the files, the checkpoint, the index). No real vault, no network. Only tests and the
  * `--mode fixtures` build reach this file.
  */
@@ -55,7 +55,7 @@ export const READER_FILES: Record<string, string | Uint8Array> = {
 }
 
 /** Files of the vault that are NOT on the phone (3D brings them later): the checkpoint names them all the same. */
-/** YAZ-5506: a made-up tree nine folders deep (deeper than the sticky cap of 7), four pages in each folder. */
+/** A made-up tree nine folders deep (deeper than the sticky cap of 7), four pages in each folder. */
 export const STICKY_PATH = ['Atlas', 'Europe', 'Spain', 'Andalusia', 'Seville', 'Triana', 'Streets', 'Calle Betis', 'Number 12']
 export const STICKY_FILES: Record<string, string> = Object.fromEntries(
   STICKY_PATH.flatMap((_, d) => {
