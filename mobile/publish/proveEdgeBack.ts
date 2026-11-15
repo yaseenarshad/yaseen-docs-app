@@ -19,7 +19,7 @@ import { freePort } from './freePort'
  *  - A SAFARI TAB, an Explore sheet over each tab screen (Search with 3 sheets, Review, Today): each `history.back()`
  *    (Safari's swipe) closes ONE sheet, and the tab stays in the app (before, sheets wrote no entry and Back left the app).
  *  - THE HOME SCREEN APP: a real touch swipe from x = 2 (the sheet sits 8 px in: the finger lands on its dim) closes the top sheet.
- *  - A page's overlays (the ⋯ menu, Find, Headings, Properties, a table full screen): Back closes ONLY the overlay and
+ *  - A page's overlays (the ⋯ menu, Find, Headings, a table full screen): Back closes ONLY the overlay and
  *    the page stays: `history.back()` in a tab, the edge swipe in the Home Screen app.
  * Run after `npm run build:fixtures -w mobile`: `npx vite-node mobile/publish/proveEdgeBack.ts` (LAYOUT_DIST: another
  * build folder; PROOF_PORT, PROOF_DEBUG: the ports, else free ones). Exit 0: every swipe went back.
@@ -206,7 +206,7 @@ const OVERLAYS: { name: string; open: string; shows: string }[] = [
   { name: 'the ⋯ menu', open: `document.querySelector('[aria-label="Page tools"]').click()`, shows: '.page-tools__menu' },
   { name: 'Find in page', open: `document.querySelector('[aria-label="Page tools"]').click(); await new Promise((r) => setTimeout(r, 100)); [...document.querySelectorAll('[role="menuitem"]')].find((b) => /Find in page/.test(b.textContent)).click()`, shows: '.find-line' },
   { name: 'Headings', open: `document.querySelector('[aria-label="Page tools"]').click(); await new Promise((r) => setTimeout(r, 100)); [...document.querySelectorAll('[role="menuitem"]')].find((b) => /Headings/.test(b.textContent)).click()`, shows: '[role="dialog"][aria-label="Headings"]' },
-  { name: 'Properties', open: `document.querySelector('[aria-label="Properties"]').click()`, shows: '[role="dialog"][aria-label="Properties"]' },
+  // YAZ-5529: the properties open inline under the title, in the page: no overlay, so no Back of their own.
   { name: 'a table, full screen', open: `document.querySelector('[data-table-open]').click()`, shows: '.table-view' },
 ]
 
