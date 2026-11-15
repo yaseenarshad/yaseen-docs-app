@@ -15,6 +15,7 @@ import { openLink, type LinkDoor } from './openLink'
 import { resolveSourceOf } from './pageLook'
 import { useVaultLook } from './vaultLook'
 import { usePageTools } from './PageTools'
+import { PropertiesTab } from './PropertiesTab'
 import { vaultName } from '../screens/Frame'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
@@ -198,6 +199,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
         <ScrollJump scroller={host} closest=".screen" />
         {tools.sheet}
+        <PropertiesTab record={record} data={data} door={door} />
         {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
       </article>
     </Frame>

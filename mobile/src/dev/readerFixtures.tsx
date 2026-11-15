@@ -17,7 +17,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * two pages ("1 / 2": the folder's pages only). YAZ-5467: `page-jump` a long page just scrolled, the ⤒ ⤓ pill at the right edge. The clipboard is a fake: nothing reaches the
  * phone's real one.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -94,6 +94,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
             ? {
                 'Links.md': `---\ntitle: Links\nid: DEMO-7\n---\n\n# Links\n\nBy words: [[Trip plan|the trip]]. By ID: [[DEMO-4]]. To a heading: [[Spanish words#Places]].\n\nA card: [[DEMO-40]]. Missing: [[No such page]]. Web: [a site](https://example.com/x).\n\nRelative: [the guide](notes/Folder%20guide.md#step-two).\n`,
                 'notes/Folder guide.md': '---\ntitle: Folder guide\n---\n\n# Folder guide\n\n## Step one\n\nOne.\n\n## Step two\n\nDone.\n',
+              }
+          : name === 'page-properties'
+            ? {
+                'Trip notes.md':
+                  '---\ntitle: Trip notes\nid: DEMO-8\nstatus: Planning\ndue: 2026-12-01\nstarts: 2026-12-01T09:30\nbudget: 1250.5\nbooked: true\npacked: false\ntags: [spain, trains]\nsee: "[[Trip plan]]"\nnote: Read [[Café notes]] first\naliases: [Viaje]\n---\n\nThe notes.\n',
               }
           : name === 'page-pills'
             ? {
@@ -187,6 +192,13 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await wait(50)
       press(/Headings/)
       await until(() => document.querySelector('.headings-sheet__row') !== null)
+      break
+    case 'page-properties':
+      await typed('trip notes')
+      await open(/^Trip notes/, '.reader__body p')
+      press('Properties')
+      await until(() => document.querySelector('.props__panel[data-shown]') !== null)
+      await wait(300)
       break
     case 'page-pills':
       await open(/^Spanish words/, '.reader__body h1')
