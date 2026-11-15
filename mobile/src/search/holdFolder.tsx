@@ -8,13 +8,49 @@ import { openFile } from '../explore/openFile'
  * small menu: "Open folder page" (the folder's page and its views, read only, through the one file door `openFile`, so
  * the vault's "Clicking a link" says sheet or full screen) and "Copy path". A tap still opens or closes the folder: a
  * hold that fired eats the click that follows it. The row shows it is pressed (`data-pressing`, `search.css`) while
- * the finger stays. A finger that moves (a scroll) is no hold. In the search chunk: the first load does not carry it.
+ * the finger stays. A finger that moves (a scroll) is no hold. The lift of the finger that opened the menu is no tap on
+ * it (`eatLiftClick`, M4). In the search chunk: the first load does not carry it.
  */
 
 /** How long a finger stays on a row before its menu opens (ms). */
 export const HOLD_MS = 450
 /** A finger that moves farther than this (px) scrolls: no hold. */
 const SLOP = 10
+/** After the finger that opened the menu lifts, a click this soon (ms) is that lift's own click, not a tap (M4). */
+export const LIFT_GUARD_MS = 400
+
+/**
+ * M4 (sweep1): the menu opens while the finger is still down, over the row. When it lifts, the phone sends the click
+ * of that touch where the finger was: on the menu's dim (or an item), which closed the menu at once. The lift
+ * (pointerup, touchend or a cancel) always comes before its click: the first click in the `LIFT_GUARD_MS` after it is
+ * eaten, in the capture phase, before the dim or an item sees it. A phone that sends no click after a long press loses
+ * nothing: the guard ends by itself. Returns the guard's end.
+ */
+function eatLiftClick(): () => void {
+  let until = Infinity
+  let timer = 0
+  const lifts = ['pointerup', 'pointercancel', 'touchend', 'touchcancel'] as const
+  const end = () => {
+    clearTimeout(timer)
+    document.removeEventListener('click', onClick, true)
+    for (const type of lifts) document.removeEventListener(type, onLift, true)
+  }
+  const onLift = () => {
+    if (until !== Infinity) return
+    until = Date.now() + LIFT_GUARD_MS
+    timer = window.setTimeout(end, LIFT_GUARD_MS)
+  }
+  const onClick = (e: MouseEvent) => {
+    if (until === Infinity) return
+    end()
+    if (Date.now() > until) return
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  document.addEventListener('click', onClick, true)
+  for (const type of lifts) document.addEventListener(type, onLift, true)
+  return end
+}
 
 /** The props a folder row takes for the hold, by its folder path. */
 export type HoldProps = {
@@ -31,6 +67,7 @@ export type HoldProps = {
 export function useFolderHold(): { hold: (path: string, label: string) => HoldProps; layer: ReactNode } {
   const press = useRef<{ timer: number; x: number; y: number; el: HTMLElement } | null>(null)
   const held = useRef(false)
+  const liftGuard = useRef<(() => void) | null>(null)
   const [menu, setMenu] = useState<{ path: string; label: string } | null>(null)
   const stop = () => {
     const p = press.current
@@ -39,7 +76,13 @@ export function useFolderHold(): { hold: (path: string, label: string) => HoldPr
     p.el.removeAttribute('data-pressing')
     press.current = null
   }
-  useEffect(() => stop, [])
+  useEffect(
+    () => () => {
+      stop()
+      liftGuard.current?.()
+    },
+    [],
+  )
   const hold = (path: string, label: string): HoldProps => ({
     onPointerDown(e) {
       if (e.button !== 0) return
@@ -50,6 +93,8 @@ export function useFolderHold(): { hold: (path: string, label: string) => HoldPr
       const timer = window.setTimeout(() => {
         stop()
         held.current = true
+        liftGuard.current?.()
+        liftGuard.current = eatLiftClick()
         setMenu({ path, label })
       }, HOLD_MS)
       press.current = { timer, x: e.clientX, y: e.clientY, el }
@@ -70,7 +115,12 @@ export function useFolderHold(): { hold: (path: string, label: string) => HoldPr
     // The phone's own long-press menu (a link's, Android's) never shows over ours.
     onContextMenu: (e) => e.preventDefault(),
   })
-  return { hold, layer: menu === null ? null : <FolderMenu folder={menu} onClose={() => setMenu(null)} /> }
+  const close = () => {
+    liftGuard.current?.()
+    liftGuard.current = null
+    setMenu(null)
+  }
+  return { hold, layer: menu === null ? null : <FolderMenu folder={menu} onClose={close} /> }
 }
 
 /** The folder's menu, at the bottom of the screen over a dim, as the phone's own action sheets. */
