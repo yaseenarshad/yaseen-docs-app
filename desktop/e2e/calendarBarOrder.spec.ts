@@ -22,24 +22,24 @@ const real = process.env.BAR_ORDER_FOLDER
 
 const p2 = (n: number) => String(n).padStart(2, '0')
 const key = (d: Date) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
-/** This week's Monday at noon: the pages land around today, where Month and Rolling open. */
-const monday = (() => {
+/** This week's Sunday at noon: the pages land in today's week, where Month, Week and Rolling all open. */
+const sunday = (() => {
   const d = new Date()
   d.setHours(12, 0, 0, 0)
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  d.setDate(d.getDate() - d.getDay())
   return d
 })()
-const on = (days: number) => key(new Date(monday.getTime() + days * 86_400_000))
+const on = (days: number) => key(new Date(sunday.getTime() + days * 86_400_000))
 
-/** Made-up pages: [title, order, start, end?]. "Long trip" starts on the week's Monday or before it, as Sarmad did. */
+/** Made-up pages: [title, order, start, end?]. "Long trip" starts before the week, as Sarmad did. */
 const PAGES: Array<[string, number, string, string?]> = [
-  ['Long trip', 9, on(-1), on(2)],
+  ['Long trip', 9, on(-2), on(3)],
   ['Short meeting', 1, on(0), on(1)],
-  ['Workshop', 5, on(2), on(4)],
   ['Conference', 3, on(1), on(3)],
+  ['Workshop', 5, on(4), on(5)],
   ['Dentist', 2, on(0)],
   ['Lunch with Sam', 4, on(1)],
-  ['Gym', 6, on(3)],
+  ['Gym', 6, on(4)],
 ]
 
 const FOLDER_HEAD = `---
