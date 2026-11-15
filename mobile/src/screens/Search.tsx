@@ -1,13 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SearchCandidate } from '@client/search/searchCandidates'
 import { useApp } from '../app/AppState'
 import type { Route } from '../app/nav'
 import { buildRows, emptyBoxRows, findRows, type PhoneType } from '../search/searchRun'
 import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
-import { RowIcon, SearchTree } from '../search/SearchTree'
+import { RowIcon } from '../search/rowIcon'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import '../search/search.css'
+
+/** The tree (YAZ-5438): its own chunk, loaded when the box is empty. */
+const SearchTree = lazy(() => import('../search/SearchTree'))
 
 /** Rows drawn at first, and added at each "Show more" (5,000 pages are not drawn at once). */
 const STEP = 100
@@ -177,7 +180,9 @@ export function Search() {
       {tree && data !== null && data.records.length > 0 && (
         <>
           <h2 className="section">{unit('Pages')}</h2>
-          <SearchTree data={data} cards={cards} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
+          <Suspense fallback={null}>
+            <SearchTree data={data} cards={cards} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
+          </Suspense>
         </>
       )}
       {!tree && results !== null && results.length > 0 && (

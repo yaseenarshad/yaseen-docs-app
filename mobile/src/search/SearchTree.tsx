@@ -3,15 +3,8 @@ import { useApp } from '../app/AppState'
 import type { Route } from '../app/nav'
 import type { VaultData } from './vaultData'
 import { openFoldersOf } from './searchState'
-import { buildTree, visibleRows, type TreeKind, type TreeRow } from './vaultTree'
-
-/** The Mac's `data-kind` of each icon (`app.css`): a page is `markdown`. */
-export const ICON_KIND: Record<TreeKind, string> = { folder: 'folder', page: 'markdown', card: 'card' }
-
-/** A row's icon: the Mac's glyph (`search.css`), drawn by its kind. VoiceOver reads the row's kind in its label. */
-export function RowIcon({ kind, open = false }: { kind: TreeKind; open?: boolean }) {
-  return <span className={`file-icon${open ? ' file-icon--open' : ''}`} data-kind={ICON_KIND[kind]} aria-hidden />
-}
+import { ICON_KIND, RowIcon } from './rowIcon'
+import { buildTree, visibleRows, type TreeRow } from './vaultTree'
 
 /** Where a tree row opens: a page in the reader; a card file in the card view. */
 export function treeRoute(row: TreeRow): Route {
@@ -19,11 +12,11 @@ export function treeRoute(row: TreeRow): Route {
 }
 
 /**
- * THE SEARCH TAB'S TREE (YAZ-5438): the Mac's sidebar tree (`vaultTree.ts`), shown while the search box is empty. A
+ * THE SEARCH TAB'S TREE (YAZ-5438), a chunk of its own (the first load stays under its ceiling, YAZ-5377): the Mac's sidebar tree (`vaultTree.ts`), shown while the search box is empty. A
  * folder opens and closes with a tap, to any depth; the open folders stay open while the app runs. A page opens in the
  * reader, a card file in the card view. Only the rows of open folders are drawn, `shown` at a time (the tab's "Show more", kept while a page is open).
  */
-export function SearchTree({ data, cards, shown, more }: { data: VaultData; cards: boolean; shown: number; more: React.ReactNode }) {
+export default function SearchTree({ data, cards, shown, more }: { data: VaultData; cards: boolean; shown: number; more: React.ReactNode }) {
   const app = useApp()
   const open = openFoldersOf(app.vaultKey)
   const [turn, setTurn] = useState(0)
