@@ -3,7 +3,7 @@ import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../store'
 
 /**
- * The vault's word for "page" (YAZ-5036; round 15, item 5): the phone reads `.yaseendocs/unit-word.json` from the
+ * The vault's word for "page" (round 15, item 5): the phone reads `.yaseendocs/unit-word.json` from the
  * vault's stored files (3B downloads `.yaseendocs/`) and uses THE Mac's helper (`unitTextOf`, from
  * `client/src/vault/unitWordText.ts`), so "page" in a label becomes the vault's word, as on the Mac. "Card" never changes.
  */

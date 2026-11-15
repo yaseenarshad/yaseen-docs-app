@@ -4,7 +4,7 @@ import type { PhoneIndex } from '../sync/phoneIndex'
 import type { TreeDiff } from '../sync/plan'
 
 /**
- * What the shell needs from the sync engine (3B, YAZ-5072). It is a structural subset of 3B's `SyncEngine`
+ * What the shell needs from the sync engine (3B). It is a structural subset of 3B's `SyncEngine`
  * (`mobile/src/sync/engine.ts`), so 3B's engine plugs in as it is (`lazySync.ts` loads it; `engineFits` checks the
  * fit). Tests pass `fakeSync` (`dev/fakes.ts`).
  */
@@ -33,7 +33,7 @@ export interface ShellSyncState {
 }
 
 /**
- * The events the shell reads. 3B's `changed` event carries the settings files, and (4C, YAZ-5079) the diff and the index:
+ * The events the shell reads. 3B's `changed` event carries the settings files, and (4C) the diff and the index:
  * Search and the reader follow the index, and the open page follows the diff (R3 changed, R5 deleted, R6 renamed). Both
  * are optional, so a fake may leave them out: then the screens read the stored index again.
  */
@@ -49,11 +49,11 @@ export interface ShellSync {
   /** A pass now ("Try again" on the download view). */
   syncNow(): Promise<void>
   /**
-   * 4B (YAZ-5078): the engine and the ONE answer list of the open vault, for the Review tab; null while no vault is open.
+   * 4B: the engine and the ONE answer list of the open vault, for the Review tab; null while no vault is open.
    * Absent (a fake sync): the Review tab waits.
    */
   review?(): Promise<ReviewLink | null>
-  /** Resolves when no pass runs, also a pass of a vault that was open before (YAZ-5175: the erase waits for it). */
+  /** Resolves when no pass runs, also a pass of a vault that was open before (the erase waits for it). */
   idle(): Promise<void>
 }
 

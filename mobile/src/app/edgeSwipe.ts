@@ -1,5 +1,5 @@
 /**
- * YAZ-5435: a swipe from the LEFT EDGE goes back, as iPhone apps do. Pure, so it is tested without a phone.
+ * A swipe from the LEFT EDGE goes back, as iPhone apps do. Pure, so it is tested without a phone.
  *
  *  - It starts only within `EDGE_PX` of the left edge: a wide table or a code block keeps its own sideways scroll, and a
  *    tap anywhere else is never touched.
@@ -89,7 +89,7 @@ export function edgeSwipe(width: () => number): EdgeSwipe {
 export const swipeIsOurs = (where: 'standalone' | 'ios-safari' | 'ios-other' | 'not-ios'): boolean => where === 'standalone'
 
 /**
- * YAZ-5518: the left-edge Back on a full-screen view drawn outside the frame (a table, a drawing): a swipe from the edge
+ * The left-edge Back on a full-screen view drawn outside the frame (a table, a drawing): a swipe from the edge
  * calls `back` (passive; no motion of its own). `ours`: the swipe is the app's (the Home Screen app, `swipeIsOurs`).
  */
 export function edgeBackOn(el: HTMLElement, back: () => void, ours: boolean): void {
