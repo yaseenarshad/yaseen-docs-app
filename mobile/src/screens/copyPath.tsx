@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useOverlay } from '../app/browserHistory'
 import { Toast, useToast } from './Toast'
 
 /** The phone's clipboard. No clipboard at all (an old browser) throws here, and that is a "no" as well. */
@@ -14,6 +15,8 @@ export function useCopyPath(copy: (text: string) => Promise<void> = clipboard): 
   const [said, say] = useToast()
   const [byHand, setByHand] = useState<string | null>(null)
   const field = useRef<HTMLInputElement>(null)
+  // YAZ-5092 D3: the by-hand dialog is an overlay of the app's one stack: a Back closes it, and the screen stays.
+  useOverlay(byHand !== null, () => setByHand(null))
   useEffect(() => {
     if (byHand !== null) field.current?.select()
   }, [byHand])

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { useApp } from '../app/AppState'
+import { useOverlay } from '../app/browserHistory'
 import { choose, chosenOf, heldList, loadScope, loadingScope, type ListKind, type Scope } from './lists'
 import type { PhoneType } from './searchRun'
 import type { VaultData } from './vaultData'
@@ -26,6 +27,8 @@ export function SearchBar({ data, kind, cards, onType, onScope }: { data: VaultD
   const { vaultKey, unit } = app
   const store = app.services.store
   const [menu, setMenu] = useState(false)
+  // YAZ-5092 D3: the Type menu is an overlay of the app's one stack: a Back closes it, and Search stays.
+  useOverlay(menu, () => setMenu(false))
   const [on, setOn] = useState(() => chosenOf(vaultKey))
   const types: [PhoneType, string][] = [['all', 'All types'], ['pages', unit('Pages')], ...(cards ? [['cards', 'Cards'] as [PhoneType, string]] : [])]
 
