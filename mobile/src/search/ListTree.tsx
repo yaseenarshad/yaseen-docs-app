@@ -1,4 +1,4 @@
-import { useState, type CSSProperties } from 'react'
+import type { CSSProperties } from 'react'
 import { favoriteRoots } from '@client/lib/treeState'
 import { copyFoldKey } from '@shared/foldKey'
 import type { TreeNode } from '@shared/types'
@@ -6,6 +6,7 @@ import { useApp } from '../app/AppState'
 import { vaultNodes, type VaultNodes } from './foundTree'
 import type { ListFolder, ListKind, Scope } from './lists'
 import type { RecentEntry } from './recent'
+import { bumpFolds, useFolds } from './folds'
 import { ICON_KIND, RowIcon } from './rowIcon'
 import { ShowMore, TreeId, treeRoute } from './SearchTree'
 import { rowId, useIdsForm } from './showIds'
@@ -35,7 +36,7 @@ export interface ListRow {
 }
 
 /** The fold key of a folder of the tab: a NUL never stands in a path, so it is no path's. */
-const groupKey = (id: string): string => `\0${id}`
+export const groupKey = (id: string): string => `\0${id}`
 
 /** The stack glyph of a folder of the tab (the Mac's `StackIcon`, `FocusFolderList.tsx`, drawn the same). */
 const StackIcon = () => (
@@ -48,7 +49,7 @@ const StackIcon = () => (
 
 /** The folds of each list of each vault, kept while the app runs (the Mac keeps its folds for the session). */
 const folds = new Map<string, Set<string>>()
-const foldsOf = (vault: string | null, kind: ListKind): Set<string> => {
+export const foldsOf = (vault: string | null, kind: ListKind): Set<string> => {
   const key = `${vault}\n${kind}`
   let set = folds.get(key)
   if (set === undefined) folds.set(key, (set = new Set()))
@@ -116,7 +117,8 @@ export function recentRows(data: VaultData, recent: readonly RecentEntry[], card
 /** A list filter on with an empty box (YAZ-5452): the list under its name, or its plain line when it holds nothing. */
 export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope }) {
   const app = useApp()
-  const [, setTurn] = useState(0)
+  // YAZ-5474: a fold here, or Collapse all / Expand all in the box, draws the list again.
+  useFolds()
   // YAZ-5454: the vault's "Show IDs in the files list": the Mac's Favorites and Focus rows show it too.
   const ids = useIdsForm(data)
   if (scope.loading === true) return null
@@ -127,7 +129,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
   const toggle = (key: string) => {
     if (open.has(key)) open.delete(key)
     else open.add(key)
-    setTurn((n) => n + 1)
+    bumpFolds()
   }
   return (
     <>

@@ -110,6 +110,11 @@
   line-height: 1;
 }
 
+/* YAZ-5474: Collapse all / Expand all, in the ✕'s place while the box is empty: the Mac's chevrons, quiet, no disc. */
+.search__fold {
+  color: var(--fg-muted);
+}
+
 /*
  * YAZ-5438: THE MAC'S SIDEBAR TREE (`client/src/app.css`: `.tree__row`, `.tree__chevron`, the icon rules), at the
  * phone's tap size. A row's indent is the Mac's: 8 + depth × 14 px, then the chevron (14 px), the icon, the name.
