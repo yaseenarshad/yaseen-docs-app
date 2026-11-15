@@ -57,8 +57,11 @@ import { fixtureAnswers } from './fixtureAnswers'
  * YAZ-5524 (sweep3 S-1): `page-no-id` a page with a long title and NO ID chip; `-waiting1-offline` "1 comment waiting ·
  * no signal", `-waiting2-offline` "2 waiting · no signal" (a comment and a tick), `-waiting`, `-not-sent`. YAZ-5524 S-2:
  * `-mixed-offline` (also on `page`, with the ID chip): one comment not sent AND two waiting, no signal.
+ * YAZ-5532: the finger band: `page-table-band` the frozen table with a finger's band on its fifth body row (lifted: it
+ * stays), scrolled sideways so the frozen column shows over the rest; `page-table-band-full` it full screen (the copy
+ * keeps the band); `folder-table-band` the folder's table with the band on its second row.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'page-table-band', 'page-table-band-full', 'folder-table-band'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -187,7 +190,7 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
           ? { 'Reading look.md': `---\ntitle: Reading look\n---\n\n${READING_LOOK_PAGE}\n` }
         : name === 'page-tables' || name === 'page-table-full'
           ? { 'Table shapes.md': `---\ntitle: Table shapes\n---\n\n${TABLE_PAGE}\n` }
-        : name === 'page-table-frozen' || name === 'page-table-frozen-full'
+        : name === 'page-table-frozen' || name === 'page-table-frozen-full' || name === 'page-table-band' || name === 'page-table-band-full'
           ? { 'Frozen table.md': `---\ntitle: Frozen table\n---\n\n${FROZEN_PAGE}\n` }
         : name === 'page-tasks'
           ? { 'home/Weekend jobs.md': TASKS_PAGE }
@@ -320,6 +323,14 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     await until(() => document.querySelector('.hold-menu') !== null, 1500)
     await wait(250)
   }
+  /** YAZ-5532: a finger down on a table row and lifted: its band stays. */
+  const fingerOn = (row: HTMLTableRowElement | null | undefined) => {
+    const cell = row?.cells[1]
+    if (cell === undefined) return
+    const Pointer = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent
+    cell.dispatchEvent(new Pointer('pointerdown', { bubbles: true, button: 0, clientX: 40, clientY: 40, isPrimary: true, pointerType: 'touch' }))
+    cell.dispatchEvent(new Pointer('pointerup', { bubbles: true, button: 0, clientX: 40, clientY: 40, isPrimary: true, pointerType: 'touch' }))
+  }
   const folderTab = async (tab: string) => {
     press(/^Open folder page$/)
     await until(() => document.querySelector('.folder-view') !== null)
@@ -341,6 +352,27 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
       await wait(150)
       break
+    case 'folder-table-band':
+      await hold('Projects')
+      await folderTab('')
+      document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
+      fingerOn(document.querySelectorAll<HTMLTableRowElement>('.folder-table tbody tr[data-row]')[1])
+      await wait(150)
+      break
+    case 'page-table-band':
+    case 'page-table-band-full': {
+      await typed('frozen table')
+      await open(/^Frozen table/, '.reader__body .page-table-box')
+      const scroll = document.querySelector<HTMLElement>('.reader__body .page-table')
+      if (scroll !== null) scroll.scrollLeft = 120
+      fingerOn(document.querySelector<HTMLTableElement>('.reader__body table')?.tBodies[0]?.rows[4])
+      if (name === 'page-table-band-full') {
+        document.querySelector<HTMLElement>('.reader__body [data-table-open]')?.click()
+        await until(() => document.querySelector('.table-view') !== null)
+      }
+      await wait(200)
+      break
+    }
     case 'folder-grouped':
     case 'folder-board':
     case 'folder-cards':

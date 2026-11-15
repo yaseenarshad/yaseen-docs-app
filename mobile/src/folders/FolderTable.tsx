@@ -10,6 +10,8 @@ import { useApp } from '../app/AppState'
 import { openFile } from '../explore/openFile'
 import { layoutTables } from '../page/tableLayout'
 import { useTables } from '../page/useTables'
+import { useVaultLook } from '../page/vaultLook'
+import { useVaultData } from '../search/vaultData'
 import { rowTarget, type ViewRun } from './folderModel'
 
 /**
@@ -22,6 +24,10 @@ import { rowTarget, type ViewRun } from './folderModel'
  * sideways), its rows under it, its inner groups after. A tap on a row opens its page (a subfolder's row, its folder's
  * page; a card row, its card) through the one file door.
  *
+ * YAZ-5532: a finger on a row bands it, as the Mac's hover band (`rowBand.ts`, the vault's band look): the band follows
+ * the finger and stays on the last row after the lift. A tap still opens the row; a long press on a cell's text selects
+ * in that cell.
+ *
  * The table is drawn into its host by hand, as the reader draws a page's table: the phone's table layout
  * (`layoutTables`) wraps and measures it, which React must not see.
  */
@@ -29,7 +35,9 @@ export function FolderTable({ run }: { run: ViewRun }) {
   const app = useApp()
   const host = useRef<HTMLDivElement>(null)
   const rows = useRef<Row[]>([])
-  useTables(host)
+  // YAZ-5532: the vault's band look (`table-look.json`), as a page's tables.
+  const look = useVaultLook(app.services.store, useVaultData())
+  useTables(host, look?.table ?? null)
   useEffect(() => {
     const el = host.current
     if (el === null) return
