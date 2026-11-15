@@ -78,9 +78,12 @@ import { freePort } from './freePort'
  *    by draw.io's viewer in its frame, its picture inside the page's width, the page picker of a diagram of several
  *    pages inside the screen with a 44 px tap; a pick draws that page; the page never scrolls sideways; a picture of
  *    each box.
+ *  - the Explore panel's top (`#fixture=explore-one`, `explore-stack`, YAZ-5540), light and dark, at 375 px, the safe-area inset 0 and
+ *    47 px, and on a small phone on its side (667x375, YAZ-5522 N7, side insets 0 and 47 px): each sheet at the inset +
+ *    12 px + 8 px a step (on its side too: ~363 px tall), a strip of the dim above, the top sheet's head whole below the inset.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -1203,6 +1206,60 @@ if (process.env.LAYOUT_DIAGRAMS !== 'no') {
       console.log(`${ok ? 'PASS' : 'FAIL'}  page-diagrams at ${w}x${h}, ${scheme}: ${boxes.map((b) => `${b.path} ${b.drawn ? (b.fits ? 'drawn, fits' : 'drawn, TOO WIDE') : `NOT DRAWN (${b.text})`}${b.picker ? `, picker ${b.picker.pages} pages ${b.picker.left}-${b.picker.right} x${b.picker.height}` : ''}`).join('; ')}; a pick drew "${picked}"; page ${pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${file.replace('.png', `-${scheme}-*.png`)}`)
     }
   }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5540 (taller): the Explore panel rests just under the status bar, light and dark, at 375 px (and 667x375, N7), with the safe-area
+// inset at 0 (a Safari tab) and at 47 px (a notched iPhone's Home Screen app; Chrome's own inset override): each
+// sheet's top is the inset + 12 px + 8 px a step; above the first, a strip of the dimmed screen shows; the top sheet's
+// head and its grab handle are whole on the screen, below the inset, and a tap at the head's middle is the head's.
+const PANEL_TOP = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const probe = document.createElement('div')
+  probe.style.cssText = 'position: fixed; top: 0; left: 0; width: 1px; height: 0; padding-top: env(safe-area-inset-top, 0px); visibility: hidden'
+  document.body.append(probe)
+  const inset = r(probe).height
+  probe.remove()
+  const sheets = [...document.querySelectorAll('.explore-sheet:not(.explore-sheet--deep)')]
+  if (sheets.length === 0) return { none: true, inset }
+  const top = sheets.at(-1), box = top.querySelector('.explore-sheet__box'), head = top.querySelector('.explore-sheet__head'), grab = top.querySelector('.explore-sheet__grab')
+  const hb = r(head), gb = r(grab)
+  const at = document.elementFromPoint(innerWidth / 2, inset + 5)
+  const mid = document.elementFromPoint(hb.left + hb.width / 2, hb.top + hb.height / 2)
+  return {
+    inset,
+    tops: sheets.map((s) => ({ step: Number(s.style.getPropertyValue('--sheet-step')), top: Math.round(r(s).top * 10) / 10 })),
+    boxTop: Math.round(r(box).top * 10) / 10,
+    strip: Math.round((r(sheets[0]).top - inset) * 10) / 10,
+    stripDim: !!at && at.classList.contains('explore-dim') && !at.closest('.explore-sheet'),
+    head: [Math.round(hb.top), Math.round(hb.bottom)],
+    headLeft: Math.round(hb.left),
+    grab: [Math.round(gb.top), Math.round(gb.bottom)],
+    headWhole: hb.top >= inset && hb.bottom <= innerHeight && hb.left >= 0 && hb.right <= innerWidth + 0.5 && gb.top >= inset,
+    headOnTop: !!mid && head.contains(mid),
+  }
+})()`
+if (process.env.LAYOUT_PANEL_TOP !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    // YAZ-5522 N7 (option A): a short screen, a small phone on its side (667x375), the same rule: the panel near the
+    // top, ~363 px tall (not ~268). On its side a notched iPhone's inset is at the left and right (`side`), not the top.
+    const CASES = [['explore-one', 0, 375, 667, 0], ['explore-one', 47, 375, 667, 0], ['explore-stack', 0, 375, 667, 0], ['explore-stack', 47, 375, 667, 0], ['explore-one', 0, 667, 375, 0], ['explore-one', 0, 667, 375, 47], ['explore-stack', 0, 667, 375, 47]] as const
+    for (const [name, inset, w, h, side] of CASES) {
+      await send('Emulation.setSafeAreaInsetsOverride', { insets: { top: inset, topMax: inset, left: side, leftMax: side, right: side, rightMax: side } }, page)
+      const file = await open(name, w, h)
+      const m = await evaluate(PANEL_TOP)
+      const shot = file.replace('.png', `-inset${inset}${side ? `-side${side}` : ''}-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const steps = m.none ? false : m.tops.every((t: { step: number; top: number }) => Math.abs(t.top - (inset + 12 + 8 * t.step)) <= 0.5)
+      // One sheet: the strip is the 12 px. A stack: the lowest drawn sheet's step (two or more down are not drawn) adds 8 px each.
+      const strip = m.none ? -1 : m.strip - 8 * m.tops[0].step
+      const tall = m.none ? 0 : h - m.boxTop
+      const ok = !m.none && Math.abs(m.inset - inset) <= 0.5 && Math.abs(tall - (h - inset - 12 - 8 * m.tops.at(-1).step)) <= 0.5 && m.headLeft >= side - 0.5 && m.tops.length >= (name === 'explore-one' ? 1 : 2) && (name !== 'explore-one' || m.tops[0].step === 0) && steps && strip >= 10 && strip <= 12.5 && m.stripDim && m.headWhole && m.headOnTop
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} panel top ${scheme}, inset ${inset}${side ? `, sides ${side}` : ''} at ${w}x${h}: inset read ${m.inset}px; panel ${tall}px tall, head from x ${m.headLeft}; sheets ${m.none ? 'NONE' : m.tops.map((t: { step: number; top: number }) => `step ${t.step} at ${t.top}`).join(', ')} (${steps ? 'inset + 12 + 8 a step' : 'OFF THE STEPS'}); strip ${m.strip}px (${strip}px at step 0) ${m.stripDim ? 'of the dim' : 'NOT THE DIM'}; head ${m.head?.join('..')}, grab ${m.grab?.join('..')} ${m.headWhole ? 'whole, below the inset' : 'UNDER THE INSET OR CUT'}, ${m.headOnTop ? 'on top' : 'COVERED'}  ${shot}`)
+    }
+  }
+  await send('Emulation.setSafeAreaInsetsOverride', { insets: {} }, page)
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()
