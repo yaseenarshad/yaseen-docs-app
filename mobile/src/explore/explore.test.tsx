@@ -93,7 +93,7 @@ describe('Explore on the phone (YAZ-5472)', () => {
     // "Spanish words" links to "Trip plan".
     await waitFor(h, () => topSheet()?.querySelector('.linked-mentions__header')?.textContent === 'Linked mentions (1)')
 
-    // A link in the sheet: another sheet on top; the one under steps back.
+    // A link in the sheet: another sheet on top; the one under stays where it is (YAZ-5540), marked as under.
     await tap(inTop(/^Spanish words$/))
     await waitFor(h, () => sheets().length === 2)
     await drawn(h, 'Words for a trip')
@@ -107,6 +107,41 @@ describe('Explore on the phone (YAZ-5472)', () => {
     await act(async () => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     await waitFor(h, () => sheets().length === 0)
     expect(h.host.querySelector('.reader__body')).toBe(page)
+  })
+
+  // YAZ-5540: the sheet under a new one, and the page under the first, stay STILL on an open and on a close: only the
+  // top sheet slides. The one under keeps its place (its style never changes); the new one sits a step lower, so the
+  // top edge of the one under shows above it.
+  it('a sheet opened over another leaves the one under it, and the page under them, exactly where they were', async () => {
+    h = await openSearch(READER_FILES)
+    await h.click(/^Spanish words/)
+    await waitFor(h, () => h!.host.querySelector('.reader__body h1') !== null)
+    const screen = h.host.querySelector<HTMLElement>('.screen')!
+    const pageStyle = () => [screen.getAttribute('style'), screen.className, document.getElementById('root')?.getAttribute('style') ?? null, document.body.getAttribute('style')].join('|')
+    const pageBefore = pageStyle()
+    await act(async () => openSheet({ kind: 'page', path: 'Trip plan.md' }))
+    await waitFor(h, () => sheets().length === 1)
+    await drawn(h, 'Madrid')
+    const lower = sheets()[0]
+    const style = lower.getAttribute('style')
+    expect(pageStyle()).toBe(pageBefore)
+
+    await act(async () => openSheet({ kind: 'card', path: 'cards/capital-of-spain-demo-40.md', id: 'DEMO-40' }))
+    await drawn(h, 'On the Manzanares river')
+    expect(sheets()[0]).toBe(lower)
+    expect(lower.getAttribute('style')).toBe(style)
+    expect(lower.style.transform).toBe('')
+    expect(lower.style.transition).toBe('')
+    expect(pageStyle()).toBe(pageBefore)
+    // Seen behind: the new sheet sits one step lower than the one under it.
+    const step = (el: HTMLElement) => Number(el.style.getPropertyValue('--sheet-step'))
+    expect(step(sheets()[1])).toBe(step(lower) + 1)
+
+    await act(async () => closeTop())
+    await waitFor(h, () => sheets().length === 1)
+    expect(sheets()[0]).toBe(lower)
+    expect(lower.getAttribute('style')).toBe(style)
+    expect(pageStyle()).toBe(pageBefore)
   })
 
   it('closing returns to the exact scroll place: the page under the sheets is never remounted', async () => {
