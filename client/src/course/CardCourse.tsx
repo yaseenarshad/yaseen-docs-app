@@ -43,7 +43,7 @@ import { downloadedVoice } from './downloadedVoice'
 import { CourseScrubber, type CourseScrubberHandle } from './CourseScrubber'
 import { appTour, hasTour, type CourseTour } from './courseTour'
 import { NO_VAULT, showOnlyHost, type CourseHost, type CourseVault } from './courseHost'
-import { INBOX_CARD_CLIP, SHOW_ONLY, vaultCourseHost } from './courseCards'
+import { INBOX_CARD_CLIPS, SHOW_ONLY, inboxOnlyClip, vaultCourseHost } from './courseCards'
 import { courseScenes } from './scenes'
 import { CourseEnd } from './scenes/finale'
 import { readEscapeFacts } from '../lib/escapeOrder'
@@ -737,7 +737,8 @@ export function CardCourse({ chapter: openAt, vault, onClose, course = COURSE, s
             visible={docked}
             reached={readReached}
             onDoStep={askCorner}
-            prepare={clip.id === INBOX_CARD_CLIP ? () => host.inboxCard() : undefined}
+            prepare={INBOX_CARD_CLIPS.has(clip.id) ? () => host.inboxCard() : undefined}
+            inbox={inboxOnlyClip(chapter, clip.id)}
             onEnd={() => endLive(clip.id)}
           />,
           document.body,

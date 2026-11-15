@@ -41,6 +41,7 @@ import { typedFolders } from '@shared/linkResolver'
 import { storage } from '../lib/storage'
 import { bridgeDisk } from '../views/scaffold'
 import { cardSkillPrompt } from '../vault/cardSkill'
+import type { CourseChapter } from './script'
 import { cardsAddedToday } from '../review/cardsAdded'
 import { upNextTakenToday } from '../review/upNextTaken'
 import {
@@ -143,6 +144,25 @@ export const EXAMPLE_CARDS: readonly { title: string; text: string }[] = [
 
 /** The clip whose live step is "Click Inbox in the sidebar": the Inbox gets its card right before it (YAZ-5412). */
 export const INBOX_CARD_CLIP = 'c3-23'
+/**
+ * The clips that ask for the Inbox card (`inboxCard`) before their check: c3-23, and the two Inbox steps after it, for
+ * a person who skipped past c3-23. The write stays once only.
+ */
+export const INBOX_CARD_CLIPS: ReadonlySet<string> = new Set([INBOX_CARD_CLIP, 'c3-08', 'c3-09'])
+/** The live targets that are the Inbox itself: its sidebar row, its card, its answers. */
+const INBOX_TARGETS: ReadonlySet<string> = new Set(['sidebar-inbox', 'inbox-card', 'inbox-answers'])
+
+/**
+ * Does this clip's check need only a card in the Inbox, in any folder (YAZ-5412)? Its chapter's clips from
+ * `INBOX_CARD_CLIP` on whose live steps are all on the Inbox. Every other clip's check is as ever: a card in Course Cards.
+ */
+export function inboxOnlyClip(chapter: Pick<CourseChapter, 'clips'>, clipId: string): boolean {
+  const from = chapter.clips.findIndex((c) => c.id === INBOX_CARD_CLIP)
+  const at = chapter.clips.findIndex((c) => c.id === clipId)
+  if (from === -1 || at < from) return false
+  const live = chapter.clips[at].live ?? []
+  return live.length > 0 && live.every((st) => INBOX_TARGETS.has(st.target))
+}
 
 /** The card chapter 3's Inbox shows when it has none (YAZ-5412): chapter 2's example (`example` on c2-15, c2-16, c2-17). */
 export const INBOX_EXAMPLE = {
@@ -558,6 +578,9 @@ export function vaultCourseHost(vault: CourseVault, deps: CourseHostDeps = appDe
       const run = writeInboxCard().finally(() => inboxWrites.delete(root))
       inboxWrites.set(root, run)
       return run
+    },
+    inboxHasCard() {
+      return showOnlyReason(vault) === null && inboxShows(vault.index.records, deps.now())
     },
     summary() {
       // The course's own folder only (YAZ-5202): a "Course Cards" of the person's is not the course's.

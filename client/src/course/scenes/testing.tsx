@@ -39,6 +39,8 @@ export interface MemoryHost extends CourseHost {
   made: MadeCard[]
   /** The cards in the folder now, as `watchCards` gives them. */
   cards: CourseCard[]
+  /** The vault's Inbox has a card today (any folder): `inboxHasCard`. Default false. */
+  inbox: boolean
   arrive(card: CourseCard, text?: string): void
   /** Sets the AI step's state directly, and wakes its listeners. */
   set(patch: Partial<AgentStepState>): void
@@ -93,6 +95,8 @@ export function memoryHost(vault = '/demo'): MemoryHost {
     },
     summary: () => ({ folder, cards: host.cards.map((c) => ({ path: c.path, title: c.title, due: null })) }),
     inboxCard: () => Promise.resolve(null),
+    inbox: false,
+    inboxHasCard: () => host.inbox,
     arrive(card, text = 'A {{card}}\n---\nIts back') {
       host.cards = [...host.cards, card]
       texts.set(courseCardKey(card), text)

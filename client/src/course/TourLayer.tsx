@@ -66,6 +66,8 @@ export interface TourLayerProps {
    * Read once, when the layer mounts; a failure is passed over, and the check runs as ever.
    */
   prepare?: () => Promise<unknown>
+  /** YAZ-5412: the steps are on the Inbox: a card the Inbox shows today, in any folder, lets them run (`checkTour`'s `inbox`). */
+  inbox?: boolean
 }
 
 /** The coach waits this long before it says where a control is, so a menu that opens a moment late does not flash it. */
@@ -197,7 +199,7 @@ const NOTHING_SEEN: Seen = { target: null, course: null, holes: [], view: { widt
 const sameSeen = (a: Seen, b: Seen): boolean => JSON.stringify(a) === JSON.stringify(b)
 const round = (b: Box): Box => ({ left: Math.round(b.left), top: Math.round(b.top), width: Math.round(b.width), height: Math.round(b.height) })
 
-export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour', reached, visible = true, onDoStep, prepare }: TourLayerProps) {
+export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour', reached, visible = true, onDoStep, prepare, inbox = false }: TourLayerProps) {
   const live = variant === 'live'
   const reducedMotion = useReducedMotion()
   const layer = useRef<HTMLDivElement>(null)
@@ -231,7 +233,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
     let live = true
     const before = prepareRef.current?.().catch(() => undefined) ?? Promise.resolve()
     void before
-      .then(() => checkTour(chapter.id, host))
+      .then(() => checkTour(chapter.id, host, { inbox }))
       .then(
         (r) => {
           if (!live) return
@@ -246,7 +248,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
       live = false
       setTourPlaces(null)
     }
-  }, [chapter.id, host, dispatch])
+  }, [chapter.id, host, dispatch, inbox])
 
   // ---- the person's real actions: the app's events, a click on a marked control ----
   useEffect(() => listenTour((name, detail) => dispatch({ type: 'event', name, detail, at: performance.now() })), [dispatch])

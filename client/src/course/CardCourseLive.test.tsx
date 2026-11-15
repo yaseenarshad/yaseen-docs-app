@@ -361,7 +361,42 @@ describe("chapter 3's Inbox card (YAZ-5412)", () => {
     act(() => target.click())
     await play(2)
     expect(caption()).toBe(SCRIPT.find((ch) => ch.id === 'inbox')!.clips.find((c) => c.id === 'c3-08')!.text)
-    expect(inboxCard).toHaveBeenCalledTimes(1)
+    // c3-08 asks too (for a person who skipped c3-23); the host's write is once only.
+    expect(inboxCard).toHaveBeenCalledTimes(2)
+  })
+
+  const clipOf = (id: string) => SCRIPT.find((ch) => ch.id === 'inbox')!.clips.find((c) => c.id === id)!
+  const NO_COURSE_CARD = 'There is no card in Course Cards yet. Chapter 2 shows how to make one.'
+
+  it('skipped straight to c3-08 or c3-09: each asks for the Inbox card before its check', async () => {
+    for (const id of ['c3-08', 'c3-09']) {
+      const inboxCard = vi.fn(() => Promise.resolve(null))
+      host.inboxCard = inboxCard
+      await mount({ chapter: 'inbox', clip: id }, { course: SCRIPT })
+      expect(inboxCard, id).toHaveBeenCalledTimes(1)
+      act(() => root.unmount())
+      root = createRoot(el)
+    }
+  })
+
+  it('no card in Course Cards, but the Inbox has one in another folder: "Click Inbox" runs; with none at all, the old line', async () => {
+    host.cards = []
+    host.inbox = true
+    control('sidebar-inbox')
+    await mount({ chapter: 'inbox', clip: 'c3-23' }, { course: SCRIPT })
+    click(button('Play'))
+    await play(seconds(clipOf('c3-23')) + 1)
+    expect(coachSay()).toBe('Click Inbox in the sidebar.')
+    act(() => root.unmount())
+    root = createRoot(el)
+
+    host.inbox = false
+    saved = defaultCourseState()
+    await mount({ chapter: 'inbox', clip: 'c3-23' }, { course: SCRIPT })
+    click(button('Play'))
+    await play(seconds(clipOf('c3-23')) + 1)
+    expect(document.body.textContent).toContain(NO_COURSE_CARD)
+    expect(coachSay()).not.toBe('Click Inbox in the sidebar.')
   })
 })
 

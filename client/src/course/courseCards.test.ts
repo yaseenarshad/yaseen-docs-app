@@ -35,7 +35,9 @@ import {
   EXAMPLE_CARDS,
   EXAMPLE_TEXT,
   INBOX_CARD_CLIP,
+  INBOX_CARD_CLIPS,
   INBOX_EXAMPLE,
+  inboxOnlyClip,
   NO_CARDS_YET_MS,
   STILL_WORKING_MS,
   SHOW_ONLY,
@@ -646,13 +648,13 @@ describe('the seam', () => {
   it('the test double and the frame host have every member of the real host, and of its AI step', () => {
     const real = vaultCourseHost(vaultOf().view, depsOf().deps)
     const keys = (o: object): string[] => [...new Set([...Object.keys(o), ...Object.getOwnPropertyNames(Object.getPrototypeOf(o))])].filter((k) => k !== 'constructor').sort()
-    const members = (h: CourseHost): string[] => ['vault', 'courseCards', 'watchCards', 'makeFirstCard', 'coursePage', 'readCard', 'agentStep', 'summary', 'inboxCard'].filter((k) => k in h)
+    const members = (h: CourseHost): string[] => ['vault', 'courseCards', 'watchCards', 'makeFirstCard', 'coursePage', 'readCard', 'agentStep', 'summary', 'inboxCard', 'inboxHasCard'].filter((k) => k in h)
     for (const host of [memoryHost(), showOnlyHost('/v', SHOW_ONLY.readOnly)]) {
       expect(members(host)).toEqual(members(real))
       expect(keys(host.agentStep)).toEqual(keys(real.agentStep))
       expect(Object.keys(host.agentStep.state()).sort()).toEqual(Object.keys(real.agentStep.state()).sort())
     }
-    expect(members(real)).toHaveLength(9)
+    expect(members(real)).toHaveLength(10)
   })
 })
 
@@ -782,6 +784,29 @@ describe("chapter 3's Inbox card (YAZ-5412)", () => {
     expect(inboxQueue(vault)).toEqual([])
     expect(await host.inboxCard()).toBeNull()
     expect(await cardFilesIn(at.path)).toEqual(['protein.md'])
+  })
+
+  it('the Inbox check is for chapter 3 from c3-23 on, on Inbox steps only; c3-08 and c3-09 ask for the card too', () => {
+    const inboxClips = COURSE.flatMap((ch) => ch.clips.filter((c) => inboxOnlyClip(ch, c.id)).map((c) => c.id))
+    expect(inboxClips).toEqual(['c3-23', 'c3-08', 'c3-09', 'c3-10', 'c3-11', 'c3-21'])
+    expect([...INBOX_CARD_CLIPS]).toEqual(['c3-23', 'c3-08', 'c3-09'])
+  })
+
+  it('c3-23\'s check passes on a card the Inbox shows in any folder; with none, and in other chapters, it needs a Course Card as before', async () => {
+    const vault = vaultOf()
+    const host = vaultCourseHost(vault.view, depsOf().deps)
+    const noCard = { blocked: 'There is no card in Course Cards yet. Chapter 2 shows how to make one.' }
+    await vault.refresh()
+    expect(host.inboxHasCard()).toBe(false)
+    expect(await checkTour('inbox', host, { inbox: true })).toEqual(noCard)
+    await mkdirP(join(root, 'food'))
+    await writeFile(join(root, 'food', 'bread.md'), cardFileContent('Bread', 'Bread rises because {{yeast}} makes gas.', withCardId(EMPTY_CARD_LINE, 'TST-92')))
+    await vault.refresh()
+    expect(host.inboxHasCard()).toBe(true)
+    expect(await checkTour('inbox', host, { inbox: true })).toEqual({ places: { folder: folder(), page: `${folder()}/Course page.md` }, folderTitle: 'Course Cards' })
+    expect(await checkTour('inbox', host)).toEqual(noCard)
+    expect(await checkTour('links', host, { inbox: false })).toEqual({ blocked: 'This tour needs 2 cards in Course Cards. Chapter 2 shows how to make one.' })
+    expect(await cardFilesIn(folder())).toEqual([])
   })
 
   it("no new card would show today (the day's new-card number is 0): nothing is written; a read-only vault only shows", async () => {
