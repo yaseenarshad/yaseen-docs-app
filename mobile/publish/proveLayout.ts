@@ -43,9 +43,11 @@ import { join } from 'node:path'
  *    each); a page's card and a card embed with theirs; the page never scrolls sideways.
  *  - the comment count of a card file (`#fixture=card-strip`, YAZ-5511), light and dark, at 375 px: on the screen above
  *    the card, a 44 px tap, its centre the count's own; a tap brings the comments under the card up.
+ *  - a link to a heading (`#fixture=page-links`, YAZ-5519 S2) at 320 and 375 px: the heading lands whole under the top
+ *    bar, a small gap between.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -679,6 +681,27 @@ if (process.env.LAYOUT_COUNT !== 'no') {
     console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip count ${scheme} at 375x667: "${m.text}" at ${m.rect?.join(',')}; ${m.onScreen ? 'on screen' : 'OFF SCREEN'}; ${m.tap ? '44px tap' : 'TAP TOO SMALL'}; its centre ${m.hit ? 'is the count' : 'IS COVERED'}; ${m.overCard ? 'OVER THE CARD' : 'above the card'}; a tap: the comments ${went}px under the top bar  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5519 S2: a link to a heading of another page (`[[Spanish words#Places]]`, `#fixture=page-links`) lands with the
+// heading whole under the top bar, a small gap between (the page's H1 repeats its title, so the reader's title hides).
+const HEADING_LANDED = `(() => {
+  const bar = document.querySelector('.topbar').getBoundingClientRect().bottom
+  const h = [...document.querySelectorAll('.reader__body h2')].find((x) => x.textContent.trim() === 'Places')
+  return h ? { top: Math.round(h.getBoundingClientRect().top), bar: Math.round(bar) } : { error: 'no heading' }
+})()`
+if (process.env.LAYOUT_HEADING !== 'no') {
+  for (const [w, h] of [[320, 568], [375, 667]] as const) {
+    const file = await open('page-links', w, h)
+    await evaluate(`[...document.querySelectorAll('.reader__body a')].find((a) => a.textContent === 'Spanish words > Places').click()`)
+    for (let i = 0; i < 40 && (await evaluate(`document.querySelector('.topbar__title')?.textContent`)) !== 'Spanish words'; i++) await wait(100)
+    await wait(1200)
+    const m = await evaluate(HEADING_LANDED)
+    const shot = file.replace('.png', '-heading.png')
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.error === undefined && m.top >= m.bar + 8 && m.top <= m.bar + 48
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-links heading at ${w}x${h}: "Places" top at ${m.top}, the top bar ends at ${m.bar} (${m.top - m.bar}px under it)  ${shot}`)
+  }
 }
 chrome.kill()
 server.close()

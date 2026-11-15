@@ -102,6 +102,21 @@ describe('YAZ-5455: links open their page', () => {
     expect(flashed[1]).toBe('Second part')
   })
 
+  it('headingLink_scrollsHeadingBelowTopBar: the landing is measured after the page title that repeats the H1 left the flow (S2)', async () => {
+    // The drawn page's H1 says its title, so the reader's own title (`.reader__title`) hides (`--same`, out of the
+    // flow): everything under it moves up by its height. A landing measured before that put the heading under the bar.
+    const atFlash: string[] = []
+    const flash = HTMLElement.prototype.animate
+    HTMLElement.prototype.animate = function (this: HTMLElement, ...a: Parameters<typeof flash>) {
+      atFlash.push(document.querySelector('.reader__title')?.className ?? '')
+      return flash.apply(this, a)
+    } as typeof flash
+    h = await openLinks()
+    await tap(h, 'Long read > Second part')
+    await waitFor(h, () => title(h!) === 'Long read' && flashed.length === 1)
+    expect(atFlash).toEqual(['reader__title reader__title--same'])
+  })
+
   it('a relative Markdown link opens its page at its heading (a GitHub-style `#step-two`); `../` goes up; no `.md` reads as a page name', async () => {
     h = await openLinks()
     await tap(h, 'the guide')
