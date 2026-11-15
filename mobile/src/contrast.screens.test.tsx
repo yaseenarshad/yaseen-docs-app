@@ -86,6 +86,7 @@ const FIXTURES = [
   'page-comments',
   'card',
   'card-file',
+  'card-file-comments',
   'card-invalid',
   'page-offline',
   'page-copied',

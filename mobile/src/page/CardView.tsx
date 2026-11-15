@@ -18,6 +18,7 @@ import { openLink } from './openLink'
 import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
+import { PageComments, PageCommentsCount } from './comments/PageComments'
 
 /** The words of a card file that is not valid (round 15, item 3). */
 export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
@@ -35,6 +36,9 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  *
  * 4B (Review) opens this view for "Open card" (`{ kind: 'card', path, id }`), and the page view for "Open page"
  * (`{ kind: 'page', path, at: id }`).
+ *
+ * YAZ-5477: a card file shows its comments under the card and its history, with the page's Comment button and box
+ * (`comments/PageComments.tsx`, the same block, no copy). A card in a page shows none: they are the page's.
  */
 export default function CardView({ path, id }: { path: string; id: string }) {
   const app = useApp()
@@ -113,6 +117,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   return (
     <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
       <article className="reader card-view" aria-label={label} style={look?.style}>
+        {/* YAZ-5478: a card file's comment count, at the top right; a tap goes to its comments under the card. */}
+        {isFile && typeof text === 'string' && <PageCommentsCount text={text} />}
         <h2 className="reader__title reader__title--same">
           {title}
           <span className="card-view__id"> · {card?.id ?? id}</span>
@@ -143,6 +149,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
             {app.unit('Open page')}
           </button>
         )}
+        {/* YAZ-5477: a card FILE's comments (its front matter's), and its Comment button; a card in a page has none. */}
+        {isFile && typeof text === 'string' && <PageComments path={path} text={text} noun="card file" />}
       </article>
     </Frame>
   )

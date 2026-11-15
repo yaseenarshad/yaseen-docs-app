@@ -1,9 +1,10 @@
 /* YAZ-5461: a page's comments on the phone, read only, after the Mac's comment block (`client/src/comments/comments.css`),
-   and the Comment button with its box. On the app's tokens (`styles.css`). */
+   and (YAZ-5478) the inline box at their end. On the app's tokens (`styles.css`). */
 
 .page-comments {
-  margin: 28px 0 0;
-  padding-top: 12px;
+  clear: both;
+  margin: 32px 0 8px;
+  padding-top: 16px;
   border-top: 1px solid var(--border);
 }
 
@@ -82,90 +83,89 @@
   margin-top: 4px;
 }
 
-/* The dock: it floats at the bottom right of the page's scroll area, over the reader's bottom fade, so it never covers
-   a bar under the page (the page arrows) or the tab bar. */
-.page-comments__dock {
-  position: sticky;
-  bottom: 32px;
-  z-index: 2;
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 16px;
-  pointer-events: none;
-}
-
-.page-comments__dock > * {
-  pointer-events: auto;
-}
-
-.page-comments__fab {
-  min-height: var(--tap);
-  padding: 0 18px;
-  border: 0;
-  border-radius: 22px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
-  cursor: pointer;
-}
-
-.page-comments__fab:disabled {
-  opacity: 0.55;
-}
-
-.page-comments__composer {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--bg);
-  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.16);
-}
-
-.page-comments__chips {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.page-comments__chip {
-  min-height: var(--tap);
-  padding: 0 16px;
-  border: 1px solid var(--accent);
-  border-radius: 22px;
-  background: var(--accent-soft);
-  color: var(--fg);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.page-comments__undo {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: var(--tap);
-  margin: 0 0 8px;
-  color: var(--fg-muted);
+/* YAZ-5478: the new comment, inline at the end of the comments (no floating button). Quiet at rest: one line on the
+   page's own background; it grows when it takes the focus, the comments still in view above. */
+.page-comments__new {
+  margin-top: 14px;
 }
 
 /* 16 px: iOS does not zoom into the box when it takes the focus. */
 .page-comments__box {
   box-sizing: border-box;
+  display: block;
   width: 100%;
-  padding: 8px 10px;
+  min-height: 40px;
+  padding: 9px 12px;
+  /* A field border at 3:1 (the contrast check): quiet by its thin line and the page's own background. */
   border: 1px solid var(--control-border);
   border-radius: 10px;
   background: var(--bg);
   color: var(--fg);
   font: inherit;
   font-size: 16px;
+  line-height: 1.35;
   resize: none;
+}
+
+.page-comments__box::placeholder {
+  color: var(--fg-muted);
+}
+
+.page-comments__box:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .page-comments__actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* "Approved": a pre-fill, a quiet chip at the left of the row; Comment at its right. */
+.page-comments__chip {
+  min-height: var(--tap);
+  margin-right: auto;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.page-comments__send {
+  min-height: var(--tap);
+}
+
+.page-comments__send:disabled {
+  opacity: 0.5;
+}
+
+/* YAZ-5478: the comment count near the title: a speech bubble and the open count, quiet, in the column (no float
+   over the page). A tap glides to the comments. 44 px tall for the tap; it looks small. */
+.comments-count {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  min-width: var(--tap);
+  margin: -6px -8px 0 8px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.comments-count__icon {
+  flex: none;
 }

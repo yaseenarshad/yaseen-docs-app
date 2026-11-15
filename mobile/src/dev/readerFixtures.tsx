@@ -21,8 +21,9 @@ import { TABLE_PAGE } from './tableFixtures'
  * YAZ-5474: `search-collapsed` the tree after "Collapse all folders" in the box, its Expand all icon at the right end.
  * YAZ-5471: `page-tables` a page of made-up tables in the real shapes (`tableFixtures.ts`), at its six-column table;
  * `page-table-full` that table full screen (its ⤢, at the top right of the table: YAZ-5479).
+ * YAZ-5477: `card-file-comments` a card file's own view, scrolled to its comments under the card (its Comment button).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -100,6 +101,20 @@ const COMMENTED = [
   '',
 ].join('\n')
 
+/** YAZ-5477: a card file with comments (made-up): in its front matter after `kind: card`, never on the card line. */
+const COMMENTED_CARD = [
+  '---',
+  'kind: card',
+  'comments:',
+  '  - {id: demo0011, n: 1, at: "2026-11-12T09:00:00Z", by: demo, body: "Is it the Guadalquivir or the Guadiana?"}',
+  '  - {id: demo0012, n: 1, at: "2026-11-12T09:20:00Z", by: sam, reply_to: demo0011, body: "The Guadalquivir."}',
+  '  - {id: demo0013, n: 2, at: "2026-11-13T08:00:00Z", by: demo, resolved: "2026-11-13T09:00:00Z", body: "Add a picture."}',
+  '---',
+  '',
+  cardBlock('DEMO-45', 'Which river runs through Seville?\n---\nThe Guadalquivir.', ['title "River of Seville"', '2026-11-01T08:00Z good']),
+  '',
+].join('\n')
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
@@ -152,7 +167,9 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
             ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
           : name === 'page-folder'
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
-          : {}
+          : name === 'card-file-comments'
+            ? { 'cards/river-of-seville-demo-45.md': COMMENTED_CARD }
+            : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -368,6 +385,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'page-comments':
       await open(/^Review notes/, '.page-comments')
       document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
+      break
+    case 'card-file-comments':
+      await typed('seville')
+      await open(/^River of Seville/, '.card-view .page-comments')
+      document.querySelector('.card-view .page-comments')?.scrollIntoView({ block: 'start' })
       break
     case 'page-tables':
     case 'page-table-full': {
