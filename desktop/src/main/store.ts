@@ -269,6 +269,10 @@ export interface Store {
   approvePictureFolder(folder: string): boolean
   /** Settings › Files & Links › "Allowed picture folders" › Remove: off the list only; no file moves or goes. Not on it: no commit. */
   removePictureFolder(folder: string): void
+  /** YAZ-5487 (the YAZ-5491 rule): this Mac seeded (or found) `<root>/.yaseendocs/<name>` once already. */
+  seededConfig(root: string, name: string): boolean
+  /** Marks `<root>/.yaseendocs/<name>` as seeded or found, so it is never seeded again. */
+  markSeededConfig(root: string, name: string): void
   /**
    * The settings of another Mac's newer file (YAZ-3276 D3), and its `savedAt`. Only fields that travel are
    * taken. A field that the file lacks, or that this build can't read and can't repair, keeps this Mac's value.
@@ -1272,7 +1276,27 @@ function sanitizeState(raw: unknown): AppState | null {
     tabCanvas: sanitizeTabCanvas(raw.tabCanvas, windows),
     // YAZ-5120: absent is the default; each bad field reads its default; an old build drops the key.
     course: cleanCourseState(raw.course),
+    // YAZ-5487 (the YAZ-5491 rule): absolute roots, each with config file names; anything else is dropped.
+    ...seededOf(raw.seededVaultConfig),
   }
+}
+
+/** The key only when it holds a mark, so a state with none reads as it always did. */
+const seededOf = (raw: unknown): Pick<AppState, 'seededVaultConfig'> => {
+  const seeded = sanitizeSeeded(raw)
+  return Object.keys(seeded).length === 0 ? {} : { seededVaultConfig: seeded }
+}
+
+/** `seededVaultConfig`: absolute roots to lists of plain config names (`<name>.json`, or `<name>.json#<part>`), each once. */
+function sanitizeSeeded(raw: unknown): Record<string, string[]> {
+  if (!isRecord(raw)) return {}
+  const out: Record<string, string[]> = {}
+  for (const [root, names] of Object.entries(raw)) {
+    if (!isAbsolute(root) || !Array.isArray(names)) continue
+    const clean = [...new Set(names.filter((n): n is string => typeof n === 'string' && /^[\w.-]+\.json(#[\w-]+)?$/.test(n)))]
+    if (clean.length > 0) out[root] = clean
+  }
+  return out
 }
 
 // ---------- loading ----------
@@ -1405,6 +1429,16 @@ export function createStore(filePath: string): Store {
       if (!isAbsolute(folder) || state.approvedPictureFolders.length >= MAX_PICTURE_FOLDERS) return false
       commit({ ...state, approvedPictureFolders: [...state.approvedPictureFolders, folder] })
       return true
+    },
+
+    seededConfig(root, name) {
+      return state.seededVaultConfig?.[root]?.includes(name) === true
+    },
+
+    markSeededConfig(root, name) {
+      const held = state.seededVaultConfig ?? {}
+      if (held[root]?.includes(name) === true) return
+      commit({ ...state, seededVaultConfig: { ...held, [root]: [...(held[root] ?? []), name] } })
     },
 
     removePictureFolder(folder) {

@@ -53,6 +53,7 @@ import { foldRuns, runOf, unfoldRun } from './tableFold'
 import { tablerIcon } from './tableIcons'
 import { changedTables, typingOnly } from './tableStyle'
 import { calendarDaySetting, onSlotTimeSetting, slotTimeSetting, timeFormatSetting } from './timeFormatSetting'
+import type { TableLookPlace } from './tableLook'
 import './tableCalendar.css'
 
 /** Minutes from midnight of `date`, local time. */
@@ -524,10 +525,11 @@ const filled = (cell: ProseNode): boolean => cell.childCount > 1 || (cell.firstC
  * `calendar 30m`, compact rows, the header row and column A frozen, and column A's body cells vertically in the
  * middle (YAZ-4166), so a time sits level with a two-line plan.
  */
-export function calendarTableNode(schema: Schema, format = timeFormatSetting()): ProseNode {
+export function calendarTableNode(schema: Schema, own?: string, at?: TableLookPlace): ProseNode {
+  const format = own ?? timeFormatSetting(at)
   const { table, table_header_row: headerRow, table_row: row, table_header: header, table_cell: cell } = schema.nodes
   const rows = [headerRow!.create(null, [cellNode(schema, header!, 'Time'), cellNode(schema, header!, 'Plan 1')])]
-  const { start, end } = calendarDaySetting()
+  const { start, end } = calendarDaySetting(at)
   for (let t = start; t <= end; t += 30) rows.push(row!.create(null, [cellNode(schema, cell!, formatTime(format, t), { valign: 'middle' }), cellNode(schema, cell!, '')]))
   return table!.create({ calendar: 30, height: 'compact', freezeRows: 1, freezeCols: 1 }, rows)
 }
@@ -585,13 +587,13 @@ function emptyRowAt(schema: Schema, template: ProseNode, format: string, time: n
 }
 
 /** The slot times of the Calendar day setting that the calendar `table` has no row for; none for another table. */
-export function missingDayTimes(table: ProseNode): number[] {
+export function missingDayTimes(table: ProseNode, at?: TableLookPlace): number[] {
   const slot = table.attrs.calendar as number
   // A merged cell (YAZ-4792): the rows cannot be built again, so nothing is missing.
   if (!(slot > 0) || table.childCount < 2 || tableHasMerge(table)) return []
   const body = rowTimes(table)
   const have = new Set(body.flatMap(({ time }) => (time === null ? [] : [time % 1440])))
-  const { start, end } = calendarDaySetting()
+  const { start, end } = calendarDaySetting(at)
   const out: number[] = []
   for (let t = Math.ceil(start / slot) * slot; t <= end; t += slot) if (!have.has(t)) out.push(t)
   return out
@@ -601,10 +603,10 @@ export function missingDayTimes(table: ProseNode): number[] {
 export function fillCalendarDay(view: EditorView, pos: number): boolean {
   const table = view.state.doc.nodeAt(pos)
   if (table?.type.name !== 'table') return false
-  const missing = missingDayTimes(table)
+  const missing = missingDayTimes(table, view)
   if (missing.length === 0) return false
   const body = rowTimes(table)
-  const format = detectTimeFormat(body.map((_, i) => cellTextAt(table, i + 1, 0))) ?? timeFormatSetting()
+  const format = detectTimeFormat(body.map((_, i) => cellTextAt(table, i + 1, 0))) ?? timeFormatSetting(view)
   const rows = withNewRows(view.state.schema, body, () => true, missing, format)
   view.dispatch(closeHistory(view.state.tr).replaceWith(pos, pos + table.nodeSize, table.type.create(table.attrs, [table.firstChild!, ...rows])))
   return true
@@ -614,8 +616,8 @@ export function fillCalendarDay(view: EditorView, pos: number): boolean {
  * The table with a "Time" column before column A, a time in each body row from the Calendar day's start, `slot` apart
  * (D7); its body cells vertically in the middle, as "/Calendar table" makes them (YAZ-4166, YAZ-4176).
  */
-function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: string): ProseNode {
-  const { start } = calendarDaySetting()
+function withTimeColumn(table: ProseNode, slot: number, schema: Schema, format: string, at?: TableLookPlace): ProseNode {
+  const { start } = calendarDaySetting(at)
   const rows: ProseNode[] = []
   table.forEach((row, _, r) => {
     const type = row.firstChild!.type
@@ -637,7 +639,7 @@ export function setTimeSlots(view: EditorView, pos: number, slot: number): void 
   if (slot === 0) tr.setNodeMarkup(pos, undefined, { ...table.attrs, calendar: 0 })
   else {
     const hasTimes = rowTimes(table).some(({ time }) => time !== null)
-    const next = hasTimes ? slotTimes(table, slot, view.state.schema) : withTimeColumn(table, slot, view.state.schema, timeFormatSetting())
+    const next = hasTimes ? slotTimes(table, slot, view.state.schema, timeFormatSetting(view)) : withTimeColumn(table, slot, view.state.schema, timeFormatSetting(view), view)
     tr.replaceWith(pos, pos + table.nodeSize, next)
   }
   view.dispatch(tr)

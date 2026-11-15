@@ -92,6 +92,8 @@ describe('settingCandidates', () => {
       'codeBlockWidth',
       // Settings › Tables, a page of its own after Editor (YAZ-4775); its "All tables" group (YAZ-4167 D16, YAZ-4162 D6,
       // D14) starts with Header row (YAZ-4774) and Width (YAZ-4783).
+      // YAZ-5487: the Vault dropdown of the table look (table-look.json).
+      'tableLookVault',
       'tableHeaderRow',
       // Subheader row and Sticky subheaders (YAZ-4899) next to it.
       'tableSubheaderRow',

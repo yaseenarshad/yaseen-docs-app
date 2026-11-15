@@ -18,7 +18,7 @@ import { CardStyleFlyout, type CardStyleWrite } from './CardStyleMenu'
 import { ContextMenuSurface } from '../../components/ContextMenuSurface'
 import { MenuFlyout, useFlyout } from '../../components/Flyout'
 import { StyleFlyout } from './StylePanel'
-import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, toggleHeaderRowPlain } from './TableLookSettings'
+import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, toggleHeaderRowPlain, useFolderHeaderRow } from './TableLookSettings'
 import type { ValueHistory } from './valueHistory'
 import { canonicalKey } from './keys'
 import { type PageWindowLink, currentItemClass, usePageWindowItems } from './PageWindow'
@@ -743,7 +743,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const properties = rows.find((r) => r.record.path === m.path)?.record.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(m.path, writes)} />] }
   }
-  const shownHead = shownHeaderRow(view)
+  const headBase = useFolderHeaderRow()
+  const shownHead = shownHeaderRow(view, headBase)
   /** ⌘Z / ⇧⌘Z on a card (YAZ-4906): the page's value history, as the table reads them; a field keeps its own keys. */
   const onUndoKey = (e: ReactKeyboardEvent) => {
     if (history === undefined || e.key.toLowerCase() !== 'z' || !e.metaKey || e.altKey || e.ctrlKey) return
@@ -907,8 +908,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
                 shown={shownHead}
                 plainLabel="Plain, like any row"
                 plainOn={plainHeaderRow(shownHead)}
-                onPlain={() => onHeaderRow(toggleHeaderRowPlain)}
-                onPick={(part, value) => onHeaderRow((v) => setHeaderRowPart(v, part, value))}
+                onPlain={() => onHeaderRow((v) => toggleHeaderRowPlain(v, headBase))}
+                onPick={(part, value) => onHeaderRow((v) => setHeaderRowPart(v, part, value, headBase))}
               />
             </div>
           </MenuFlyout.Provider>

@@ -19,6 +19,7 @@ import { useLinkPills, type LinkPillsState } from '../settings/useLinkPills'
 import { useVaultUnitWord, type UnitWordState } from './unitWord'
 import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
+import { useTableLook, type TableLookState } from '../settings/useTableLook'
 import { useProperties } from '../views/useProperties'
 
 /**
@@ -54,6 +55,8 @@ export interface VaultScope {
   readOnlyVault: ReadOnlyVaultState
   /** How text looks in every page of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
+  /** How this vault's tables look and how its new tables start (YAZ-5487): `.yaseendocs/table-look.json`; no file draws the app's look. */
+  tableLook: TableLookState
   /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
   linkPills: LinkPillsState
   review: CardReviewApi
@@ -136,6 +139,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const unit = useVaultUnitWord(root)
   const readOnlyVault = useReadOnlyVault(root)
   const textFormatting = useTextFormatting(root, notify)
+  const tableLook = useTableLook(root, notify)
   const linkPills = useLinkPills(root, notify)
   // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
   // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
@@ -208,6 +212,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     unit,
     readOnlyVault,
     textFormatting,
+    tableLook,
     linkPills,
     review,
     renames,
