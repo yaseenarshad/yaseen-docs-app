@@ -1,0 +1,144 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { READER_FILES, READER_ID, seedReaderVault, writeVaultFiles } from '../dev/readerVault'
+import { forgetListFolds } from '../search/ListTree'
+import { forgetLists } from '../search/lists'
+import { forgetSearch } from '../search/searchState'
+import { mount, newPhone, type Harness } from './testing'
+
+/**
+ * YAZ-5452: Search's list filters. Favorites shows the vault's own `favorites.json`, as the Mac's Favorites tab: the
+ * Mac's order, the tree's icons, a folder that opens in place, a path that is gone hidden; a missing or corrupt file is
+ * a plain line; typed text finds only inside the list, in the folder tree; a sync's new file shows at once. Made-up vault.
+ */
+let h: Harness | null = null
+beforeEach(() => {
+  URL.createObjectURL = vi.fn(() => 'blob:phone/1')
+  URL.revokeObjectURL = vi.fn()
+})
+afterEach(() => {
+  h?.unmount()
+  h = null
+  forgetSearch()
+  forgetLists()
+  forgetListFolds()
+})
+
+async function waitFor(x: Harness, done: () => boolean, ms = 3000): Promise<void> {
+  const until = Date.now() + ms
+  while (!done()) {
+    if (Date.now() > until) throw new Error(`Timed out. Screen: ${x.text()}`)
+    await act(async () => void (await new Promise((r) => setTimeout(r, 10))))
+  }
+}
+const favs = (list: unknown) => ({ '.yaseendocs/favorites.json': typeof list === 'string' ? list : JSON.stringify({ version: 1, favorites: list }) })
+async function openSearch(extra: Record<string, string> = {}): Promise<Harness> {
+  const phone = await newPhone()
+  await seedReaderVault(phone.store, phone.tokens, { ...READER_FILES, ...extra })
+  const x = await mount({ phone })
+  await x.click('Search')
+  await waitFor(x, () => x.host.querySelector('.tree') !== null && x.host.querySelector('.search__chip') !== null)
+  return x
+}
+/** Each row: indent depth, icon kind, name. */
+const tree = (x: Harness) =>
+  [...x.host.querySelectorAll<HTMLElement>('.tree .tree__row')].map((r) => `${r.style.getPropertyValue('--tree-depth')}:${r.querySelector('.file-icon')?.getAttribute('data-kind')}${r.querySelector('.file-icon--open') ? '-open' : ''}:${r.querySelector('.tree__label')?.textContent}`)
+const box = (x: Harness) => x.host.querySelector<HTMLInputElement>('input[type="search"]')!
+async function typeQuery(x: Harness, value: string): Promise<void> {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box(x), value)
+    box(x).dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await x.settle()
+  await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
+}
+const chip = (x: Harness, name: string) => [...x.host.querySelectorAll<HTMLButtonElement>('.search__chip')].find((b) => b.textContent === name)!
+
+describe('the Favorites filter (YAZ-5452)', () => {
+  it('a chip beside All types; on, only the favorites in the Mac order, with the tree icons; off again, the whole tree', async () => {
+    h = await openSearch(favs(['Trip plan.md', 'cards/capital-of-spain-demo-40.md', 'Spanish words.md']))
+    expect([...h.host.querySelectorAll('.search__bar button')].map((b) => b.textContent)).toEqual(['All types ▾', 'Favorites'])
+    expect(chip(h, 'Favorites').getAttribute('aria-pressed')).toBe('false')
+    await h.click('Favorites')
+    await waitFor(h, () => h!.host.querySelector('[aria-label="Favorites"][role="tree"]') !== null)
+    expect(chip(h, 'Favorites').getAttribute('aria-pressed')).toBe('true')
+    expect(h.host.querySelector('h2.section')?.textContent).toBe('Favorites')
+    // The stored order, never the tree's (which would put Spanish words before Trip plan).
+    expect(tree(h)).toEqual(['0:markdown:Trip plan', '0:card:Capital of Spain', '0:markdown:Spanish words'])
+    await h.click('Favorites')
+    await waitFor(h, () => tree(h!)[0] === '0:folder:cards')
+  })
+
+  it('a folder favorite opens in place like a folder of the tree, its rows in the tree order; a file listed beside it shows in both places', async () => {
+    h = await openSearch({ ...favs(['git', 'git/deep/Rebase.md', 'Café notes.md']), 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nText.\n' })
+    await h.click('Favorites')
+    await waitFor(h, () => tree(h!).length === 3)
+    expect(tree(h)).toEqual(['0:folder:git', '0:markdown:Rebase', '0:markdown:Café notes'])
+    await h.click(/^git, folder/)
+    await h.click(/^deep, folder/)
+    expect(tree(h)).toEqual(['0:folder-open:git', '1:folder-open:deep', '2:markdown:Rebase', '1:markdown:Git cheat sheet', '0:markdown:Rebase', '0:markdown:Café notes'])
+    // A page of the folder opens read only.
+    await h.click(/^Git cheat sheet/)
+    await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Git cheat sheet')
+  })
+
+  it('a path that is gone, unsafe or hidden has no row; the filter is kept while a page is open over Search', async () => {
+    h = await openSearch(favs(['Gone.md', '../outside.md', '/abs.md', 'Trip plan.md', '.yaseendocs/review.json']))
+    await h.click('Favorites')
+    await waitFor(h, () => tree(h!).length > 0)
+    expect(tree(h)).toEqual(['0:markdown:Trip plan'])
+    await h.click(/^Trip plan/)
+    await waitFor(h, () => h!.host.querySelector('.reader__title') !== null)
+    await h.click('‹ Back')
+    await waitFor(h, () => h!.host.querySelector('[aria-label="Favorites"][role="tree"]') !== null)
+    expect(tree(h)).toEqual(['0:markdown:Trip plan'])
+  })
+
+  it.each([
+    ['missing', {}],
+    ['corrupt JSON', favs('{ not json')],
+    ['a wrong shape', favs('{"version": 2, "favorites": ["Trip plan.md"]}')],
+    ['an empty list', favs([])],
+  ])('a %s file: the plain line, and the phone writes nothing', async (_, files) => {
+    h = await openSearch(files)
+    const before = await h.store.read(READER_ID, '.yaseendocs/favorites.json')
+    await h.click('Favorites')
+    await waitFor(h, () => h!.text().includes('No favorites in this vault yet. Add them on the Mac.'))
+    expect(h.host.querySelector('.tree')).toBeNull()
+    expect(await h.store.read(READER_ID, '.yaseendocs/favorites.json')).toEqual(before)
+  })
+
+  it('typed text finds only inside the favorites, in the folder tree; Cards lists only the cards of the favorites', async () => {
+    h = await openSearch(favs(['git', 'Café notes.md']))
+    await h.click('Favorites')
+    await typeQuery(h, 'git')
+    await waitFor(h, () => h!.host.querySelector('.search__found') !== null)
+    const found = () => [...h!.host.querySelectorAll('.search__found .tree__label')].map((l) => l.textContent)
+    expect(found()).toEqual(['git', 'Git cheat sheet', 'git pull'])
+    // "trip" finds Trip plan, which is no favorite.
+    await typeQuery(h, 'trip')
+    await waitFor(h, () => h!.text().includes('No matches with these filters.'))
+    await typeQuery(h, 'caf')
+    await waitFor(h, () => found().join() === 'Café notes')
+    // Off: the whole vault again.
+    await h.click('Favorites')
+    await typeQuery(h, 'trip')
+    await waitFor(h, () => found().includes('Trip plan'))
+    await h.click('Favorites')
+    await typeQuery(h, '')
+    await h.click(/All types/)
+    await h.click('Cards')
+    await waitFor(h, () => h!.host.querySelector('.search__rows') !== null)
+    expect([...h.host.querySelectorAll('.search__rows .row__main')].map((r) => r.textContent)).toEqual(['git pull'])
+  })
+
+  it('a sync that brings a new favorites.json changes the list at once', async () => {
+    h = await openSearch(favs(['Trip plan.md']))
+    await h.click('Favorites')
+    await waitFor(h, () => tree(h!).join() === '0:markdown:Trip plan')
+    const index = await writeVaultFiles(h.store, { ...READER_FILES, ...favs(['Café notes.md', 'Trip plan.md']) }, {}, 'c2')
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: ['.yaseendocs/favorites.json'], diff: { added: [], changed: ['.yaseendocs/favorites.json'], removed: [], renamed: [] }, index })
+    await waitFor(h, () => tree(h!).join() === '0:markdown:Café notes,0:markdown:Trip plan')
+  })
+})

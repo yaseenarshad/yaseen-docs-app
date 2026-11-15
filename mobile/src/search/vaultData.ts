@@ -47,7 +47,8 @@ const CONFIG = `${VAULT_CONFIG_DIR}/`
 const REVIEW_PATH = `${CONFIG}${REVIEW_SETTINGS_FILE}`
 export const IDS_PATH = `${CONFIG}${IDS_FILE}`
 
-async function readJson(store: VaultStore, vault: string, path: string): Promise<unknown> {
+/** A stored JSON file of the vault, parsed; undefined when it is not stored or not JSON. */
+export async function readJson(store: VaultStore, vault: string, path: string): Promise<unknown> {
   const file = await store.read(vault, path)
   if (file === null) return undefined
   try {

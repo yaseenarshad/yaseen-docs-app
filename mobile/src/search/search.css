@@ -7,7 +7,10 @@
 
 .search__bar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
+  gap: 6px;
+  min-height: 36px; /* the bar's own height while its chunk loads: nothing under it moves */
   margin-bottom: 8px;
 }
 
@@ -21,7 +24,12 @@
   font-size: 14px;
   cursor: pointer;
 }
-.pill[aria-expanded='true'] {
+/* YAZ-5452: a list filter (Favorites) is a chip beside the Type pill; lit while on. */
+.search__chip {
+  padding: 6px 12px;
+}
+.pill[aria-expanded='true'],
+.pill[aria-pressed='true'] {
   border-color: transparent;
   background: var(--accent-soft);
   color: var(--fg);

@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SearchCandidate } from '@client/search/searchCandidates'
+import type { Scope } from '../search/lists'
 import { useApp } from '../app/AppState'
 import { buildRows, emptyBoxRows, findRows, type PhoneType } from '../search/searchRun'
 import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
@@ -12,6 +13,8 @@ const SearchTree = lazy(() => import('../search/SearchTree'))
 /** The cards of Cards (an empty box), and the results in the tree (YAZ-5447): the same chunk (the first load stays under its ceiling, YAZ-5377). */
 const ResultList = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultList })))
 const ResultTree = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultTree })))
+/** The filter bar: Type and the vault's lists (YAZ-5452), the same chunk. */
+const SearchBar = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.SearchBar })))
 
 /** Rows drawn at first, and added at each "Show more" (5,000 pages are not drawn at once). */
 const STEP = 100
@@ -29,6 +32,7 @@ const STEP = 100
  * YAZ-5439: the ✕ at the right of the box (and Escape) clears the text and leaves the search: the keyboard goes away
  * and the tree shows again.
  * YAZ-5447: with text, the results stand in that tree, as on the Mac's Search tab (`ResultTree`, `foundTree.ts`).
+ * YAZ-5452: a list filter (Favorites, `SearchBar`) cuts the rows to that list before the search, so the text finds only in it.
  */
 export function Search() {
   const app = useApp()
@@ -37,7 +41,7 @@ export function Search() {
   const held = searchStateOf(vaultKey)
   const [query, setQuery] = useState(held.query)
   const [type, setType] = useState<PhoneType>(held.type)
-  const [menu, setMenu] = useState(false)
+  const [scope, setScope] = useState<Scope | null>(null)
   const [rows, setRows] = useState<SearchCandidate[] | null>(null)
   const [found, setFound] = useState<SearchCandidate[] | null>(null)
   const [shown, setShown] = useState(held.shown ?? STEP)
@@ -54,6 +58,7 @@ export function Search() {
   const cards = data?.review.enabled ?? false
   // Cards is a choice only while Review is on, as on the Mac.
   const kind: PhoneType = type === 'cards' && !cards ? 'all' : type
+  const pool = useMemo(() => (rows !== null && scope !== null ? rows.filter((r) => scope.has(r.page ?? r.path)) : rows), [rows, scope])
 
   // The rows, built again when the index changes (R4: a new page is in search after the pass that brings it).
   useEffect(() => {
@@ -75,19 +80,19 @@ export function Search() {
       setShown(STEP)
       keepPlace(STEP, 0)
     }
-    if (rows === null || query.trim() === '') return setFound(null)
+    if (pool === null || query.trim() === '') return setFound(null)
     let live = true
-    void findRows(rows, query, kind, uiSlicer(), () => live).then((next) => {
+    void findRows(pool, query, kind, uiSlicer(), () => live).then((next) => {
       if (live && next !== null) setFound(next)
     })
     return () => {
       live = false
     }
-  }, [rows, query, kind, vaultKey])
+  }, [pool, query, kind, vaultKey])
 
   const empty = query.trim() === ''
   const tree = empty && kind !== 'cards'
-  const list = useMemo(() => (rows !== null && empty && kind === 'cards' ? emptyBoxRows(rows, kind) : null), [rows, empty, kind])
+  const list = useMemo(() => (pool !== null && empty && kind === 'cards' ? emptyBoxRows(pool, kind) : null), [pool, empty, kind])
   const results = empty ? list : found
 
   // YAZ-5211: the list's scroll place is kept as the person scrolls, and given back when the tab shows again.
@@ -107,11 +112,7 @@ export function Search() {
     return () => scroller.removeEventListener('scroll', keep)
   }, [])
 
-  const TYPES: [PhoneType, string][] = [
-    ['all', 'All types'],
-    ['pages', unit('Pages')],
-    ...(cards ? [['cards', 'Cards'] as [PhoneType, string]] : []),
-  ]
+  const more = () => setShown((n) => n + STEP * 2)
 
   return (
     <section className="search" aria-label="Search" ref={section}>
@@ -143,31 +144,9 @@ export function Search() {
         </button>
       )}
       </div>
-      <div className="search__bar">
-        <button type="button" className="pill" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
-          {TYPES.find(([value]) => value === kind)?.[1]} ▾
-        </button>
-      </div>
-      {menu && (
-        <div className="sheet search__menu" role="menu" aria-label="Type">
-          {TYPES.map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              role="menuitemradio"
-              aria-checked={value === kind}
-              className="row row__button"
-              onClick={() => {
-                setType(value)
-                setMenu(false)
-              }}
-            >
-              <span className="row__main">{label}</span>
-              {value === kind && <span className="row__side">✓</span>}
-            </button>
-          ))}
-        </div>
-      )}
+      <Suspense fallback={<div className="search__bar" />}>
+        <SearchBar data={data} kind={kind} cards={cards} onType={setType} onScope={setScope} />
+      </Suspense>
       {notice !== null && (
         <p className="search__notice" role="status">
           {notice}
@@ -176,39 +155,19 @@ export function Search() {
       {data !== null && data.records.length === 0 && <p className="muted">{unit('No pages yet. They come with the next sync.')}</p>}
       {tree && data !== null && data.records.length > 0 && (
         <Suspense fallback={null}>
-          <SearchTree data={data} cards={cards} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
+          <SearchTree data={data} cards={cards} shown={shown} onMore={more} scope={scope} />
         </Suspense>
       )}
       {!empty && found !== null && data !== null && (
         <Suspense fallback={null}>
-          <ResultTree data={data} rows={found} query={query} type={kind} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
+          <ResultTree data={data} rows={found} query={query} type={kind} shown={shown} onMore={more} scope={scope} />
         </Suspense>
       )}
-      {list !== null && list.length > 0 && (
-        <>
-          <Suspense fallback={null}>
-            <ResultList rows={list.slice(0, shown)} />
-          </Suspense>
-          {list.length > shown && <ShowMore onMore={() => setShown((n) => n + STEP * 2)} />}
-        </>
+      {list !== null && (
+        <Suspense fallback={null}>
+          <ResultList rows={list} shown={shown} onMore={more} />
+        </Suspense>
       )}
     </section>
-  )
-}
-
-/** "Show more": a tap, or the end of the list coming into view. */
-function ShowMore({ onMore }: { onMore: () => void }) {
-  const el = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    const button = el.current
-    if (button === null || typeof IntersectionObserver === 'undefined') return
-    const seen = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && onMore(), { rootMargin: '400px 0px' })
-    seen.observe(button)
-    return () => seen.disconnect()
-  }, [onMore])
-  return (
-    <button type="button" ref={el} className="btn btn--wide search__more" onClick={onMore}>
-      Show more
-    </button>
   )
 }
