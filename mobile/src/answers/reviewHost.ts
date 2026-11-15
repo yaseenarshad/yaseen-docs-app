@@ -5,7 +5,8 @@ import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, cardReview
 import { NOTHING_ADDED, type CardsAddedToday } from '@shared/cardSchedule'
 import type { VaultStore } from '../store'
 import type { Answers } from './answers'
-import { opsBetween, type CardOp } from './ops'
+import { changeCardLine } from './cardLineWrite'
+import type { CardOp } from './ops'
 
 /**
  * DECISION 9: the phone's own two day numbers, kept on this phone only (they never sync, and never become an action):
@@ -160,21 +161,8 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
       const { line, title } = await current(path, id)
       await add(path, title, [reviewOp(id, line, review)])
     },
-    async changeCardLine(path, id, change) {
-      const { line, title } = await current(path, id)
-      const ops = opsBetween(id, line, change(line))
-      if (ops.length === 0) return
-      // YAZ-5078: the inverse of a mark the list still holds unsent (Undo of Archive card, Up next, Fix later): the
-      // mark's group leaves the list, so the card reads byte for byte as before. When a send has tried it (it may be on
-      // GitHub, YAZ-5180), the list keeps it and the inverse goes as an action, as an `unreview` does.
-      const only = ops.length === 1 ? ops[0] : null
-      if (only !== null && (only.kind === 'off' || only.kind === 'next' || only.kind === 'fix' || only.kind === 'notitle')) {
-        const waiting = answers.waiting()
-        const mark = [...waiting].reverse().find((w) => w.op.kind === only.kind && w.op.id === id && 'on' in w.op && w.op.on === !only.on)
-        if (mark !== undefined && waiting.filter((w) => w.group === mark.group).length === 1 && (await answers.undo(mark.group))) return
-      }
-      await add(path, title, ops)
-    },
+    // The phone's safe card-line write (`cardLineWrite.ts`), shared with the reader's card menu (YAZ-5504).
+    changeCardLine: (path, id, change) => changeCardLine(answers, path, id, change),
     upNextTakenToday: () => days.upNextTakenToday(),
     setUpNextTaken: (_root, id, taken) => days.setUpNextTaken(id, taken),
     subscribeUpNextTaken: (listener) => days.subscribeUpNext(listener),
