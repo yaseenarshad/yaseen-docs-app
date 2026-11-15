@@ -88,3 +88,11 @@ describe('the page spacing (YAZ-5485, version 2)', () => {
     expect(spacingVars(undefined)).toEqual({})
   })
 })
+
+describe('YAZ-5485: the spacing ranges are the Settings rows\' ranges', () => {
+  it('bullet indent and gap: the PAGE_BULLET_* ranges of types.ts', async () => {
+    const { PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN } = await import('@shared/types')
+    expect(sanitizeSpacing({ bulletIndent: PAGE_BULLET_INDENT_MIN, bulletGap: PAGE_BULLET_GAP_MAX })).toEqual({ bulletIndent: PAGE_BULLET_INDENT_MIN, bulletGap: PAGE_BULLET_GAP_MAX })
+    expect(sanitizeSpacing({ bulletIndent: PAGE_BULLET_INDENT_MAX + 1, bulletGap: PAGE_BULLET_GAP_MIN - 1 })).toEqual({})
+  })
+})

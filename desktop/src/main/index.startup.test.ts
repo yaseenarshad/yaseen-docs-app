@@ -128,6 +128,8 @@ vi.mock('./drawImport', async (importOriginal) => ({ ...(await importOriginal<ty
 vi.mock('./cardSkill', async (importOriginal) => ({ ...(await importOriginal<typeof import('./cardSkill')>()), ensureCardSkill: h.ensureCardSkill, cardSkillStamp: h.cardSkillStamp }))
 vi.mock('./theme', () => ({ subscribeNativeTheme: vi.fn(), windowBackgroundColor: vi.fn() }))
 vi.mock('./appZoom', () => ({ subscribeAppZoom: vi.fn(), appZoomFactor: () => 1 }))
+// YAZ-5491: main's watch of the vaults' daily-pages.json, for the menu.
+vi.mock('./dailyPagesVaultFile', () => ({ watchDailyPages: vi.fn(() => ({ on: () => false, stop: () => undefined })) }))
 vi.mock('./menu', () => ({
   buildContextMenuTemplate: vi.fn(),
   buildMenuTemplate: vi.fn(() => []),

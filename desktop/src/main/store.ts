@@ -269,7 +269,7 @@ export interface Store {
   removePictureFolder(folder: string): void
   /** YAZ-5491: this Mac seeded (or found) `<root>/.yaseendocs/<name>` once already. */
   seededConfig(root: string, name: string): boolean
-  /** YAZ-5491: notes that `<root>/.yaseendocs/<name>` was seeded or found, so it is never seeded again. */
+  /** YAZ-5491: marks `<root>/.yaseendocs/<name>` as seeded or found, so it is never seeded again. */
   markSeededConfig(root: string, name: string): void
   /**
    * The settings of another Mac's newer file (YAZ-3276 D3), and its `savedAt`. Only fields that travel are

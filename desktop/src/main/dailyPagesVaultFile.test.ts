@@ -92,19 +92,19 @@ describe('seedVaultPart (the move rules)', () => {
 
 describe('seedWindowDailyPages', () => {
   it('only the vault that holds the folder, in the phone\'s format', async () => {
-    const plain = await vault('Notes')
+    const plain = await vault('Pages')
     const daily = await vault('Daily')
     expect(await seedWindowDailyPages([plain, daily], ON, marks())).toEqual({ root: daily, result: 'written' })
     expect(await held(daily)).toEqual({ version: 1, enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false })
     expect(sanitizeDailyPages(await held(daily))).toEqual({ folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false })
-    expect(await readdir(plain)).toEqual(['Notes'])
+    expect(await readdir(plain)).toEqual(['Pages'])
   })
 
   it("'' (the vault folder) seeds the FIRST vault only, not every vault", async () => {
-    const a = await vault('Notes')
-    const b = await vault('Notes')
+    const a = await vault('Pages')
+    const b = await vault('Pages')
     expect((await seedWindowDailyPages([a, b], { ...ON, dailyPageFolder: '' }, marks())).root).toBe(a)
-    expect(await readdir(b)).toEqual(['Notes'])
+    expect(await readdir(b)).toEqual(['Pages'])
   })
 
   it('off (the default) moves nothing; a window with a file in any vault moves nothing', async () => {
@@ -118,7 +118,7 @@ describe('seedWindowDailyPages', () => {
   })
 
   it('no vault holds the folder: nothing', async () => {
-    const plain = await vault('Notes')
+    const plain = await vault('Pages')
     expect(await seedWindowDailyPages([plain], ON, marks())).toEqual({ root: null, result: 'default' })
   })
 

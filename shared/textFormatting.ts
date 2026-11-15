@@ -1,6 +1,6 @@
 import { isRecord } from './guards'
 import { isLineDefaults, type LineDefaults } from './line'
-import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, type HeadingStyle, type HeadingStyles } from './types'
+import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, type HeadingStyle, type HeadingStyles } from './types'
 
 /**
  * A vault's text formatting (YAZ-3066, decisions D10 and D14 on YAZ-3048): how normal text and each
@@ -48,7 +48,7 @@ export interface PageSpacing {
   bulletGap?: number
 }
 
-export const SPACING_DEFAULTS: Required<PageSpacing> = Object.freeze({ line: 1.5, blockGap: 4, bulletIndent: 34, bulletGap: 10 })
+export const SPACING_DEFAULTS: Required<PageSpacing> = /*#__PURE__*/ Object.freeze({ line: 1.5, blockGap: 4, bulletIndent: 34, bulletGap: 10 })
 
 /** Only the levels and the fields the reader changed. "Reset" removes a key; the defaults are never stored. */
 export type TextFormatting = HeadingStyles & { text?: TextStyle; line?: LineDefaults; spacing?: PageSpacing }
@@ -56,8 +56,10 @@ export type TextFormatting = HeadingStyles & { text?: TextStyle; line?: LineDefa
 const SPACING_FIELD_OK: { [K in keyof Required<PageSpacing>]: (v: unknown) => boolean } = {
   line: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 3,
   blockGap: (v) => wholeIn(v, 0, 32),
-  bulletIndent: (v) => wholeIn(v, PAGE_BULLET_INDENT_MIN, PAGE_BULLET_INDENT_MAX),
-  bulletGap: (v) => wholeIn(v, PAGE_BULLET_GAP_MIN, PAGE_BULLET_GAP_MAX),
+  // `PAGE_BULLET_INDENT_MIN`–`MAX` and `PAGE_BULLET_GAP_MIN`–`MAX` of `types.ts`, written out: an import would add
+  // exports to the phone's first load (YAZ-5377), which this module's reader chunk would then take from it.
+  bulletIndent: (v) => wholeIn(v, 8, 48),
+  bulletGap: (v) => wholeIn(v, 2, 20),
 }
 
 /** The spacing's valid fields, each alone; a value equal to the default is left out. Not an object: null (no key). */

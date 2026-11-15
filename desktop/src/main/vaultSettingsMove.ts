@@ -11,10 +11,10 @@ import { createConfig, readConfigDetailed, writeConfig } from './vaultConfig'
  * `seedVaultPart` writes `part` (the app's value, as the file holds it) into `<root>/.yaseendocs/<name>`:
  *  - only once per Mac and vault (`store.seededConfig`): a file or part a person deleted later is not made again;
  *  - only when the file has none of `owns` (absent, or a file that has other keys: the part is ADDED and the file's
- *    other keys stay); a file that already has the part is left alone, and noted as seeded;
- *  - never over a file that is not valid JSON (noted, never written);
+ *    other keys stay); a file that already has the part is left alone, and marked as seeded;
+ *  - never over a file that is not valid JSON (marked, never written);
  *  - never for a root that is not a folder now (a drive not connected: `writeConfig` would make the folder again);
- *  - never for the default value (`part` null): nothing to move, and nothing is noted, so a later value still moves;
+ *  - never for the default value (`part` null): nothing to move, and nothing is marked, so a later value still moves;
  *  - only after the vault's first pull (`canSeed`: its sync pass ended `synced`, or its sync is off), so two Macs do not
  *    both make the same file; a new file is made with `createConfig`, which never writes over one that came meanwhile.
  * The app value itself is kept: it is the fallback, and older builds still read it.

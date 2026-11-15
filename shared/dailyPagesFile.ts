@@ -56,7 +56,7 @@ export interface DailyPagesSettings {
 export const DAILY_PAGES_KEYS: readonly string[] = ['version', 'enabled', 'folder', 'format', 'dayFolder']
 
 /** Off, with the app's own folder and style: a file that is not valid JSON reads as this. */
-export const DAILY_PAGES_OFF: DailyPagesSettings = Object.freeze({ enabled: false, folder: '', format: DEFAULT_DAILY_PAGE_FORMAT, dayFolder: false })
+export const DAILY_PAGES_OFF: DailyPagesSettings = /*#__PURE__*/ Object.freeze({ enabled: false, folder: '', format: DEFAULT_DAILY_PAGE_FORMAT, dayFolder: false })
 
 const safeFolder = (v: unknown): string | null => {
   if (typeof v !== 'string') return null

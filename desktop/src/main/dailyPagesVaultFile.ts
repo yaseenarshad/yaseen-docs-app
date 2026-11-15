@@ -48,7 +48,7 @@ export async function seedWindowDailyPages(roots: readonly string[], s: DailyFie
   if (!s.dailyPages) return { root: null, result: 'default' }
   const files = await Promise.all(roots.map(readDailyPages))
   const withFile = roots.filter((_, i) => files[i] !== null)
-  // A vault of the window has a file: the window reads the files; noted so a later deletion is not undone.
+  // A vault of the window has a file: the window reads the files; marked so a later deletion is not undone.
   for (const root of withFile) store.markSeededConfig(root, DAILY_PAGES_FILE)
   if (withFile.length > 0) return { root: null, result: 'present' }
   let holder: string | null = null
