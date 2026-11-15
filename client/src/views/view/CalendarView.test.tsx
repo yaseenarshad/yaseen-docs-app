@@ -57,14 +57,14 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let draw: () => void = () => {}
 
-function mount(text: string, props: Partial<ViewsPaneProps> = {}) {
+function mount(text: string, props: Partial<ViewsPaneProps> = {}, host: HTMLElement = document.body) {
   let parsed = parseViews(text)
   const onOpenFile = vi.fn()
   const onChange = vi.fn((next: ParsedViews) => {
     parsed = next
   })
   container = document.createElement('div')
-  document.body.appendChild(container)
+  host.appendChild(container)
   root = createRoot(container)
   draw = () =>
     act(() =>
@@ -1370,35 +1370,60 @@ describe('the day names\' header row (YAZ-4864 round 3): the Table view\'s heade
   })
 })
 
-describe('calendar Rolling scale (YAZ-5588)', () => {
+describe('calendar Rolling scale (YAZ-5588; round 3: it scrolls with the page)', () => {
   const ROLLING = `${CALENDAR}    calendarScale: rolling\n`
   const weeksIn = (el: ParentNode) => [...el.querySelectorAll<HTMLElement>('[data-week]')].map((r) => r.dataset.week)
   const grid = (el: ParentNode) => q<HTMLElement>(el, '.view-cal__grid')
   const title = (el: ParentNode) => q(el, '.view-cal__month').textContent
+  /** The tab's scroller, as `.editor-host`: the only box that scrolls. */
+  let page: HTMLElement
   /**
-   * A laid-out grid: its box at 100…600, the day names 30 px under its top, each week row 100 px tall from there, moved
-   * up by the grid's scrollTop, so a load above moves the rows by its own height unless the place rule holds them.
+   * A laid-out folder page in a 600 px tall page scroller, moved up by ITS scrollTop: the calendar's bar 100 px down
+   * the page (36 px tall), the day names under it (30 px), then each week row 100 px tall. The bar sticks at the top
+   * and the day names under it, as views.css says, so a load above moves the rows by its own height unless the place
+   * rule holds them.
    */
   const box = (top: number, height: number) => ({ top, bottom: top + height, left: 0, right: 700, width: 700, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
   beforeEach(() => {
+    page = document.createElement('div')
+    page.style.overflowY = 'auto'
+    document.body.appendChild(page)
+    Object.defineProperty(page, 'clientHeight', { value: 600, configurable: true })
+    Object.defineProperty(page, 'scrollHeight', { value: 100000, configurable: true })
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const st = page.scrollTop
+      if (this === page) return box(0, 600)
+      if (this.classList.contains('view-cal__nav')) return box(Math.max(100 - st, 0), 36)
       const g = this.closest<HTMLElement>('.view-cal__grid')
       if (g === null) return box(0, 0)
-      if (this === g) return box(100, 500)
-      if (this.dataset.week !== undefined) {
-        const i = [...g.querySelectorAll('[data-week]')].indexOf(this)
-        return box(130 + i * 100 - g.scrollTop, 100)
-      }
-      if (this.classList.contains('view-cal__week')) return box(100, 30)
+      const rows = [...g.querySelectorAll('[data-week]')]
+      if (this === g) return box(144 - st, 30 + rows.length * 100)
+      if (this.dataset.week !== undefined) return box(174 + rows.indexOf(this) * 100 - st, 100)
+      if (this.classList.contains('view-cal__week')) return box(Math.max(144 - st, 36), 30)
       return box(0, 0)
     })
   })
-  afterEach(() => vi.restoreAllMocks())
-  const scrollTo = (el: ParentNode, top: number) => {
-    grid(el).scrollTop = top
-    fire(grid(el), 'scroll')
+  afterEach(() => {
+    vi.restoreAllMocks()
+    page.remove()
+  })
+  const open = (text = ROLLING) => mount(text, {}, page)
+  /** The page scrolls (not the calendar): its scroll event is what Rolling hears. */
+  const scrollTo = (top: number) => {
+    page.scrollTop = top
+    fire(page, 'scroll')
   }
   const rowTop = (el: ParentNode, week: string) => q<HTMLElement>(el, `[data-week="${week}"]`).getBoundingClientRect().top
+  /** Scrolls the page down until the last row is half under the window's bottom (550…650), as a scroll down the page goes. */
+  const toBottom = (el: ParentNode) => scrollTo(174 + (weeksIn(el).length - 1) * 100 - 550)
+
+  // views.css's rules, read as text, against the real elements: the last value a rule that matches gives `prop`.
+  const cssRules = [...viewsCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ selector: sel.trim(), body }))
+  const cssOf = (node: Element, prop: string) =>
+    cssRules
+      .filter(({ selector, body }) => new RegExp(`(^|[;\\s])${prop}:`).test(body) && node.matches(selector))
+      .map(({ body }) => body.match(new RegExp(`(?:^|[;\\s])${prop}:([^;]+);`))![1]!.trim())
+      .at(-1)
 
   it('the switch says Month · Week · Rolling and saves calendarScale: rolling for the view; Settings › Folder pages can open it', () => {
     const { el, yaml } = mount(CALENDAR)
@@ -1413,86 +1438,123 @@ describe('calendar Rolling scale (YAZ-5588)', () => {
     expect(opened.yaml()).not.toContain('calendarScale')
   })
 
-  it('opens on this week at the top, two weeks above it drawn, 10 week rows in all, no other-month days, a 1st says its month', () => {
-    const { el } = mount(ROLLING)
-    expect(weeksIn(el)).toHaveLength(10)
-    expect(weeksIn(el)[0]).toBe('2026-11-22')
-    expect(rowTop(el, '2026-12-06')).toBe(130)
+  it('has no scroller of its own: neither the calendar nor its grid scrolls (one scroll bar, the page\'s), and the grid clips its corners without one', () => {
+    const { el } = open()
+    for (const node of [q(el, '.view-cal'), grid(el)]) expect(['auto', 'scroll', 'hidden', 'hidden auto', 'auto hidden', 'overlay']).not.toContain(cssOf(node, 'overflow') ?? 'visible')
+    expect(cssOf(grid(el), 'overflow')).toBe('clip')
+    expect(cssOf(grid(el), 'flex')).toBe('none')
+  })
+
+  it('the month bar sticks at the top of the page, and the day names right under it', () => {
+    const { el } = open()
+    const bar = q(el, '.view-cal__nav')
+    const names = grid(el).firstElementChild!
+    expect([cssOf(bar, 'position'), cssOf(bar, 'top'), cssOf(bar, 'height')]).toEqual(['sticky', '0', 'var(--cal-bar-height)'])
+    expect([cssOf(names, 'position'), cssOf(names, 'top')]).toEqual(['sticky', 'var(--cal-bar-height)'])
+    expect(cssOf(q(el, '.view-cal'), '--cal-bar-height')).toBe('36px')
+  })
+
+  it('opens on this week where the page is: the page does not move, about 3 months (13 week rows) drawn, no other-month days, a 1st says its month', () => {
+    const { el } = open()
+    expect(page.scrollTop).toBe(0)
+    expect(weeksIn(el)).toHaveLength(13)
+    expect(weeksIn(el)[0]).toBe('2026-12-06')
     expect(title(el)).toBe('December 2026')
     expect(el.querySelectorAll('.view-cal__day--other')).toHaveLength(0)
-    expect(q(el, '[data-day="2026-12-01"] .view-cal__date').textContent).toBe('Dec 1')
-    expect(q(el, '[data-day="2026-12-02"] .view-cal__date').textContent).toBe('2')
-  })
-
-  it('weeks load above without a jump: the week at the top stays where it was', () => {
-    const { el } = mount(ROLLING)
-    scrollTo(el, 50)
-    expect(weeksIn(el)[0]).toBe('2026-11-08')
-    expect(weeksIn(el)).toHaveLength(10)
-    // Before the load the 22 Nov row's top was 20 px above the grid's (130 − 50 − 100); it still is.
-    expect(rowTop(el, '2026-11-22') - 100).toBe(-20)
-    expect(grid(el).scrollTop).toBe(250)
-  })
-
-  it('stays 10 week rows however far it scrolls, up or down; the title is the month of the week at the top', () => {
-    const { el } = mount(ROLLING)
-    for (let i = 0; i < 30; i++) scrollTo(el, 0)
-    expect(weeksIn(el)).toHaveLength(10)
-    expect(weeksIn(el)[0]).toBe('2025-09-28')
-    expect(el.querySelectorAll('.view-cal__day')).toHaveLength(70)
-    expect(title(el)).toBe('October 2025')
-    for (let i = 0; i < 40; i++) scrollTo(el, 600)
-    expect(weeksIn(el)).toHaveLength(10)
-    expect(weeksIn(el)[0]! > '2026-12-31').toBe(true)
-  })
-
-  it('Hide weekends: five days a row, still this week at the top (a row keeps its whole week as its key)', () => {
-    const { el } = mount(`${ROLLING}    hideWeekends: true\n`)
-    expect(el.querySelectorAll('[data-week="2026-12-06"] .view-cal__day')).toHaveLength(5)
-    expect(rowTop(el, '2026-12-06')).toBe(130)
-  })
-
-  it('the month label follows the scroll: January once its first week is at the top', () => {
-    const { el } = mount(ROLLING)
-    scrollTo(el, 600)
-    expect(title(el)).toBe('January 2027')
     expect(q(el, '[data-day="2027-01-01"] .view-cal__date').textContent).toBe('Jan 1')
   })
 
-  it('Today scrolls back to this week; ‹ › put the week before or after at the top', () => {
-    const { el } = mount(ROLLING)
-    for (let i = 0; i < 10; i++) scrollTo(el, 0)
+  it('the PAGE scroller moves it: a page scroll into the calendar loads 4 weeks above without a jump (the week at the top stays put)', () => {
+    const { el } = open()
+    // 150 px down: the day names stick at 36…66 and the 6 Dec row is half under them (24…124).
+    scrollTo(150)
+    expect(weeksIn(el)[0]).toBe('2026-11-08')
+    // The 6 rows in view and a step of 4 at each end: more than 13, so a load at one end never shows the other.
+    expect(weeksIn(el)).toHaveLength(14)
+    expect(rowTop(el, '2026-12-06')).toBe(24)
+    expect(page.scrollTop).toBe(550)
+  })
+
+  it('at the page\'s top nothing loads above (the calendar\'s top shows), so the title and tabs stay in reach', () => {
+    const { el } = open()
+    scrollTo(0)
+    scrollTo(60)
+    expect(weeksIn(el)[0]).toBe('2026-12-06')
+  })
+
+  it('weeks load at the bottom as the page nears the last row; not once the calendar\'s bottom shows (the "No date" tray in view)', () => {
+    const { el } = open()
+    // The last row straddles the window's bottom at 600.
+    toBottom(el)
+    expect(weeksIn(el)[0]).toBe('2027-01-03')
+    expect(weeksIn(el)).toHaveLength(14)
+    act(() => root?.unmount())
+    container?.remove()
+    const again = open()
+    // The calendar ends at 474: its bottom shows, so the page reaches what is under it.
+    scrollTo(1000)
+    expect(weeksIn(again.el)[0]).toBe('2026-12-06')
+  })
+
+  it('the DOM stays bounded: as many week rows as the window shows and a step at each end, however far the page scrolls up or down', () => {
+    const { el } = open()
+    for (let i = 0; i < 30; i++) scrollTo(150)
+    expect(weeksIn(el)).toHaveLength(14)
+    expect(weeksIn(el)[0]).toBe('2024-08-18')
+    expect(el.querySelectorAll('.view-cal__day')).toHaveLength(98)
+    for (let i = 0; i < 40; i++) toBottom(el)
+    expect(weeksIn(el)).toHaveLength(14)
+    expect(weeksIn(el)[0]).toBe('2027-09-12')
+    expect(el.querySelectorAll('.view-cal__day')).toHaveLength(98)
+  })
+
+  it('the month label follows the page scroll: January once its first week is the top row under the day names', () => {
+    const { el } = open()
+    scrollTo(500)
+    expect(title(el)).toBe('December 2026')
+    scrollTo(510)
+    expect(title(el)).toBe('January 2027')
+  })
+
+  it('Hide weekends: five days a row, still this week first', () => {
+    const { el } = open(`${ROLLING}    hideWeekends: true\n`)
+    expect(el.querySelectorAll('[data-week="2026-12-06"] .view-cal__day')).toHaveLength(5)
+    expect(weeksIn(el)[0]).toBe('2026-12-06')
+  })
+
+  it('Today scrolls the page back to this week, under the bar and the day names; ‹ › put the week before or after there', () => {
+    const { el } = open()
+    for (let i = 0; i < 10; i++) scrollTo(150)
     expect(weeksIn(el)).not.toContain('2026-12-06')
     click(q(el, '[aria-label="Today"]'))
-    expect(rowTop(el, '2026-12-06')).toBe(130)
+    expect(rowTop(el, '2026-12-06')).toBe(66)
+    expect(weeksIn(el)[0]).toBe('2026-11-08')
     expect(title(el)).toBe('December 2026')
     click(q(el, '[aria-label="Next week"]'))
-    expect(rowTop(el, '2026-12-13')).toBe(130)
+    expect(rowTop(el, '2026-12-13')).toBe(66)
     click(q(el, '[aria-label="Previous week"]'))
     click(q(el, '[aria-label="Previous week"]'))
-    expect(rowTop(el, '2026-11-29')).toBe(130)
+    expect(rowTop(el, '2026-11-29')).toBe(66)
     expect(title(el)).toBe('December 2026')
   })
 
-  it('a card drags to a day of another week; a drag held near the bottom scrolls the grid', () => {
+  it('a card drags to a day of another week; a drag held near the window\'s bottom scrolls the page', () => {
     let frame: FrameRequestCallback | null = null
     vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
       frame = cb
       return 1
     })
-    const { el } = mount(ROLLING)
-    Object.defineProperty(grid(el), 'scrollHeight', { value: 1030, configurable: true })
-    Object.defineProperty(grid(el), 'clientHeight', { value: 500, configurable: true })
-    drag(cardOf(el, 'Timed'), day(el, '2026-12-16'))
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Timed.md', 'due', '2026-12-16 10:30')
-    fire(cardOf(el, 'Bare'), 'dragstart')
-    const before = grid(el).scrollTop
+    const { el } = open()
+    drag(cardOf(el, 'Busy A'), day(el, '2026-12-23'))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Busy A.md', 'due', '2026-12-23')
+    fire(cardOf(el, 'Busy B'), 'dragstart')
     act(() => void day(el, '2026-12-20').dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientY: 595 })))
     expect(frame).not.toBeNull()
     act(() => frame!(performance.now()))
-    expect(grid(el).scrollTop).toBeGreaterThan(before)
+    expect(page.scrollTop).toBeGreaterThan(0)
+    expect(grid(el).scrollTop).toBe(0)
     fire(day(el, '2026-12-20'), 'drop')
-    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'due', '2026-12-20')
+    expect(write).toHaveBeenLastCalledWith('/vault/Busy B.md', 'due', '2026-12-20')
   })
 })
 
@@ -1547,13 +1609,13 @@ describe('a week row is the same in Month and Rolling, and grows to its tallest 
     }
   })
 
-  it('Month\'s grid never shrinks either (the page scrolls); Rolling\'s grid is the scroller and takes the room left', () => {
+  it('Month\'s grid never shrinks either, nor Rolling\'s (round 3: the page scrolls both)', () => {
     const month = mount(CALENDAR)
     expect(flexOf(q(month.el, '.view-cal__grid'))).toBe('none')
     act(() => root?.unmount())
     container?.remove()
     const rolling = mount(ROLLING)
-    expect(flexOf(q(rolling.el, '.view-cal__grid'))).toBe('1 1 0')
+    expect(flexOf(q(rolling.el, '.view-cal__grid'))).toBe('none')
   })
 
   it('a row\'s height is its content: its lanes and its cards row are auto, no fixed height, with fold Off and wrap', () => {

@@ -2154,8 +2154,7 @@
 
 /* Seven equal columns that may shrink below their cards: a long title ellipses, the page never scrolls sideways.
    The grid and its week rows never shrink in height (YAZ-5588 round 2): a row is as tall as its tallest day (its
-   "+N more", or every card with "Fold long days" off, wrapped titles too) and the page (Month) or the grid (Rolling)
-   scrolls. A squeezed row stops at its 104px and its cards spill into the next week. */
+   "+N more", or every card with "Fold long days" off, wrapped titles too) and the page scrolls (Month and Rolling). A squeezed row stops at its 104px and its cards spill into the next week. */
 .view-cal__grid {
   display: flex;
   flex: none;
@@ -2233,20 +2232,39 @@
   border-left: var(--cal-day-line, 1px) solid var(--cal-day-line-color, var(--border));
 }
 
-/* Rolling (YAZ-5588): the grid is the scroller, between the toolbar and the "No date" tray, and the day names stick at
-   its top. Only the place rule in CalendarView moves it when weeks load above, so the browser's scroll anchoring is off. */
+/* Rolling (YAZ-5588 round 3): no scroller of its own. The calendar is in the folder page's flow and the PAGE's scroller
+   (the tab's `.editor-host`) scrolls it: one scroll bar. So nothing between them may be a scroll container (a sticky
+   sticks to the nearest one): the calendar does not scroll, and the grid clips its round corners with `clip`, not
+   `hidden`. The bar (the month label, ‹ › Today, the scale) sticks at the page's top and the day names right under it,
+   while the calendar is on screen. Only the place rule in CalendarView moves the page when weeks load above, so the
+   page's own scroll anchoring is off while Rolling shows. */
+.view-cal--rolling {
+  --cal-bar-height: 36px;
+  overflow: visible;
+}
+
+.view-cal--rolling > .view-cal__nav {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: var(--cal-bar-height);
+  background: var(--bg);
+}
+
 .view-cal__grid--rolling {
-  flex: 1 1 0;
-  min-height: 320px;
-  overflow: hidden auto;
+  overflow: clip;
   overflow-anchor: none;
 }
 
 .view-cal__grid--rolling > .view-cal__week:first-child {
   position: sticky;
-  top: 0;
+  top: var(--cal-bar-height);
   z-index: 2;
   background: var(--bg);
+}
+
+.editor-host:has(.view-cal--rolling) {
+  overflow-anchor: none;
 }
 
 /* A month's 1st in Rolling says its month ("Dec 1"), the only mark where one month meets the next. */

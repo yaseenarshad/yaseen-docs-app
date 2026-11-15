@@ -111,13 +111,14 @@ const NO_DATE = 'none'
 const NO_COLUMNS: readonly string[] = []
 const MONTHS_SHORT = MONTHS.map((m) => m.slice(0, 3))
 /**
- * Rolling (YAZ-5588): the week rows in the DOM at once, the rows added at an end that comes into view (as many go at the
- * other end), and the rows above the week a jump (Today, ‹ ›, the switch) puts at the top. A pane tall enough to show
- * more rows than the window less two steps gets a bigger window (`rollCount`), so the two ends never both load.
+ * Rolling (YAZ-5588, round 3: it scrolls with the page): the week rows in the DOM at once (about 3 months), the rows
+ * added at an end the page scroll nears (as many go at the other end), and the rows above the week a jump (Today, ‹ ›)
+ * puts at the top. A window tall enough to show more rows than the window less two steps gets a bigger window
+ * (`rollCount`), so the two ends never both load.
  */
-export const ROLL_WEEKS = 10
-export const ROLL_STEP = 2
-const ROLL_LEAD = 2
+export const ROLL_WEEKS = 13
+export const ROLL_STEP = 4
+const ROLL_LEAD = 4
 
 /** Rolling's window (YAZ-5588): its first week's first day, its size, and the week a jump puts at the top (null = keep the place). */
 interface Roll {
@@ -134,8 +135,30 @@ function dayInBar(bar: HTMLElement, x: number): DayKey {
   return days[Math.max(0, Math.min(days.length - 1, i))]
 }
 
-/** The sticky day names' height at the grid's top (YAZ-5588): a row there sits under them. */
-const headHeight = (grid: HTMLElement): number => grid.querySelector('.view-cal__week')?.getBoundingClientRect().height ?? 0
+/**
+ * The page's scroller (YAZ-5588 round 3): Rolling has no scroller of its own, the nearest box above it that scrolls up
+ * and down does (the tab's `.editor-host`), else the document.
+ */
+function pageScroller(el: HTMLElement): HTMLElement {
+  for (let p = el.parentElement; p !== null && p !== document.body; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY
+    if (y === 'auto' || y === 'scroll' || y === 'overlay') return p
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement
+}
+const isDocument = (scroller: HTMLElement) => scroller === document.scrollingElement || scroller === document.documentElement
+/** The part of the page scroller on screen, in screen px. */
+function viewOf(scroller: HTMLElement): { top: number; bottom: number } {
+  const box = isDocument(scroller) ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect()
+  return { top: Math.max(0, box.top), bottom: Math.min(window.innerHeight, box.bottom) }
+}
+/** Rolling's day names, the grid's first row: sticky under the sticky month bar (views.css). */
+const headOf = (grid: HTMLElement): HTMLElement | null => grid.querySelector<HTMLElement>('.view-cal__week')
+/** Where the day names stick, in screen px: a row put at the top (a jump) has its top here, under the bar and the day names. */
+function stuckLine(grid: HTMLElement, scroller: HTMLElement): number {
+  const nav = grid.parentElement?.querySelector('.view-cal__nav')?.getBoundingClientRect().height ?? 0
+  return viewOf(scroller).top + nav + (headOf(grid)?.getBoundingClientRect().height ?? 0)
+}
 
 /** A bar over a weekend alone (YAZ-4858): with the weekends hidden it has no day on the grid, so it is a one-day card on its start's home day. */
 const weekendOnly = (span: Span): boolean => daysBetween(span.start, span.end) <= 1 && weekendOf(span.start) !== null && weekendOf(span.end) !== null
@@ -195,10 +218,15 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     return { first: addDays(week, -7 * ROLL_LEAD), count, pin: week }
   }
   const [roll, setRoll] = useState<Roll | null>(null)
-  // The switch to Rolling keeps the place: the window opens on the week of `anchor` (the month's 1st, or the shown week).
-  if (rolling && roll === null) setRoll(rollAround(anchor))
+  // The switch to Rolling keeps the place and leaves the page where it is: the window starts on the week of `anchor`
+  // (the month's 1st, Month's first row, or the shown week); the weeks above load once the page scrolls into it.
+  if (rolling && roll === null) setRoll({ first: weekDays(anchor, sundayFirst)[0], count: ROLL_WEEKS, pin: null })
   if (!rolling && roll !== null) setRoll(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  /** The page's scroller while Rolling shows (`pageScroller`). */
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  /** The latest scroll handler: the page scroller's listener calls it, so it reads this render's window. */
+  const onScrollRef = useRef<() => void>(() => undefined)
   /** The week row that keeps its place over a window change (YAZ-5588): its key and its top's distance below the grid's top. */
   const hold = useRef<{ week: DayKey; at: number } | null>(null)
   const [expanded, setExpanded] = useState<DayKey | null>(null)
@@ -326,28 +354,61 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   }, [revealed, windowLink])
 
   /**
-   * Rolling's place rule (YAZ-5588), after each window change and before the paint: a jump scrolls its week to the top
-   * (under the sticky day names); a load at an end puts the held week back where it was, so weeks added above do not
-   * move what you look at. The browser's own scroll anchoring is off there (views.css), so only this moves it.
+   * Rolling's place rule (YAZ-5588), after each window change and before the paint: a jump scrolls the PAGE so its week
+   * is at the top (under the sticky bar and day names); a load at an end puts the held week back where it was, so weeks
+   * added above do not move what you look at. The browser's own scroll anchoring is off there (views.css), so only this
+   * moves it.
    */
   useLayoutEffect(() => {
     const grid = gridRef.current
     if (!rolling || grid === null || roll === null) return
+    const scroller = pageScroller(grid)
     const rowTop = (week: DayKey) => grid.querySelector<HTMLElement>(`[data-week="${week}"]`)?.getBoundingClientRect().top
-    const top = grid.getBoundingClientRect().top
     if (roll.pin !== null) {
       const at = rowTop(roll.pin)
-      if (at !== undefined) grid.scrollTop += at - top - headHeight(grid)
+      if (at !== undefined) scroller.scrollTop += at - stuckLine(grid, scroller)
       hold.current = null
       return
     }
     const kept = hold.current
     hold.current = null
     const at = kept === null ? undefined : rowTop(kept.week)
-    if (kept !== null && at !== undefined) grid.scrollTop += at - top - kept.at
+    if (kept !== null && at !== undefined) scroller.scrollTop += at - viewOf(scroller).top - kept.at
   }, [rolling, roll])
-  /** A drag held near Rolling's top or bottom scrolls it (YAZ-5588), the table's drag scroll (`edgeScroller`); the scroll loads more weeks. */
-  const rollEdges = useMemo(() => edgeScroller(() => gridRef.current, undefined, 'y'), [])
+  // Rolling listens to the page's scroll (YAZ-5588 round 3): it has no scroller of its own.
+  const noDate = dateKey === null
+  useEffect(() => {
+    const grid = gridRef.current
+    if (!rolling || grid === null) return
+    const scroller = pageScroller(grid)
+    scrollerRef.current = scroller
+    const target: EventTarget = isDocument(scroller) ? window : scroller
+    const onScroll = () => onScrollRef.current()
+    target.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      target.removeEventListener('scroll', onScroll)
+      scrollerRef.current = null
+    }
+  }, [rolling, noDate])
+  /**
+   * A drag held near the top or the bottom scrolls the page in Rolling (YAZ-5588), the table's drag scroll
+   * (`edgeScroller`): the top end is just under the sticky day names, the bottom end the window's; the scroll loads more weeks.
+   */
+  const rollEdges = useMemo(
+    () =>
+      edgeScroller(
+        () => scrollerRef.current,
+        undefined,
+        'y',
+        () => {
+          const grid = gridRef.current
+          const scroller = scrollerRef.current
+          const head = grid === null ? null : headOf(grid)
+          return scroller === null || head === null ? null : { start: head.getBoundingClientRect().bottom, end: viewOf(scroller).bottom }
+        },
+      ),
+    [],
+  )
   useEffect(() => () => rollEdges.stop(), [rollEdges])
 
   const clear = () => {
@@ -397,36 +458,45 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   /** Rolling's week rows in the DOM and their boxes, top to bottom. */
   const rollRows = (): { week: DayKey; box: DOMRect }[] =>
     [...(gridRef.current?.querySelectorAll<HTMLElement>('[data-week]') ?? [])].map((row) => ({ week: row.dataset.week!, box: row.getBoundingClientRect() }))
+  /** The bottom of Rolling's day names in screen px: stuck under the bar, or where they sit while the calendar's top shows. */
+  const headLine = (grid: HTMLElement): number => headOf(grid)?.getBoundingClientRect().bottom ?? grid.getBoundingClientRect().top
   /** The first day of the week row at Rolling's top: the first one whose bottom is below the sticky day names. */
   const topWeek = (): DayKey | null => {
     const grid = gridRef.current
     if (grid === null) return null
-    const line = grid.getBoundingClientRect().top + headHeight(grid)
+    const line = headLine(grid)
     return rollRows().find((r) => r.box.bottom > line)?.week ?? null
   }
   /**
-   * Rolling's scroll (YAZ-5588): the title names the month of the week at the top (its 4th day, the month most of it is
-   * in); a first or last row in view loads `ROLL_STEP` weeks there and drops as many at the other end, the top week held.
+   * Rolling's page scroll (YAZ-5588): the title names the month of the week at the top (its 4th day, the month most of
+   * it is in). Near an end (its last 2 rows in view) `ROLL_STEP` weeks load there and as many go at the other end, the
+   * top week held. Only while the calendar's own edge there is out of view (under the day names, or below the window):
+   * once the page shows the calendar's top or bottom, nothing loads, so the title and tabs above and the "No date" tray,
+   * Other files and Comments below stay in reach.
    */
   const onRollScroll = () => {
     const grid = gridRef.current
-    if (!rolling || grid === null || roll === null) return
-    const box = grid.getBoundingClientRect()
-    const line = box.top + headHeight(grid)
+    const scroller = scrollerRef.current
+    if (!rolling || grid === null || scroller === null || roll === null) return
+    const view = viewOf(scroller)
+    const line = headLine(grid)
     const rows = rollRows()
-    const seen = rows.filter((r) => r.box.bottom > line && r.box.top < box.bottom)
+    const seen = rows.filter((r) => r.box.bottom > line && r.box.top < view.bottom)
     if (seen.length === 0) return
     const mid = addDays(seen[0].week, 3)
     if (mid.slice(0, 7) !== anchor.slice(0, 7)) setAnchor(mid)
     const firstSeen = rows.indexOf(seen[0])
     const lastSeen = rows.indexOf(seen[seen.length - 1])
+    const above = firstSeen <= 1 && rows[0].box.top < line - 0.5
+    const below = lastSeen >= rows.length - 2 && rows[rows.length - 1].box.bottom > view.bottom + 0.5
     // Room for every row in view and a step at each end, so a load at one end never shows the other.
     const count = Math.max(roll.count, seen.length + 2 * ROLL_STEP)
-    const by = firstSeen === 0 ? -ROLL_STEP : lastSeen === rows.length - 1 ? ROLL_STEP : 0
+    const by = above ? -ROLL_STEP : below ? ROLL_STEP : 0
     if (by === 0 && count === roll.count) return
-    hold.current = { week: seen[0].week, at: seen[0].box.top - box.top }
+    hold.current = { week: seen[0].week, at: seen[0].box.top - view.top }
     setRoll({ first: addDays(roll.first, 7 * by), count, pin: null })
   }
+  onScrollRef.current = onRollScroll
 
   /** The click rule (YAZ-5582, the Board's too): plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧ / ⌃ → nothing. */
   const open = (e: ReactMouseEvent, path: string) => {
@@ -680,7 +750,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     if (e.shiftKey ? history.redo() : history.undo()) e.preventDefault()
   }
   return (
-    <div ref={rootRef} className={`view-cal${resize === null ? '' : ' view-cal--resizing'}`} onKeyDown={onUndoKey}>
+    <div ref={rootRef} className={`view-cal${rolling ? ' view-cal--rolling' : ''}${resize === null ? '' : ' view-cal--resizing'}`} onKeyDown={onUndoKey}>
       <div className="view-cal__nav">
         {/* The title alone at the left, the controls at the right (YAZ-3746 13M): views.css gives the title the room between. */}
         <h3 className="view-cal__month">{title}</h3>
@@ -707,8 +777,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         role="grid"
         aria-label={title}
         style={gridLines(view)}
-        onScroll={rolling ? onRollScroll : undefined}
-        // A drag near Rolling's ends scrolls it; a drag that leaves the grid stops that.
+        // A drag near Rolling's ends scrolls the page; a drag that leaves the grid stops that.
         onDragOver={rolling && drag !== null ? (e) => rollEdges.at(e.clientY) : undefined}
         onDragLeave={rolling ? (e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && rollEdges.stop() : undefined}
       >
