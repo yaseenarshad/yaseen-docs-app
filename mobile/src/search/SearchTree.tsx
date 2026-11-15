@@ -16,6 +16,7 @@ import { bumpFolds, useFolds } from './folds'
 import { rowId, useIdsForm } from './showIds'
 import { openFile } from '../explore/openFile'
 import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
+import { useFolderHold } from './holdFolder'
 
 export { SearchBar } from './SearchBar'
 export { FoldButton } from './folds'
@@ -49,6 +50,8 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
   const open = openFoldersOf(app.vaultKey)
   // YAZ-5474: a fold here, or Collapse all / Expand all in the box, draws the tree again.
   const turn = useFolds()
+  // YAZ-5460: hold a folder for its page.
+  const { hold, layer } = useFolderHold()
   const tree = useMemo(() => buildTree(recordsWithBoards(data), data.folders), [data])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => visibleRows(tree, open, cards ? undefined : (r) => r.kind !== 'card'), [tree, open, cards, turn])
@@ -73,6 +76,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
               style={{ '--tree-depth': row.depth } as CSSProperties}
               aria-label={`${row.label}, ${kindWord(row.kind, app.unit('page'))}`}
               onClick={() => (row.kind === 'folder' ? toggle(row.path) : openFile(app, treeRoute(row)))}
+              {...(row.kind === 'folder' && hold(row.path, row.label))}
             >
               <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               <RowIcon kind={row.kind} open={row.open === true} />
@@ -83,6 +87,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
         ))}
       </ul>
       {rows.length > shown && <ShowMore onMore={onMore} />}
+      {layer}
     </>
   )
 }
@@ -156,6 +161,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   const found = useMemo(() => foundTree(vault, rows, folders, query), [vault, rows, folders, query])
   const drawn = useMemo(() => foundRows(vault, found, flipped, data.review.enabled), [vault, found, flipped, data])
   const needle = readNeedle(query)
+  const { hold, layer } = useFolderHold()
   const toggle = (path: string) => {
     flips = { key, open: new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]) }
     setTurn((n) => n + 1)
@@ -184,6 +190,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
                 style={{ '--tree-depth': row.depth } as CSSProperties}
                 aria-label={`${id === null ? '' : `${id} — `}${row.label}, ${what}`}
                 onClick={() => open(row)}
+                {...(row.kind === 'folder' && hold(row.path, row.label))}
               >
                 <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
                 <RowIcon kind={row.kind} open={row.open === true} />
@@ -198,6 +205,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
         })}
       </ul>
       {drawn.length > shown && <ShowMore onMore={onMore} />}
+      {layer}
       {/* The Mac's limit line (🔒 D6): the ranking keeps the best SEARCH_CAP rows. */}
       {(rows.length === SEARCH_CAP || folders.length === SEARCH_CAP) && <p className="muted">Showing {SEARCH_CAP} matches. Type more to narrow.</p>}
     </>

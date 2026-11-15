@@ -62,6 +62,8 @@ export type Route =
   | { kind: 'card'; path: string; id: string }
   /** YAZ-5473: a drawing file on its own (`.excalidraw`, `.drawio.svg`; a `.drawio` says "Open it on the Mac"), read only. */
   | { kind: 'drawing'; path: string }
+  /** YAZ-5460: a folder's page, read only (hold a folder in Search): its `.folder.md` text and its views. `path`: the folder as the index names it. */
+  | { kind: 'folder'; path: string }
   /** 4E4 (decision 23): "You vs <friend>". `theirs`: the friend's pointer; or `group` and `pointer`: a member of a group. */
   | { kind: 'friend'; theirs: string; group?: undefined; pointer?: undefined }
   | { kind: 'friend'; group: string; pointer: string; theirs?: undefined }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { cardInContent, type CardAtPage } from '@client/review/cardRead'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
@@ -236,8 +236,17 @@ export function DrawingBody({ path, onDrawn }: { path: string; onDrawn(): void }
 /** A drawing file's name, as its tree row says it. */
 export const drawingTitle = (path: string): string => boardLabel(path.slice(path.lastIndexOf('/') + 1))
 
+/** A folder's page (YAZ-5460): its own chunk, with the Mac's view engine, loaded when one opens. */
+const FolderBody = lazy(() => import('../folders/FolderBody'))
+
 /** The sheet's body for its route. */
 export function SheetContent({ route, onDrawn, onText }: { route: SheetRoute; onDrawn(): void; onText(text: string): void }) {
+  if (route.kind === 'folder')
+    return (
+      <Suspense fallback={<div className="reader" aria-busy="true" />}>
+        <FolderBody path={route.path} onDrawn={onDrawn} />
+      </Suspense>
+    )
   if (route.kind === 'drawing') return <DrawingBody path={route.path} onDrawn={onDrawn} />
   return route.kind === 'page' ? <SheetPage path={route.path} at={route.at} onDrawn={onDrawn} /> : <SheetCard path={route.path} id={route.id} onDrawn={onDrawn} onText={onText} />
 }
