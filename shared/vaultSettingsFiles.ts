@@ -3,6 +3,7 @@ import { DAILY_PAGES_FILE } from './dailyPagesFile'
 import { FOLDER_PAGES_FILE } from './folderPages'
 import { LINK_CLICK_FILE } from './linkClick'
 import { LINK_PILLS_FILE } from './linkPills'
+import { MOBILE_SETTINGS_FILE } from './mobileSettings'
 import { NEW_PLACES_FILE } from './newPlaces'
 import { REVIEW_SETTINGS_FILE } from './reviews'
 import { SHOW_IDS_FILE } from './showIds'
@@ -39,4 +40,6 @@ export const VAULT_SETTINGS_FILES: readonly VaultSettingsFile[] = [
   { file: NEW_PLACES_FILE, label: 'new places' },
   { file: ICONS_FILE, label: 'icons' },
   { file: SHOW_IDS_FILE, label: 'show IDs' },
+  // YAZ-5592: the vault on a phone or a tablet (folding, sticky headings); the phone writes it, the Mac does not show it yet.
+  { file: MOBILE_SETTINGS_FILE, label: 'mobile' },
 ]

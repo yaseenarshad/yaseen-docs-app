@@ -49,6 +49,11 @@ export interface ToolsFor {
    * this page", a check row; none: the phone cannot write this page (no comments path, a card).
    */
   folding?: { on: boolean; set(on: boolean): void } | null
+  /**
+   * YAZ-5591: the page's own "Sticky headings" (`sticky-headings: true | false` in its frontmatter, the phone's own key):
+   * "Sticky headings on this page", a check row; none: the phone cannot write this page.
+   */
+  sticky?: { on: boolean; set(on: boolean): void } | null
 }
 
 /** The Mac's fold-all icons (`FoldAllButton.tsx`'s shape): two chevrons up to collapse, down to expand. */
@@ -86,6 +91,10 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const folding = () => {
     setMenu(false)
     file.folding?.set(!file.folding.on)
+  }
+  const sticky = () => {
+    setMenu(false)
+    file.sticky?.set(!file.sticky.on)
   }
   const { copyPath, layer } = useCopyPath()
   const copy = async () => {
@@ -129,6 +138,14 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
                     {file.folding.on ? '✓' : ''}
                   </span>{' '}
                   Folding on this page
+                </button>
+              )}
+              {menu && file.sticky != null && (
+                <button type="button" role="menuitemcheckbox" aria-checked={file.sticky.on} className="page-tools__item" onClick={sticky}>
+                  <span aria-hidden="true" className="page-tools__icon">
+                    {file.sticky.on ? '✓' : ''}
+                  </span>{' '}
+                  Sticky headings on this page
                 </button>
               )}
             </>

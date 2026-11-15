@@ -16,7 +16,10 @@ import { renderPage } from '../page/pageRender'
 import { heldText, holdText } from '../page/heldText'
 import { headingTarget, landOn } from '../page/headings'
 import { attachFolds, revealFolds, type PageFolds } from '../page/folds'
-import { pageSwitchAttrs } from '../page/pageSwitches'
+import { pageOwnSwitch } from '../page/pageSwitches'
+import { effectiveSwitch, useMobileSettings } from '../page/mobileSettings'
+import { stickHeadings } from '../page/stickyHeadings'
+import { useCommentsPort } from '../page/comments/PageComments'
 import { openLink, type LinkDoor } from '../page/openLink'
 import { LinkedMentions } from '../page/LinkedMentions'
 import { boardKindOf, boardLabel } from '../drawing/boardFiles'
@@ -123,11 +126,26 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
   // YAZ-5568: a panel folds as the page does (the page's `folding: false` too); its folds last while it is open.
   const folds = useRef<PageFolds | null>(null)
   useEffect(() => () => folds.current?.destroy(), [])
+  // YAZ-5592: the vault's mobile settings; a page's own `folding` / `sticky-headings` wins.
+  const vaultMobile = useMobileSettings(data, useCommentsPort()).settings
+  const own = (key: 'folding' | 'sticky-headings') => (typeof content === 'string' ? pageOwnSwitch(content, key) : undefined)
+  const foldingOn = effectiveSwitch(own('folding'), vaultMobile?.folding ?? true)
+  const stickyOn = effectiveSwitch(own('sticky-headings'), vaultMobile?.stickyHeadings ?? true)
+  // YAZ-5591: the stuck headings of the panel, in its own scroller.
+  const stuckLayer = useRef<HTMLDivElement>(null)
+  const hasText = typeof content === 'string'
+  useEffect(() => {
+    const el = host.current
+    const layer = stuckLayer.current
+    const scroller = el?.closest<HTMLElement>('.explore-sheet__body')
+    if (!stickyOn || !hasText || el == null || layer === null || scroller == null) return
+    return stickHeadings(scroller, el, layer, { title })
+  }, [stickyOn, hasText, path, title])
 
   useEffect(() => {
     const el = host.current
-    if (el === null || data === null || typeof content !== 'string') return
-    const key = `${data.version}\n${content}`
+    if (el === null || data === null || typeof content !== 'string' || vaultMobile === undefined) return
+    const key = `${data.version}\n${content}\n${foldingOn}`
     if (drawn.current === key) return
     drawn.current = key
     let live = true
@@ -146,7 +164,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       }
       const kept = folds.current?.folded() ?? []
       folds.current?.destroy()
-      folds.current = pageSwitchAttrs(content)['data-folding'] === 'off' ? null : attachFolds(el, { title, initial: kept })
+      folds.current = foldingOn ? attachFolds(el, { title, initial: kept }) : null
       folds.current?.apply()
       const head = el.firstElementChild
       // S2 (sweep1): the title hides before the card asked for is landed on (it leaves the flow; the page moves up).
@@ -171,7 +189,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
     }
     // `door` and `onDrawn` are the same doors at each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, data, path, at, heading, title])
+  }, [content, data, path, at, heading, title, foldingOn, vaultMobile === undefined])
 
   return (
     <article className="reader explore-sheet__reader" aria-label={title}>
@@ -182,6 +200,8 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
         </p>
       )}
       {content === null && <p className="muted">{app.unit('This page is not on the phone.')}</p>}
+      {/* YAZ-5591: the layer of stuck headings (copies), zero height. */}
+      <div ref={stuckLayer} className="reader__stuck" aria-hidden="true" />
       <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
       {/* The end of the page, the full page's own component; a row opens another panel (the sheet's door). */}
       {data !== null && content !== undefined && <LinkedMentions path={path} data={data} store={app.services.store} door={door} />}

@@ -106,3 +106,41 @@ export const FOLDS_FILES: Record<string, string> = {
   'garden/Garden plan.md': `---\ntitle: Garden plan\n---\n\n${FOLDS_PAGE}\n`,
   'garden/Garden plan, no folds.md': `---\ntitle: Garden plan, no folds\nfolding: false\n---\n\n${FOLDS_PAGE.replace('# Garden plan', '# Garden plan, no folds')}\n`,
 }
+
+/**
+ * YAZ-5591: the sticky headings fixtures (`page-sticky*`, `sheet-sticky`), made-up: a long "Lisbon trip" page with
+ * headings three deep, long enough to scroll well past a section, and the same page with `sticky-headings: false`.
+ * YAZ-5592 (`settings-mobile`): the vault's `mobile.json` says Folding off.
+ */
+const para = (words: string, n: number) => Array.from({ length: n }, (_, i) => `${words} Line ${i + 1} of the notes for this part, so the page is long enough to scroll on a phone.`).join(' ')
+export const STICKY_PAGE = [
+  '# Lisbon trip',
+  para('Five days by the river in spring.', 3),
+  '## Getting there',
+  para('The morning train from Porto.', 4),
+  '### Tickets',
+  para('Two seats, bought a week before.', 4),
+  '## Days in the city',
+  para('One part of the city each day.', 2),
+  '### Day 1: Alfama',
+  para('The old streets up to the castle.', 5),
+  '### Day 2: Belém',
+  ['- The tower by the water', '    - Open from ten', '- The monastery', '- Custard tarts'].join('\n'),
+  para('A long walk along the river.', 5),
+  '#### Lunch',
+  para('Grilled sardines by the market.', 4),
+  '### Day 3: Sintra',
+  para('The train out to the hills and the palaces.', 6),
+  '## Costs',
+  para('Rooms, trains and food.', 5),
+].join('\n\n')
+
+export const STICKY_HEADINGS_FILES: Record<string, string> = {
+  'travel/Lisbon trip.md': `---\ntitle: Lisbon trip\n---\n\n${STICKY_PAGE}\n`,
+  'travel/Lisbon trip, still.md': `---\ntitle: Lisbon trip, still\nsticky-headings: false\n---\n\n${STICKY_PAGE.replace('# Lisbon trip', '# Lisbon trip, still')}\n`,
+}
+
+export const MOBILE_SETTINGS_FILES: Record<string, string> = {
+  ...STICKY_HEADINGS_FILES,
+  '.yaseendocs/mobile.json': `${JSON.stringify({ version: 1, folding: false }, null, 2)}\n`,
+}

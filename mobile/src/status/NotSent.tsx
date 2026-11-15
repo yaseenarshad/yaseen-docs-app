@@ -21,7 +21,14 @@ export const WHY_NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string
 
 /** What the person wrote: a comment's words, the tick and its task ("Tick: Book hotel"), or a page setting (YAZ-5568). */
 export const notSentWords = (c: WaitingComment): string =>
-  c.setting !== undefined ? `Folding on this page: ${c.setting.on ? 'On' : 'Off'}` : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
+  c.setting !== undefined ? settingWords(c.setting) : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
+
+/** A setting's row and what it becomes: "Folding on this page: Off", YAZ-5592 "This vault on mobile, Sticky headings: Off". */
+function settingWords(s: NonNullable<WaitingComment['setting']>): string {
+  const to = s.on ? 'On' : 'Off'
+  if ('file' in s) return `This vault on mobile, ${s.key === 'folding' ? 'Folding' : 'Sticky headings'}: ${to}`
+  return `${s.key === 'sticky-headings' ? 'Sticky headings' : 'Folding'} on this page: ${to}`
+}
 
 const pageName = (path: string): string => (path.split('/').pop() ?? path).replace(/\.md$/i, '')
 
@@ -57,7 +64,7 @@ function NotSentRow({ item, onDiscard }: { item: WaitingComment; onDiscard: () =
         {words}
         <br />
         <span className="muted">
-          {pageName(item.path)} · {WHY_NOT_SENT[item.refused ?? 'gone']}
+          {pageName(item.path)} · {item.setting !== undefined && 'file' in item.setting && item.refused === 'invalid' ? 'The file does not read correctly. Fix it on the Mac.' : WHY_NOT_SENT[item.refused ?? 'gone']}
         </span>
       </span>
       {asking ? (

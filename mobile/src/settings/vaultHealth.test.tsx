@@ -34,7 +34,7 @@ describe('the list of settings files (YAZ-5559)', () => {
     const names = VAULT_SETTINGS_FILES.map((f) => f.file)
     expect(new Set(names).size).toBe(names.length)
     for (const n of names) expect(n).toMatch(/^[a-z][a-z0-9-]*\.json$/)
-    expect(names).toEqual(expect.arrayContaining(['table-look.json', 'card-look.json', 'text-formatting.json', 'review.json', 'daily-pages.json', 'icons.json', 'folder-pages.json', 'new-places.json', 'link-click.json', 'link-pills.json', 'show-ids.json']))
+    expect(names).toEqual(expect.arrayContaining(['table-look.json', 'card-look.json', 'text-formatting.json', 'review.json', 'daily-pages.json', 'icons.json', 'folder-pages.json', 'new-places.json', 'link-click.json', 'link-pills.json', 'show-ids.json', 'mobile.json']))
     // The phone spells no file name: its code reads the shared list.
     const code = readFileSync(join(HERE, 'healthRows.ts'), 'utf8') + readFileSync(join(HERE, 'VaultHealth.tsx'), 'utf8')
     expect(code).not.toMatch(/['"`][a-z-]+\.json['"`]/)

@@ -24,9 +24,17 @@ import { isMap, isScalar, parseDocument } from 'yaml'
  * chunks grew. `settingWrite.test.ts` holds them equal to the Mac's.
  */
 export interface PageSetting {
-  key: PageSwitchKey
+  key: PageSettingKey
   on: boolean
 }
+
+/**
+ * YAZ-5591: the phone's own page key, `sticky-headings: true | false` ("Sticky headings on this page"). Not a Mac switch
+ * (the Mac has no sticky headings): the Mac keeps it as any other property, byte for byte (`useAutosave` puts the block
+ * back as it was read; `setFrontmatterIn` lays out only its own key: `client/src/hooks/useAutosave.test.tsx`).
+ */
+export const STICKY_HEADINGS_KEY = 'sticky-headings'
+export type PageSettingKey = PageSwitchKey | typeof STICKY_HEADINGS_KEY
 
 export type SettingRefusedWhy = 'invalid' | 'layout'
 
@@ -38,7 +46,7 @@ export const SETTING_REFUSED_WORDS: Record<SettingRefusedWhy, string> = {
 }
 
 /** The page's own value for `key` (the Mac's `readPageSwitches`: a boolean, else none). */
-export const switchOf = (content: string, key: PageSwitchKey): boolean | undefined => {
+export const switchOf = (content: string, key: PageSettingKey): boolean | undefined => {
   const value: unknown = parseFrontmatter(splitFrontmatter(content).frontmatter).properties[key]
   return typeof value === 'boolean' ? value : undefined
 }

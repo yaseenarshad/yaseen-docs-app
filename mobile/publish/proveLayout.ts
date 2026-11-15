@@ -54,6 +54,9 @@ import { freePort } from './freePort'
  *  - folding (`#fixture=page-folds`, `-folded`, `-all`, `-off`, YAZ-5568), light and dark, at 375 and 320 px: each arrow
  *    inside the screen, a 44 px button that its arrow's middle hits, a bullet's holding its dot, a task's leaving its
  *    box to the tick; folded lines turned and their children gone; `folding: false` none; never sideways.
+ *  - sticky headings (`#fixture=page-sticky`, `sheet-sticky`, `page-sticky-off`, YAZ-5591), light and dark, at 375 and
+ *    320 px: under the top bar, each under its parent, as its heading, full width, at most 40%, each a tap; a tap lands it.
+ *  - Settings › This vault on mobile (`#fixture=settings-mobile`, YAZ-5592), light and dark, at 375 and 320 px.
  *  - a link to a heading (`#fixture=page-links`, YAZ-5519 S2) at 320 and 375 px: the heading lands whole under the top
  *    bar, a small gap between.
  *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
@@ -115,7 +118,7 @@ import { freePort } from './freePort'
  *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -1372,7 +1375,7 @@ if (process.env.LAYOUT_PROPS !== 'no') {
       const shot = file.replace('.png', `-${scheme}.png`)
       writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       const open_ = name !== 'page-properties-closed'
-      const rowsOk = open_ ? m.rows !== null && m.rows.n === 11 && m.rows.gap >= -0.5 && m.rows.gap <= 16 && m.rows.inColumn && m.rows.position === 'static' && m.rows.moved === 60 && /reader__body|^$/.test(m.rows.next) : m.rows === null
+      const rowsOk = open_ ? m.rows !== null && m.rows.n === 11 && m.rows.gap >= -0.5 && m.rows.gap <= 16 && m.rows.inColumn && m.rows.position === 'static' && m.rows.moved === 60 && /reader__body|reader__stuck|^$/.test(m.rows.next) : m.rows === null
       const ok = m.error === undefined && m.tap && m.right && m.onLine && m.hit && !m.edgeTab && m.expanded === String(open_) && rowsOk && !m.wide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${m.error ?? `title ${m.title}; chip ${m.rect.join(',')} ${m.tap ? '44px tap' : 'TAP TOO SMALL'}, ${m.right ? 'right of the title' : 'NOT RIGHT OF THE TITLE'}, ${m.onLine ? 'on its line' : 'OFF ITS LINE'}, ${m.hit ? 'its own' : 'COVERED'}; ${m.edgeTab ? 'AN EDGE TAB' : 'no edge tab'}; ${m.rows === null ? 'closed' : `${m.rows.n} rows ${m.rows.gap}px under the title, ${m.rows.inColumn ? 'in the column' : 'OUT OF THE COLUMN'}, ${m.rows.position}, a 60px scroll moves them ${m.rows.moved}px`}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}`}  ${shot}`)
@@ -1846,7 +1849,7 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const shot = file.replace('.png', `-${scheme}.png`)
       writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       const m = await evaluate(HEALTH_CHECK)
-      const ok = !m.error && m.line === 'Using defaults: link clicks, table look, icons' && m.tap >= 44 && m.inside && m.rows === 11 && m.rowsInside && !m.pageWide
+      const ok = !m.error && m.line === 'Using defaults: link clicks, table look, icons' && m.tap >= 44 && m.inside && m.rows === 12 && m.rowsInside && !m.pageWide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings-health at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.line}", a ${m.tap}px tap ${m.inside ? 'inside' : 'OUTSIDE'}; ${m.rows} rows ${m.rowsInside ? 'inside' : 'OUTSIDE'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
@@ -1985,6 +1988,131 @@ if (process.env.LAYOUT_FOLDS !== 'no') {
         if (!ok) failed++
         console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${hgt}, ${scheme}: ${m.all} arrows, ${rows.length} shown (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.arrowIn ? '' : ' ARROW OFF SCREEN'}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}${x.tick === false ? ' BOX TAKEN' : ''} @${x.arrowX}`).join('; ')}); hidden: Beans ${m.beans}, Water ${m.water}, North bed first ${m.first}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
       }
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5591: sticky headings (`page-sticky`, scrolled into "Day 2: Belém" › "Lunch"), light and dark, at 375 and 320 px,
+// in a full page and in an Explore panel (`sheet-sticky`); `sticky-headings: false` (`page-sticky-off`): none. The stuck
+// headings sit right under the top bar (the panel's top), each under the one that holds it, as tall as their headings and
+// in their type, the width of the screen, opaque with the thin line, at most 40% of the scroller, each a tap of its own;
+// the layer is zero height (nothing in the page moves); never sideways. A tap lands the heading under its parent; the
+// arrow of a stuck heading folds it.
+const STUCK_HEADINGS = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const sheet = document.querySelector('.explore-sheet .reader__stuck') !== null
+  const root = sheet ? '.explore-sheet ' : ''
+  const scroller = document.querySelector(sheet ? '.explore-sheet__body' : '.screen')
+  const top = r(scroller).top + scroller.clientTop
+  const rows = [...document.querySelectorAll(root + '.reader__stuck-row')].sort((a, b) => r(a).top - r(b).top)
+  const real = (row) => [...document.querySelectorAll(root + '.reader__body > :is(h1, h2, h3, h4, h5, h6)')].find((h) => h.textContent === row.textContent)
+  const bar = sheet ? top : r(document.querySelector('.topbar')).bottom
+  return {
+    names: rows.map((x) => x.textContent),
+    tops: rows.map((x) => Math.round(r(x).top - top)),
+    heights: rows.map((x) => Math.round(r(x).height)),
+    same: rows.every((x) => Math.abs(r(x).height - r(real(x)).height) <= 1 && getComputedStyle(x.firstElementChild).fontSize === getComputedStyle(real(x)).fontSize && getComputedStyle(x.firstElementChild).fontWeight === getComputedStyle(real(x)).fontWeight),
+    underBar: rows.length === 0 || Math.abs(r(rows[0]).top - bar) <= 1,
+    full: rows.every((x) => r(x).left <= r(scroller).left + 0.5 && r(x).right >= r(scroller).right - 0.5),
+    cover: Math.round((100 * rows.reduce((n, x) => n + r(x).height, 0)) / scroller.clientHeight),
+    opaque: rows.every((x) => /^rgb\\(/.test(getComputedStyle(x).backgroundColor)),
+    line: rows.every((x) => getComputedStyle(x).boxShadow.includes('1px')),
+    hit: rows.every((x) => { const b = r(x); return document.elementFromPoint(b.left + b.width * 0.6, b.top + b.height / 2)?.closest('.reader__stuck-row') === x }),
+    arrows: rows.map((x) => x.querySelector('.fold-btn') !== null),
+    layer: Math.round(r(document.querySelector(root + '.reader__stuck')).height),
+    wide: document.scrollingElement.scrollWidth > innerWidth + 1 || scroller.scrollWidth > scroller.clientWidth + 1,
+  }
+})()`
+const STUCK_TAP = `(async () => {
+  const r = (el) => el.getBoundingClientRect()
+  const frames = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))
+  const scroller = document.querySelector('.screen')
+  const top = r(scroller).top + scroller.clientTop
+  const row = (words) => [...document.querySelectorAll('.reader__stuck-row')].find((x) => x.textContent === words)
+  const real = (words) => [...document.querySelectorAll('.reader__body > :is(h2, h3, h4)')].find((h) => h.textContent === words)
+  const parent = r(row('Days in the city')).height
+  const b = r(row('Day 2: Belém'))
+  document.elementFromPoint(b.left + b.width * 0.6, b.top + b.height / 2).click()
+  await frames()
+  const landed = Math.round(r(real('Day 2: Belém')).top - top)
+  const left = [...document.querySelectorAll('.reader__stuck-row')].map((x) => x.textContent)
+  // Down into the section again, then the arrow of the stuck H2 folds it.
+  scroller.scrollTop += 400
+  scroller.dispatchEvent(new Event('scroll'))
+  await frames()
+  const arrow = row('Days in the city')?.querySelector('.fold-btn')
+  const a = arrow ? r(arrow.querySelector('svg')) : null
+  if (a) document.elementFromPoint(a.left + a.width / 2, a.top + a.height / 2)?.closest('.fold-btn')?.click()
+  await frames()
+  await frames()
+  const folded = real('Days in the city').querySelector('.fold-btn')?.getAttribute('aria-expanded') === 'false'
+  const hidden = real('Day 2: Belém').offsetParent === null
+  const at = Math.round(r(real('Days in the city')).top - top)
+  return { parent: Math.round(parent), landed, left, folded, hidden, at }
+})()`
+if (process.env.LAYOUT_STICKY_HEADINGS !== 'no') {
+  const want = ['Days in the city', 'Day 2: Belém', 'Lunch']
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, hgt] of [[375, 667], [320, 568]] as const) {
+      for (const name of ['page-sticky', 'sheet-sticky', 'page-sticky-off'] as const) {
+        if (name === 'page-sticky-off' && w !== 375) continue
+        const file = await open(name, w, hgt)
+        const shot = file.replace('.png', `-${scheme}.png`)
+        writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        const m = await evaluate(STUCK_HEADINGS)
+        const names = m.names as string[]
+        const tops = m.tops as number[]
+        const heights = m.heights as number[]
+        const flush = tops.every((t, i) => Math.abs(t - heights.slice(0, i).reduce((n, x) => n + x, 0)) <= 1)
+        const prefix = names.length > 0 && names.every((n, i) => n === want[i])
+        const ok =
+          !m.wide &&
+          m.layer === 0 &&
+          (name === 'page-sticky-off'
+            ? names.length === 0
+            : prefix && (w === 375 ? names.length === 3 : true) && flush && m.same && m.underBar && m.full && m.cover <= 40 && m.opaque && m.line && m.hit && m.arrows[0] === true && m.arrows[1] === true)
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at ${w}x${hgt}: ${names.length} stuck: ${names.join(' / ')}; tops ${tops.join(',')} (heights ${heights.join(',')}), ${m.same ? 'as tall and in the type of their headings' : 'NOT THEIR HEADINGS'}, ${m.underBar ? 'under the top bar' : 'NOT UNDER THE TOP BAR'}, ${m.full ? 'full width' : 'NOT FULL WIDTH'}, ${m.cover}% of the screen, ${m.opaque ? 'opaque' : 'SEE-THROUGH'}, ${m.line ? 'line under' : 'NO LINE'}, ${m.hit ? 'each a tap' : 'TAP MISSES'}, arrows ${m.arrows.join(',')}, layer ${m.layer}px; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+        if (name === 'page-sticky' && w === 375 && scheme === 'light') {
+          const t = await evaluate(STUCK_TAP)
+          const tapOk = Math.abs(t.landed - t.parent) <= 1 && t.left.join('/') === 'Days in the city' && t.folded && t.hidden && t.at === 0
+          if (!tapOk) failed++
+          writeFileSync(file.replace('.png', '-tapped.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+          console.log(`${tapOk ? 'PASS' : 'FAIL'}  page-sticky tap on the stuck "Day 2: Belém": its heading at ${t.landed}px (under "Days in the city": ${t.parent}px), stuck now: ${t.left.join(' / ')}; the stuck H2's arrow ${t.folded ? 'folded it' : 'DID NOT FOLD'}, its section ${t.hidden ? 'hidden' : 'SHOWN'}, it landed at ${t.at}px`)
+        }
+      }
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5592: Settings › "This vault on mobile" (`settings-mobile`: the vault's mobile.json says Folding off), light and
+// dark, at 375 and 320 px: its heading, Folding (off) and Sticky headings (on), each a 44 px row that can be changed,
+// inside the screen; never sideways.
+const MOBILE_PART = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const part = document.querySelector('.settings-mobile')
+  if (part === null) return { error: 'no section' }
+  const rows = [...part.querySelectorAll('label.row')]
+  return {
+    title: part.querySelector('h2')?.textContent,
+    rows: rows.map((l) => ({ label: l.textContent, on: l.querySelector('input').checked, enabled: !l.querySelector('input').disabled, h: Math.round(r(l).height), inside: r(l).left >= 0 && r(l).right <= innerWidth + 0.5 })),
+    wide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_SETTINGS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, hgt] of [[375, 667], [320, 568]] as const) {
+      const file = await open('settings-mobile', w, hgt)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(MOBILE_PART)
+      type Row = { label: string; on: boolean; enabled: boolean; h: number; inside: boolean }
+      const rows = (m.rows ?? []) as Row[]
+      const ok = m.title === 'This vault on mobile' && rows.length === 2 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  settings-mobile ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.title}": ${rows.map((x) => `${x.label} ${x.on ? 'on' : 'off'}${x.enabled ? '' : ' DISABLED'} ${x.h}px${x.inside ? '' : ' OUTSIDE'}`).join(', ')}; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

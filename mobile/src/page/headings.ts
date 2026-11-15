@@ -72,12 +72,25 @@ export function landingTop(scroller: HTMLElement, element: HTMLElement | Range, 
   return Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + top - scroller.getBoundingClientRect().top - offset))
 }
 
+/** YAZ-5591: what the sticky headings of a scroller cover above an element landed on (`stickyHeadings.ts`), px. */
+const covers = new WeakMap<HTMLElement, (target: Element) => number>()
+
+/** The sticky headings of `scroller` say how much they cover above a landing. Returns the cleanup. */
+export function setLandingCover(scroller: HTMLElement, cover: (target: Element) => number): () => void {
+  covers.set(scroller, cover)
+  return () => {
+    if (covers.get(scroller) === cover) covers.delete(scroller)
+  }
+}
+
 /**
  * Lands on `element` in its `.screen` (the only scroller), then the Mac's one flash (none with Reduce Motion). YAZ-5568:
  * the folds that hide it open first (a link, the Headings list, a same-page `#heading`), so it is on the screen.
+ * YAZ-5591: with sticky headings, it lands under the headings that will stick above it, not under them.
  */
 export function landOn(element: HTMLElement, scroller: HTMLElement | null = element.closest<HTMLElement>('.screen')): void {
   revealFolds(element)
-  if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
+  const cover = scroller === null ? 0 : (covers.get(scroller)?.(element) ?? 0)
+  if (scroller !== null) scroller.scrollTop = landingTop(scroller, element, cover > 0 ? Math.max(LANDING_PX, cover) : LANDING_PX)
   if (typeof element.animate === 'function' && !reducedMotion()) element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
 }
