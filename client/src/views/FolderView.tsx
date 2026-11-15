@@ -77,6 +77,7 @@ import { writeProperties, writeProperty, writeRouted, type PropertyWrite } from 
 import { byFolder, declarationOf, folderName, foldersTaking, pageColumns, readOnlyRefusal, selfAndAncestors, takesFrom, withOwnerSwitch, type ColumnSources } from './columnInheritance'
 import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
 import { isViewOnlyChange } from './viewOnlyChange'
+import { declStamp, definedBelowOf, rowValues, withTied } from './folderPageValues'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
 import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
@@ -193,48 +194,6 @@ function folderViewSet({ views, formulas, properties, defaultView }: FolderSetti
     return parseViews(stringify({ views: folderSettings(undefined, ids).views }))
   }
 }
-
-/** A row's values with each tied column's links on it (YAZ-4781 R2); the same object when the page has none. */
-function withTied(properties: Record<string, unknown>, row: IndexRecord, tied: RunOptions['mentions']): Record<string, unknown> {
-  if (tied === undefined) return properties
-  const out = { ...properties }
-  for (const key of tied.keys) out[key] = tied.of(row, key)
-  return out
-}
-
-/**
- * A row's values as the views read them (YAZ-4713 C1/C3): its file's own fields less the keys no column may have
- * (`columnReservedKeys`: the app's, and a subfolder row's settings block, D31) — but the read-only switch, which a view
- * may still show (YAZ-3130) — and each separate column's value from this page's block. The same object when nothing changes.
- *
- * YAZ-4769 (one key, capitals ignored): each field whose key is a page column's in other capitals reads under the
- * column's spelling (`spell`, `respell`): a page's `dessert column` is the `Dessert Column` cell, so every view, filter,
- * sort, group, board and calendar reads it with no fold of its own. A page holding two spellings shows the column's;
- * the other stays in the file, and is no second column. The app's keys are never moved. A separate value is found in
- * the page's block in any capitals too.
- */
-function rowValues(properties: Record<string, unknown>, reserved: ReadonlySet<string>, pageId: string | undefined, separate: ReadonlySet<string>, spell: ReadonlyMap<string, string>): Record<string, unknown> {
-  const keys = Object.keys(properties)
-  const kept = keys.some((key) => reserved.has(key) && key !== READ_ONLY_KEY) ? Object.fromEntries(keys.filter((key) => !reserved.has(key) || key === READ_ONLY_KEY).map((key) => [key, properties[key]])) : properties
-  const own = respell(kept, spell, reserved)
-  if (separate.size === 0) return own
-  const block = folderValues(properties, pageId)
-  const out = { ...own }
-  for (const key of separate) {
-    const held = heldKey(block, key)
-    if (held !== undefined) out[key] = block[held]
-    else delete out[key]
-  }
-  return out
-}
-
-/** Order-insensitive identity for one declaration; a field that is undefined is one that is absent (YAZ-4637 M1), as on disk. */
-const declStamp = (decl: ColumnDecl): string =>
-  JSON.stringify(
-    Object.entries(decl)
-      .filter(([, value]) => value !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : 1)),
-  )
 
 /** Order-insensitive identity for a columns map: the index re-reads what we wrote, key order and all, but never trust that. */
 const columnsStamp = (columns: Readonly<Record<string, ColumnDecl>>): string =>
@@ -631,26 +590,7 @@ export function FolderView({
    * The keys the subfolders below define (C11, locked 2026-11-08): the names of the subfolders that define each, and
    * its definition when they all agree. Once per snapshot: a column edit on this page does not walk them again.
    */
-  const definedBelow = useMemo(() => {
-    const out: Record<string, { names: string[]; decl?: ColumnDecl }> = {}
-    const stamps = new Map<string, Set<string>>()
-    /** YAZ-4769: one key in any capitals, spelled as the first subfolder (in path order) spells it. */
-    const spelled = new Map<string, string>()
-    for (const record of [...feed.folders].sort((a, b) => (a.folder < b.folder ? -1 : 1))) {
-      if (record.folder === folder || !inFolder(record.folder, folder)) continue
-      const name = folderName(folderMap, record.folder, vaultName)
-      for (const [declared, { separate: _own, ...decl }] of Object.entries(folderSettings(record, ids).columns)) {
-        const fold = keyFold(declared)
-        const key = spelled.get(fold) ?? declared
-        spelled.set(fold, key)
-        const entry = (out[key] ??= { names: [], decl })
-        if (!entry.names.includes(name)) entry.names.push(name)
-        stamps.set(key, (stamps.get(key) ?? new Set()).add(declStamp(decl)))
-      }
-    }
-    for (const [key, seen] of stamps) if (seen.size > 1) delete out[key].decl
-    return out
-  }, [feed.folders, folderMap, folder, ids, vaultName])
+  const definedBelow = useMemo(() => definedBelowOf(feed.folders, folderMap, folder, ids, vaultName), [feed.folders, folderMap, folder, ids, vaultName])
   /**
    * Of those, the keys no folder on this page's chain defines (in any capitals, YAZ-4769): a view that shows such a key
    * through "Other properties" types it by the subfolders' agreed definition (none when they differ), and its header

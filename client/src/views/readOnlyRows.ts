@@ -10,7 +10,7 @@
  */
 import type { IndexRecord, PropertyDecl } from '@shared/types'
 import { isReadOnlyProperties } from '@shared/readOnly'
-import { SAME_WORD, type UnitText } from '../vault/unitWord'
+import { SAME_WORD, type UnitText } from '../vault/unitWordText'
 import { reservedKeys } from '../links/reservedKeys'
 import { canonicalKey } from './view/keys'
 import type { PropertyWrite } from './writeProperty'
