@@ -58,7 +58,7 @@ describe('the folder table (YAZ-5460)', () => {
     await h.waitText('Build the shed before winter.')
   })
 
-  it('YAZ-5532: a finger bands the row, its frozen Name cell too; it stays after the lift; a tap still opens the row', async () => {
+  it('YAZ-5532: a finger bands the row, its frozen Name cell too; it stays after the lift; only a tap on the Name opens the row', async () => {
     h = await openFolder()
     await waitFor(h, () => h!.host.querySelector('.folder-table table') !== null)
     const table = h.host.querySelector('.folder-table table')!
@@ -75,9 +75,22 @@ describe('the folder table (YAZ-5460)', () => {
     fire(rows[1].cells[3], 'pointerup')
     expect([...table.querySelectorAll('tr[data-band]')]).toEqual([rows[1]])
     // Another row: the band moves; its tap opens its page, through the same handler as before.
+    // YAZ-5532 (A): a tap on another cell of a row only moves the band; nothing opens.
+    await act(async () => {
+      fire(rows[3].cells[2], 'pointerdown')
+      fire(rows[3].cells[2], 'pointerup')
+      rows[3].cells[2].click()
+    })
+    await h.settle()
+    expect(rows[3].hasAttribute('data-band')).toBe(true)
+    expect(rows[1].hasAttribute('data-band')).toBe(false)
+    expect(h.host.querySelector('.folder-table table')).toBe(table)
+    expect(h.host.textContent).not.toContain('Build the shed before winter.')
+    expect(h.host.textContent).not.toContain('The summer pictures.')
+    // A tap on a row's Name opens its page.
+    expect(rows[2].cells[0].hasAttribute('data-name')).toBe(true)
     fire(rows[2].cells[0], 'pointerdown')
     expect(rows[2].hasAttribute('data-band')).toBe(true)
-    expect(rows[1].hasAttribute('data-band')).toBe(false)
     await act(async () => {
       fire(rows[2].cells[0], 'pointerup')
       rows[2].cells[0].click()
