@@ -6,7 +6,7 @@ import type { VaultStore } from '../store'
 import type { VaultData } from './vaultData'
 
 /**
- * THE VAULT'S OWN ICONS IN THE SEARCH TREE (YAZ-5488), read only, from the phone's copy of `.yaseendocs/icons.json`
+ * THE VAULT'S OWN ICONS IN THE SEARCH TREE, read only, from the phone's copy of `.yaseendocs/icons.json`
  * (`parseIconsConfig`, the Mac's): a row's own pick (`paths`, by vault-relative path), then the first name rule
  * (`rules`, the Mac's glob on the NAME, any case) of the row's kind, as the Mac's sidebar (`rowIcons.ts`); and the
  * kinds' colours (`colors`) as the Mac's `--kind-<kind>` variables on the tree. The icon is Material's file

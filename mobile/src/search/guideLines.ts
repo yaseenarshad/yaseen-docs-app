@@ -1,7 +1,7 @@
 import type { TocLines } from '@shared/types'
 
 /**
- * THE GUIDE LINES OF SEARCH'S TREE (YAZ-5507), the Mac sidebar's level lines (YAZ-3309 D1, D3; app.css
+ * THE GUIDE LINES OF SEARCH'S TREE, the Mac sidebar's level lines (app.css
  * `.tree[role='group']::before`, `levelLinesHover.ts`): one thin grey line below the chevron of each open folder, down
  * past every row inside it. The Mac nests a list in each folder and draws one line on it; the phone's tree is one flat
  * list, so each row draws the lines of the levels above it (treeLook.css, one gradient on `::before`, no node more).

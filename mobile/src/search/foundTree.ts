@@ -8,11 +8,11 @@ import { buildTree, fileKind, levelOf, type TreeFolder, type TreeKind } from './
 import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
 
 /**
- * THE RESULTS AS A TREE (YAZ-5447): the Mac's Search tab (`client/src/sidebar/hooks/useSidebarSearch.ts`, YAZ-2620) on
+ * THE RESULTS AS A TREE: the Mac's Search tab (`client/src/sidebar/hooks/useSidebarSearch.ts`) on
  * the phone. With text in the box the Mac draws the Files tree CUT to the matches and the folders that lead to them
  * (`searchTree`, the Mac's own, reused here): each such folder open, at its depth; every other row hidden. A folder that
  * matched and holds no match keeps all it holds, closed (one tap looks inside). A card in a page stands right under its
- * page (YAZ-5037), which stays as a parent. The Mac's default Search sort, Best match (`bestScores`, the Mac's own; the
+ * page, which stays as a parent. The Mac's default Search sort, Best match (`bestScores`, the Mac's own; the
  * order of `treeSort.ts` `sortLevel`, copied, as that module pulls the desktop's tree feed): each level by its score,
  * then the newer row, then the name, no folder first. A fold tapped during a search is the search's alone and lasts as
  * long as its text (`useSidebarSearch`'s `flipped`): the tree of the empty box keeps its own folds.
@@ -57,9 +57,9 @@ export function vaultNodes(data: VaultData): VaultNodes {
 }
 
 /**
- * Every folder as the Mac's search row (`folderCandidates`, YAZ-1491): its title (its `.folder.md`), else its name, as
+ * Every folder as the Mac's search row (`folderCandidates`): its title (its `.folder.md`), else its name, as
  * its tree row shows it; its ID; the vault's earlier ID letters. Built here from the tree, not by `folderCandidates`:
- * its module is in the phone's first load, where each new line counts (YAZ-5377), and this chunk is not.
+ * its module is in the phone's first load, where each new line counts, and this chunk is not.
  */
 export function folderRowsOf(data: VaultData): SearchCandidate[] {
   const ids = new Map<string, string>()
@@ -91,7 +91,7 @@ export interface Found {
   cards: ReadonlyMap<string, readonly SearchCandidate[]>
   /** Best match's score of each row of the cut. */
   scores: ReadonlyMap<string, number>
-  /** YAZ-5534: no text (a Type alone): the tree's own order (Name A to Z, folders first), as the empty box's tree. */
+  /** No text (a Type alone): the tree's own order (Name A to Z, folders first), as the empty box's tree. */
   treeOrder?: true
 }
 
@@ -119,7 +119,7 @@ export function foundTree(vault: VaultNodes, results: readonly SearchCandidate[]
 
 /**
  * The cut of one search, kept for its last inputs: the result tree and the box's Collapse all read the same cut
- * (YAZ-5534), built once. `rows` and `folders` are the same arrays while nothing changed.
+ *, built once. `rows` and `folders` are the same arrays while nothing changed.
  */
 let last: { vault: VaultNodes; results: readonly SearchCandidate[]; folders: readonly SearchCandidate[]; query: string; found: Found } | null = null
 export function foundTreeOf(vault: VaultNodes, results: readonly SearchCandidate[], folders: readonly SearchCandidate[], query: string): Found {
@@ -129,7 +129,7 @@ export function foundTreeOf(vault: VaultNodes, results: readonly SearchCandidate
   return found
 }
 
-/** Every folder of a cut (YAZ-5534: what Collapse all and Expand all act on). */
+/** Every folder of a cut (what Collapse all and Expand all act on). */
 export function cutFolders(nodes: readonly TreeNode[]): string[] {
   const out: string[] = []
   const walk = (list: readonly TreeNode[]) => {

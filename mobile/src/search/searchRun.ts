@@ -5,7 +5,7 @@ import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
 import { boardKindOf } from '../drawing/boardFiles'
 
 /**
- * THE PHONE'S SEARCH (YAZ-5079, 4C): the Mac's own search over the index records, with no bridge. The rows are the Mac's
+ * THE PHONE'S SEARCH (4C): the Mac's own search over the index records, with no bridge. The rows are the Mac's
  * (`searchCandidates`: titles, aliases, a file name given by hand, IDs; a card file is one card row while Review is on,
  * and each card in a page with an ID is one more row), and the ranking is the Mac's (`searchRows`). So one query gives
  * the same rows in the same order on both.
@@ -16,17 +16,17 @@ import { boardKindOf } from '../drawing/boardFiles'
  *  - `findRows` reads the rows ONE time in slices and keeps only the rows that can show: each row whose ID the text holds,
  *    each row of `#<digits>`, and in each rank tier of the title match only its first `SEARCH_CAP` rows (the cap cuts
  *    after the tiers, so no later row can show). Then `searchRows` ranks that short list as the Mac ranks the whole one.
- *  - The Type filter (round 15, item 2; YAZ-5534) runs in the same pass, BEFORE the ranking, as the Mac's (D16).
+ *  - The Type filter (round 15, item 2) runs in the same pass, BEFORE the ranking, as the Mac's (D16).
  *
  * No folder rows: the phone opens no folder. The search box has no pinned items (the Mac's `first`).
  */
 
 /**
- * The Type filter of the phone (YAZ-5534): the Mac's types and words (`searchFilter.ts`, YAZ-5047: Pages, Cards, Drawings,
+ * The Type filter of the phone: the Mac's types and words (`searchFilter.ts`, YAZ-5047: Pages, Cards, Drawings,
  * Diagrams, in that order), the ones the phone opens. Cards only while Review is on.
  */
 export type PhoneKind = 'pages' | 'cards' | 'drawings' | 'diagrams'
-/** The types on, any mix (YAZ-5534: multi-select), in the menu's order; none on is All types. */
+/** The types on, any mix (multi-select), in the menu's order; none on is All types. */
 export type PhoneType = readonly PhoneKind[]
 /** All types: no type on. */
 export const ALL_TYPES: PhoneType = []

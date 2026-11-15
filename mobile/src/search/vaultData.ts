@@ -7,7 +7,7 @@ import type { VaultStore } from '../store'
 import type { PhoneIndex } from '../sync/phoneIndex'
 
 /**
- * WHAT SEARCH AND THE READER KNOW OF THE OPEN VAULT (YAZ-5079), from the phone's storage only, so both work with no
+ * WHAT SEARCH AND THE READER KNOW OF THE OPEN VAULT, from the phone's storage only, so both work with no
  * signal: the index records (3B keeps them as the vault's state `index`), the vault's files (the checkpoint's list, for
  * pictures and files a link names), its ID letters (`.yaseendocs/ids.json`) and its review settings
  * (`.yaseendocs/review.json`: Review on or off, the answer words).

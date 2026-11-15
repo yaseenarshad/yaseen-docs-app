@@ -11,7 +11,7 @@ export type IdsForm = Exclude<IdsInFiles, 'off'>
 const held = new Map<string, IdsForm | null>()
 
 /**
- * THE VAULT'S "SHOW IDS IN THE FILES LIST" ON THE PHONE (YAZ-5454): `.yaseendocs/show-ids.json`, read by the Mac's own
+ * THE VAULT'S "SHOW IDS IN THE FILES LIST" ON THE PHONE: `.yaseendocs/show-ids.json`, read by the Mac's own
  * rule (`sanitizeShowIds`, `@shared/showIds`): Off (the default, and with no file), Number ("#12") or Full ("DEMO-12").
  * Read only. Read again at each sync (`data` is new after each `changed` event), so the Mac's change shows at once.
  * Null: Off.

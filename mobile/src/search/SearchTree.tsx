@@ -15,7 +15,7 @@ import type { Scope } from './lists'
 import { ListTree } from './ListTree'
 import { bumpFolds, flipsOf, forgetFlips, searchKey, setFlips, useFolds } from './folds'
 import { rowId, useIdsForm } from './showIds'
-// YAZ-5472 Q4: a row of this tab screen is a first open, so ALWAYS a full page (`from: 'tab'`), whatever link-click.json says.
+// A row of this tab screen is a first open, so ALWAYS a full page (`from: 'tab'`), whatever link-click.json says.
 import { openFile } from '../explore/openFile'
 import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
 import { useFolderHold } from './holdFolder'
@@ -25,7 +25,7 @@ import { TreeLook } from './treeLook'
 export { SearchBar } from './SearchBar'
 export { FoldButton } from './folds'
 
-/** Where a tree row opens: a page in the reader; a card file in the card view; a drawing file in the drawing view (YAZ-5473). */
+/** Where a tree row opens: a page in the reader; a card file in the card view; a drawing file in the drawing view. */
 export function treeRoute(row: TreeRow): Route {
   if (row.kind === 'drawing' || row.kind === 'diagram') return { kind: 'drawing', path: row.path }
   return row.kind === 'card' ? { kind: 'card', path: row.path, id: row.id ?? '' } : { kind: 'page', path: row.path }
@@ -35,28 +35,28 @@ export function treeRoute(row: TreeRow): Route {
 export const kindWord = (kind: TreeRow['kind'], page: string): string => (kind === 'folder' || kind === 'card' || kind === 'drawing' || kind === 'diagram' ? kind : page)
 
 /**
- * THE SEARCH TAB'S TREE (YAZ-5438), a chunk of its own (the first load stays under its ceiling, YAZ-5377): the Mac's sidebar tree (`vaultTree.ts`), shown while the search box is empty. A
+ * THE SEARCH TAB'S TREE, a chunk of its own (the first load stays under its ceiling): the Mac's sidebar tree (`vaultTree.ts`), shown while the search box is empty. A
  * folder opens and closes with a tap, to any depth; the open folders stay open while the app runs. A page opens in the
  * reader, a card file in the card view. Only the rows of open folders are drawn, `shown` at a time (the tab's "Show more", kept while a page is open).
  */
 export default function SearchTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope | null }) {
-  // YAZ-5452: a list filter on (Favorites): that list, as the Mac's tab of it draws it.
+  // A list filter on (Favorites): that list, as the Mac's tab of it draws it.
   if (scope !== null) return <ListTree data={data} cards={cards} shown={shown} onMore={onMore} scope={scope} />
   return <FullTree data={data} cards={cards} shown={shown} onMore={onMore} />
 }
 
-/** The whole vault's tree (YAZ-5438). */
+/** The whole vault's tree. */
 function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: boolean; shown: number; onMore: () => void }) {
   const app = useApp()
-  // YAZ-5454: the vault's "Show IDs in the files list", as the Mac's Files tree.
+  // The vault's "Show IDs in the files list", as the Mac's Files tree.
   const ids = useIdsForm(data)
   useEffect(forgetFlips, [])
   const open = openFoldersOf(app.vaultKey)
-  // YAZ-5474: a fold here, or Collapse all / Expand all in the box, draws the tree again.
+  // A fold here, or Collapse all / Expand all in the box, draws the tree again.
   const turn = useFolds()
-  // YAZ-5460: hold a folder for its page.
+  // Hold a folder for its page.
   const { hold, layer } = useFolderHold()
-  // YAZ-5488: the vault's own icons and colours (icons.json).
+  // The vault's own icons and colours (icons.json).
   const icons = useTreeIcons(app.services.store, data)
   const tree = useMemo(() => buildTree(recordsWithBoards(data), data.folders), [data])
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,7 +69,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
     },
     [open],
   )
-  // YAZ-5506: the open folders stick at the top while their rows scroll under them.
+  // The open folders stick at the top while their rows scroll under them.
   const drawn = rows.slice(0, shown)
   return (
     <>
@@ -110,12 +110,12 @@ function routeOf(row: SearchCandidate): Route {
 }
 
 /**
- * THE RESULTS IN THE TREE (YAZ-5447), the box has text: the Mac's Search tab (`foundTree.ts`). The matches stand in the
+ * THE RESULTS IN THE TREE, the box has text: the Mac's Search tab (`foundTree.ts`). The matches stand in the
  * vault's tree, each folder that leads to one open at its depth, every other row hidden. A match shows its name with
  * the typed text marked (the Mac's `marked`, its `tree__mark`); a row that is no match (a parent, a row inside a
  * matched folder) is dim. A row found by its ID reads `ID — name`, the matched digits marked; a card's ID stands at the
  * right, as in the phone's rows before. "No matches" as the Mac says it, "with these filters" with a Type on.
- * YAZ-5534: a Type on with NO text shows here too: every row of the types on (`rows`, Search's pool cut to them) in the
+ * A Type on with NO text shows here too: every row of the types on (`rows`, Search's pool cut to them) in the
  * tree, its parents open, in the tree's own order (no text, no ranking): the Mac's search engine, the Type its query.
  */
 export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { data: VaultData; rows: readonly SearchCandidate[]; query: string; type: PhoneType; shown: number; onMore: () => void; scope: Scope | null }) {
@@ -126,15 +126,15 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   const flipped = flipsOf(key)
   const vault = vaultNodes(data)
   const folderRows = useMemo(() => folderRowsOf(data), [data])
-  // YAZ-5452: with a list on, the folders of that list only (`rows` came already cut to it, `Search.tsx`).
+  // With a list on, the folders of that list only (`rows` came already cut to it, `Search.tsx`).
   const folders = useMemo(() => folderHits(scope === null ? folderRows : folderRows.filter((r) => scope.has(r.path)), query, type), [folderRows, query, type, scope])
   const found = foundTreeOf(vault, rows, folders, query)
   const drawn = useMemo(() => foundRows(vault, found, flipped, data.review.enabled), [vault, found, flipped, data])
   const needle = readNeedle(query)
   const { hold, layer } = useFolderHold()
-  // YAZ-5506: the found tree's open folders stick too, as on the Mac's Search tab.
+  // The found tree's open folders stick too, as on the Mac's Search tab.
   const shownRows = drawn.slice(0, shown)
-  // YAZ-5488: the vault's own icons and colours (icons.json).
+  // The vault's own icons and colours (icons.json).
   const icons = useTreeIcons(app.services.store, data)
   const toggle = (path: string) => setFlips(key, new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]))
   if (scope?.loading === true) return null
@@ -204,7 +204,7 @@ export function ShowMore({ onMore }: { onMore: () => void }) {
   )
 }
 
-/** A row's ID at its right end (YAZ-5454, the Mac's `tree__id`): "In the files list" on, a page with an ID. */
+/** A row's ID at its right end (the Mac's `tree__id`): "In the files list" on, a page with an ID. */
 export function TreeId({ id }: { id: string | null }) {
   return id === null ? null : <span className="tree__id">{id}</span>
 }

@@ -7,24 +7,24 @@ import { readRecent, type RecentEntry } from './recent'
 import { readJson, type VaultData } from './vaultData'
 
 /**
- * THE MAC'S LISTS AS SEARCH FILTERS (YAZ-5452, YAZ-5453): a filter next to "All types" that shows one list of the vault,
+ * THE MAC'S LISTS AS SEARCH FILTERS: a filter next to "All types" that shows one list of the vault,
  * read from the files the Mac keeps in `.yaseendocs/` (the phone downloads that folder first, `isEager` in
  * `sync/plan.ts`), by the Mac's own rules (`@shared/vaultLists`, which `desktop/src/main/` uses too). Read only: the
- * phone never writes these files. Its own chunk (Search's tree), never the first load (YAZ-5377).
+ * phone never writes these files. Its own chunk (Search's tree), never the first load.
  *
- * Each list is the VAULT's own (`scope: 'vault'`), never its workspace list (`*-workspace*.json`, YAZ-4450): that one
+ * Each list is the VAULT's own (`scope: 'vault'`), never its workspace list (`*-workspace*.json`): that one
  * is for a Mac window with two or more vaults, and the phone shows one vault.
  *  - Favorites: `favorites.json` (`desktop/src/main/favorites.ts`), and the Favorites tab's folders,
  *    `favorite-folders.<mac id>.json` (YAZ-4460 demo).
  *  - Focus: `focus.<mac id>.json` (`focus.ts`) and the Focus tab's folders, `focus-folders.<mac id>.json`
  *    (`focusFolders.ts`). The `<mac id>` is a MAC's, not a window's: each Mac writes only its own file, so a sync never
  *    conflicts, and the Mac shows the NEWEST valid file by its `at` (of two with one `at`, the later name). So does the phone.
- *  - Recent (YAZ-5457): the phone's own list of what was opened on it (`recent.ts`): the Mac's Recents are not in the vault.
+ *  - Recent: the phone's own list of what was opened on it (`recent.ts`): the Mac's Recents are not in the vault.
  */
 
 export type ListKind = 'favorites' | 'focus' | 'recent'
 
-/** A folder of the Focus or the Favorites tab (YAZ-4460): a named group of the list's items; it moves nothing on disk. */
+/** A folder of the Focus or the Favorites tab: a named group of the list's items; it moves nothing on disk. */
 export interface ListFolder {
   id: string
   name: string
@@ -59,7 +59,7 @@ async function newestOf<T extends { at: number }>(store: VaultStore, vault: stri
 }
 
 /**
- * The tab's folders (YAZ-4460), the Mac's way: tombstones out, the dragged order, then the order they were made
+ * The tab's folders, the Mac's way: tombstones out, the dragged order, then the order they were made
  * (`mergeFolders`, the Mac's own). Each item names its vault by the vault's folder name on the Mac; the file says which
  * name is this vault's (`self`), and an item of another vault (a ghost on the Mac) is not shown. An old file with no
  * `self`: every item is taken (a path this vault does not hold has no row anyway).

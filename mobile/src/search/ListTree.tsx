@@ -13,7 +13,7 @@ import { ShowMore, TreeId, kindWord, treeRoute } from './SearchTree'
 import { rowId, useIdsForm } from './showIds'
 import type { VaultData } from './vaultData'
 import { fileKind, fileLabel, type TreeKind } from './vaultTree'
-// YAZ-5472 Q4: a row of this tab screen is a first open, so ALWAYS a full page (`from: 'tab'`), whatever link-click.json says.
+// A row of this tab screen is a first open, so ALWAYS a full page (`from: 'tab'`), whatever link-click.json says.
 import { openFile } from '../explore/openFile'
 import { fileRecord } from '../drawing/boardFiles'
 import { useFolderHold } from './holdFolder'
@@ -29,7 +29,7 @@ const WORDS: Record<ListKind, { title: string; none: string }> = {
 
 /** One drawn row of a list. */
 export interface ListRow {
-  /** `group`: a folder of the tab (YAZ-4460), the Mac's stack glyph, never a folder on disk. */
+  /** `group`: a folder of the tab, the Mac's stack glyph, never a folder on disk. */
   kind: TreeKind | 'group'
   path: string
   label: string
@@ -64,14 +64,14 @@ export const foldsOf = (vault: string | null, kind: ListKind): Set<string> => {
 }
 
 /**
- * The rows of a list (YAZ-5452), as the Mac's Favorites tab draws them (`Sidebar.tsx`, YAZ-1766 D4): the Mac's own
+ * The rows of a list, as the Mac's Favorites tab draws them (`Sidebar.tsx`): the Mac's own
  * `favoriteRoots` gives the top rows, every listed path the tree still holds in the list's STORED order (the user's,
  * never the tree's), files and folders alike; a path that is gone simply has no row (D14: the Mac drops it at its
  * next write; the phone, read only, hides it). A listed folder opens in place like a folder of the tree, its rows in
  * the tree's order; a file listed beside its listed folder shows at the top AND inside it, each copy folded on its
  * own (`copyFoldKey`). A card file shows only while Review is on, as in the tree.
  *
- * Above the top rows, the tab's folders (YAZ-4460 F3, `FocusFolderList.tsx`): a row with the stack glyph and the
+ * Above the top rows, the tab's folders (`FocusFolderList.tsx`): a row with the stack glyph and the
  * name, open at first (the Mac opens every one at launch), its items under it, one step in. `open` holds the fold
  * keys of the open tree folders, and of the tab's folders that were SHUT.
  */
@@ -103,7 +103,7 @@ export function listRows(vault: VaultNodes, folders: readonly ListFolder[], top:
 }
 
 /**
- * Recent (YAZ-5457), newest first, one flat row each, as the Mac's Recents list: a page; a card file; a card in a page
+ * Recent, newest first, one flat row each, as the Mac's Recents list: a page; a card file; a card in a page
  * (its title, else its ID, as search names it). One that is gone from the vault has no row. No IDs at the end: the
  * Mac's Recents rows have none either.
  */
@@ -121,23 +121,23 @@ export function recentRows(data: VaultData, recent: readonly RecentEntry[], card
   })
 }
 
-/** A list filter on with an empty box (YAZ-5452): the list under its name, or its plain line when it holds nothing. */
+/** A list filter on with an empty box: the list under its name, or its plain line when it holds nothing. */
 export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope }) {
   const app = useApp()
-  // YAZ-5474: a fold here, or Collapse all / Expand all in the box, draws the list again.
+  // A fold here, or Collapse all / Expand all in the box, draws the list again.
   useFolds()
-  // YAZ-5454: the vault's "Show IDs in the files list": the Mac's Favorites and Focus rows show it too.
+  // The vault's "Show IDs in the files list": the Mac's Favorites and Focus rows show it too.
   const ids = useIdsForm(data)
-  // YAZ-5460: hold a folder for its page (a folder of the tab, the stack glyph, is no folder on disk).
+  // Hold a folder for its page (a folder of the tab, the stack glyph, is no folder on disk).
   const { hold, layer } = useFolderHold()
-  // YAZ-5488: the vault's own icons and colours (icons.json).
+  // The vault's own icons and colours (icons.json).
   const icons = useTreeIcons(app.services.store, data)
   if (scope.loading === true) return null
   const words = WORDS[scope.kind]
   const open = foldsOf(app.vaultKey, scope.kind)
   const rows = scope.recent !== undefined ? recentRows(data, scope.recent, cards) : listRows(vaultNodes(data), scope.folders, scope.top, open, cards)
   if (rows.length === 0) return <p className="muted search__none">{words.none}</p>
-  // YAZ-5506: the list's open folders (and the tab's own folders) stick, as on the Mac's Favorites and Focus tabs.
+  // The list's open folders (and the tab's own folders) stick, as on the Mac's Favorites and Focus tabs.
   const drawn = rows.slice(0, shown)
   const toggle = (key: string) => {
     if (open.has(key)) open.delete(key)
