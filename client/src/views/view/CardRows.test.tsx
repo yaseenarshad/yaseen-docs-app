@@ -136,8 +136,8 @@ describe('YAZ-5319: Show cards as rows', () => {
       ['Longest river', '', 'Active', 'GEO-3'],
     ])
     expect(q(el, '.view-toolbar__count').textContent).toBe('3 cards')
-    // No New button: a card row is no page.
-    expect(el.querySelector('.view-toolbar__new')).toBeNull()
+    // "+ New" makes a card (YAZ-5349 follow-up: a row of this table is a card).
+    expect(el.querySelector('.view-toolbar__new')).not.toBeNull()
   })
 
   it('the Page cell opens the page, landed on the card', () => {

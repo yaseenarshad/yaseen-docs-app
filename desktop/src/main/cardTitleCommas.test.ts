@@ -1,7 +1,7 @@
 // YAZ-5393 (decision: encode commas) and YAZ-5394: a card-line title survives an OLDER build's writes, and a quote
 // that never closes never hides the parts after it.
 import { describe, expect, it } from 'vitest'
-import { cardReviewsOf, cardTitleOf, changeCard, cleanCardTitle, formatCardLine, isCardNext, isCardOff, parseCardLine, withCardReview, withCardTitle, type CardLine } from '@shared/cardLine'
+import { cardPropertiesOf, cardReviewsOf, cardTitleOf, changeCard, cleanCardTitle, formatCardLine, isCardNext, isCardOff, parseCardLine, withCardOff, withCardProperty, withCardReview, withCardTitle, type CardLine } from '@shared/cardLine'
 import { canonicalPageId, isNumberId } from '@shared/pageId'
 
 /**
@@ -203,5 +203,37 @@ describe('YAZ-5394: a quote that never closes never hides the parts after it', (
   it('a closed quote after an unclosed one changes nothing: the rest is still split on its commas', () => {
     const line = read('NC-1, a"b, title "c, d", 2026-11-01T09:00Z good')
     expect(cardReviewsOf(line)).toHaveLength(1)
+  })
+})
+
+describe('Card property values and names: the same comma escape as the title (one quote, one unquote)', () => {
+  /** The property parts of a line, as the line writes them. */
+  const line = (props: Record<string, unknown>): string => formatCardLine(Object.entries(props).reduce((l, [k, v]) => withCardProperty(l, k, v), parseCardLine(`<!-- card: NC-1, ${R1} -->`)!))!
+
+  it('a comma in a value or a name is written `&#44;`, so an older build keeps each property ONE part, byte for byte', () => {
+    const text = line({ level: 'A2, B1', tags: ['europe, west', 'capitals'], 'Due, soon': '2026-11-20' })
+    expect(text).toBe('<!-- card: NC-1, level "A2&#44; B1", tags "europe&#44; west" "capitals", "Due&#44; soon" "2026-11-20", 2026-11-01T09:00Z good -->')
+    const old = older.parseCardLine(text)!
+    expect(old.parts.map((p) => p.kind)).toEqual(['id', 'other', 'other', 'other', 'review'])
+    for (const [name, write] of OLDER_WRITES) {
+      const after = older.formatCardLine(write(old))!
+      expect(cardPropertiesOf(parseCardLine(after)!), name).toEqual({ level: 'A2, B1', tags: ['europe, west', 'capitals'], 'Due, soon': '2026-11-20' })
+    }
+  })
+
+  it('round trip: every text reads back as it was written', () => {
+    for (const value of ['A2, B1', 'Q&A, part 2', 'the code &#44; is a comma', '&#38;', '&#38;#44;', 'Paris, "the" --> city \\', '\\&#44;', 'two\nlines', ',', ''])
+      expect(cardPropertiesOf(parseCardLine(line({ note: value }))!)).toEqual({ note: value })
+  })
+
+  it('a value an older build or a hand wrote with a raw comma inside its quotes still reads as itself; the next write encodes it', () => {
+    const raw = parseCardLine('<!-- card: NC-1, level "A2, B1" -->')!
+    expect(cardPropertiesOf(raw)).toEqual({ level: 'A2, B1' })
+    expect(formatCardLine(withCardOff(raw, true))).toBe('<!-- card: NC-1, level "A2&#44; B1", off -->')
+  })
+
+  it('a value with no comma and no `&#44;` / `&#38;` is written as before: byte for byte', () => {
+    const text = '<!-- card: NC-1, title "Spain", tags "europe" "capitals", level "A2", "Due Date" "2026-11-20", note "Q&A \\"x\\" --\\> \\\\ two\\nlines", count 3, done true -->'
+    expect(formatCardLine(parseCardLine(text)!)).toBe(text)
   })
 })
