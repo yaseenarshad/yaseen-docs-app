@@ -31,9 +31,14 @@ import { join } from 'node:path'
  *    its text and tabs, its table (in its box, the header row and the Name column marked to stay), the grouped table,
  *    the board (its columns scroll sideways in their row), the cards, the calendar's agenda, the page in a sheet; the
  *    page never scrolls sideways.
+ *  - sticky folders in Search's tree (`#fixture=search-sticky`, YAZ-5506), light and dark, at 375 px: the open
+ *    folders stuck at the top, flush, one row apart, the shallower on top, opaque, the open chevron, at most the cap;
+ *    a tap on a stuck folder scrolls back to it, landing under the rows stuck above it.
+ *  - the guide lines of Search's tree (`#fixture=search-lines`, YAZ-5507), light and dark, at 375 px: with a finger on
+ *    the list they show, each at the centre of the chevron of the folder above; the stuck rows cover them.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -469,6 +474,96 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
       writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5506: sticky folders in Search's tree (`search-sticky`: nine folders deep, scrolled to the deepest pages).
+const STICKY = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const screen = document.querySelector('.screen')
+  const top = r(screen).top + screen.clientTop
+  const stuck = [...document.querySelectorAll('.tree__stuck .tree__row--stuck')].sort((a, b) => r(a).top - r(b).top)
+  const h = r(document.querySelector('.tree > li')).height
+  const label = (el) => el.querySelector('.tree__label')?.textContent
+  const style = (el) => getComputedStyle(el)
+  return {
+    names: stuck.map(label),
+    tops: stuck.map((el) => Math.round(r(el).top - top)),
+    h, view: screen.clientHeight,
+    depths: stuck.map((el) => Number(el.style.getPropertyValue('--tree-depth'))),
+    z: stuck.map((el) => Number(style(el).zIndex)),
+    opaque: stuck.every((el) => /^rgb\\(/.test(style(el).backgroundColor)),
+    line: stuck.every((el) => style(el).boxShadow.includes('1px')),
+    open: stuck.every((el) => el.querySelector('.tree__chevron--open') !== null),
+    wide: screen.scrollWidth > screen.clientWidth + 1,
+  }
+})()`
+const STICKY_TAP = `(async () => {
+  const r = (el) => el.getBoundingClientRect()
+  const screen = document.querySelector('.screen')
+  const top = r(screen).top + screen.clientTop
+  const stuck = [...document.querySelectorAll('.tree__stuck .tree__row--stuck')].sort((a, b) => r(a).top - r(b).top)
+  const pick = stuck[2]
+  const name = pick.querySelector('.tree__label').textContent
+  pick.querySelector('.tree__label').click()
+  await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))
+  const row = [...document.querySelectorAll('.tree > li > .tree__row')].find((b) => b.querySelector('.tree__label')?.textContent === name)
+  const h = r(row).height
+  return { name, at: Math.round(r(row).top - top), want: Math.round(2 * h), open: row.closest('li').getAttribute('aria-expanded') }
+})()`
+if (process.env.LAYOUT_STICKY !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    // A fresh load for each scheme: the same URL again would only change the hash, and keep the tapped list.
+    await send('Page.navigate', { url: 'about:blank' }, page)
+    const file = await open('search-sticky', 375, 667)
+    const m = await evaluate(STICKY)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    // The cap: the setting (7), cut to the rows that fit in 40% of the list (the Mac's `stickyCap`).
+    const cap = Math.min(7, Math.floor((0.4 * m.view) / m.h))
+    const flush = m.tops.every((t: number, i: number) => Math.abs(t - i * m.h) <= 1)
+    const ok = m.names.length === cap && flush && m.depths.every((d: number, i: number) => d === i) && m.z.every((z: number, i: number) => i === 0 || z < m.z[i - 1]) && m.opaque && m.line && m.open && !m.wide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  search-sticky ${scheme} at 375x667: ${m.names.length} stuck (cap ${cap}: 7 levels, ${Math.round(m.view)}px list): ${m.names.join(' / ')}; tops ${m.tops.join(',')} (row ${m.h}px); ${m.opaque ? 'opaque' : 'SEE-THROUGH'}, ${m.line ? 'line under' : 'NO LINE'}, ${m.open ? 'open chevrons' : 'CLOSED CHEVRON'}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+    if (scheme === 'light') {
+      const t = await evaluate(STICKY_TAP)
+      const tapOk = Math.abs(t.at - t.want) <= 1 && t.open === 'true'
+      if (!tapOk) failed++
+      writeFileSync(file.replace('.png', '-tapped.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      console.log(`${tapOk ? 'PASS' : 'FAIL'}  search-sticky tap on the stuck "${t.name}": its row at ${t.at}px (under the 2 rows stuck above it: ${t.want}px), still ${t.open === 'true' ? 'open' : 'CLOSED'}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5507: the guide lines (`search-lines`: a finger on the list, three folders stuck).
+const LINES = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const rows = [...document.querySelectorAll('ul.tree > li > .tree__row')]
+  const deep = rows.find((b) => b.querySelector('.tree__label')?.textContent === 'Seville note 1')
+  const line = getComputedStyle(deep, '::before')
+  const shown = Number(line.opacity) === 1
+  // Each level's line, at the centre of the chevron of that level's folder.
+  const left = r(deep).left + parseFloat(line.left)
+  const chevrons = ['Atlas', 'Europe', 'Spain', 'Andalusia'].map((n) => rows.find((b) => b.querySelector('.tree__label')?.textContent === n).querySelector('.tree__chevron')).map((c) => r(c).left + r(c).width / 2)
+  const lines = chevrons.map((_, k) => left + 14 * k + 0.5)
+  const centred = chevrons.every((c, k) => Math.abs(c - lines[k]) <= 1)
+  // Over a stuck row, at a line's x, the stuck row is on top.
+  const stuck = [...document.querySelectorAll('.tree__row--stuck')]
+  const covered = stuck.length > 0 && stuck.every((s) => { const y = r(s).top + r(s).height / 2; return document.elementFromPoint(lines[0], y)?.closest('.tree__stuck') !== null })
+  return { shown, centred, covered, stuck: stuck.length, color: line.backgroundImage.slice(0, 60), chevrons: chevrons.map(Math.round), lines: lines.map(Math.round) }
+})()`
+if (process.env.LAYOUT_LINES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    await send('Page.navigate', { url: 'about:blank' }, page)
+    const file = await open('search-lines', 375, 667)
+    const m = await evaluate(LINES)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.shown && m.centred && m.covered
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  search-lines ${scheme} at 375x667: lines ${m.shown ? 'show' : 'HIDDEN'} with a finger on the list; at x ${m.lines.join(',')}, the chevrons at ${m.chevrons.join(',')} (${m.centred ? 'centred' : 'OFF CENTRE'}); ${m.stuck} stuck rows ${m.covered ? 'cover them' : 'DO NOT COVER them'}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

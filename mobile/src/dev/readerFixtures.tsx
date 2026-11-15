@@ -4,7 +4,7 @@ import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
-import { READER_FILES, READER_ID, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
+import { READER_FILES, READER_ID, READER_NOT_STORED, STICKY_FILES, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
 import { FOLDER_FILES } from './folderVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
@@ -46,8 +46,11 @@ import { fixtureAnswers } from './fixtureAnswers'
  * `folder-sheet` the page in a sheet over Search (the vault says "explore").
  * YAZ-5504: `card-menu` a card's own view with its ⋯ open, Archive card tapped once ("Tap again to archive");
  * `page-card-menu` the page of three cards with the ⋯ of its first card open (a made-up answer list, `fixtureAnswers`).
+ * YAZ-5506: `search-sticky` a made-up tree nine folders deep, every folder open, scrolled to its deepest pages: the open
+ * folders stuck at the top (`STICKY_FILES`).
+ * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -173,6 +176,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
           ? { 'Day plan.md': `---\ntitle: Day plan\n---\n\n${CALENDAR_PAGE}\n` }
         : name === 'page-table-look'
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
+        : name === 'search-sticky' || name === 'search-lines'
+          ? STICKY_FILES
         : name === 'page-drawing'
           ? DRAWING_FILES
           : name === 'search-favorites'
@@ -447,6 +452,35 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       press('Collapse all folders')
       await until(() => document.querySelector('[aria-label="Expand all folders"]') !== null)
       break
+    case 'search-sticky': {
+      // YAZ-5506: every folder open (Expand all), then the list scrolled so a page eight folders down is at the top.
+      await until(() => document.querySelector('[aria-label="Expand all folders"]') !== null)
+      press('Expand all folders')
+      await until(() => document.querySelector('[aria-label="Number 12 note 2, page"]') !== null)
+      await wait(300)
+      const screen = document.querySelector<HTMLElement>('.screen')
+      const li = document.querySelector('[aria-label="Calle Betis note 3, page"]')?.closest('li')
+      if (screen !== null && li != null) screen.scrollTop += li.getBoundingClientRect().top - screen.getBoundingClientRect().top
+      await until(() => document.querySelectorAll('.tree__row--stuck').length > 0)
+      await wait(150)
+      break
+    }
+    case 'search-lines': {
+      // YAZ-5507: every folder open, a finger on the list ("On hover", the Mac's default: the lines show while it is
+      // there), and the list scrolled so Spain's pages pass under three stuck folders.
+      await until(() => document.querySelector('[aria-label="Expand all folders"]') !== null)
+      press('Expand all folders')
+      await until(() => document.querySelector('[aria-label="Number 12 note 2, page"]') !== null)
+      await wait(300)
+      const screen = document.querySelector<HTMLElement>('.screen')
+      const list = document.querySelector<HTMLElement>('ul.tree')
+      list?.dispatchEvent(new Event('touchstart'))
+      const li = document.querySelector('[aria-label="Andalusia, folder"]')?.closest('li')
+      if (screen !== null && li != null) screen.scrollTop += li.getBoundingClientRect().top - screen.getBoundingClientRect().top - 2 * 44 + 20
+      await until(() => document.querySelectorAll('.tree__row--stuck').length > 0)
+      await wait(250)
+      break
+    }
     case 'search-found':
       // YAZ-5447: the matches in the tree: a page two folders down, a card under its page, the typed text marked.
       await typed('madrid')

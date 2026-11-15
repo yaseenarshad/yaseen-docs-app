@@ -15,6 +15,7 @@ import { fileKind, fileLabel, type TreeKind } from './vaultTree'
 import { openFile } from '../explore/openFile'
 import { fileRecord } from '../drawing/boardFiles'
 import { useFolderHold } from './holdFolder'
+import { TreeLook } from './treeLook'
 
 /** What a list is called, and its line when it holds nothing the phone can show. */
 const WORDS: Record<ListKind, { title: string; none: string }> = {
@@ -131,6 +132,8 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
   const open = foldsOf(app.vaultKey, scope.kind)
   const rows = scope.recent !== undefined ? recentRows(data, scope.recent, cards) : listRows(vaultNodes(data), scope.folders, scope.top, open, cards)
   if (rows.length === 0) return <p className="muted search__none">{words.none}</p>
+  // YAZ-5506: the list's open folders (and the tab's own folders) stick, as on the Mac's Favorites and Focus tabs.
+  const drawn = rows.slice(0, shown)
   const toggle = (key: string) => {
     if (open.has(key)) open.delete(key)
     else open.add(key)
@@ -139,8 +142,9 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
   return (
     <>
       <h2 className="section">{words.title}</h2>
+      <TreeLook rows={drawn} />
       <ul className="tree" role="tree" aria-label={words.title}>
-        {rows.slice(0, shown).map((row) => (
+        {drawn.map((row) => (
           <li key={row.key} role="treeitem" aria-expanded={row.kind === 'folder' || row.kind === 'group' ? row.open : undefined}>
             <button
               type="button"

@@ -1,0 +1,63 @@
+/*
+ * In the lazy Search tree chunk (`treeLook.tsx` imports it), not the first load (YAZ-5377).
+ *
+ * YAZ-5506: STICKY FOLDERS, as the Mac sidebar's (YAZ-3440 D1, D10; `client/src/app.css` `.tree__row--sticky`). The
+ * layer of stuck rows (`stickyFolders.ts`): a zero-height box that sticks at the scroller's top edge (`.screen` has
+ * 12px of top padding, and a sticky box stops below it, so `top` takes it back, as the Mac's `--sidebar-pad-top`), over
+ * the list, as wide as it. Each stuck row is a copy of its folder row, at its depth's slot, the shallower on top: the
+ * side's colour (the screen's, on the phone), opaque, so no row or line shows through, and the thin line under it.
+ */
+.tree__stuck {
+  position: sticky;
+  top: -12px;
+  z-index: 2;
+  height: 0;
+  margin: 0 -8px;
+}
+.search .tree__stuck .tree__row--stuck {
+  position: absolute;
+  left: 0;
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--border);
+}
+/* A press shows on it as on any row. */
+.search .tree__stuck .tree__row--stuck:active {
+  background: var(--bg-side);
+}
+/* A finger's room on the chevron of a stuck row, which closes its folder (the rest of the row scrolls back to it). */
+.tree__row--stuck .tree__chevron::after {
+  content: '';
+  position: absolute;
+  inset: -15px -8px -15px -10px;
+}
+
+/*
+ * YAZ-5507: THE GUIDE LINES, the Mac sidebar's level lines (YAZ-3309 D1, D2; app.css `.tree[role='group']::before`):
+ * one thin grey line (`--border`) below the chevron of each open folder, down past every row inside it. The Mac draws
+ * one line on each nested list, at depth × 14 + 1 px from the tree's edge: the centre of the chevron of the folder
+ * above (its row is indented 8 + depth × 14 px, the chevron 14 px wide). The phone's tree is one flat list, so a row
+ * `--tree-depth` d deep draws the d lines of the levels above it: one gradient, a 1 px line each 14 px from 15 px in.
+ * Rows of the same folder are one row tall each and touch, so their pieces join into one line. No target (D5): the
+ * tap goes to the row. A stuck row (above) is opaque and stands over the list, so the lines pass behind it.
+ * `data-lines` on the list says when they show (`guideLines.ts`).
+ */
+.search .tree > li > .tree__row {
+  position: relative;
+}
+.search .tree > li > .tree__row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 15px;
+  width: calc(var(--tree-depth, 0) * 14px);
+  background: repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 14px);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+.tree[data-lines='always'] > li > .tree__row::before,
+.tree[data-lines='hover'][data-touch] > li > .tree__row::before {
+  opacity: 1;
+}

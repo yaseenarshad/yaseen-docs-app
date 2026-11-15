@@ -55,6 +55,15 @@ export const READER_FILES: Record<string, string | Uint8Array> = {
 }
 
 /** Files of the vault that are NOT on the phone (3D brings them later): the checkpoint names them all the same. */
+/** YAZ-5506: a made-up tree nine folders deep (deeper than the sticky cap of 7), four pages in each folder. */
+export const STICKY_PATH = ['Atlas', 'Europe', 'Spain', 'Andalusia', 'Seville', 'Triana', 'Streets', 'Calle Betis', 'Number 12']
+export const STICKY_FILES: Record<string, string> = Object.fromEntries(
+  STICKY_PATH.flatMap((_, d) => {
+    const dir = STICKY_PATH.slice(0, d + 1).join('/')
+    return [1, 2, 3, 4].map((n) => [`${dir}/${STICKY_PATH[d]} note ${n}.md`, `---\ntitle: ${STICKY_PATH[d]} note ${n}\n---\n\nMade-up notes.\n`])
+  }),
+)
+
 export const READER_NOT_STORED: Record<string, Uint8Array> = { 'assets/plaza.png': SUN_PNG }
 
 /** Puts `files` on the phone as a finished first download: the files, the index, then the checkpoint (3B's order). */
