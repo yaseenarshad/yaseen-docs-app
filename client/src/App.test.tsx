@@ -5518,7 +5518,11 @@ describe('App card review (YAZ-4967)', () => {
     path: `/v/${folder === '' ? '' : `${folder}/`}${name}.md`, name: `${name}.md`, basename: name, title: name, folder, ext: 'md', size: 1, ctime: 1, mtime: 1,
     properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: cards.map(([id, reviews]) => ({ id, off: false, next: false, reviews })),
   })
-  const hourAgo = () => [{ at: new Date(Date.now() - H).toISOString().slice(0, 16) + 'Z', rating: 'good' as const }]
+  // Two Remembered an hour ago: out of its same-day steps, so not due (YAZ-5020: a new card needs two in a row).
+  const hourAgo = () => [
+    { at: new Date(Date.now() - H).toISOString().slice(0, 16) + 'Z', rating: 'good' as const },
+    { at: new Date(Date.now() - H + 60_000).toISOString().slice(0, 16) + 'Z', rating: 'good' as const },
+  ]
   const RECORDS = () => [
     page('x', '', ['V-1', [{ at: '2020-01-01T09:00Z', rating: 'good' }]], ['V-2', hourAgo()]), // due; not due
     page('p', 'Work', ['V-3', []]), // new
@@ -5725,9 +5729,9 @@ describe('App: the card flow (YAZ-4962)', () => {
     expect(captured.sidebar?.dueCount).toBe(1)
     act(() => captured.sidebar?.onOpenInbox())
     await vi.waitFor(() => expect(el.querySelector('.card-inbox .card__side')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
-    // The head: the page and the ID in brackets (YAZ-5012); the card's first line is not said again above the card.
+    // The head: the ID, no brackets (YAZ-5037 "Title · ID", the ID first, D20); the card's first line is not said again above the card.
     expect(el.querySelector('.card-inbox .explore__title')).toBeNull()
-    expect(el.querySelector('.card-inbox .card__id')?.textContent).toBe('(WIKI-9)')
+    expect(el.querySelector('.card-inbox .card__id')?.textContent).toBe('WIKI-9')
     expect(el.querySelector('.card-inbox__place')?.textContent).toBe('1 of 1')
     // The page under the Inbox stays where it was: its tab layer is still mounted.
     expect(el.querySelector('.tabstack__layer [data-editor][data-path="/v/a.md"]')).not.toBeNull()
@@ -5743,16 +5747,29 @@ describe('App: the card flow (YAZ-4962)', () => {
     expect([sides(el), hidden(el)]).toEqual([2, ['France', 'Paris']])
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     const remembered = el.querySelectorAll<HTMLButtonElement>('.card-inbox__answer')[1]
-    expect(remembered.getAttribute('aria-description')).toMatch(/^Remembered · (\d+ days?|today)$/)
-    // Remembered (2): the review lands on the card line, written as the line holds reviews.
+    // A new card's first Remembered keeps it in its same-day steps (YAZ-5020): the hover says "later today".
+    expect(remembered.getAttribute('aria-description')).toBe('Remembered · later today')
+    // Remembered (2): the review lands on the card line, written as the line holds reviews (the answer's seconds may
+    // end it, YAZ-5033).
+    const review = /, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)?/g
     await press(el, '2')
-    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m))
-    expect(files[PAGE].content.replace(/, \d{4}-\d\d-\d\dT\d\d:\d\dZ good/, '')).toBe(page('<!-- card: WIKI-9 -->'))
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)? -->$/m))
+    expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
+    const once = files[PAGE].content
+    // YAZ-5020: still in its steps, the card comes back in this session, from its first step; its second Remembered
+    // takes it out of them.
+    await vi.waitFor(() => expect([sides(el), hidden(el)]).toEqual([1, []]))
+    for (let i = 0; i < 3; i++) await press(el, ' ')
+    await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
+    expect(el.querySelectorAll<HTMLButtonElement>('.card-inbox__answer')[1].getAttribute('aria-description')).toMatch(/^Remembered · (\d+ days?|today)$/)
+    await press(el, '2')
+    await vi.waitFor(() => expect(files[PAGE].content.match(review)).toHaveLength(2))
+    expect(files[PAGE].content.replace(review, '')).toBe(page('<!-- card: WIKI-9 -->'))
     // Nothing left in the session: the done screen.
     await vi.waitFor(() => expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.'))
-    // ⌘Z: the review comes off the line and the card shows again, from its first step.
+    // ⌘Z: the last review comes off the line and the card shows again, from its first step.
     await press(el, 'z', { metaKey: true })
-    await vi.waitFor(() => expect(files[PAGE].content).toBe(page('<!-- card: WIKI-9 -->')))
+    await vi.waitFor(() => expect(files[PAGE].content).toBe(once))
     await vi.waitFor(() => expect(sides(el)).toBe(1))
     expect(hidden(el)).toEqual([])
     // YAZ-5011: Esc does not close the Inbox (a tab; the Esc order goes on to the sidebar); its tab's ✕ does.
@@ -5980,9 +5997,17 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
       return at === -1
     })
     expect(at).toBeGreaterThan(-1)
-    // YAZ-5030: the card starts with its title line, "Title", selected: the typing replaces it.
-    expect(view.state.doc.textBetween(at + 1, at + 1 + 'Title'.length)).toBe('Title')
-    await act(async () => void view.dispatch(view.state.tr.insertText('Capital of {{France}}\n---\nParis', at + 1, at + 1 + 'Title'.length)))
+    // The card starts empty: its title is no line of its text but a part of its card line, edited in the title band
+    // (YAZ-5308 decision D; YAZ-5030's "Title" first line is gone). /card opens Edit card at the Title field; Done
+    // (nothing typed) gives the block back to the page, where the card's text is written.
+    expect(view.state.doc.nodeAt(at)?.textContent).toBe('')
+    const card = cardBlockViewOfDom(view.dom.querySelector('.card'))!
+    await act(async () => {
+      await card.cardEditor?.ready
+      card.done()
+    })
+    expect(card.editing).toBe(false)
+    await act(async () => void view.dispatch(view.state.tr.insertText('Capital of {{France}}\n---\nParis', at + 1)))
     // The autosave writes the card with the ID the door gave at insert, before any sweep.
     await vi.waitFor(() => expect(files[PAGE].content).toBe('# Cards\n\nIntro\n\n```card\nCapital of {{France}}\n---\nParis\n```\n<!-- card: WIKI-9 -->\n'), { timeout: SLOW_RUNNER_MS })
     // The index reads the save: the Inbox row counts the new card.
@@ -6001,7 +6026,8 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     for (let i = 0; i < 3; i++) await press(' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     await press('2')
-    const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m
+    // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
+    const reviewed = /^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)? -->$/m
     await vi.waitFor(() => expect(files[PAGE].content).toMatch(reviewed), { timeout: SLOW_RUNNER_MS })
     // The open page took the review, and its next save writes the typing with it: both are in the file.
     await vi.waitFor(() => expect(files[PAGE].content).toContain('Intro, typed'), { timeout: SLOW_RUNNER_MS })
@@ -6089,8 +6115,9 @@ describe('App: the card flow from /card, through the real editor (YAZ-4965)', ()
     await press(' ')
     await vi.waitFor(() => expect(el.querySelectorAll('.card-inbox__answer')).toHaveLength(2))
     await press('2')
-    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good -->$/m), { timeout: SLOW_RUNNER_MS })
-    await vi.waitFor(() => expect(getMarkdownForSave(captured.crepes.at(-1)!)).toMatch(/<!-- card: WIKI-9, \S+ good -->/))
+    // The review part may end with the answer's seconds (YAZ-5033: ` <n>s`, written when known).
+    await vi.waitFor(() => expect(files[PAGE].content).toMatch(/^<!-- card: WIKI-9, \d{4}-\d\d-\d\dT\d\d:\d\dZ good(?: \d+s)? -->$/m), { timeout: SLOW_RUNNER_MS })
+    await vi.waitFor(() => expect(getMarkdownForSave(captured.crepes.at(-1)!)).toMatch(/<!-- card: WIKI-9, \S+ good(?: \d+s)? -->/))
     expect(el.querySelector('.outside-changes-bar')).toBeNull()
     // A review is no file change (YAZ-4948 with YAZ-4985): the read-only ask never comes for the card line.
     expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
@@ -8122,7 +8149,8 @@ describe('App: the card course (YAZ-5120)', () => {
     expect(bridge.state.setCourse).toHaveBeenCalledWith({ offered: true })
     const open = [...el.querySelectorAll<HTMLButtonElement>('.link-notice button')].find((b) => b.textContent === 'Open the course')!
     act(() => open.click())
-    await vi.waitFor(() => expect(document.querySelector('.course[role="dialog"]')).not.toBeNull())
+    // The lazy layer's chunk holds every chapter's scenes (YAZ-5121): its first load can take past waitFor's 1 s default.
+    await vi.waitFor(() => expect(document.querySelector('.course[role="dialog"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
     act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     expect(document.querySelector('.course')).toBeNull()
   })
