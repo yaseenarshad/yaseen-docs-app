@@ -5,8 +5,13 @@
  * until the tab closes, else the moment it ends. ONE `setTimeout` per unlock, armed here and cleared on close or on
  * "Lock now"; no clock ticks here (the chip keeps its own 1-second tick, only while a timer runs). At zero the page
  * SAVES first (`beforeLock`: the host's flush), then locks again; the caret is the editor's own and stays.
+ *
+ * The vault's unlock (YAZ-5581) ends the same way: `beforeLock` is also this surface's step before the VAULT locks again
+ * (registered with the vault's `beforeLock`, from `VaultReadOnly`, or `vaultBeforeLock` where no editor provides it).
+ * It runs only while this tab's own unlock does not: a tab unlocked on its own stays unlocked.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { NO_BEFORE_LOCK, VaultReadOnly, type BeforeVaultLock } from '../vault/readOnlyVault'
 
 export type AllowFor = 'minute' | 'ten' | 'close'
 
@@ -21,8 +26,12 @@ export interface TimedUnlock {
   lock: () => void
 }
 
-export function useTimedUnlock(beforeLock: () => Promise<unknown> | void): TimedUnlock {
+export function useTimedUnlock(beforeLock: () => Promise<unknown> | void, vaultBeforeLock?: BeforeVaultLock): TimedUnlock {
   const [until, setUntil] = useState<number | null>(null)
+  const untilNow = useRef(until)
+  untilNow.current = until
+  const fromContext = useContext(VaultReadOnly).beforeLock
+  const register = vaultBeforeLock ?? fromContext ?? NO_BEFORE_LOCK
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   /** Each allow is a run; a relock lands only for the run it belongs to (an allow during the save wins). */
   const run = useRef(0)
@@ -58,6 +67,18 @@ export function useTimedUnlock(beforeLock: () => Promise<unknown> | void): Timed
       timer.current = setTimeout(relock, ms)
     },
     [relock],
+  )
+  useEffect(
+    () =>
+      register(() => {
+        if (untilNow.current !== null) return
+        try {
+          return before.current()
+        } catch {
+          return undefined
+        }
+      }),
+    [register],
   )
   // Cleared on close: a closed tab saves through its host's own unmount flush.
   useEffect(
