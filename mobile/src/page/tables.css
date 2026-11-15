@@ -158,18 +158,19 @@
   opacity: 1;
 }
 
-/* ⤢ under a table wider than the screen: it opens the table full screen. */
+/* ⤢ at the top right of a table wider than the screen (YAZ-5479), above its frame, so it never covers the sticky first
+   column or the header text: it opens the table full screen. 44 px to tap. */
 .page-table__bar {
   display: none;
   justify-content: flex-end;
-  margin-top: 2px;
+  margin-bottom: 2px;
 }
 .page-table-box[data-wide] .page-table__bar {
   display: flex;
 }
 .page-table__open {
   min-width: var(--tap);
-  min-height: 32px;
+  min-height: var(--tap);
   padding: 0 10px;
   border: 0;
   border-radius: 8px;

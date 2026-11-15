@@ -216,6 +216,15 @@ describe('⤢ and the full-screen view (YAZ-5471)', () => {
     markTable(wide)
     expect([frame.hasAttribute('data-more-left'), frame.hasAttribute('data-more-right')]).toEqual([true, false])
     expect(wide.querySelector('[data-table-open]')!.getAttribute('aria-label')).toBe('Open the table full screen')
+    // YAZ-5479: ⤢ at the TOP right: the box's first child, right-aligned, ABOVE the frame (never over the sticky first column
+    // or the header text), and 44 px to tap.
+    const bar = wide.querySelector<HTMLElement>('.page-table__bar')!
+    expect(wide.firstElementChild).toBe(bar)
+    expect(bar.nextElementSibling).toBe(frame)
+    expect(frame.contains(bar)).toBe(false)
+    expect(getComputedStyle(bar).justifyContent).toBe('flex-end')
+    const tap = getComputedStyle(wide.querySelector('[data-table-open]')!)
+    expect([tap.minWidth, tap.minHeight]).toEqual(['var(--tap)', 'var(--tap)']) // --tap: 44px (styles.css)
   })
 
   it('a tap on ⤢ opens the whole table full screen (its own chunk); ✕ closes it and the focus goes back', async () => {

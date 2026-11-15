@@ -13,8 +13,8 @@ import './tables.css'
  *  - The first column of a table of three columns or more stays in place while it scrolls sideways (`data-sticky`),
  *    at most `STICKY_MAX` em wide.
  *
- * A table wider than the screen scrolls in its own box, with a soft shadow at the side with more, and a ⤢ button that
- * opens it full screen (`useTables`, `tableView`). The widths are counted from the text, not measured: no layout runs
+ * A table wider than the screen scrolls in its own box, with a soft shadow at the side with more, and a ⤢ button (top
+ * right, YAZ-5479) that opens it full screen (`useTables`, `tableView`). The widths are counted from the text, not measured: no layout runs
  * here, so a long page still draws in quick slices. A table whose columns the Mac sized (`data-sized`) keeps them.
  */
 
@@ -182,7 +182,7 @@ export function layoutTable(table: HTMLTableElement): void {
   }
 }
 
-/** The ⤢ button under a table (shown when the table is wider than the screen: `data-wide`, `useTables`). */
+/** The ⤢ button at the top right of a table, above its frame (YAZ-5479; shown when the table is wider than the screen: `data-wide`, `useTables`). */
 function openButton(): HTMLElement {
   const bar = document.createElement('div')
   bar.className = 'page-table__bar'
@@ -204,7 +204,8 @@ function frame(scroll: HTMLElement): void {
   edge.className = 'page-table-frame'
   scroll.replaceWith(box)
   edge.append(scroll)
-  box.append(edge, openButton())
+  // YAZ-5479: ⤢ sits at the top right, ABOVE the frame: never over the sticky first column or the header text.
+  box.append(openButton(), edge)
 }
 
 /**
