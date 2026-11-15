@@ -6,11 +6,11 @@
 import { folderBlocks } from '@shared/folderValues'
 import { exactLinkTarget } from '@shared/linkRewrite'
 import type { IndexRecord, MentionsFrom } from '@shared/types'
-import type { ResolveLink } from '../editor/wikilink/wikilinkPlugin'
+import type { ResolveLink } from '../editor/wikilink/linkResolve'
 import { mentionsMap } from '../links/backlinks'
-import { rowPage } from '../links/shortcuts'
+import { rowPage } from '../links/folderRows'
 import type { RunOptions } from './engine'
-import type { ColumnDecl } from './folderSettings'
+import type { ColumnDecl } from './folderSettingsRead'
 import { pageLinkOf } from './view/fills'
 
 /** Whether `key` (bare, or `note.`-prefixed) is a Linked mentions column of `columns`. */

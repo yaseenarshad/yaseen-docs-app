@@ -10,7 +10,7 @@ export default function FolderView({ path }: { path: string }) {
   const data = useVaultData()
   return (
     <Frame title={folderTitleOf(data?.folders ?? [], path)} back={() => app.go({ type: 'back' })} gear tabs reader>
-      <FolderBody path={path} />
+      <FolderBody path={path} sheet={false} />
     </Frame>
   )
 }

@@ -26,7 +26,7 @@ import type { SheetRoute } from './sheets'
 const text = (content: string | Uint8Array) => (typeof content === 'string' ? content : new TextDecoder().decode(content))
 
 /** The file's text from the phone's storage: undefined while it reads, null when it is not on the phone. Read again when a pass changes it. */
-function useFileText(path: string): string | null | undefined {
+export function useFileText(path: string): string | null | undefined {
   const app = useApp()
   const { store, sync } = app.services
   const vault = app.vaultKey!
@@ -54,10 +54,11 @@ function useFileText(path: string): string | null | undefined {
  * drawing (YAZ-5473: the reader's `tapOf` names a drawing file a drawing) opens in ANOTHER sheet on top; a heading of
  * this page lands there in the sheet; a file opens as in the reader; a missing page's link does nothing, as in the reader.
  */
-function useSheetTap(data: VaultData | null, say: (words: string) => void) {
+export function useSheetTap(data: VaultData | null, say: (words: string) => void, click: LinkDoor['click'] | null = 'explore') {
   const app = useApp()
   const media = useVaultMedia()
-  const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: 'explore' }
+  // `null` (a folder page full screen, YAZ-5460): the vault's own "Clicking a link" decides.
+  const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, ...(click !== null && { click }) }
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
     const tap = tapOf(event.target, data)
