@@ -11,6 +11,7 @@ export const QUICK_REPLIES = ['Approved'] as const
 const NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
   ...REFUSED_WORDS,
   gone: 'This page is no longer in the vault (it was moved or deleted), so your comment was not added.',
+  copies: 'This page has a copy with the same ID, so the phone could not tell where your comment goes. It was not added.',
   'too-large': 'This page is too large for the phone to change, so your comment was not added. Comment on the Mac.',
   // A check box tick's refusal (YAZ-5494); ticks are not shown here (`taskTicks.ts` says it).
   changed: 'This page changed, so your comment was not added.',
