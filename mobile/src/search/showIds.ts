@@ -35,12 +35,16 @@ export function useIdsForm(data: VaultData): IdsForm | null {
 }
 
 /**
- * The ID at the right end of a row of `path` (the Mac's `tree__id`, `Tree.tsx`), or null: only a page or card file with
- * an ID, as the Mac's files list (`useAllPathIds`: the index records' `id`). Never a folder.
+ * The ID at the right end of a row of `path` (the Mac's `tree__id`, `Tree.tsx`), or null: a page's own ID (its record's
+ * `id`), and a card file's card's ID, off its card line (decision D, YAZ-5308: a card file has no `id:` property, so its
+ * record holds none; its one card's ID is the file's, as `searchCandidates`' `cardFileId` on the Mac). Read here, not put
+ * on the record: a record's `id` also resolves links and names comments, where a card file is not a page. Never a folder.
  */
 export function rowId(data: VaultData, path: string, form: IdsForm | null): string | null {
-  const id = form === null ? undefined : data.byPath[path]?.id
-  return id === undefined || form === null ? null : idInFiles(id, form)
+  if (form === null) return null
+  const record = data.byPath[path]
+  const id = record?.id ?? (record?.kind === 'card' ? (record.cards?.[0]?.id ?? undefined) : undefined)
+  return id === undefined ? null : idInFiles(id, form)
 }
 
 /** Forgets the choices read (a test starts clean). */
