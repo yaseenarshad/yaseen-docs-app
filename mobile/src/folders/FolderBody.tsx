@@ -30,6 +30,8 @@ import './folders.css'
 
 /** The tab each folder showed last, while the app runs (the Mac keeps the open view tab for its session too). */
 const lastTab = new Map<string, number>()
+/** Forgets them (a test starts clean). */
+export const forgetFolderTabs = (): void => lastTab.clear()
 
 export default function FolderBody({ path, onDrawn, sheet = true }: { path: string; onDrawn?(): void; sheet?: boolean }) {
   const app = useApp()
