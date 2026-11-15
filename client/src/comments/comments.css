@@ -492,7 +492,7 @@
   outline: none;
 }
 
-/* The row under the text: the shortcut hint at the left, the buttons at the right. */
+/* The row under the text: the buttons at the right; the submit button says its key (YAZ-5332, "Comment (Cmd+Enter)"). */
 .comments__footer {
   display: flex;
   align-items: center;
@@ -500,10 +500,8 @@
   padding: 0 8px 8px 12px;
 }
 
-.comments__hint {
-  margin-right: auto;
-  font-size: 12px;
-  color: var(--fg-muted);
+.comments__footer > .comments__btn:not(.comments__btn + .comments__btn) {
+  margin-left: auto;
 }
 
 /* `.btn` / `.btn--primary` are the app's own (the Welcome screen's); this only trims them to the block's scale. */
@@ -696,8 +694,4 @@
 .comments__me:hover {
   color: var(--fg);
   background: var(--bg-hover);
-}
-
-.comments__me + .comments__hint {
-  margin-left: 0;
 }

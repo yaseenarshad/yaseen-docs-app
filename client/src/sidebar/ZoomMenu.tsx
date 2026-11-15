@@ -18,6 +18,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useReducer, useRef, useS
 import { createPortal } from 'react-dom'
 import { SIDEBAR_ZOOM_STEPS, stepZoom } from '@shared/types'
 import { ZoomStepper } from './ZoomStepper'
+import { withKeys } from '@shared/keyLabel'
 
 interface ZoomMenuProps {
   /** The sidebar zoom in percent: the chip's label and the Sidebar row. */
@@ -113,7 +114,7 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
   const [min, max] = [SIDEBAR_ZOOM_STEPS[0], SIDEBAR_ZOOM_STEPS[SIDEBAR_ZOOM_STEPS.length - 1]]
   return (
     <div className="zoom-footer" role="group" aria-label="Sidebar zoom in the footer">
-      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar out" title="Zoom the sidebar out (⌘−)" disabled={sidebar <= min} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, -1))}>
+      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar out" title={withKeys('Zoom the sidebar out', '⌘−')} disabled={sidebar <= min} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, -1))}>
         −
       </button>
       <button
@@ -128,7 +129,7 @@ export const ZoomMenu = memo(function ZoomMenu({ sidebar, onSidebar, app, onApp,
       >
         {Math.round(sidebar)}%
       </button>
-      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar in" title="Zoom the sidebar in (⌘+)" disabled={sidebar >= max} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, 1))}>
+      <button type="button" className="zoom-stepper__step" aria-label="Zoom the sidebar in" title={withKeys('Zoom the sidebar in', '⌘+')} disabled={sidebar >= max} onClick={() => onSidebar(stepZoom(SIDEBAR_ZOOM_STEPS, sidebar, 1))}>
         +
       </button>
       {place !== undefined &&

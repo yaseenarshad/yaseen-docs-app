@@ -104,7 +104,6 @@ it('YAZ-5026 round 2: a card`s lists, read (the page, the card window, the Inbox
 it('YAZ-5026 round 2: Edit card`s key row has its own look in the page (explore.css loads only with the card window or the Inbox)', () => {
   const row = rules(cardCss, '.card .card__keys').find((r) => /display:\s*flex/.test(r.body))!
   expect(row.body).toMatch(/gap:\s*14px/)
-  expect(rules(cardCss, '.card .card__keys kbd').some((r) => /font-family:\s*inherit/.test(r.body) && /border:/.test(r.body))).toBe(true)
 })
 
 it('YAZ-5051: the line between two sides is clear — dashed, across the card, darker than its borders, unlike a rule in the text; the Inbox gives it more room, edge to edge', () => {
@@ -211,9 +210,9 @@ it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s loo
   const screens = read('../../review/cardScreens.css')
   expect(rules(screens, '[data-card-clean]').some((r) => /--inbox-card-pad:\s*44px/.test(r.body))).toBe(true)
   expect(rules(screens, '[data-card-clean]').some((r) => /max-width/.test(r.body))).toBe(false)
-  // The Inbox card's width: Card width's text and the card's own sides.
+  // The Inbox card's width: Card width's text and the card's own sides, times the Inbox zoom (YAZ-5372).
   const column = rules(screens, '.card-inbox__column').find((r) => r.selector === '.card-inbox__column')!
-  expect(column.body).toMatch(/width:\s*min\(calc\(var\(--card-text-width\) \+ 2 \* var\(--inbox-card-pad, 28px\)\), 100%\)/)
+  expect(column.body).toMatch(/width:\s*min\(calc\(\(var\(--card-text-width\) \+ 2 \* var\(--inbox-card-pad, 28px\)\) \* var\(--document-zoom, 1\)\), 100%\)/)
 })
 
 it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in the editor (Edit card, a card in a page, a card file) and in the read card; the Inbox has "Side 1 of 2" above, so its line has none', () => {
@@ -256,4 +255,30 @@ it('YAZ-5144 round 3: Card width is ONE rule for a card in a page (written there
   expect(rules(screens, '.explore__body--card').some((r) => /max-width/.test(r.body))).toBe(false)
   expect(rules(cardCss, '.milkdown .card').some((r) => /margin-inline:\s*auto/.test(r.body))).toBe(false)
   expect(rules(read('../cardFileView.css'), '.card-file__page').find((r) => r.selector === '.card-file__page')?.body).toMatch(/max-width:\s*var\(--content-max-width\)/)
+})
+
+it('YAZ-5145 round 3: a page locked by Read only (`data-read-only`, a page tab with its caret) shows the card\'s Edit card, which asks first; a preview (no caret) hides it', () => {
+  const hides = (part: string) => rules(cardCss, part).filter((r) => r.selector.split(',').some((s) => s.trim().startsWith(part)) && /display:\s*none/.test(r.body))
+  expect(hides(".ProseMirror[contenteditable='false'] .card__edit")).toHaveLength(1)
+  expect(hides('.ProseMirror[data-read-only] .card__edit')).toEqual([])
+})
+
+it('YAZ-5387: the title band reads Card title size over the card text, and its title beats the page`s h1 rule (it read at 1.802em in a page)', () => {
+  const app = read('../../app.css')
+  const h1 = rules(app, '.editor-instance .milkdown .ProseMirror h1').find((r) => /font-size:\s*var\(--h1-size, 1\.802em\)/.test(r.body))!
+  expect(h1).toBeDefined()
+  const title = rules(cardCss, '.card-band.card-band.card-band :is(.page-title__text, .page-title__input)')[0]!
+  expect(title.body).toMatch(/font:\s*inherit/)
+  expect(title.body).toMatch(/margin:\s*0 0 0 -4px/)
+  expect(beats(specificity(title.selector), specificity(h1.selector))).toBe(true)
+  // No "H1" tag after the title (headingLevelTag.css), however the page is set.
+  expect(rules(cardCss, '.card-band.card-band.card-band .page-title__text::after')[0]?.body).toMatch(/content:\s*none/)
+  // The band: a step of the card's text. The card: Custom's px, else its parent's size.
+  expect(rules(cardCss, '.card-band').find((r) => r.selector === '.card-band')?.body).toMatch(/font-size:\s*calc\(1em \* var\(--card-title-scale, 1\.125\)\)/)
+  expect(rules(cardCss, '.card').find((r) => r.selector === '.card')?.body).toMatch(/font-size:\s*var\(--card-text-size, 1em\)/)
+  // The Inbox and Preview: the card's text, and the band beside it (not inside it) from the same two variables.
+  const screens = read('../../review/cardScreens.css')
+  expect(rules(screens, '.card.card-inbox__card')[0]?.body).toMatch(/font-size:\s*var\(--card-text-size, 1\.05em\)/)
+  expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*calc\(var\(--card-text-size, 1\.05em\) \* var\(--card-title-scale, 1\.125\)\)/)
+  expect(rules(screens, '.card-inbox__card').filter((r) => r.selector === '.card-inbox__card').some((r) => /font-size/.test(r.body))).toBe(false)
 })

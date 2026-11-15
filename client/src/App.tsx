@@ -64,7 +64,7 @@ import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
 import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
-import { CARD_PREVIEW, type CardPreviewRequest } from './editor/card/cardOpen'
+import { CARD_PREVIEW, type CardPlace, type CardPreviewRequest } from './editor/card/cardOpen'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
 import { setTypingArrows } from './editor/typingArrows'
@@ -75,6 +75,7 @@ import type { CodeSettingsPatch } from './code/codeSettings'
 import { ConfirmRename, isNameChange, type RenameTo } from './sidebar/ConfirmRename'
 import type { CardReviewResume, CardReviewScope, CardReviewSession } from './review/useCardReview'
 import { cardLookAttrs, cardSpacingVars } from './review/cardSpacing'
+import { cardTextVars } from './review/cardText'
 import { useReviewOnRoots } from './review/useReviewSettings'
 import { contentWidthVars, tablePositionVars } from './lib/contentWidth'
 import { nextHiddenAttrs, nextHiddenVars } from './review/nextHidden'
@@ -116,6 +117,8 @@ import { FILE_ACTIONS_ALLOW, READ_ONLY_VAULT_FILE, sanitizeReadOnlyVault, type F
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
+import { cycleStop, type InboxSlot } from './workspace/tabCycle'
+import { readInboxFocus, saveInboxFocus } from './review/inboxFocus'
 import { useTabSleep } from './workspace/useTabSleep'
 import { restoreSession } from './workspace/restoreSession'
 import { Welcome } from './Welcome'
@@ -326,7 +329,7 @@ const PageWindowEditorProps = createContext<((path: string) => Omit<ComponentPro
  * The page window's editor: the editor a tab has, with all its parts (Properties, comments); memo, as a tab's is.
  * `openLink` (the explore stack, YAZ-2571): a link opened in this tab goes there instead; the other gestures keep their doors.
  */
-function PageWindowEditor({ path, openLink, unlocked = false }: { path: string; openLink?: (path: string) => void; unlocked?: boolean }) {
+function PageWindowEditor({ path, openLink, unlocked = false, startView }: { path: string; openLink?: (path: string) => void; unlocked?: boolean; startView?: PageView }) {
   const propsFor = useContext(PageWindowEditorProps)
   // An Explore layer's timed "Allow edits" (YAZ-4939): the vault's Read only does not lock this editor while it runs.
   const props = propsFor?.(path)
@@ -334,13 +337,13 @@ function PageWindowEditor({ path, openLink, unlocked = false }: { path: string; 
   const baseOpenLink = base?.onOpenLink
   const onOpenLink = useCallback((to: string, where?: GestureAction | 'explore') => (where === undefined || where === 'thisTab' || where === 'explore' ? openLink?.(to) : baseOpenLink?.(to, where)), [openLink, baseOpenLink])
   if (base === undefined) return null
-  return openLink === undefined ? <RetainedEditor {...base} path={path} /> : <RetainedEditor {...base} path={path} onOpenFile={openLink} onOpenLink={onOpenLink} />
+  return openLink === undefined ? <RetainedEditor {...base} path={path} /> : <RetainedEditor {...base} path={path} onOpenFile={openLink} onOpenLink={onOpenLink} startView={startView} />
 }
 
 /** `FolderHost.renderPageEditor` (YAZ-4547): one function, so it never renders a folder page again. */
 const renderPageEditor = (path: string) => <PageWindowEditor path={path} />
-/** The explore stack's editor (YAZ-2571): the same, with the stack's link door. */
-const renderExploreEditor = (path: string, openLink: (path: string) => void, unlocked: boolean) => <PageWindowEditor path={path} openLink={openLink} unlocked={unlocked} />
+/** The explore stack's editor (YAZ-2571): the same, with the stack's link door; it starts where the reading layer stood (YAZ-5164). */
+const renderExploreEditor = (path: string, openLink: (path: string) => void, unlocked: boolean, start?: PageView) => <PageWindowEditor path={path} openLink={openLink} unlocked={unlocked} startView={start} />
 
 /**
  * A new window's boot tab starts with the page view main gave it (YAZ-2951 D5), when that tab shows
@@ -395,7 +398,7 @@ export function App() {
   // id (YAZ-2940 D1): `active`, `mounted` and `preview` are ids, and two tabs may show one file.
   const {
     tabs, active: activeTab, file, mounted, preview, blank, openCurrent, navigate, openKept, duplicate, openZoom, zoomTab, take, keep, setName: setTabName, newTab: openBlank, closeBlank, openBackground, openBackgroundAt, activate, sleep: sleepTabs, wake: wakeTab, close: closeTab, closeMany: closeTabs, openStored, move: moveTab,
-    closeActive, next: nextTab, prev: prevTab, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
+    closeActive, back, forward, go: goToStep, openStep, canBack, canForward, history: tabHistory, reset: resetTabs,
     renamePath: renameWorkspacePath, renameDirPath: renameWorkspaceDir, deletePath: deleteWorkspacePath, deleteDirPath: deleteWorkspaceDir,
     rightPanel, rightMounted, openRight, openRightBackground, navigateRight, toggleRight, closeRight,
     moveRight, transferMainToRight, transferRightToMain,
@@ -528,6 +531,18 @@ export function App() {
    */
   const [inboxFront, setInboxFront] = useState(false)
   const inboxShown = reviewer !== null && inboxFront
+  /**
+   * FOCUS MODE (YAZ-5375, Yaseen: "a button that enables focus mode so someone can decide to turn it on vs not"): on, the
+   * tab row hides while the Inbox tab is the one on show, so the card gets its room; off, as before. The Inbox bar's
+   * button, F and Esc in the Inbox turn it off again; ⌃Tab and the sidebar still go to other tabs, where the row shows.
+   * Remembered across restarts (`inbox:focus` in localStorage), for every window.
+   */
+  const [inboxFocusMode, setInboxFocusMode] = useState(readInboxFocus)
+  const changeInboxFocus = useCallback((on: boolean) => {
+    setInboxFocusMode(on)
+    saveInboxFocus(on)
+  }, [])
+  const inboxFocused = inboxShown && inboxFocusMode
   /**
    * The page on show in the main pane: the active tab's — and none under the blank tab (YAZ-2655
    * D10), where `file` is still the last real active tab, the one the window stores, nor under the Inbox tab (YAZ-5038).
@@ -897,6 +912,8 @@ export function App() {
     '--edit-block-gap': `${settings.blockGap}px`,
     // Settings › Review › Card spacing (YAZ-5050): Custom only; Same as pages sets none, so a card reads the two above.
     ...cardSpacingVars(settings),
+    // Card look › Card text size and Card title size (YAZ-5387): the card's own text, and its title band's step of it.
+    ...cardTextVars(settings),
     // Appearance › Content width and Settings › Review › Card width (YAZ-5144): the text's widest, pages and cards.
     ...contentWidthVars(settings),
     // Settings › Tables › Table position and Card look › Card tables (YAZ-5136 rounds 2 and 3).
@@ -1511,11 +1528,12 @@ export function App() {
   /**
    * The Inbox's O and E (YAZ-5145): Explore's own page layer for the card's file — the view Explore opens for it — so
    * the card looks the same from both. ⌘↵ while reading goes back to the Inbox (YAZ-5009). E edits as Explore's E
-   * does, then the card opens in Edit card (round 2: no second E): a card in a page (`index`) landed on, or a card file.
+   * does, then the card opens in Edit card (round 2: no second E): a card in a page (`index`) landed on, as asked
+   * here; a card file by the layer's own rule, as Explore's E on it (round 3).
    */
   // YAZ-5307: `card` (Settings › Cards › Inbox: O opens the page at › The card) lands on it as E and Explore's card rows do.
-  const openFromInbox = useCallback((path: string, card?: number) => openExploreWith({ kind: 'page', path, fromInbox: true, ...(card !== undefined && { card }) }), [openExploreWith])
-  const editFromInbox = useCallback((path: string, index: number | null) => openExploreWith({ kind: 'page', path, edit: true, editCard: true, fromInbox: true, ...(index !== null && { card: index }) }), [openExploreWith])
+  const openFromInbox = useCallback((path: string, card?: CardPlace) => openExploreWith({ kind: 'page', path, fromInbox: true, ...(card !== undefined && { card }) }), [openExploreWith])
+  const editFromInbox = useCallback((path: string, card: CardPlace | null) => openExploreWith({ kind: 'page', path, edit: true, fromInbox: true, ...(card !== null && { card, editCard: true }) }), [openExploreWith])
   // The card window (YAZ-4962, D13): every editor sends `mdapp:card-open` from its card (a click on the title,
   // ⋯ › Open card, ⌘↵); it bubbles to the document. A preview that does not know its page sends no path: nothing opens.
   useEffect(() => {
@@ -1527,7 +1545,7 @@ export function App() {
     return () => document.removeEventListener(CARD_OPEN, onOpenCard)
   }, [openExploreWith])
   // Preview a card (YAZ-5152): every card sends `mdapp:card-preview` (⋯ › Preview, P, Edit card's Preview); the window
-  // shows it as the Inbox shows it, over everything, until Esc.
+  // shows it as the Inbox shows it, in the page area (option A), until Esc, Close, ⌘W or a click on a tab or the sidebar.
   const [cardPreview, setCardPreview] = useState<CardPreviewRequest | null>(null)
   useEffect(() => {
     const onPreview = (event: Event) => setCardPreview((event as CustomEvent<CardPreviewRequest>).detail)
@@ -1543,6 +1561,15 @@ export function App() {
     exploreFrom.current = null
     // In place (YAZ-4971): the page stays where it was scrolled, not at its caret.
     giveFocusBack(from)
+  }, [])
+  /**
+   * A click on a tab or in the sidebar while a preview shows (YAZ-5152 A): the preview goes and the click does its job.
+   * An Explore stack hidden under it goes too — the click leaves for the app — and the keyboard stays with the click.
+   */
+  const leaveCardPreview = useCallback(() => {
+    setCardPreview(null)
+    exploreFrom.current = null
+    setExploreRequest(0)
   }, [])
   // The stack's search vaults: each vault's folders from the tree the window already holds, and its drawings and diagrams
   // (YAZ-4943: they open as reading layers); no other files.
@@ -1615,6 +1642,9 @@ export function App() {
   const inboxAt = inboxAnchor === null ? 0 : tabs.findIndex((t) => t.id === inboxAnchor) + 1
   const inboxAtRef = useRef(inboxAt)
   inboxAtRef.current = inboxAt
+  /** The Inbox tab's slot for ⌃Tab (YAZ-5373): null while no session is open. */
+  const inboxNow = useRef<InboxSlot | null>(null)
+  inboxNow.current = reviewer === null ? null : { at: inboxAt, front: inboxFront }
   /** A close from the Inbox tab's menu took the active page tab (YAZ-5016): the Inbox tab stays in front. */
   const inboxStays = useRef(false)
   /** The Inbox tab to the front: the blank tab, unused, goes (YAZ-2655 S73), and the tab board gives way. */
@@ -1793,16 +1823,25 @@ export function App() {
     setOverview(OVERVIEW_CLOSED)
     openKept(path, true)
   }, [openKept])
-  const toNextTab = useCallback(() => {
+  /**
+   * ⌃Tab / ⌃⇧Tab (rule 9): the next or previous tab of the strip as it shows — the Inbox tab one of them, where it stands
+   * (YAZ-5373: from it, the tab right after it, not the one after the page tab behind it). Read from `now` and `inboxNow`, so
+   * the menu's handlers stay put.
+   */
+  const toCycleTab = useCallback((dir: 1 | -1) => {
+    const { tabs: strip, active, blank: blankShows } = now.current
+    const stop = cycleStop(strip.map((t) => t.id), active, blankShows, inboxNow.current, dir)
+    // A trip from the tab board closes it, to the page already open too (one tab: no stop to go to).
     setOverview(OVERVIEW_CLOSED)
-    setInboxFront(false)
-    nextTab()
-  }, [nextTab])
-  const toPrevTab = useCallback(() => {
-    setOverview(OVERVIEW_CLOSED)
-    setInboxFront(false)
-    prevTab()
-  }, [prevTab])
+    if (stop === null) return
+    if ('inbox' in stop) showInbox()
+    else {
+      setInboxFront(false)
+      activate(stop.tab)
+    }
+  }, [activate, showInbox])
+  const toNextTab = useCallback(() => toCycleTab(1), [toCycleTab])
+  const toPrevTab = useCallback(() => toCycleTab(-1), [toCycleTab])
   // ⌘⌥← / ⌘⌥→ (YAZ-3647 D7), as ⌃Tab: a step to another page closes the tab board. The ‹ › buttons and a row of their
   // menu (E3) close it the same way: a zoom step in one tab moves neither the tab nor the file, so the effect above cannot.
   const toBack = useCallback(() => {
@@ -2525,7 +2564,8 @@ export function App() {
     onSwitchVault: openVaultSwitcher,
     onSettings: openSettings,
     onToggleSidebar: toggleSidebar,
-    onCloseTab: inboxShown ? closeReview : closeTabOrWindow,
+    // ⌘W with a card preview closes the preview only (YAZ-5152 A), never the tab under it.
+    onCloseTab: cardPreview !== null ? closeCardPreview : inboxShown ? closeReview : closeTabOrWindow,
     onNextTab: toNextTab,
     onPrevTab: toPrevTab,
     onTabOverview: toggleOverview,
@@ -3683,6 +3723,24 @@ export function App() {
     moveRight(from, at > from ? at - 1 : at)
   }
 
+  /** Preview a card (YAZ-5152): the Inbox's card, nothing saved; a link in it closes it and opens as in the Inbox. */
+  const cardPreviewView = (place: 'page' | 'window') =>
+    cardPreview !== null &&
+    root !== null && (
+      <Suspense fallback={null}>
+        <CardPreview
+          card={cardPreview}
+          vault={exploreVaultOf(cardPreview.path)}
+          settings={exploreVaultOf(cardPreview.path).review?.settings}
+          doors={{ openLayer: (to) => (closeCardPreview(), openExploreOn(to)), openTab: (to, where) => (closeCardPreview(), openLink(to, where)), onNotice: notify }}
+          onNotice={notify}
+          onClose={closeCardPreview}
+          leaveOn=".tabbar-row, .sidebar"
+          onLeave={leaveCardPreview}
+          whole={place === 'window'}
+        />
+      </Suspense>
+    )
   return (
     // Every place outside the tree that shows a file's icon reads it here (D11, `FileIcon`). Not indented: the app's tree below keeps its lines.
     <IconsContext.Provider value={iconsHere}>
@@ -3728,23 +3786,12 @@ export function App() {
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
-      {/* Preview a card (YAZ-5152): the Inbox's card, nothing saved; a link in it closes it and opens as in the Inbox. */}
-      {cardPreview !== null && root !== null && (
-        <Suspense fallback={null}>
-          <CardPreview
-            card={cardPreview}
-            vault={exploreVaultOf(cardPreview.path)}
-            settings={exploreVaultOf(cardPreview.path).review?.settings}
-            doors={{ openLayer: (to) => (closeCardPreview(), openExploreOn(to)), openTab: (to, where) => (closeCardPreview(), openLink(to, where)), onNotice: notify }}
-            onNotice={notify}
-            onClose={closeCardPreview}
-          />
-        </Suspense>
-      )}
+      {/* Preview a card (YAZ-5152) in a Files window: no page area there, so it covers the window. */}
+      {filesWindow && cardPreviewView('window')}
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -3920,7 +3967,7 @@ export function App() {
           <Welcome recents={storage.getRecentRoots()} sets={storage.getVaultSets()} onOpenRecent={openRoot} onOpenSet={openSetFromWelcome} onPickFolder={pick} picking={picking} onNotice={notify} />
         </section>
       ) : (
-        <div className="workspace">
+        <div className="workspace" data-inbox-focus={inboxFocused || undefined}>
           {/* One per vault (YAZ-2602 D1): each feeds its own vault's sources from that vault's index.
               In SLOT order: a new order of the vaults moves none, so none reads its index again (YAZ-2631 D5). */}
           {scopes.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
@@ -4031,9 +4078,11 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} />
               </Suspense>
             )}
+            {/* Preview a card (YAZ-5152 A): in the page area as the Inbox tab is, over it too; the sidebar and the tab row stay. */}
+            {cardPreviewView('page')}
             {/* The tab board (YAZ-2648 D5) covers the stack while it shows; a review never has one over it. */}
             {overview.phase !== 'closed' && !inboxShown && tabBoard()}
             {/* The preview panel of the search (YAZ-2662 D5), over the page area — over the empty page of the blank tab too (S45). No layer of the stack: it is no tab and no page. */}
@@ -4082,7 +4131,7 @@ export function App() {
           </div>
         </RightPanel>
       )}
-      {root !== null && !rightPanel.open && !filesWindow && (
+      {root !== null && !rightPanel.open && !filesWindow && !inboxFocused && (
         <button type="button" className="right-panel-reopen" aria-label="Show right panel" title="Show right panel" onClick={() => setRightOpen(true)}>
           ‹
         </button>

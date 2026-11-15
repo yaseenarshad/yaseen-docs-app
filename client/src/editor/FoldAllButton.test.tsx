@@ -16,7 +16,7 @@ import { FoldAllButton, type FoldNext } from './FoldAllButton'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { HEADING_TOGGLE_CLASS } from './outline/headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outline/outlineFolding'
-import { hintOf } from '../lib/keyHint'
+import { wordsOf } from '../lib/keyHint'
 import { storage } from '../lib/storage'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
 
@@ -100,11 +100,11 @@ describe('the page fold-all button (YAZ-3938)', () => {
     const { host, view, button, crepe } = await mount(MIXED)
     const before = getMarkdownForSave(crepe)
     await hover(button)
-    expect(button.getAttribute('aria-label')).toBe(`Collapse all (${hintOf('page.foldAll')})`)
+    expect(button.getAttribute('aria-label')).toBe(`Collapse all (${wordsOf('page.foldAll')})`)
 
     await click(button)
     expect(folded(host)).toBe(3)
-    expect(button.getAttribute('aria-label')).toBe(`Expand all (${hintOf('page.unfoldAll')})`)
+    expect(button.getAttribute('aria-label')).toBe(`Expand all (${wordsOf('page.unfoldAll')})`)
     expect(undo(view)).toBe(true)
     expect(folded(host)).toBe(0)
 
@@ -175,8 +175,8 @@ describe('the page fold-all button (YAZ-3938)', () => {
     try {
       const { button } = await mount(MIXED)
       await hover(button)
-      expect(button.getAttribute('aria-label')).toBe(`Collapse all (${hintOf('page.foldAll')})`)
-      expect(hintOf('page.foldAll')).toMatch(/K$/)
+      expect(button.getAttribute('aria-label')).toBe(`Collapse all (${wordsOf('page.foldAll')})`)
+      expect(wordsOf('page.foldAll')).toBe('Option+Cmd+K')
       await click(button)
       expect(button.getAttribute('aria-label')).toBe('Expand all')
     } finally {

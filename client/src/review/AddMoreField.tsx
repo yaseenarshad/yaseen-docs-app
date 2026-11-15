@@ -8,7 +8,7 @@
  * - The field's keys stay in it: they reach neither the Inbox's keys (Space, the digits) nor the menu's Esc.
  * - On the done screen a click on "Add" or the words adds the number shown; a click on the number types.
  */
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { AddKind } from '@shared/cardSchedule'
 
 interface AddMoreFieldProps {
@@ -20,6 +20,8 @@ interface AddMoreFieldProps {
   onCancel?: () => void
   /** `menu`: "Add [10] more new cards", focused at once. `done`: the pill, "Add [10] new cards". */
   look: 'menu' | 'done'
+  /** The done pill's end (YAZ-5322): "from [Spanish ▾]", the new cards' folder pick. */
+  after?: ReactNode
 }
 
 /** The words after the number: "more new cards" in the menu (today has some), "new cards" on the done screen. */
@@ -34,7 +36,7 @@ export const typedCount = (value: string): number | null => {
   return value.trim() !== '' && Number.isInteger(n) && n > 0 ? n : null
 }
 
-export function AddMoreField({ kind, start, onAdd, onCancel, look }: AddMoreFieldProps) {
+export function AddMoreField({ kind, start, onAdd, onCancel, look, after }: AddMoreFieldProps) {
   const [value, setValue] = useState(String(start))
   const input = useRef<HTMLInputElement>(null)
   // The done screen's pill follows a new start (another add, another day) while nobody types in it.
@@ -107,6 +109,7 @@ export function AddMoreField({ kind, start, onAdd, onCancel, look }: AddMoreFiel
       <button type="button" className="card-inbox__done-add-word" onMouseDown={(e) => e.preventDefault()} onClick={add}>
         {addWords(kind, 'done', n)}
       </button>
+      {after}
     </span>
   )
 }

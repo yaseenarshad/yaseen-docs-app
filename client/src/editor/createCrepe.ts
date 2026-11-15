@@ -234,6 +234,7 @@
  *    `table/colours.ts`), and frozen rows and columns (`table/tableFreeze.ts`; the right-click
  *    Table part is `pageMenu.tsx`'s).
  */
+import { holdPagePlace } from './pagePlace'
 import { fileKind } from '@shared/fileKind'
 import { Crepe, CrepeFeature } from './crepe'
 import { EditorView as CodeMirrorView } from '@codemirror/view'
@@ -357,7 +358,8 @@ import { createWikilinkMenu, linkMenuOf } from './wikilink/wikilinkMenu'
 import { createWikilinkPicker, createWikilinkCandidateSource, createWikilinkPickerKeymap, type WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { createWikilink, createWikilinkResolveSource, linkCard, linkPath, linksAsShown, type LinkLook, type VaultsOfLetters, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { languages as codeLanguages } from '@codemirror/language-data'
-import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardKeyRow, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
+import { flushCardEditor, CARD_ID_META, CARD_MIRROR_META, cardCodeKeys, cardLanguage, cardBlockPlugins, cardRow, type CardDeps, type CardHost, type CardReviewDoorApi } from './card/cardBlockView'
+import { cardKeyRow } from './card/cardEditKeys'
 import { cardLook } from './card/cardLook'
 import { desktopBoardPicture } from './card/boardPictureDesktop'
 // A card's look moved to its own file (YAZ-5153); it is given out here as before.
@@ -866,7 +868,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
                   cardDeps.editor === undefined
                     ? undefined
                     : // A card file's title shows in the Title field, unchanged here: the file's own tab renames it (YAZ-5164 part 3).
-                      (root, text, title, done, fileCard) => ({ editor: mountCardEditor({ root, text, title, make: cardDeps.editor!, titleReadOnly: fileCard, doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
+                      (root, text, title, done, fileCard) => ({ editor: mountCardEditor({ root, text, title, make: cardDeps.editor!, titleField: fileCard ? 'show' : 'edit', doors: { done, changed: () => {} } }), keys: cardKeyRow() }),
                 follow,
                 hotkeys: cardDeps.hotkeys,
                 openHref: cardDeps.openHref,
@@ -1184,13 +1186,16 @@ export function keepCaretOf(crepe: Crepe): KeptCaret {
 export function giveCaretBack(crepe: Crepe, kept: KeptCaret | null): void {
   const view = editorViewOf(crepe)
   if (view.isDestroyed) return
-  if (kept !== null) {
-    const { doc } = view.state
-    const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
-    const selection = kept.doc === doc ? kept.selection : TextSelection.between(pos(kept.selection.anchor), pos(kept.selection.head))
-    if (!selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(selection))
-  }
-  view.focus()
+  // The page stays where it is (YAZ-5164): a caret out of view, or a focus that scrolls, never moves it.
+  holdPagePlace(view, () => {
+    if (kept !== null) {
+      const { doc } = view.state
+      const pos = (n: number) => doc.resolve(Math.max(0, Math.min(n, doc.content.size)))
+      const selection = kept.doc === doc ? kept.selection : TextSelection.between(pos(kept.selection.anchor), pos(kept.selection.head))
+      if (!selection.eq(view.state.selection)) view.dispatch(view.state.tr.setSelection(selection))
+    }
+    view.focus()
+  })
 }
 
 /** The drilled-in bullet's zoom key, or null (YAZ-2951 D4): the page view reader asks once, on a copy action. */

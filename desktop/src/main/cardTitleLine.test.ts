@@ -108,9 +108,9 @@ describe('the merge rule of sync (decision 5, `uniteCardLines`) keeps the title 
   const M = '2026-11-13T10:05Z again 7s'
 
   it('the Mac renames the card (mine), the phone answers it (theirs): the new title and both answers stay', () => {
-    const [t, m] = uniteCardLines(page(`YAZ-7, title "Hola", ${R1}`), page(`YAZ-7, title "Hola", ${R1}, ${T}`), page(`YAZ-7, title "Hello, world", ${R1}, ${M}`))
+    const [t, m] = uniteCardLines(page(`YAZ-7, title "Hola", ${R1}`), page(`YAZ-7, title "Hola", ${R1}, ${T}`), page(`YAZ-7, title "Hello&#44; world", ${R1}, ${M}`))
     expect(t).toBe(m)
-    expect(lineOf(t)).toBe(`<!-- card: YAZ-7, title "Hello, world", ${R1}, ${T}, ${M} -->`)
+    expect(lineOf(t)).toBe(`<!-- card: YAZ-7, title "Hello&#44; world", ${R1}, ${T}, ${M} -->`)
   })
 
   it('the other way round: the Mac renames (theirs), the phone answers (mine)', () => {
@@ -178,12 +178,12 @@ describe('a build from before YAZ-5308 (point 6: the phone never writes what an 
     expect(olderWrite(`WIKI-5, title "a ,b", ${R1}`, (l) => l)).toBe(`WIKI-5, title "a, b", ${R1}`)
   })
 
-  it('a known word between the commas of a title (`off`, `next`, `notitle`, `fix`, a review) is read by an older build as that mark', () => {
+  it('a known word between the commas of a title (`off`, `next`, `notitle`, `fix`, a review) is no mark for an older build: the title holds `&#44;`, no comma (YAZ-5393)', () => {
+    expect(partOf('Go, next, now')).toBe('title "Go&#44; next&#44; now"')
     const line = older.parseCardLine(`<!-- card: WIKI-5, ${partOf('Go, next, now')}, ${R1} -->`)!
-    expect(older.isCardNext(line)).toBe(true)
+    expect(older.isCardNext(line)).toBe(false)
+    expect(older.formatCardLine(line)).toBe(`<!-- card: WIKI-5, ${partOf('Go, next, now')}, ${R1} -->`)
     expect(cardTitleOf(parse(`WIKI-5, ${partOf('Go, next, now')}, ${R1}`))).toBe('Go, next, now')
-    // At the start or the end of the title the word holds a quote mark: no mark.
-    expect(older.isCardNext(older.parseCardLine(`<!-- card: WIKI-5, ${partOf('Go, next')} -->`)!)).toBe(false)
   })
 
   it('this build reads what an older build wrote with `fix`, `off` and `next` before the title part', () => {

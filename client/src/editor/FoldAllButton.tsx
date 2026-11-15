@@ -13,7 +13,8 @@
  * so it never does the wrong thing.
  */
 import { useEffect, useRef, useState } from 'react'
-import { hintOf } from '../lib/keyHint'
+import { labelWith } from '@shared/keyLabel'
+import { wordsOf } from '../lib/keyHint'
 import { CollapseAllIcon, ExpandAllIcon } from '../views/view/icons'
 
 /** What a click does now. */
@@ -31,8 +32,7 @@ export function FoldAllButton({ read, run, subscribe, keys }: {
 }) {
   const [shown, setShown] = useState<{ next: FoldNext; label: string }>({ next: 'collapse', label: LABEL.collapse })
   const labelOf = (next: FoldNext): string => {
-    const key = next === 'none' ? undefined : hintOf(next === 'collapse' ? keys.collapse : keys.expand)
-    return key === undefined ? LABEL[next] : `${LABEL[next]} (${key})`
+    return labelWith(LABEL[next], next === 'none' ? undefined : wordsOf(next === 'collapse' ? keys.collapse : keys.expand))
   }
   const refresh = (): void =>
     void Promise.resolve(read()).then((next) => {

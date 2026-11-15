@@ -20,6 +20,9 @@ import { FolderIcon, ShortcutIcon } from './icons'
 import { HoverTip } from '../../components/HoverTip'
 import { canonicalKey } from './keys'
 import { typeWord } from './typeWord'
+import { CardRows } from './cardRowsContext'
+import { cardCellText, cardRowOfRecord } from '../cardRows'
+import { CardIcon } from '../../search/CardIcon'
 import { GroupHeaderMenu } from './GroupHeaderMenu'
 import { OtherFilesFolderMove } from './otherFilesMove'
 import { GroupLevelStepsContext } from '../groupLevelSteps'
@@ -175,8 +178,32 @@ export const rowCell = (row: Row, key: string, resolve?: Resolver): ReactNode =>
   const c = canonicalKey(key)
   if (c === 'file.folder') return <FolderCell row={row} value={row.values[key]} resolve={resolve} />
   if (c === 'file.kind') return typeWord(row.values[key])
+  // A card row's Page (YAZ-5319): a link to the page, landed on the card; its success rate in percent.
+  if (c === 'card.page') return <CardPageCell row={row} value={row.values[key]} />
+  const card = cardCellText(c, row.values[key])
+  if (card !== null) return card
   if (c.startsWith('note.')) return <PageCell value={row.values[key]} name={c.slice('note.'.length)} resolve={resolve} />
   return cellContent(row.values[key], resolve)
+}
+
+/** A card row's Page cell (YAZ-5319): the page's title as a link chip; a click opens it, landed on the card. A card file's: blank. */
+function CardPageCell({ row, value }: { row: Row; value: Value }) {
+  const rows = useContext(CardRows)
+  if (typeof value !== 'string') return null
+  if (rows === null) return <>{value}</>
+  return (
+    <button
+      type="button"
+      className="view-table__chip view-table__chip--link view-card-page"
+      title={value}
+      onClick={(e) => {
+        e.stopPropagation()
+        rows.openPage(row.record.path)
+      }}
+    >
+      {value}
+    </button>
+  )
 }
 
 /** The pills a Linked mentions cell shows (YAZ-4738 L3); the rest are "+N", their titles in its tooltip. */
@@ -287,6 +314,8 @@ function RowTitle({ row }: { row: Row }) {
   }
   return (
     <>
+      {/* A card row (YAZ-5319): the card's icon, as search's card row. */}
+      {cardRowOfRecord(row.record) !== undefined && <CardIcon />}
       {row.record.title}
       {/* YAZ-4797 demo: the ↗ says where the page lives, on hover. */}
       {folder !== null && isShortcut(row.record, folder) && (

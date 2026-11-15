@@ -3,8 +3,9 @@
  * `kind: card` (the mark, `isCardKind`) and whose body is exactly ONE card: its ```` ```card ```` block and its card line,
  * with no other text but blank lines. The card's ID (on its card line) is the file's ID: the sweep gives a card file no
  * page `id:` (one already there stays, YAZ-5037 pick 6). ITS TITLE IS ON ITS CARD LINE, as every card's is (YAZ-5308,
- * decision D: "a card's facts always live in its card line"): its properties hold only `kind: card` and the person's
- * own, and the card's text holds only its sides. So a card moves between a page and its own file as its block and card
+ * decision D: "a card's facts always live in its card line"), and so are its own properties (YAZ-5349 option A,
+ * YAZ-5379): its front matter holds only `kind: card` and the file's switches (Read only…; `cardPropertySweep.ts` moved
+ * the rest once, YAZ-5384), and the card's text holds only its sides. So a card moves between a page and its own file as its block and card
  * line, with nothing to translate. The name is built from that title and the card's ID as a page's is (`pageFileName`,
  * YAZ-2420 🔒 D3).
  *

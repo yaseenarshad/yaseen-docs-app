@@ -69,6 +69,19 @@ describe('the stored index and the rules it was built by (YAZ-5309)', () => {
     second.stop()
   })
 
+  it('YAZ-5349: an index of rules 2 (no card properties; `fix "x"` read as a property) is built again at open: rules 3 or more', async () => {
+    expect(INDEX_RULES).toBeGreaterThanOrEqual(3)
+    const { s, make } = await synced()
+    const saved = (await s.store.getState<PhoneIndex>(VAULT, INDEX_STATE))!
+    await s.store.setState(VAULT, INDEX_STATE, { ...saved, rules: 2, records: { ...saved.records, 'p.md': { ...saved.records['p.md'], cards: saved.records['p.md'].cards!.map((c) => ({ ...c, title: 'Stale' })) } } } satisfies PhoneIndex)
+    s.github.offline = true
+    const second = make()
+    await second.open(ROW)
+    expect(second.index()!.records['p.md'].cards?.map((c) => c.title)).toEqual([undefined, 'Longest river'])
+    await second.idle()
+    second.stop()
+  })
+
   it('a pass with an index of older rules builds every record again, also the files that did not change', async () => {
     const { s, make } = await synced()
     const saved = (await s.store.getState<PhoneIndex>(VAULT, INDEX_STATE))!

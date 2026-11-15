@@ -2,9 +2,11 @@
  * A CARD FILE's tab (YAZ-5037): a `.md` file with `kind: card` (`shared/cardFileFormat.ts`) shows its card, not a page.
  * `Editor` routes here after its ONE read (`useFile`) and hands the file over: the tab reads nothing on open.
  *
- *  - The head: the folder path, the title, the card ID (a click copies it) and the state —
- *    "Archived", or with the vault's Review on "New" / "Due in 3 days", the "Up next" chip, "Hidden in review". Then
- *    Edit card (E) and ⋯. With Review off nothing asks you to review the card: no due state, no Inbox row, no Reviews.
+ *  - ONE TITLE SPOT (YAZ-5392, Yaseen's Q46 on YAZ-5308: "model the exact same UI on the cards page itself"): the card
+ *    shows as a card in a page does. Above it the folder path only, no big page title. In the card: the top bar (the
+ *    card ID, a click copies it; the state — "Archived", or with the vault's Review on "New" / "Due in 3 days", "Title
+ *    hidden in review", the "Up next" chip; Edit card (E); ⋯), the title band, the sides. With Review off nothing asks
+ *    you to review the card: no due state, no Inbox row, no Reviews.
  *  - The body is the card window's (`review/cardPane.tsx`): the card or the card editor, its Reviews, "Linked
  *    mentions (n)", and "Embedded in (n)". There is no "Open page": the tab is the card's file.
  *  - EDIT CARD (YAZ-5026) as in the card window: Done writes the card's text by its ID on the newest bytes, ONE
@@ -12,11 +14,11 @@
  *    asks first, as typing in a locked page does, and opens at once after "Allow edits" (YAZ-5145 round 2); ⋯ and
  *    reviews still write, as reviews do in a locked page. A card New card just made opens in Edit card (YAZ-5101).
  *  - THE TITLE (YAZ-5104, YAZ-5308 decision D) is the card's, on its card line, and the card's text never holds it:
- *    the big title is the page's own `PageTitle`, read from the index, so a click edits it as on a page. Enter (or a
+ *    the band's title is the page's own `PageTitle`, read from the index, so a click edits it as on a page. Enter (or a
  *    click away) writes the card line's title and renames the file through App's title edit door (`onRetitle`, which
  *    asks first as a page's title does); Esc goes back. While the tab is read only, the title is too: a click on it shows the "Read only"
  *    chip's card, "This card is Read only. Press Enter to allow edits." (YAZ-5141), and once allowed the title edits.
- *    Edit card's Title field (YAZ-5164 part 3) holds it too, and Done renames through the same door.
+ *    The band is the card's only title. Edit card's band shows it, with no field: read, the band renames the file too.
  *  - A FILE THAT IS NOT VALID (`cardFileShape`) stays a card file: one notice at the top (`CardFileNotice`), and
  *    nothing is deleted. 2+ cards: "This card file holds 3 cards.", the first card under it (each one stays in review).
  *    Text outside the card: the notice, and that text below it, muted. No card: the notice, and the file's text.
@@ -29,6 +31,8 @@
  *    While locked, Edit card asks first; at the unlock's end an open Edit card is Done first, then the tab locks. The
  *    cog has what applies to a card: "Read only" and the counts. A page's rows (line numbers, folding, the table of
  *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
+ *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
+ *    own card search), the Edit card editor's text while it is open.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
@@ -48,7 +52,8 @@ import { CardReviewDoor } from '../review/cardReviewDoor'
 import { cardInContent } from '../review/cardFile'
 import { forgetNewCard, isNewCard } from '../review/newCardFile'
 import { CardPane, cardMenuSections, cardWrites, isCardEditKey, isCardPreviewKey, onIndexVersion, previewCardOf } from '../review/cardPane'
-import { cardFacts, cardNextReview, CardId, CardNextChip } from '../review/cardParts'
+import { CardBand, cardFacts, cardNextReview, CardId, CardNextChip, type CardStripPart } from '../review/cardParts'
+import { PropertiesIcon } from '../views/view/icons'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { usePathTitles } from '../lib/pageLabel'
@@ -69,6 +74,9 @@ import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
 import { useUnit } from '../vault/unitWord'
+import { FindBar } from './find/FindBar'
+import { createFindChannel } from './find/findChannel'
+import { createCardFinder } from './find/cardFind'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -87,7 +95,7 @@ export interface CardFileViewProps {
   onNotice?: (message: string) => void
   /** The file is no longer a card file (`kind: card` gone on disk): the page view, on the file just read. */
   onPage: (file: FileResponse) => void
-  /** The title edit door (YAZ-2420 🔒 D16, App's): the big title's edit writes `title` and names the file after it (YAZ-5104). Absent: the title is read only. */
+  /** The title edit door (YAZ-2420 🔒 D16, App's): the band's title edit writes the card line's title and names the file after it (YAZ-5104, YAZ-5392). Absent: the title is read only. */
   onRetitle?: (path: string, title: string, kind: 'file') => void
   /** The tab's own convert ended (YAZ-5037 phase 5: Turn into a page): the editor reads the file again, with no notice. */
   onReread?: () => void
@@ -172,6 +180,9 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const editingRef = useRef(editing)
   editingRef.current = editing
   const bodyRef = useRef<HTMLDivElement>(null)
+  // ⌘F (YAZ-5378): the page's bar and channel, over the card as the tab shows it (`createCardFinder`); Esc gives the keys back.
+  const findChannel = useMemo(() => createFindChannel(), [])
+  useEffect(() => createCardFinder(findChannel, () => bodyRef.current, () => bodyRef.current?.focus({ preventScroll: true })), [findChannel])
   /** This tab's timed "Allow edits" (YAZ-4939, YAZ-5102): at its end an open Edit card is Done first, then the tab locks. */
   const unlock = useTimedUnlock(() => {
     if (!editingRef.current) return
@@ -211,6 +222,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   }, [present])
   /** The chip's "Allow edits?" box is open; gone once Read only is. */
   const [asking, setAsking] = useState(false)
+  /** The strip's open part (YAZ-5383): the top-right properties button opens Properties. */
+  const [stripPart, setStripPart] = useState<CardStripPart | null>(null)
   useEffect(() => {
     if (!lockedBase) setAsking(false)
   }, [lockedBase])
@@ -218,18 +231,14 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const setReadOnly = (on: boolean) =>
     void transformFile(path, (text) => setPageReadOnly(text, on)).then(read, (err: unknown) => onNotice(`Read only could not change: ${err instanceof Error ? err.message : String(err)}`))
   const giveKeysBack = () => bodyRef.current?.focus({ preventScroll: true })
-  /**
-   * Done: the card's text, its sides only; then a new title from the Title field renames the card file through the tab's
-   * title door, as the big title does (YAZ-5308: it writes the card line, then the name).
-   */
-  const editDone = (text: string, title: string) => {
+  /** Done: the card's text, its sides only. The band is the only title: Edit card shows it, with no field (YAZ-5392). */
+  const editDone = (text: string) => {
     setSave('saving')
     writes.editDone(
       text,
       () => {
         setSave('saved')
         setEditing(false)
-        if (card !== null && title !== '' && title !== card.title) onRetitle?.(path, title, 'file')
       },
       () => setSave('error'),
     )
@@ -279,8 +288,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
     })
   }
   const sections = (): MenuSection[] => [
-    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview }),
-    ...(converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : []),
+    // Reset history stays the last row (YAZ-5376): "Turn into a page" goes in before it.
+    ...cardMenuSections(card, id, writes.changeLine, onNotice, { inbox: reviewOn, link: true, preview, more: converts ? [[{ id: 'to-page', label: unit('Turn into a page'), onSelect: toPage }]] : [] }),
   ]
   const fixes =
     !converts ? null : shape.problem === 'many' ? (
@@ -320,34 +329,37 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         onReturn: giveKeysBack,
       }
   const cardText = card?.text ?? ''
+  const propertyCount = Object.keys(card?.properties ?? {}).length
+  const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
 
   return (
     <>
       <StatusChips zoom={zoom} onZoom={setZoom} readOnly={readOnlyChip} sync={sync} onSyncNow={onSyncNow} save={save}>
+        {/* YAZ-5383 (Q45): the properties button, where a page has it, opens the card's strip on Properties: one place for them. */}
+        {card !== null && reviewOn && (
+          <button
+            type="button"
+            className="frontmatter-panel__header card-file__properties"
+            aria-expanded={stripPart === 'properties'}
+            aria-label={propertiesLabel}
+            title={propertiesLabel}
+            onClick={() => {
+              setStripPart((part) => (part === 'properties' ? null : 'properties'))
+              requestAnimationFrame(() => bodyRef.current?.querySelector('.card-reviews--strip')?.scrollIntoView({ block: 'nearest' }))
+            }}
+          >
+            <PropertiesIcon />
+            {propertyCount > 0 && <span className="frontmatter-panel__count">{propertyCount}</span>}
+          </button>
+        )}
         <PageSettings readOnly={lockedBase} onToggleReadOnly={() => (lockedBase ? (unlock.until !== null ? unlock.lock() : setAsking(true)) : setReadOnly(true))} readText={() => cardText} />
       </StatusChips>
+      <FindBar channel={findChannel} scope="page" hostRef={bodyRef} />
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
       <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
         <div className="card-file__page">
-          <header className="card-file__head">
-            <div className="card-file__path">{folderOf(root, path)}</div>
-            <div className="card-file__title-row">
-              <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} locked={locked && 'card'} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
-              {(canEdit || (card !== null && lockedBase)) && !editing && (
-                <button type="button" className="card-file__button" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
-                  Edit card <kbd>E</kbd>
-                </button>
-              )}
-              <CardFileMore sections={sections} />
-            </div>
-            <div className="card-file__facts">
-              {id !== null && <CardId id={id} onNotice={onNotice} />}
-              {state !== null && <span className="card-file__state">{state}</span>}
-              {reviewOn && card?.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
-              {reviewOn && card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
-              {card?.fix === true && <span className="card__state card__fix">To fix</span>}
-            </div>
-          </header>
+          {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. */}
+          <div className="card-file__path">{folderOf(root, path)}</div>
           {outside.length > 0 && (
             <div className="card-file__outside">
               {outside.map((text, i) => (
@@ -366,8 +378,34 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               onOpenPage={onOpenFile}
               reviews={reviewOn ? settings : undefined}
               onDeleteReview={writes.deleteReview}
+              onChangeLine={writes.changeLine}
+              onNotice={onNotice}
+              stripOpen={stripPart}
+              onStripToggle={(part) => setStripPart((open) => (open === part ? null : part))}
               embeds
-              titleReadOnly={onRetitle === undefined}
+              titleField="show"
+              head={
+                <div className="card__head">
+                  {id !== null && <CardId id={id} onNotice={onNotice} />}
+                  {state !== null && <span className="card__state card-file__state">{state}</span>}
+                  {reviewOn && card.notitle === true && <span className="card__state card__notitle">Title hidden in review</span>}
+                  {reviewOn && card.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
+                  {card.fix === true && <span className="card__state card__fix">To fix</span>}
+                  {(canEdit || lockedBase) && (
+                    <button type="button" className="card__edit" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
+                      Edit card
+                    </button>
+                  )}
+                  <CardFileMore sections={sections} />
+                </div>
+              }
+              band={
+                // The title band (YAZ-5308 A3), the one title spot: the page title's own component, read from the index.
+                // A click renames the card line's title and the file through App's title edit door (`onRetitle`).
+                <CardBand>
+                  <PageTitle path={path} titles={titles} readOnly={locked || onRetitle === undefined} locked={locked && 'card'} onRetitle={(title) => onRetitle?.(path, title, 'file')} onArrowDown={giveKeysBack} />
+                </CardBand>
+              }
             />
           )}
         </div>
@@ -390,7 +428,7 @@ function CardFileMore({ sections }: { sections: () => MenuSection[] }) {
     <>
       <button
         type="button"
-        className="card-file__button card-file__more"
+        className="card__more"
         aria-label="More actions"
         aria-haspopup="menu"
         aria-expanded={at !== null}

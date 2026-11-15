@@ -8,31 +8,12 @@ import { useEffect, useRef, useState } from 'react'
 import { isIdLetters } from '@shared/pageId'
 import type { IdsState } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
+import { TypedConfirmSheet } from '../components/TypedConfirmSheet'
 import { idsLettersAsk, KEEP_OTHER_ASK, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
 import type { SettingsCtx } from './registry'
 import { useUnit } from '../vault/unitWord'
 
 type Ids = NonNullable<SettingsCtx['ids']>
-
-/**
- * A confirm box with a text field (🔒 D2): the confirm button and Enter do nothing until what is
- * typed is `valid`. `onConfirm` takes it in capitals. The field holds the focus: Enter in it is
- * safe. Its keys stay inside it, so the dialog under it does not close.
- */
-export function TypedConfirmSheet({ labelId, text, ask, confirmLabel, valid, onConfirm, onCancel }: { labelId: string; text: string; ask: string; confirmLabel: string; valid: (typed: string) => boolean; onConfirm: (typed: string) => void; onCancel: () => void }) {
-  const [typed, setTyped] = useState('')
-  const field = useRef<HTMLInputElement>(null)
-  // After the sheet's own effect, which puts the focus on Cancel.
-  useEffect(() => field.current?.focus(), [])
-  return (
-    <ConfirmSheet labelId={labelId} text={text} confirmLabel={confirmLabel} confirmDisabled={!valid(typed)} keys="contained" onConfirm={() => onConfirm(typed.toUpperCase())} onCancel={onCancel}>
-      <label className="confirm__letters">
-        {ask}
-        <input ref={field} className="confirm__input" type="text" value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" autoComplete="off" spellCheck={false} />
-      </label>
-    </ConfirmSheet>
-  )
-}
 
 /**
  * "Give IDs" where the pages already hold number IDs (YAZ-4922 🔒 D2): the box says the groups (`text`) and its first

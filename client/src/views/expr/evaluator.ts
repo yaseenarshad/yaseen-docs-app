@@ -85,6 +85,8 @@ class Evaluator {
       case 'note': return fromYaml(this.scope.page)
       case 'formula': return new ErrorValue('formula needs a name: formula.<name>')
     }
+    // A card row's columns (YAZ-5319): `card.status`; on a page's row `card` stays the page's property of that name.
+    if (name === 'card' && this.scope.card !== undefined) return this.scope.card
     const extra = this.scope.extra
     if (extra && hasOwn(extra, name)) return extra[name]
     if (hasFunction(name)) return new ErrorValue(`${name} is a function; call it as ${name}()`)

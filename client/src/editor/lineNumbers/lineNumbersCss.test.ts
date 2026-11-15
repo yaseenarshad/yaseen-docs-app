@@ -76,8 +76,8 @@ describe('line numbers CSS contract', () => {
     ])
     expect(zoomed[0].body.match(/\/ var\(--document-zoom, 1\)/g)).toHaveLength(2)
     expect(zoomed[1].body).toMatch(/right:\s*calc\(100% \+ 52px \/ var\(--document-zoom, 1\)\);/)
-    // The zoom the two lengths undo is the one on the page body itself.
-    expect(appCss).toMatch(/\.editor-instance \.milkdown > \.ProseMirror\s*\{\s*zoom:\s*var\(--document-zoom, 1\);\s*\}/)
+    // The zoom the two lengths undo is the one on the page body itself (one rule with the Inbox card's, YAZ-5372).
+    expect(appCss).toMatch(/\.editor-instance \.milkdown > \.ProseMirror\s*(?:,[^{]*)?\{\s*zoom:\s*var\(--document-zoom, 1\);\s*\}/)
   })
 
   it('takes the number out of the flow, out of selection and out of the pointer’s way (S51, S54)', () => {

@@ -17,6 +17,9 @@
   color: var(--fg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
   counter-reset: card-side 1;
+  /* Card look › Card text size (YAZ-5387): Custom's px (`--card-text-size`, `review/cardText.ts`) in every place a card
+     shows; Same as pages sets none, so the card keeps its page's (or its screen's) size: 1em is the parent's. */
+  font-size: var(--card-text-size, 1em);
   /* No overflow clip: the line number (`data-line`, drawn left of the block) stays visible. The head and the code
      editor round their own corners instead. */
 }
@@ -153,23 +156,18 @@
 .card--editing > .card__head .card__edit {
   margin-left: 0;
 }
-/* "Done Esc Cmd + Enter" (YAZ-5001, in words YAZ-5035): the keys, quiet, as in Explore's head (`.explore__button kbd`). */
-.card__head .card__edit kbd {
-  margin-left: 4px;
-  font-family: inherit;
-  color: var(--fg-muted);
-}
 .card__more {
   font-size: 1.2em;
   line-height: 1.3;
 }
-/* A read-only page (a preview, or Read only with its caret, `data-read-only`): no Edit card — its review still works. */
-.ProseMirror[contenteditable='false'] .card__edit,
-.ProseMirror[data-read-only] .card__edit {
+/*
+ * A preview (no caret: the hover preview, an Explore layer reading): no Edit card — its review still works. A page
+ * locked by Read only (its caret, `data-read-only`) keeps Edit card: it asks "Allow edits?", then opens (YAZ-5145).
+ */
+.ProseMirror[contenteditable='false'] .card__edit {
   display: none;
 }
-.ProseMirror[contenteditable='false'] .card__more,
-.ProseMirror[data-read-only] .card__more {
+.ProseMirror[contenteditable='false'] .card__more {
   margin-left: auto;
 }
 
@@ -200,8 +198,8 @@
   border-radius: 0;
   width: auto;
 }
-/* Edit card's key row (YAZ-5034): quiet, ONE line at the bottom of the card frame, keycaps as the Inbox's
-   (`.explore__foot kbd`). In the card only while it is edited (`cardKeyRow`). */
+/* Edit card's key row (YAZ-5034): quiet, ONE line at the bottom of the card frame, each part the app's hotkey label
+   (YAZ-5332, `.key-label`). In the card only while it is edited (`cardKeyRow`). */
 .card .card__keys {
   flex-wrap: nowrap;
   overflow: hidden;
@@ -213,7 +211,7 @@
   flex: none;
 }
 /* The row's own look (YAZ-5026 round 2): `.explore__foot` is in `explore.css`, which loads only with the card window or
-   the Inbox; in a page before either opened the row ran together ("hide wordCmd"). The same values, here. */
+   the Inbox; in a page before either opened the row ran together. The same values, here. */
 .card .card__keys {
   display: flex;
   gap: 14px;
@@ -221,13 +219,6 @@
   font-size: 11px;
   color: var(--fg-muted);
   border-top: 1px solid var(--border);
-}
-.card .card__keys kbd {
-  padding: 0 4px;
-  font-family: inherit;
-  font-size: 11px;
-  border: 1px solid var(--border);
-  border-radius: 3px;
 }
 /* Edit card has the writing look (YAZ-5007, Yaseen's decision): the page's font, no line numbers or fold arrows, the
    rendered card's padding (`.card__body`), so Edit card / Done does not jump. Other code blocks keep the code look.
@@ -698,63 +689,97 @@
   cursor: pointer;
 }
 
-/* THE CARD'S TITLE (YAZ-5164 part 3): the page title's own component (`PageTitle`) in a card's head — a card in a page,
-   an embed, Explore's card window, the Inbox — at the head's own size; a click renames it. While Edit card is open its
-   Title field holds it, so the head does not show it twice. */
-.card .card__title {
-  flex: 0 1 auto;
-  min-width: 0;
-  margin: 0 2px;
-}
-.card .card__title[hidden],
-.card.card--editing .card__title {
-  display: none;
-}
-:is(.card__title, .explore__title, .card-inbox__name) .page-title {
-  display: block;
-  min-width: 0;
-}
-:is(.card__title, .explore__title, .card-inbox__name) :is(.page-title__text, .page-title__input) {
-  margin: 0 0 0 -4px;
-  padding: 0 4px;
-  overflow: hidden;
-  font: inherit;
-  font-weight: 600;
-  line-height: inherit;
-  color: var(--fg);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-:is(.card__title, .explore__title, .card-inbox__name) .page-title__input {
-  white-space: normal;
-}
-.page-title__text--empty {
-  color: var(--fg-muted);
-  font-weight: 400;
-}
-
-/* Edit card's Title field (YAZ-5164 part 3): above Side 1, the title's weight, a line under it. */
-.card .card-editor__title {
+/* THE TITLE BAND (YAZ-5308 A3, `cardBand.ts`): ONE look wherever a card shows — a card in a page and an embed (read and
+   Edit card), Explore's card, the Inbox and its Preview. A shaded band under the top bar (`--card-title-band`, one step
+   darker than the bar), the title bold, a line under it. A long title WRAPS: never cut off, never wider than the card.
+   Only Edit card has the small "TITLE" label and the field. The title is the page title's own component (`PageTitle`):
+   a click renames it. While Edit card is open, its band (in the editor) holds the title, so the card's own band hides. */
+/* Card look › Card title size (YAZ-5387, Yaseen: "the title is massive"): a step of the card's text
+   (`--card-title-scale`, `review/cardText.ts`): Small 1×, Medium 1.125× (the default), Large 1.375×. The band sits in
+   the card, so 1em is the card's text; the Inbox's band sits beside its card and says so itself (`cardScreens.css`). */
+.card-band {
   display: block;
   box-sizing: border-box;
-  width: 100%;
-  margin: 0;
-  padding: 8px 12px 6px;
-  border: 0;
+  min-width: 0;
   border-bottom: 1px solid var(--border);
-  background: transparent;
+  background: var(--card-title-band);
+  color: var(--fg);
+  font-size: calc(1em * var(--card-title-scale, 1.125));
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+/* Its room: two classes, to beat Crepe's reset; the Inbox's frame sets its own (`cardScreens.css`). */
+.card .card-band {
+  padding: 8px 16px 9px;
+}
+.card-band[hidden],
+.card.card--editing > .card-band {
+  display: none;
+}
+.card-band .page-title {
+  display: block;
+  min-width: 0;
+}
+/* The title takes the band's size. YAZ-5387: in a page (a card there and its embed) the title's `h1` is inside the
+   editor, where the page's h1 rule (`.editor-instance .milkdown .ProseMirror h1`, 0-3-1: 1.802em, its margins, its
+   Heading styles) weighed more than this rule did, so the title read at the page title's size. The band's class three
+   times (0-4-0) wins there, and the heading level tag ("H1") is not drawn after it. */
+.card-band.card-band.card-band :is(.page-title__text, .page-title__input) {
+  margin: 0 0 0 -4px;
+  padding: 0 4px;
+  font: inherit;
+  line-height: inherit;
+  text-decoration: none;
+  --heading-bg: none;
+  color: var(--fg);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.card-band.card-band.card-band .page-title__text::after {
+  content: none;
+}
+.card-band.card-band.card-band .page-title__text--empty {
+  color: var(--fg-muted);
+}
+/* Edit card's band: the small label, then the Title field — a box the band's width, its text the title's, wrapping. */
+.card .card-band__label {
+  display: block;
+  margin: 0 0 3px;
+  color: var(--fg-muted);
+  font-size: 0.65em;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  user-select: none;
+}
+.card .card-band__field {
+  display: block;
+  box-sizing: border-box;
+  width: calc(100% + 8px);
+  margin: 0 -4px;
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
   color: var(--fg);
   font: inherit;
-  font-weight: 600;
+  line-height: inherit;
   outline: none;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  resize: none;
+  field-sizing: content;
 }
-.card .card-editor__title:focus {
-  border-bottom-color: var(--accent);
+.card .card-band__field:focus {
+  border-color: var(--accent);
 }
-.card .card-editor__title::placeholder {
+.card .card-band__field::placeholder {
   color: var(--fg-muted);
-  font-weight: 400;
+  opacity: 1;
 }
-.card .card-editor__title:read-only {
-  color: var(--fg-muted);
+.card .card-band__field:read-only {
+  border-color: transparent;
+  background: transparent;
 }

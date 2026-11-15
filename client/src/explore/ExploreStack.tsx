@@ -14,7 +14,7 @@
  * windows (round 6): a press on a layer behind brings it to the front (`frontOrder`); the keys and Esc go to the front one.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { rootOfPath, type CommentsOrder, type OpenStat, type ZoomStep } from '@shared/types'
+import { rootOfPath, type CommentsOrder, type OpenStat, type PageView, type ZoomStep } from '@shared/types'
 import type { GestureAction } from '@shared/keys'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { LinkActions } from '../editor/linkMenu'
@@ -38,7 +38,8 @@ import { ExploreArrange } from './ExploreArrange'
 import { GRIPS, useLayerBoxes } from './layerBoxes'
 import { layoutForCount, pickRecent, TILE_MS, TILE_PLACES, tileBoxes, tileOrder, type ArrangeLayout, type TileLayout } from './tile'
 import { frontOrder, layerKindOf, MAX_LAYERS, PAGE_MS, newLayerId, pushLayer, raiseLayer, saveExploreZoom, savedExploreZoom, SEARCH_MS, stepCount, stepPlace, stepResult, topPage, type ExploreLayer, type ExploreRequest } from './layers'
-import { landOnCard } from '../editor/card/cardOpen'
+import { landOnCard, type CardPlace } from '../editor/card/cardOpen'
+import { keyText } from '@shared/keyLabel'
 import './explore.css'
 
 export interface ExploreStackProps {
@@ -58,7 +59,7 @@ export interface ExploreStackProps {
   nameOf: (path: string) => string
   textVarsFor: (path: string) => CSSProperties
   /** `unlocked` (YAZ-4939): the layer's timed "Allow edits" runs, so the vault's Read only does not lock this editor. */
-  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean) => ReactNode
+  renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean, start?: PageView) => ReactNode
   createFolder: (sourcePath: string) => string
   /** App's read-only door (YAZ-4985), for a reading layer's link to a missing page. */
   onFileAction?: (root: string) => Promise<boolean>
@@ -75,6 +76,8 @@ export interface ExploreStackProps {
   onChangeCommentsOrder: (order: CommentsOrder) => void
   /** The last Esc, ⌘↵ and the click outside: App unmounts the stack and the keyboard goes back where it was. */
   onClose: () => void
+  /** A card preview shows over the page area (YAZ-5152 A): the stack hides, every layer kept, until it closes. */
+  hidden?: boolean
   /** The empty box (YAZ-4945): a vault's open history (`storage.getOpens`) and its save log (`storage.getEdits`). */
   opensOf?: (root: string) => Readonly<Record<string, OpenStat>>
   editsOf?: (root: string) => Readonly<Record<string, number>>
@@ -141,7 +144,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -303,7 +306,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
     [push],
   )
   /** A card window's page (YAZ-4962), or a card row's (YAZ-5164): on top, landed on the card. */
-  const openPageAt = useCallback((path: string, card: number) => {
+  const openPageAt = useCallback((path: string, card: CardPlace) => {
     const layer = fileLayer(path)
     if (layer.kind === 'page' && push({ ...layer, card })) rememberExploreRecent(path)
   }, [push])
@@ -319,7 +322,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   const openRow = useCallback(
     (search: number, row: SearchCandidate, at: number) => {
       // A card inside a page (YAZ-5164): its page on top, landed on the card, as the Inbox's E lands. Not a step of ‹ ›.
-      if (row.page !== undefined) return openPageAt(row.page, row.index ?? 0)
+      if (row.page !== undefined) return openPageAt(row.page, { id: row.id ?? null, index: row.index ?? 0 })
       if (layerKindOf(row.path) === null) return openPath(row.path)
       if (push(fileLayer(row.path, { search, at }))) rememberExploreRecent(row.path)
     },
@@ -655,7 +658,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
   }
 
   return (
-    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
+    <div ref={rootRef} className="explore" role="dialog" aria-modal="true" aria-label="Explore the vault" hidden={hidden} onKeyDown={onKeyDown} onKeyDownCapture={onKeyDownCapture} onMouseDown={onBackdropMouseDown} onPointerDownCapture={onPointerDownCapture}>
       {/* The trail (YAZ-4925): one chip per layer from two layers on, in the open order, the front one bold; a click brings that layer to the front (round 6). */}
       {live.length > 1 && (
         <nav className="explore__trail" aria-label="Layers">
@@ -669,7 +672,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
           ))}
           {/* Tile (YAZ-4944): arrange the windows; ▾ opens Arrange (the layouts and which windows). */}
           <span className="explore__trail-tools">
-            <button type="button" className="explore__tile" disabled={fileCount < 2} title={fileCount < 2 ? 'Open two or more pages or boards to tile them' : 'Tile the pages and boards (⌥⌘2 … ⌥⌘5; ⌥⌘0: back to the stack)'} onMouseDown={(e) => e.preventDefault()} onClick={tileAuto}>
+            <button type="button" className="explore__tile" disabled={fileCount < 2} title={fileCount < 2 ? 'Open two or more pages or boards to tile them' : `Tile the pages and boards (${keyText('⌥⌘2')} … ${keyText('⌥⌘5')}; ${keyText('⌥⌘0')}: back to the stack)`} onMouseDown={(e) => e.preventDefault()} onClick={tileAuto}>
               <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
                 <rect x="0.5" y="0.5" width="4.75" height="4.75" rx="1" />
                 <rect x="6.75" y="0.5" width="4.75" height="4.75" rx="1" />
@@ -735,7 +738,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 index={layer.index}
                 pageName={nameOf(layer.path)}
                 vault={vaultOf(layer.path)}
-                onOpenPage={(index) => openPageAt(layer.path, index)}
+                onOpenPage={(card) => openPageAt(layer.path, card)}
                 onOpenLink={openPath}
                 onOpenTab={openTabFromCard}
                 onOpenInTab={toTab}

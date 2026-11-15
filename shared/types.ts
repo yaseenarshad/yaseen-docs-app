@@ -1390,6 +1390,24 @@ export const CARD_WIDTH_MAX = 1600
 export const CARD_WIDTH_START = 640
 export const CARD_WIDTH_CLEAN = 520
 export const isCardWidth = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_WIDTH_MIN && v <= CARD_WIDTH_MAX
+/**
+ * Settings › Cards › Card look › Card text size, Custom (YAZ-5387, Yaseen: "add text sizing for cards ... same as pages
+ * versus custom"): a card's text in whole px. It starts at the pages' default 16 px; 12–32, so a card read at arm's
+ * length in the Inbox can be larger than any page.
+ */
+export const CARD_TEXT_SIZE_MIN = 12
+export const CARD_TEXT_SIZE_MAX = 32
+export const CARD_TEXT_SIZE_START = 16
+export const isCardTextSize = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_TEXT_SIZE_MIN && v <= CARD_TEXT_SIZE_MAX
+/**
+ * Card look › Card title size (YAZ-5387): the title band's text, as a step OF the card's text, so a bigger card text
+ * brings its title along and the title never ends up smaller than the text it names. `--card-title-scale` on `.app`.
+ * Before: 1.0625× in the Inbox, Preview and Explore, but 1.802× in a page and its embeds (the page's h1 rule won over
+ * the band's). Medium, the default, is 1.125×: one calm step over the text.
+ */
+export const CARD_TITLE_SIZES = ['small', 'medium', 'large'] as const
+export type CardTitleSize = (typeof CARD_TITLE_SIZES)[number]
+export const CARD_TITLE_SCALE: Readonly<Record<CardTitleSize, number>> = { small: 1, medium: 1.125, large: 1.375 }
 
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
@@ -2270,6 +2288,14 @@ export interface SettingsState {
    */
   cardWidth: number | null
   /**
+   * Settings › Cards › Card look › Card text size (YAZ-5387): `null`, Same as pages (the default), reads the page's text
+   * size (a card in a page, its embed, a card file's tab) or the screen's own (the Inbox, Preview, Explore); else Custom,
+   * whole px everywhere a card shows (`isCardTextSize`). `--card-text-size` on `.app`, Custom only.
+   */
+  cardTextSize: number | null
+  /** Card look › Card title size (YAZ-5387): the title band's text, a step of the card's text (`CARD_TITLE_SCALE`). */
+  cardTitleSize: CardTitleSize
+  /**
    * Settings › Review › Card look › Card tables (YAZ-5136 round 3, Yaseen: "it might be different for cards vs pages"):
    * where a table sits in a card, read anywhere and in Edit card. `pages` (the default) follows `tablePosition`.
    * `--card-table-inline` on `.app`, read by the one Table position rule (`table.css`).
@@ -3041,6 +3067,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   nextHiddenColour: null,
   cardSpacing: 'pages',
   cardWidth: null,
+  cardTextSize: null,
+  cardTitleSize: 'medium',
   cardTablePosition: 'pages',
   inboxOpenAt: 'top',
   ...CARD_SPACING_CLEAN,
@@ -4335,6 +4363,13 @@ export interface PageView {
   selection?: { anchor: number; head: number }
   /** A drawing's pan and zoom (YAZ-3737 D13): the engine's `scrollX`, `scrollY` and `zoom.value`. Only a drawing has it. */
   canvas?: { scrollX: number; scrollY: number; zoom: number }
+  /**
+   * The place in the TEXT (YAZ-5164, `client/src/editor/pagePlace.ts`): the block at the scroller's top, by its document
+   * position, and how far below the top edge it starts, px (negative: above). Explore's reading layer gives it to its
+   * editor, another view with other things above the text, where `scrollTop` would land elsewhere. Given and drawn, it
+   * wins over `scrollTop`. A tab's own view has none: its copy is the same editor.
+   */
+  top?: { pos: number; offset: number }
 }
 
 /** A page view for one file: what a popped-out window starts its active tab with (YAZ-2951 D2). Never stored. */
@@ -4380,8 +4415,8 @@ export interface MovedTab extends PopOutCarry {
   path: string
 }
 
-/** The Inbox's filters (YAZ-5017, YAZ-5046, YAZ-5097's To fix), as `useCardReview`'s `CardFilter`. */
-export const INBOX_FILTERS = ['all', 'next', 'due', 'new', 'fix', 'archived'] as const
+/** The Inbox's filters (YAZ-5017; no Archived since YAZ-5319; YAZ-5097's To fix), as `useCardReview`'s `CardFilter`. */
+export const INBOX_FILTERS = ['all', 'next', 'due', 'new', 'fix'] as const
 export type InboxFilter = (typeof INBOX_FILTERS)[number]
 
 /**

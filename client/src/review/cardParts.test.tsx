@@ -26,7 +26,8 @@ describe('YAZ-5032: the review history in words', () => {
       ['Nov 2, 2026', 'Remembered'],
     ])
     expect(rows.slice(0, 3).map((r) => r[2])).toEqual(['', 'Same day', '1 day'])
-    expect(rows[3][0]).toMatch(/^Due (in \d+ days \([A-Z][a-z]{2} \d{1,2}, \d{4}\)|tomorrow \([A-Z][a-z]{2} \d{1,2}, \d{4}\)|later today|today)$/)
+    // YAZ-5381: the last line's due part (the chance is its right side).
+    expect(rows[3][0]).toMatch(/^Due (in \d+ days \([A-Z][a-z]{2} \d{1,2}, \d{4}\)|tomorrow \([A-Z][a-z]{2} \d{1,2}, \d{4}\)|later today|today)\d+% chance you remember it$/)
     act(() => root.unmount())
   })
 
@@ -82,10 +83,12 @@ describe('YAZ-5032 round 2: the strip, the (i) and the ask before a remove', () 
     expect(cardDueWords(cardNextReview(new Date(2026, 9, 24, 9).getTime(), true, at))).toBe('Due 3 days ago (Oct 24, 2026)')
   })
 
-  it('page 3: the table\'s last row says the same words as the strip', () => {
+  it('page 3, YAZ-5381: the table\'s last row says when it is due on the left and the chance on the right', () => {
     const { box, unmount } = mount(<CardReviewsTable reviews={three} settings={s} now={now} />)
     const last = [...box.querySelectorAll('tbody tr')].at(-1)!
-    expect(last.textContent).toMatch(/^Due in \d+ days \([A-Z][a-z]{2} \d{1,2}, \d{4}\)$/)
+    expect(last.querySelector('.card-reviews__due')?.textContent).toMatch(/^Due in \d+ days \([A-Z][a-z]{2} \d{1,2}, \d{4}\)$/)
+    expect(last.querySelector('.card-reviews__chance')?.textContent).toMatch(/^\d+% chance you remember it$/)
+    expect([...last.querySelector('.card-reviews__next-line')!.children].map((c) => c.className)).toEqual(['card-reviews__due', 'card-reviews__chance card-strip__recall'])
     unmount()
   })
 

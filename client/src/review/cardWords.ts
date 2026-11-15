@@ -94,9 +94,12 @@ export function cardRemoveOutcome(reviews: readonly CardReview[], review: CardRe
   return `The due date moves from ${from} to ${to}${will.date === null ? '' : ` (${will.when})`}.`
 }
 
-/** What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for another day." */
-export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[]): string {
-  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? 'new' : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
+/**
+ * What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for
+ * another day." `from` (YAZ-5322): the folders new cards come from, "14 new Spanish cards"; empty for All folders.
+ */
+export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[], from = ''): string {
+  const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? (from === '' ? 'new' : `new ${from}`) : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
   const one = kinds.length === 1 && more[kinds[0]] === 1
   return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
 }

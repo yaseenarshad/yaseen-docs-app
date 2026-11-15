@@ -3,7 +3,7 @@
  * `cardFile.ts` and every other review host (the phone's, a test's) read a card the same way. `cardFile.ts` gives out
  * the same names.
  */
-import { CardNotFoundError, cardIdOf, cardReviewsOf, cardTitleOf, isCardFix, isCardNext, isCardNoTitle, isCardOff, pageCards, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, cardIdOf, cardPlace, cardPropertiesOf, cardReviewsOf, cardTitleOf, isCardFix, isCardNext, isCardNoTitle, isCardOff, pageCards, type CardPropertyValue, type CardReview } from '@shared/cardLine'
 import { isCardFileContent } from '@shared/cardFileFormat'
 import { BridgeRequestError } from '../bridgeError'
 
@@ -24,6 +24,8 @@ export interface CardOnPage {
   notitle?: boolean
   /** Marked "Fix later" (YAZ-5097): the line's `fix`. Absent: no mark. */
   fix?: true
+  /** The card's own properties (YAZ-5379), off its card line; {} for a card with none. */
+  properties?: Record<string, CardPropertyValue>
 }
 
 /** A card found by its ID or, before it has one, by its place (the card window, YAZ-4962). */
@@ -38,11 +40,11 @@ export interface CardAtPage extends Omit<CardOnPage, 'id'> {
 /** `readCardAt` on bytes already read (a card embed's one read per file version, and a card file's tab, which holds its file's bytes: YAZ-5037): the same choice of card. */
 export function cardInContent(path: string, content: string, id: string | null, index: number): CardAtPage | null {
   const cards = pageCards(content)
-  const at = id === null || (cards[index] !== undefined && cardIdOf(cards[index].line) === id) ? index : cards.findIndex((c) => cardIdOf(c.line) === id)
+  const at = cardPlace(cards.map((c) => cardIdOf(c.line)), id, index)
   const card = cards[at]
   if (card === undefined) return null
   const cardFile = at === 0 && isCardFileContent(content)
-  return { path, id: cardIdOf(card.line), index: at, text: card.text, title: cardTitleOf(card.line), reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), ...(isCardFix(card.line) && { fix: true as const }), ...(cardFile && { cardFile: true as const }) }
+  return { path, id: cardIdOf(card.line), index: at, text: card.text, title: cardTitleOf(card.line), reviews: cardReviewsOf(card.line), off: isCardOff(card.line), next: isCardNext(card.line), notitle: isCardNoTitle(card.line), properties: cardPropertiesOf(card.line), ...(isCardFix(card.line) && { fix: true as const }), ...(cardFile && { cardFile: true as const }) }
 }
 
 /**

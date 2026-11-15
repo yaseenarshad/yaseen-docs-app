@@ -27,6 +27,11 @@ export function registerPageView(host: Element, read: PageViewReader): () => voi
   }
 }
 
+/** The page view of the editor whose scroller is `host` now (YAZ-5164: Explore's edit layer, which is no tab), or undefined. */
+export function readPageViewOf(host: Element | null | undefined): PageView | undefined {
+  return host == null ? undefined : readers.get(host)?.()
+}
+
 /** The page view of tab `tabId` now, or undefined when the tab has no open editor (S8, S9). */
 export function readPageView(tabId: string): PageView | undefined {
   const host = document.querySelector(`[data-tab="${CSS.escape(tabId)}"] :is(.editor-host, .code-editor, .drawing-editor)`)

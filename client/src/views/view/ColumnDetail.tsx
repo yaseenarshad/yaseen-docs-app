@@ -9,6 +9,7 @@ import { columnTyping } from '../editorType'
 import { undeletableReason } from '../deleteColumn'
 import { CURRENCIES, DATE_STYLES, MAX_DECIMALS, NUMBER_STYLES } from '../columnFormat'
 import { canonicalKey } from './keys'
+import { isCardKey } from '../cardRows'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { declarationForKind } from './declarationForKind'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
@@ -303,6 +304,8 @@ export function deletableHere(folder: Pick<ColumnDoors, 'sources'> & Partial<Pic
 export function columnTypeLabel(key: string, records: readonly IndexRecord[], properties: PropertiesResponse | null, settings: FolderSettings): string {
   const c = canonicalKey(key)
   if (c.startsWith('file.')) return 'File field'
+  // A card row's column (YAZ-5319): the app reads it off the card line.
+  if (isCardKey(c)) return 'Card field'
   if (c.startsWith('formula.')) return 'Formula'
   return PROPERTY_LABELS[columnKind(key, records, properties, settings)]
 }
@@ -654,7 +657,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
           ) : isPage ? (
             <span className="column-detail__value">{PROPERTY_LABELS.mentions}</span>
           ) : (
-            <span className="column-detail__value">{c.startsWith('file.') ? 'File field' : 'Formula'}</span>
+            <span className="column-detail__value">{c.startsWith('file.') ? 'File field' : isCardKey(c) ? 'Card field' : 'Formula'}</span>
           )}
         </div>}
         {choice && decl !== undefined && (

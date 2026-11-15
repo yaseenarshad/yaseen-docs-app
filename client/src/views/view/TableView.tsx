@@ -55,6 +55,7 @@ import { useLiveGapReorder } from '../../lib/useLiveGapReorder'
 import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
 import { NO_READ_ONLY, readOnlyTip, writableKey } from '../readOnlyRows'
+import { cardEditKey, isCardKey } from '../cardRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
@@ -138,6 +139,11 @@ export interface TableViewProps {
   onWriteValues: FolderHost['writeValues']
   /** The read-only pages (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
+  /**
+   * The rows are cards (YAZ-5319, Show cards as rows): no row moves (a drag onto a group or to Other files), and the
+   * Name cell is the card's title, which no title edit renames. Card status and Card up next still edit.
+   */
+  cardRows?: boolean
   /** The Name cell's commit (YAZ-2420 🔒 D19): the row's new title, through `FolderHost.retitle`. */
   onRetitle: (path: string, title: string) => void
   /** Confirm changes (YAZ-3746 13AN): asked before a typed cell or a bulk write; absent where the page does not ask. */
@@ -315,7 +321,7 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  * section's header or rows writes the group property through `onMoveToGroup`, the hovered
  * section highlights, Esc cancels, and a failed move flags the row's name cell.
  */
-export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, matchRows, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeletePages, onDuplicatePage, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, hover, confirmChange }: TableViewProps) {
+export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, matchRows, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeletePages, onDuplicatePage, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, cardRows = false, hover, confirmChange }: TableViewProps) {
   const unit = useUnit()
   /**
    * YAZ-4799: the deepest Folder group a row line is drawn in (its group and the groups above it), or null: a shortcut's
@@ -436,7 +442,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   // per-column halves of the editor inference (5B, GRO-2142), over the view's shown rows;
   // memoised so scroll/drag re-renders skip the per-column row walk (7B, GRO-2148)
   const rowRecords = useMemo(() => rows.map((r) => r.record), [rows])
-  const bares = useMemo(() => keys.map((key) => writableKey(key, settings.columns)), [keys, settings])
+  // A card row's Card status and Card up next (YAZ-5319) edit as page columns do; the host writes them to the card's line.
+  const bares = useMemo(() => keys.map((key) => cardEditKey(key) ?? writableKey(key, settings.columns)), [keys, settings])
   const typings = useMemo(() => keys.map((k) => columnTyping(k, rowRecords, properties, settings)), [keys, rowRecords, properties, settings])
   /**
    * Each header's type icon and its words (YAZ-4779): the Columns list's icons — a file field, a formula, else the
@@ -449,6 +456,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         : keys.map((key, i): { icon: ReactNode; label: string } => {
             const c = canonicalKey(key)
             if (c.startsWith('file.')) return { icon: <FileFieldIcon />, label: 'File field' }
+            if (isCardKey(c)) return { icon: <FileFieldIcon />, label: 'Card field' }
             if (c.startsWith('formula.')) return { icon: <FormulaIcon />, label: 'Formula' }
             const kind = settings.columns[c.slice('note.'.length)]?.kind ?? typings[i]?.assigned ?? typings[i]?.dominant ?? 'text'
             return { icon: <PropertyTypeIcon kind={kind} />, label: PROPERTY_LABELS[kind] }
@@ -1909,7 +1917,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               data-row={line.r}
               // The row's only drag source (YAZ-4603 D53), a ⋮⋮ on hover (views.css): onto another group, or the Other
               // files tray, the only target of an ungrouped row (YAZ-4597 D46). A drag across cells selects.
-              {...(line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)))}
+              {...(cardRows ? {} : line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)))}
               onClick={(e) => (e.currentTarget.draggable ? wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:0"]`)?.focus({ preventScroll: true }) : undefined)}
             >
               {numbered && line.n}
@@ -1941,7 +1949,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `cutCellCard`.
                 title={c === nameCol && locked ? readOnlyTip(unit) : undefined}
                 data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
-                onDoubleClick={c === nameCol ? (locked ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
+                onDoubleClick={c === nameCol ? (locked || cardRows ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
                 {...(c !== nameCol && !locked && typings[c]?.assigned === 'image' ? imageDrop(line.r, c) : {})}
               >
                 {c === nameCol ? (

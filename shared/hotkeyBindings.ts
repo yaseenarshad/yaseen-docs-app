@@ -13,6 +13,8 @@
  * and the tests read it alike.
  */
 
+import { keyText, labelWith } from './keyLabel'
+
 /** The changeable commands (YAZ-3397 D1), in the order Settings › Hotkeys lists them. */
 export type HotkeyId =
   | 'newTab'
@@ -248,6 +250,19 @@ export function toDisplay(accelerator: string | null): string {
   return `${chord.ctrl ? '⌃' : ''}${chord.alt ? '⌥' : ''}${chord.cmd ? '⌘' : ''}${chord.shift ? '⇧' : ''}${KEY_DISPLAY[chord.key] ?? chord.key}`
 }
 
+/**
+ * A key as a label says it (YAZ-5332, `keyLabel.ts`): 'CmdOrCtrl+Shift+W' → 'Cmd+Shift+W'; a two-step key
+ * ('CmdOrCtrl+K CmdOrCtrl+0', Settings' form) step by step. '' for no key.
+ */
+export const keyInWords = (key: string | null): string =>
+  key === null
+    ? ''
+    : key
+        .split(' ')
+        .filter((step) => step !== '')
+        .map((step) => keyText(toDisplay(step)))
+        .join(' ')
+
 /** A menu item's hint (YAZ-3410): the command's key as it is NOW, or undefined — no hint — with "No key". */
 export function keyHint(id: HotkeyId, overrides: HotkeyOverrides | undefined): string | undefined {
   const key = toDisplay(keyFor(id, overrides))
@@ -256,8 +271,7 @@ export function keyHint(id: HotkeyId, overrides: HotkeyOverrides | undefined): s
 
 /** A tooltip that names the command's key as it is NOW (YAZ-3410): 'New tab (⌘T)'; the bare text with "No key". */
 export function titleWithKey(text: string, id: HotkeyId, overrides: HotkeyOverrides | undefined): string {
-  const key = keyHint(id, overrides)
-  return key === undefined ? text : `${text} (${key})`
+  return labelWith(text, keyInWords(keyFor(id, overrides)))
 }
 
 // ---------- recording one ----------

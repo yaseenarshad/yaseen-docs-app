@@ -49,6 +49,7 @@ import { Avatar, type AvatarTone } from './Avatar'
 import { ConfirmDeleteComment } from './ConfirmDeleteComment'
 import { commentHtml, commentInlineHtml, commentSplit } from './markdown'
 import { CommentPrefsContext, saveCard, usePeople } from './usePeople'
+import { KeyLabel } from '../keys/KeyLabel'
 import './comments.css'
 
 export interface CommentsSectionProps {
@@ -756,14 +757,13 @@ function Composer({
                 <span>{me.name}</span>
               </button>
             ))}
-          <span className="comments__hint">⌘ Enter</span>
           {onCancel !== undefined && (
             <button type="button" className="btn comments__btn" disabled={saving} onClick={onCancel}>
               Cancel
             </button>
           )}
           <button type="button" className="btn btn--primary comments__btn" disabled={!ready} onClick={() => void submit()}>
-            {submitLabel}
+            <KeyLabel action={submitLabel} keys="⌘↵" />
           </button>
         </div>
       )}

@@ -37,7 +37,8 @@ import { newestFile } from '@shared/settingsSync'
 import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, canonicalPageId, isNumberId, vaultPageId } from '@shared/pageId'
-import { cardBlock, cardTitleOf, changeCard, pageCards, withCardNext, withCardTitle } from '@shared/cardLine'
+import { keyFold } from '@shared/propertyKeys'
+import { cardBlock, cardTitleOf, changeCard, isCardPropertyName, pageCards, withCardNext, withCardProperty, withCardTitle, type CardLine, type CardPropertyScalar, type CardPropertyValue } from '@shared/cardLine'
 import { lineKinds } from '@shared/fences'
 import { inLineEnds, withLf } from '@shared/lineEnds'
 import { cardQueue, cardState } from '@shared/cardSchedule'
@@ -81,8 +82,8 @@ export const USAGE = `usage:
   yaseendocs links    <page.md> [--json]
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
-  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--after <heading>] [--json]
-  yaseendocs card new <folder> --title <text> [--body <text | ->] [--json]
+  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--prop <name>=<value> ...] [--after <heading>] [--json]
+  yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
@@ -149,7 +150,8 @@ card line by hand: \`card add\` and \`card new\` write it, and the app writes ea
 
 \`due\` lists the cards due now under a folder (the whole vault for its root), as the app's Inbox
 shows them: first the cards up next (see \`card next\`), then the cards due today, most overdue first, then
-new cards, oldest or newest first by the vault's "New cards first", as many as its "New cards a day" leaves
+new cards in the vault's "New cards order" (oldest first, newest first, or random for the day), from the
+folders the Inbox picked for new cards when any (all folders when they have none left), as many as its "New cards a day" leaves
 for today (all of them when that box is empty). A line is the day it was due (\`next\` for a card up next,
 \`new\` for a new card, \`steps\` for a card in its same-day steps: Forgot, or a new card not yet Remembered
 twice; it is due now, minutes after its last answer), the card's id, its title (\`title "…"\` on its card line) and its page.
@@ -164,6 +166,12 @@ on its card line as \`title "<text>"\`: what the app and a \`[[<card id>]]\` lin
 the page, or with \`--after\` at the end of that heading's section (the heading's text, without the \`#\`
 marks; case does not count). It prints \`added <id> to <page>\`; \`--json\` gives \`id\`, \`page\` and \`title\`. A card file is refused:
 "This is a card file. Use \`card new\`."
+
+A card has its own properties, as a page has (tags, level, source…): on its card line, never in the page's
+properties, in a card in a page and a card file alike: \`tags "europe" "capitals", level "A2"\`. \`card add\` and \`card new\`
+take \`--prop <name>=<value>\`, once for each: a name given twice is a list (\`--prop tags=europe --prop tags=capitals\`).
+A value is text; \`true\` and \`false\` are a checkbox, and a plain number (\`3\`, \`-2.5\`) a number. The card line's own
+words (\`title\`, \`off\`, \`next\`, \`notitle\`) are never a name. \`--json\` adds \`properties\` when any are given.
 
 A card file is a card on its own: a page whose properties hold \`kind: card\` and whose body is one card and
 its card line, nothing else. The card's id is the file's id (the file has no \`id:\` line). Its title is on its
@@ -225,25 +233,31 @@ Make a card, and see what is due:
 `
 
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
-const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after'])
+const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--after', '--prop'])
+/** Flags that may come more than once: each value is kept, in order (`--prop`, YAZ-5386). */
+const REPEATED = new Set(['--prop'])
 /** Flags that take no value. */
 const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off'])
 
 class Usage extends Error {}
 
-function parse(argv: readonly string[]): { verb: string; args: string[]; flags: Map<string, string | true> } {
+function parse(argv: readonly string[]): { verb: string; args: string[]; flags: Map<string, string | true>; repeated: Map<string, string[]> } {
   const args: string[] = []
   const flags = new Map<string, string | true>()
+  const repeated = new Map<string, string[]>()
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     if (!a.startsWith('-') || a === '-') args.push(a)
     else if (SWITCHES.has(a)) flags.set(a, true)
     else if (!FLAGS.has(a)) throw new Usage(`unknown flag: ${a}`)
-    else if (i + 1 < argv.length) flags.set(a, argv[++i])
-    else throw new Usage(`${a} needs a value`)
+    else if (i + 1 < argv.length) {
+      const value = argv[++i]
+      flags.set(a, value)
+      if (REPEATED.has(a)) repeated.set(a, [...(repeated.get(a) ?? []), value])
+    } else throw new Usage(`${a} needs a value`)
   }
   const [verb = '', ...rest] = args
-  return { verb, args: rest, flags }
+  return { verb, args: rest, flags, repeated }
 }
 
 /**
@@ -601,12 +615,37 @@ function cardTitleFlag(flags: Map<string, string | true>): string {
   return titleLine
 }
 
+/**
+ * The card's own properties from `--prop <name>=<value>` (YAZ-5386; YAZ-5349 option A: on its card line): a name
+ * given twice (in any capitals) is a list; `true`/`false` a checkbox, a plain number a number, else text. A name the
+ * card line cannot hold is refused before any number is taken.
+ */
+function cardProps(values: readonly string[] = []): Record<string, CardPropertyValue> {
+  const out: Record<string, CardPropertyValue> = {}
+  for (const raw of values) {
+    const at = raw.indexOf('=')
+    const name = at === -1 ? '' : raw.slice(0, at).trim()
+    if (at === -1 || name === '') throw new Usage(`--prop needs <name>=<value>, not ${raw}`)
+    if (!isCardPropertyName(name)) throw new Usage(`--prop: "${name}" is a word the card line uses; choose another name`)
+    const text = raw.slice(at + 1)
+    const value: CardPropertyScalar = text === 'true' || text === 'false' ? text === 'true' : /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(text) ? Number(text) : text
+    const held = Object.keys(out).find((k) => keyFold(k) === keyFold(name))
+    if (held === undefined) out[name] = value
+    else out[held] = [...(Array.isArray(out[held]) ? out[held] : [out[held]]), value]
+  }
+  return out
+}
+
+/** `line` with `properties` on it, in their order (YAZ-5386). */
+const withCardProps = (line: CardLine, properties: Record<string, CardPropertyValue>): CardLine => Object.entries(properties).reduce((l, [name, value]) => withCardProperty(l, name, value), line)
+
 /** `card add` (YAZ-4963, idea 16): a card with a real ID from the vault's counter, written atomically. */
-async function cardAdd(page: string, flags: Map<string, string | true>, io: Io): Promise<void> {
-  onlyFlags('card add', flags, ['--body', '--title', '--after', '--json'])
+async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, props?: readonly string[]): Promise<void> {
+  onlyFlags('card add', flags, ['--body', '--title', '--prop', '--after', '--json'])
   const body = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
   if (body === '') throw new Usage('card add needs a --body with text')
   const title = cardTitleFlag(flags)
+  const properties = cardProps(props)
   const root = await cardVault(dirname(page), page)
   const after = str(flags, '--after')
   // The page and the heading are checked before a number is taken: a refusal costs no number.
@@ -616,7 +655,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its pages IDs, so it has no cards`)
-  const block = cardBlock(body, withCardTitle({ parts: [{ kind: 'id', id }] }, title))
+  const block = cardBlock(body, withCardProps(withCardTitle({ parts: [{ kind: 'id', id }] }, title), properties))
   // The page keeps its own line end, `\r\n` or `\n` (YAZ-5146): the card is written with it.
   await transformOnDisk(page, (fresh) => inLineEnds(fresh, (text) => {
     if (isCardFileContent(text)) throw new Error(CARD_FILE_REFUSED)
@@ -631,7 +670,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
     const next = [...before, ...(before.length > 0 ? [''] : []), block, ...(rest.length > 0 && rest.some((l) => l !== '') ? ['', ...rest] : [''])]
     return frontmatter + next.join('\n')
   }))
-  io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title }, null, 2)}\n` : `added ${id} to ${page}\n`)
+  io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page, title, ...(Object.keys(properties).length > 0 && { properties }) }, null, 2)}\n` : `added ${id} to ${page}\n`)
 }
 
 /**
@@ -640,10 +679,11 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io):
  * The folder is checked before a number is taken. The create never writes over a file: a name that is taken is refused
  * (the number is spent, as the app's New page spends one on a create that fails).
  */
-async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): Promise<void> {
-  onlyFlags('card new', flags, ['--title', '--body', '--json'])
+async function cardNew(dir: string, flags: Map<string, string | true>, io: Io, props?: readonly string[]): Promise<void> {
+  onlyFlags('card new', flags, ['--title', '--body', '--prop', '--json'])
   const title = cardTitleFlag(flags)
   if (title === '') throw new Usage('card new needs --title')
+  const properties = cardProps(props)
   const body = flags.has('--body') ? (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '') : ''
   const at = await stat(dir).catch(() => null)
   if (at === null) throw new Error(`no folder ${dir}`)
@@ -655,10 +695,10 @@ async function cardNew(dir: string, flags: Map<string, string | true>, io: Io): 
   if (id === undefined) throw new Error(`${dir}'s vault does not give its pages IDs, so it has no cards`)
   const path = join(dir, cardFileName(title, id))
   // No door: a card file carries no page `id:` (its card's ID is the file's), so the content is written as it is.
-  await createFile({ path, content: cardFileContent(title, body, { parts: [{ kind: 'id', id }] }) }, null).catch((err: unknown) => {
+  await createFile({ path, content: cardFileContent(title, body, withCardProps({ parts: [{ kind: 'id', id }] }, properties)) }, null).catch((err: unknown) => {
     throw err instanceof BridgeFailure && err.code === 'ALREADY_EXISTS' ? new Error(`${path} is already there`) : err
   })
-  io.stdout(flags.has('--json') ? `${JSON.stringify({ id, path, title }, null, 2)}\n` : `made ${path}\n`)
+  io.stdout(flags.has('--json') ? `${JSON.stringify({ id, path, title, ...(Object.keys(properties).length > 0 && { properties }) }, null, 2)}\n` : `made ${path}\n`)
 }
 
 /**
@@ -683,7 +723,7 @@ async function cardNext(ref: string, from: string, flags: Map<string, string | t
 }
 
 async function run(argv: readonly string[], io: Io): Promise<void> {
-  const { verb, args, flags } = parse(argv)
+  const { verb, args, flags, repeated } = parse(argv)
   if (verb === '' || verb === 'help' || flags.has('--help') || flags.has('-h')) {
     io.stdout(HELP)
     return
@@ -705,13 +745,13 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
     }
     if (args[0] === 'new') {
       if (args[1] === undefined) throw new Usage('card new needs a folder')
-      return cardNew(resolve(args[1]), flags, io)
+      return cardNew(resolve(args[1]), flags, io, repeated.get('--prop'))
     }
     if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new or next' : `unknown card command: ${args[0]}`)
     if (args[1] === undefined) throw new Usage('card add needs a page')
     const page = resolve(args[1])
     requireMarkdownFile(page)
-    return cardAdd(page, flags, io)
+    return cardAdd(page, flags, io, repeated.get('--prop'))
   }
   if (verb === 'due') {
     onlyFlags('due', flags, ['--json'])

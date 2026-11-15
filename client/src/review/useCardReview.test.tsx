@@ -4,7 +4,7 @@
  * transforms to that vault, and `api.readFile` reads it.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, cardTime, cardReviewsOf, pageCards, parseCardLine, type CardLine } from '@shared/cardLine'
 import { cardState } from '@shared/cardSchedule'
@@ -198,6 +198,20 @@ describe('useCardReview', () => {
     await step(() => review.undo())
     expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
     expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { next: true } })
+  })
+
+  it('YAZ-5321: `upNext` says whether any card of the vault is marked Up next (an archived one does not count): off when its last mark goes, on again with one', async () => {
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good'], ['Capital of {{Chad}}?', 'WIKI-3, off, next'])
+    await mount()
+    await act(async () => review.start())
+    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2' }))
+    expect(review.session?.upNext).toBe(true)
+    // The answer takes the last mark off (WIKI-3 is archived): no Up next.
+    await step(() => review.answer('good'))
+    await vi.waitFor(() => expect(review.session?.upNext).toBe(false))
+    // Its undo puts the mark back.
+    await step(() => review.undo())
+    await vi.waitFor(() => expect(review.session?.upNext).toBe(true))
   })
 
   it('YAZ-4999: setNext (the Inbox chip`s ×) writes the mark off and reads the card again', async () => {
@@ -979,34 +993,45 @@ describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
   })
 })
 
-describe('YAZ-5046: archived cards, to look at (not to review)', () => {
-  it('the session lists the scope`s archived cards in page order with their titles; Archived shows no card to review; unarchive takes `off` away, keeps the history, and the card leaves the list', async () => {
+describe('YAZ-5046: an archived card is never reviewed', () => {
+  it('the review\'s counts and queue leave archived cards out (YAZ-5319: the Inbox lists none; a folder page\'s table finds them)', async () => {
     page('Old.md', ['Old fact', 'WIKI-8, title "Old fact", off, 2025-01-01T09:00Z good'], ['Kept', 'WIKI-9'])
     await mount()
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
-    expect(review.session?.archived).toEqual([
-      { path: `${ROOT}/Bio/Cells.md`, index: 1, id: 'WIKI-4', title: 'Off card' },
-      { path: `${ROOT}/Old.md`, index: 0, id: 'WIKI-8', title: 'Old fact' },
-    ])
-    // The review's own counts are unchanged: an archived card is never in the queue.
     expect(review.session?.counts).toEqual({ all: 3, next: 0, due: 1, new: 2 })
-    act(() => review.setFilter('archived'))
-    expect(review.session).toMatchObject({ filter: 'archived', card: null })
-    await step(() => review.unarchive(`${ROOT}/Old.md`, 'WIKI-8'))
-    expect(vault.get(`${ROOT}/Old.md`)).toContain('<!-- card: WIKI-8, title "Old fact", 2025-01-01T09:00Z good -->')
-    await vi.waitFor(() => expect(review.session?.archived.map((c) => c.id)).toEqual(['WIKI-4']))
-    expect(review.dueCount).toBe(4)
-    // Back on All cards, the review goes on where it was.
-    act(() => review.setFilter('all'))
-    expect(review.session?.card).not.toBeNull()
+    expect(review.session).not.toHaveProperty('archived')
   })
+})
 
-  it('a folder`s review lists only that folder`s archived cards', async () => {
-    page('Old.md', ['Old fact', 'WIKI-8, off'])
-    await mount()
-    await act(async () => review.start({ folder: 'Bio' }))
-    expect(review.session?.archived.map((c) => c.id)).toEqual(['WIKI-4'])
+describe('YAZ-5322: the folder pick for new cards', () => {
+  /** The vault's settings held as `useReviewSettings` holds them: a save is the new settings at once. */
+  function Saving() {
+    const [settings, setSettings] = useState<ReviewSettings>(S)
+    review = useCardReview(ROOT, source, settings, (text) => void notices.push(text), null, desktopReviewHost, setSettings)
+    return null
+  }
+
+  it('a pick changes the open session\'s new cards at once (due cards stay); none left in it, new cards come from All folders and the session says so', async () => {
+    page('Spanish/Verbs.md', ['Hablar', 'WIKI-5'])
+    page('Spanish/Deep/More.md', ['Comer', 'WIKI-7'])
+    page('Work.md', ['Standup', 'WIKI-6'])
+    reindex()
+    root = createRoot(document.createElement('div'))
+    await act(async () => root?.render(<Saving />))
+    await act(async () => review.start())
+    expect(review.session).toMatchObject({ counts: { all: 5, due: 1, new: 4 }, newFrom: [], newFallback: false })
+    expect(review.newCardFolders()).toEqual({ all: 4, folders: [{ folder: 'Bio', label: 'Bio', count: 1 }, { folder: 'Spanish', label: 'Spanish', count: 2 }, { folder: 'Spanish/Deep', label: 'Deep', count: 1 }] })
+    await act(async () => review.setNewFrom(['Spanish']))
+    expect(review.settings.newFrom).toEqual(['Spanish'])
+    expect(review.session).toMatchObject({ counts: { all: 3, due: 1, new: 2 }, total: 3, newFrom: [{ folder: 'Spanish', label: 'Spanish' }], newFallback: false })
+    expect(review.session?.card?.id).toBe('WIKI-1')
+    // A folder with no new card left: All folders, said out loud; the pick stays (0 in the picker).
+    await act(async () => review.setNewFrom(['Empty']))
+    expect(review.session).toMatchObject({ counts: { all: 5, due: 1, new: 4 }, newFrom: [{ folder: 'Empty', label: 'Empty' }], newFallback: true })
+    expect(review.newCardFolders().folders.map((f) => [f.folder, f.count])).toEqual([['Bio', 1], ['Empty', 0], ['Spanish', 2], ['Spanish/Deep', 1]])
+    await act(async () => review.setNewFrom([]))
+    expect(review.session).toMatchObject({ counts: { all: 5, due: 1, new: 4 }, newFrom: [], newFallback: false })
   })
 })
 

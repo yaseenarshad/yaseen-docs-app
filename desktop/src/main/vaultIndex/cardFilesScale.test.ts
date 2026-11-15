@@ -7,7 +7,7 @@ import path from 'node:path'
 import { IDS_FILE } from '@shared/pageId'
 import { removeVault } from '../fs/testFixture'
 import { writeConfig } from '../vaultConfig'
-import { CARD_TITLES_MOVED } from './idSweep'
+import { CARD_PROPERTIES_MOVED, CARD_TITLES_MOVED } from './idSweep'
 import { _evictAll, getIndex } from './index'
 
 const N = 5000
@@ -29,10 +29,10 @@ beforeAll(async () => {
   // Vaults that give IDs (only those have cards, YAZ-4946 D8); every page and card already holds one, and every card
   // its title on its line, so the sweep writes nothing.
   for (const root of [cardsRoot, pagesRoot]) await writeConfig(root, IDS_FILE, { enabled: true, letters: 'WIKI' })
-  // Vaults whose one-time title move is done (YAZ-5308): the sweep reads no card's page for it.
+  // Vaults whose one-time title move (YAZ-5308) and card file properties move (YAZ-5384) are done: the sweep reads no card's page for them.
   for (const root of [cardsRoot, pagesRoot]) {
     await mkdir(path.dirname(path.join(root, CARD_TITLES_MOVED)), { recursive: true })
-    await writeFile(path.join(root, CARD_TITLES_MOVED), '{}\n')
+    for (const mark of [CARD_TITLES_MOVED, CARD_PROPERTIES_MOVED]) await writeFile(path.join(root, mark), '{}\n')
   }
 }, 120_000)
 afterAll(async () => {

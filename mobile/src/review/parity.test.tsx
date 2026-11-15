@@ -24,8 +24,10 @@ import { NOW, cardBlock, cardFile, page } from './testing'
  * (`desktopReviewHost`, its files through a fake bridge, as `useCardReview.test.tsx` does) and the phone's host (the
  * answer list on the real engine and the fake GitHub). The due list after each step, its order, the title each card
  * shows, and the card lines and files at the end must be the same, byte for byte. YAZ-5309: the titles are on the card
- * lines (YAZ-5308, decision D), some with a quote, a comma, `-->`, a backslash, non-ASCII letters and an emoji; a card
- * file's properties hold only `kind: card`.
+ * lines (YAZ-5308, decision D), some with a quote, a comma (`&#44;`, YAZ-5393), `-->`, a backslash, non-ASCII letters and
+ * an emoji; a card file's properties hold only `kind: card`. YAZ-5349: each card's own properties are on its card line
+ * too (`tags "europe" "capitals"`, `["x"]`, a value with a comma, a hand-written form, 20 of them), and every step
+ * keeps them byte for byte on both hosts. One title is in an older build's form (a raw comma): both hosts encode it.
  */
 const ROOT = '/vault'
 let disk = new Map<string, string>()
@@ -57,16 +59,17 @@ vi.mock('@client/api', async (importOriginal) => {
 })
 
 const SETTINGS = sanitizeReviewSettings({ newPerDay: 3, fuzz: false })
+const TWENTY = Array.from({ length: 20 }, (_, i) => `p${i + 1} ${i % 2 === 0 ? `"v${i}"` : String(i)}`).join(', ')
 const FILES: Record<string, string> = {
   '.yaseendocs/review.json': JSON.stringify({ newPerDay: 3, fuzz: false }),
   'spanish.md': page(
     'Spanish words',
-    cardBlock('Old one?\n---\n{{viejo}}', 'PA-1, title "Viejo", 2026-10-01T09:00Z good, 2026-10-05T09:00Z good'),
-    cardBlock('Hola?\n---\n{{hello}}', 'PA-2, title "Hola, \\"mundo\\" --\\> \\\\ ñandú 🙂"'),
-    cardBlock('Adios?\n---\n{{bye}}', 'PA-3, next'),
+    cardBlock('Old one?\n---\n{{viejo}}', 'PA-1, title "Viejo", tags "europe" "capitals", level "A2", 2026-10-01T09:00Z good, 2026-10-05T09:00Z good'),
+    cardBlock('Hola?\n---\n{{hello}}', 'PA-2, title "Hola&#44; \\"mundo\\" --\\> \\\\ ñandú 🙂", source "Atlas, chapter 3", say "\\"hi\\""'),
+    cardBlock('Adios?\n---\n{{bye}}', `PA-3, tags ["x"], none [], ${TWENTY}, next`),
   ),
-  'cards/speed-of-light-pa-4.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{300,000 km/s}}', 'PA-4')),
-  'git.md': page('Git', cardBlock('git pull?\n---\nIt {{fetches}} and {{merges}}.', 'PA-5, title "a > b, by hand", 2026-11-10T09:00Z again'), cardBlock('git push?\n---\n{{uploads}}', 'PA-6, title ""'), '![[PA-4]]'),
+  'cards/speed-of-light-pa-4.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{300,000 km/s}}', 'PA-4, note "x&#44;y", ratio 2.50')),
+  'git.md': page('Git', cardBlock('git pull?\n---\nIt {{fetches}} and {{merges}}.', 'PA-5, title "a > b, by hand", tags  "a"   "b", 2026-11-10T09:00Z again'), cardBlock('git push?\n---\n{{uploads}}', 'PA-6, title ""'), '![[PA-4]]'),
 }
 
 /** One run: the hook with a host, and the steps. Returns what showed after each step, and the card lines. */
@@ -151,7 +154,7 @@ async function script(run: Run): Promise<string[]> {
   const seen: string[] = []
   const look = () => {
     const s = run.review().session
-    seen.push(s === null ? 'none' : `${s.card?.id ?? 'done'} "${s.card?.page?.title ?? '-'}" ${s.position}/${s.total} due:${run.review().dueCount} [${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}]`)
+    seen.push(s === null ? 'none' : `${s.card?.id ?? 'done'} "${s.card?.page?.title ?? '-'}" ${JSON.stringify(s.card?.page?.properties ?? null)} ${s.position}/${s.total} due:${run.review().dueCount} [${s.counts.all}/${s.counts.next}/${s.counts.due}/${s.counts.new}]`)
   }
   const minute = (m: number) => vi.setSystemTime(NOW + m * 60_000)
   const step = async (m: number, fn: () => unknown) => {
@@ -198,10 +201,18 @@ describe('one review logic (decision 3): the Mac host and the phone host give th
     expect(phoneLines).toEqual(macLines)
     expect(phoneFiles).toEqual(macFiles)
     // The titles showed, and each title part is where it was, with its bytes, on both.
-    expect(macSeen.join('\n')).toContain('PA-2 "Hola, "mundo" --> \\ ñandú 🙂"')
+    expect(macSeen.join('\n')).toContain('PA-2 "Hola, "mundo" --> \\ ñandú 🙂" {"source":"Atlas, chapter 3","say":"\\"hi\\""}')
     expect(macSeen.join('\n')).toContain('"Speed of light"')
-    for (const [id, part] of [['PA-1', 'title "Viejo"'], ['PA-2', 'title "Hola, \\"mundo\\" --\\> \\\\ ñandú 🙂"'], ['PA-4', 'title "Speed of light"'], ['PA-5', 'title "a > b, by hand"'], ['PA-6', 'title ""']])
-      expect(macLines[id].startsWith(`<!-- card: ${id}, ${part}`), id).toBe(true)
+    for (const [id, part] of [
+      ['PA-1', 'title "Viejo", tags "europe" "capitals", level "A2"'],
+      ['PA-2', 'title "Hola&#44; \\"mundo\\" --\\> \\\\ ñandú 🙂", source "Atlas, chapter 3", say "\\"hi\\""'],
+      ['PA-3', `tags ["x"], none [], ${TWENTY}`],
+      ['PA-4', 'title "Speed of light", note "x&#44;y", ratio 2.50'],
+      // An older build's raw comma: the first write encodes it, on both hosts (YAZ-5393); the hand-written property keeps its bytes.
+      ['PA-5', 'title "a \\> b&#44; by hand", tags  "a"   "b"'],
+      ['PA-6', 'title ""'],
+    ])
+      expect(macLines[id].startsWith(`<!-- card: ${id}, ${part}`), `${id}: ${macLines[id]}`).toBe(true)
     expect(macFiles['cards/speed-of-light-pa-4.md'].startsWith('---\nkind: card\n---\n')).toBe(true)
     expect(Object.values(macLines).join('\n')).toMatch(/fix/)
     // The run did something: answers, Up next, an archive, two reviews in one minute.

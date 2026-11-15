@@ -19,6 +19,7 @@ import { usePageId } from '../search/showIds'
 import { ExploreSteps, keepFocus, openRows, stepRows, type ExploreVault, type LayerSteps } from './ExplorePage'
 import { HeadMore, useCompactHead } from './ExploreHeadMore'
 import { PAGE_WIDTH } from './layers'
+import { withKeys } from '@shared/keyLabel'
 
 interface ExploreBoardProps {
   path: string
@@ -155,7 +156,7 @@ export function ExploreBoard({ path, title, idInTitle = false, vault, steps, onO
         {/* The parts a narrow layer folds into ⋯ one by one (YAZ-4956, YAZ-4986), the ID stays; `display: contents`, so a wide head is laid out as before. */}
         <span className="explore__fold">
           {steps !== undefined && <ExploreSteps steps={steps} />}
-          <button type="button" className="explore__button" data-fold-part="open" onMouseDown={keepFocus} onClick={onOpenInTab} title="Open in a tab to edit it, and close the stack (⌘↵)" aria-label="Open in a tab">
+          <button type="button" className="explore__button" data-fold-part="open" onMouseDown={keepFocus} onClick={onOpenInTab} title={withKeys('Open in a tab to edit it, and close the stack', '⌘↵')} aria-label="Open in a tab">
             ↗
           </button>
         </span>

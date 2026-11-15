@@ -2,6 +2,7 @@ import { splitFrontmatter } from './frontmatter'
 import { closesFence, fenceOf } from './fences'
 import { canonicalPageId, isNumberId } from './pageId'
 import { inLineEnds, withLf } from './lineEnds'
+import { keyFold } from './propertyKeys'
 
 /**
  * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line
@@ -24,7 +25,8 @@ import { inLineEnds, withLf } from './lineEnds'
  * THE TITLE (YAZ-5308, decision D: "a card's facts always live in its card line"): `title "Capital of France"`, right
  * after the ID. A card's text is only its sides: no line of it is ever read as its title, and a card file's title is
  * this part too, never its properties. The title is plain text on one line, in double quotes: `\"` is a quote, `\\`
- * a backslash and `\>` a `>`, so a comma, a quote or a `-->` in a title never ends the part or the line. A card
+ * a backslash, `\>` a `>` and `&#44;` a comma (YAZ-5393: an older build splits on every comma), so a comma, a quote or a
+ * `-->` in a title never ends the part or the line, in any build. A card
  * with no title has no `title` part (`cardTitleOf` is ''). A card takes its ID when it is
  * made (`/card` asks the vault's door, `yaseendocs card add` too); one that has none (an agent's text, a paste) gets
  * it from the index's sweep (YAZ-4960). The due date is never written: `cardSchedule.ts` replays the reviews.
@@ -52,14 +54,30 @@ export interface CardReview {
 /** The longest time a review part holds: one day, in seconds (YAZ-5033). */
 export const CARD_SECONDS_MAX = 86400
 
+/** One value of a card property (YAZ-5379): text (quoted on the line), a number or a checkbox (bare). */
+export type CardPropertyScalar = string | number | boolean
+/** A card property's value: one value, or a list of two or more (`tags "europe" "capitals"`). */
+export type CardPropertyValue = CardPropertyScalar | CardPropertyScalar[]
+
 /** One part of a card line, in the order the line holds them. */
-export type CardPart = { kind: 'id'; id: string } | { kind: 'title'; title: string; raw?: string } | { kind: 'review'; review: CardReview } | { kind: 'off' } | { kind: 'next' } | { kind: 'notitle' } | { kind: 'fix' } | { kind: 'other'; text: string }
+export type CardPart =
+  | { kind: 'id'; id: string }
+  | { kind: 'title'; title: string; raw?: string }
+  | { kind: 'property'; name: string; value: CardPropertyValue; raw?: string }
+  | { kind: 'review'; review: CardReview }
+  | { kind: 'off' }
+  | { kind: 'next' }
+  | { kind: 'notitle' }
+  | { kind: 'fix' }
+  | { kind: 'other'; text: string }
 
 /**
  * What a card line holds. `parts` keeps every part in place; the getters below read it. A title part read off a line
  * in a form this app does not write (a bare `>`, extra spaces, a tab after `title`, an odd escape) keeps that part's
  * text as `raw`, so a write that does not change the title writes its bytes back (YAZ-5309: an answer on the phone
- * never changes a title); a new title (`withCardTitle`) is written in the app's own form.
+ * never changes a title); a new title (`withCardTitle`) is written in the app's own form. A title with a raw comma
+ * keeps no `raw`: a write encodes its commas (YAZ-5393), so an older build never splits it. A property part keeps its
+ * text as `raw` the same way (YAZ-5349: `tags  "a"`, `ratio 2.50`, `[ "a" ]`), until a write changes it.
  */
 export interface CardLine {
   parts: CardPart[]
@@ -84,6 +102,8 @@ export interface CardRecord {
   notitle?: true
   /** The card is marked "Fix later" (the line's `fix`, YAZ-5097): the To fix list; absent: no mark. */
   fix?: true
+  /** The card's own properties (its line's property parts, YAZ-5379, `cardPropertiesOf`); absent for a card with none. */
+  properties?: Record<string, CardPropertyValue>
 }
 
 /** `<!-- card: … -->` on one line, any spaces inside the delimiters. */
@@ -98,41 +118,131 @@ const REVIEW_RE = /^(\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2
 /** A review time as the line writes it: UTC, to the minute (`2026-11-12T14:05Z`). */
 export const cardTime = (ms: number): string => `${new Date(ms).toISOString().slice(0, 16)}Z`
 
-/** A title part: `title "…"`, its text with `\\`, `\"` and `\>` escapes. */
+/** A title part: `title "…"`, its text with `\\`, `\"`, `\>` and `&#44;` escapes (`quoteTitle`). */
 const TITLE_RE = /^title[ \t]+"((?:[^"\\]|\\.)*)"$/
 
+/** A part the line's own rules know by its text alone: a review, `off`, `next`, `notitle`, `fix` (YAZ-5097) or an ID. */
+const isKnownPart = (text: string): boolean => REVIEW_RE.test(text) || text === 'off' || text === 'next' || text === 'notitle' || text === 'fix' || isNumberId(text)
+
 /**
- * The parts of a line's body, split on its commas: a comma inside a quoted text (a title) splits nothing, and a quote
- * that is never closed takes the rest of the line into its part (an unknown part, kept as its text).
+ * The parts of a line's body, split on its commas: a comma inside a quoted text (a title, a property's value) splits
+ * nothing. A quote that is never closed (YAZ-5394: an agent's or a hand's line) never hides the parts after it: from
+ * the part it opens in, the rest is split on its commas again, and the pieces that are no known part (`isKnownPart`)
+ * stay one part with their own bytes, so a review, a mark or an answer written after it reads, and the rest is kept.
  */
 function splitParts(body: string): string[] {
   const parts: string[] = []
-  let part = ''
+  let start = 0
   let quoted = false
   for (let i = 0; i < body.length; i++) {
     const ch = body[i]
-    if (quoted && ch === '\\' && i + 1 < body.length) {
-      part += ch + body[++i]
-      continue
+    if (quoted && ch === '\\' && i + 1 < body.length) i++
+    else if (ch === '"') quoted = !quoted
+    else if (ch === ',' && !quoted) {
+      parts.push(body.slice(start, i).trim())
+      start = i + 1
     }
-    if (ch === '"') quoted = !quoted
-    if (ch === ',' && !quoted) {
-      parts.push(part.trim())
-      part = ''
-    } else part += ch
   }
-  parts.push(part.trim())
+  if (!quoted) return [...parts, body.slice(start).trim()]
+  // The unclosed tail: its known pieces stand alone; each run of other pieces is one part, its commas kept.
+  let run: number | null = null
+  let at = start
+  for (const piece of body.slice(start).split(',')) {
+    const end = at + piece.length
+    if (isKnownPart(piece.trim())) {
+      if (run !== null) parts.push(body.slice(run, at - 1).trim())
+      parts.push(piece.trim())
+      run = null
+    } else run ??= at
+    at = end + 1
+  }
+  if (run !== null) parts.push(body.slice(run).trim())
   return parts
 }
 
 /** A title as plain text on one line: every run of white space one space, none at either end (YAZ-5308). */
 export const cleanCardTitle = (title: string): string => title.replace(/\s+/g, ' ').trim()
 
-/** The title part's text as the line writes it, quotes and all: `\` and `"` escaped, and `>` so no `-->` can end the line. */
-const quoteTitle = (title: string): string => `"${title.replace(/[\\">]/g, (c) => `\\${c}`)}"`
-const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)/g, '$1')
+/**
+ * The title part's text as the line writes it, quotes and all: `\` and `"` escaped, and `>` so no `-->` can end the
+ * line. A comma is written `&#44;` (YAZ-5393, decision: encode commas): a build from before YAZ-5308 splits the line on
+ * every comma, also inside the quotes, so with none in it the title stays ONE part there, kept byte for byte, and no
+ * word of it can read as `next`, `off` or a review. An `&` that starts `&#44;` or `&#38;` is written `&#38;`, so a
+ * title that holds those letters reads back as it was; every other `&` stays as it is. A build of YAZ-5308 before this
+ * reads `&#44;` as those letters and writes them back the same.
+ */
+const quoteTitle = (title: string): string =>
+  `"${title
+    .replace(/&(?=#(?:44|38);)/g, '&#38;')
+    .replace(/,/g, '&#44;')
+    .replace(/[\\">]/g, (c) => `\\${c}`)}"`
+/** The title part's text read back (`quoteTitle`'s escapes, in one pass); a raw comma (an older line) reads as itself. */
+const unquoteTitle = (quoted: string): string => quoted.replace(/\\(.)|&#(44|38);/g, (_, c: string | undefined, code: string | undefined) => c ?? (code === '44' ? ',' : '&'))
 /** The title part as this app writes it. */
 const titlePart = (title: string): string => `title ${quoteTitle(title)}`
+
+// ---------- properties (YAZ-5379, YAZ-5349 option A) ----------
+//
+// A card's own properties are parts of its card line, after its ID and title: a name, then one or more values.
+//   <!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", count 3, done true -->
+// Text is quoted, with the title's escapes plus `\n` for a line break; a number or a checkbox is bare. Two or more
+// values are a list; one value reads as that value, as YAML's `tags: europe` does on a page. A list of one or none is
+// written in brackets, `tags ["europe"]`, `tags []`, so it reads back as a list. An empty text is `""`. A name is bare when it
+// starts with a letter or `_` and holds no space, quote, comma, `\` or `>`; any other name is quoted:
+// `"Due Date" "2026-11-20"`. The card line's own words are never a name (`isCardPropertyName`). A part that does not
+// read as a property (a bare word alone, a bare value that is no number or checkbox) stays an unknown part, kept.
+
+/** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
+const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle', 'fix'])
+const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
+const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
+const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
+
+/**
+ * Can `name` be a card property's name (YAZ-5379)? A property name (`isPropertyName`: not empty, no space at either
+ * end, no line break) that is none of the card line's words (`title`, `off`, `next`, `notitle`, `fix`), in any capitals.
+ */
+export function isCardPropertyName(name: unknown): name is string {
+  return typeof name === 'string' && name !== '' && name === name.trim() && !/[\r\n]/.test(name) && !CARD_LINE_WORDS.has(name.toLowerCase())
+}
+
+const quoteValue = (text: string): string => `"${text.replace(/\r/g, '').replace(/[\\">\n]/g, (c) => (c === '\n' ? '\\n' : `\\${c}`))}"`
+const unquoteValue = (quoted: string): string => quoted.slice(1, -1).replace(/\\(.)/g, (_, c: string) => (c === 'n' ? '\n' : c))
+const formatScalar = (v: CardPropertyScalar): string => (typeof v === 'string' ? quoteValue(v) : String(v))
+const formatName = (name: string): string => (BARE_NAME_RE.test(name) ? name : quoteValue(name))
+
+/** A property part as the line writes it: a list of none or one in brackets, so it reads back as a list. */
+const formatProperty = (name: string, value: CardPropertyValue): string => {
+  if (!Array.isArray(value)) return `${formatName(name)} ${formatScalar(value)}`
+  return `${formatName(name)} ${value.length < 2 ? `[${value.map(formatScalar).join(' ')}]` : value.map(formatScalar).join(' ')}`
+}
+
+/** The property a part's text holds, or null when it holds none. */
+function parseProperty(text: string): { name: string; value: CardPropertyValue } | null {
+  const tokens: string[] = []
+  TOKEN_RE.lastIndex = 0
+  let m: RegExpExecArray | null
+  while (TOKEN_RE.lastIndex < text.length && (m = TOKEN_RE.exec(text)) !== null) tokens.push(m[1])
+  if (TOKEN_RE.lastIndex < text.trimEnd().length || tokens.length < 2) return null
+  const [head, ...all] = tokens
+  // A list in brackets (`["europe"]`, `[]`, `[ "a" "b" ]`): always a list, of any length.
+  const open = all[0]?.startsWith('[') === true
+  const close = all.at(-1)?.endsWith(']') === true
+  if (open !== close) return null
+  const inner = open ? [all[0].slice(1), ...all.slice(1)] : all
+  if (open) inner[inner.length - 1] = inner[inner.length - 1].slice(0, -1)
+  const rest = inner.filter((t) => t !== '')
+  const name = head.startsWith('"') ? unquoteValue(head) : BARE_NAME_RE.test(head) ? head : null
+  if (name === null || !isCardPropertyName(name)) return null
+  const values: CardPropertyScalar[] = []
+  for (const t of rest) {
+    if (t.startsWith('"')) values.push(unquoteValue(t))
+    else if (NUMBER_RE.test(t)) values.push(Number(t))
+    else if (t === 'true' || t === 'false') values.push(t === 'true')
+    else return null
+  }
+  return { name, value: open ? values : values.length === 1 ? values[0] : values }
+}
 
 /** The card line `value` holds (one line, trimmed or not), or null when it is no card line. */
 export function parseCardLine(value: string): CardLine | null {
@@ -151,7 +261,9 @@ export function parseCardLine(value: string): CardLine | null {
     else if (title !== null && cleanCardTitle(unquoteTitle(title[1])) !== '') {
       titled = true
       const clean = cleanCardTitle(unquoteTitle(title[1]))
-      parts.push(text === titlePart(clean) ? { kind: 'title', title: clean } : { kind: 'title', title: clean, raw: text })
+      // Its own bytes are kept (`raw`) unless they are the app's form, or hold a raw comma: an older build splits there,
+      // so a write puts the title in the app's form, its commas `&#44;` (YAZ-5393).
+      parts.push(text === titlePart(clean) || text.includes(',') ? { kind: 'title', title: clean } : { kind: 'title', title: clean, raw: text })
     } else if (text === 'off') parts.push({ kind: 'off' })
     else if (text === 'next') parts.push({ kind: 'next' })
     else if (text === 'notitle') parts.push({ kind: 'notitle' })
@@ -159,7 +271,11 @@ export function parseCardLine(value: string): CardLine | null {
     else if (!id && isNumberId(text)) {
       id = true
       parts.push({ kind: 'id', id: canonicalPageId(text) })
-    } else parts.push({ kind: 'other', text })
+    } else {
+      const property = parseProperty(text)
+      // A property in a form this app does not write (`tags  "a"`, `ratio 2.50`, `[ "a" ]`) keeps its bytes (`raw`), as a title does.
+      parts.push(property === null ? { kind: 'other', text } : formatProperty(property.name, property.value) === text ? { kind: 'property', ...property } : { kind: 'property', ...property, raw: text })
+    }
   }
   return { parts }
 }
@@ -178,7 +294,19 @@ export const cardReviewKey = (r: CardReview): string => `${r.at} ${r.rating}`
 
 /** The card line for `line`, or null when it holds no part (a card with no ID and no review writes no line). */
 export function formatCardLine(line: CardLine): string | null {
-  const parts = line.parts.map((p) => (p.kind === 'id' ? p.id : p.kind === 'title' ? (p.raw ?? titlePart(p.title)) : p.kind === 'review' ? formatCardReview(p.review) : p.kind === 'other' ? p.text : p.kind))
+  const parts = line.parts.map((p) =>
+    p.kind === 'id'
+      ? p.id
+      : p.kind === 'title'
+        ? (p.raw ?? titlePart(p.title))
+        : p.kind === 'property'
+          ? (p.raw ?? formatProperty(p.name, p.value))
+          : p.kind === 'review'
+            ? formatCardReview(p.review)
+            : p.kind === 'other'
+              ? p.text
+              : p.kind,
+  )
   return parts.length === 0 ? null : `<!-- card: ${parts.join(', ')} -->`
 }
 
@@ -197,14 +325,87 @@ export const isCardNoTitle = (line: CardLine): boolean => line.parts.some((p) =>
 export const cardTitleOf = (line: CardLine): string => line.parts.find((p) => p.kind === 'title')?.title ?? ''
 const cardRecordOf = (line: CardLine): CardRecord => {
   const title = cardTitleOf(line)
-  return { id: cardIdOf(line), off: isCardOff(line), next: isCardNext(line), reviews: cardReviewsOf(line), ...(title !== '' && { title }), ...(isCardNoTitle(line) && { notitle: true as const }), ...(isCardFix(line) && { fix: true as const }) }
+  const properties = cardPropertiesOf(line)
+  return {
+    id: cardIdOf(line),
+    off: isCardOff(line),
+    next: isCardNext(line),
+    reviews: cardReviewsOf(line),
+    ...(title !== '' && { title }),
+    ...(isCardNoTitle(line) && { notitle: true as const }),
+    ...(isCardFix(line) && { fix: true as const }),
+    ...(Object.keys(properties).length > 0 && { properties }),
+  }
 }
 
-/** Where a part that follows the card's head goes: after its ID and its title (each when it has one), else first. */
+/** Where a part that follows the card's head goes: after its ID, its title and its properties (each when it has them), else first. */
 const afterHead = (line: CardLine): number => {
   let i = line.parts.findIndex((p) => p.kind === 'id') + 1
-  while (line.parts[i]?.kind === 'title') i++
+  while (line.parts[i]?.kind === 'title' || line.parts[i]?.kind === 'property') i++
   return i
+}
+
+/**
+ * The card's own properties (YAZ-5379), by name in the line's order. Two spellings of one key (`Tags`, `tags`,
+ * `keyFold`): the first one wins, as on a page.
+ */
+export function cardPropertiesOf(line: CardLine): Record<string, CardPropertyValue> {
+  const out: Record<string, CardPropertyValue> = {}
+  const seen = new Set<string>()
+  for (const p of line.parts) {
+    if (p.kind !== 'property' || seen.has(keyFold(p.name))) continue
+    seen.add(keyFold(p.name))
+    out[p.name] = Array.isArray(p.value) ? [...p.value] : p.value
+  }
+  return out
+}
+
+/** A value a property row or a cell gives, as a card line value: null and undefined are empty text, a Date its ISO day. */
+const toCardValue = (value: unknown): CardPropertyValue => {
+  const scalar = (v: unknown): CardPropertyScalar =>
+    typeof v === 'string' || typeof v === 'boolean' ? v : typeof v === 'number' && Number.isFinite(v) ? v : v instanceof Date ? v.toISOString().slice(0, 10) : v === null || v === undefined ? '' : String(v)
+  return Array.isArray(value) ? value.map(scalar) : scalar(value)
+}
+
+/**
+ * The card with property `name` set to `value` (YAZ-5379: the strip's Properties part, the Cards table's cells,
+ * `card add --prop`): the part changes in place under `name`'s spelling, its other spellings go, or it comes after the
+ * card's last property, else after its ID and title. Throws for a name the line cannot hold (`isCardPropertyName`).
+ * The same value gives the same line.
+ */
+export function withCardProperty(line: CardLine, name: string, value: unknown): CardLine {
+  if (!isCardPropertyName(name)) throw new Error(`${JSON.stringify(name)} cannot be a card property's name`)
+  const next = toCardValue(value)
+  const fold = keyFold(name)
+  const at = line.parts.findIndex((p) => p.kind === 'property' && keyFold(p.name) === fold)
+  const held = line.parts[at]
+  if (held?.kind === 'property' && held.name === name && JSON.stringify(held.value) === JSON.stringify(next) && line.parts.filter((p) => p.kind === 'property' && keyFold(p.name) === fold).length === 1) return line
+  const part: CardPart = { kind: 'property', name, value: next }
+  if (at !== -1) return { parts: line.parts.flatMap((p, i) => (i === at ? [part] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
+  let i = line.parts.findIndex((p) => p.kind === 'id') + 1
+  while (line.parts[i]?.kind === 'title') i++
+  const last = line.parts.map((p) => p.kind === 'property').lastIndexOf(true)
+  if (last !== -1) i = last + 1
+  return { parts: [...line.parts.slice(0, i), part, ...line.parts.slice(i)] }
+}
+
+/**
+ * Property `from` renamed `to` (YAZ-5383: the Properties part's Rename…), its value and its place kept; the other
+ * spellings of `to` go. Throws for a name the line cannot hold. A name the card does not hold changes nothing.
+ */
+export function renameCardProperty(line: CardLine, from: string, to: string): CardLine {
+  if (!isCardPropertyName(to)) throw new Error(`${JSON.stringify(to)} cannot be a card property's name`)
+  const at = line.parts.findIndex((p) => p.kind === 'property' && keyFold(p.name) === keyFold(from))
+  const held = line.parts[at]
+  if (held?.kind !== 'property' || held.name === to) return line
+  const fold = keyFold(to)
+  return { parts: line.parts.flatMap((p, i) => (i === at ? [{ kind: 'property', name: to, value: held.value }] : p.kind === 'property' && keyFold(p.name) === fold ? [] : [p])) }
+}
+
+/** The card without property `name`, in any spelling (YAZ-5379). A name it does not hold changes nothing. */
+export function withoutCardProperty(line: CardLine, name: string): CardLine {
+  const fold = keyFold(name)
+  return line.parts.some((p) => p.kind === 'property' && keyFold(p.name) === fold) ? { parts: line.parts.filter((p) => !(p.kind === 'property' && keyFold(p.name) === fold)) } : line
 }
 
 /**
@@ -460,10 +661,15 @@ export function findCards(text: string): CardBlock[] {
 /** What the index keeps of a page's cards (D4, YAZ-5308 its title off its line): one entry per card, in page order. */
 export const cardRecords = (text: string): CardRecord[] => findCards(text).map((c) => cardRecordOf(c.line))
 
+// `cardsWithIds` has its own file (no YAML parser): the phone's Search reads it in its first load (YAZ-5377).
+export { cardsWithIds, type CardWithId } from './cardsWithIds'
+
 /**
  * `text` with the card line of each card `change` names rewritten: `change` gets each card in page order and returns
- * the new line, or undefined to leave that card as it is. A card that had no line gets one right under its fence;
- * a line that empties is removed. The ONE writer of card lines in a page: the sweep, the command and the Inbox.
+ * the new line, or undefined (or the card's own line, unchanged) to leave that card as it is: an older line keeps its
+ * bytes until a write changes it (YAZ-5393: a raw comma in its title is encoded then). A card that had no line gets one
+ * right under its fence; a line that empties is removed. The ONE writer of card lines in a page: the sweep, the command
+ * and the Inbox.
  */
 function rewriteCardLines(text: string, change: (card: CardBlock, index: number) => CardLine | undefined): string {
   const cards = findCards(text)
@@ -473,7 +679,7 @@ function rewriteCardLines(text: string, change: (card: CardBlock, index: number)
   for (let n = cards.length - 1; n >= 0; n--) {
     const card = cards[n]
     const next = change(card, n)
-    if (next === undefined) continue
+    if (next === undefined || next === card.line) continue
     const formatted = formatCardLine(next)
     const written = formatted === null ? [] : [card.indent + formatted]
     if (card.lineAt !== null) lines.splice(card.lineAt, 1, ...written)
@@ -529,7 +735,7 @@ export function changeCardText(content: string, id: string | null, text: string,
 function changedCardText(content: string, id: string | null, text: string, index: number): string {
   const { frontmatter, body } = splitFrontmatter(content)
   const cards = findCards(body)
-  const at = id === null ? index : cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((card) => cardIdOf(card.line) === id)
+  const at = cardPlace(cards.map((card) => cardIdOf(card.line)), id, index)
   const card = cards[at]
   if (card === undefined) throw new CardNotFoundError(id ?? `#${index + 1}`)
   const wanted = withLf(text).replace(/\n+$/, '')
@@ -545,6 +751,17 @@ function changedCardText(content: string, id: string | null, text: string, index
 }
 
 /**
+ * Which of a page's cards is card `id` at `index` (their IDs in page order, `null` for one with none): the one at `index`
+ * when it holds `id` (two cards with one ID before the sweep settles the copy: each keeps its own), else the first that
+ * holds it; with no ID, the one at `index`. -1: none. The ONE choice of card for a write, a read and a landing
+ * (YAZ-5164: Explore lands on a card of its page by this, so an index gone stale, or a card embed above it, never moves it).
+ */
+export function cardPlace(ids: readonly (string | null)[], id: string | null, index = -1): number {
+  if (id === null) return index
+  return ids[index] === id ? index : ids.indexOf(id)
+}
+
+/**
  * The page `content` with the card line of card `id` changed by `change` — for the Inbox, the card window and the ⋯
  * menu: `transformFile(path, (c) => changeCard(c, 'WIKI-512', (l) => withCardReview(l, { at: cardTime(Date.now()), rating: 'good' })))`.
  * Throws `CardNotFoundError` when no card holds `id`. Two cards with one ID (a copy the sweep has not met): the one at
@@ -552,7 +769,7 @@ function changedCardText(content: string, id: string | null, text: string, index
  */
 export function changeCard(content: string, id: string, change: (line: CardLine) => CardLine, index?: number): string {
   const cards = pageCards(content)
-  const at = index !== undefined && cards[index] !== undefined && cardIdOf(cards[index].line) === id ? index : cards.findIndex((card) => cardIdOf(card.line) === id)
+  const at = cardPlace(cards.map((card) => cardIdOf(card.line)), id, index)
   if (at === -1) throw new CardNotFoundError(id)
   return rewritePageCards(content, (card, n) => (n === at ? change(card.line) : undefined))
 }

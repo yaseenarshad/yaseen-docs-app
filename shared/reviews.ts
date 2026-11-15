@@ -24,8 +24,13 @@ export type PauseAfter = (typeof PAUSE_AFTER_CHOICES)[number]
 export const TIME_SO_FAR_CHOICES = ['hidden', 'shown', 'off'] as const
 export type TimeSoFar = (typeof TIME_SO_FAR_CHOICES)[number]
 
-/** Which new cards the Inbox takes first (YAZ-4999 D2), by the card's ID number: the vault's counter grows with time. */
-export type NewCardOrder = 'oldest' | 'newest'
+/**
+ * Which new cards the Inbox takes first (YAZ-4999 D2), by the card's ID number: the vault's counter grows with time.
+ * `random` (YAZ-5322, Settings › Cards › New cards order): one order for the whole day (`cardPlan` seeds it with the
+ * local date), so the queue does not change when the Inbox draws again; another day has another order.
+ */
+export const NEW_CARD_ORDERS = ['oldest', 'newest', 'random'] as const
+export type NewCardOrder = (typeof NEW_CARD_ORDERS)[number]
 
 export interface ReviewSettings {
   /** Review cards in this vault: off, no card is due and the Inbox shows none. */
@@ -43,8 +48,15 @@ export interface ReviewSettings {
    * others keep the mark and wait for another day, unless due anyway (YAZ-5042; `cardQueue`).
    */
   upNextPerDay: number | null
-  /** Which new cards come first: the oldest (the lowest ID number) or the newest. */
+  /** Which new cards come first: the oldest (the lowest ID number), the newest, or a random order for the day. */
   newOrder: NewCardOrder
+  /**
+   * Where new cards come from (YAZ-5322, the Inbox's New cards row and the done screen's "from Spanish ▾"): the
+   * root-relative folders picked, each with its subfolders; empty for All folders. It stays until cleared. It narrows
+   * only NEW cards (due cards and Up next come from everywhere); with no new card left in them, new cards come from
+   * All folders (`CardPlan.newFallback`). No Settings row: the Inbox is where it is picked.
+   */
+  newFrom: string[]
   /** Spread due dates (FSRS fuzz): cards made together do not all come back on one day. */
   fuzz: boolean
   /**
@@ -71,6 +83,7 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   newPerDay: 10,
   upNextPerDay: null,
   newOrder: 'oldest',
+  newFrom: [],
   fuzz: true,
   pauseAfter: 60,
   timeSoFar: 'hidden',
@@ -79,6 +92,16 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
 
 const wholeIn = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 const isWeights = (v: unknown): v is number[] => Array.isArray(v) && [17, 19, 21].includes(v.length) && v.every((n) => typeof n === 'number' && Number.isFinite(n))
+
+/**
+ * The folder pick, clean (YAZ-5322): root-relative folder paths with no slash at either end, each one time, none inside
+ * another picked folder (a tick takes subfolders); anything that is not a list is All folders.
+ */
+export function sanitizeNewFrom(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const folders = [...new Set(raw.filter((f): f is string => typeof f === 'string').map((f) => f.replace(/^\/+|\/+$/g, '')).filter((f) => f !== ''))]
+  return folders.filter((f) => !folders.some((other) => other !== f && f.startsWith(`${other}/`)))
+}
 
 /** The settings a parsed `review.json` holds, every field checked on its own. */
 export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
@@ -93,7 +116,8 @@ export function sanitizeReviewSettings(raw: unknown): ReviewSettings {
     newPerDay: r.newPerDay === null || wholeIn(r.newPerDay, 0, 9999) ? r.newPerDay : d.newPerDay,
     // YAZ-5028: as newPerDay; a missing field is the default, no limit.
     upNextPerDay: r.upNextPerDay === null || wholeIn(r.upNextPerDay, 0, 9999) ? r.upNextPerDay : d.upNextPerDay,
-    newOrder: r.newOrder === 'oldest' || r.newOrder === 'newest' ? r.newOrder : d.newOrder,
+    newOrder: (NEW_CARD_ORDERS as readonly unknown[]).includes(r.newOrder) ? (r.newOrder as NewCardOrder) : d.newOrder,
+    newFrom: sanitizeNewFrom(r.newFrom),
     fuzz: typeof r.fuzz === 'boolean' ? r.fuzz : d.fuzz,
     pauseAfter: (PAUSE_AFTER_CHOICES as readonly unknown[]).includes(r.pauseAfter) ? (r.pauseAfter as PauseAfter) : d.pauseAfter,
     timeSoFar: (TIME_SO_FAR_CHOICES as readonly unknown[]).includes(r.timeSoFar) ? (r.timeSoFar as TimeSoFar) : d.timeSoFar,
