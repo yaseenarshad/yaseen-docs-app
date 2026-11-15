@@ -9,6 +9,7 @@ import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { isReaderFixture, mountReaderFixture } from './readerFixtures'
 import { InstallGate } from '../screens/InstallGate'
 import { setAppearance } from '../settings/appearance'
+import type { CheckResult, Updates } from '../pwa/updates'
 
 /**
  * The screen fixtures: each screen of 4A with made-up data, for the screenshots (`#fixture=settings`). Only a
@@ -45,6 +46,30 @@ const pickGithub = (name: string) =>
   })
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * YAZ-5593: Settings › Check for updates with a made-up update (no service worker in the fixture build): the button,
+ * and after a tap (`settings-check-<answer>`) its answer; `busy` never answers.
+ */
+function fixtureUpdates(answer: CheckResult | 'busy' | null): Updates {
+  const fns = new Set<() => void>()
+  let ready = false
+  return {
+    start: async () => {},
+    ready: () => ready,
+    tookOver: () => false,
+    subscribe: (fn) => (fns.add(fn), () => void fns.delete(fn)),
+    apply: () => {},
+    check: async () => {},
+    checkNow: () =>
+      answer === 'busy' || answer === null
+        ? new Promise<CheckResult>(() => {})
+        : wait(30).then(() => {
+            if (answer === 'ready') (ready = true), fns.forEach((fn) => fn())
+            return answer
+          }),
+  }
+}
 const press = (name: string) => {
   const el = [...document.querySelectorAll<HTMLElement>('button, a')].find((b) => (b.getAttribute('aria-label') ?? b.textContent ?? '').trim() === name)
   el?.click()
@@ -105,7 +130,8 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       if (label !== 'table look' && label !== 'icons') await store.write(vaultId(VAULTS[0]), `.yaseendocs/${file}`, label === 'link clicks' ? '{ not json' : '{"version":1}')
   const sync = fakeSync({ download: name === 'download' })
   const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
-  root.render(<App services={services} />)
+  const check = /^settings-check-(newest|ready|unreachable|busy)$/.exec(name)?.[1] as CheckResult | 'busy' | undefined
+  root.render(<App services={services} updates={name.startsWith('settings') ? fixtureUpdates(check ?? null) : null} />)
   await wait(50)
 
   switch (name) {
@@ -155,6 +181,16 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       // Its own chunk (makes room in the first load): wait until it draws.
       for (let i = 0; i < 100 && document.querySelector('.settings__version') === null; i++) await wait(20)
       if (name === 'erase') press('Sign out and erase this phone')
+      break
+    case 'settings-check-newest':
+    case 'settings-check-ready':
+    case 'settings-check-unreachable':
+    case 'settings-check-busy':
+      // YAZ-5593: Check for updates, tapped, and its answer (or its busy state).
+      press('Settings')
+      for (let i = 0; i < 100 && document.querySelector('.settings__check button') === null; i++) await wait(20)
+      document.querySelector<HTMLButtonElement>('.settings__check button')?.click()
+      await wait(check === 'busy' ? 20 : 120)
       break
     case 'settings-health': {
       // YAZ-5559: Settings › Vault health, its list open.

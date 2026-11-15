@@ -1,4 +1,4 @@
-import { PAGE_READY, SKIP_WAITING, UPDATE_MARK, type WorkerState } from './swCore'
+import { PAGE_READY, SKIP_WAITING, UPDATE_MARK, type ServedVersion, type WorkerState } from './swCore'
 
 /**
  * The page side of an update. The browser downloads a new version in the background (the worker installs it whole,
@@ -12,6 +12,15 @@ import { PAGE_READY, SKIP_WAITING, UPDATE_MARK, type WorkerState } from './swCor
  */
 
 export const SW_URL = '/sw.js'
+/** YAZ-5593: how long "Check for updates" waits for a new version to download whole before it says it cannot. */
+export const CHECK_INSTALL_MS = 60_000
+
+/**
+ * YAZ-5593, "Check for updates": `newest` (the host serves this build), `ready` (a new version is ready: the same line
+ * and Restart as always; nothing restarts by itself), `unreachable` (no signal, or the host no longer serves the app).
+ */
+export type CheckResult = 'newest' | 'ready' | 'unreachable'
+
 /** Ask the host for a new version at most this often (at the start, and when the app comes back from the background). */
 export const CHECK_EVERY_MS = 30 * 60_000
 
@@ -46,6 +55,11 @@ export interface Updates {
   apply(): void
   /** Read the worker's state again (each time), and ask the host for a new version (at most each `CHECK_EVERY_MS`). */
   check(): Promise<void>
+  /**
+   * YAZ-5593, the person's "Check for updates": asks the host now (`update()`, and `/version.txt` with no cache), waits
+   * for a new version to download whole, and says what it found. It never applies anything (only Restart does).
+   */
+  checkNow?(): Promise<CheckResult>
 }
 
 /** The address that loads the new version (the worker chooses it): this address with `UPDATE_MARK`. */
@@ -70,8 +84,14 @@ export function createUpdates(deps: {
   now: () => number
   /** YAZ-5555: the worker's { active, chosen } (`STATE_ASK`); null when it does not say (an older worker, no worker). */
   readState?: () => Promise<WorkerState | null>
+  /** YAZ-5593: what the host serves now (`VERSION_ASK`); null when it cannot say (no signal, host gone, no worker). */
+  askServed?: () => Promise<ServedVersion | null>
+  /** YAZ-5593: this build's commit (`BUILD.commit`), as `/version.txt` names it. */
+  commit?: string
+  /** YAZ-5593: how long a check waits for a new version to install (`CHECK_INSTALL_MS`). */
+  installMs?: number
 }): Updates {
-  const { container, reload, now, readState } = deps
+  const { container, reload, now, readState, askServed } = deps
   let reg: SwRegistrationLike | null = null
   let lastCheck = -Infinity
   let reloadOnTakeover = false
@@ -92,9 +112,11 @@ export function createUpdates(deps: {
   }
 
   const follow = (worker: SwWorkerLike | null) => worker?.addEventListener('statechange', tell)
+  /** The worker's last answer to `STATE_ASK` (null: none). */
+  let state: WorkerState | null = null
   const readPinned = async () => {
     if (readState === undefined || container?.controller == null) return
-    const state = await readState().catch(() => null)
+    state = await readState().catch(() => null)
     const next = state !== null && typeof state.active === 'string' && typeof state.chosen === 'string' && state.active !== state.chosen
     if (next !== pinned) {
       pinned = next
@@ -160,5 +182,36 @@ export function createUpdates(deps: {
         // No signal, or the host is down: the next check tries again. The running version is not touched.
       }
     },
+    async checkNow() {
+      if (reg === null) return 'unreachable'
+      lastCheck = now()
+      const found = reg
+      const reached = await found.update().then(
+        () => true,
+        () => false,
+      )
+      const served = askServed === undefined ? null : await askServed().catch(() => null)
+      await readPinned()
+      if (ready()) return 'ready'
+      if (!reached || served === null) return 'unreachable'
+      if (served.commit === deps.commit || (state !== null && served.worker === state.chosen)) return 'newest'
+      // The host serves another build: wait until it is downloaded whole (or the download fails).
+      await settled(found.installing, deps.installMs ?? CHECK_INSTALL_MS)
+      await readPinned()
+      return ready() ? 'ready' : 'unreachable'
+    },
   }
+}
+
+/** Resolves when the worker is installed (or activated, or failed), or after `ms`; at once with no worker. */
+function settled(worker: SwWorkerLike | null, ms: number): Promise<void> {
+  if (worker === null || worker.state !== 'installing') return Promise.resolve()
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms)
+    worker.addEventListener('statechange', () => {
+      if (worker.state === 'installing') return
+      clearTimeout(timer)
+      resolve()
+    })
+  })
 }

@@ -27,9 +27,20 @@ export function buildTime(iso: string, timeZone?: string): string {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone }).format(at)
 }
 
-/** The Version row's words: "0.7.0 · 14 Nov 2026, 10:42 · 729da04" (the parts that are known). */
+/**
+ * YAZ-5593: the build's commit as `/version.txt` names it (the same short commit, e.g. "bb8a4aa30"), else the version.
+ * The one text for the build everywhere: the line at the top, the Version row, "You have the newest build (…)".
+ */
+export function buildName(info: BuildInfo): string {
+  return info.commit !== '' ? info.commit : info.version
+}
+
+/**
+ * The Version row's words: "Version 0.7.0 · Build bb8a4aa30 · 15 Nov 2026, 14:02" (the parts that are known). YAZ-5593:
+ * the version and the build named, so the commit reads as the same build as the line at the top.
+ */
 export function versionWords(info: BuildInfo, timeZone?: string): string {
-  return [info.version, buildTime(info.built, timeZone), info.commit].filter((part) => part !== '').join(' · ')
+  return [`Version ${info.version}`, info.commit !== '' ? `Build ${info.commit}` : '', buildTime(info.built, timeZone)].filter((part) => part !== '').join(' · ')
 }
 
 /** YAZ-5555: "15 Nov, 14:02": the build's day and time, short (no year), in the phone's own time. '' when not known. */
@@ -43,10 +54,9 @@ export function buildShortTime(iso: string, timeZone?: string): string {
 
 /**
  * YAZ-5555: the one short line at the top of Settings, so the build shows without opening anything:
- * "Build 8432fd9 · 15 Nov, 14:02" (the commit cut to 7 characters, else the version; then the build's day and time
- * when known). The Version row below keeps the whole words.
+ * "Build bb8a4aa30 · 15 Nov, 14:02" (YAZ-5593: the whole short commit, as `/version.txt` and the Version row show it,
+ * else the version; then the build's day and time when known). The Version row below keeps the whole words.
  */
 export function buildLine(info: BuildInfo, timeZone?: string): string {
-  const commit = info.commit.replace(/^([0-9a-f]{7})[0-9a-f]+/, '$1')
-  return [`Build ${commit !== '' ? commit : info.version}`, buildShortTime(info.built, timeZone)].filter((part) => part !== '').join(' · ')
+  return [`Build ${buildName(info)}`, buildShortTime(info.built, timeZone)].filter((part) => part !== '').join(' · ')
 }

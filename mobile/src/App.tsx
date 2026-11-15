@@ -2,6 +2,7 @@ import { AppProvider, type AppServices } from './app/AppState'
 import { Shell } from './screens/Shell'
 import type { Updates } from './pwa/updates'
 import { UpdateLine } from './pwa/UpdateLine'
+import { UpdatesContext } from './pwa/updatesContext'
 import { ExploreHost } from './explore/ExploreHost'
 
 /**
@@ -11,9 +12,11 @@ import { ExploreHost } from './explore/ExploreHost'
 export function App({ services, updates }: { services: AppServices; updates?: Updates | null }) {
   return (
     <AppProvider services={services}>
-      <Shell />
-      <ExploreHost />
-      {updates && <UpdateLine updates={updates} />}
+      <UpdatesContext.Provider value={updates ?? null}>
+        <Shell />
+        <ExploreHost />
+        {updates && <UpdateLine updates={updates} />}
+      </UpdatesContext.Provider>
     </AppProvider>
   )
 }

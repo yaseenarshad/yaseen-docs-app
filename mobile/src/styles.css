@@ -604,6 +604,26 @@ button,
   font-variant-numeric: tabular-nums;
 }
 
+/* YAZ-5593: under it, the address the app runs from (the same muted words), then Check for updates and its answer. */
+.settings__build:has(+ .settings__host) {
+  margin-bottom: 2px;
+}
+
+.settings__host {
+  margin: 0 0 8px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.settings__check {
+  margin: 0 0 8px;
+}
+
+.settings__check-result {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
 .whats-new__toggle {
   display: flex;
   align-items: center;

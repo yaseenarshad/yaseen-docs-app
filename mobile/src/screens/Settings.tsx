@@ -5,6 +5,7 @@ import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
 import { AppearancePart } from '../settings/AppearancePart'
+import { UpdateCheck } from '../settings/UpdateCheck'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
@@ -51,6 +52,8 @@ export function Settings() {
     <Frame title="Settings" back={() => app.go({ type: 'back' })} tabs={app.phase === 'ready'}>
       {/* YAZ-5555: which build runs, seen at once (the Version row below has the whole words). */}
       <p className="muted settings__build">{buildLine(BUILD)}</p>
+      {/* YAZ-5593: the address the app runs from, and Check for updates. */}
+      <UpdateCheck />
       <InstallHint />
       <h2 className="section">Vaults</h2>
       <ul className="rows" aria-label="Vaults">
