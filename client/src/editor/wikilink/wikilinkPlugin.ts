@@ -61,6 +61,7 @@ import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, t
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { WIKILINK_CLASS, cardPillSpan } from './cardPill'
 import './wikilink.css'
+import { tourEvent } from '../../course/tourBus'
 // The link resolution moved to its own file (YAZ-5153), so the review screen loads without this plugin; its names stay here too.
 export { WIKILINK_RE, cardLinkTitle, cardResolverOf, createWikilinkResolveSource, idLinkTitle, isLinkUnit, linkCard, linkDisplayText, linkIsResolved, linkPageId, linkPageName, linkPath, linkSplit, linksAsShown, missingId, nameAndId, otherVaultId, showsTitle } from './linkResolve'
 export type { LinkLook, MutableWikilinkResolveSource, ResolveLink, VaultsOfLetters, WikilinkResolveSource } from './linkResolve'

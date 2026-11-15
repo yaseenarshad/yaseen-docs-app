@@ -3,7 +3,6 @@
  * the phone's review sheet, so the two read the same session the same way. No DOM, no desktop module: the phone's
  * build takes it. The Mac's files re-export each name, so nothing changes there.
  */
-import type { CardRating } from '@shared/cardLine'
 import type { CardFilter, CardReviewSession, NewCardFolder } from './useCardReview'
 
 /**
@@ -11,18 +10,6 @@ import type { CardFilter, CardReviewSession, NewCardFolder } from './useCardRevi
  * on show (its last card answered just now). The other filters always show.
  */
 export const showsFilter = (id: CardFilter, session: Pick<CardReviewSession, 'upNext' | 'filter'>): boolean => id !== 'next' || session.upNext || session.filter === 'next'
-
-/** The bar's parts (YAZ-5020): each run of the same answer as one part, so a long session draws a few boxes, not one per card. */
-export function progressRuns(answered: readonly CardRating[]): { missed: boolean; count: number }[] {
-  const runs: { missed: boolean; count: number }[] = []
-  for (const rating of answered) {
-    const missed = rating === 'again'
-    const last = runs.at(-1)
-    if (last !== undefined && last.missed === missed) last.count++
-    else runs.push({ missed, count: 1 })
-  }
-  return runs
-}
 
 /** The pick's words: "Spanish", "Spanish, Geography"; empty for All folders. */
 export const pickLabel = (picked: readonly Pick<NewCardFolder, 'label'>[]): string => picked.map((f) => f.label).join(', ')

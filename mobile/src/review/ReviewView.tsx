@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom'
 import { useAnswerTimer } from '@client/review/answerTimer'
 import { cardStateText } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
-import { progressRuns } from '@client/review/inboxMenu'
 import { addedLine, resetLine, waitingLine } from '@client/review/cardWords'
 import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
@@ -215,6 +214,15 @@ function SessionScreen({
   setNotice: (text: string | null) => void
   shown: boolean
 }) {
+  // YAZ-5465 (practice merge): the Mac's Inbox stops after the due cards' first pass (YAZ-5043, `session.end`, the
+  // ring and "Learn new cards"). The phone has no such screen yet: it goes on at once, as before the merge, except at the
+  // end of Due today, where its own "No due cards left." shows (a goOn there would switch to New cards). Yaseen decides
+  // whether the phone gets the ring too.
+  const { goOn } = review
+  const ended = session.end !== null && !(session.end.kind === 'done' && session.filter === 'due')
+  useEffect(() => {
+    if (ended) goOn()
+  }, [ended, goOn])
   const card = session.card
   const page = card?.page ?? null
   const pageText = page?.text ?? null
@@ -510,7 +518,7 @@ function SessionScreen({
     advance()
   }
 
-  const filter = session.filter === 'fix' ? 'all' : session.filter
+  const filter = session.filter
   const countButton = (
     <button
       type="button"
@@ -708,16 +716,19 @@ const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role=
  * order answered — grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs.
  */
 function Progress({ session }: { session: CardReviewSession }) {
-  const size = Math.max(1, session.size)
+  // The Mac's bar (YAZ-5432): the filter on show only, `session.progress` (one rule for both apps).
+  const { runs, done } = session.progress
+  const size = Math.max(1, session.progress.size)
   const steps = size <= 80
+  const marks = runs.flatMap((run) => Array.from({ length: run.count }, () => run.missed))
   return (
-    <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={session.answered.length} data-steps={steps || undefined}>
+    <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.progress.size} aria-valuenow={done} data-steps={steps || undefined}>
       {steps
         ? Array.from({ length: size }, (_, i) => {
-            const r = session.answered[i]
-            return <span key={i} className="review__step" data-answer={r === undefined ? undefined : r === 'again' ? 'forgot' : 'remembered'} />
+            const m = marks[i]
+            return <span key={i} className="review__step" data-answer={m === undefined ? undefined : m ? 'forgot' : 'remembered'} />
           })
-        : progressRuns(session.answered).map((run, i) => <span key={i} className="review__step" data-answer={run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
+        : runs.map((run, i) => <span key={i} className="review__step" data-answer={run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
     </div>
   )
 }

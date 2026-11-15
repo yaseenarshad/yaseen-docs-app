@@ -154,11 +154,12 @@ export function InboxCardPanel({ startDrag, bodyRef, band, children }: { startDr
  * on a blank, that word; on a shown word, it hides again (round 6); elsewhere on the card, the marked word — but not on
  * a link or a sound. A mouse never scrolls.
  */
-export function InboxCardFace({ text, path, vault, steps, doors, onStep }: { text: string; path: string; vault: ExploreVault; steps: Pick<CardSteps, 'step' | 'mark' | 'showWord' | 'hideWord'>; doors: CardLinkDoors; onStep: (by: 'mouse') => void }) {
+export function InboxCardFace({ text, path, vault, steps, doors, onStep, tour }: { text: string; path: string; vault: ExploreVault; steps: Pick<CardSteps, 'step' | 'mark' | 'showWord' | 'hideWord'>; doors: CardLinkDoors; onStep: (by: 'mouse') => void; /** The guided tour's mark (YAZ-5123), in the Inbox only. */ tour?: string }) {
   const { step, mark, showWord, hideWord } = steps
   return (
     <div
       className="card card-screen card-inbox__card"
+      data-tour={tour}
       onClick={(e) => {
         if (!(e.target instanceof Element) || e.target.closest(`a[href], ${CARD_OPENS}, ${CARD_MEDIA}`) !== null) return
         const word = e.target.closest<HTMLElement>('.card__blank, .card__hidden')

@@ -338,7 +338,8 @@ folder_settings:
     expect(el.querySelector('.read-only-chip')).not.toBeNull()
   })
 
-  it('a folder whose `.folder.md` says `readonly: true` refuses a content write — a column rename — with the notice, and writes nothing', async () => {
+  // YAZ-5411: it asks the chip's "Allow edits?" first, where it showed a red line after the fact.
+  it('a folder whose `.folder.md` says `readonly: true` asks "Allow edits?" before a content write — a column rename; Cancel writes nothing and says nothing', async () => {
     disk.set(SETTINGS_FILE, { content: LOCKED_TWO, mtime: 50 })
     const el = await mount()
     rightClick(header(el, 'Priority'))
@@ -347,8 +348,11 @@ folder_settings:
     setValue(field, 'Importance')
     press(field, 'Enter')
     await flush()
+    const cancel = [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Cancel')!
+    click(cancel)
+    await flush()
     expect(writeFile).not.toHaveBeenCalled()
-    expect(errorLine(el)).toBe('Could not update the folder: This folder page is read only')
+    expect(errorLine(el)).toBeNull()
     expect(header(el, 'Importance')).toBeUndefined()
   })
 

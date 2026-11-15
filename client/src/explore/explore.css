@@ -220,7 +220,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px 8px 16px;
+  /* ONE HEIGHT (YAZ-5164, Q50): the head never grows or shrinks on a switch, a scroll or a chip that comes and goes, so
+     nothing under it moves. Its parts are centred in it; their menus drop over the page. */
+  box-sizing: border-box;
+  height: var(--explore-head-height, 41px);
+  position: relative;
+  z-index: 7;
+  padding: 0 10px 0 16px;
   border-bottom: 1px solid var(--border);
   /* The head drags the layer (round 3). */
   cursor: grab;
@@ -266,6 +272,34 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The head's title (Q50): see-through while the page's own title is in view; it fades in once that scrolls away (the
+   layer writes `data-title-shown`). Opacity only: its slot keeps its place and the head its height. */
+.explore__head > .explore__title,
+.explore__head > .explore__id {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.explore__head[data-title-shown] > .explore__title,
+.explore__head[data-title-shown] > .explore__id {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .explore__head > .explore__title,
+  .explore__head > .explore__id {
+    transition: none;
+  }
+}
+/* The page's own chips in the head (YAZ-5164 Option A): the editor's fold-all, cog, Read only chip, Sync and Saved. */
+.explore__chips {
+  gap: 8px;
+}
+.explore__chips[hidden] {
+  display: none;
+}
+/* While the layer's own chip holds the vault's Read only, the card file's chip for the same lock does not show twice. */
+.explore__head[data-layer-lock] .explore__chips .read-only-chip {
+  display: none;
+}
 .explore__mode {
   font-size: 11px;
   color: var(--fg-muted);
@@ -299,14 +333,6 @@
 /* The fold-all button in the head (item 4): the page tab's own, at the head's size. */
 .explore__head .fold-all__trigger {
   flex: none;
-}
-/* The comment stream and Linked mentions under the page (item 3), as the tab stacks them. */
-.explore__under {
-  margin-top: 24px;
-}
-.explore__under .comments,
-.explore__under .backlinks {
-  padding: 0;
 }
 .explore__button {
   flex: none;
@@ -351,36 +377,28 @@
 .explore__body:focus {
   outline: none;
 }
-/* ⌘F's bar in a reading layer (check 11): at the top of the scroller, under the head, over the text. */
-.explore__body > .find-bar-dock--page {
-  position: sticky;
-  top: 0;
-  right: 0;
-  left: 0;
-}
-.explore__body--edit {
+/* ONE PAGE FRAME (YAZ-5164 Option A): reading, editing and a card file draw the page tab's own frame in the body, its
+   scroller with the page's 48 px sides (`.editor-host`, `.card-file`); the body itself has no sides and no scroll. */
+.explore__body--frame {
   display: flex;
   flex-direction: column;
   padding: 0;
   overflow: hidden;
 }
-.explore__body--edit > .editor {
+.explore__body--frame > .editor {
   flex: 1;
   min-height: 0;
 }
+/* Reading, the body IS the page's scroller (`PageFrame`): the tab's own, with its tail under the page. */
+.explore__body.explore__body--read {
+  padding: 0 0 64px;
+}
 
-/* The zoom of a page layer (round 4): `--document-zoom` on the body, and app.css's own rule scales the reading Crepe's
-   `.ProseMirror`; the comment stream and the mentions under it scale as in a tab (`.editor-host > * > *`). */
-.explore__under > * {
-  zoom: var(--document-zoom, 1);
-}
-/* Editing: the editor inside the layer carries its own zoom on its scroller (always 100 here: the stack takes the keys
-   first). The layer's value wins, so the page zooms by the same rules as the tab; the editor's own pill is not shown. */
-.explore__body--edit .editor-host {
+/* The zoom of a page layer (round 4): `--document-zoom` on the body; the frame's own rules scale the page as in a tab.
+   The editor inside the layer carries its own zoom on its scroller (always 100 here: the stack takes the keys first),
+   a card file's view too: the layer's value wins. */
+.explore__body--frame :is(.editor-host, .card-file) {
   --document-zoom: inherit !important;
-}
-.explore__body--edit .status-chips .document-zoom {
-  display: none;
 }
 /* The pill in the head, at the head's size. */
 .explore__head .document-zoom {

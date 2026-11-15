@@ -1,4 +1,4 @@
-// YAZ-5309 (the note-cards session's note on YAZ-5393/5394): `fix` (YAZ-5097, "Fix later") is a KNOWN part of the base's
+// YAZ-5430, from the phone branch's YAZ-5309 (the note-cards session's note on YAZ-5393/5394): `fix` (YAZ-5097, "Fix later") is a KNOWN part of the base's
 // parser, as `off`, `next` and `notitle` are, so the Mac's sweeps and writers never read it as unknown, never move it,
 // and a property can never take its name. Its place: after the head (ID, title, properties) and `off` / `next` /
 // `notitle`, before the reviews.

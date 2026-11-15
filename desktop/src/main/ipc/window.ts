@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { INBOX_FILTERS, MAX_FOLD_KEYS_PER_FILE, MAX_WINDOW_ROOTS, cleanVaultName, isSidebarLens, normalizeFilesZoom, placeVaults, rootOfPath, stripSlash, type FilesAction, type FilesPreviewRequest, type InboxCarry, type OpenSetResult, type PageView, type RestoreSessionResult, type PopOutCarry, type RightPanelIdentity, type ScreenPoint, type SidebarLens, type StoredTab, type TabAction, type TabRef, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { isFiniteNumber, isRecord } from '@shared/guards'
+import { cardSkillVault } from '@shared/appVaults'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
 import { normalizeRightPanel, normalizeTabs, readStoredTab, readTabRef, type Store } from '../store'
@@ -220,8 +221,10 @@ export function registerWindowIpc(store: Store, windows: WindowManagerIpc): void
     // A Files window's page that starts (a launch, a reload) starts with its board closed (YAZ-3357 D3, D10; bug YAZ-3392):
     // main ends a wide state left from the page before, so the window is narrow again and the next board grows it.
     if (kind === 'files') windows.filesWide(id, false)
+    // The card skill's copy (YAZ-5108), once main made it: the window shows it as the app's own vault.
+    const cardSkill = cardSkillVault()
     // The copies and display names (YAZ-3057) go out with EVERY identity read: a reload keeps them, as a restart does.
-    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}) }
+    return { id, root, roots: [...roots], file, tabs: [...tabs], ...(tabStrip === undefined ? {} : { tabStrip: tabStrip.map((t) => ({ ...t })) }), ...(name === undefined ? {} : { name }), rightPanel: { ...rightPanel, items: [...rightPanel.items] }, sidebarCollapsed, sidebarLens, ...(startView !== undefined ? { startView } : {}), ...(reload !== undefined ? { reloadViews: reload.views, reloadedAtMb: reload.mb } : {}), ...(startEmpty ? { startEmpty: true as const } : {}), ...(startCollapsed ? { startCollapsed: true as const } : {}), ...(kind === undefined ? {} : { kind }), ...(kind === 'files' ? { zoom: normalizeFilesZoom(zoom) } : {}), ...(cardSkill === null ? {} : { cardSkill }) }
   })
 
   handleWithEvent(CONTRACT.window.setIdentity, async (e, patch: unknown) => {

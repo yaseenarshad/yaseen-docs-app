@@ -39,6 +39,7 @@ import type { ToolbarBuilder } from '../createCrepe'
 import { cleanCardTitle } from '@shared/cardLine'
 import { joinCardParts, sideMarkdown, sideWithEdges, splitCardText, type CardParts } from './cardEditorText'
 import { cardBand, UNTITLED_CARD } from './cardBand'
+import { setTourTyper, tourEvent } from '../../course/tourBus'
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The hidden word: the `cloze` mark
@@ -215,7 +216,10 @@ export const toggleCloze =
     const run = clozeRunAround(state, type, from, to)
     if (dispatch === undefined) return true
     if (run !== null) dispatch(state.tr.removeMark(run.from, run.to, type).scrollIntoView())
-    else dispatch(state.tr.addMark(from, to, type.create({ prefix: null, key: ++clozeKeys })).scrollIntoView())
+    else {
+      dispatch(state.tr.addMark(from, to, type.create({ prefix: null, key: ++clozeKeys })).scrollIntoView())
+      tourEvent('card-word-hidden')
+    }
     return true
   }
 
@@ -314,6 +318,7 @@ export const newSide =
       tr.setSelection(TextSelection.create(tr.doc, after + 2))
     }
     dispatch(tr.scrollIntoView())
+    tourEvent('card-side-added')
     return true
   }
 
@@ -434,6 +439,26 @@ function sidesOf(doc: ProseNode): ProseNode[][] {
 
 const sameNodes = (a: readonly ProseNode[], b: readonly ProseNode[]): boolean => a.length === b.length && a.every((n, i) => n.eq(b[i]))
 
+/**
+ * Types `text` as a person would (YAZ-5125, the tour's "Use an example"): each letter goes through the editor's
+ * `handleTextInput` props first (input rules, the `[[` picker, the tour's `card-text-changed`), as ProseMirror does for a
+ * key; a letter no prop takes is inserted. `newSide`: first the editor's own New side (the `/` row's command).
+ * `lineEnd`: first the caret goes to the end of its line.
+ */
+export function typeLikeAPerson(view: EditorView, text: string, o: { newSide?: boolean; lineEnd?: boolean; sideBreak?: NodeType } = {}): void {
+  if (o.lineEnd === true) {
+    const { $head } = view.state.selection
+    if ($head.parent.isTextblock) view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, $head.end())))
+  }
+  if (o.newSide === true && o.sideBreak !== undefined) newSide(o.sideBreak)(view.state, (tr) => view.dispatch(tr))
+  for (const letter of text) {
+    const { from, to } = view.state.selection
+    const deflt = () => view.state.tr.insertText(letter, from, to)
+    if (view.someProp('handleTextInput', (f) => f(view, from, to, letter, deflt)) !== true) view.dispatch(deflt())
+  }
+  view.focus()
+}
+
 /** The card's editor's own plugins: the sides, the hidden word, the keys, the change watch. */
 function cardPlugins(doors: CardEditorDoors, escapeTaken: () => boolean) {
   const keys = $shortcut((ctx) => ({
@@ -445,16 +470,25 @@ function cardPlugins(doors: CardEditorDoors, escapeTaken: () => boolean) {
     CardNewSide: { key: 'Mod-Shift-Enter', priority: 250, onRun: () => newSide(sideBreakSchema.type(ctx)) },
   }))
   const watch = $prose(
-    () =>
+    (ctx) =>
       new Plugin({
         key: new PluginKey('mdapp-card-editor-watch'),
         // Spell check in the card's text, as in a page.
-        props: { attributes: { spellcheck: 'true' } },
-        view: () => ({
-          update: (view, prev) => {
-            if (view.state.doc !== prev.doc) doors.changed()
-          },
-        }),
+        props: {
+          attributes: { spellcheck: 'true' },
+          // The course's guided tour (YAZ-5123): the person typed in the card. Typing goes on as always.
+          handleTextInput: () => (tourEvent('card-text-changed'), false),
+        },
+        view: (editorView) => {
+          // The guided tour's "Use an example" (YAZ-5125) types here through ProseMirror's own path for typed text.
+          setTourTyper(editorView.dom, { type: (text, o) => typeLikeAPerson(editorView, text, { ...o, sideBreak: sideBreakSchema.type(ctx) }) })
+          return {
+            update: (view, prev) => {
+              if (view.state.doc !== prev.doc) doors.changed()
+            },
+            destroy: () => setTourTyper(editorView.dom, null),
+          }
+        },
       }),
   )
   return [clozeRemark, clozeSchema, toggleClozeCommand, clozeInputRule, sideBreakSchema, newSideCommand, sideBreakInputRule, keys, watch].flat()

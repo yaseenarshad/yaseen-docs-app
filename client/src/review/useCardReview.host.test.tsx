@@ -68,7 +68,11 @@ const step = async (run: () => unknown): Promise<void> => {
   await act(async () => void (await run()))
   await act(async () => reindex())
 }
-const shown = (id: string) => vi.waitFor(() => expect(review.session?.card).toMatchObject({ id, page: { id } }))
+// After the due cards' first pass the Mac's session stops (YAZ-5043, `end`); the test goes on as the phone does (YAZ-5465).
+const shown = async (id: string) => {
+  if (review.session?.end != null) act(() => review.goOn())
+  await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id, page: { id } }))
+}
 const answer = async (id: string, rating: 'again' | 'good'): Promise<void> => {
   await shown(id)
   vi.setSystemTime(Date.now() + 20_000)
@@ -110,18 +114,17 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     const before = host.files.get(`${ROOT}/K.md`)
     await answer('WIKI-5', 'again')
     expect(reviewsOn('K.md', 'WIKI-5').map((r) => r.rating)).toEqual(['good', 'good', 'again'])
-    await shown('WIKI-6')
-    expect([review.session?.position, review.session?.total]).toEqual([2, 3])
+    // The due cards' first pass is done with a miss: the Mac's stop (YAZ-5043, merged in YAZ-5465).
+    await vi.waitFor(() => expect(review.session?.end?.kind).toBe('missed'))
     // Undo: the review out, the file the same bytes, the card back at its place.
     await step(() => review.undo())
     expect(host.files.get(`${ROOT}/K.md`)).toBe(before)
     await shown('WIKI-5')
     expect([review.session?.position, review.session?.total, review.session?.canUndo]).toEqual([1, 2, false])
-    // Forgot, then the new card twice Remembered; the forgotten card comes back last.
+    // Forgot again; the missed pass brings it back first, then the new card twice Remembered.
     await answer('WIKI-5', 'again')
-    await answer('WIKI-6', 'good')
-    await shown('WIKI-5')
     await answer('WIKI-5', 'good')
+    await answer('WIKI-6', 'good')
     await answer('WIKI-6', 'good')
     expect(review.session?.card).toBeNull()
     expect(review.dueCount).toBe(0)

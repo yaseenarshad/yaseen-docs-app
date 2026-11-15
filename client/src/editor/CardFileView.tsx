@@ -33,6 +33,11 @@
  *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
  *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
  *    own card search), the Edit card editor's text while it is open.
+ *  - COMMENTS (YAZ-5466): the page's one comments block (`CommentsSection`, the file's front matter `comments`), under the
+ *    card and its strip, where a page has it: write, reply, edit your own, resolve, delete, the order setting. `comments`
+ *    is the file's (decision D): it stays in the front matter beside `kind: card`, never on the card line, never a card
+ *    property. Comments are not edits (YAZ-5466 Q56): while the tab is Read only, a comment write goes
+ *    through with no "Allow edits?", never unlocks the tab and never touches the card part.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
@@ -44,7 +49,8 @@ import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { tellReadOnlyEdit } from './readOnlyEdit'
 import { withCardNext, type CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
-import type { FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
+import type { CommentsOrder, FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
+import { CommentsSection } from '../comments/CommentsSection'
 import type { SaveStatus } from '../lib/autosave'
 import { transformFile } from '../views/writeProperty'
 import { api, BridgeRequestError } from '../api'
@@ -79,6 +85,7 @@ import { dirname } from '../lib/paths'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createCardFinder } from './find/cardFind'
+import { tourEvent } from '../course/tourBus'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -104,6 +111,9 @@ export interface CardFileViewProps {
   /** The top bar's sync chip (YAZ-5102), as a page's: App's `useGithubSync`. */
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
+  /** The comments' order (YAZ-5466): the app's one setting, as a page's block reads it. Absent: no comments block. */
+  commentsOrder?: CommentsOrder
+  onChangeCommentsOrder?: (order: CommentsOrder) => void
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -125,7 +135,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: CardFileViewProps) {
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
@@ -178,6 +188,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   // A card New card just made (YAZ-5037) opens in Edit card, one time only.
   const [fresh] = useState(() => isNewCard(path))
   useEffect(() => forgetNewCard(path), [path])
+  // The course's guided tour (YAZ-5123): a card file opened in a tab.
+  useEffect(() => tourEvent('card-file-open', path), [path])
   const [editing, setEditing] = useState(fresh)
   const editingRef = useRef(editing)
   editingRef.current = editing
@@ -241,6 +253,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       () => {
         setSave('saved')
         setEditing(false)
+        tourEvent('card-edit-done', path)
       },
       () => setSave('error'),
     )
@@ -250,8 +263,13 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
    * (YAZ-5145 round 2): the chip's card shows, and once the person allows edits, Edit card opens with no second E.
    */
   const startEdit = () => {
-    if (canEdit) return setEditing(true)
-    if (card !== null && content !== null && lockedBase && bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', () => setEditing(true))
+    // The guided tour (YAZ-5123) hears Edit card each time it opens.
+    const open = () => {
+      setEditing(true)
+      tourEvent('card-edit-open', path)
+    }
+    if (canEdit) return open()
+    if (card !== null && content !== null && lockedBase && bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', open)
   }
   const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onKeyDown = (event: ReactKeyboardEvent) => {
@@ -394,7 +412,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
                   {reviewOn && card.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
                   {card.fix === true && <span className="card__state card__fix">To fix</span>}
                   {(canEdit || lockedBase) && (
-                    <button type="button" className="card__edit" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
+                    <button type="button" className="card__edit" data-card-file-edit data-tour="card-edit" onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
                       Edit card
                     </button>
                   )}
@@ -410,6 +428,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               }
             />
           )}
+          {/* YAZ-5466: the page's comments block, under the card and its strip; the file's front matter is its store. */}
+          {commentsOrder !== undefined && onChangeCommentsOrder !== undefined && <CommentsSection file={{ path, content }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />}
         </div>
       </div>
     </>
@@ -431,6 +451,7 @@ function CardFileMore({ sections }: { sections: () => MenuSection[] }) {
       <button
         type="button"
         className="card__more"
+        data-tour="card-menu"
         aria-label="More actions"
         aria-haspopup="menu"
         aria-expanded={at !== null}

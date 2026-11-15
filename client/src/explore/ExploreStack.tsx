@@ -28,7 +28,7 @@ import { useSearchCandidates, type SearchVault } from '../search/useSearchResult
 import { ContextMenu } from '../sidebar/ContextMenu'
 import { ExploreBoard } from './ExploreBoard'
 import { ExploreCard } from './ExploreCard'
-import { ExplorePage, type ExploreVault } from './ExplorePage'
+import { ExplorePage, type ExploreVault, type PageFrameDoors } from './ExplorePage'
 import { explorePageSections } from './exploreMenu'
 import { exploreRecents, onExploreMove, rememberExploreRecent } from './exploreRecents'
 import { ExploreSearch, type SearchLink } from './ExploreSearch'
@@ -71,6 +71,11 @@ export interface ExploreStackProps {
   onNotice: (message: string) => void
   /** The tab menu's "Rename file" (App's `renameInSidebar`): the page menu's row (round 1, items 6 and 7). */
   onRenameFile?: (path: string) => void
+  /**
+   * One page frame (YAZ-5164 Option A): a reading page layer draws the page's title and Properties as its tab does. The
+   * vault's property declarations, and App's title door (a click on the title renames, as in the tab).
+   */
+  pageFrameOf?: (path: string) => PageFrameDoors
   /** The comment stream's order and its toggle (YAZ-1515): a page layer shows the stream as its tab does (round 1, item 3). */
   commentsOrder: CommentsOrder
   onChangeCommentsOrder: (order: CommentsOrder) => void
@@ -139,12 +144,12 @@ const TABBABLE = 'button:not([disabled]), input:not([disabled]), select:not([dis
 
 /** A card file's view in an edit layer (YAZ-5143): its body takes the keyboard, as the page's open document does. */
 function focusCardFile(layer: HTMLElement): boolean {
-  const body = layer.querySelector<HTMLElement>('.explore__body--edit [data-card-file-body]')
+  const body = layer.querySelector<HTMLElement>('.explore__body [data-card-file-body]')
   body?.focus({ preventScroll: true })
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -774,6 +779,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
                 idInTitle={idsInTitle(layer.path)}
                 vault={vaultOf(layer.path)}
                 style={textVarsFor(layer.path)}
+                frame={pageFrameOf?.(layer.path)}
                 onOpenLink={openPath}
                 renderEditor={renderEditor}
                 createFolder={createFolder}

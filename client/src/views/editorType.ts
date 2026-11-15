@@ -2,7 +2,7 @@ import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/type
 import { orderedPropertyOptions } from '@shared/propertyOptions'
 import type { FolderSettings } from './folderSettings'
 import { canonicalKey } from './view/keys'
-import { CARD_STATUSES } from './cardRows'
+import { CARD_FIX_STATUSES, CARD_STATUSES } from './cardRows'
 
 /**
  * Editor type inference for inline cell editors (5B, GRO-2142). Locked precedence, as amended
@@ -73,6 +73,7 @@ const DECLARED_KIND: Record<Exclude<PropertyKind, 'mentions'>, EditorKind> = {
 }
 
 const CARD_STATUS_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_STATUSES }
+const CARD_FIX_TYPING: ColumnTyping = { assigned: 'select', dominant: null, options: CARD_FIX_STATUSES }
 const CARD_UP_NEXT_TYPING: ColumnTyping = { assigned: 'checkbox', dominant: null }
 
 /**
@@ -86,8 +87,10 @@ export function columnTyping(
   settings?: FolderSettings | null,
 ): ColumnTyping {
   const c = canonicalKey(key)
-  // A card row's two edited columns (YAZ-5319): Card status, a Select of Active and Archived; Card up next, a checkbox.
+  // A card row's edited columns (YAZ-5319): Card status, a Select of Active and Archived; Card fix status (YAZ-5430), a
+  // Select of Needs fixing, blank when not marked; Card up next, a checkbox.
   if (c === 'card.status') return CARD_STATUS_TYPING
+  if (c === 'card.fix') return CARD_FIX_TYPING
   if (c === 'card.upNext') return CARD_UP_NEXT_TYPING
   if (!c.startsWith('note.')) return null
   const bare = c.slice(5)

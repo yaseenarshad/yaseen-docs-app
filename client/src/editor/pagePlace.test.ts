@@ -2,9 +2,9 @@
  * A page's place as a place in its text (YAZ-5164): the block at the scroller's top edge and how far below the edge it
  * starts, read off one view and put back in another view of the same text that has other things above it.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EditorView } from '@milkdown/kit/prose/view'
-import { holdPagePlace, readPagePlace, readSwapPlace, scrollerOf, showPagePlace, showSwapPlace } from './pagePlace'
+import { freezeScroll, holdPagePlace, keepPlace, readPagePlace, readSwapPlace, scrollerOf, showBoxAt, showPagePlace, showSwapPlace } from './pagePlace'
 
 /** A box at `top`, `height` tall, in window px; `drawn` false is a block folded away (no client rects). */
 function block(top: number, height: number, drawn = true): HTMLElement {
@@ -185,5 +185,124 @@ describe('readSwapPlace / showSwapPlace (a card, read ⇄ Edit card)', () => {
     const other = cardView(['nothing alike'], 60, 0, 0)
     showSwapPlace(scrollerFor(other), other.box, place!)
     expect(other.box.getBoundingClientRect().top).toBe(-1212)
+  })
+})
+
+/**
+ * ROUND 2 (YAZ-5164): at the bottom the view a switch opens can be shorter under the line; and the place is the person's
+ * again at their first wheel, touch, press or key.
+ */
+describe('room at the bottom, and the place given back', () => {
+  /** A real scroller of `content` px under `view` px, its padding-bottom counted, its scrollTop clamped as a browser does. */
+  function realScroller(content: number, view: number): HTMLElement {
+    const el = document.createElement('div')
+    el.style.paddingBottom = '0px'
+    let top = 0
+    const height = () => content + (parseFloat(el.style.paddingBottom) || 0)
+    Object.defineProperty(el, 'clientHeight', { get: () => view })
+    Object.defineProperty(el, 'scrollHeight', { get: () => height() })
+    Object.defineProperty(el, 'scrollTop', {
+      get: () => top,
+      set: (v: number) => {
+        top = Math.max(0, Math.min(v, height() - view))
+        el.dispatchEvent(new Event('scroll'))
+      },
+    })
+    el.getBoundingClientRect = () => ({ top: 0, bottom: view, left: 0, right: 100, width: 100, height: view, x: 0, y: 0, toJSON: () => ({}) })
+    document.body.appendChild(el)
+    return el
+  }
+  /** A line `at` px down the content of `scroller`. */
+  function lineIn(scroller: HTMLElement, at: number): HTMLElement {
+    const el = document.createElement('p')
+    el.getBoundingClientRect = () => ({ top: at - scroller.scrollTop, bottom: at - scroller.scrollTop + 20, left: 0, right: 100, width: 100, height: 20, x: 0, y: at - scroller.scrollTop, toJSON: () => ({}) })
+    scroller.appendChild(el)
+    return el
+  }
+  // jsdom lays nothing out: no size ever changes, the observer only has to be there.
+  beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }))
+  afterEach(() => {
+    document.body.innerHTML = ''
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('a line at the bottom stays at its spot: the scroller gets the px it lacks under it, and gives them back as the person scrolls up', () => {
+    // 1000 px of page in a 400 px view: the line 950 px down can stand at most 350 px below the top edge.
+    const sc = realScroller(1000, 400)
+    const line = lineIn(sc, 950)
+    showBoxAt(sc, line, 300)
+    expect(line.getBoundingClientRect().top).toBe(300)
+    expect(sc.style.paddingBottom).toBe('50px')
+    // The person scrolls up 30 px: 30 px of room go, nothing on screen moves.
+    sc.scrollTop -= 30
+    expect(line.getBoundingClientRect().top).toBe(330)
+    expect(sc.style.paddingBottom).toBe('20px')
+    sc.scrollTop -= 100
+    expect(sc.style.paddingBottom).toBe('0px')
+  })
+
+  it('no room when the place fits', () => {
+    const sc = realScroller(1000, 400)
+    showBoxAt(sc, lineIn(sc, 500), 100)
+    expect(sc.scrollTop).toBe(400)
+    expect(sc.style.paddingBottom).toBe('0px')
+  })
+
+  it('a hold gives the scroll back at the first wheel: no "hang on the scroll up"', () => {
+    const sc = realScroller(2000, 400)
+    sc.scrollTop = 1000
+    const thaw = freezeScroll(sc)
+    sc.scrollTop = 900
+    expect(sc.scrollTop).toBe(1000)
+    sc.dispatchEvent(new Event('wheel'))
+    sc.scrollTop = 900
+    expect(sc.scrollTop).toBe(900)
+    thaw()
+  })
+
+  it('a hold at the bottom keeps the line there while the view under it gets shorter', () => {
+    let content = 1000
+    const sc = document.createElement('div')
+    let top = 0
+    Object.defineProperty(sc, 'clientHeight', { get: () => 400 })
+    Object.defineProperty(sc, 'scrollHeight', { get: () => content + (parseFloat(sc.style.paddingBottom) || 0) })
+    // A browser clamps the scroll when the page under it gets shorter.
+    Object.defineProperty(sc, 'scrollTop', { get: () => (top = Math.min(top, sc.scrollHeight - 400)), set: (v: number) => (top = Math.max(0, Math.min(v, sc.scrollHeight - 400))) })
+    sc.scrollTop = 600
+    const thaw = freezeScroll(sc)
+    content = 940
+    expect(sc.scrollTop).toBe(600)
+    thaw()
+  })
+
+  it('keepPlace puts the place back until the person scrolls, and stops by itself', () => {
+    vi.useFakeTimers()
+    const sc = realScroller(2000, 400)
+    const put = vi.fn()
+    const stop = keepPlace(sc, put, 1000)
+    expect(put).toHaveBeenCalledTimes(1)
+    window.dispatchEvent(new Event('keydown'))
+    stop()
+    const later = vi.fn()
+    keepPlace(sc, later, 1000)
+    vi.advanceTimersByTime(1001)
+    expect(later).toHaveBeenCalledTimes(1)
+  })
+
+  it('keepPlace ends when the scroll goes elsewhere (a jump of the outline, a find): that place is the one asked for', async () => {
+    const sc = realScroller(2000, 400)
+    const put = vi.fn()
+    const stop = keepPlace(sc, put, 1000)
+    // A block drawn in while it holds: the place is put back.
+    sc.appendChild(document.createElement('p'))
+    await Promise.resolve()
+    expect(put).toHaveBeenCalledTimes(2)
+    sc.scrollTop = 700
+    // The observers would put the place back now; ended, they do not.
+    sc.appendChild(document.createElement('p'))
+    await Promise.resolve()
+    expect(put).toHaveBeenCalledTimes(2)
+    stop()
   })
 })

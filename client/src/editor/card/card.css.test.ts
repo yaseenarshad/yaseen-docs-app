@@ -193,13 +193,16 @@ it('YAZ-5049 round 2: the Inbox card is one long page, as Mochi — no scroll ba
   const body = rules(screens, '.card-inbox__body').find((r) => r.selector === '.card-inbox__body')!
   expect(body.body).not.toMatch(/overflow/)
   const column = rules(screens, '.card-inbox__column').find((r) => r.selector === '.card-inbox__column')!
-  expect(column.body).toMatch(/flex:\s*none/)
+  // It never shrinks to the window (its card's height or more). YAZ-5431: it grows to fill the view, so a short card's
+  // buttons sit at the view's bottom (the dock's `margin-top: auto`), as a long card's stuck buttons do.
+  expect(column.body).toMatch(/flex:\s*1 0 auto/)
   expect(column.body).not.toMatch(/min-height:\s*0/)
   expect(rules(screens, '.card-inbox').find((r) => r.selector === '.card-inbox')!.body).toMatch(/overflow:\s*auto/)
   expect(rules(screens, '.card-inbox__top').find((r) => r.selector === '.card-inbox__top')!.body).toMatch(/position:\s*sticky;\s*top:\s*0/)
   const dock = rules(screens, '.card-inbox__dock').find((r) => r.selector === '.card-inbox__dock')!
   expect(dock.body).toMatch(/position:\s*sticky/)
-  expect(dock.body).toMatch(/bottom:/)
+  expect(dock.body).toMatch(/bottom:\s*0/)
+  expect(dock.body).toMatch(/margin-top:\s*auto/)
 })
 
 it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes the colour in the look of Shown hidden words: the line, the highlight, or the box', () => {
@@ -243,6 +246,11 @@ it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in t
   expect(label.body).not.toMatch(/font-weight/)
   const screens = read('../../review/cardScreens.css')
   expect(rules(screens, '.card-inbox__card .card__rule::before').some((r) => /content:\s*none/.test(r.body))).toBe(true)
+})
+
+it('YAZ-5164 round 2: Edit card`s side break has the read rule`s room, so Done draws side 2 where Edit card had it', () => {
+  const margin = (sel: string) => rules(cardCss, sel).find((r) => r.selector === sel && /margin:/.test(r.body))!.body.match(/margin:\s*([^;]+);/)![1].trim()
+  expect(margin('.card .card__side-break')).toBe(margin('.card .card__rule'))
 })
 
 it('YAZ-5105 round 4: ONE Reviews strip — card.css holds none of its rules; cardScreens.css draws it a step darker than the side colour, in the page too (over Crepe`s reset)', () => {

@@ -11,6 +11,7 @@ import { readComments } from '@shared/comments'
 import { IDS_FILE, isPageId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR, type IndexRecord } from '@shared/types'
 import { createStore } from '../main/store'
+import { duplicateCardSkill } from '../main/cardSkillDuplicate'
 import { sweepIds } from '../main/vaultIndex/idSweep'
 import { macId } from '../main/vaultIndex/mint'
 import { scanFile } from '../main/vaultIndex/scan'
@@ -886,7 +887,7 @@ describe('card files (YAZ-5037)', () => {
       expect(await run(['card', 'new', hidden, '--title', 'X'])).toMatchObject({ code: 1, err: `${hidden} is not a folder the vault shows\n` })
     }
     // The name the title and the new number give is there already: refused, and the file is kept (the number is spent).
-    expect(await run(['card', 'new', root, '--title', 'Taken'])).toEqual({ code: 1, out: '', err: `${path.join(root, 'taken-yaz-6.md')} is already there\n` })
+    expect(await run(['card', 'new', root, '--title', 'Taken', '--body', '{{x}}'])).toEqual({ code: 1, out: '', err: `${path.join(root, 'taken-yaz-6.md')} is already there\n` })
     expect(await readFile(path.join(root, 'taken-yaz-6.md'), 'utf8')).toBe('Mine.\n')
     for (const argv of [
       ['card', 'new'],
@@ -949,7 +950,7 @@ describe('card files (YAZ-5037)', () => {
 
   it('the contract names `card new`, the card file, `cardFile` and the kind `card`', () => {
     const help = HELP.replace(/\s+/g, ' ')
-    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`page`, `card` or `folder`;', '`kind` is `page`, `card`, `folder` or `missing`']) expect(help).toContain(said)
+    for (const said of ['yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--hide-title] [--json]', '`kind: card`', 'This is a card file. Use `card new`.', '`cardFile: true`', '(`page`, `card` or `folder`;', '`kind` is `page`, `card`, `folder` or `missing`']) expect(help).toContain(said)
   })
 })
 
@@ -1246,5 +1247,206 @@ describe('daily and new (YAZ-4269)', () => {
     expect((await run(['new', path.join(root, 'projects')])).code).toBe(2)
     expect((await run(['new', path.join(root, 'projects', 'Gym plan.md'), '--title', 'X'])).err).toMatch(/is not a folder/)
     expect((await run(['new', path.join(root, 'gone'), '--title', 'X'])).err).toBe(`no folder ${path.join(root, 'gone')}\n`)
+  })
+})
+
+describe('card guide (YAZ-5110)', () => {
+  /** The app's profile in the temp dir (S13): its copy of the card skill is `<profile>/card-skill`. */
+  let profile: string
+  let cwd: string
+  beforeEach(async () => {
+    profile = path.join(dir, 'profile')
+    await mkdir(profile)
+    vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', profile)
+    cwd = process.cwd()
+  })
+  afterEach(() => {
+    process.chdir(cwd)
+    vi.unstubAllEnvs()
+  })
+
+  /** The app's copy, as the app makes it at its start: the start page and the folder's two vault files. */
+  async function appCopy(start = '# Start here\n\nThe app copy.\n'): Promise<string> {
+    const copy = path.join(profile, 'card-skill')
+    await mkdir(path.join(copy, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(path.join(copy, 'Start here.md'), start)
+    await writeFile(path.join(copy, VAULT_CONFIG_DIR, IDS_FILE), '{"enabled":false}')
+    return copy
+  }
+
+  it("prints the app copy's start page outside a vault", async () => {
+    await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nThe app copy.\n', err: '' })
+  })
+
+  it('--path prints the folder in double quotes (the path has a space on macOS)', async () => {
+    const copy = await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide', '--path'])).toEqual({ code: 0, out: `"${copy}"\n`, err: '' })
+  })
+
+  it("inside a vault with a `Card skill` folder, the user's duplicate wins, from any folder of the vault", async () => {
+    await appCopy()
+    const root = await vault('v', { 'Card skill/Start here.md': '# Start here\n\nMy own version.\n', 'pages/deep/a.md': '' })
+    process.chdir(path.join(root, 'pages', 'deep'))
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nMy own version.\n', err: '' })
+    expect(await run(['card', 'guide', '--path'])).toEqual({ code: 0, out: `"${path.join(root, 'Card skill')}"\n`, err: '' })
+  })
+
+  it('YAZ-5109 done when: after "Duplicate into <vault>…" and an edit of a page, `card guide` prints the edited text', async () => {
+    const copy = await appCopy()
+    const root = await vault('v', { 'a.md': '' })
+    const { made } = (await duplicateCardSkill(copy, root)) as { made: string }
+    await writeFile(path.join(made, 'Start here.md'), '# Start here\n\nMy edit.\n')
+    process.chdir(root)
+    expect(await run(['card', 'guide'])).toEqual({ code: 0, out: '# Start here\n\nMy edit.\n', err: '' })
+    expect(await readFile(path.join(copy, 'Start here.md'), 'utf8')).toBe('# Start here\n\nThe app copy.\n')
+  })
+
+  it("inside a vault without a `Card skill` folder, the app's copy", async () => {
+    const copy = await appCopy()
+    const root = await vault('v', { 'a.md': '' })
+    process.chdir(root)
+    expect((await run(['card', 'guide', '--path'])).out).toBe(`"${copy}"\n`)
+  })
+
+  it('no copy yet (the app never started): one line, exit 1', async () => {
+    process.chdir(dir)
+    const copy = path.join(profile, 'card-skill')
+    for (const argv of [['card', 'guide'], ['card', 'guide', '--path']]) {
+      expect(await run(argv)).toEqual({ code: 1, out: '', err: `The card skill is not there yet: start Yaseen Docs once to make ${copy}\n` })
+    }
+  })
+
+  it('a folder with no start page is refused, exit 1', async () => {
+    const copy = await appCopy()
+    await rm(path.join(copy, 'Start here.md'))
+    process.chdir(dir)
+    expect(await run(['card', 'guide'])).toEqual({ code: 1, out: '', err: `no Start here.md in ${copy}\n` })
+  })
+
+  it('takes no other flag and no argument', async () => {
+    await appCopy()
+    process.chdir(dir)
+    expect(await run(['card', 'guide', '--json'])).toEqual({ code: 2, out: '', err: `card guide does not take --json\n${USAGE}\n` })
+    expect(await run(['card', 'guide', 'x'])).toEqual({ code: 2, out: '', err: `card guide takes no argument\n${USAGE}\n` })
+  })
+
+  it('the help lists the verb and tells an agent to run it first', () => {
+    expect(USAGE).toContain('yaseendocs card guide [--path]')
+    expect(USAGE.indexOf('yaseendocs card guide')).toBe(USAGE.indexOf('\n', USAGE.indexOf('yaseendocs card next')) + 3)
+    const help = HELP.replace(/\s+/g, ' ')
+    for (const said of ['Run `yaseendocs card guide` before you add or change a card.', '`--path`', 'Card skill']) expect(help).toContain(said)
+    expect(help).not.toMatch(/note card guide/) // rename-note-to-page: keep (the old name stays out of the help)
+  })
+})
+
+describe('--hide-title (YAZ-5135)', () => {
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('card add --hide-title writes `notitle` on the new card line; without it, no `notitle`', async () => {
+    const root = await vault('cards', { 'deck.md': '---\nid: YAZ-5\n---\n# Deck\n' })
+    const deck = path.join(root, 'deck.md')
+    expect((await run(['card', 'add', deck, '--title', 'Capital of France', '--body', 'The capital is {{Paris}}', '--hide-title'])).code).toBe(0)
+    expect(await run(['card', 'add', deck, '--title', 'Shown', '--body', '{{Rome}}'])).toMatchObject({ code: 0 })
+    // No --title: the card has none (YAZ-5308: no line of --body is ever its title), and the flag still applies.
+    expect(JSON.parse((await run(['card', 'add', deck, '--body', 'Body line\n{{x}}', '--hide-title', '--json'])).out)).toEqual({ id: 'YAZ-8', page: deck, title: '' })
+    const content = await readFile(deck, 'utf8')
+    // The title is on the card line, right after the ID; `notitle` comes after it (YAZ-5308).
+    expect(content).toContain(card('The capital is {{Paris}}', 'YAZ-6, title "Capital of France", notitle'))
+    expect(content).toContain(card('{{Rome}}', 'YAZ-7, title "Shown"'))
+    expect(content).toContain(card('Body line\n{{x}}', 'YAZ-8, notitle'))
+  })
+
+  it('card new --hide-title writes `notitle` on the card file\'s line; without it, no `notitle`', async () => {
+    const root = await vault('cards', { 'geo/a.md': '' })
+    const geo = path.join(root, 'geo')
+    expect((await run(['card', 'new', geo, '--title', 'Capital of France', '--body', '{{Paris}}', '--hide-title'])).code).toBe(0)
+    // Front matter holds only `kind: card`; the title is on the card line, `notitle` after it (YAZ-5308).
+    expect(await readFile(path.join(geo, 'capital-of-france-yaz-1.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('{{Paris}}', 'YAZ-1, title "Capital of France", notitle')}`)
+    expect((await run(['card', 'new', geo, '--title', 'Shown'])).code).toBe(0)
+    expect(await readFile(path.join(geo, 'shown-yaz-2.md'), 'utf8')).toBe(`---\nkind: card\n---\n${card('', 'YAZ-2, title "Shown"')}`)
+  })
+
+  it('the help lists the flag on both commands and says not to hide the title in {{ }}', () => {
+    expect(USAGE).toMatch(/yaseendocs card add <page\.md> [^\n]*\[--hide-title\]/)
+    expect(USAGE).toMatch(/yaseendocs card new <folder> [^\n]*\[--hide-title\]/)
+    expect(HELP.replace(/\s+/g, ' ')).toContain('Do not put the title in `{{ }}`. Use `--hide-title`.')
+  })
+})
+
+describe('no card check (YAZ-5116: removed)', () => {
+  const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
+
+  it('`card check` answers as any unknown card command, and `--strict` as any unknown flag; the help names neither', async () => {
+    const root = await vault('cards', { 'deck.md': `---\nid: YAZ-1\n---\n${card('Title\nIt is {{}}', 'YAZ-2')}`, 'geo/a.md': '' })
+    const deck = path.join(root, 'deck.md')
+    const before = await readFile(deck, 'utf8')
+    expect(await run(['card', 'check', deck])).toEqual({ code: 2, out: '', err: `unknown card command: check\n${USAGE}\n` })
+    expect(await run(['card', 'check', deck, '--json'])).toEqual({ code: 2, out: '', err: `unknown card command: check\n${USAGE}\n` })
+    expect(await run(['card', 'add', deck, '--body', 'It is {{}}', '--strict'])).toEqual({ code: 2, out: '', err: `unknown flag: --strict\n${USAGE}\n` })
+    expect(await run(['card', 'new', path.join(root, 'geo'), '--title', 'Title', '--strict'])).toEqual({ code: 2, out: '', err: `unknown flag: --strict\n${USAGE}\n` })
+    expect(await readFile(deck, 'utf8')).toBe(before)
+    expect(await readdir(path.join(root, 'geo'))).toEqual(['a.md'])
+    expect((await run(['card'])).err).toBe(`card needs add, new, next or guide\n${USAGE}\n`)
+    for (const text of [USAGE, HELP]) {
+      expect(text).not.toContain('card check')
+      expect(text).not.toContain('--strict')
+    }
+  })
+
+  it('card add and card new write the card as it is: no warning, whatever the card says', async () => {
+    const root = await vault('cards', { 'deck.md': '---\nid: YAZ-5\n---\n# Deck\n', 'geo/a.md': '' })
+    const deck = path.join(root, 'deck.md')
+    expect(await run(['card', 'add', deck, '--title', 'Title', '--body', 'It is {{Rome'])).toEqual({ code: 0, out: `added YAZ-6 to ${deck}\n`, err: '' })
+    expect(await readFile(deck, 'utf8')).toContain(card('It is {{Rome', 'YAZ-6, title "Title"'))
+    expect(await run(['card', 'new', path.join(root, 'geo'), '--title', 'Plain fact', '--body', 'Paris is in France.'])).toMatchObject({ code: 0, err: '' })
+  })
+
+  it('YAZ-5146: due reads a page with Windows line ends as its \\n twin, and a \\r\\n card file\'s title off its card line (YAZ-5308)', async () => {
+    const page = `# CRLF\n\n${card('What is it?\n---\nParis', 'YAZ-9, title "Capital of France"')}\n${card('It is {{x}}.', 'YAZ-10, title "Title"')}`
+    const file = `---\nkind: card\n---\n${card('It is {{Rome}}.', 'YAZ-11, title "Capital of Italy"')}`
+    const root = await vault('cards', { 'crlf.md': page.replace(/\n/g, '\r\n'), 'lf.md': page, 'capital-of-italy-yaz-11.md': file.replace(/\n/g, '\r\n') })
+    const rows = async (name: string) => JSON.parse((await run(['due', path.join(root, name), '--json'])).out).map((r: { id: string; title: string }) => [r.id, r.title])
+    expect(await rows('crlf.md')).toEqual([['YAZ-9', 'Capital of France'], ['YAZ-10', 'Title']])
+    expect(await rows('crlf.md')).toEqual(await rows('lf.md'))
+    expect(await rows('capital-of-italy-yaz-11.md')).toEqual([['YAZ-11', 'Capital of Italy']])
+  })
+})
+
+/** YAZ-5466: comments on a card file, from the CLI: the file's front matter, the card block and line byte for byte. */
+describe('comments on a card file (YAZ-5466)', () => {
+  it('card new --prop, then comment, reply, edit and delete: the card part stays byte for byte; `card add` still refuses it', async () => {
+    const root = await vault('cards', { 'Cards/.keep': '' })
+    const made = JSON.parse((await run(['card', 'new', path.join(root, 'Cards'), '--title', 'Rivers, of Seville', '--prop', 'tags=rivers', '--prop', 'source=Atlas, 2nd ed.', '--body', 'Q\n---\nA', '--json'])).out) as { path: string }
+    const before = await readFile(made.path, 'utf8')
+    const card = before.slice(before.indexOf('```card'))
+    expect((await run(['comment', made.path, '--body', 'Is this right?'])).out).toBe(`#1 added to ${made.path}\n`)
+    expect((await run(['comment', made.path, '--reply-to', '1', '--body', 'Yes, it is.'])).code).toBe(0)
+    expect((await run(['edit', made.path, '#1', '--body', 'Is this right, really?'])).code).toBe(0)
+    let after = await readFile(made.path, 'utf8')
+    expect(after.startsWith('---\nkind: card\ncomments:\n')).toBe(true)
+    expect(after.slice(after.indexOf('```card'))).toBe(card)
+    expect(readComments(after).map((c) => c.body)).toEqual(['Is this right, really?', 'Yes, it is.'])
+    // Never a card property, in the index.
+    const record = await scanFile(root, made.path)
+    expect(record.kind).toBe('card')
+    expect(record.properties).not.toHaveProperty('comments')
+    expect(record.cards?.[0].properties).toEqual({ tags: 'rivers', source: 'Atlas, 2nd ed.' })
+    expect((await run(['delete', made.path, '#1'])).code).toBe(0)
+    after = await readFile(made.path, 'utf8')
+    expect(readComments(after)).toEqual([])
+    expect(after.slice(after.indexOf('```card'))).toBe(card)
+    expect((await run(['card', 'add', made.path, '--body', 'x'])).code).not.toBe(0)
+  })
+
+  it('a Windows (CRLF) card file keeps its line ends and its card part through a CLI comment', async () => {
+    const root = await vault('crlf', { 'river.md': '---\r\nkind: card\r\n---\r\n```card\r\nQ\r\n---\r\nA\r\n```\r\n<!-- card: YAZ-3, title "River" -->\r\n' })
+    const p = path.join(root, 'river.md')
+    expect((await run(['comment', p, '--body', 'From Windows'])).code).toBe(0)
+    const after = await readFile(p, 'utf8')
+    expect(after.replace(/\r\n/g, '')).not.toContain('\n')
+    expect(after.endsWith('```card\r\nQ\r\n---\r\nA\r\n```\r\n<!-- card: YAZ-3, title "River" -->\r\n')).toBe(true)
   })
 })

@@ -1,0 +1,74 @@
+/* The preview's own frame (YAZ-5121): the app's tokens (`app.css`), nothing of its own colour. */
+html,
+body {
+  height: auto;
+  background: var(--bg);
+}
+body {
+  overflow: auto;
+}
+.pv {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 40px;
+  color: var(--fg);
+  font-size: 13px;
+}
+.pv__bar,
+.pv__scrub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 1100px;
+}
+.pv select,
+.pv__bar button,
+.pv__scrub button {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font: inherit;
+}
+.pv__bar .pv__play {
+  min-width: 70px;
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 600;
+}
+.pv__sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+.pv__scrub input[type='range'] {
+  width: min(520px, 80vw);
+}
+.pv__time {
+  min-width: 15em;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.pv__status {
+  margin: 0;
+  color: var(--fg-muted);
+}
+.pv__frame {
+  max-width: 100%;
+}
+.pv__stage {
+  flex: none;
+}
+.pv__log {
+  max-width: 900px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-side);
+  white-space: pre-wrap;
+}

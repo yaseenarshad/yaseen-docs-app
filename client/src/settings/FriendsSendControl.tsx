@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
 import type { FriendsSendView } from '@shared/types'
 import { api } from '../api'
+import { useUnit } from '../vault/unitWord'
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
@@ -89,6 +90,7 @@ function sendLine(v: FriendsSendView, now: number): string {
 
 export function FriendsSendControl() {
   const [view, setView] = useState<FriendsSendView | null>(null)
+  const unit = useUnit()
   useEffect(() => {
     let live = true
     api.friends.status().then(
@@ -101,7 +103,7 @@ export function FriendsSendControl() {
   }, [])
   return (
     <>
-      <p className="settings__key-status">Only your numbers: cards, minutes and streaks, with your GitHub name and picture. Never your cards or your pages.</p>
+      <p className="settings__key-status">{unit('Only your numbers: cards, minutes and streaks, with your GitHub name and picture. Never your cards or your pages.')}</p>
       <p className="settings__key-status" role="status">
         {view === null ? '…' : sendLine(view, Date.now())}
       </p>

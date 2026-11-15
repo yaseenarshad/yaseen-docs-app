@@ -31,6 +31,7 @@ import { TableOfContents } from './toc/TableOfContents'
 import { createTocChannel } from './toc/tocChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
+import { PageFrame } from './PageFrame'
 import { usePageId } from '../search/showIds'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { redrawWikilinks, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -48,6 +49,7 @@ import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { withLf } from '@shared/lineEnds'
 import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPageSwitches, writeBlockWidth, writeFindFolds, writeOutsideGlow, writePageSwitch, TABLE_WIDTH_KEY, type PageSwitchKey } from '@shared/pageSwitches'
 import { watchBlockRoom } from './blockRoom'
 import { undo } from '@milkdown/kit/prose/history'
@@ -60,7 +62,7 @@ import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './ou
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
-import { StatusChips } from './StatusChips'
+import { HeadChipsSlot, LAYER_ESCAPE, StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { NO_VAULT_READ_ONLY, VaultReadOnly, type VaultReadOnlyScope } from '../vault/readOnlyVault'
 import { PageMenu } from './pageMenu'
@@ -84,7 +86,7 @@ import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
-import { holdPagePlace, readPagePlace, showPagePlace } from './pagePlace'
+import { holdPagePlace, keepPlace, readPagePlace, showPagePlace } from './pagePlace'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
@@ -446,7 +448,7 @@ function MarkdownEditor({ inFolderPage = false, drawingSettings, root, path, wat
       {wasCard && <CardFileNotice text="This file is no longer a card file." />}
       {file !== null && cardFile && (
         <Suspense fallback={null}>
-          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} />
+          <CardFileView key={file.path} file={file} root={root} wikilinks={wikilinks} wikilinkCandidates={wikilinkCandidates} viewOnlyLinks={viewOnlyLinks} onOpenFile={onOpenFile} onOpenLink={onOpenLink} onOpenExplore={onOpenExplore} exploreOnClick={exploreOnClick} onNotice={onNotice} onPage={toPage} onRetitle={onRetitle} onReread={reread} sync={sync} onSyncNow={onSyncNow} commentsOrder={commentsOrder} onChangeCommentsOrder={onChangeCommentsOrder} />
         </Suspense>
       )}
       {file !== null && !cardFile && (
@@ -774,6 +776,8 @@ function CrepeHost({
    * under the same context, and must not take the folder's toolbar.
    */
   const chipsHere = useContext(FolderPageChips)
+  /** In an Explore layer (YAZ-5164 Option A): its head holds this page's chips, and Esc is the layer's (back to reading). */
+  const inExplore = useContext(HeadChipsSlot) !== null
   const folderChips = inFolderPage ? chipsHere : null
   /** A read-only folder page (YAZ-3746 D36) keeps its Page read only, whatever the `.folder.md` bytes say yet. */
   const folderLocked = useSyncExternalStore(folderChips?.subscribe ?? noSubscribe, () => folderChips?.getState().readOnly ?? false)
@@ -926,6 +930,8 @@ function CrepeHost({
     el.className = 'editor-instance'
     host.appendChild(el)
     const { frontmatter, body } = splitFrontmatter(file.content)
+    // The editor holds the body with `\n` alone; the save writes the page's own line end back (YAZ-5150).
+    const text = withLf(body)
     // A copied page starts with its source's LIVE folds (YAZ-2951 S2), never the ones another copy stored last.
     const start = startViewRef.current
     const startFolds = start?.folds ?? storage.getFolds(root, file.path)
@@ -945,7 +951,7 @@ function CrepeHost({
     const linkPlace = wikilinkCandidates === undefined ? undefined : { root, pagePath: file.path, candidates: wikilinkCandidates, candidatesOf }
     const crepe = createCrepe({
       root: el,
-      defaultValue: body,
+      defaultValue: text,
       onMarkdownUpdated: (md) => controller?.update(md),
       // Cards (YAZ-4961): `/card` takes its ID from the vault's door at once; the card's open hook names this page.
       cards: { path: file.path, mintId: takePageId, convert: convert.door },
@@ -1127,12 +1133,16 @@ function CrepeHost({
       // Without folded lines says what it left out (YAZ-3653); Settings › Notifications › "Copy, cut or paste" can turn it off.
       onCopyNotice: onNotice === undefined ? undefined : (text) => onNotice(text, 'copy', 'clipboard'),
       lockAgain: () => lockAgainRef.current(),
+      // In Explore, Esc is the layer's: back to reading (YAZ-4997), never a step out to the sidebar.
+      onEscape: inExplore ? () => el.dispatchEvent(new CustomEvent(LAYER_ESCAPE, { bubbles: true })) || true : undefined,
     })
     crepeRef.current = crepe
     zoomedOutRef.current = () => tellRealZoom(crepe, zoomKeyRef.current ?? null)
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     let offPageView: (() => void) | null = null
+    /** The stop of the start place kept while the page draws (YAZ-5164 round 2). */
+    let stopKeeping: (() => void) | null = null
     const ready = crepe.create().then(() => {
       if (cancelled) return
       controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
@@ -1141,7 +1151,7 @@ function CrepeHost({
       // path (Links E1, GRO-2194): apply it OVER the fresh disk baseline as an unsaved
       // change, so autosave writes it to the NEW path — the buffer survives the rename.
       const buf = takeRenameBuffer(file.path)
-      if (buf !== null && buf.body !== body) {
+      if (buf !== null && buf.body !== text) {
         setMarkdown(crepe, buf.body)
         // A rebuilt state starts zoomed out: back to the tab's bullet, as a rebuild from disk does (E1). A rename keeps
         // its zoom (YAZ-3676 F3); a bullet the buffer does not have stays zoomed out, and the report below says so.
@@ -1173,10 +1183,8 @@ function CrepeHost({
       // more a frame later, when the blocks above have drawn (a card, a picture).
       const top = start?.top
       if (start !== undefined && scroller && (top === undefined || !showPagePlace(editorViewOf(crepe), scroller, top))) scroller.scrollTop = start.scrollTop
-      if (top !== undefined && scroller)
-        requestAnimationFrame(() => {
-          if (!cancelled) showPagePlace(editorViewOf(crepe), scroller, top)
-        })
+      // Again while the blocks above still draw, until the person scrolls or types (round 2).
+      if (top !== undefined && scroller) stopKeeping = keepPlace(scroller, () => !cancelled && showPagePlace(editorViewOf(crepe), scroller, top))
       startViewRef.current = undefined
       // This tab's page view, read only when a copy action asks (YAZ-2951 D4): nothing runs per keystroke. The folder
       // page's scroller is the folder tab's, not the Page tab's (YAZ-4584 D38).
@@ -1202,8 +1210,9 @@ function CrepeHost({
       const fresh = await api.readFile(file.path)
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
+      const freshText = withLf(split.body)
       // A rewrite rebuilds the page, so nothing can glow: the one-line note says the whole page changed (YAZ-3704).
-      if (applyExternalMarkdown(crepe, split.body, quiet) === 'rebuilt' && !quiet) outsideChanges.markWholePage()
+      if (applyExternalMarkdown(crepe, freshText, quiet) === 'rebuilt' && !quiet) outsideChanges.markWholePage()
       // A rebuild makes new plugin views, so the zoom's settle timer is gone: a bullet the rewrite removed is told here (YAZ-3676 F3).
       tellRealZoom(crepe, zoomKeyRef.current ?? null)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
@@ -1248,10 +1257,11 @@ function CrepeHost({
         // placed (D2), and then nothing changed. A merge makes the new file the baseline, so the merged
         // page differs from it and the autosave writes it 500 ms later, against the new mtime.
         const split = splitFrontmatter(fresh.content)
-        const merge = mergeExternalMarkdown(crepe, diskParts().body, split.body, quiet)
+        const freshText = withLf(split.body)
+        const merge = mergeExternalMarkdown(crepe, diskParts().body, freshText, quiet)
         if (merge === 'conflict') return reportConflict(mtime)
         // 'unchanged': the file already holds the typing, so the live page is the baseline and nothing saves.
-        markReloaded(merge === 'unchanged' ? () => getMarkdownForSave(crepe) : () => split.body, fresh.mtime, split.frontmatter, split.body)
+        markReloaded(merge === 'unchanged' ? () => getMarkdownForSave(crepe) : () => freshText, fresh.mtime, split.frontmatter, split.body)
         c.update(getMarkdownForSave(crepe))
         setDisk(fresh.content)
         diskLanded()
@@ -1266,6 +1276,7 @@ function CrepeHost({
 
     return () => {
       cancelled = true
+      stopKeeping?.()
       crepeRef.current = null
       offPageView?.()
       unsubscribe()
@@ -1273,7 +1284,7 @@ function CrepeHost({
       offRefused()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, linkActions, onNotice, newPageFolderFor, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom, inFolderPage])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, linkActions, onNotice, newPageFolderFor, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom, inFolderPage, inExplore])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows
@@ -1584,35 +1595,39 @@ function CrepeHost({
           <div className="editor-mount" ref={hostRef} {...mountWidths} />
         </div>
       ) : (
-        <div className="editor-host" data-page="page" {...scrollerData} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
-          {/* Title and properties share ONE header row (YAZ-918): the panel sits to
-              the title's right and wraps under it when the title runs long. */}
-          <div className="page-header">
-            <PageTitle
-              path={file.path}
-              titles={titles}
-              readOnly={readOnly}
-              id={pageId}
-              onNotice={onNotice}
-              onRetitle={(title) => onRetitle(file.path, title, 'file')}
-              onArrowDown={() => {
-                const crepe = crepeRef.current
-                if (crepe !== null) focusEditor(crepe)
-              }}
-            />
-            {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
-                folder view — ONE registry, so a type declared in a row types the same column in
-                every folder's views. */}
-            <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
-          </div>
-          <div className="editor-mount" ref={hostRef} {...mountWidths} />
+        <PageFrame
+          {...scrollerData}
+          style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}
+          header={
+            <>
+              <PageTitle
+                path={file.path}
+                titles={titles}
+                readOnly={readOnly}
+                id={pageId}
+                onNotice={onNotice}
+                onRetitle={(title) => onRetitle(file.path, title, 'file')}
+                onArrowDown={() => {
+                  const crepe = crepeRef.current
+                  if (crepe !== null) focusEditor(crepe)
+                }}
+              />
+              {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
+                  folder view — ONE registry, so a type declared in a row types the same column in
+                  every folder's views. */}
+              <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
+            </>
+          }
+        >
+          {/* A target of the course's guided tour (YAZ-5123): the page's text. */}
+          <div className="editor-mount" data-tour="page-editor" ref={hostRef} {...mountWidths} />
           {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
               writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
           <MemoCommentsSection file={diskFile} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />
           {wikilinks !== undefined && (
             <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} hoverPreview={hoverBacklinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
           )}
-        </div>
+        </PageFrame>
       )}
       {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the
           positioned ancestor, so the bar holds its corner while the page scrolls under it. */}

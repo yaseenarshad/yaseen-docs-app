@@ -1,7 +1,7 @@
 /**
  * The head of a narrow layer (YAZ-4956, YAZ-4986). A tiled layer (Tile › Three at the default width gives 348 px) or a
  * layer dragged narrow is narrower than its full head (about 500 px with the Read only chip). The head then folds its
- * parts ONE BY ONE, the least important first (`FOLD_ORDER`), until the title has `TITLE_ROOM` again: the zoom pill,
+ * parts ONE BY ONE, the least important first (`FOLD_ORDER`), until the title has `TITLE_ROOM` again: the zoom pill, the page's chips (YAZ-5164: the cog, Saved),
  * the fold-all button, ‹ n/m ›, ↗, the Read only chip's word (its lock stays), the chip, Edit / Done last. The title
  * (cut with "…"), the ID and × never fold (Yaseen: "esp i need to see the id please"); "⋯" shows once a part has folded
  * and holds every action of the head. A wide layer looks as before.
@@ -19,7 +19,7 @@ import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 
 /** The head's parts, the first to fold first (YAZ-4986). */
-export const FOLD_ORDER = ['zoom', 'fold-all', 'steps', 'open', 'chip-word', 'chip', 'edit'] as const
+export const FOLD_ORDER = ['zoom', 'chips', 'fold-all', 'steps', 'open', 'chip-word', 'chip', 'edit'] as const
 type FoldPart = (typeof FOLD_ORDER)[number]
 
 /** The least room the title keeps; below it the next part folds. */

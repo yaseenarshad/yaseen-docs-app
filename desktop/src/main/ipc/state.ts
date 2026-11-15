@@ -1,4 +1,5 @@
 import { MAX_CANVAS_CARDS, MAX_CANVAS_FRAMES, cleanCardsAdded, cleanUpNextTaken, isTocSource, type CanvasCard, type CanvasFrame, type FolderPatch, type TabCanvasPatch } from '@shared/types'
+import { cleanCourseState, defaultCourseState, type CoursePatch } from '@shared/courseState'
 import { isRecord } from '@shared/guards'
 import { CONTRACT } from '@shared/ipc'
 import { BridgeFailure, requireAbsPath } from '../fs/fsUtils'
@@ -58,6 +59,22 @@ function optionalCards<T>(raw: unknown, key: 'set' | 'forget', read: (v: unknown
     if (card === null) throw new BridgeFailure('BAD_REQUEST', `'${key}[${i}]' must be ${shape}`)
     return card
   })
+}
+
+/**
+ * The card course's patch (YAZ-5120), strict at the boundary: an object whose every field is one the course state
+ * has, with a valid value (`cleanCourseState` keeps the base's value for a bad one, so a bad field shows as a change).
+ */
+function requireCoursePatch(raw: unknown): CoursePatch {
+  if (!isRecord(raw)) throw new BridgeFailure('BAD_REQUEST', 'patch must be an object')
+  const fields = defaultCourseState()
+  for (const [key, value] of Object.entries(raw)) {
+    if (!Object.hasOwn(fields, key)) throw new BridgeFailure('BAD_REQUEST', `'${key}' is not a field of the course`)
+    // The value alone over a base with no value for its field: a valid value is kept as it is, a bad one is not.
+    const kept = cleanCourseState({ [key]: value }, { ...fields, [key]: undefined } as never)[key as keyof typeof fields]
+    if (JSON.stringify(kept) !== JSON.stringify(value)) throw new BridgeFailure('BAD_REQUEST', `'${key}' has a bad value`)
+  }
+  return raw as CoursePatch
 }
 
 /**
@@ -171,6 +188,9 @@ export function registerStateIpc(store: Store, settingsFolder: Pick<SettingsFold
   })
   handle(CONTRACT.state.setTabCanvas, async (patch: unknown) => {
     store.setTabCanvas(requireTabCanvasPatch(patch))
+  })
+  handle(CONTRACT.state.setCourse, async (patch: unknown) => {
+    store.setCourse(requireCoursePatch(patch))
   })
   // Every live window gets the new state (`state.onChange` in the renderer), whichever window changed it.
   store.onChange((state) => broadcastAll(CONTRACT.state.onChange.channel, state))

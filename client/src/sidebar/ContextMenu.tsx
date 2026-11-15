@@ -86,6 +86,7 @@ function ActionRow({ item, onClose, onMouseEnter }: { item: MenuAction; onClose:
       className={`ctx-menu__item${item.danger === true ? ' ctx-menu__item--danger' : ''}${armedClass}`}
       disabled={item.disabled}
       data-hint={armed ? undefined : hint}
+      data-tour={item.tour}
       title={item.tip}
       onMouseEnter={() => {
         onMouseEnter?.()

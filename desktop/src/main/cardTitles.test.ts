@@ -107,7 +107,7 @@ describe('YAZ-5308: the one-time move of each card title onto its card line', ()
   })
 
   it('a first line that is not plain text, or that is the whole front, stays as the question', () => {
-    for (const text of ['###### {{Capital of France}}\n\nWhat is it?\n---\nParis', '```js\nlet x = 1\n```\nWhat is x?', 'Hear it ![[tone.mp3]]\nWhich note?', 'See ![map](map.png)\nWhere?', 'About [[Paris]]\nWhat?', 'Which river runs through Paris?\n---\nThe Seine', '---\nBack', ''])
+    for (const text of ['###### {{Capital of France}}\n\nWhat is it?\n---\nParis', '```js\nlet x = 1\n```\nWhat is x?', 'Hear it ![[tone.mp3]]\nWhich note?', 'See ![map](map.png)\nWhere?', 'About [[Paris]]\nWhat?', 'Which river runs through Paris?\n---\nThe Seine', '---\nBack', '']) // rename-note-to-page: keep (a musical note)
       expect(firstLineTitle(text)).toEqual({ title: '', text })
   })
 
