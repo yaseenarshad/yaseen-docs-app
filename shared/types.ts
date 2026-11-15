@@ -1400,14 +1400,18 @@ export const CARD_TEXT_SIZE_MAX = 32
 export const CARD_TEXT_SIZE_START = 16
 export const isCardTextSize = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_TEXT_SIZE_MIN && v <= CARD_TEXT_SIZE_MAX
 /**
- * Card look › Card title size (YAZ-5387): the title band's text, as a step OF the card's text, so a bigger card text
- * brings its title along and the title never ends up smaller than the text it names. `--card-title-scale` on `.app`.
- * Before: 1.0625× in the Inbox, Preview and Explore, but 1.802× in a page and its embeds (the page's h1 rule won over
- * the band's). Medium, the default, is 1.125×: one calm step over the text.
+ * Card look › Card title size (YAZ-5387, Yaseen: "why wouldn't we just give them the px just like we give them px for
+ * everything else? ... default or custom"): `null`, Default, follows the card's text at `CARD_TITLE_SCALE` (18 px next to
+ * 16 px text), so a bigger card text brings its title along; else Custom, whole px, 12–40, everywhere a card shows.
+ * Custom starts at Default's size for the card text of the moment (`cardTitleSizeStart`). `--card-title-size` on `.app`,
+ * Custom only. A file saved with round 1's Small · Medium · Large fails the door and reads Default.
  */
-export const CARD_TITLE_SIZES = ['small', 'medium', 'large'] as const
-export type CardTitleSize = (typeof CARD_TITLE_SIZES)[number]
-export const CARD_TITLE_SCALE: Readonly<Record<CardTitleSize, number>> = { small: 1, medium: 1.125, large: 1.375 }
+export const CARD_TITLE_SCALE = 1.125
+export const CARD_TITLE_SIZE_MIN = 12
+export const CARD_TITLE_SIZE_MAX = 40
+export const isCardTitleSize = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= CARD_TITLE_SIZE_MIN && v <= CARD_TITLE_SIZE_MAX
+/** Default's title size in whole px for a Card text size (`null`, Same as pages, reads the pages' 16 px). */
+export const cardTitleSizeStart = (cardTextSize: number | null): number => Math.round((isCardTextSize(cardTextSize) ? cardTextSize : CARD_TEXT_SIZE_START) * CARD_TITLE_SCALE)
 
 /**
  * `AppState.settings` — app-global editor preferences (GRO-2024). Applied as CSS custom
@@ -2215,8 +2219,8 @@ export interface SettingsState {
    * whole px everywhere a card shows (`isCardTextSize`). `--card-text-size` on `.app`, Custom only.
    */
   cardTextSize: number | null
-  /** Card look › Card title size (YAZ-5387): the title band's text, a step of the card's text (`CARD_TITLE_SCALE`). */
-  cardTitleSize: CardTitleSize
+  /** Card look › Card title size (YAZ-5387): `null`, Default (the card's text × `CARD_TITLE_SCALE`); else Custom px (`isCardTitleSize`). */
+  cardTitleSize: number | null
   /**
    * Settings › Review › Card look › Card tables (YAZ-5136 round 3, Yaseen: "it might be different for cards vs pages"):
    * where a table sits in a card, read anywhere and in Edit card. `pages` (the default) follows `tablePosition`.
@@ -2990,7 +2994,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   cardSpacing: 'pages',
   cardWidth: null,
   cardTextSize: null,
-  cardTitleSize: 'medium',
+  cardTitleSize: null,
   cardTablePosition: 'pages',
   inboxOpenAt: 'top',
   ...CARD_SPACING_CLEAN,

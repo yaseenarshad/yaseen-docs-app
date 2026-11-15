@@ -264,3 +264,29 @@ describe('closing', () => {
     expect(barEl.querySelector('.find-bar')).toBeNull()
   })
 })
+
+describe('YAZ-5378 round 2: hidden words take the Underline look while find has a query', () => {
+  it('the searched view carries `data-find-query` while the bar is open with a query; a cleared query, a close or an unmount take it off', async () => {
+    const channel = createFindChannel()
+    const { el } = await mountEditor('apple', { find: channel })
+    const barEl = renderBar(channel, 'page', el)
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    pressCmdF()
+    // An open bar with nothing typed searches nothing: the hidden words keep their look.
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    type(barInput(barEl), 'apple')
+    expect(el.hasAttribute('data-find-query')).toBe(true)
+    type(barInput(barEl), '')
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    type(barInput(barEl), 'apple')
+    keyOn(barInput(barEl), 'Escape')
+    // Close keeps the query for the next ⌘F, but the page is not searched any more.
+    expect(channel.getState().query).toBe('apple')
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+    pressCmdF()
+    expect(el.hasAttribute('data-find-query')).toBe(true)
+    const { root } = roots.splice(0)[0]!
+    act(() => root.unmount())
+    expect(el.hasAttribute('data-find-query')).toBe(false)
+  })
+})

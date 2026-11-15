@@ -17,6 +17,9 @@
  * layout effect on the open; a CMD+F on an already-open bar has an input to focus and refocuses it
  * from the handler itself — one call site, told apart by the ref being null or not.
  *
+ * Hidden words (YAZ-5378 round 2): while the bar has a query, its host carries `data-find-query`; card.css gives a
+ * shown hidden word in Highlight the Underline look there.
+ *
  * Folds (YAZ-4787): a page's bar has a fold button beside the count. Its menu sets what find does with folded bullets
  * for this page (`find-folds` in the page); "Use the default" hands it back to Settings › Editor › Find.
  */
@@ -92,6 +95,16 @@ export function FindBar({ channel, scope, hostRef, folds }: FindBarProps) {
   useLayoutEffect(() => {
     if (state.open) focusInput()
   }, [state.open])
+
+  // YAZ-5378 round 2: while the bar searches (open, with a query), the searched view carries `data-find-query`, and a
+  // shown hidden word in Highlight takes the Underline look there (card.css), so it is never taken for a match.
+  const searching = state.open && state.query !== ''
+  useLayoutEffect(() => {
+    const host = hostRef.current
+    if (!searching || host === null) return
+    host.setAttribute('data-find-query', '')
+    return () => host.removeAttribute('data-find-query')
+  }, [searching, hostRef])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
