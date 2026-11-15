@@ -338,7 +338,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       }
       await open(/^Git cheat sheet/, '.reader__body')
       press(/Copy the path$/)
-      await until(() => document.querySelector('.page-toast') !== null)
+      await until(() => document.querySelector('.toast, .copy-by-hand') !== null)
       break
     case 'page-tools':
     case 'page-find':

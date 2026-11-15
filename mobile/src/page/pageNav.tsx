@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
 import type { IndexRecord } from '@shared/types'
 import { vaultPageId } from '@shared/pageId'
 import type { AppModel } from '../app/AppState'
 import type { Route } from '../app/nav'
 import type { VaultData } from '../search/vaultData'
 import { KIND_WORD, KindIcon, type FileKind } from '../screens/Frame'
+import { useCopyPath } from '../screens/copyPath'
 import { buildTree, fileKind, levelOf, type TreeFolder } from '../search/vaultTree'
 import './pageNav.css'
 
@@ -135,52 +135,19 @@ export function pageIdOf(data: VaultData | null, record: IndexRecord | undefined
 
 /**
  * The ID chip in the top bar (YAZ-5450). One tap copies the page's path in the vault (`Spanish/Words/la biblioteca.md`),
- * to paste to an agent; a short toast says "Copied: <path>". When the clipboard says no, the path shows selected, to
- * copy by hand.
+ * to paste to an agent (`useCopyPath`: the app's toast, or the path to copy by hand).
  */
-export function PageIdChip({ id, path, copy = (text) => navigator.clipboard.writeText(text) }: { id: string; path: string; copy?: (text: string) => Promise<void> }) {
-  const [said, setSaid] = useState<{ kind: 'copied' | 'by-hand'; path: string } | null>(null)
-  const field = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    if (said?.kind !== 'copied') return
-    const timer = setTimeout(() => setSaid(null), 2000)
-    return () => clearTimeout(timer)
-  }, [said])
-  useEffect(() => {
-    if (said?.kind === 'by-hand') field.current?.select()
-  }, [said])
-  const tap = async () => {
-    try {
-      await copy(path)
-      setSaid({ kind: 'copied', path })
-    } catch {
-      setSaid({ kind: 'by-hand', path })
-    }
-  }
+export function PageIdChip({ id, path, copy }: { id: string; path: string; copy?: (text: string) => Promise<void> }) {
+  const { copyPath, layer } = useCopyPath(copy)
   return (
     <>
-      <button type="button" className="page-id" aria-label={`${id}. Copy the path`} onClick={() => void tap()}>
+      <button type="button" className="page-id" aria-label={`${id}. Copy the path`} onClick={() => void copyPath(path)}>
         <span className="page-id__pill" aria-hidden="true">
           <span className="page-id__prefix">{id.slice(0, id.lastIndexOf('-') + 1)}</span>
           <span className="page-id__number">{id.slice(id.lastIndexOf('-') + 1)}</span>
         </span>
       </button>
-      {said?.kind === 'copied' && (
-        <p className="page-toast" role="status">
-          Copied: {said.path}
-        </p>
-      )}
-      {said?.kind === 'by-hand' && (
-        <div className="page-toast page-toast--by-hand" role="dialog" aria-label="Copy the path">
-          <label>
-            The phone could not copy. Copy the path by hand:
-            <input ref={field} className="page-toast__path" readOnly value={said.path} onFocus={(e) => e.currentTarget.select()} />
-          </label>
-          <button type="button" className="btn" onClick={() => setSaid(null)}>
-            Close
-          </button>
-        </div>
-      )}
+      {layer}
     </>
   )
 }

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useOverlay } from '../app/browserHistory'
-import { Toast, useToast } from '../screens/Toast'
+import { useCopyPath } from '../screens/copyPath'
 import { MenuTitle, isCut } from './menuTitle'
 import './find/pageTools.css'
 
@@ -48,7 +48,6 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const [menu, setMenu] = useState(false)
   const [tool, setTool] = useState<PageTool>(null)
   const [cut, setCut] = useState(false)
-  const [said, say] = useToast()
   const box = useRef<HTMLDivElement>(null)
   // YAZ-5518: the menu and the open tool are overlays: a Back closes them, one at a time, and the page stays.
   useOverlay(menu, () => setMenu(false))
@@ -75,14 +74,10 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
     if (!menu) setCut(isCut(box.current?.closest('.topbar')?.querySelector('.topbar__title')))
     setMenu(!menu)
   }
+  const { copyPath, layer } = useCopyPath()
   const copy = async () => {
     setMenu(false)
-    try {
-      await navigator.clipboard.writeText(file.path)
-      say(`Copied: ${file.path}`)
-    } catch {
-      say(file.path)
-    }
+    await copyPath(file.path)
   }
   const button = (
     <div className="page-tools" ref={box}>
@@ -116,7 +111,7 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
           )}
         </div>
       )}
-      {said !== null && <Toast text={said} />}
+      {layer}
     </div>
   )
   const close = () => setTool(null)

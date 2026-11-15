@@ -7,6 +7,7 @@ import { swipeIsOurs } from '../app/edgeSwipe'
 import { useVaultData, type VaultData } from '../search/vaultData'
 import { folderOf } from '../page/pageLook'
 import { MenuTitle, isCut } from '../page/menuTitle'
+import { useCopyPath } from '../screens/copyPath'
 import { countWords, linkCounts, type LinkCounts } from './linkCounts'
 import { SheetContent, titleOf } from './SheetBody'
 import { SHEET_MS } from './sheetDrag'
@@ -81,7 +82,6 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
   const motion = useRef<SheetMotion | null>(null)
   const [menu, setMenu] = useState(false)
   const [cut, setCut] = useState(false)
-  const [toast, setToast] = useState<string | null>(null)
   const [cardText, setCardText] = useState<string | undefined>(undefined)
   const [counts, setCounts] = useState<LinkCounts | null>(null)
   const isTop = depth === 0
@@ -123,12 +123,6 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
     return () => clearTimeout(timer)
   }, [data, sheet.route, cardText, isTop])
 
-  useEffect(() => {
-    if (toast === null) return
-    const timer = setTimeout(() => setToast(null), 2000)
-    return () => clearTimeout(timer)
-  }, [toast])
-
   const restore = () => {
     if (sheet.scroll > 0 && body.current !== null) body.current.scrollTop = sheet.scroll
   }
@@ -137,14 +131,10 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
     closeAll()
     app.go({ type: 'open', route: sheet.route })
   }
+  const { copyPath, layer } = useCopyPath()
   const copy = async () => {
     setMenu(false)
-    try {
-      await navigator.clipboard.writeText(sheet.route.path)
-      setToast(`Copied: ${sheet.route.path}`)
-    } catch {
-      setToast(sheet.route.path)
-    }
+    await copyPath(sheet.route.path)
   }
   const route = sheet.route
   const title = route.kind === 'folder' ? folderName(data, route.path) : route.kind === 'card' ? (data?.byPath[route.path]?.cards?.find((c) => c.id?.toLowerCase() === route.id.toLowerCase())?.title ?? '') || route.id : titleOf(data, route.path)
@@ -188,11 +178,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
           <p className="explore-sheet__foot" aria-live="off">
             {counts === null ? ' ' : countWords(counts)}
           </p>
-          {toast !== null && (
-            <p className="page-toast explore-sheet__toast" role="status">
-              {toast}
-            </p>
-          )}
+          {layer}
         </div>
       </div>
     </>

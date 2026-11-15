@@ -159,10 +159,6 @@
   color: var(--fg-muted);
 }
 
-.explore-sheet__toast {
-  z-index: 3;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .explore-sheet {
     transition: none;
