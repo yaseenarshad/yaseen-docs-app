@@ -137,7 +137,9 @@ describe('YAZ-5529: the properties under the title', () => {
     expect(chip(h)!.getAttribute('aria-expanded')).toBe('true')
     // In the page's flow: right after the reader's title, before the page's text, inside the reader's scroll box.
     expect(body.previousElementSibling?.classList.contains('reader__title')).toBe(true)
-    expect(body.nextElementSibling?.classList.contains('reader__body')).toBe(true)
+    // YAZ-5591: the stuck headings' layer (zero height) stands just before the page's body.
+    expect(body.nextElementSibling?.classList.contains('reader__stuck')).toBe(true)
+    expect(body.nextElementSibling?.nextElementSibling?.classList.contains('reader__body')).toBe(true)
     expect(body.closest('.screen--reader')).not.toBeNull()
     await act(async () => chip(h!)!.click())
     expect(h.host.querySelector('.page-props__body')).toBeNull()

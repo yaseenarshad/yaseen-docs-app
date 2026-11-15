@@ -21,7 +21,13 @@ export const WHY_NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string
 
 /** What the person wrote: a comment's words, the tick and its task ("Tick: Book hotel"), or a page setting (YAZ-5568). */
 export const notSentWords = (c: WaitingComment): string =>
-  c.setting !== undefined ? `Folding on this page: ${c.setting.on ? 'On' : 'Off'}` : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
+  c.setting !== undefined ? settingWords(c.setting) : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
+
+/** A setting's row and what it becomes: "Folding on this page: Off", YAZ-5591 "Sticky headings on this page: On". */
+function settingWords(s: NonNullable<WaitingComment['setting']>): string {
+  const to = s.on ? 'On' : 'Off'
+  return `${s.key === 'sticky-headings' ? 'Sticky headings' : 'Folding'} on this page: ${to}`
+}
 
 const pageName = (path: string): string => (path.split('/').pop() ?? path).replace(/\.md$/i, '')
 

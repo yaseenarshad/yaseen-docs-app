@@ -22,7 +22,10 @@ import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
-import { markSections, pageSwitchAttrs } from './pageSwitches'
+import { markSections, pageOwnSwitch, pageSwitchAttrs } from './pageSwitches'
+import { usePageSettingRow } from './pageSettingRow'
+import { STICKY_HEADINGS_KEY } from '../comments/settingWrite'
+import { stickHeadings } from './stickyHeadings'
 import { attachFolds, revealFolds, type PageFolds } from './folds'
 import { moveFolds, readFolds, writeFolds } from '../store/foldPref'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
@@ -88,39 +91,14 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   // The page's own Guide lines and Section indent, from its frontmatter (`pageSwitches.ts`).
   const switches = useMemo(() => (typeof text === 'string' ? pageSwitchAttrs(text) : {}), [text])
   const sectionIndent = switches['data-section-indent'] === 'true'
-  // YAZ-5568: the Mac's folding, on unless the page says `folding: false`; the folds kept on this phone, by vault and path.
-  const fileFolding = switches['data-folding'] !== 'off'
-  // "Folding on this page" (⋯) writes the Mac's page setting on the comments' safe path; the page shows it at once, and
-  // follows the file again when the file says it (or the write was refused).
-  const [foldingWant, setFoldingWant] = useState<{ path: string; on: boolean; id: string | null } | null>(null)
-  const want = foldingWant?.path === path ? foldingWant : null
-  const foldingOn = want?.on ?? fileFolding
-  useEffect(() => {
-    if (want !== null && want.on === fileFolding && want.id !== null) setFoldingWant(null)
-  }, [want, fileFolding])
-  useEffect(() => {
-    if (commentsPort === null || want?.id == null) return
-    const id = want.id
-    const check = () => {
-      const entry = commentsPort.waiting(path).find((c) => c.id === id)
-      if (entry?.refused === undefined) return
-      setFoldingWant(null)
-      setNotice("The phone could not change this page's Folding setting. Nothing was changed.")
-    }
-    check()
-    return commentsPort.subscribe(check)
-  }, [commentsPort, path, want?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-  const setFolding = (on: boolean) => {
-    if (commentsPort === null) return
-    setFoldingWant({ path, on, id: null })
-    commentsPort.add({ path, body: '', setting: { key: 'folding', on } }).then(
-      (c) => setFoldingWant((w) => (w !== null && w.path === path && w.on === on ? { ...w, id: c.id } : w)),
-      () => {
-        setFoldingWant(null)
-        setNotice("The phone could not change this page's Folding setting. Nothing was changed.")
-      },
-    )
-  }
+  // YAZ-5568: the Mac's folding: the page's own `folding: true | false`, else on; the folds kept
+  // on this phone, by vault and path. "Folding on this page" (⋯) writes the page's own key (`pageSettingRow.ts`).
+  const own = (key: 'folding' | 'sticky-headings') => (typeof text === 'string' ? pageOwnSwitch(text, key) : undefined)
+  const folding = usePageSettingRow(commentsPort, path, 'folding', own('folding') ?? true, 'Folding', setNotice)
+  const foldingOn = folding.on
+  // YAZ-5591: sticky headings, the page's own `sticky-headings: true | false` (the phone's own key), else on.
+  const sticky = usePageSettingRow(commentsPort, path, STICKY_HEADINGS_KEY, own('sticky-headings') ?? true, 'Sticky headings', setNotice)
+  const stickyOn = sticky.on
   const folds = useRef<PageFolds | null>(null)
   const [foldsNow, setFoldsNow] = useState<PageFolds | null>(null)
   useEffect(() => {
@@ -138,7 +116,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     }
   }, [vault, path, title, foldingOn])
   // "⋯" → Find in page, Headings (each a lazy chunk), Collapse all; YAZ-5498: the full title when the top bar cuts it.
-  const tools = usePageTools(host, { title, path, folds: foldsNow, folding: typeof text === 'string' && commentsPort !== null ? { on: foldingOn, set: setFolding } : null })
+  const writable = typeof text === 'string' && commentsPort !== null
+  const tools = usePageTools(host, { title, path, folds: foldsNow, folding: writable ? folding : null, sticky: writable ? sticky : null })
   // The Mac's properties chip at the right of the title; the rows open under it, in the page.
   const props = usePageProperties({ path, record, data, door, slot: sameTitle ? propsSlot : null })
 
@@ -300,6 +279,17 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     return () => scroller.removeEventListener('scroll', keep)
   }, [vault, path])
 
+  // YAZ-5591: the stuck headings, in their layer just before the body, while sticky headings are on.
+  const stuckLayer = useRef<HTMLDivElement>(null)
+  const hasText = typeof text === 'string'
+  useEffect(() => {
+    const el = host.current
+    const layer = stuckLayer.current
+    const scroller = el?.closest<HTMLElement>('.screen')
+    if (!stickyOn || !hasText || el == null || layer === null || scroller == null) return
+    return stickHeadings(scroller, el, layer, { title })
+  }, [stickyOn, hasText, path, title])
+
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
     const tap = tapOf(event.target, data)
@@ -350,6 +340,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         )}
         {gone && <p className="muted">{record === undefined ? app.unit('This page is not on the phone.') : app.unit('This page is too large to show on the phone. Open it on the Mac.')}</p>}
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
+        {/* YAZ-5591: the layer of stuck headings (copies; the headings are in the body), zero height. */}
+        <div ref={stuckLayer} className="reader__stuck" aria-hidden="true" />
         <div className="reader__body" {...switches} data-folding={foldingOn ? undefined : 'off'} ref={host} onClick={(e) => void onTap(e)} />
         {/* The page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}

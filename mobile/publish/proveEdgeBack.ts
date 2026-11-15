@@ -25,6 +25,7 @@ import { freePort } from './freePort'
  *    the page stays: `history.back()` in a tab, the edge swipe in the Home Screen app.
  *  - YAZ-5568: a tap on a heading's fold arrow, 0 to 16 px from the edge, folds it and opens it again, the page stays;
  *    a swipe that starts on the arrow is still the Back (the Home Screen app).
+ *  - YAZ-5591: the same for a STUCK heading's fold arrow (`page-sticky`), and a swipe from a stuck heading is the Back.
  * Run after `npm run build:fixtures -w mobile`: `npx vite-node mobile/publish/proveEdgeBack.ts` (LAYOUT_DIST: another
  * build folder; PROOF_PORT, PROOF_DEBUG: the ports, else free ones). Exit 0: every swipe went back.
  */
@@ -284,6 +285,42 @@ async function foldArrowAtEdge(where: Where): Promise<Check[]> {
   return checks
 }
 
+/**
+ * YAZ-5591: a STUCK heading's fold arrow (`page-sticky`: "Days in the city" stuck under the top bar) sits at the left
+ * edge too. A tap on it folds the heading (the page's own arrow) and the page stays; a swipe that starts on it is still
+ * the Back (the Home Screen app).
+ */
+async function stuckArrowAtEdge(where: Where): Promise<Check[]> {
+  const s = await session('page-sticky', where)
+  const STUCK = `[...document.querySelectorAll('.reader__stuck-row')].find((x) => x.textContent === 'Days in the city')`
+  const REAL = `[...document.querySelectorAll('.reader__body > h2')].find((h) => h.textContent === 'Days in the city')`
+  const at = await s.evaluate(`(() => { const row = ${STUCK}; const b = row && row.querySelector('.fold-btn'); if (!b) return null; const a = b.querySelector('svg').getBoundingClientRect(); return { x: Math.round(a.left + a.width / 2), y: Math.round(a.top + a.height / 2) } })()`)
+  if (at === null) {
+    await s.close()
+    return [{ name: `${where}, a tap on a stuck heading's fold arrow at the edge`, ok: false, note: 'no stuck heading with an arrow' }]
+  }
+  const under = String(await s.evaluate(`(() => { const e = document.elementFromPoint(${at.x}, ${at.y}); return e ? (e.closest('.reader__stuck-row') ? 'stuck ' : '') + e.tagName.toLowerCase() + [...e.classList].map((c) => '.' + c).join('') : 'none' })()`))
+  await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y, radiusX: 4, radiusY: 4, force: 1, id: 1 }] }, s.id)
+  await wait(60)
+  await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, s.id)
+  await wait(500)
+  const folded = String(await s.evaluate(`${REAL}.querySelector('.fold-btn').getAttribute('aria-expanded')`))
+  const screen1 = String(await s.evaluate(SCREEN))
+  const still = (await s.evaluate(`(document.querySelector('.app')?.style.transform ?? '') === ''`)) === true
+  const checks: Check[] = [{ name: `${where}, a tap on a stuck heading's fold arrow ${at.x} px from the edge folds it, the page stays`, ok: folded === 'false' && screen1 === 'Lisbon trip [Back]' && still && (await s.stayed()), note: `at x ${at.x}, under the finger: ${under}; aria-expanded ${folded}; page "${screen1}", in place ${still}` }]
+  if (where === 'home-screen') {
+    // Down the page again, so a heading is stuck at the edge, then a swipe from it.
+    await s.evaluate(`(() => { const sc = document.querySelector('.screen'); sc.scrollTop += 700; sc.dispatchEvent(new Event('scroll')) })()`)
+    await wait(300)
+    const y = Number(await s.evaluate(`(() => { const r = document.querySelector('.reader__stuck-row'); return r ? Math.round(r.getBoundingClientRect().top + 10) : ${at.y} })()`))
+    await s.swipe(4, y)
+    const screen2 = String(await s.evaluate(SCREEN))
+    checks.push({ name: `${where}, a swipe that starts on a stuck heading is the Back`, ok: !screen2.endsWith('[Back]') && (await s.stayed()), note: `"${screen2}"` })
+  }
+  await s.close()
+  return checks
+}
+
 const results: Result[] = []
 for (const fixture of ['page', 'card'] as const)
   for (const where of ['home-screen', 'safari-tab'] as const) for (const spot of ['middle', 'top', 'foot'] as const) results.push(await run(fixture, where, spot))
@@ -298,6 +335,7 @@ for (const fixture of ['explore-stack', 'explore-review', 'explore-today'] as co
 checks.push(await sheetEdge())
 for (const where of ['safari-tab', 'home-screen'] as const) checks.push(...(await overlayBack(where)))
 for (const where of ['home-screen', 'safari-tab'] as const) checks.push(...(await foldArrowAtEdge(where)))
+for (const where of ['home-screen', 'safari-tab'] as const) checks.push(...(await stuckArrowAtEdge(where)))
 for (const c of checks) {
   if (!c.ok) failed++
   console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name} (${c.note})`)

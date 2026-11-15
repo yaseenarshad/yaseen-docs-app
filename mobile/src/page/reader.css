@@ -640,6 +640,48 @@
   max-width: calc(var(--card-text-width, 100vw) + 34px);
 }
 
+/* STICKY HEADINGS (YAZ-5591, `stickyHeadings.ts`), phone only: the layer of stuck headings, a zero-height box just before
+   the page's body that sticks at the scroller's top edge, under the top bar (`.screen` has 12px of top padding, and a
+   sticky box stops below it, so `top` takes it back, as Search's `.tree__stuck`; an Explore panel's has none). It is as
+   wide as the scroller (its 16px sides too), so nothing of the page shows beside a stuck heading. Each stuck heading is a
+   copy of its heading at its slot, the shallower on top: the page's colour, opaque, the thin line under it (Search's
+   stuck rows). Zero height and copies: nothing in the page moves when a heading sticks. */
+.reader__stuck {
+  --stuck-gutter: 16px;
+  position: sticky;
+  top: -12px;
+  z-index: 3;
+  height: 0;
+  margin: 0 calc(var(--stuck-gutter) * -1);
+}
+.explore-sheet__body .reader__stuck {
+  top: 0;
+}
+.reader__stuck-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  padding-right: var(--stuck-gutter);
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--border);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader__stuck-row:active {
+  background: var(--bg-side);
+}
+.reader__stuck-row > * {
+  position: relative;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* A link in a stuck heading is the heading's words: a tap scrolls back to the heading. */
+.reader__stuck-row a {
+  pointer-events: none;
+}
+
 /* FOLDING (YAZ-5568, option A; `folds.ts`): the Mac's chevron (`headingFolding.css`, `outlineFolding.css`), 14 px and
    muted, always shown (a phone has no hover), turned right when folded. Each is a 44 px button: a heading's in the left
    margin on its first line (it runs over the first letters; a tap there folds), a bullet's one step left of its dot,
@@ -732,4 +774,5 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
 
