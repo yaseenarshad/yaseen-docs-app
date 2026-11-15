@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type CSSProperties } from 'react'
+import type { SearchCandidate } from '@client/search/searchCandidates'
 import { useApp } from '../app/AppState'
 import type { Route } from '../app/nav'
 import type { VaultData } from './vaultData'
@@ -33,6 +34,7 @@ export default function SearchTree({ data, cards, shown, more }: { data: VaultDa
   )
   return (
     <>
+      <h2 className="section">{app.unit('Pages')}</h2>
       <ul className="tree" role="tree" aria-label={app.unit('Pages')}>
         {rows.slice(0, shown).map((row) => (
           <li key={row.path} role="treeitem" aria-expanded={row.kind === 'folder' ? row.open : undefined}>
@@ -52,6 +54,42 @@ export default function SearchTree({ data, cards, shown, more }: { data: VaultDa
         ))}
       </ul>
       {rows.length > shown && more}
+    </>
+  )
+}
+
+/** Where a row opens: a page read only; a card alone (a card file's card, or a card in its page). */
+function routeOf(row: SearchCandidate): Route {
+  if (row.card === true) return { kind: 'card', path: row.page ?? row.path, id: row.id ?? '' }
+  return { kind: 'page', path: row.path }
+}
+
+/** A result row: the Mac's icon (a page, or a card: a card file's or a card in a page), the name, a card's ID. */
+function ResultRow({ row }: { row: SearchCandidate }) {
+  const app = useApp()
+  const card = row.card === true
+  const side = card ? (row.id ?? '') : ''
+  return (
+    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : app.unit('page')}`} onClick={() => app.go({ type: 'open', route: routeOf(row) })}>
+      <RowIcon kind={card ? 'card' : 'page'} />
+      <span className="row__main">{row.label}</span>
+      {side !== '' && <span className="row__side">{side}</span>}
+    </button>
+  )
+}
+
+/** The result rows (the box has text), or the cards of Cards with an empty box (`cards`, under its heading). */
+export function ResultList({ rows, cards }: { rows: readonly SearchCandidate[]; cards: boolean }) {
+  return (
+    <>
+    {cards && <h2 className="section">Cards</h2>}
+    <ul className="rows search__rows" aria-label={cards ? 'Cards' : 'Results'}>
+      {rows.map((row) => (
+        <li key={`${row.path}\n${row.label}`}>
+          <ResultRow row={row} />
+        </li>
+      ))}
+    </ul>
     </>
   )
 }

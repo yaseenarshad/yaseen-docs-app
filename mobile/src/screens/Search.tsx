@@ -1,16 +1,16 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SearchCandidate } from '@client/search/searchCandidates'
 import { useApp } from '../app/AppState'
-import type { Route } from '../app/nav'
 import { buildRows, emptyBoxRows, findRows, type PhoneType } from '../search/searchRun'
 import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
-import { RowIcon } from '../search/rowIcon'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import '../search/search.css'
 
 /** The tree (YAZ-5438): its own chunk, loaded when the box is empty. */
 const SearchTree = lazy(() => import('../search/SearchTree'))
+/** The result rows with their icons: the same chunk (the first load stays under its ceiling, YAZ-5377). */
+const ResultList = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultList })))
 
 /** Rows drawn at first, and added at each "Show more" (5,000 pages are not drawn at once). */
 const STEP = 100
@@ -43,12 +43,10 @@ export function Search() {
   const listOf = useRef(`${held.query}\n${held.type}`)
   const section = useRef<HTMLElement>(null)
   const input = useRef<HTMLInputElement>(null)
-  const [focused, setFocused] = useState(false)
   /** YAZ-5439: clear the box and leave the search (the keyboard goes away). */
   const leave = () => {
     setQuery('')
     input.current?.blur()
-    setFocused(false)
   }
   const [notice] = useState(() => takeSearchNotice())
   const cards = data?.review.enabled ?? false
@@ -130,8 +128,6 @@ export function Search() {
         spellCheck={false}
         enterKeyHint="search"
         onChange={(e) => setQuery(e.target.value)}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
         onKeyDown={(e) => {
           if (e.key === 'Escape') {
             e.preventDefault()
@@ -139,8 +135,8 @@ export function Search() {
           }
         }}
       />
-      {(query !== '' || focused) && (
-        <button type="button" className="search__clear" aria-label="Clear search" onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={leave}>
+      {query !== '' && (
+        <button type="button" className="search__clear" aria-label="Clear search" onClick={leave}>
           <span aria-hidden>✕</span>
         </button>
       )}
@@ -178,47 +174,19 @@ export function Search() {
       {data !== null && data.records.length === 0 && <p className="muted">{unit('No pages yet. They come with the next sync.')}</p>}
       {results !== null && !empty && results.length === 0 && <p className="muted">{`Nothing matches "${query.trim()}".`}</p>}
       {tree && data !== null && data.records.length > 0 && (
-        <>
-          <h2 className="section">{unit('Pages')}</h2>
-          <Suspense fallback={null}>
-            <SearchTree data={data} cards={cards} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
-          </Suspense>
-        </>
+        <Suspense fallback={null}>
+          <SearchTree data={data} cards={cards} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
+        </Suspense>
       )}
       {!tree && results !== null && results.length > 0 && (
         <>
-          {empty && <h2 className="section">Cards</h2>}
-          <ul className="rows search__rows" aria-label={empty ? 'Cards' : 'Results'}>
-            {results.slice(0, shown).map((row) => (
-              <li key={`${row.path}\n${row.label}`}>
-                <ResultRow row={row} />
-              </li>
-            ))}
-          </ul>
+          <Suspense fallback={null}>
+            <ResultList rows={results.slice(0, shown)} cards={empty} />
+          </Suspense>
           {results.length > shown && <ShowMore onMore={() => setShown((n) => n + STEP * 2)} />}
         </>
       )}
     </section>
-  )
-}
-
-/** Where a row opens: a page read only; a card alone (a card file's card, or a card in its page). */
-function routeOf(row: SearchCandidate): Route {
-  if (row.card === true) return { kind: 'card', path: row.page ?? row.path, id: row.id ?? '' }
-  return { kind: 'page', path: row.path }
-}
-
-/** A result row: the Mac's icon (a page, or a card: a card file's or a card in a page), the name, a card's ID. */
-function ResultRow({ row }: { row: SearchCandidate }) {
-  const app = useApp()
-  const card = row.card === true
-  const side = card ? (row.id ?? '') : ''
-  return (
-    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : app.unit('page')}`} onClick={() => app.go({ type: 'open', route: routeOf(row) })}>
-      <RowIcon kind={card ? 'card' : 'page'} />
-      <span className="row__main">{row.label}</span>
-      {side !== '' && <span className="row__side">{side}</span>}
-    </button>
   )
 }
 
