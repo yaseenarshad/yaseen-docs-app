@@ -60,7 +60,7 @@ export type Route =
   | { kind: 'page'; path: string; at?: string; heading?: string }
   /** 4C (round 12, item 10): a card alone, read only: the card, its review history, "Open page" for a card in a page. */
   | { kind: 'card'; path: string; id: string }
-  /** YAZ-5473: a drawing file on its own (`.excalidraw`, `.drawio.svg`; a `.drawio` says "Open it on the Mac"), read only. */
+  /** YAZ-5473: a drawing file on its own (`.excalidraw`, `.drawio.svg`, a plain `.drawio` drawn by draw.io's viewer: YAZ-5533), read only. */
   | { kind: 'drawing'; path: string }
   /** YAZ-5460: a folder's page, read only (hold a folder in Search): its `.folder.md` text and its views. `path`: the folder as the index names it. */
   | { kind: 'folder'; path: string }
