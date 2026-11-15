@@ -5,7 +5,7 @@ import { saveAccount, type VaultAccount } from '../auth/account'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
 import { fakeGithub } from '../github/testing'
-import { fakeFriends, fakeScanner, fakeSync } from './fakes'
+import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { isReaderFixture, mountReaderFixture } from './readerFixtures'
 
 /**
@@ -89,7 +89,7 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     await saveVaultList(store, { vaults: name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1), open: vaultId(VAULTS[0]) })
   }
   const sync = fakeSync({ download: name === 'download' })
-  const services: AppServices = { store, tokens, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
   root.render(<App services={services} />)
   await wait(50)
 

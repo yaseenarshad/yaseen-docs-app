@@ -1,7 +1,7 @@
 import { useRef, type ReactNode } from 'react'
 import { useApp } from '../app/AppState'
 import { FORWARD_LABEL, type Forward } from '../app/help'
-import { TABS } from '../app/nav'
+import { showsTabBar, tabsOf } from '../app/nav'
 import { TodayTab } from '../daily/TodayTab'
 import { setReviewTop } from './reviewTop'
 import { SyncStatus } from './SyncStatus'
@@ -10,6 +10,7 @@ import { useEdgeBack } from './useEdgeBack'
 /**
  * The frame of every screen: the top bar, the screen, and (when a vault is open) the tab bar. The bars keep clear of
  * the notch and the home bar (safe areas, `styles.css`). Every control is at least 44 pt and has a VoiceOver name.
+ * YAZ-5476: the bar holds the open vault's tabs (`tabsOf`) and Today; with Search alone it is not drawn (`showsTabBar`).
  */
 export function Frame({
   title,
@@ -70,9 +71,9 @@ export function Frame({
       {notice}
       <main className={review ? 'screen screen--review' : reader ? 'screen screen--reader' : 'screen'}>{children}</main>
       {foot}
-      {tabs && (
+      {tabs && showsTabBar(app.tabs) && (
         <nav className="tabbar" role="tablist" aria-label="Tabs">
-          {TABS.map((t) => (
+          {tabsOf(app.tabs).map((t) => (
             <button
               key={t.id}
               type="button"
@@ -84,7 +85,7 @@ export function Frame({
               {t.label}
             </button>
           ))}
-          <TodayTab />
+          {app.tabs.daily && <TodayTab />}
         </nav>
       )}
     </div>

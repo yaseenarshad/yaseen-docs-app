@@ -2,7 +2,7 @@ import type { Root } from 'react-dom/client'
 import { App } from '../App'
 import { answersSetup } from '../answers/testing'
 import type { AppServices } from '../app/AppState'
-import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
+import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from '../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
 import type { VaultMedia } from '../media/ui/vaultMedia'
@@ -113,7 +113,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   await saveVaultList(store, { vaults: [vault], open: VAULT })
   const sync = fakeSync()
   sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
-  const services: AppServices = { store, tokens, sync, media, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, media, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
   root.render(<App services={services} />)
   step('render')
   await wait(400)

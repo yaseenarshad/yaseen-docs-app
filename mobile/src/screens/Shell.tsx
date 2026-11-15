@@ -71,7 +71,8 @@ export function Shell() {
   }, [route])
   const reviewShown = route === null && app.nav.tab === 'review'
   // The kept Review, always the SECOND child of what the shell returns once the tabs are ready, so it never remounts.
-  const kept = tabsReady && (reviewKept || reviewShown) ? createPortal(<Review shown={reviewShown} />, reviewHost) : null
+  // YAZ-5476: only while the open vault has Review on; another vault's Review is not kept.
+  const kept = tabsReady && app.tabs.review && (reviewKept || reviewShown) ? createPortal(<Review shown={reviewShown} />, reviewHost) : null
 
   if (app.phase === 'loading') return <div className="app" aria-busy="true" />
 

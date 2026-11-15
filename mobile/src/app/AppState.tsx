@@ -8,9 +8,10 @@ import type { VaultMedia } from '../media/ui/vaultMedia'
 import type { Scanner } from '../scan/scanner'
 import { loadVaultList, openVault, openVaultOf, saveVaultList, vaultId, type KeepStorage, type PhoneVault, type TokenStore, type VaultList, type VaultStore } from '../store'
 import type { FriendsPort, FriendsSettings } from './friendsPort'
-import { navigate, openingTab, type NavAction, type NavState } from './nav'
+import { PLAIN_VAULT, navigate, openingTab, tabIn, type NavAction, type NavState, type VaultTabs } from './nav'
 import { IDLE, type ShellSync, type ShellSyncState } from './syncPort'
 import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
+import { readVaultTabs, sameTabs } from './vaultTabs'
 
 /**
  * The app's state and its actions: the one layer the screens (4A–4E) plug into. Every service is passed in, so
@@ -34,6 +35,11 @@ export interface AppServices {
   fetch?: FetchLike
   now?: () => number
   keepStorage?: () => Promise<KeepStorage>
+  /**
+   * YAZ-5476: which tabs a vault turns on. Default: its own files (`readVaultTabs`). The screen tests of other features
+   * pass one that keeps Review on (`screens/testing.ts`), as their made-up vaults have no IDs.
+   */
+  vaultTabs?: typeof readVaultTabs
 }
 
 /**
@@ -58,7 +64,10 @@ export interface AppModel {
   friendsSettings: FriendsSettings
   /** The open vault's word for "page": `unit('Search pages')` → "Search docs" (round 15, item 5). */
   unit: UnitText
+  /** What the open vault turns on (YAZ-5476, `vaultTabs.ts`): the Review and Friends tabs, the Today button. */
+  tabs: VaultTabs
   sync: ShellSyncState
+  /** Its `tab` is always one the open vault has (`tabIn`): a tab that went away shows Search. */
   nav: NavState
   go(action: NavAction): void
   /** The sign-in form (decision 13), typed or scanned. On success, the new vault opens. */
@@ -121,6 +130,7 @@ interface Loaded {
   friendsAccount: FriendsAccount
   friendsSettings: FriendsSettings
   unit: UnitText
+  tabs: VaultTabs
 }
 
 const EMPTY: Loaded = {
@@ -130,14 +140,18 @@ const EMPTY: Loaded = {
   friendsAccount: { kind: 'no-vaults' },
   friendsSettings: { vaults: null, nickname: null },
   unit: SAME_WORD,
+  tabs: PLAIN_VAULT,
 }
 
 export function AppProvider({ services, children }: { services: AppServices; children: ReactNode }) {
   const { store, tokens, sync, friends } = services
+  const tabsOfVault = services.vaultTabs ?? readVaultTabs
   const [loaded, setLoaded] = useState<Loaded>(EMPTY)
   const [nav, setNav] = useState<NavState>({ tab: 'review', stack: [] })
   const [syncState, setSyncState] = useState<ShellSyncState>(() => sync.state() ?? IDLE)
   const openKey = useRef<string | null>(null)
+  /** YAZ-5476: the vault's tabs changed (Review turned off, another vault): a tab it no longer has goes to Search, and stays there. */
+  const keepTab = useCallback((tabs: VaultTabs) => setNav((n) => (tabIn(n.tab, tabs) === n.tab ? n : { ...n, tab: tabIn(n.tab, tabs) })), [])
 
   /** Reads everything the screens show from the phone. No network call. `opening`: open the vault in the sync too. */
   const load = useCallback(
@@ -155,6 +169,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         friendsAccount: await loadFriendsAccount(store),
         friendsSettings: await friends.settings(),
         unit: key === null ? SAME_WORD : await readUnitWord(store, key),
+        tabs: await tabsOfVault(store, key),
       }
       openKey.current = key
       const syncing = opening ? (start.kind === 'ready' ? open : null) : undefined
@@ -164,10 +179,11 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       // YAZ-5260: the opening tab is set BEFORE the tabs show, so the first screen is the right one (no jump).
       await beforeShow?.(next)
       setLoaded(next)
+      keepTab(next.tabs)
       if (syncing) void sync.open(syncing).catch(() => undefined)
       return next
     },
-    [store, tokens, sync, friends],
+    [store, tokens, sync, friends, tabsOfVault, keepTab],
   )
 
   useEffect(() => {
@@ -178,7 +194,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       await load(true, async (next) => {
         if (next.phase !== 'ready') return
         const hasFriends = await asked
-        if (live) setNav({ tab: openingTab(hasFriends), stack: [] })
+        if (live) setNav({ tab: openingTab(hasFriends, next.tabs), stack: [] })
       })
     })()
     return () => {
@@ -189,12 +205,19 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   useEffect(
     () =>
       sync.subscribe((event) => {
-        if (event.type === 'state') setSyncState(event.state)
+        if (event.type === 'state') return setSyncState(event.state)
+        if (event.vault !== openKey.current) return
+        const vault = event.vault
         // Round 15, item 5: a new `.yaseendocs/unit-word.json` from the Mac changes the words at once.
-        else if (event.vault === openKey.current && event.settings.includes(UNIT_WORD_PATH))
-          void readUnitWord(store, event.vault).then((unit) => setLoaded((l) => ({ ...l, unit })))
+        if (event.settings.includes(UNIT_WORD_PATH)) void readUnitWord(store, vault).then((unit) => setLoaded((l) => ({ ...l, unit })))
+        // YAZ-5476: the vault's settings (or its first IDs) can bring a tab or take one away, at once.
+        void tabsOfVault(store, vault, event.index).then((tabs) => {
+          if (openKey.current !== vault) return
+          setLoaded((l) => (sameTabs(l.tabs, tabs) ? l : { ...l, tabs }))
+          keepTab(tabs)
+        })
       }),
-    [sync, store],
+    [sync, store, tabsOfVault, keepTab],
   )
 
   const go = useCallback(
@@ -218,9 +241,9 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       if (outcome.ok) {
         const first = loaded.list.vaults.length === 0
         await saveVaultList(store, openVault(await loadVaultList(store), outcome.vault))
-        await load(true)
+        const next = await load(true)
         // The first vault: the app opens as at start (decision 21). One more vault: back to the tabs, on the new vault.
-        if (first) setNav({ tab: openingTab(await friends.hasFriends()), stack: [] })
+        if (first) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
         else setNav((n) => navigate(n, { type: 'home' }))
       }
       return outcome
@@ -233,8 +256,8 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       const outcome = await signInAgain(vault, token, deps, expiresAt)
       if (outcome.ok) {
         const wasWaiting = loaded.phase === 'sign-in-again'
-        await load(true)
-        if (wasWaiting) setNav({ tab: openingTab(await friends.hasFriends()), stack: [] })
+        const next = await load(true)
+        if (wasWaiting) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
         else setNav((n) => navigate(n, { type: 'back' }))
       }
       return outcome
@@ -315,6 +338,10 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     [friends],
   )
 
+  // YAZ-5476: a tab the open vault does not have shows Search (`keepTab` makes it stay Search when the tabs change).
+  const tab = tabIn(nav.tab, loaded.tabs)
+  const shownNav = useMemo(() => (tab === nav.tab ? nav : { ...nav, tab }), [nav, tab])
+
   const vault = openVaultOf(loaded.list)
   const model: AppModel = {
     services,
@@ -322,7 +349,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     vault,
     vaultKey: vault === null ? null : vaultId(vault),
     sync: syncState,
-    nav,
+    nav: shownNav,
     go,
     addVault,
     replaceToken,
