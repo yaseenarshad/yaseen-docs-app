@@ -137,6 +137,9 @@ import { tourEvent } from '../course/tourBus'
 import { addedLine, resetLine, waitingLine } from './cardWords'
 import type { CardPlace } from '../editor/card/cardOpen'
 
+/** How long "Archived · Undo" stays under the buttons (YAZ-5621): the phone's `UNDO_SHOWN_MS`. */
+const ARCHIVED_SHOWN_MS = 4000
+
 /** Where the Inbox's zoom is kept (YAZ-5372): `savedZoom`, localStorage. */
 const INBOX_ZOOM_KEY = 'inbox:zoom'
 
@@ -325,7 +328,19 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
     pendingLine.current = null
     setLastLine(pending)
   }, [answeredCount])
-  const line = lastLine !== null && answeredCount === lastLine.count && session.answered[answeredCount - 1] === lastLine.rating ? lastLine : null
+  // YAZ-5621: Archive card is on the Undo stack, as on the phone (YAZ-5078). While it is the last thing done, the
+  // answer's line goes (its Undo would take back the archive), and "Archived · Undo ⌘Z" shows for the phone's 4
+  // seconds; ⌘Z and ⋯'s Undo still take the archive back after that.
+  const [archivedAt, setArchivedAt] = useState<object | null>(null)
+  useEffect(() => {
+    if (archivedAt === null) return
+    const id = setTimeout(() => setArchivedAt((a) => (a === archivedAt ? null : a)), ARCHIVED_SHOWN_MS)
+    return () => clearTimeout(id)
+  }, [archivedAt])
+  const archived = session.lastArchive != null
+  const answerLineNow = lastLine !== null && answeredCount === lastLine.count && session.answered[answeredCount - 1] === lastLine.rating ? lastLine : null
+  const line = archived ? null : answerLineNow
+  const archivedLine = archived && archivedAt !== null && session.lastAdd === null
   useEffect(() => {
     if (!moreOpen) return
     const away = (event: PointerEvent) => {
@@ -483,7 +498,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
       ? []
       : [
           { id: 'undo', label: 'Undo last review', keys: '⌘Z', icon: ICON_UNDO, disabled: !session.canUndo, run: () => void review.undo() },
-          { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
+          { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => {
+            setArchivedAt({})
+            void review.turnOff()
+          } },
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
@@ -665,12 +683,20 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           </div>
         )}
         {/* The last answer's line (YAZ-5025 round 2): centred under the buttons; the row keeps its height when empty. */}
-        <div className="card-inbox__last" role="status" aria-live="polite" data-rating={session.lastAdd === null ? line?.rating : undefined} data-kind={session.lastAdd === null ? undefined : 'add'}>
+        <div className="card-inbox__last" role="status" aria-live="polite" data-rating={session.lastAdd === null ? line?.rating : undefined} data-kind={session.lastAdd !== null ? 'add' : archivedLine ? 'archive' : undefined}>
           {session.lastAdd !== null ? (
             // YAZ-5042: the add (round 2: or the Reset), while it is the last thing done; its Undo is the hook's undo, as ⌘Z.
             <>
               <span className="card-inbox__last-mark">{session.lastAdd.reset ? '↺' : '+'}</span>
               <span className="card-inbox__last-text"> {session.lastAdd.reset ? resetLine(session.lastAdd.kind) : addedLine(session.lastAdd.kind, session.lastAdd.count)} · </span>
+              <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
+                <KeyLabel action="Undo" keys="⌘Z" />
+              </button>
+            </>
+          ) : archivedLine ? (
+            // YAZ-5621: the phone's words, "Archived · Undo"; its Undo is the hook's undo, as ⌘Z.
+            <>
+              <span className="card-inbox__last-text">Archived · </span>
               <button type="button" className="card-inbox__last-undo" disabled={!session.canUndo} onMouseDown={(e) => e.preventDefault()} onClick={() => void review.undo()}>
                 <KeyLabel action="Undo" keys="⌘Z" />
               </button>

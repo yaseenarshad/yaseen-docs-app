@@ -25,4 +25,6 @@ export const desktopReviewHost: ReviewHost = Object.freeze({
   setCardsAdded: (root: string, added: CardsAddedToday) => setCardsAdded(root, added),
   subscribeCardsAdded,
   vaultName: (root: string) => storage.vaultName(root),
+  // YAZ-5621: Undo takes back Archive card on the Mac too, as on the phone (YAZ-5078).
+  undoesArchive: true,
 })
