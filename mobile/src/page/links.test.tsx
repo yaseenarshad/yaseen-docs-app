@@ -177,6 +177,35 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     expect(h.host.querySelector('.linked-from')).toBeNull()
   })
 
+  it('linkedFrom_drawsFirst20_thenMore: 47 linking pages draw 20, then "Show 20 more", then the last 7 (S4)', async () => {
+    const many = Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`many/Fan ${String(i).padStart(2, '0')}.md`, page(`title: Fan ${String(i).padStart(2, '0')}\n`, 'Back to [[Trip plan]].')]))
+    const phone = await newPhone()
+    await seedReaderVault(phone.store, phone.tokens, { ...FILES, ...many })
+    h = await mount({ phone })
+    await h.click('Search')
+    await waitFor(h, () => h!.button(/^Links, page/) !== null)
+    await h.click(/^Links, page/)
+    await waitFor(h, () => h!.host.querySelector('.reader__body h2') !== null)
+    await tap(h, 'the trip')
+    await waitFor(h, () => title(h!) === 'Trip plan' && h!.host.querySelector('.linked-from') !== null)
+    expect(h.host.querySelector('.linked-from__header')?.textContent).toBe('Linked from (47)')
+    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
+    const entries = () => h!.host.querySelectorAll('.linked-from__entry').length
+    const more = () => h!.host.querySelector<HTMLButtonElement>('.linked-from__more')
+    expect(entries()).toBe(20)
+    expect(more()?.textContent).toBe('Show 20 more')
+    await act(async () => more()!.click())
+    expect(entries()).toBe(40)
+    expect(more()?.textContent).toBe('Show 7 more')
+    await act(async () => more()!.click())
+    expect(entries()).toBe(47)
+    expect(more()).toBeNull()
+    // Closed and opened again: the first 20 again.
+    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
+    await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
+    expect(entries()).toBe(20)
+  })
+
   it('1,300 pages: the reverse map is one pass, built once per version of the vault data, then free', () => {
     const records = Array.from({ length: 1300 }, (_, i) => {
       const body = `# Page ${i}\n\nSee [[Page ${(i + 1) % 1300}]], [[Page ${(i + 7) % 1300}|seven on]] and [[Page ${(i * 13) % 1300}#Part]].\n\n${cardBlock(`DEMO-${i + 100}`, 'Q\n---\nA')}\n`

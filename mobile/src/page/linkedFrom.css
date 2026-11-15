@@ -67,6 +67,17 @@
   overflow-wrap: anywhere;
   cursor: pointer;
 }
+.linked-from__more {
+  min-height: var(--tap, 44px);
+  margin: 4px 0 0 20px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
 .linked-from__match {
   background: var(--accent-soft);
   color: var(--fg);
