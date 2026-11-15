@@ -250,13 +250,12 @@
   z-index: 1;
 }
 
-/* YAZ-5487: Settings' default is `--table-sticky-subheaders` on `.app`, or the vault's on its surface (nearest wins). */
-.milkdown .ProseMirror .milkdown-table-block[data-table-sticky-subheaders='on'] .table-subhead-row > td {
-  background-color: var(--bg);
-  background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
-}
+/* YAZ-5487: Settings' default is `--table-sticky-subheaders` on `.app`, or the vault's on its surface; the table's own
+   sets it on its block, nearer (the nearest wins). */
+.milkdown .ProseMirror .milkdown-table-block[data-table-sticky-subheaders='on'] { --table-sticky-subheaders: on; }
+.milkdown .ProseMirror .milkdown-table-block[data-table-sticky-subheaders='off'] { --table-sticky-subheaders: off; }
 @container style(--table-sticky-subheaders: on) {
-  .milkdown .ProseMirror .milkdown-table-block:not([data-table-sticky-subheaders='off']) .table-subhead-row > td {
+  .milkdown .ProseMirror .milkdown-table-block .table-subhead-row > td {
     background-color: var(--bg);
     background-image: var(--table-page-mark, none), var(--table-open-ring, none), var(--table-band, none), var(--table-past, none), linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
   }
@@ -381,15 +380,17 @@
    the table's own `data-table-nowrap` (Clip) / `data-table-wrap` (Wrap) wins over it, and a column's own `data-cell-text`
    on its cells wins over both. A caret in a clipped cell keeps the one line and scrolls it sideways. A cut cell shows its
    full text on hover as a card (`cellNotePreview.ts`, YAZ-4901). */
+/* YAZ-5487: the table's own Wrap or Clip sets `--table-text` on its block, nearer than Settings' (the nearest wins). */
+.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] { --table-text: clip; }
+.milkdown .ProseMirror .milkdown-table-block[data-table-wrap] { --table-text: wrap; }
 @container style(--table-text: clip) {
-  .milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) p {
+  .milkdown .ProseMirror .milkdown-table-block :is(th, td):not([data-cell-text='wrap']) p {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 }
-.milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) p,
 .milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] p {
   min-width: 0;
   overflow: hidden;
@@ -637,16 +638,17 @@
    The YAZ-3818 demo: its colour (`--table-band-colour`, the accent by default) and strength (`--table-band-strength`,
    10%) are settings on `.app`, and `data-table-band-rows` there leaves out the caret's row (`mouse`) or the mouse's
    (`caret`). */
+.milkdown .ProseMirror .milkdown-table-block { --table-band-on: linear-gradient(color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent), color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent)); }
 @container style(--table-row-band: all) {
   .app:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block .table-band-row,
   .app:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover {
-    --table-band: linear-gradient(color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent), color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent));
+    --table-band: var(--table-band-on);
   }
 }
 @container style(--table-row-band: calendar) {
   .app:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] .table-band-row,
   .app:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block[data-table-calendar] tr:not(:first-child):hover {
-    --table-band: linear-gradient(color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent), color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), transparent));
+    --table-band: var(--table-band-on);
   }
 }
 

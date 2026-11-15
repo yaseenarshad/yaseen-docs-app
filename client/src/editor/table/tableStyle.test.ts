@@ -374,13 +374,12 @@ describe('Text in cells (YAZ-4900): the table\'s Wrap or Clip, each column\'s ow
     const css = (await import('./table.css?inline')).default as string
     const bare = css.replace(/\/\*.*?\*\//gs, '')
     const rules = [...bare.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({ selector: selector.replace(/\s+/g, ' ').trim(), body })).filter(({ selector, body }) => /text-overflow:\s*ellipsis/.test(body) && selector.endsWith(' p'))
-    // The table's and the column's own (on the table and its cells), then Settings' (YAZ-5487: `--table-text`, the
-    // nearest surface's, a style query, so each vault its own) for a table with no Wrap of its own.
-    expect(rules.map((r) => r.selector)).toEqual([
-      ".milkdown .ProseMirror .milkdown-table-block:not([data-table-wrap]) :is(th, td):not([data-cell-text='wrap']) p",
-      [".milkdown .ProseMirror .milkdown-table-block[data-table-nowrap] :is(th, td):not([data-cell-text='wrap']) p", ".milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] p"].join(', '),
-    ])
-    expect(bare).toMatch(/@container style\(--table-text: clip\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block:not\(\[data-table-wrap\]\)/)
+    // Settings' (YAZ-5487: `--table-text`, the nearest surface's, a style query, so each vault its own), which the table's
+    // own Wrap or Clip sets on its block, nearer; then a column's own Clip.
+    expect(rules.map((r) => r.selector)).toEqual([".milkdown .ProseMirror .milkdown-table-block :is(th, td):not([data-cell-text='wrap']) p", ".milkdown .ProseMirror .milkdown-table-block :is(th, td)[data-cell-text='clip'] p"])
+    expect(bare).toMatch(/@container style\(--table-text: clip\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block :is\(th, td\)/)
+    expect(bare).toMatch(/\.milkdown-table-block\[data-table-nowrap\] \{ --table-text: clip; \}/)
+    expect(bare).toMatch(/\.milkdown-table-block\[data-table-wrap\] \{ --table-text: wrap; \}/)
     for (const rule of rules) expect(rule.body).toMatch(/white-space:\s*nowrap/)
   })
 })
