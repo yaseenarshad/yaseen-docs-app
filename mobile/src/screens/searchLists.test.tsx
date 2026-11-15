@@ -96,7 +96,7 @@ describe('the Favorites filter (YAZ-5452)', () => {
     expect(tree(h)).toEqual(['0:markdown:Trip plan'])
     await h.click(/^Trip plan/)
     await waitFor(h, () => h!.host.querySelector('.reader__title') !== null)
-    await h.click('‹ Back')
+    await h.click('Back')
     await waitFor(h, () => h!.host.querySelector('[aria-label="Favorites"][role="tree"]') !== null)
     expect(tree(h)).toEqual(['0:markdown:Trip plan'])
   })
@@ -268,7 +268,7 @@ describe('the Recent filter (YAZ-5457)', () => {
     await x.click(name)
     await waitFor(x, () => x.host.querySelector('.reader__title, .card-view__card') !== null)
     await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
-    await x.click('‹ Back')
+    await x.click('Back')
     await waitFor(x, () => x.host.querySelector('.search') !== null)
   }
 
