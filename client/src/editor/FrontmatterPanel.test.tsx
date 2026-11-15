@@ -16,6 +16,11 @@ import { TEST_RECORDS } from '../views/testRecords'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { settleFileWrites } from '../views/writeProperty'
 import type { ColumnDecl } from '../views/folderSettings'
+import { UNIT_WORDS, UnitContext, unitTextOf } from '../vault/unitWord'
+import { READ_ONLY_EDIT, ReadOnlyEditEvent } from './readOnlyEdit'
+import { EMPTY_CARD_LINE, cardPropertiesOf, withCardProperty, type CardLine } from '@shared/cardLine'
+import { setDisplayName } from '../views/view/columnLabel'
+import type { ViewSet } from '../views/viewSchema'
 
 vi.mock('../api', async (importOriginal) => {
   const { propertiesStub } = await import('../views/propertiesStub')
@@ -1405,14 +1410,15 @@ Body
 describe('a read-only page (YAZ-3076 D2, S23)', () => {
   const LOCKED = TYPED.replace('---\n', '---\nreadonly: true\n')
 
-  it('every row is its value with no editor and no property menu; `readonly` itself is Reserved; no Add property', () => {
+  it('every row is its value with no editor; its name still opens its menu (YAZ-5584); `readonly` itself is Reserved; no Add property', () => {
     const el = mount(LOCKED, { readOnly: true })
     expand(el)
     expect(keysOf(el)).toContain('readonly')
     expect(chipIn(rowOf(el, 'readonly'))).toBe('Reserved')
-    // A flag's value is drawn as a disabled box; nothing in a row takes input.
-    for (const row of rows(el)) expect(row.querySelector('input:not([disabled]), select, textarea, button, [contenteditable="true"]'), row.dataset.key).toBeNull()
-    expect(el.querySelector('[aria-label^="Configure "]')).toBeNull()
+    // A flag's value is drawn as a disabled box; nothing in a row takes input. The name is the menu's button.
+    for (const row of rows(el)) expect(row.querySelector('input:not([disabled]), select, textarea, button:not(.frontmatter-property-name), [contenteditable="true"]'), row.dataset.key).toBeNull()
+    expect(byLabel(rowOf(el, 'readonly'), 'Configure readonly')).toBeNull()
+    expect(byLabel(rowOf(el, 'status'), 'Configure status')).not.toBeNull()
     expect(btn(el, 'Add property')).toBeNull()
     // A row the user could edit before carries no chip: it is not the app's, only locked.
     expect(chipIn(rowOf(el, 'parent'))).toBeNull()
@@ -1448,9 +1454,9 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     act(() => void target?.dispatchEvent(event))
     return event
   }
-  const menuItems = (): string[] => [...document.querySelectorAll('.ctx-menu [role="menuitem"]')].map((b) => b.textContent ?? '')
+  const menuItems = (): string[] => [...document.querySelectorAll('.frontmatter-property-menu [role="menuitem"]')].map((b) => b.textContent ?? '')
   const menuItem = (text: string): HTMLButtonElement => {
-    const b = [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((n) => n.textContent === text)
+    const b = [...document.querySelectorAll<HTMLButtonElement>('.frontmatter-property-menu [role="menuitem"]')].find((n) => n.textContent === text)
     if (b === undefined) throw new Error(`no menu item ${text}`)
     return b
   }
@@ -1559,27 +1565,44 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: FIELD_PAGE.replace('Status: Ready\n', 'Status: Ready\nDue Date: ""\n'), expectedMtime: 100 })
   })
 
-  it('a right-click is no native menu: it closes the popover and opens "<Type> · <name>", Change type ›, Rename…, Copy value, Remove from this page', () => {
+  it('YAZ-5584: a click and a right-click open the ONE menu — the name and its type, Edit property ›, Rename…, Copy value, Remove from this page…; a right-click is no native menu', () => {
     const el = mount(TYPED, { root: ROOT })
     expand(el)
+    const heading = () => document.querySelector('.frontmatter-property-menu__heading')?.textContent
     click(byLabel(el, 'Configure status'))
-    expect(document.querySelector('.frontmatter-property-menu')).not.toBeNull()
+    const byClick = { heading: heading(), items: menuItems() }
+    expect(byClick).toEqual({ heading: 'statusText', items: ['Edit property ›', 'Rename…', 'Copy value', 'Remove from this page…'] })
+    press(document.body, 'Escape')
+    expect(document.querySelector('.frontmatter-property-menu')).toBeNull()
     const event = contextMenu(byLabel(el, 'Configure status'))
     expect(event.defaultPrevented).toBe(true)
-    expect(document.querySelector('.frontmatter-property-menu')).toBeNull()
-    expect(document.querySelector('.ctx-menu .ctx-menu__heading')?.textContent).toBe('Text · status')
-    expect(menuItems()).toEqual(['Change type ›', 'Rename…', 'Copy value', 'Remove from this page…'])
-    press(document.body, 'Escape')
+    expect({ heading: heading(), items: menuItems() }).toEqual(byClick)
+    expect(document.querySelectorAll('.frontmatter-property-menu')).toHaveLength(1)
+    expect(document.querySelector('.ctx-menu')).toBeNull()
+    // A right-click on another row moves the one menu there.
     contextMenu(byLabel(el, 'Configure pages'))
-    expect(document.querySelector('.ctx-menu .ctx-menu__heading')?.textContent).toBe('Number · pages')
+    expect(heading()).toBe('pagesNumber')
+    expect(document.querySelectorAll('.frontmatter-property-menu')).toHaveLength(1)
   })
 
-  it('Change type › opens the same definition editor; for a page field Save writes properties.json, and nothing in the page', async () => {
+  it('YAZ-5584: "Remove from this page…" says the vault’s word for a page (`unit()`), in the menu and its ask', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<UnitContext.Provider value={unitTextOf(UNIT_WORDS.note)}><FrontmatterPanel file={{ path: PATH, content: TYPED, mtime: 100 }} root={ROOT} /></UnitContext.Provider>))
+    expand(container)
+    contextMenu(byLabel(container, 'Configure status'))
+    expect(menuItems().at(-1)).toBe('Remove from this note…')
+    click(menuItem('Remove from this note…'))
+    expect(document.querySelector('.confirm-overlay')?.textContent).toContain('Remove "status" from this note?')
+  })
+
+  it('Edit property › (was the right-click’s Change type ›) opens the definition editor; for a page field Save writes properties.json, and nothing in the page', async () => {
     const el = mount(TYPED, { root: ROOT })
     expand(el)
     contextMenu(byLabel(el, 'Configure status'))
-    click(menuItem('Change type ›'))
-    expect(document.querySelector('.ctx-menu')).toBeNull()
+    click(menuItem('Edit property ›'))
+    expect(menuItems()).toEqual([])
     expect(document.querySelector('.frontmatter-property-menu__scope')?.textContent).toBe('In every page of this vault')
     click(byLabel(el, 'Property type: Text'))
     click(buttonNamed(el, 'Number'))
@@ -1609,7 +1632,7 @@ describe('FrontmatterPanel — any name, a type when you add, a real right-click
     await flush()
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PATH, content: TYPED.replace('due: 2024-05-01', 'Due Date: 2024-05-01'), expectedMtime: 100 })
     expect(keysOf(el)).toEqual(['status', 'pages', 'done', 'Due Date', 'tags', 'parent'])
-    expect(document.querySelector('.ctx-menu')).toBeNull()
+    expect(document.querySelector('.frontmatter-property-menu')).toBeNull()
   })
 
   it('Rename… refuses a name the page holds already, and writes nothing', () => {
@@ -1664,7 +1687,7 @@ describe('FrontmatterPanel — one key, capitals ignored (YAZ-4769)', () => {
     return container
   }
   const contextMenu = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 30, clientY: 40 })))
-  const menuItem = (text: string): HTMLButtonElement => [...document.querySelectorAll<HTMLButtonElement>('.ctx-menu [role="menuitem"]')].find((n) => n.textContent === text)!
+  const menuItem = (text: string): HTMLButtonElement => [...document.querySelectorAll<HTMLButtonElement>('.frontmatter-property-menu [role="menuitem"]')].find((n) => n.textContent === text)!
 
   it('the page’s `dessert column` is the page column `Dessert Column`: one row, in the column’s spelling, on Recipes; a second spelling is no second row', () => {
     const el = mountAt('---\ndessert column: Pie\nDESSERT COLUMN: Tart\n---\nBody\n')
@@ -1718,7 +1741,7 @@ describe('FrontmatterPanel — one key, capitals ignored (YAZ-4769)', () => {
     expect(writeFile).not.toHaveBeenCalled()
   })
 
-  it('Rename… of a field shown in its column’s capitals renames the page’s own spelling', async () => {
+  it('YAZ-5585: Rename… of a column renames it as the folder table does — its label on Recipes; the page’s key, in any capitals, stays', async () => {
     const el = mountAt('---\ndessert column: Pie\n---\nBody\n')
     contextMenu(byLabel(el, 'Configure Dessert Column'))
     click(menuItem('Rename…'))
@@ -1726,6 +1749,142 @@ describe('FrontmatterPanel — one key, capitals ignored (YAZ-4769)', () => {
     setValue(field, 'Course')
     press(field, 'Enter')
     await flush()
-    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PAGE, content: '---\nCourse: Pie\n---\nBody\n', expectedMtime: 100 })
+    expect(writeFile).toHaveBeenCalledOnce()
+    const write = writeFile.mock.calls[0]![0]
+    expect(write.path).toBe('/vault/Recipes/.folder.md')
+    expect((parseFrontmatter(splitFrontmatter(write.content).frontmatter).properties.folder_settings as { properties: unknown }).properties).toEqual({ 'Dessert Column': { displayName: 'Course' } })
+  })
+})
+
+/** YAZ-5583: a page's property has ONE menu (part 1, YAZ-5584) holding Rename (part 2, YAZ-5585). */
+describe('FrontmatterPanel — one property menu with Rename (YAZ-5583)', () => {
+  const PAGE = '/vault/Recipes/Cake.md'
+  const RECIPES = '/vault/Recipes/.folder.md'
+  const COLUMNS = { Course: { kind: 'text' } } as const
+  const RECIPES_BYTES = '---\nid: r1e2c3i4p5e6\nfolder_settings:\n  columns:\n    Course:\n      kind: text\n  views:\n    - type: board\n      name: Board\n---\n'
+  const recipes = () => feedOf(folderMd('/vault/Recipes', { columns: { ...COLUMNS }, id: 'r1e2c3i4p5e6', title: 'Recipes' }))
+  const contextMenu = (target: Element | null) => act(() => void target?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: 30, clientY: 40 })))
+  const menuItem = (text: string): HTMLButtonElement => [...document.querySelectorAll<HTMLButtonElement>('.frontmatter-property-menu [role="menuitem"]')].find((n) => n.textContent === text)!
+  const settingsIn = (content: string) => parseFrontmatter(splitFrontmatter(content).frontmatter).properties.folder_settings as Record<string, unknown>
+  const mountAt = (content: string, extra: Partial<FrontmatterPanelProps> = {}): HTMLElement => {
+    readFile.mockImplementation(async (p: string) => ({ path: p, content: p === PAGE ? content : p === RECIPES ? RECIPES_BYTES : '', mtime: 100, size: 1 }))
+    writeFile.mockImplementation(async (w) => ({ path: w.path, mtime: 200, size: w.content.length }))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<FrontmatterPanel file={{ path: PAGE, content, mtime: 100 }} root={ROOT} wikilinks={recipes()} {...extra} />))
+    expand(container)
+    return container
+  }
+  const rename = async (el: HTMLElement, shown: string, to: string, open: 'click' | 'right-click' = 'click') => {
+    const name = byLabel(el, `Configure ${shown}`)
+    if (open === 'click') click(name)
+    else contextMenu(name)
+    click(menuItem('Rename…'))
+    const field = byLabel<HTMLInputElement>(el, `Rename ${shown}`)!
+    setValue(field, to)
+    press(field, 'Enter')
+    await flush()
+    await flush()
+  }
+
+  it('a column’s rename from the page is the folder table’s "Rename column…": the same `setDisplayName` change, in ONE write of the folder page; the page and its key stay', async () => {
+    const el = mountAt('---\nCourse: Pie\n---\nBody\n')
+    await rename(el, 'Course', 'Dish')
+    expect(writeFile).toHaveBeenCalledOnce()
+    const write = writeFile.mock.calls[0]![0]
+    expect(write.path).toBe(RECIPES)
+    // The table's own change, on the same settings: the label, and nothing else (columns, views, the page's key).
+    const table: ViewSet = { views: [{ type: 'board', name: 'Board' }] as ViewSet['views'] }
+    setDisplayName(table, 'note.Course', 'Dish')
+    expect(settingsIn(write.content)).toEqual({ columns: { Course: { kind: 'text' } }, views: [{ type: 'board', name: 'Board' }], properties: table.properties })
+  })
+
+  it('the row then says the column’s label (the table’s header word); Rename… again starts from it, and Undo puts the old name back', async () => {
+    const onNotice = vi.fn()
+    const labelled = folderMd('/vault/Recipes', { columns: { ...COLUMNS }, id: 'r1e2c3i4p5e6', title: 'Recipes' })
+    ;(labelled.properties.folder_settings as Record<string, unknown>).properties = { Course: { displayName: 'Dish' } }
+    const el = mountAt('---\nCourse: Pie\n---\nBody\n', { wikilinks: feedOf(labelled), onNotice })
+    expect(keysOf(el)).toEqual(['Dish'])
+    expect(rowOf(el, 'Course').querySelector('.frontmatter-panel__key')?.getAttribute('title')).toBe('Column on Recipes')
+    click(byLabel(el, 'Configure Dish'))
+    click(menuItem('Rename…'))
+    expect(byLabel<HTMLInputElement>(el, 'Rename Dish')?.value).toBe('Dish')
+    press(document.body, 'Escape')
+    await rename(el, 'Dish', 'Main', 'right-click')
+    expect(settingsIn(writeFile.mock.calls.at(-1)![0].content).properties).toEqual({ Course: { displayName: 'Main' } })
+    expect(onNotice).toHaveBeenLastCalledWith('Renamed Dish to Main', 'info', 'undo', expect.objectContaining({ label: 'Undo' }))
+  })
+
+  it('a field no folder defines renames its key in this page only (one write, the value stays)', async () => {
+    const el = mountAt('---\nmood: calm\n---\nBody\n')
+    await rename(el, 'mood', 'Feeling')
+    expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PAGE, content: '---\nFeeling: calm\n---\nBody\n', expectedMtime: 100 })
+  })
+
+  it('a CARD’s property (the strip’s Properties part, the same rows and menu): Rename writes the card line (YAZ-5349 card lens), no file of the page', async () => {
+    let line: CardLine = withCardProperty(EMPTY_CARD_LINE, 'level', 'B1')
+    const change = vi.fn(async (edit: (l: CardLine) => CardLine) => void (line = edit(line)))
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<FrontmatterPanel file={{ path: PAGE, content: '', mtime: 0 }} root={ROOT} card={{ values: cardPropertiesOf(line), change }} />))
+    click(byLabel(container, 'Configure level'))
+    expect([...document.querySelectorAll('.frontmatter-property-menu [role="menuitem"]')].map((b) => b.textContent)).toEqual(['Edit property ›', 'Rename…', 'Copy value', 'Remove from this card…'])
+    await rename(container, 'level', 'Level')
+    expect(change).toHaveBeenCalledOnce()
+    expect(cardPropertiesOf(line)).toEqual({ Level: 'B1' })
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('Read only: the menu opens; Rename… asks "Allow edits?" first (the page’s chip, as the title does) and writes nothing; once allowed, its field opens and the rename lands', async () => {
+    const asked: ReadOnlyEditEvent[] = []
+    const listen = (e: Event) => asked.push(e as ReadOnlyEditEvent)
+    document.addEventListener(READ_ONLY_EDIT, listen)
+    try {
+      const el = mountAt('---\nmood: calm\n---\nBody\n', { readOnly: true })
+      click(byLabel(el, 'Configure mood'))
+      click(menuItem('Rename…'))
+      expect(asked).toHaveLength(1)
+      expect(asked[0]!.detail).toBe('page')
+      expect(byLabel(el, 'Rename mood')).toBeNull()
+      expect(document.querySelector('.frontmatter-property-menu')).toBeNull()
+      // The person allows edits: the page draws unlocked, and the chip runs the rename the click meant.
+      act(() => root?.render(<FrontmatterPanel file={{ path: PAGE, content: '---\nmood: calm\n---\nBody\n', mtime: 100 }} root={ROOT} wikilinks={recipes()} />))
+      act(() => asked[0]!.resume?.())
+      const field = byLabel<HTMLInputElement>(el, 'Rename mood')!
+      expect(field).not.toBeNull()
+      expect(writeFile).not.toHaveBeenCalled()
+      setValue(field, 'Feeling')
+      press(field, 'Enter')
+      await flush()
+      expect(writeFile).toHaveBeenCalledExactlyOnceWith({ path: PAGE, content: '---\nFeeling: calm\n---\nBody\n', expectedMtime: 100 })
+    } finally {
+      document.removeEventListener(READ_ONLY_EDIT, listen)
+    }
+  })
+
+  it('Read only: Edit property › and Remove ask first too; Copy value does not', () => {
+    const asked: Event[] = []
+    const listen = (e: Event) => asked.push(e)
+    document.addEventListener(READ_ONLY_EDIT, listen)
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    try {
+      const el = mountAt('---\nmood: calm\n---\nBody\n', { readOnly: true })
+      for (const entry of ['Edit property ›', 'Remove from this page…']) {
+        click(byLabel(el, 'Configure mood'))
+        click(menuItem(entry))
+      }
+      expect(asked).toHaveLength(2)
+      expect(document.querySelector('.confirm-overlay')).toBeNull()
+      expect(document.querySelector('.property-settings-fields')).toBeNull()
+      click(byLabel(el, 'Configure mood'))
+      click(menuItem('Copy value'))
+      expect(writeText).toHaveBeenCalledWith('calm')
+      expect(asked).toHaveLength(2)
+    } finally {
+      document.removeEventListener(READ_ONLY_EDIT, listen)
+    }
   })
 })

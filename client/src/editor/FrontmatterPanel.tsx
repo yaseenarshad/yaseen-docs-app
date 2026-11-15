@@ -28,7 +28,7 @@ import { byFolder, declarationOf, folderName, moveColumnText, pageColumns, readO
 import { cellEditor, columnTyping, type EditorKind } from '../views/editorType'
 import { fromYaml } from '../views/expr'
 import { FOLDER_SETTINGS_KEY } from '@shared/folderSettingsLinks'
-import { folderSettings, moveFolderColumn, writeFolderColumn, type ColumnDecl, type FolderSettings } from '../views/folderSettings'
+import { folderSettings, moveFolderColumn, writeFolderColumn, writeFolderSettings, type ColumnDecl, type FolderSettings } from '../views/folderSettings'
 import { PROPERTY_LABELS, PropertyDefinitionEditor, PropertyTypeIcon } from '../views/view/PropertyDefinitionEditor'
 import { MenuPicker, TypePicker } from '../views/view/TypePicker'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -37,7 +37,10 @@ import { declarationForKind } from '../views/view/declarationForKind'
 import { TextField } from '../views/view/TextField'
 import { properties as vaultProperties } from '../views/useProperties'
 import { showsFolderRows } from '../views/viewSchema'
-import { ContextMenuSurface } from '../components/ContextMenuSurface'
+import { displayNameOf, setDisplayName } from '../views/view/columnLabel'
+import { defaultLabel } from '../views/engine'
+import type { ViewSet } from '../views/viewSchema'
+import { tellReadOnlyEdit } from './readOnlyEdit'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { Notice, NoticeKind, NoticeType } from '../lib/notice'
 import { Popover } from '../views/view/Popover'
@@ -141,6 +144,11 @@ interface Row {
   raw: unknown
   /** null = read-only; the row then offers nothing but its chip. */
   editor: EditorKind | null
+  /**
+   * A row the page's Read only locks (YAZ-5584): the editor it has once edits are allowed. Its menu still opens; each
+   * entry that writes asks "Allow edits?" first, through the page's chip.
+   */
+  locked?: EditorKind
   chip: 'reserved' | 'yaml' | null
 }
 
@@ -228,7 +236,11 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   const [moving, setMoving] = useState<{ key: string; from: string | null; to: string | null; decl: ColumnDecl } | null>(null)
   /** "Remove from this page" awaiting its confirm (YAZ-4769): the key and where its value lives. */
   const [removing, setRemoving] = useState<{ key: string; home: Home | null } | null>(null)
-  const [propertyMenu, setPropertyMenu] = useState<{ key: string; home: Home | null; file: string | undefined; dir: string | undefined; scope: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean } | null>(null)
+  /**
+   * THE property menu (YAZ-5584): one menu for a click and a right-click on a row's name, at the name. `editing` = its
+   * Edit property form is open; `renaming` = its Rename… field is.
+   */
+  const [propertyMenu, setPropertyMenu] = useState<{ row: Row; key: string; home: Home | null; file: string | undefined; dir: string | undefined; scope: string; anchor: HTMLElement; definition: PropertyDecl; base: PropertyDecl | undefined; editing: boolean; renaming: boolean } | null>(null)
   // The panel follows the folder settings FILES (YAZ-2196): every index refetch hands over a new
   // array, and one that moved no `.folder.md` — a save anywhere in the vault — re-renders nothing here.
   // It follows the vault's answer on IDs with them (YAZ-2523 🔒 V5), which moves no file.
@@ -248,7 +260,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
   // and the view settings block is edited through the views, so it is no row.
   const own = card === undefined && isFolderSettingsPath(file.path)
   /** What a removal takes the value from, in the panel's words. */
-  const holder = own ? 'folder' : card !== undefined ? 'card' : 'page'
+  const holder = own ? 'folder' : card !== undefined ? 'card' : unit('page')
   const byId = useMemo(() => foldersById(folders), [folders])
   const openMemory = useContext(PropertiesOpenMemory)
   // A card's rows show open: the strip's part is their toggle (YAZ-5383).
@@ -268,8 +280,6 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
    * the list follows the name's own type; `on` undefined = not chosen (the page's folder), null = "No column".
    */
   const [adding, setAdding] = useState<{ name: string; kind: PagePropertyKind | null; on?: string | null } | null>(null)
-  /** The right-click menu (YAZ-4551 D21) at the pointer, on one row; `renaming` = its Rename… field is open. */
-  const [rowMenu, setRowMenu] = useState<{ row: Row; x: number; y: number; anchor: HTMLElement; renaming: boolean } | null>(null)
   const [query, setQuery] = useState('')
   const [snap, setSnap] = useState<Snapshot>(() => ({ seen: file.content, content: file.content, draft: null }))
 
@@ -447,11 +457,34 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         ...separateRows,
       ]
   // Read only: each row is its value, with no editor (a Reserved or YAML chip still says why that row never has one).
-  const rows = readOnly ? typedRows.map((row) => ({ ...row, editor: null })) : typedRows
+  // YAZ-5584: a locked row keeps its menu (its kind in `locked`); each write in it asks first.
+  const rows = readOnly ? typedRows.map((row): Row => ({ ...row, editor: null, locked: row.editor ?? undefined })) : typedRows
+  /** The row's kind, edits allowed or not; null for a row that never has an editor (Reserved, YAML). */
+  const kindOf = (row: Row): EditorKind | null => row.editor ?? row.locked ?? null
+  /**
+   * The folder page whose table shows a row as a column (YAZ-5585), where its label lives: a separate value's page, else
+   * the page's own folder (the one its columns type it by) when a folder defines it. None for a field no folder defines,
+   * and for a card's property.
+   */
+  const labelDirOf = (row: Row): string | undefined => (card !== undefined ? undefined : row.home !== null ? row.home.dir : row.owner !== undefined ? typingDir ?? undefined : undefined)
+  /** Each folder's column labels (`ViewSet.properties`), read once per folder for this snapshot. */
+  const labelsIn = useMemo(() => {
+    const seen = new Map<string, ViewSet>()
+    return (folder: string): ViewSet => {
+      let labels = seen.get(folder)
+      if (labels === undefined) seen.set(folder, (labels = { views: [], properties: folderSettings(folderMap.get(folder), ids).properties }))
+      return labels
+    }
+  }, [folderMap, ids])
+  /** A row's name as its folder table's header says it (YAZ-5585): the column's label there, else its key. */
+  const nameOfRow = (row: Row): string => {
+    const folder = labelDirOf(row)
+    return (folder === undefined ? '' : displayNameOf(labelsIn(folder), row.key)) || row.key
+  }
   const needle = query.trim().toLocaleLowerCase()
-  const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle))
-  /** A row's words (Yaseen, 2026-11-08): the key; a separate value names its page, "Cook time · Desserts". */
-  const rowLabel = (row: Row): string => (row.home === null ? row.key : `${row.key} · ${row.home.name}`)
+  const shown = rows.filter((row) => row.key.toLocaleLowerCase().includes(needle) || nameOfRow(row).toLocaleLowerCase().includes(needle))
+  /** A row's words (Yaseen, 2026-11-08): its name; a separate value names its page, "Cook time · Desserts". */
+  const rowLabel = (row: Row): string => (row.home === null ? nameOfRow(row) : `${nameOfRow(row)} · ${row.home.name}`)
 
   /**
    * Rename… (YAZ-4551 D21): THIS page only — one write that moves the key and keeps its value, its
@@ -485,6 +518,59 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         setError(null)
       })
       .catch((err: unknown) => setError(`Could not rename "${from}": ${messageOf(err)}`))
+  }
+
+  /**
+   * Rename… of a column (YAZ-5585): the folder table's own "Rename column…" (`setDisplayName`, `columnLabel.ts`), on the
+   * folder page whose table shows the row, in one write of its settings — so a rename here and one in the table are the
+   * same change. The KEY never changes: the pages' values, Column on, and the views' filters, sorts and groups all keep
+   * naming it, and the header and this row say the new name. An emptied name (or the key itself) goes back to the key.
+   * A toast offers Undo, as the table's does.
+   */
+  const renameLabel = (row: Row, folder: string, typed: string): void => {
+    const was = displayNameOf(labelsIn(folder), row.key)
+    const name = typed.trim() === row.key ? '' : typed.trim()
+    if (readOnly || name === was) return
+    const settings = folderSettings(folderMap.get(folder), ids)
+    const named = (label: string): FolderSettings => {
+      const def: ViewSet = { views: settings.views, properties: { ...settings.properties } }
+      setDisplayName(def, row.key, label)
+      return { ...settings, properties: def.properties as FolderSettings['properties'] }
+    }
+    const before = named(was)
+    const after = named(name)
+    const write = async (next: FolderSettings, base: FolderSettings): Promise<void> => {
+      refuseReadOnly(folder)
+      await writeFolderSettings(folderSettingsPath(absOf(folder)), next, base, ids)
+    }
+    const from = was || defaultLabel(row.key)
+    write(after, before)
+      .then(() => {
+        setError(null)
+        onNotice?.(`Renamed ${from} to ${name || defaultLabel(row.key)}`, 'info', 'undo', { label: 'Undo', run: () => void write(before, after).catch((err: unknown) => setError(`Could not undo: ${messageOf(err)}`)), fades: true })
+      })
+      .catch((err: unknown) => setError(`Could not rename "${from}": ${messageOf(err)}`))
+  }
+
+  /** The menu's Rename… (YAZ-5585): a column's label on its folder page, as the table renames it; else the key, in this page or card only. */
+  const renameRow = (row: Row, typed: string): void => {
+    const folder = labelDirOf(row)
+    if (folder !== undefined) renameLabel(row, folder, typed)
+    else renameKey(row.key, typed, row.home)
+  }
+  /** Whether Rename… has anything to rename: a column's label, or a key this page holds (an empty folder row holds none, YAZ-4635 P4). */
+  const renameable = (row: Row): boolean => labelDirOf(row) !== undefined || row.raw !== undefined
+
+  /**
+   * An entry of the menu that writes (YAZ-5584): at once, or on a locked page "Allow edits?" first — the page's own
+   * ask, as a click on its locked title makes it (`tellReadOnlyEdit`): the chip shows its card, and once edits are
+   * allowed the entry goes on (its form or field opens), with no second click.
+   */
+  const unlockThen = (anchor: HTMLElement, run: () => void): void => {
+    if (!readOnly) return run()
+    setPropertyMenu(null)
+    anchor.focus({ preventScroll: true })
+    tellReadOnlyEdit(anchor, card !== undefined ? 'card' : 'page', run)
   }
 
   /**
@@ -654,25 +740,26 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
     // A column a parent defines is edited on its owner (C6): the base and the definition are that folder's own, so the
     // owner's "Separate value" switch (C3), which the page's copy never carries, stays.
     const base = row.home !== null ? column : row.owner === undefined ? undefined : folderSettings(folderMap.get(row.owner), ids).columns[row.key]
-    return { key: row.key, home: row.home, file: settingsFile, dir, scope, anchor, base, definition: base ?? column ?? decls?.properties[row.key] ?? { kind: row.editor ?? 'text' }, editing }
+    return { row, key: row.key, home: row.home, file: settingsFile, dir, scope, anchor, base, definition: base ?? column ?? decls?.properties[row.key] ?? { kind: kindOf(row) ?? 'text' }, editing, renaming: false }
   }
 
   const rowItem = (row: Row) => {
     // A separate value is typed by its page's column; a page field by its page's columns (C2).
     const definition = row.home === null ? typing : separatePages.find((p) => p.home.dir === row.home!.dir)?.settings ?? null
     const words = rowLabel(row)
+    const kind = kindOf(row)
     // C8: a page field a folder defines says which, on hover.
     const from = row.owner === undefined ? undefined : `Column on ${nameOf(row.owner)}`
+    /** A click and a right-click open the ONE menu, at the name (YAZ-5584); a right-click is no native menu (YAZ-4551 D21). */
+    const openMenu = (event: ReactMouseEvent<HTMLButtonElement>): void => {
+      event.preventDefault()
+      setPropertyMenu(menuFor(row, event.currentTarget, false))
+    }
     return (
       // Keyed by the page too: a separate value of the same name is another value, with its own editor state.
       <li key={`${row.home?.dir ?? ''}:${row.key}`} className="frontmatter-panel__row" data-key={row.key}>
-        {row.editor === null ? <span className="frontmatter-panel__key" title={from}>{words}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${words}`} title={from} onClick={event => setPropertyMenu(menuFor(row, event.currentTarget, false))} onContextMenu={event => {
-          // A real menu, not the greyed system one over the popover (YAZ-4551 D21).
-          event.preventDefault()
-          setPropertyMenu(null)
-          setRowMenu({ row, x: event.clientX, y: event.clientY, anchor: event.currentTarget, renaming: false })
-        }}>
-          <PropertyTypeIcon kind={row.editor} /><span>{words}</span>
+        {kind === null ? <span className="frontmatter-panel__key" title={from}>{words}</span> : <button type="button" className="frontmatter-panel__key frontmatter-property-name" aria-label={`Configure ${words}`} aria-haspopup="menu" title={from} onClick={openMenu} onContextMenu={openMenu}>
+          <PropertyTypeIcon kind={kind} /><span>{words}</span>
         </button>}
         <span className="frontmatter-panel__value">
           {row.editor === null ? (
@@ -744,7 +831,7 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         </button>
       )}
       {propertyMenu && createPortal(<Popover label={`Property ${propertyMenu.key}`} anchor={propertyMenu.anchor} onClose={() => { if (!saving) setPropertyMenu(null) }} className="frontmatter-property-menu">
-        <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{propertyMenu.key}</strong></div>
+        <div className="frontmatter-property-menu__heading"><PropertyTypeIcon kind={propertyMenu.definition.kind} /><strong>{rowLabel(propertyMenu.row)}</strong><span className="frontmatter-property-menu__kind">{PROPERTY_LABELS[propertyMenu.definition.kind]}</span></div>
         {propertyMenu.editing ? <>
           {/* YAZ-4769: a page field's column says where it is, and moves, with the Add row's picker; other rows keep the line. */}
           {propertyMenu.home === null && columnChoices(propertyMenu.key).length > 0 ? (
@@ -781,11 +868,30 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
           {error && <p role="alert" className="frontmatter-panel__error">{error}</p>}
           <div className="frontmatter-property-menu__actions"><button type="button" disabled={saving} onClick={() => setPropertyMenu(null)}>Cancel</button><button type="button" disabled={saving} onClick={() => void saveDefinition()}>{saving ? 'Saving…' : 'Save'}</button></div>
           </fieldset>
-        </> : <>
-          {/* A column's row edits that column on its folder (C2, C6); a field no folder defines, with a vault root, the vault's declaration (YAZ-4551 D21). */}
-          {(propertyMenu.file !== undefined || (typeof root === 'string' && root !== '')) && <button className="view-popover__item" type="button" onClick={() => setPropertyMenu({ ...propertyMenu, editing: true })}>Edit property <span>›</span></button>}
-          <button className="view-popover__item" type="button" onClick={() => { setRemoving({ key: propertyMenu.key, home: propertyMenu.home }); setPropertyMenu(null) }}>Remove from this {holder}…</button>
-        </>}
+        </> : propertyMenu.renaming ? (
+          <TextField
+            className="view-input"
+            aria-label={`Rename ${rowLabel(propertyMenu.row)}`}
+            autoFocus
+            selectOnMount
+            value={nameOfRow(propertyMenu.row)}
+            placeholder={labelDirOf(propertyMenu.row) === undefined ? undefined : propertyMenu.key}
+            onCommit={(next) => renameRow(propertyMenu.row, next)}
+            onDone={() => setPropertyMenu(null)}
+          />
+        ) : (
+          <div role="menu" aria-label={`Property ${propertyMenu.key}`} className="frontmatter-property-menu__items">
+            {/* A column's row edits that column on its folder (C2, C6); a field no folder defines, with a vault root, the vault's declaration (YAZ-4551 D21). */}
+            {typeable(propertyMenu.row) && <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const menu = propertyMenu; unlockThen(menu.anchor, () => setPropertyMenu({ ...menu, editing: true })) }}>Edit property <span>›</span></button>}
+            {renameable(propertyMenu.row) && <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const menu = propertyMenu; unlockThen(menu.anchor, () => setPropertyMenu({ ...menu, renaming: true })) }}>Rename…</button>}
+            <button className="view-popover__item" type="button" role="menuitem" onClick={() => {
+              const { key, row } = propertyMenu
+              void navigator.clipboard.writeText(copyText(row.raw)).catch((err: unknown) => setError(`Could not copy "${key}": ${messageOf(err)}`))
+              setPropertyMenu(null)
+            }}>Copy value</button>
+            <button className="view-popover__item" type="button" role="menuitem" onClick={() => { const { key, home, anchor } = propertyMenu; setPropertyMenu(null); unlockThen(anchor, () => setRemoving({ key, home })) }}>Remove from this {holder}…</button>
+          </div>
+        )}
       </Popover>, document.body)}
       {/* YAZ-4769: a column's move asks first, with what each folder gains or loses; then Undo. */}
       {moving !== null && createPortal(
@@ -824,29 +930,6 @@ function Panel({ file, root, properties: decls = null, wikilinks, readOnly = fal
         />,
         document.body,
       )}
-      {rowMenu && createPortal(<ContextMenuSurface x={rowMenu.x} y={rowMenu.y} onClose={() => setRowMenu(null)}>
-        {rowMenu.renaming ? (
-          <TextField
-            className="view-input"
-            aria-label={`Rename ${rowLabel(rowMenu.row)}`}
-            autoFocus
-            selectOnMount
-            value={rowMenu.row.key}
-            onCommit={(next) => renameKey(rowMenu.row.key, next, rowMenu.row.home)}
-            onDone={() => setRowMenu(null)}
-          />
-        ) : <>
-          <div className="ctx-menu__heading" role="presentation">{PROPERTY_LABELS[menuFor(rowMenu.row, rowMenu.anchor, false).definition.kind]} · {rowLabel(rowMenu.row)}</div>
-          {typeable(rowMenu.row) && <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => { setPropertyMenu(menuFor(rowMenu.row, rowMenu.anchor, true)); setRowMenu(null) }}>Change type ›</button>}
-          {/* An empty folder row holds no key of this page to rename (YAZ-4635 P4). */}
-          {rowMenu.row.raw !== undefined && <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => setRowMenu({ ...rowMenu, renaming: true })}>Rename…</button>}
-          <button type="button" className="ctx-menu__item" role="menuitem" onClick={() => {
-            void navigator.clipboard.writeText(copyText(rowMenu.row.raw)).catch((err: unknown) => setError(`Could not copy "${rowMenu.row.key}": ${messageOf(err)}`))
-            setRowMenu(null)
-          }}>Copy value</button>
-          <button type="button" className="ctx-menu__item ctx-menu__item--danger" role="menuitem" onClick={() => { setRemoving({ key: rowMenu.row.key, home: rowMenu.row.home }); setRowMenu(null) }}>Remove from this {holder}…</button>
-        </>}
-      </ContextMenuSurface>, document.body)}
       {expanded && (
         <div className="frontmatter-panel__body">
           {rawMode ? (
