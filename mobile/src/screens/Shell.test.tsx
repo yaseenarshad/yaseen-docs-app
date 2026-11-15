@@ -153,7 +153,7 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     h = await mount()
     await h.click('Scan a code')
     // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
-    await vi.waitFor(() => expect(h.scanner.on).toBe(true), { timeout: 5000 })
+    await vi.waitFor(() => expect(h!.scanner.on).toBe(true), { timeout: 5000 })
     await h.scan(code())
     expect(h.scanner.on).toBe(false)
     expect(tabs(h)).toEqual(['Friends', 'Review*', 'Search'])
@@ -168,7 +168,7 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     await h.scan('https://example.com/menu')
     expect(h.text()).toContain('This is not a Yaseen Docs code.')
     // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
-    await vi.waitFor(() => expect(h.scanner.on).toBe(true), { timeout: 5000 })
+    await vi.waitFor(() => expect(h!.scanner.on).toBe(true), { timeout: 5000 })
     await h.scan(code())
     expect(tabs(h)).toEqual(['Friends', 'Review*', 'Search'])
   })
@@ -181,7 +181,7 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     expect(h.button('How to make a token')).not.toBeNull()
     await h.click('Scan again')
     // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
-    await vi.waitFor(() => expect(h.scanner.on).toBe(true), { timeout: 5000 })
+    await vi.waitFor(() => expect(h!.scanner.on).toBe(true), { timeout: 5000 })
     await storedNothing(h.store, h)
   })
 
