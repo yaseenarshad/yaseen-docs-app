@@ -961,8 +961,11 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
       if (st.pending.length > 0) {
         const k = (current?.k ?? -1) + 1
         const intent = st.intents.find((i) => i.k === k)
-        const fresh = intent !== undefined && intent.by !== me && liveIntent(intent.at, now)
-        if (fresh) return paused(base, budget, 'busy', (Date.parse(intent.at) || now) + INTENT_LEASE_MS)
+        // The clock NOW (round 5): a run that waited long (a slow call, the app in the background) never judges a lease by
+        // the time it started, which would take over another device's fresh intent.
+        const t = opts.now()
+        const fresh = intent !== undefined && intent.by !== me && liveIntent(intent.at, t)
+        if (fresh) return paused(base, budget, 'busy', (Date.parse(intent.at) || t) + INTENT_LEASE_MS)
         if (intent === undefined || intent.by !== me) {
           // (a) The intent, on the newest list: generation k is still the next one, and no live run of another
           // device holds it.
@@ -973,9 +976,9 @@ export async function finishRemove(api: GistsApi, handle: IndexHandle, budget: G
               const c = s.gens.at(-1)
               if ((c?.k ?? -1) + 1 !== k || s.pending.length === 0) return { patch: null, result: false }
               const other = s.intents.find((i) => i.k === k)
-              if (other !== undefined && other.by !== me && liveIntent(other.at, now)) return { patch: null, result: false }
+              if (other !== undefined && other.by !== me && liveIntent(other.at, opts.now())) return { patch: null, result: false }
               const covers = [...new Set([...(c?.covers ?? []), ...s.pending.map((t) => t.id)])]
-              return { patch: { [listFile.intent(k)]: JSON.stringify({ v: 1, covers, by: me, at: new Date(now).toISOString() }) }, result: true }
+              return { patch: { [listFile.intent(k)]: JSON.stringify({ v: 1, covers, by: me, at: new Date(opts.now()).toISOString() }) }, result: true }
             },
             opts,
           )

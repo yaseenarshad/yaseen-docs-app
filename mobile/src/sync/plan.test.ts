@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { gitBlobSha } from './gitSha'
+import { LIST_PATH } from '@shared/friendListStore'
 import { diffTrees, isEager, isIndexed } from './plan'
 
 describe('what downloads at once (October decision 5, decision 6)', () => {
@@ -11,6 +12,12 @@ describe('what downloads at once (October decision 5, decision 6)', () => {
     expect(isEager('assets/images/flag.png')).toBe(false)
     expect(isEager('assets/audio/fifth.mp3')).toBe(false)
     expect(isEager('board.excalidraw')).toBe(false)
+  })
+
+  it('round 5 (YAZ-5083): the friends list file is never indexed (not a page, a card or media), and it comes down at once as a settings file', () => {
+    expect(isIndexed(LIST_PATH)).toBe(false)
+    expect(isIndexed('.yaseendocs/friends.md')).toBe(false)
+    expect(isEager(LIST_PATH)).toBe(true)
   })
 
   it('isIndexed: what the Mac\'s scan indexes: Markdown, no dot-folder or node_modules, but a folder\'s .folder.md', () => {
