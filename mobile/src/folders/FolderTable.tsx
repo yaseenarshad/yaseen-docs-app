@@ -13,6 +13,7 @@ import { layoutTables } from '../page/tableLayout'
 import { useTables } from '../page/useTables'
 import { useVaultLook } from '../page/vaultLook'
 import { useVaultData } from '../search/vaultData'
+import { foldKeyOf } from '../store/folderFolds'
 import { rowTarget, type ViewRun } from './folderModel'
 
 /**
@@ -36,10 +37,15 @@ import { rowTarget, type ViewRun } from './folderModel'
  * not drag), and a subfolder row's "N inside" (`ViewRun.inside`). The Name cell stays at least 44 px (YAZ-5532: a
  * finger's tap): a taller row height wins; Short keeps the Name cell, so its row, at 44 px.
  *
+ * YAZ-5598: a group row folds, as the Mac's: its ⌄ (a 44 px tap) hides the group's rows and the groups inside it, and
+ * turns to › while folded; its count stays. The folded groups come from `FolderViewPane` (`folderFolds.ts`: this
+ * phone's own, per vault, folder and view), which also holds the collapse all / expand all button. A redraw keeps the
+ * table's sideways scroll.
+ *
  * The table is drawn into its host by hand, as the reader draws a page's table: the phone's table layout
  * (`layoutTables`) wraps and measures it, which React must not see.
  */
-export function FolderTable({ run }: { run: ViewRun }) {
+export function FolderTable({ run, folded = NONE_FOLDED, onFold }: { run: ViewRun; folded?: readonly string[]; onFold?: (key: string) => void }) {
   const app = useApp()
   const host = useRef<HTMLDivElement>(null)
   const rows = useRef<Row[]>([])
@@ -49,13 +55,22 @@ export function FolderTable({ run }: { run: ViewRun }) {
   useEffect(() => {
     const el = host.current
     if (el === null) return
-    const { table, drawn } = drawTable(run)
+    const left = el.querySelector('.page-table')?.scrollLeft ?? 0
+    const { table, drawn } = drawTable(run, new Set(folded))
     rows.current = drawn
     el.replaceChildren(table)
     layoutTables(el)
-  }, [run])
-  // Only a tap on the row's Name opens it; a tap elsewhere only moves the band.
+    const box = el.querySelector('.page-table')
+    if (box !== null && left > 0) box.scrollLeft = left
+  }, [run, folded])
+  // Only a tap on the row's Name opens it; a tap elsewhere only moves the band. A group's ⌄ folds it.
   const onClick = (e: React.MouseEvent) => {
+    const fold = (e.target as Element).closest<HTMLElement>('.folder-table__fold')
+    const gk = fold?.closest<HTMLElement>('tr[data-gk]')?.dataset.gk
+    if (gk !== undefined) {
+      onFold?.(gk)
+      return
+    }
     const name = (e.target as Element).closest<HTMLElement>('td[data-name]')
     const tr = name?.closest<HTMLElement>('tr[data-row]') ?? null
     if (tr === null) return
@@ -64,6 +79,8 @@ export function FolderTable({ run }: { run: ViewRun }) {
   }
   return <div className="folder-table" ref={host} onClick={onClick} />
 }
+
+const NONE_FOLDED: readonly string[] = []
 
 /** The Mac's view width (px) of a column, else `auto` (`tableLayout`'s `data-widths`). */
 const widthOf = (sizes: Record<string, number> | undefined, key: string): string => {
@@ -78,8 +95,11 @@ const clips = (wrap: Record<string, boolean> | undefined, key: string): boolean 
 /** The Mac's row heights (px, `TableView.tsx`'s `ROW_HEIGHTS`): a view's `rowHeight`, Short when it names none. */
 export const ROW_HEIGHTS: Readonly<Record<string, number>> = { short: 28, medium: 44, tall: 68 }
 
-/** A table of the view's rows: its header, its groups and rows, its summaries. `drawn`: each row by its `data-row`. */
-export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[] } {
+/**
+ * A table of the view's rows: its header, its groups and rows, its summaries. `drawn`: each row by its `data-row`.
+ * `folded`: the groups folded (YAZ-5598, `foldKeyOf`): the header row stays, its rows and inner groups do not.
+ */
+export function drawTable(run: ViewRun, folded: ReadonlySet<string> = new Set()): { table: HTMLTableElement; drawn: Row[] } {
   const { view, def, keys, ctx, groups, result, inside } = run
   const name = keys.find((k) => canonicalKey(k) === 'file.name')
   // The Name column first, as the Mac's table holds it at the left (its own `order` otherwise).
@@ -141,12 +161,16 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
     }
   }
   const showEmpty = view.showEmptyColumns === true
-  const addGroups = (list: readonly Group[], level: number) => {
+  const addGroups = (list: readonly Group[], level: number, parents: readonly Group[]) => {
     for (const g of list) {
       if (g.rows.length === 0 && !showEmpty) continue
       const tr = body.insertRow()
       tr.className = 'folder-table__group'
       tr.dataset.level = String(level)
+      const gk = foldKeyOf(g, parents)
+      const shut = folded.has(gk)
+      tr.dataset.gk = gk
+      if (shut) tr.dataset.folded = ''
       if (numbered) tr.append(numberCell('td'))
       n = 0
       const th = document.createElement('th')
@@ -156,15 +180,16 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
       const count = document.createElement('span')
       count.className = 'folder-table__count'
       count.textContent = ` ${g.rows.length}`
-      th.append(label, count)
+      th.append(foldButton(g.label, !shut), label, count)
       tr.append(th)
       for (let i = 1; i < columns.length; i++) tr.append(document.createElement('td'))
+      if (shut) continue
       for (const row of g.children === undefined ? g.rows : (g.direct ?? [])) addRow(row)
-      if (g.children !== undefined) addGroups(g.children, level + 1)
+      if (g.children !== undefined) addGroups(g.children, level + 1, [...parents, g])
     }
   }
   if (groups === null) for (const row of result.rows) addRow(row)
-  else addGroups(groups, 0)
+  else addGroups(groups, 0, [])
   // The view's summaries (the Mac's foot row): each column's, under it.
   const summaries = Object.keys(result.summaries)
   if (summaries.length > 0) {
@@ -178,6 +203,24 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
     }
   }
   return { table, drawn }
+}
+
+const SVG = 'http://www.w3.org/2000/svg'
+/** A group row's ⌄ (YAZ-5598, the Mac's `view-group__toggle`): open, it points down; folded, right (CSS). */
+function foldButton(label: string, open: boolean): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'folder-table__fold'
+  button.setAttribute('aria-expanded', String(open))
+  button.setAttribute('aria-label', `Toggle group ${label}`)
+  const svg = document.createElementNS(SVG, 'svg')
+  svg.setAttribute('viewBox', '0 0 16 16')
+  svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS(SVG, 'path')
+  path.setAttribute('d', 'm4 6 4 4 4-4')
+  svg.append(path)
+  button.append(svg)
+  return button
 }
 
 /** A subfolder row's "N inside" (the Mac's `view-folder-row__inside`), after its title. */

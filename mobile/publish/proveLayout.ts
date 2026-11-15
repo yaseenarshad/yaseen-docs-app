@@ -83,6 +83,8 @@ import { freePort } from './freePort'
  *  - the folder table's grid (`#fixture=folder-table`, `folder-grouped`, `folder-table-band`, YAZ-5595), light and dark, at
  *    375 px: a line between every column and every row, subtle; the frame; the header set apart; the frozen columns keep
  *    their lines while the table scrolls sideways; the band across the whole row, its lines drawn.
+ *  - a grouped folder table folds (`#fixture=folder-grouped`, YAZ-5598), light and dark, at 375 px: each group's ⌄ a
+ *    44 px tap on top; a tap folds the group (count kept, arrow turned); the toolbar toggle folds and opens them all.
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
@@ -685,6 +687,59 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} grid ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5598: a grouped folder table folds (`folder-grouped`), light and dark, at 375 px: each group row's ⌄ a 44 px tap
+// at the row's left, on top; a real tap folds its group (its rows gone, the count kept, the arrow turned ›), the grid
+// and the other groups' numbers as before; the toolbar toggle after the count (44 px) folds every group, then opens them.
+const FOLD_STATE = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const groups = [...document.querySelectorAll('.folder-table tr.folder-table__group')]
+  const rowsOf = (g) => { const out = []; for (let tr = g.nextElementSibling; tr && !tr.classList.contains('folder-table__group'); tr = tr.nextElementSibling) out.push(tr); return out }
+  const all = document.querySelector('.folder-view__fold')
+  return {
+    groups: groups.map((g) => {
+      const a = g.querySelector('.folder-table__fold')
+      const b = r(a)
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)
+      return { name: g.querySelector('th > span:not(.folder-table__count)').textContent, count: g.querySelector('.folder-table__count').textContent.trim(), rows: rowsOf(g).length, numbers: rowsOf(g).map((tr) => tr.cells[0].textContent).join(','), open: a.getAttribute('aria-expanded'), tap: [Math.round(b.width), Math.round(b.height)], row: Math.round(r(g).height), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), onTop: a.contains(hit), turn: getComputedStyle(a.querySelector('svg')).transform, lines: getComputedStyle(g.cells[0]).borderRightWidth }
+    }),
+    all: all ? { label: all.getAttribute('aria-label'), tap: [Math.round(r(all).width), Math.round(r(all).height)], x: Math.round(r(all).left + r(all).width / 2), y: Math.round(r(all).top + r(all).height / 2) } : null,
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  const tapAt = async (x: number, y: number) => {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, page)
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, page)
+    await wait(250)
+  }
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('folder-grouped', 375, 667)
+    await evaluate(`(() => { try { localStorage.removeItem('notecard.folderFolds') } catch {} })()`)
+    const before = await evaluate(FOLD_STATE)
+    const g0 = before.groups[0]
+    await tapAt(g0.x, g0.y)
+    const folded = await evaluate(FOLD_STATE)
+    const shot = file.replace('.png', `-fold-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const f0 = folded.groups.find((g: any) => g.name === g0.name)
+    await tapAt(folded.all.x, folded.all.y)
+    const allShut = await evaluate(FOLD_STATE)
+    const shotAll = file.replace('.png', `-fold-all-${scheme}.png`)
+    writeFileSync(shotAll, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    await tapAt(allShut.all.x, allShut.all.y)
+    const allOpen = await evaluate(FOLD_STATE)
+    const ok =
+      before.groups.length > 1 && before.groups.every((g: any) => g.tap[0] >= 44 && g.tap[1] >= 44 && g.row >= 44 && g.row <= 46 && g.onTop && g.open === 'true' && g.rows === Number(g.count) && g.numbers.startsWith('1') && g.lines === '1px') &&
+      f0 !== undefined && f0.rows === 0 && f0.count === g0.count && f0.open === 'false' && f0.turn !== 'none' && folded.groups.filter((g: any) => g.name !== g0.name).every((g: any) => g.rows === Number(g.count)) &&
+      before.all !== null && before.all.label === 'Collapse all groups' && before.all.tap[0] >= 44 && before.all.tap[1] >= 44 &&
+      allShut.groups.every((g: any) => g.rows === 0 && g.open === 'false') && allShut.all.label === 'Expand all groups' &&
+      allOpen.groups.every((g: any) => g.rows === Number(g.count) && g.open === 'true') && !before.pageWide && !allShut.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  folder-grouped fold ${scheme} at 375x667: before ${JSON.stringify(before.groups.map((g: any) => [g.name, g.count, g.rows, g.tap.join('x'), g.row, g.onTop]))}; tapped "${g0.name}": ${JSON.stringify(f0)}; collapse all: ${JSON.stringify(allShut.groups.map((g: any) => [g.name, g.rows, g.open]))} "${allShut.all?.label}"; expand all: ${JSON.stringify(allOpen.groups.map((g: any) => [g.name, g.rows]))}  ${shot} ${shotAll}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

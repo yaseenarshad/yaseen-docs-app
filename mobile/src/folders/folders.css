@@ -93,6 +93,29 @@
   font-size: 13px;
   line-height: var(--tap);
 }
+/* YAZ-5598: the Mac's toolbar toggle after the count: Collapse all groups (chevrons up) or Expand all (down), a 44 px tap. */
+.folder-view__fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  vertical-align: top;
+}
+.folder-view__fold svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 /* Other files (the Mac's tray): a head that folds, then a line for each file with its kind. */
 .folder-other {
@@ -234,6 +257,43 @@
   color: var(--fg-muted);
   font-size: 13px;
 }
+/* YAZ-5598: a group row's ⌄ (the Mac's `view-group__toggle`), before its name: a 44 px tap, so the group row is a
+   finger's tap tall, no taller; folded, it turns to ›. The full-screen view is a still copy: no arrows there. */
+.folder-table .page-table-box .page-table-frame .page-table table tr.folder-table__group > :is(th, td) {
+  height: var(--tap);
+  padding-block: 0;
+}
+.folder-table__fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin: 0 0 0 -14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  vertical-align: middle;
+  -webkit-tap-highlight-color: transparent;
+}
+.folder-table__fold svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 120ms ease;
+}
+.folder-table__fold[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+.table-view .folder-table__fold {
+  display: none;
+}
+
 /*
  * YAZ-5595: the grid, as Google Sheets and the Mac's folder table (`views.css` `.view-table`: a line right of and under
  * every cell, always, no setting): a thin line between every column and every row, in the phone tables' light line
