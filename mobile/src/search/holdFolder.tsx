@@ -153,7 +153,8 @@ function FolderMenu({ folder, onClose, onCopy }: { folder: { path: string; label
   }, [onClose])
   const open = () => {
     onClose()
-    openFile(app, { kind: 'folder', path: folder.path })
+    // YAZ-5472 Q4: from Search, a tab screen, so ALWAYS a full page; its rows then open panels (`from: 'inside'`).
+    openFile(app, { kind: 'folder', path: folder.path }, { from: 'tab' })
   }
   return createPortal(
     <div className="hold-menu">

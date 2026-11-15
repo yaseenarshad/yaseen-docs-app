@@ -10,7 +10,8 @@ import { mount, newPhone, type Harness } from '../screens/testing'
  * YAZ-5518: Back and the Explore sheets, in the whole app on a made-up vault. ONE stack of overlays (the sheets, the
  * panels, the menus, the full-screen views) sits over the screens: each overlay writes one history entry, so the
  * browser's Back (Safari's own swipe in a tab), the app's Back and the left-edge swipe close the top overlay first, one
- * at a time, and the screen under stays.
+ * at a time, and the screen under stays. YAZ-5472 Q4: a tab screen's first open is a FULL page (its Back is the tab
+ * screen); the sheets open from the links inside it.
  */
 let h: Harness | null = null
 const restore: (() => void)[] = []
@@ -34,7 +35,7 @@ afterEach(async () => {
 })
 
 const EXPLORE = { ...READER_FILES, '.yaseendocs/link-click.json': '{"click":"explore"}' }
-const DAILY = { '.yaseendocs/daily-pages.json': JSON.stringify({ enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false }), 'Daily/2026-11-13.md': '# Today words\n' }
+const DAILY = { '.yaseendocs/daily-pages.json': JSON.stringify({ enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false }), 'Daily/2026-11-13.md': '# Today words\n\nSee [[Trip plan]].\n' }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 async function waitFor(x: Harness, done: () => boolean, ms = 4000): Promise<void> {
@@ -67,6 +68,17 @@ async function browserBack(): Promise<void> {
 const sheets = () => [...document.querySelectorAll<HTMLElement>('.explore-sheet')]
 const title = (x: Harness) => x.host.querySelector('.topbar__title')?.textContent ?? ''
 const onTabs = (x: Harness) => x.button('Back') === null && x.host.querySelector('[role="tab"]') !== null
+/** A `[[link]]` named `name` in `where`'s reader (the full page's, or a sheet's). */
+const linkIn = (where: ParentNode | null | undefined, name: string) =>
+  [...(where?.querySelectorAll<HTMLElement>('.reader__body a, .reader__body [data-open]') ?? [])].find((a) => a.textContent?.trim() === name) ?? null
+/** YAZ-5472 Q4: a Search row opens a FULL page; then a link in it opens a sheet. */
+async function pageThenSheet(x: Harness, page: RegExp, link: string): Promise<void> {
+  await x.click(page)
+  await waitFor(x, () => linkIn(x.host, link) !== null)
+  expect(sheets()).toEqual([])
+  await act(async () => linkIn(x.host, link)!.click())
+  await waitFor(x, () => sheets().length === 1)
+}
 
 let stamp = 0
 function touch(el: Element, type: string, x: number, y = 300): void {
@@ -78,24 +90,28 @@ function touch(el: Element, type: string, x: number, y = 300): void {
 }
 
 describe('YAZ-5518 M2: in a Safari tab, Back with a sheet open closes the sheet, not the app', { timeout: 20_000 }, () => {
-  it('safariBack_closesSheetOverSearch', async () => {
+  it('safariBack_closesSheetsOverTheFirstPage_thenThePage', async () => {
     h = await open(EXPLORE)
     await toSearch(h)
     const before = history.length
-    await h.click(/^Trip plan/)
-    await waitFor(h, () => sheets().length === 1)
-    await act(async () => openSheet({ kind: 'page', path: 'Spanish words.md' }))
+    // YAZ-5472 Q4: the Search row opens a full page; its link a sheet, and that sheet's link another.
+    await pageThenSheet(h, /^Trip plan/, 'Spanish words')
+    await waitFor(h, () => linkIn(sheets().at(-1), 'Trip plan') !== null)
+    await act(async () => linkIn(sheets().at(-1), 'Trip plan')!.click())
     await waitFor(h, () => sheets().length === 2)
     await act(async () => void (await sleep(20)))
-    // One entry for each sheet.
-    expect(history.length).toBe(before + 2)
+    // One entry for the page and one for each sheet.
+    expect(history.length).toBe(before + 3)
     await browserBack()
     await waitFor(h, () => sheetStack().length === 1)
     await browserBack()
     await waitFor(h, () => sheetStack().length === 0)
+    // The first page, full screen, under them.
+    expect(title(h)).toBe('Trip plan')
+    await browserBack()
     // Still in the app, on Search.
+    await waitFor(h, () => onTabs(h!))
     expect(h.host.querySelector('.tree')).not.toBeNull()
-    expect(onTabs(h)).toBe(true)
   })
 
   it('safariBack_closesSheetOverReview', async () => {
@@ -109,23 +125,29 @@ describe('YAZ-5518 M2: in a Safari tab, Back with a sheet open closes the sheet,
     expect(h.button('Review')?.getAttribute('aria-selected')).toBe('true')
   })
 
-  it('safariBack_closesSheetOverToday', async () => {
+  it('safariBack_closesSheetOverToday_thenToday', async () => {
     h = await open({ ...EXPLORE, ...DAILY })
     await toSearch(h)
     await waitFor(h, () => h!.host.querySelector('.tabbar__today') !== null)
+    // YAZ-5472 Q4: Today opens the daily page full screen; its link opens a sheet.
     await act(async () => h!.host.querySelector<HTMLElement>('.tabbar__today')!.click())
+    await waitFor(h, () => linkIn(h!.host, 'Trip plan') !== null)
+    expect(sheets()).toEqual([])
+    await act(async () => linkIn(h!.host, 'Trip plan')!.click())
     await waitFor(h, () => sheets().length === 1)
     await act(async () => void (await sleep(20)))
     await browserBack()
     await waitFor(h, () => sheetStack().length === 0)
+    expect(h.text()).toContain('Today words')
+    await browserBack()
+    await waitFor(h, () => onTabs(h!))
     expect(h.host.querySelector('.tree')).not.toBeNull()
   })
 
   it('a sheet closed in the app (a tap on the dim) takes its entry with it: the next Back is the screen under', async () => {
     h = await open(EXPLORE)
     await toSearch(h)
-    await h.click(/^Spanish words/)
-    await waitFor(h, () => sheets().length === 1)
+    await pageThenSheet(h, /^Spanish words/, 'Trip plan')
     await act(async () => void (await sleep(20)))
     const withSheet = history.length
     await act(async () => document.querySelector<HTMLElement>('.explore-dim--top')!.click())
@@ -135,6 +157,9 @@ describe('YAZ-5518 M2: in a Safari tab, Back with a sheet open closes the sheet,
     await h.click('Settings')
     await waitFor(h, () => h!.button('Back') !== null)
     expect(history.length).toBe(withSheet)
+    // Back from Settings: the page under (the sheet is gone), then Search.
+    await browserBack()
+    await waitFor(h, () => title(h!) === 'Spanish words' && sheetStack().length === 0)
     await browserBack()
     await waitFor(h, () => onTabs(h!))
   })
@@ -249,11 +274,20 @@ describe('YAZ-5518 S7: a double tap opens one sheet', { timeout: 20_000 }, () =>
   it('doubleTap_opensOneSheet', async () => {
     h = await open(EXPLORE)
     await toSearch(h)
-    const row = h.button(/^Trip plan/)!
+    // YAZ-5472 Q4: the row opens a full page (one, for a double tap); its link, tapped twice, one sheet.
+    const row = h.button(/^Spanish words/)!
     await act(async () => {
       row.click()
       await sleep(120)
       row.click()
+    })
+    await waitFor(h, () => linkIn(h!.host, 'Trip plan') !== null)
+    expect(sheets()).toEqual([])
+    const first = linkIn(h.host, 'Trip plan')!
+    await act(async () => {
+      first.click()
+      await sleep(120)
+      first.click()
     })
     await waitFor(h, () => sheets().length >= 1)
     await act(async () => void (await sleep(50)))

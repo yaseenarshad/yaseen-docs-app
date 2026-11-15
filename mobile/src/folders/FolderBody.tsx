@@ -11,6 +11,7 @@ import { pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
 import { useTables } from '../page/useTables'
 import { vaultName } from '../screens/Frame'
+// YAZ-5472 Q4: a folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
 import { openFile } from '../explore/openFile'
 import { useFileText, useSheetTap } from '../explore/SheetBody'
 import { boardKindOf } from '../drawing/boardFiles'
@@ -144,9 +145,9 @@ function OtherFiles({ model }: { model: FolderModel }) {
   const { media } = useSheetTap(model.data, setNotice)
   if (model.other.length === 0) return null
   const tap = async (path: string, type: string) => {
-    if (type === 'page') return openFile(app, { kind: 'page', path })
-    if (type === 'folder') return openFile(app, { kind: 'folder', path })
-    if (boardKindOf(path) !== null) return openFile(app, { kind: 'drawing', path })
+    if (type === 'page') return openFile(app, { kind: 'page', path }, { from: 'inside' })
+    if (type === 'folder') return openFile(app, { kind: 'folder', path }, { from: 'inside' })
+    if (boardKindOf(path) !== null) return openFile(app, { kind: 'drawing', path }, { from: 'inside' })
     const words = await openMediaFile(media, path)
     if (words !== null) setNotice(words)
   }

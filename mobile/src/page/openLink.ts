@@ -7,7 +7,8 @@ import { openFile } from '../explore/openFile'
  * comes here: a `[[link]]` or a Markdown link in a page, a pill in a card (the page's own cards, an embedded card, the
  * card view), an embed's "Embedded from", a "Linked from" row, a properties link, a link in an Explore sheet.
  *
- * It hands the route to the app's ONE door to open a file, `openFile` (YAZ-5472): the vault's "Clicking a link"
+ * A link is always tapped INSIDE a page, a card or a panel, so it opens with `from: 'inside'` (YAZ-5472 Q4: only a
+ * tab screen's first open is always a full page). It hands the route to the app's ONE door, `openFile`: the vault's "Clicking a link"
  * (`.yaseendocs/link-click.json`, the Mac's YAZ-4936) says how. `explore`: the file opens in a sheet over where you are;
  * `open` (the Mac's default, and with no file): it opens over the open one, full screen (one Back step).
  */
@@ -38,5 +39,5 @@ export function linkAction(target: LinkTarget): NavAction {
 
 /** Opens `target`. The one place a link tap opens anything: through `openFile`, which picks a sheet or full screen. */
 export function openLink(door: LinkDoor, target: LinkTarget): void {
-  openFile(door, linkRoute(target), door.click)
+  openFile(door, linkRoute(target), { from: 'inside', ...(door.click !== undefined && { click: door.click }) })
 }

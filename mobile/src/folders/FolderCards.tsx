@@ -5,6 +5,7 @@ import { isFolderRow } from '@client/links/folderRows'
 import { bucketByDay, calendarDateKey, calendarEndKey, dateColumns, todayKey, type DayKey } from '@client/views/calendar'
 import { canonicalKey } from '@client/views/view/keys'
 import { useApp } from '../app/AppState'
+// YAZ-5472 Q4: a folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
 import { openFile } from '../explore/openFile'
 import { rowTarget, type ViewRun } from './folderModel'
 
@@ -32,7 +33,7 @@ function Card({ row, run, keys }: { row: Row; run: ViewRun; keys: readonly strin
     return [{ key, label: own?.hideLabel === true ? null : propertyLabel(run.def, key), text, bold: own?.bold === true }]
   })
   return (
-    <button type="button" className={`folder-card${row.crossed === true ? ' folder-card--crossed' : ''}`} onClick={() => openFile(app, rowTarget(row))}>
+    <button type="button" className={`folder-card${row.crossed === true ? ' folder-card--crossed' : ''}`} onClick={() => openFile(app, rowTarget(row), { from: 'inside' })}>
       <span className="folder-card__title">
         {isFolderRow(row.record) && <span className="file-icon" data-kind="folder" aria-hidden />}
         {row.record.title}

@@ -10,7 +10,7 @@ import { mount, newPhone, type Harness } from '../screens/testing'
 
 /**
  * YAZ-5460, the entry: a finger held on a folder row of Search's tree opens the folder's menu; "Open folder page" opens
- * its page through the one file door (full screen, or a sheet when the vault says "explore"); a tap still opens and
+ * its page through the one file door (always full screen from Search, YAZ-5472 Q4; its rows open sheets with "explore"); a tap still opens and
  * closes the folder; a finger that moves is no hold.
  */
 let h: Harness | null = null
@@ -152,12 +152,19 @@ describe('hold a folder (YAZ-5460)', () => {
     expect(menu()).toBeNull()
   })
 
-  it('"explore": the folder page opens in a sheet over Search', async () => {
+  it('"explore": the folder page still opens FULL SCREEN from Search (YAZ-5472 Q4); its rows open sheets', async () => {
     h = await openSearch({ ...FOLDER_FILES, '.yaseendocs/link-click.json': '{"click":"explore"}' })
     await hold(h, row(h, 'Projects')!)
     await act(async () => item('Open folder page')!.click())
-    await waitFor(h, () => document.querySelector('.explore-sheet .folder-page') !== null)
-    expect(sheetStack().map((s) => s.route)).toEqual([{ kind: 'folder', path: 'Projects' }])
-    expect(h.host.querySelector('.tree')).not.toBeNull()
+    await waitFor(h, () => h!.host.querySelector('.folder-page .folder-table tbody tr') !== null)
+    expect(sheetStack()).toEqual([])
+    await act(async () => h!.host.querySelector<HTMLElement>('.folder-table tbody tr td')!.click())
+    await waitFor(h, () => sheetStack().length === 1 && document.querySelector('.explore-sheet') !== null)
+    expect(sheetStack()[0].route.kind).toBe('page')
+    // Back from the sheet, then from the folder page: Search.
+    await act(async () => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+    await waitFor(h, () => sheetStack().length === 0)
+    await h.click('Back')
+    await waitFor(h, () => h!.host.querySelector('.tree') !== null)
   })
 })
