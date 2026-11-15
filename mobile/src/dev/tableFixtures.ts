@@ -175,5 +175,7 @@ export const CALENDAR = [
 export const CALENDAR_COMMENT = '<!-- table: nodim 2, height compact, freeze 1 row 1 col, calendar 30m -->'
 /** The fixture's frozen clock: 9:40 am on a made-up day, a third of the way into the 9:30 slot. */
 export const CALENDAR_NOW = new Date(2026, 10, 14, 9, 40, 0)
+/** YAZ-5606, Time in slot: 46 seconds on, so the 9:30 slot reads `19:14 left` (count down) and `10:46 in` (count up). */
+export const CALENDAR_SLOT_NOW = new Date(2026, 10, 14, 9, 40, 46)
 /** A page with the calendar table, a line before and text after it. */
 export const CALENDAR_PAGE = ['# Day plan', 'Saturday, planned on the Mac:', CALENDAR, CALENDAR_COMMENT, 'Notes for the evening.', ...Array.from({ length: 20 }, (_, i) => `Line ${i + 1} after the table.`)].join('\n\n')

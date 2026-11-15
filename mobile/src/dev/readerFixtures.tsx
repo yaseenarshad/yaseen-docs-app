@@ -11,7 +11,7 @@ import { FOLDER_FILES, calendarFiles } from './folderVault'
 import { todayKey } from '@client/views/calendar'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
-import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
+import { CALENDAR_NOW, CALENDAR_PAGE, CALENDAR_SLOT_NOW, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
 import { MOBILE_SETTINGS_FILES, STICKY_HEADINGS_FILES, CENTRE_FILES, FOLDS_FILES, NUMBERED_FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
@@ -47,6 +47,10 @@ import { openSheet } from '../explore/sheets'
  * YAZ-5493: `page-calendar` a made-up day plan as a calendar table, the clock frozen at 9:40 am (`CALENDAR_NOW`): the now
  * line a third down the 9:30 row, the rows before it dimmed; `page-calendar-chip` the same (`proveLayout.ts` scrolls it past the now
  * row: the Now pill at the bottom); `page-calendar-full` the table full screen.
+ * YAZ-5606: Time in slot from the vault's table-look.json, the clock at 9:40:46 (`CALENDAR_SLOT_NOW`):
+ * `page-calendar-slot-down` counts down with seconds (`19:14 left`), `page-calendar-slot-up` counts up (`10:46 in`),
+ * `page-calendar-slot-chip` counts down in minutes (`20 min left`), scrolled past the now row by `proveLayout.ts` (the
+ * Now pill says `Now · 20 min left`).
  * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
  * tap ticks (44 px around it), the card's box a glyph. YAZ-5510: `page-tasks-numbered` numbered tasks (`1.` to `11.`): only
  * the box, in the number's place (the Mac's rule), then the text.
@@ -89,7 +93,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-calendar-slot-down', 'page-calendar-slot-up', 'page-calendar-slot-chip', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -231,6 +235,15 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
               'Day plan.md': `---\ntitle: Day plan\n---\n\n${CALENDAR_PAGE}\n`,
               // YAZ-5541: the now tint (with its line) and Shade the next time slot, in the default red.
               '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { nowMark: 'both', nextShade: true } }),
+            }
+        : name === 'page-calendar-slot-down' || name === 'page-calendar-slot-up' || name === 'page-calendar-slot-chip'
+          ? {
+              'Day plan.md': `---\ntitle: Day plan\n---\n\n${CALENDAR_PAGE}\n`,
+              // YAZ-5606: Time in slot (`look.slotTime`), with seconds or not (`look.slotSeconds`).
+              '.yaseendocs/table-look.json': JSON.stringify({
+                version: 1,
+                look: name === 'page-calendar-slot-up' ? { slotTime: 'up' } : name === 'page-calendar-slot-chip' ? { slotTime: 'down', slotSeconds: false } : { slotTime: 'down' },
+              }),
             }
         : name === 'page-table-look'
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
@@ -802,8 +815,11 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     case 'page-calendar':
     case 'page-calendar-chip':
     case 'page-calendar-full':
-    case 'page-calendar-next': {
-      setCalendarClock(() => CALENDAR_NOW)
+    case 'page-calendar-next':
+    case 'page-calendar-slot-down':
+    case 'page-calendar-slot-up':
+    case 'page-calendar-slot-chip': {
+      setCalendarClock(() => (name.startsWith('page-calendar-slot') ? CALENDAR_SLOT_NOW : CALENDAR_NOW))
       await typed('day plan')
       await open(/^Day plan/, '.reader__body .table-now-row')
       if (name === 'page-calendar-full') {

@@ -6561,6 +6561,10 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(band().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Off')
       act(() => band().find((b) => b.textContent === 'All tables')!.click())
       expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', 'table-look.json', { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900 } }, ['version', 'look', 'newTables']]])
+      // YAZ-5602 round 2: Time in slot writes the vault's file too (`look.slotTime`), never the app's settings.
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableSlotTime"] button')].find((b) => b.textContent === 'Count down')!.click())
+      expect(bridge.vaultConfig.write.mock.calls.at(-1)).toEqual(['/w', 'table-look.json', { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900, slotTime: 'down' } }, ['version', 'look', 'newTables']])
+      expect(JSON.stringify(bridge.state.setSettings.mock.calls)).not.toContain('tableSlotTime')
     })
   })
 

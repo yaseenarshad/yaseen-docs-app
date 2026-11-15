@@ -669,6 +669,56 @@
   background-image: linear-gradient(color-mix(in srgb, var(--fg) var(--table-past-shade, 6%), transparent), color-mix(in srgb, var(--fg) var(--table-past-shade, 6%), transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
 }
 
+/* Time in slot (YAZ-5606, the Mac's YAZ-5602 `tableCalendar.css`; `drawSlotPill` in `tableCalendar.ts`): a pill at the
+   right end of the now line, the Now pill's shape in the line's red. Its anchor fills the now row's last cell (already
+   its own positioned box, above) and runs leftwards across the row (`100vw`), so on a table wider than the screen the
+   pill sticks to the visible right end of the scroll box even when only a sliver of the last column shows. Its track
+   rides the line (`--table-now`) and stays inside the row. Out of the flow, tabular digits: its text never moves the
+   table. A last cell with text keeps a right padding as wide as the slot's widest text (`--table-slot-chars`). */
+.page-table-box .page-table-frame .page-table table :is(th, td).table-slot-pad {
+  padding-right: calc(var(--table-slot-chars, 10) * 7px + 26px);
+}
+.page-table-box .page-table .table-slot-anchor {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: -100vw;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.page-table-box .page-table .table-slot-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: clamp(0px, calc(var(--table-now, 0) * 100% - 10px), calc(100% - 20px));
+  display: flex;
+  justify-content: flex-end;
+  height: 20px;
+}
+.page-table-box .page-table .table-slot-pill {
+  position: sticky;
+  right: 6px;
+  margin-right: 6px;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--table-text-red);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--table-text-red);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.page-table-box .page-table .table-slot-pill:empty {
+  display: none;
+}
+
 /* Go to now (the Mac's "Now" chip): a pill in a zero-height anchor after the table's frame, stuck to the bottom of the
    screen while the table is in view; shown only while the now row is not (`tableCalendar.ts`). Its tap area is 44px
    tall; the pill itself stays small. Not in the full-screen view (a copy). */
@@ -697,6 +747,9 @@
   font-size: 13px;
   font-weight: 500;
   line-height: 18px;
+  /* "Now · 19:14 left" (Time in slot) ticks without the pill changing width each second. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
   pointer-events: auto;
   -webkit-tap-highlight-color: transparent;
 }

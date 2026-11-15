@@ -21,6 +21,7 @@ import { freePort } from './freePort'
  *    375 px, the clock frozen at 9:40 am: the now line a third down the 9:30 row, red, across the row; the rows before
  *    it dimmed, the kept to-do row not; scrolled past the row, the Now pill at the bottom of the screen pointing up;
  *    full screen, the copy marked too. YAZ-5541 (`page-calendar-next`): the next slot tinted as the now row.
+ *    YAZ-5606 (`page-calendar-slot-down`, `-up`, `-chip`): the Time in slot pill on the now line, and on the Now pill.
  *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
  *    area, a done task struck through.
  *  - numbered tasks (`#fixture=page-tasks-numbered`, YAZ-5510, the Mac's rule), light and dark, at 375 px: for 1. to 11.,
@@ -440,6 +441,51 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     const ok = !m.none && m.now === 7 && m.next.join() === '8' && m.nowPaint.includes('gradient') && m.nextPaint === m.nowPaint && !m.laterPaint.includes('color') && !m.pageWide
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-calendar-next at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `now row ${m.now}, next row ${m.next.join(',') || 'none'}; next paint ${m.nextPaint === m.nowPaint ? 'the now tint\'s' : `DIFFERS (${m.nextPaint} vs ${m.nowPaint})`}; the row after ${m.laterPaint}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5606: Time in slot (the vault's table-look.json, the clock at 9:40:46), light and dark at 375 px: the pill sits on
+// the now line (its middle within 3 px of the line, inside the now row), at the right end of the visible table (inside
+// the scroll box and the screen), says the slot's time in the Mac's words, and covers no text of the row's cells; the
+// Now pill, scrolled past the now row, says it too. The page never scrolls sideways.
+const SLOT_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.reader__body table[data-calendar]')
+  if (!table) return { none: true }
+  const row = table.querySelector('.table-now-row')
+  const pill = table.querySelector('.table-slot-pill')
+  const chip = document.querySelector('.reader__body [data-table-now]')
+  const out = { pills: table.querySelectorAll('.table-slot-pill').length, chip: chip && !chip.hidden ? chip.textContent : null, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+  if (!row || !pill) return out
+  const p = r(pill), box = r(table.closest('.page-table')), rr = r(row)
+  const after = getComputedStyle(row.cells[1], '::after')
+  const line = r(row.cells[1]).top - 1 + new DOMMatrix(after.transform).m42 + 1
+  // Text of the row's cells (their own text nodes) under the pill.
+  const covered = [...row.cells].some((cell) => [...cell.childNodes].some((n) => {
+    if (n.nodeType !== 3 || !n.textContent.trim()) return false
+    const range = document.createRange(); range.selectNodeContents(n)
+    return [...range.getClientRects()].some((t) => t.right > p.left && t.left < p.right && t.bottom > p.top && t.top < p.bottom)
+  }))
+  return { ...out, text: pill.textContent, mid: Math.round((p.top + p.bottom) / 2 - line), inRow: p.top >= rr.top - 1 && p.bottom <= rr.bottom + 1, right: Math.round(box.right - p.right), inside: p.left >= box.left && p.right <= box.right && p.right <= innerWidth, covered, colour: getComputedStyle(pill).color }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [name, want, chipWant] of [['page-calendar-slot-down', '19:14 left', null], ['page-calendar-slot-up', '10:46 in', null], ['page-calendar-slot-chip', '20 min left', 'Now · 20 min left']] as const) {
+      const file = await open(name, 375, 667)
+      if (name === 'page-calendar-slot-chip') {
+        await evaluate(`(() => { const s = document.querySelector('.screen--reader'), row = document.querySelector('.reader__body table tbody tr:last-child'); s.scrollTop += row.getBoundingClientRect().bottom - s.getBoundingClientRect().bottom + 40 })()`)
+        await wait(400)
+      }
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(SLOT_CHECK)
+      const red = scheme === 'dark' ? 'rgb(255, 123, 114)' : 'rgb(192, 57, 43)'
+      const pillOk = name === 'page-calendar-slot-chip' ? m.pills === 1 : m.text === want && Math.abs(m.mid) <= 3 && m.inRow && m.inside && m.right <= 14 && !m.covered && m.colour === red
+      const ok = !m.none && pillOk && m.pills === 1 && (chipWant === null || m.chip === chipWant) && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `pill "${m.text ?? ''}" (${m.pills}), ${m.mid}px off the line, ${m.inRow ? 'in the row' : 'OUT OF THE ROW'}, ${m.right}px from the box's right, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.covered ? 'COVERS TEXT' : 'covers no text'}, ${m.colour}; Now pill ${m.chip === null ? 'hidden' : `"${m.chip}"`}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

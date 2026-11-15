@@ -1,3 +1,4 @@
+import type { TableSlotTime } from './tableLook'
 import { readTime } from './timeFormat'
 
 /*
@@ -18,6 +19,9 @@ export const minutesOf = (date: Date): number => date.getHours() * 60 + date.get
 export interface NowPlace {
   row: number | null
   fraction: number
+  /** The now row's slot, in minutes from today's midnight (YAZ-5602): its time, and the next row's time (one slot length on for the last row); 0 and 0 with no now row. */
+  start: number
+  end: number
   /** Body rows before this index are past. */
   pastEnd: number
 }
@@ -46,8 +50,47 @@ export function nowPlace(times: ReadonlyArray<number | null>, slot: number, minu
   // Today's minute first, then the same minute tomorrow (a row after midnight).
   for (const at of [minutes, minutes + 1440]) {
     const now = slots.find(({ start, end }) => start <= at && at < end)
-    if (now !== undefined) return { row: now.row, fraction: (at - now.start) / (now.end - now.start), pastEnd: now.row }
+    if (now !== undefined) return { row: now.row, fraction: (at - now.start) / (now.end - now.start), pastEnd: now.row, start: now.start - (at - minutes), end: now.end - (at - minutes) }
   }
   const next = slots.find(({ start }) => start > minutes)
-  return { row: null, fraction: 0, pastEnd: next?.row ?? times.length }
+  return { row: null, fraction: 0, pastEnd: next?.row ?? times.length, start: 0, end: 0 }
+}
+
+/*
+ * TIME IN SLOT (YAZ-5602, YAZ-5606): ONE copy of what the pill on the now line says, for the Mac (`tableCalendar.ts`,
+ * the vault's `look.slotTime` and `look.slotSeconds`) and the phone (`mobile/src/page/tableCalendar.ts`).
+ */
+
+/** Two digits. */
+const two = (n: number): string => String(n).padStart(2, '0')
+
+/**
+ * What the Time in slot pill says (YAZ-5602) for the slot `start`–`end` (minutes from today's midnight) at `seconds`
+ * from today's midnight: the time left (`down`) or since the slot started (`up`), with seconds (`19:14 left`,
+ * `1:19:14 left` from an hour) or in minutes (`20 min left`, `1 h 20 min left`). The count down rounds up, so the last
+ * minute reads `1 min left`, never `0 min left`; the count up rounds down. Kept inside the slot.
+ */
+export function slotTimeLabel(mode: 'down' | 'up', withSeconds: boolean, start: number, end: number, seconds: number): string {
+  const total = Math.max(0, Math.min((end - start) * 60, mode === 'down' ? end * 60 - seconds : seconds - start * 60))
+  const word = mode === 'down' ? 'left' : 'in'
+  if (withSeconds) {
+    // A count down rounds up, as a timer does: 19:13.8 left reads 19:14; a count up rounds down.
+    const s = mode === 'down' ? Math.ceil(total) : Math.floor(total)
+    const h = Math.floor(s / 3600)
+    const m = Math.floor((s % 3600) / 60)
+    return `${h > 0 ? `${h}:${two(m)}` : m}:${two(s % 60)} ${word}`
+  }
+  const mins = mode === 'down' ? Math.ceil(total / 60) : Math.floor(total / 60)
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${h > 0 ? `${h} h${m > 0 ? ` ${m} min` : ''}` : `${m} min`} ${word}`
+}
+
+/** Seconds from today's midnight, local time. */
+export const secondsOf = (date: Date): number => date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds() + date.getMilliseconds() / 1000
+
+/** The widest text of the pill in a slot `start`–`end`, in characters (its full length: a count down at the start, a count up at the end); 0 when off. */
+export function slotPillChars(mode: TableSlotTime, withSeconds: boolean, start: number, end: number): number {
+  if (mode === 'off') return 0
+  return slotTimeLabel(mode, withSeconds, start, end, mode === 'down' ? start * 60 : end * 60).length
 }

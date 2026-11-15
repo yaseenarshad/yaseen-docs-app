@@ -14,7 +14,7 @@ import { DAILY_PAGES_MOVE } from '../dailyPagesVaultFile'
 import { PAGE_SPACING_MOVE } from '../textFormattingMove'
 import { ICON_LOOK_MOVE } from '../icons'
 import { CARD_LOOK_MOVE } from '../cardLookMove'
-import { TABLE_LOOK_MOVE } from '../tableLookMove'
+import { tableLookMoves } from '../tableLookMove'
 import { FOLDER_PAGES_MOVE } from '../folderPagesMove'
 import { NEW_PLACES_MOVE } from '../newPlaces'
 import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
@@ -128,6 +128,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // (its pass ended `synced`), or when its sync is off. YAZ-5485: the page spacing, into each vault's text-formatting.json.
   // YAZ-5486: where new pages and boards go, into each vault's new-places.json (a folder only where the vault has it).
   // YAZ-5488: the icon rules and colours into each vault's icons.json. YAZ-5484: the card look into each card-look.json.
+  // YAZ-5487: the table look into each table-look.json (YAZ-5602 round 2: with the Time in slot this Mac set before).
   const pulled = new Set<string>()
   let moves: VaultMove | null = null
   const sync = registerGithubIpc(store, (status) => {
@@ -135,7 +136,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
     pulled.add(status.root)
     moves?.pulled(status.root)
   })
-  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, TABLE_LOOK_MOVE, FOLDER_PAGES_MOVE], async (root) => {
+  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, ...tableLookMoves(store.slotTimeToMove()), FOLDER_PAGES_MOVE], async (root) => {
     if (pulled.has(root)) return true
     const status = await sync.status(root)
     return status.enabled !== true || status.state === 'off' || status.state === 'synced'

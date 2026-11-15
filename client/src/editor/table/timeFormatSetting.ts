@@ -4,9 +4,9 @@
  * `code/languageHelpers.ts` is, so no editor rebuilds for a change.
  */
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT, isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
-import type { TableLookSettings } from '@shared/tableLook'
+import type { TableLookSettings, TableSlotTime } from '@shared/tableLook'
 import type { HeaderRow, TableTextInCells } from '@shared/types'
-import { appTableLookNow, onTableLookSticky, setAppTableLook, tableLookAt, type TableLookPlace } from './tableLook'
+import { appTableLookNow, onTableLookSlot, onTableLookSticky, setAppTableLook, tableLookAt, type TableLookPlace } from './tableLook'
 
 /*
  * YAZ-5487: the table look and the new-table defaults are the VAULT's (`table-look.json`, `tableLook.ts`). Each reader
@@ -74,3 +74,18 @@ export function setCellNoteButtonSetting(on: boolean): void {
 }
 
 export const cellNoteButtonSetting = (): boolean => noteButton
+
+
+/**
+ * Settings › Tables › Calendar tables › Time in slot and Show seconds (YAZ-5602; the vault's since round 2:
+ * `look.slotTime`, `look.slotSeconds` in table-look.json): each page editor's calendar clock (`tableCalendar.ts`)
+ * reads them for the vault that holds it, draws the pill on the now line or none, and ticks each second or each minute.
+ * A change (the app's or a vault's) tells each clock, which draws its marks again at once.
+ */
+export const slotTimeSetting = (at?: TableLookPlace): { mode: TableSlotTime; seconds: boolean } => {
+  const look = tableLookAt(at)
+  return { mode: look.tableSlotTime, seconds: look.tableSlotSeconds }
+}
+
+/** Calls `listener` on each change of Time in slot or Show seconds; returns the unsubscribe. */
+export const onSlotTimeSetting = onTableLookSlot

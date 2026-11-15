@@ -1,3 +1,4 @@
+import type { TableSlotTime } from '@shared/tableLook'
 import type { TableDimPast, TableNowMark } from '@shared/types'
 
 /**
@@ -24,6 +25,13 @@ export interface CalendarLook {
   nextShade: boolean
   /** Its colour as CSS (`nextColour` of the vault's `tableNextColour`), or null for the now mark's red. */
   nextColour: string | null
+  /**
+   * YAZ-5606 (the Mac's YAZ-5602), Time in slot: the pill on the now line says the time left in the now row's slot
+   * (`down`), or since it started (`up`); `off`, none. The vault's `look.slotTime` in table-look.json.
+   */
+  slotTime: TableSlotTime
+  /** Show seconds (the vault's `look.slotSeconds`): `19:14 left`, ticking each second; off, `20 min left`, each minute. */
+  slotSeconds: boolean
 }
 
 /** The Mac's defaults (`DEFAULT_SETTINGS` in `shared/types.ts`; `calendarLook.test.ts` holds them equal). */
@@ -36,6 +44,8 @@ export const MAC_CALENDAR_LOOK: Readonly<CalendarLook> = Object.freeze({
   dayEnd: 22 * 60,
   nextShade: false,
   nextColour: null,
+  slotTime: 'off',
+  slotSeconds: true,
 })
 
 /** The Mac's bounds of Shade darkness (`TABLE_SHADE_MIN`, `TABLE_SHADE_MAX`). */
@@ -43,6 +53,7 @@ export const SHADE_MIN = 2
 export const SHADE_MAX = 30
 
 const NOW_MARKS: readonly unknown[] = ['line', 'tint', 'both']
+const SLOT_TIMES: readonly unknown[] = ['off', 'down', 'up']
 const DIM_PASTS: readonly unknown[] = ['off', 'text', 'shade']
 const halfHour = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v < 1440 && v % 30 === 0
 
@@ -63,5 +74,7 @@ export function calendarLook(from: Partial<Record<keyof CalendarLook, unknown>> 
     ...day,
     nextShade: typeof from.nextShade === 'boolean' ? from.nextShade : d.nextShade,
     nextColour: typeof from.nextColour === 'string' && from.nextColour !== '' ? from.nextColour : d.nextColour,
+    slotTime: SLOT_TIMES.includes(from.slotTime) ? (from.slotTime as TableSlotTime) : d.slotTime,
+    slotSeconds: typeof from.slotSeconds === 'boolean' ? from.slotSeconds : d.slotSeconds,
   }
 }
