@@ -57,7 +57,7 @@ import { allPropertyKeys } from './properties'
 import { setViewOrder } from './columnOrder'
 import { NO_READ_ONLY, readOnlyTip, writableKey } from '../readOnlyRows'
 import { cardEditKey, isCardKey } from '../cardRows'
-import { ReadOnlyName } from './ReadOnlyMark'
+import { ItemName, useItemLock } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 import type { FolderHost } from '../ViewsPane'
 import type { PageWindowLink } from './PageWindow'
@@ -381,6 +381,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   /** The folder page's Read only (YAZ-5411): a sheet of a change that writes files, and a locked cell's edit, ask "Allow edits?" first. */
   const editLock = useContext(EditLockContext)
+  /** The read-only rows (YAZ-5587): which ask, which never open, which wear a lock. */
+  const itemLock = useItemLock(readOnly)
   const wrapRef = useRef<HTMLDivElement>(null)
   /**
    * The ancestor that scrolls the table vertically (YAZ-4636 T6): in a folder page the wrap takes the table's whole
@@ -1699,11 +1701,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
    * edits?" first, and once allowed the cell opens as that edit would have. False: no ask (a cell the box does not
    * open: a page's own switch keeps its tip).
    */
-  const askToEdit = (path: string, open: () => void): boolean => {
-    if (editLock === null || !readOnly.has(path) || !editLock.locked(path)) return false
-    void editLock.ask().then((ok) => ok && open())
-    return true
-  }
+  const askToEdit = itemLock.ask
   const openCellEditor = (r: number, c: number) => () => wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r}:${c}"] [data-edit]`)?.click()
 
   /** Arrow keys move between body cells (`data-cell="row:col"`); Enter on the name column opens the page. */
@@ -1938,7 +1936,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               data-row={line.r}
               // The row's only drag source (YAZ-4603 D53), a ⋮⋮ on hover (views.css): onto another group, or the Other
               // files tray, the only target of an ungrouped row (YAZ-4597 D46). A drag across cells selects.
-              {...(cardRows ? {} : line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path) && editLock?.locked(line.row.record.path) !== true))}
+              {...(cardRows ? {} : line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, itemLock.fixed(line.row.record.path)))}
               onClick={(e) => (e.currentTarget.draggable ? wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:0"]`)?.focus({ preventScroll: true }) : undefined)}
             >
               {numbered && line.n}
@@ -1948,6 +1946,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             const v = line.row.values[key]
             const { path, title } = line.row.record
             const locked = readOnly.has(path)
+            /** The lock and its tip show only when this row is locked while its page is not (YAZ-5587). */
+            const marked = c === nameCol && itemLock.mark(path)
             // A cell's own fill, else its row's, else its column's (YAZ-3746 13AQ).
             const fill = cellFillOf(fills, path, key) ?? columnFills[c]
             /** What an undo of this cell wrote, while the index is behind it (YAZ-3746 13O); null for every other cell. */
@@ -1968,8 +1968,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 onClick={c === nameCol ? (e) => (newWindowClick(e, rowPage(path)) ? undefined : e.metaKey || e.altKey ? void openByGesture(e, path, openHandlers) : selectCell(e)) : bares[c] === null ? undefined : selectCell}
                 // A read-only page's Name cell opens no title field: a title edit renames the page (YAZ-3076 D6).
                 // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `cutCellCard`.
-                title={c === nameCol && locked ? readOnlyTip(unit) : undefined}
-                data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
+                title={marked ? readOnlyTip(unit) : undefined}
+                data-clip-title={marked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
                 onDoubleClick={
                   c === nameCol
                     ? cardRows ? undefined : locked ? () => void askToEdit(path, () => setTitleEdit(rowKey(line))) : () => setTitleEdit(rowKey(line))
@@ -1999,7 +1999,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                       // YAZ-4799: grouped by Folder, a row's ↗ is read against the folder group it is drawn in, so a
                       // shortcut's copy under its second folder wears it and its home copy does not.
                       <ViewFolder.Provider value={folderGroupOf(line.at, line.g) ?? viewFolder}>
-                        {locked ? <ReadOnlyName>{rowTitle(line.row)}</ReadOnlyName> : rowTitle(line.row)}
+                        <ItemName mark={marked}>{rowTitle(line.row)}</ItemName>
                       </ViewFolder.Provider>
                     )}
                     {moveError?.path === line.row.record.path && (

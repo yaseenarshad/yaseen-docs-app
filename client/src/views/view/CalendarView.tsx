@@ -25,7 +25,7 @@ import { type PageWindowLink, currentItemClass, usePageWindowItems } from './Pag
 import { PageContextMenu } from './PageContextMenu'
 import { Popover } from './Popover'
 import { type CardPageDoors, cardMenuItems } from './rowMenuItems'
-import { ReadOnlyName } from './ReadOnlyMark'
+import { ItemName, useItemLock } from './ReadOnlyMark'
 import { FolderIcon } from './icons'
 import { FolderPages } from './GroupHeader'
 import { isFolderRow } from '../../links/shortcuts'
@@ -208,6 +208,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   const [over, setOver] = useState<string | null>(null)
   /** The card's right-click menu (YAZ-4547 D24), as the board's. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string; day: DayKey | null; locked: boolean } | null>(null)
+  /** The read-only cards (YAZ-5587): a vault-locked card still drags and resizes, and its drop asks first; a lock only when the page is not locked too. */
+  const itemLock = useItemLock(readOnly)
   /** The day names' right-click (YAZ-4864 round 3): "Header row ›" with the style panel, in place of the page's greyed-out Cut / Copy / Paste. Before the no-date-column return: a hook. */
   const [headMenu, setHeadMenu] = useState<{ x: number; y: number } | null>(null)
   const headFlyout = useFlyout<string>()
@@ -545,7 +547,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
    */
   const card = (row: Row, from: DayKey | null, place?: { bar: BarPlace; days: readonly DayKey[] }) => {
     const path = row.record.path
-    const locked = readOnly.has(path)
+    // A card nothing here opens (a page's own switch) does not move; a vault-locked one does, and its write asks first (YAZ-5587).
+    const locked = itemLock.fixed(path)
     const time = from === null && place === undefined ? null : timeOf(row.record.properties[dateKey])
     // A weekend page on its Friday or Monday (YAZ-4595 S33, YAZ-4635 P3) says its day. A drop on that day is a drop on its own day: no write.
     const real = from === null ? null : dayOf(row.record.properties[dateKey]) ?? (endKey === null ? null : dayOf(row.record.properties[endKey]))
@@ -562,7 +565,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
           {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too, unless the view's "Folder icon" is off (YAZ-4848). */}
           {isFolderRow(row.record) && folderIcons && <FolderIcon size={12} className="view-folder-row__icon" />}
           {/* "Cross out when" (YAZ-4864) strikes the whole card's text (`view-cal__card--crossed`): the icon stays as it is. */}
-          <span className="view-cal__card-name">{locked ? <ReadOnlyName>{row.record.title}</ReadOnlyName> : row.record.title}</span>
+          <span className="view-cal__card-name"><ItemName mark={itemLock.mark(path)}>{row.record.title}</ItemName></span>
         </span>
       ) : (
         <CardProp key={key} def={def} view={view} row={row} field={key} resolve={resolve} />
