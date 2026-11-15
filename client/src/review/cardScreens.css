@@ -1294,27 +1294,78 @@ body.card-inbox--sizing {
 .card-preview__close:hover {
   background: var(--bg-hover);
 }
-/* YAZ-5322: where new cards come from. On the New cards row, between the name and the count: "from Spanish ›",
-   grey "from All folders ›" with no pick; its own click target. The chip by the filter while a folder is picked. */
+/* YAZ-5322: where new cards come from; YAZ-5434 (A1, "tree corner line"): the pick on a second, small line under
+   New cards — a thin corner from under the New cards glyph bends into a 12px folder glyph, the name and a small ▾, in
+   the secondary text. `contain: inline-size` keeps the line out of the menu's width (the widest plain row sets it; a
+   long name gets "…"). One wash for the pointer over both lines; the line's own text darkens under the pointer. */
+.card-inbox__new-group {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 5px;
+}
+.card-inbox__new-group:hover {
+  background: var(--accent-soft);
+}
+.card-inbox__new-group > .card-inbox__filter-item:hover:not(:disabled) {
+  background: none;
+}
+.card-inbox__filter-row[data-from] > .card-inbox__reset {
+  align-self: start;
+  margin-top: 6px;
+  line-height: 18px;
+}
 .card-inbox__new-from {
-  max-width: 160px;
-  overflow: hidden;
-  margin-left: 4px;
-  padding: 1px 4px;
-  border-radius: 4px;
+  contain: inline-size;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  /* The corner's foot (17px, the glyph's middle, + 9px) and a 3px gap before the folder glyph. */
+  padding: 0 10px 6px 30px;
+  border: 0;
+  background: none;
   color: var(--fg-muted);
-  font-weight: 400;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
   white-space: nowrap;
-  text-overflow: ellipsis;
   cursor: pointer;
+}
+/* The tree corner: 1px, from under the New cards glyph (its middle, 17px in) down to the folder glyph's middle. */
+.card-inbox__new-from::before {
+  content: '';
+  position: absolute;
+  left: 16.5px;
+  top: -6px;
+  width: 9px;
+  height: 14px;
+  border-left: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
+  border-bottom-left-radius: 4px;
+  pointer-events: none;
+}
+.card-inbox__new-from .card-inbox__glyph {
+  flex: none;
+}
+.card-inbox__new-from-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-inbox__new-from[data-on] .card-inbox__new-from-name {
   color: var(--fg);
   font-weight: 500;
 }
 .card-inbox__new-from:hover {
-  background: var(--bg-hover);
   color: var(--fg);
+}
+.card-inbox__new-from:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 5px;
 }
 .card-inbox__pick-chip {
   flex: none;

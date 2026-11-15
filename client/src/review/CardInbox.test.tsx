@@ -644,7 +644,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
       ['All cards12', 'true'],
       ['Up next0', 'false'],
       ['Due today9', 'false'],
-      ['New cardsfrom All folders ›3', 'false'],
+      ['New cards3', 'false'],
     ])
     // The menu is open: the Inbox's keys are not taken (a menu owns them).
     press('1')
@@ -667,7 +667,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards12', 'Up next2', 'Due today9', 'New cardsfrom All folders ›3'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards12', 'Up next2', 'Due today9', 'New cards3'])
     const count = rows()[1].querySelector('.card-inbox__count')!
     expect([count.getAttribute('data-filter'), count.hasAttribute('data-empty')]).toEqual(['next', false])
     act(() => rows()[1].click())
@@ -695,7 +695,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const open = () => act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const rows = () => [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')].map((r) => r.textContent)
     open()
-    expect(rows()).toEqual(['All cards12', 'Due today9', 'New cardsfrom All folders ›3'])
+    expect(rows()).toEqual(['All cards12', 'Due today9', 'New cards3'])
     open()
     // The done screen: nothing of Up next (nothing waits, no add).
     session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
@@ -706,13 +706,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, filter: 'next', counts: { all: 10, next: 0, due: 7, new: 3 } }
     render()
     open()
-    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cardsfrom All folders ›3'])
+    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cards3'])
     open()
     // One card marked Up next: the row is back.
     session = { ...session, filter: 'all', upNext: true }
     render()
     open()
-    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cardsfrom All folders ›3'])
+    expect(rows()).toEqual(['All cards10', 'Up next0', 'Due today7', 'New cards3'])
   })
 
   it('YAZ-5018: the buttons wear their glyphs — ✕ Forgot and ✓ Remembered; with four buttons ↺ Again, ~ Hard, ✓ Good, ⇈ Easy — each a round pill with its digit', async () => {
@@ -1470,19 +1470,19 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
   const field = () => document.querySelector<HTMLInputElement>('.card-inbox__add-number')
   const WAITING = { counts: { all: 22, next: 2, due: 10, new: 10 }, more: { new: 38, next: 3 }, adds: { new: 10, next: 2 }, limited: { new: true, next: true } }
 
-  it('round 2: the Up next and New cards rows read "today / total" ("2 / 5", "10 / 48"); no limit: the count alone', () => {
+  it('round 2: the Up next row reads "today / total" ("2 / 5"); New cards its count alone (YAZ-5434); no limit: the count alone', () => {
     mount(TWO_SIDES)
     session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 5', 'Due today10', 'New cardsfrom All folders ›10 / 48'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 5', 'Due today10', 'New cards10All folders'])
     // The total is every card of the kind: nothing waits, it is today's count.
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
     render()
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 2', 'Due today10', 'New cardsfrom All folders ›10 / 10'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2 / 2', 'Due today10', 'New cards10All folders'])
     session = { ...session, limited: { new: false, next: false } }
     render()
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cardsfrom All folders ›10'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards22', 'Up next2', 'Due today10', 'New cards10All folders'])
   })
 
   it('round 2: a click on the count turns the row into "Add [10] more new cards" (the Settings number, selected); Enter adds the typed number and the menu stays open; Esc goes back; the keys stay in the field', () => {
@@ -1532,7 +1532,7 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, ...WAITING, counts: { all: 34, next: 2, due: 10, new: 22 }, more: { new: 26, next: 3 }, canReset: { new: true, next: false } }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows().map((r) => r.textContent)).toEqual(['All cards34', 'Up next2 / 5', 'Due today10', 'New cardsfrom All folders ›22 / 48Reset'])
+    expect(rows().map((r) => r.textContent)).toEqual(['All cards34', 'Up next2 / 5', 'Due today10', 'New cards22All foldersReset'])
     act(() => rows()[3].querySelector<HTMLButtonElement>('.card-inbox__reset')!.click())
     expect(review.resetCards).toHaveBeenCalledExactlyOnceWith('new')
     expect(review.setFilter).not.toHaveBeenCalled()
@@ -1976,13 +1976,13 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
   const WAITING = { counts: { all: 22, next: 2, due: 10, new: 10 }, more: { new: 14, next: 3 }, adds: { new: 10, next: 2 }, limited: { new: true, next: true } }
   const SPANISH = [{ folder: 'spanish', label: 'Spanish' }]
 
-  it('the row reads "New cards  from All folders ›  10 / 38", grey; a click on the folder part opens the picker beside the menu, not the filter', () => {
+  it('the row reads "New cards  10", its line under it "All folders", grey; a click on the line opens the picker beside the menu, not the filter', () => {
     mount(TWO_SIDES)
     session = { ...session, ...WAITING }
     render()
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
     const from = rows()[3].querySelector<HTMLElement>('.card-inbox__new-from')!
-    expect(rows()[3].textContent).toBe('New cardsfrom All folders ›10 / 24')
+    expect(rows()[3].textContent).toBe('New cards10All folders')
     expect(from.hasAttribute('data-on')).toBe(false)
     // No chip with All folders.
     expect(el.querySelector('.card-inbox__pick-chip')).toBeNull()
@@ -2003,7 +2003,7 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     render()
     expect(el.querySelector('.card-inbox__pick-chip')?.textContent).toBe('New cards: Spanish×')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
-    expect(rows()[3].textContent).toBe('New cardsfrom Spanish ›10 / 24')
+    expect(rows()[3].textContent).toBe('New cards10Spanish')
     expect(rows()[3].querySelector('.card-inbox__new-from')!.hasAttribute('data-on')).toBe(true)
     act(() => rows()[3].querySelector<HTMLElement>('.card-inbox__new-from')!.click())
     const boxes = pickerRows().map((r) => r.querySelector('input')!)
@@ -2039,6 +2039,44 @@ describe('YAZ-5322: where new cards come from — the New cards row, the picker,
     expect(el.querySelector('.card-inbox__pick-chip')?.textContent).toBe('New cards: Spanish×')
     act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-from')!.click())
     expect(picker()!.textContent).toContain('Spanish stays picked. Its new cards come first again once you make some.')
+  })
+
+  /**
+   * YAZ-5434 (A1, "go with A one, tree corner line"): the New cards row is a plain row, "New cards  9", the same shape as
+   * the others; the pick sits on its own small line under it, outside the row's button, so it never pushes the counts.
+   */
+  it('YAZ-5434: "New cards  10" has the same shape as the other rows; the pick is a line of its own under it (folder glyph, name, ▾) that opens the picker', () => {
+    mount(TWO_SIDES)
+    session = { ...session, ...WAITING, newFrom: SPANISH }
+    render()
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__filter')!.click())
+    const items = [...document.querySelectorAll<HTMLButtonElement>('.card-inbox__filter-item')]
+    // Each row's button: its glyph and name, then its count as its last part — one column of counts. No "/ total" on New cards.
+    expect(items.map((b) => [b.children.length, b.lastElementChild!.className, b.lastElementChild!.textContent])).toEqual([
+      [2, 'card-inbox__count', '22'],
+      [2, 'card-inbox__count', '2 / 5'],
+      [2, 'card-inbox__count', '10'],
+      [2, 'card-inbox__count', '10'],
+    ])
+    const line = rows()[3].querySelector<HTMLButtonElement>('.card-inbox__new-from')!
+    // The line is not inside the row's button: the row and the line share one group (one wash for both).
+    expect(line.closest('.card-inbox__filter-item')).toBeNull()
+    expect(line.parentElement!.className).toBe('card-inbox__new-group')
+    expect(line.parentElement!.firstElementChild).toBe(items[3])
+    // A folder glyph, the name, a small ▾; a button, so Tab reaches it and Enter opens it.
+    expect(line.tagName).toBe('BUTTON')
+    expect(line.getAttribute('aria-haspopup')).toBe('dialog')
+    expect([...line.children].map((c) => c.tagName.toLowerCase())).toEqual(['svg', 'span', 'svg'])
+    expect(line.querySelector('.card-inbox__new-from-name')!.textContent).toBe('Spanish')
+    expect(line.title).toBe('New cards come from Spanish')
+    // Only the New cards row has the line.
+    expect(document.querySelectorAll('.card-inbox__new-from')).toHaveLength(1)
+    act(() => line.click())
+    expect(review.setFilter).not.toHaveBeenCalled()
+    expect(pickerRows().map((r) => r.textContent)).toEqual(['All folders38', 'Spanish24', 'Verbs4', 'Geography12'])
+    // The row itself is still the filter.
+    act(() => items[3].querySelector<HTMLElement>('.card-inbox__filter-name')!.click())
+    expect(review.setFilter).toHaveBeenCalledExactlyOnceWith('new')
   })
 })
 

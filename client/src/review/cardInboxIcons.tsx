@@ -35,10 +35,10 @@ export const ClockIcon = ({ size = 14 }: { size?: number }) =>
     size,
   )
 /** The menu's chevron. */
-export const ChevronIcon = () => glyph(<path d="m4.5 6.5 3.5 3.5 3.5-3.5" />, 12)
+export const ChevronIcon = ({ size = 12 }: { size?: number }) => glyph(<path d="m4.5 6.5 3.5 3.5 3.5-3.5" />, size)
 /** The scope: the vault (a stack of cards), a folder, or a page. */
 export const VaultIcon = () => glyph(<path d="M3 5.5h10v7.5H3zM4.5 3.5h7M6 1.75h4" />)
-export const FolderIcon = () => glyph(<path d="M2.25 4.25a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1z" />)
+export const FolderIcon = ({ size = 14 }: { size?: number }) => glyph(<path d="M2.25 4.25a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1z" />, size)
 export const PageIcon = () => glyph(<path d="M4 1.75h5.25L12.5 5v9.25H4zM9 1.75V5.25h3.5" />)
 
 /**
