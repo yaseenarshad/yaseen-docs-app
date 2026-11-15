@@ -32,6 +32,8 @@ import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
+import { appCardLook, type CardLookSettings } from '@shared/cardLook'
+import { cardLookVars } from '../review/cardLook'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -402,6 +404,11 @@ export interface SettingsCtx {
    * The icon colours and name rules (YAZ-5488): the picked vault's icons.json `colors` and `rules` (each the app's
    * until the vault has its own), with the Vault dropdown as Spacing's. Absent with no vault: the rows edit the app's.
    */
+  /**
+   * The card look (YAZ-5484): the picked vault's card-look.json as the 13 settings (`value`: the app's until the vault
+   * has a file), with the Vault dropdown as Spacing's. Absent with no vault: the Card look rows edit the app's settings.
+   */
+  cardLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: CardLookSettings; save: (next: CardLookSettings) => void }
   iconLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; rules: readonly IconRule[]; colors: SidebarIconColors; save: (look: { rules?: IconRule[]; colors?: SidebarIconColors }) => void }
   /** Daily pages › Change… (YAZ-5491): App writes the folder to the file of the vault it was picked in. Absent with no vault. */
   pickDailyFolder?: (folder: string, vault: string) => void
@@ -574,6 +581,36 @@ function setPageSpacing(ctx: SettingsCtx, patch: Partial<PageSpacing>): void {
   if (patch.bulletIndent !== undefined) next.pageBulletIndent = patch.bulletIndent
   if (patch.bulletGap !== undefined) next.pageBulletGap = patch.bulletGap
   ctx.onChange(next)
+}
+/**
+ * The Card look rows (YAZ-5484): each reads and writes the picked vault's look (`ctx.cardLook`, card-look.json; the
+ * app's values until the vault has a file) through a ctx whose `settings` carry that look and whose `onChange` saves
+ * the 13 keys into the vault. With no vault in the window, the app's settings, as before. A Vault dropdown first.
+ */
+function cardLookCtx(ctx: SettingsCtx): SettingsCtx {
+  const look = ctx.cardLook
+  if (look === undefined) return ctx
+  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appCardLook(next)) }
+}
+function cardLookItems(items: readonly SettingDef[]): SettingDef[] {
+  const vaultRow: SettingDef = {
+    id: 'cardLookVault',
+    label: 'Vault',
+    keywords: [...REVIEW_KEYWORDS, 'card look', 'vault'],
+    available: (ctx) => reviewOn(ctx) && (ctx.cardLook?.vaults.length ?? 0) > 1,
+    render: ({ cardLook }) => cardLook && <Select options={cardLook.vaults.map((v) => ({ label: v.name, value: v.root }))} value={cardLook.root} onChange={cardLook.choose} ariaLabel="Vault" />,
+  }
+  const through = <T,>(f: T | ((ctx: SettingsCtx) => T)): T | ((ctx: SettingsCtx) => T) => (typeof f === 'function' ? (ctx: SettingsCtx) => (f as (ctx: SettingsCtx) => T)(cardLookCtx(ctx)) : f)
+  return [
+    vaultRow,
+    ...items.map((def): SettingDef => ({
+      ...def,
+      label: through(def.label),
+      ...(def.hint !== undefined && { hint: through(def.hint) }),
+      ...(def.available !== undefined && { available: (ctx: SettingsCtx) => def.available!(cardLookCtx(ctx)) }),
+      render: (ctx) => def.render(cardLookCtx(ctx)),
+    })),
+  ]
 }
 /** Card spacing's own four rows (YAZ-5050): only with Custom. */
 const cardSpacingCustom = (ctx: SettingsCtx): boolean => reviewOn(ctx) && ctx.settings.cardSpacing === 'custom'
@@ -2252,11 +2289,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Card look',
-        // YAZ-5483: every row here writes the app's settings (`ctx.onChange`), not the vault.
-        hint: 'For the whole app: these are saved on this Mac, not in the vault.',
-        items: [
+        // YAZ-5484 (replaces YAZ-5005's "one setting for the whole app"): every row here writes the picked vault's
+        // card-look.json (`cardLookItems`), with the Vault dropdown where the window has two or more; the phone draws
+        // its cards with it too.
+        hint: "Saved in the vault's card-look.json: each vault has its own look, on this Mac and on the phone.",
+        items: cardLookItems([
           {
-            // YAZ-5005: how the app looks, for every vault (the app's settings, not review.json): `data-shown-hidden-words` on `.app`.
+            // YAZ-5005, the vault's since YAZ-5484 (card-look.json): `--shown-hidden-words` on each surface of its cards.
             id: 'shownHiddenWords',
             label: 'Shown hidden words',
             hint: 'How a hidden word looks once it shows: in the page, the Inbox and the card window.',
@@ -2431,8 +2470,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           // YAZ-5050 round 2: a sample card in the card's own render and styles, redrawn as the rows above change.
-          previewRow('cardSpacingPreview', 'Card preview', [...CARD_SPACING_KEYWORDS, 'cloze', 'highlight', 'underline', 'box'], CardSpacingPreview, reviewOn),
-        ],
+          // YAZ-5484: in the picked vault's look (its whole variables over `.app`'s).
+          previewRow('cardSpacingPreview', 'Card preview', [...CARD_SPACING_KEYWORDS, 'cloze', 'highlight', 'underline', 'box'], CardSpacingPreview, reviewOn, (ctx) =>
+            ctx.cardLook === undefined ? {} : (cardLookVars({ ...ctx.settings, ...ctx.cardLook.value }, true) as Record<string, string>),
+          ),
+        ]),
       },
       {
         // YAZ-5020: the same-day rules in plain words, closed by default.

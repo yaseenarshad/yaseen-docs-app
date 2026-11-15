@@ -8,8 +8,9 @@
  *   (`.editor-instance .milkdown .ProseMirror`).
  *
  * Neither copies a style: both sit inside `.app`, so the page's and the card's own rules and CSS variables
- * (`--edit-line-height`, `--edit-block-gap`, `--card-*`, `data-shown-hidden-words`) draw them, and they redraw the
- * moment a setting changes. The text is made up; nothing reads the vault.
+ * (`--edit-line-height`, `--edit-block-gap`, `--card-*`, `--shown-hidden-words`) draw them, and they redraw the
+ * moment a setting changes; the registry wraps each in the picked vault's variables (YAZ-5485 spacing, YAZ-5484 card
+ * look). The text is made up; nothing reads the vault.
  */
 import { useEffect, useRef } from 'react'
 import { renderCard } from '../editor/card/cardRender'

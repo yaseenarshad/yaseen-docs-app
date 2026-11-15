@@ -5,6 +5,9 @@ import { onlyLocalMedia } from '@client/editor/card/cardSafety'
 import { urlOf } from '@client/editor/card/localOnly'
 import type { WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 import { makeAssetResolver } from '@shared/assetLookup'
+import { CARD_LOOK_FILE, cardLookStyle, sanitizeCardLook } from '@shared/cardLook'
+import { VAULT_CONFIG_DIR } from '@shared/types'
+import type { VaultStore } from '../../store'
 import { vaultMediaPath, vaultMediaUrl } from './vaultMedia'
 
 /**
@@ -100,4 +103,23 @@ export function drawLocalCard(text: string, show: CardShow, place: { links: Wiki
     } else if (kind !== 'mail' && !(kind === 'path' && a.getAttribute('href')!.trim().startsWith('#'))) a.removeAttribute('href')
   }
   return el
+}
+
+/**
+ * THE VAULT'S CARD LOOK ON THE PHONE (YAZ-5484), read only, from the phone's copy of `.yaseendocs/card-look.json`: the
+ * Mac's own variables (`cardLookStyle`), which the Mac's `card.css` and `cardScreens.css` (loaded by the phone) read,
+ * so a card draws as on the Mac: the text and title size, the hidden-word look (Highlight, Underline, Box) and the next
+ * mark with its colour, Clean's look and the spacing. The width is only a max on the phone (`reader.css`,
+ * `review.css`). No file, or one that is not JSON: no variable, the phone's look before (the Mac's app values are not
+ * on the phone). Worn by the reader (a card in a page, the card view: `vaultLook.ts`) and by Review's card. Here, with the
+ * phone's one card drawing, so no new chunk joins the first load's list.
+ */
+export async function readCardLook(store: VaultStore, vault: string): Promise<Record<string, string>> {
+  const file = await store.read(vault, `${VAULT_CONFIG_DIR}/${CARD_LOOK_FILE}`).catch(() => null)
+  if (file === null) return {}
+  try {
+    return cardLookStyle(sanitizeCardLook(JSON.parse(typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content))))
+  } catch {
+    return {}
+  }
 }

@@ -133,6 +133,27 @@ afterEach(() => {
   el.remove()
 })
 
+describe('YAZ-5484: the Inbox draws its card with the card\'s vault\'s look', () => {
+  it('the card\'s vault\'s variables on the Inbox\'s root (two vaults, two looks); its zoom stays; no card, none', () => {
+    const LOOKS: Record<string, Record<string, string>> = { '/v': { '--shown-hidden-words': 'box', '--card-clean': 'on' }, '/w': { '--shown-hidden-words': 'underline', '--card-clean': 'off' } }
+    mount(TWO_SIDES)
+    const cardVarsOf = vi.fn((path: string) => LOOKS[path.slice(0, 2)])
+    props = { ...props, cardVarsOf }
+    render()
+    const box = el.querySelector<HTMLElement>('.card-inbox')!
+    expect(cardVarsOf).toHaveBeenCalledWith(PATH)
+    expect([box.style.getPropertyValue('--shown-hidden-words'), box.style.getPropertyValue('--card-clean')]).toEqual(['box', 'on'])
+    expect(box.style.getPropertyValue('--document-zoom')).not.toBe('')
+    // The next card is in the other vault: its look.
+    session = { ...session, card: { ...session.card!, path: '/w/cards.md', page: { ...session.card!.page!, path: '/w/cards.md' } } }
+    render()
+    expect([box.style.getPropertyValue('--shown-hidden-words'), box.style.getPropertyValue('--card-clean')]).toEqual(['underline', 'off'])
+    session = { ...session, card: null }
+    render()
+    expect(box.style.getPropertyValue('--shown-hidden-words')).toBe('')
+  })
+})
+
 describe('the Inbox screen (YAZ-4962)', () => {
   it('YAZ-5308 A3: the head reads the ID; the title, off the card line, is in the band at the top of the card`s frame from the start, with no label, never a word of the front (YAZ-5132: the page is in the breadcrumb, not "in Cards"); the hint row shows only keys that act now', async () => {
     mount(TWO_SIDES)

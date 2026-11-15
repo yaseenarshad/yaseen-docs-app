@@ -2241,13 +2241,14 @@ export interface SettingsState {
   sectionLines: SectionLines
   /**
    * A card's shown hidden word (YAZ-5005): highlighted (the default) or underlined, in the page, the Inbox and
-   * the card window. How the app looks, for every vault: `data-shown-hidden-words` on `.app`. The blanks do not change.
+   * the card window. YAZ-5484 replaces YAZ-5005's "for every vault": the VAULT's (`card-look.json`, `shared/cardLook.ts`);
+   * this app value is the fallback for a vault with no file. `--shown-hidden-words`. The blanks do not change.
    */
   shownHiddenWords: ShownHiddenWords
   /**
    * Settings › Review › Mark the next hidden word (YAZ-5053 round 3, Yaseen: "can it have a color to it so we know that
    * that is where the eye should go?"): the one blank the next Space shows takes a colour, in the look of Shown hidden
-   * words. `data-mark-next-hidden` on `.app`; the render marks the blank (`data-next`).
+   * words. `--mark-next-hidden` (the vault's since YAZ-5484, as all of Card look); the render marks the blank (`data-next`).
    */
   markNextHidden: boolean
   /** Its colour: `null` is the theme's calm default (`--next-hidden` in `app.css`, light and dark); else a hex colour for both. */
@@ -2262,7 +2263,7 @@ export interface SettingsState {
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
    * uses the four `card*` values below, on `.app` as `--card-line-height`, `--card-block-gap`, `--card-bullet-indent`
    * and `--card-bullet-gap`. Round 3: Custom starts at Mochi's clean values (`CARD_SPACING_CLEAN`). Round 4: `clean`
-   * uses them, with Mochi's softer text, Inbox padding and line length (`data-card-clean` on `.app`); Custom keeps that look.
+   * uses them, with Mochi's softer text, Inbox padding and line length (`--card-clean`, the vault's since YAZ-5484); Custom keeps that look.
    */
   cardSpacing: CardSpacing
   /**

@@ -20,6 +20,7 @@ import type { ReviewLink } from './link'
 import { storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { lostRows } from '../status/dot'
 import { PhoneCard, type CardLinkOpen } from './PhoneCard'
+import { readCardLook } from '../media/ui/cardDraw'
 import { createReviewSource, type ReviewSource } from './source'
 import { setReviewInProgress } from './inProgress'
 import { useTapGuard } from './tapGuard'
@@ -166,6 +167,18 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
   useEffect(() => setReviewInProgress(inProgress), [inProgress])
   useEffect(() => () => setReviewInProgress(false), [])
 
+  // YAZ-5484: the vault's card look (card-look.json, the Mac's card variables) on the card; read again with each index
+  // the source takes in (a sync that brought a new file). No file: none, the look before.
+  const [cardLook, setCardLook] = useState<Record<string, string>>({})
+  const records = source.records
+  useEffect(() => {
+    let live = true
+    void readCardLook(link.store, vault).then((next) => live && setCardLook((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next)))
+    return () => {
+      live = false
+    }
+  }, [link, vault, records])
+
   const answers = useAnswersState(link)
   // A pass that ends well asks again for each picture that waited for a signal.
   const { engine } = link
@@ -181,7 +194,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
       </div>
     )
   if (session === null) return <Waiting />
-  return <SessionScreen {...{ link, unit, open, source, host, media, retry, review, session, answers, notice, setNotice, shown }} />
+  return <SessionScreen {...{ link, unit, open, source, host, media, retry, review, session, answers, notice, setNotice, shown, cardLook }} />
 }
 
 function SessionScreen({
@@ -198,6 +211,7 @@ function SessionScreen({
   notice,
   setNotice,
   shown,
+  cardLook,
 }: {
   link: ReviewLink
   unit: UnitText
@@ -212,6 +226,8 @@ function SessionScreen({
   notice: string | null
   setNotice: (text: string | null) => void
   shown: boolean
+  /** The vault's card look (YAZ-5484): the Mac's card variables, on the card. */
+  cardLook: Record<string, string>
 }) {
   // YAZ-5465 (practice merge): the Mac's Inbox stops after the due cards' first pass (YAZ-5043, `session.end`, the
   // ring and "Learn new cards"). The phone has no such screen yet: it goes on at once, as before the merge, except at the
@@ -557,7 +573,7 @@ function SessionScreen({
           <div className="review__stage">
             {/* YAZ-5229: the card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
                 shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. */}
-            <div ref={cardBox} className="review__card card card-screen">
+            <div ref={cardBox} className="review__card card card-screen" style={cardLook}>
               <div className="review__cardtop">
                 <span className="review__chip" data-new={card.isNew || undefined} title={cardStateText(card, Date.now())}>
                   <i aria-hidden="true" />

@@ -432,8 +432,20 @@
 }
 
 .review__card .phone-card__body {
-  font-size: 17px;
-  line-height: 1.55;
+  /* YAZ-5484: the vault's Card text size and Card spacing (card-look.json, `page/cardLook.ts`), else the phone's own. */
+  font-size: var(--card-text-size, 17px);
+  line-height: var(--card-line-height, 1.55);
+}
+/* YAZ-5484: the vault's space between blocks, on top of the phone's own; its Card width only as a max (a narrow screen
+   fills its width); its Card title size on the title. */
+.review__card .phone-card__body .card__side > p {
+  padding-block: var(--card-block-gap, 0);
+}
+.review__card {
+  max-width: calc(var(--card-text-width, 100vw) + 36px);
+}
+.review__title {
+  font-size: var(--card-title-size, inherit);
 }
 
 .review__card pre,
@@ -471,10 +483,14 @@
   color: var(--fg-muted);
 }
 
-/* The part the next tap shows: the accent's mark (the Mac's "Mark the next hidden word"). */
-.review__card .card__blank[data-next] {
-  border-bottom-color: var(--next-hidden);
-  background: color-mix(in srgb, var(--next-hidden) 16%, transparent);
+/* The part the next tap shows: the accent's mark (the Mac's "Mark the next hidden word"). YAZ-5484: not where the vault
+   turned it off (`--mark-next-hidden: off`, card-look.json); its colour is the vault's where it picked one; with a file,
+   the Mac's own mark rules (`card.css`) draw it in the vault's hidden-word look. */
+@container not style(--mark-next-hidden: off) {
+  .review__card .card__blank[data-next] {
+    border-bottom-color: var(--card-next-hidden, var(--next-hidden));
+    background: color-mix(in srgb, var(--card-next-hidden, var(--next-hidden)) 16%, transparent);
+  }
 }
 
 /* A pointer: the hidden part under it lights up (as the Mac's hover); a tap on it shows THAT part. */

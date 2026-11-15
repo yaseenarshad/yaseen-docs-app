@@ -20,6 +20,7 @@ import { useLinkPills, type LinkPillsState } from '../settings/useLinkPills'
 import { useVaultUnitWord, type UnitWordState } from './unitWord'
 import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
+import { useCardLook, type CardLookState } from '../review/useCardLook'
 import { useDailyPages, type DailyPagesState } from '../settings/useDailyPages'
 import { useVaultNewPlaces, type VaultNewPlacesState } from '../settings/useVaultNewPlaces'
 import { useProperties } from '../views/useProperties'
@@ -57,6 +58,8 @@ export interface VaultScope {
   readOnlyVault: ReadOnlyVaultState
   /** How text looks in every page of this vault (YAZ-3066 D10): `.yaseendocs/text-formatting.json`. Each page layer of the vault reads it (D12). */
   textFormatting: TextFormattingState
+  /** How this vault's cards look (YAZ-5484): `.yaseendocs/card-look.json`; no file draws the app's look. Every surface that shows one of its cards reads it. */
+  cardLook: CardLookState
   /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
   linkPills: LinkPillsState
   /** This vault's daily pages (YAZ-5491): `.yaseendocs/daily-pages.json`, the one source; App picks the window's (`windowDailyPages`). */
@@ -143,6 +146,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const unit = useVaultUnitWord(root)
   const readOnlyVault = useReadOnlyVault(root)
   const textFormatting = useTextFormatting(root, notify)
+  const cardLook = useCardLook(root, notify)
   const linkPills = useLinkPills(root, notify)
   const dailyPages = useDailyPages(root, notify)
   const newPlaces = useVaultNewPlaces(root, notify)
@@ -217,6 +221,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     unit,
     readOnlyVault,
     textFormatting,
+    cardLook,
     linkPills,
     dailyPages,
     newPlaces,

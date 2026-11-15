@@ -7,6 +7,7 @@ import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, spacingVars } from '@shar
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
+import { readCardLook } from '../media/ui/cardDraw'
 import './linkPills.css'
 
 /**
@@ -19,6 +20,8 @@ import './linkPills.css'
  *  - the page spacing (`text-formatting.json` › `spacing`, YAZ-5485): line spacing, space between blocks, bullet
  *    indent and gap, as the Mac's `--edit-line-height`, `--edit-block-gap`, `--page-bullet-indent`, `--page-bullet-gap`
  *    (`spacingVars`), which `reader.css` reads. No `spacing`: the reader's own defaults (the Mac's defaults).
+ *  - the card look (`card-look.json`, YAZ-5484, `cardLook.ts`): the Mac's card variables, so a card in a page and the
+ *    card view draw with the vault's text and title size, hidden-word look, next mark and spacing. No file: none.
  *  - "Clicking a link" (`link-click.json`), for the link door (`openLink.ts`).
  * Read once for each version of the vault's data (a sync that brings a new file makes a new version).
  */
@@ -47,11 +50,11 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
   let held = looks.get(data)
   if (held === undefined) {
     held = (async () => {
-      const [rawPills, rawText, rawClick] = await Promise.all([readJson(store, data.vault, LINK_PILLS_FILE), readJson(store, data.vault, TEXT_FORMATTING_FILE), readJson(store, data.vault, LINK_CLICK_FILE)])
+      const [rawPills, rawText, rawClick, card] = await Promise.all([readJson(store, data.vault, LINK_PILLS_FILE), readJson(store, data.vault, TEXT_FORMATTING_FILE), readJson(store, data.vault, LINK_CLICK_FILE), readCardLook(store, data.vault)])
       const clean = sanitizeLinkPills(rawPills)
       const pills = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
       const text = sanitizeTextFormatting(rawText)
-      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...headingVars(text), ...spacingVars(text.spacing) } }
+      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...headingVars(text), ...spacingVars(text.spacing), ...card } }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
   }

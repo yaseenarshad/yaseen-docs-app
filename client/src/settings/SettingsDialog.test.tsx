@@ -17,6 +17,7 @@ import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
+import { appCardLook } from '@shared/cardLook'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { UNIT_WORDS, unitTextOf } from '../vault/unitWord'
 import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
@@ -531,7 +532,8 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       vault: [...g.querySelectorAll('.settings-group__hint')].some((h) => h.textContent === 'Vault: Work'),
       wholeApp: [...g.querySelectorAll('.settings-group__hint')].some((h) => h.textContent?.startsWith('For the whole app') === true),
     }))
-    expect(groups.find((g) => g.title === 'Card look')).toEqual({ title: 'Card look', vault: false, wholeApp: true })
+    // YAZ-5484: Card look is the vault's now (card-look.json), with its own Vault dropdown (as Spacing): no "For the whole app".
+    expect(groups.find((g) => g.title === 'Card look')).toEqual({ title: 'Card look', vault: false, wholeApp: false })
     for (const title of [undefined, 'Daily limits', 'Answers', 'Scheduling']) expect(groups.find((g) => g.title === title), String(title)).toMatchObject({ vault: true, wholeApp: false })
     expect(el.querySelector('#settings-cards [data-setting="inboxOpenAt"] .setting__hint')?.textContent).toMatch(/For the whole app\.$/)
     // A Card look row's own hint does not repeat it: its group says it.
@@ -1446,6 +1448,43 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(row(none.el, 'spacingVault')).toBeNull()
     act(() => rowButtons(none.el, 'lineSpacing').find((b) => b.textContent === '2.0')!.click())
     expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
+  })
+
+  it('YAZ-5484: Card look reads and writes the picked vault\'s card-look.json (the 13 settings), with the Vault dropdown with two vaults; the preview wears that vault\'s look; the app\'s settings with no vault', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const value = { ...appCardLook(DEFAULT_SETTINGS), shownHiddenWords: 'box' as const, cardSpacing: 'custom' as const, cardLineSpacing: 2 }
+    const cardLook = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/b', choose, value, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, review: { settings: REVIEW_ON, save: vi.fn() }, cardLook }} onClose={vi.fn()} />))
+    clickNav(container, 'Cards')
+    const select = row(container, 'cardLookVault')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+    expect(select.selectedIndex).toBe(1)
+    // The vault's value shows (Box, and Custom's own rows), not the app's (Highlight, Same as pages).
+    expect(rowButtons(container, 'shownHiddenWords').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Box')
+    expect(row(container, 'cardLineSpacing')).not.toBeNull()
+    act(() => rowButtons(container!, 'shownHiddenWords').find((b) => b.textContent === 'Underline')!.click())
+    expect(save).toHaveBeenLastCalledWith({ ...value, shownHiddenWords: 'underline' })
+    expect(onChange).not.toHaveBeenCalled()
+    // The preview wears the vault's whole look.
+    await act(async () => await import('./SpacingPreview'))
+    const wrap = container.querySelector<HTMLElement>('[data-preview="card"]')?.parentElement
+    expect(wrap?.style.getPropertyValue('--shown-hidden-words')).toBe('box')
+    expect(wrap?.style.getPropertyValue('--card-line-height')).toBe('2')
+    act(() => {
+      select.value = '/a'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(choose).toHaveBeenCalledWith('/a')
+    unmount()
+    const none = mountOn('Cards', { ...DEFAULT_SETTINGS }, undefined, REVIEW_ON)
+    expect(row(none.el, 'cardLookVault')).toBeNull()
+    act(() => rowButtons(none.el, 'shownHiddenWords').find((b) => b.textContent === 'Underline')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, shownHiddenWords: 'underline' })
   })
 
   it('YAZ-5488: the icon colours and rules write the picked vault\'s icons.json; each group has the Vault dropdown with two vaults; the app values with no vault', async () => {

@@ -394,8 +394,8 @@
 }
 /* A card's head and title band (YAZ-5437), as the Mac's read card (`card.css`: `.card__head`, `.card-band`): the ID first,
    small and grey, then its marks; the title bold in the shaded band under it. The band's colour is the Mac's
-   `--card-title-band` (`app.css`), one step darker than the head. Card title size stays Default (the Mac's setting is
-   in its settings folder, which the phone never gets). */
+   `--card-title-band` (`app.css`), one step darker than the head. Card title size is the vault's (card-look.json,
+   YAZ-5484: `--card-title-size`, read by `card.css`), Default with no file. */
 .reader {
   --card-title-band: #ededf0;
 }
@@ -527,6 +527,12 @@
 /* Block math: its source, as code (the Mac draws no math: YAZ-977). */
 .reader__body pre.page-math {
   font-style: italic;
+}
+
+/* YAZ-5484: the vault's Card width (card-look.json, `readCardLook`, `media/ui/cardDraw.ts`) only as a max on the phone: a narrow screen fills its
+   width, a wide one stops at the card's line. No file, or Same as pages: no max. */
+.reader .card {
+  max-width: calc(var(--card-text-width, 100vw) + 34px);
 }
 
 /* YAZ-5494: a box with its line (`data-task`) is a check box a tap ticks (`taskTicks.ts`): its tap area is 44 px around

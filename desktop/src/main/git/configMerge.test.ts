@@ -69,6 +69,15 @@ describe('mergeConfigFile', () => {
   })
 })
 
+describe('YAZ-5484: card-look.json merges key by key', () => {
+  it('two Macs change different settings of the look: both stay; a clash takes the remote\'s', () => {
+    const base = json({ version: 1, hiddenWords: 'box', custom: { line: 2 } })
+    const theirs = json({ version: 1, hiddenWords: 'underline', custom: { line: 2, gap: 4 } })
+    const mine = json({ version: 1, hiddenWords: 'box', textSize: 18, custom: { line: 1.15 } })
+    expect(JSON.parse(mergeConfigFile(base, theirs, mine).text)).toEqual({ version: 1, hiddenWords: 'underline', textSize: 18, custom: { line: 1.15, gap: 4 } })
+  })
+})
+
 describe('mergesByKey: the files AutoSync merges key by key, by rule', () => {
   it.each(['text-formatting.json', 'link-pills.json', 'link-click.json', 'show-ids.json', 'review.json', 'new-places.json', 'daily-pages.json', 'unit-word.json', 'read-only.json', 'github.json', 'card-look.json', 'some-file-of-a-later-build.json'])('%s: yes', (name) => {
     expect(mergesByKey(`.yaseendocs/${name}`)).toBe(true)
