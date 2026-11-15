@@ -173,6 +173,31 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(showing()).toBe('VRB-5')
   })
 
+  it('undo_onDoneScreen_ignoresTapsUnder400ms_onTheReturnedCard: a double tap on Undo never answers the card it brings back (sweep2 M-A)', async () => {
+    h = await reviewSetup(FILES)
+    await pick('Due today')
+    for (const r of ['Remembered', 'Remembered', 'Remembered', 'Remembered', 'Forgot'] as const) await answer(r)
+    expect(q('.due-end')?.dataset.kind).toBe('missed')
+    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
+    // The first tap of the double tap: Undo brings VRB-5 back, with ✓ under the finger.
+    await act(async () => q('.review__stage--done .review__undo')!.click())
+    await h.settle()
+    expect(showing()).toBe('VRB-5')
+    // The second tap, 100–300 ms later, lands on ✓, then on the card: both do nothing.
+    await act(async () => q('.review__answer[data-rating="good"]')!.click())
+    await h.settle()
+    await act(async () => q('.review__card')!.click())
+    await h.settle()
+    expect(showing()).toBe('VRB-5')
+    expect(q('.review__sides')?.textContent).toBe('Side 1 of 2')
+    expect(listed()).toEqual(DUE.slice(0, 4))
+    expect(q('.review__answers')?.dataset.guard).toBe('')
+    // After the 400 ms, ✓ answers it (a choice).
+    expect(await answer('Remembered')).toBe('VRB-5')
+    expect(endText()).toContain('You remembered 100% of 5 cards.')
+    expect(listed()).toEqual(DUE)
+  })
+
   it('6. "from All folders ›" opens the sheet at its folder page; its ‹ closes it', async () => {
     h = await reviewSetup(FILES)
     await pick('Due today')

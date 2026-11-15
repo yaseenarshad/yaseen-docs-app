@@ -51,6 +51,15 @@ describe('the guard, each transition', () => {
     expect(guardStep(again, { type: 'seen', turn: settling.turn })).toBe(again) // the old timer ends nothing
   })
 
+  it('YAZ-5521: undo from the screen after the last card settles; the card that comes back starts its own 400 ms', () => {
+    const undone = guardStep(ready, { type: 'undo', fromDone: true })
+    expect(undone.kind).toBe('settling')
+    const drawn = guardStep(undone, { type: 'shown', key: 'd-back' })
+    expect(drawn.kind).toBe('settling')
+    expect(drawn).not.toEqual(undone)
+    expect(guardStep(drawn, { type: 'seen', turn: (drawn as { turn: number }).turn })).toEqual(ready)
+  })
+
   it('undo goes to ready from every state, reset from all but a running save; answered or seen in ready change nothing', () => {
     const settling = guardStep(answering, { type: 'answered', sameCard: false, cardOnScreen: true })
     for (const s of [ready, answering, settling]) expect(guardStep(s, { type: 'undo' })).toEqual(ready)

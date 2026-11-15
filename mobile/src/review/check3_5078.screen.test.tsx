@@ -129,7 +129,7 @@ describe('checker round 3: the guard, cell by cell, on the screen', () => {
     expect(free - shown).toBeGreaterThanOrEqual(380)
   })
 
-  it('C3 answered, no card (the last card): Inbox complete, no guard, the review stays "in progress" while Undo remains; Undo brings the card back, ready', async () => {
+  it('C3 answered, no card (the last card): Inbox complete, no guard, the review stays "in progress" while Undo remains; Undo brings the card back, ready after 400 ms', async () => {
     s = await screen({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...cards(1)) })
     expect(reviewInProgress()).toBe(true)
     await s.press('Remembered')
@@ -143,6 +143,10 @@ describe('checker round 3: the guard, cell by cell, on the screen', () => {
     await s.press('Undo')
     await s.settle()
     expect(s.head()).toContain('KC-1')
+    // YAZ-5521 (sweep2 M-A): the card that comes back to the screen after the last card takes no tap for SEEN_MS (its ✓
+    // sat under the finger on Undo); then it is ready.
+    expect(s.guarded()).toBe(true)
+    await real(SEEN_MS + 50)
     expect(s.guarded()).toBe(false)
     await s.press('Remembered')
     await s.settle()

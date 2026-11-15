@@ -444,7 +444,9 @@ function SessionScreen({
   const undo = () => {
     setMenu(null)
     setNotice(null)
-    guard.undo()
+    // sweep2 M-A: from the screen after the last card, the card that comes back takes no tap for 400 ms (its ✓ sits
+    // under the finger that tapped Undo).
+    guard.undo(card === null)
     // YAZ-5078: Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
     if (line?.kind === 'mark' && line.undo !== undefined) {
       const run = line.undo
