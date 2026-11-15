@@ -279,6 +279,15 @@ function SessionScreen({
   useEffect(() => {
     if (drawing !== null) cardShown(drawing)
   }, [drawing, cardShown])
+  // Sweep2 nit 3 (YAZ-5521): a card drawn where the screen after the last card was ("Review missed cards", "Learn new
+  // cards") takes no tap for 400 ms: the second tap of a double tap on the button showed its side 2.
+  const { arrive } = guard
+  const onDone = useRef(card === null)
+  useEffect(() => {
+    const was = onDone.current
+    onDone.current = card === null
+    if (was && card !== null) arrive()
+  }, [card, arrive])
   // Hidden and shown again: the guard starts from `ready` (YAZ-5266).
   const { reset: resetGuard } = guard
   useEffect(() => resetGuard(), [shown, resetGuard])

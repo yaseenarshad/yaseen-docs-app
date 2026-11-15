@@ -21,6 +21,8 @@ export const SEEN_MS = 400
  *    after the last card (`fromDone`, sweep2 M-A, YAZ-5521): `settling`. The card that comes back is drawn where the
  *    finger is (its ✓ sits under "↶ Undo"), so the second tap of a double tap on Undo answered it. Its key is `UNDONE`:
  *    the drawing of the card that comes back starts the 400 ms again; the timer still ends it.
+ *  - `arrive`: a card is drawn where the screen after the last card was ("Review missed cards", "Learn new cards", an
+ *    Undo): `settling`, as `undo` with `fromDone` (sweep2 nit 3: the second tap of a double tap showed side 2).
  *  - `reset` (the tab hidden or shown again, the session starts again): `ready`, but a save that runs keeps
  *    `answering` (YAZ-5315: its next card still gets its 400 ms).
  *  - `shown` of another drawing in `settling` starts its 400 ms again (YAZ-5335).
@@ -33,6 +35,7 @@ export type GuardEvent =
   | { type: 'shown'; key: string }
   | { type: 'answered'; sameCard: boolean; cardOnScreen: boolean }
   | { type: 'undo'; fromDone?: boolean }
+  | { type: 'arrive' }
   | { type: 'reset' }
   | { type: 'seen'; turn: number }
 
@@ -58,6 +61,8 @@ export function guardStep(state: GuardState, event: GuardEvent): GuardState {
       if (event.sameCard || !event.cardOnScreen) return READY
       // The screen tells when the next card is drawn (`shown`): the 400 ms count from there. Without it: from now.
       return state.follows ? { kind: 'awaiting', from: state.from } : { kind: 'settling', turn: ++turns }
+    case 'arrive':
+      return { kind: 'settling', turn: ++turns, key: UNDONE }
     case 'undo':
       if (event.fromDone === true) return { kind: 'settling', turn: ++turns, key: UNDONE }
       return state.kind === 'ready' ? state : READY
@@ -92,5 +97,6 @@ export function useTapGuard() {
   const shown = useCallback((key: string) => dispatch({ type: 'shown', key }), [])
   const undo = useCallback((fromDone = false) => dispatch({ type: 'undo', fromDone }), [])
   const reset = useCallback(() => dispatch({ type: 'reset' }), [])
-  return { taps: state.kind === 'ready', state, answer, shown, undo, reset }
+  const arrive = useCallback(() => dispatch({ type: 'arrive' }), [])
+  return { taps: state.kind === 'ready', state, answer, shown, undo, reset, arrive }
 }

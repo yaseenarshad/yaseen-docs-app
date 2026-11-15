@@ -198,6 +198,24 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(listed()).toEqual(DUE)
   })
 
+  it('reviewMissed_doubleTap_staysOnSide1: the second tap of a double tap on "Review missed cards" never shows side 2 (sweep2 nit 3)', async () => {
+    h = await reviewSetup(FILES)
+    await pick('Due today')
+    for (const r of ['Remembered', 'Forgot', 'Remembered', 'Remembered', 'Remembered'] as const) await answer(r)
+    expect(q('.due-end')?.dataset.kind).toBe('missed')
+    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
+    await act(async () => q('.due-end__go')!.click())
+    await h.settle()
+    expect(showing()).toBe('VRB-2')
+    // The second tap lands on the card, ~150 ms later: nothing.
+    await act(async () => q('.review__card')!.click())
+    await h.settle()
+    expect(q('.review__sides')?.textContent).toBe('Side 1 of 2')
+    // A tap after 400 ms shows side 2.
+    await h.tap()
+    expect(q('.review__sides')?.textContent).toBe('Side 2 of 2')
+  })
+
   it('6. "from All folders ›" opens the sheet at its folder page; its ‹ closes it', async () => {
     h = await reviewSetup(FILES)
     await pick('Due today')
