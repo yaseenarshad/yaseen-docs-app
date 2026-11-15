@@ -8,6 +8,7 @@ import { drawingBox, onMacWords } from '../drawing/drawingBox'
 import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
 import { cardMoreButton } from '../cardMenu/moreButton'
 import { applyTableFile, readTableComment } from './tableFile'
+import { applyTableLook, type PhoneTableLook } from './tableLook'
 import { layoutTables } from './tableLayout'
 import { markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } from './pageMarked'
 
@@ -80,6 +81,8 @@ export interface PageLook {
   asset(src: string): string | null
   /** The page's own card, drawn read only (`renderCard`). */
   card(text: string): HTMLElement
+  /** The vault's table look (YAZ-5487, `table-look.json`); absent or null: the Mac's defaults. */
+  tables?: PhoneTableLook | null
 }
 
 export type Slice = () => Promise<void>
@@ -476,9 +479,11 @@ export function renderPiece(text: string, look: PageLook, firstLine = 0): Docume
   drawCallouts(root)
   // YAZ-5480: a table's own settings from the file (its frozen rows and columns), read with the Mac's parser.
   for (const table of root.querySelectorAll<HTMLTableElement>('table[data-table-file]')) {
-    applyTableFile(table, table.getAttribute('data-table-file') ?? '')
+    applyTableFile(table, table.getAttribute('data-table-file') ?? '', look.tables)
     table.removeAttribute('data-table-file')
   }
+  // YAZ-5487: each table's defaults from the vault, for what it does not set itself.
+  if (look.tables != null) for (const table of root.querySelectorAll('table')) applyTableLook(table, look.tables)
   // YAZ-5471: each table, the page's and its cards', in its box with its column widths (`tableLayout.ts`).
   layoutTables(root)
   return root

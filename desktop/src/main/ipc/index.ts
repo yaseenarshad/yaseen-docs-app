@@ -14,6 +14,7 @@ import { DAILY_PAGES_MOVE } from '../dailyPagesVaultFile'
 import { PAGE_SPACING_MOVE } from '../textFormattingMove'
 import { ICON_LOOK_MOVE } from '../icons'
 import { CARD_LOOK_MOVE } from '../cardLookMove'
+import { TABLE_LOOK_MOVE } from '../tableLookMove'
 import { NEW_PLACES_MOVE } from '../newPlaces'
 import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
 import { registerBoardIpc } from './board'
@@ -133,7 +134,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
     pulled.add(status.root)
     moves?.pulled(status.root)
   })
-  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE], async (root) => {
+  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE, ICON_LOOK_MOVE, CARD_LOOK_MOVE, TABLE_LOOK_MOVE], async (root) => {
     if (pulled.has(root)) return true
     const status = await sync.status(root)
     return status.enabled !== true || status.state === 'off' || status.state === 'synced'

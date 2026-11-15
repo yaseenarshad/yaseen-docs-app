@@ -317,16 +317,17 @@ describe('the marker in table.css (D2, D6, D14)', () => {
     for (const { selector, body } of calendarRules) expect(body, selector).not.toMatch(/(^|[;\s])position\s*:/)
   })
 
-  it('the look follows `data-table-now`: the line by default, none of it for the tint; past rows grey for `text` and `shade` of `data-table-dim-past`, shaded for `shade` only', () => {
-    expect(calendarRules.find(({ selector }) => selector.startsWith("[data-table-now='tint']"))?.body).toMatch(/--table-now-line:\s*none/)
-    const past = calendarRules.filter(({ selector }) => selector.includes('table-past-row'))
-    const grey = past.find(({ body }) => body.trim() === 'color: var(--fg-muted);')
-    expect(grey?.selector).toMatch(/^:is\(\[data-table-dim-past='text'\], \[data-table-dim-past='shade'\]\)/)
-    const shade = past.find(({ body }) => body.includes('--table-past:'))
-    expect(shade?.selector).toMatch(/^\[data-table-dim-past='shade'\]/)
-    // Each cell rule (a cell, a frozen cell, a sticky subheader cell, YAZ-4899) paints the shade as a layer, under the band and over a fill.
+  it('the look follows `--table-now-mark` (YAZ-5487: a style query, the nearest surface\'s value): the line by default, none of it for the tint; past rows grey for `text` and `shade` of `--table-dim-past`, shaded for `shade` only', () => {
+    const css = tableCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    expect(css).toMatch(/@container style\(--table-now-mark: tint\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-now-row \{\s*--table-now-line: none;/)
+    expect(css).toMatch(/@container style\(--table-dim-past: text\) or style\(--table-dim-past: shade\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-past-row > :is\(th, td\) \{\s*color: var\(--fg-muted\);/)
+    expect(css).toMatch(/@container style\(--table-dim-past: shade\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-past-row > :is\(th, td\) \{\s*--table-past:/)
+    // No attribute on an ancestor decides it any more (two vaults side by side would clash).
+    expect(css).not.toMatch(/\[data-table-(now|dim-past)=/)
+    // Each cell rule (a cell, a frozen cell, a sticky subheader cell, YAZ-4899: the table's own and Settings', YAZ-5487)
+    // paints the shade as a layer, under the band and over a fill.
     const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-page-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
-    expect(paint.length).toBe(3)
+    expect(paint.length).toBe(4)
     for (const { body } of paint) expect(body).toMatch(/var\(--table-band, none\), var\(--table-past, none\)/)
   })
 })

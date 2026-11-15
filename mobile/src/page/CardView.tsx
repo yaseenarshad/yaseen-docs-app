@@ -62,7 +62,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const media = useVaultMedia()
   useMediaWatch(host, media)
   // YAZ-5471: its tables get their widths and frame; a wide one opens full screen (⤢).
-  useTables(host)
+  useTables(host, look?.table ?? null)
   const now = app.services.now?.() ?? Date.now()
 
   // Read again when a pass brings a new version of the file.

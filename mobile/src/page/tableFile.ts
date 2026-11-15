@@ -1,4 +1,5 @@
 import { cellAddress, parseTableComment, validMerges, type TableStyle } from '@client/editor/table/tableComment'
+import { stickyHeaderOf, type PhoneTableLook } from './tableLook'
 
 /**
  * THE TABLE'S OWN SETTINGS, FROM THE FILE (YAZ-5480). The Mac keeps each table's settings in the file, in the comment
@@ -23,9 +24,10 @@ import { cellAddress, parseTableComment, validMerges, type TableStyle } from '@c
  *  - columns: the table's own `freeze N cols`; none by default.
  *  - both stay inside the table (`ownCounts`, clamped on load): never more rows than the table has, nor more columns.
  */
-export function freezeOf(style: TableStyle | null, rows: number, cols: number): { rows: number; cols: number } {
+export function freezeOf(style: TableStyle | null, rows: number, cols: number, stickyDefault = STICKY_HEADER_DEFAULT): { rows: number; cols: number } {
   const own = style?.freeze ?? { rows: 0, cols: 0 }
-  const sticky = style?.stickyHeader ?? STICKY_HEADER_DEFAULT
+  // YAZ-5487: the vault's Sticky header row (`table-look.json`, `tableLook.ts`), else the Mac's default.
+  const sticky = style?.stickyHeader ?? stickyDefault
   const r = own.rows > 0 ? own.rows : sticky ? 1 : 0
   return { rows: Math.max(0, Math.min(r, rows)), cols: Math.max(0, Math.min(own.cols, cols)) }
 }
@@ -95,11 +97,13 @@ export const BORDER_PX_PHONE = 2
  *  - `header`: the header row's own colour, strength (`plain` is off), weight, text colour and alignment;
  *  - `stripes`, `border` (at most `BORDER_PX_PHONE`), `height`, `nowrap` / `wrap` and each column's `text`.
  */
-export function applyTableFile(table: HTMLTableElement, body: string): TableStyle | null {
+export function applyTableFile(table: HTMLTableElement, body: string, look: PhoneTableLook | null = null): TableStyle | null {
   const style = readTableComment(`<!-- ${body} -->`)
   if (style === null) return null
+  // YAZ-5487: its freeze and Clip are decided here, with the vault's defaults (`applyTableLook` leaves them).
+  table.setAttribute('data-table-look-own', '')
   const grid = gridOf(table)
-  const { rows, cols } = freezeOf(style, grid.rows, grid.cols)
+  const { rows, cols } = freezeOf(style, grid.rows, grid.cols, stickyHeaderOf(look))
   table.setAttribute('data-freeze-rows', String(rows))
   if (cols > 0) table.setAttribute('data-freeze-cols', String(cols))
   // YAZ-5493: a calendar table (`calendar 15m | 30m | 60m`): its slot length, `nonow` (no Now button) and the rows it
@@ -142,8 +146,8 @@ export function applyTableFile(table: HTMLTableElement, body: string): TableStyl
   for (const [address, align] of style.align) cells.get(address)?.style.setProperty('text-align', align)
   for (const [address, valign] of style.valign) cells.get(address)?.style.setProperty('vertical-align', valign)
 
-  // Text in cells (YAZ-4900): the table's Clip, else each column's own; the phone's default is Wrap, as the Mac's.
-  const clip = (c: number) => (style.text?.get(c) ?? (style.nowrap ? 'clip' : 'wrap')) === 'clip'
+  // Text in cells (YAZ-4900): each column's own, else the table's Clip or Wrap, else the vault's (YAZ-5487), else Wrap, as the Mac's.
+  const clip = (c: number) => (style.text?.get(c) ?? (style.nowrap ? 'clip' : style.wrap ? 'wrap' : (look?.tableTextInCells ?? 'wrap'))) === 'clip'
   for (const row of table.rows) [...row.cells].forEach((cell, c) => clip(c) && cell.setAttribute('data-clip', ''))
 
   // Merged cells: the top-left cell spans the range; the cells it covers (empty in the file) go.
