@@ -123,6 +123,22 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     expect(applyOps(page, [])).toEqual({ content: page, lost: [] })
   })
 
+  it('YAZ-5514 W1: an answer on a mixed line end page changes only its card line', () => {
+    // Pasted from Windows: the properties and one paragraph end in CRLF, the rest in LF. Each line keeps its own end.
+    const mixed = '---\r\ntitle: P\r\n---\r\n# A\n\nPasted from Windows\r\nmore\n\n```card\nQ\n```\n<!-- card: NC-1 -->\n\n```card\nQ2\r\n```\r\n<!-- card: NC-2 -->\r\n'
+    const out = applyOps(mixed, [
+      { kind: 'review', id: 'NC-1', review: R1 },
+      { kind: 'off', id: 'NC-2', on: true },
+    ]).content
+    const a = mixed.split('\n')
+    const b = out.split('\n')
+    expect(b).toHaveLength(a.length)
+    expect(a.map((l, i) => (l === b[i] ? null : [l, b[i]])).filter((x) => x !== null)).toEqual([
+      ['<!-- card: NC-1 -->', '<!-- card: NC-1, 2026-11-14T06:01Z good 9s -->'],
+      ['<!-- card: NC-2 -->\r', '<!-- card: NC-2, off -->\r'],
+    ])
+  })
+
   it('500 actions on one page: one read of the page, the right lines', () => {
     const ids = Array.from({ length: 100 }, (_, i) => `NC-${100 + i}`)
     const big = pageText('Big', 'NC-1', ids)
