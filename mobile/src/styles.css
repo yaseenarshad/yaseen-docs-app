@@ -597,6 +597,13 @@ button,
   text-align: right;
 }
 
+/* YAZ-5555: the build's one short line at the top of Settings. */
+.settings__build {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .whats-new__toggle {
   display: flex;
   align-items: center;

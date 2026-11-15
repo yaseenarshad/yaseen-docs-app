@@ -16,7 +16,7 @@ describe('what holds the update back', () => {
   })
   it('answers that wait to be sent', () => expect(holdsOf({ ...calm, answersWaiting: 2 })).toEqual(['answers']))
   it('the Review tab (a review can be in its middle)', () => expect(holdsOf({ ...calm, tab: 'review' })).toEqual(['review']))
-  it('YAZ-5269: a review in progress behind Friends or Search holds too; a resume after 5 minutes does not swap', () => {
+  it('YAZ-5269: a review in progress behind Friends or Search holds too; a resume after 30 s does not swap', () => {
     for (const tab of ['friends', 'search'] as const) {
       const holds = holdsOf({ ...calm, tab, reviewInProgress: true })
       expect(holds).toEqual(['review'])
@@ -44,7 +44,7 @@ describe('when the new version takes over', () => {
     expect(swapNow({ ready: true, trigger: 'start', holds: ['answers'], hiddenMs: 0 })).toBe(true)
   })
 
-  it(`back from the background after ${RESUME_AFTER_MS / 60_000} minutes or more, with nothing held`, () => {
+  it(`back from the background after ${RESUME_AFTER_MS / 1000} s or more, with nothing held`, () => {
     expect(swapNow({ ready: true, trigger: 'resume', holds: none, hiddenMs: RESUME_AFTER_MS })).toBe(true)
     expect(swapNow({ ready: true, trigger: 'resume', holds: none, hiddenMs: RESUME_AFTER_MS - 1 })).toBe(false)
     for (const hold of ['answers', 'review', 'screen', 'download'] as const) {

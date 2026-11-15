@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { act } from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildTime, versionWords } from '../settings/buildInfo'
+import { BUILD, buildLine, buildShortTime, buildTime, versionWords } from '../settings/buildInfo'
 import { WHATS_NEW, entryDay } from '../settings/whatsNew'
 import { GOOD, mount, signInWithForm, type Harness } from './testing'
 
@@ -44,6 +44,31 @@ describe('the version (YAZ-5446)', () => {
     const words = row.querySelector('.settings__version')!.textContent!
     expect(words.startsWith(`${pkg.version} · ${buildTime('2026-11-14T10:42:00Z')}`)).toBe(true)
     expect(words).toMatch(/^\d+\.\d+\.\d+ · \d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2}/)
+  })
+})
+
+describe('the build at the top of Settings (YAZ-5555)', () => {
+  it('the words: "Build <commit> · <day> <month>, <time>" in the phone\'s own time; the version when no commit', () => {
+    expect(buildShortTime('2026-11-15T14:02:00Z', 'UTC')).toBe('15 Nov, 14:02')
+    expect(buildShortTime('2026-11-15T23:30:00Z', 'Pacific/Auckland')).toBe('16 Nov, 12:30')
+    expect(buildLine({ version: '0.8.0', built: '2026-11-15T14:02:00Z', commit: '8432fd9' }, 'UTC')).toBe('Build 8432fd9 · 15 Nov, 14:02')
+    expect(buildLine({ version: '0.8.0', built: '2026-11-15T14:02:00Z', commit: '8432fd91c' }, 'UTC')).toBe('Build 8432fd9 · 15 Nov, 14:02')
+    expect(buildLine({ version: '0.8.0', built: '', commit: '8432fd91c-dirty' })).toBe('Build 8432fd9-dirty')
+    expect(buildLine({ version: '0.8.0', built: '', commit: '' })).toBe('Build 0.8.0')
+    expect(buildLine({ version: 'dev', built: 'not a time', commit: '' })).toBe('Build dev')
+  })
+
+  it('it shows without opening anything: one short muted line, the first thing on the screen', async () => {
+    const x = await settings()
+    const line = x.host.querySelector('.settings__build')!
+    expect(line).not.toBeNull()
+    expect(line.classList).toContain('muted')
+    expect(line.textContent).toBe(buildLine(BUILD))
+    expect(line.textContent).toMatch(/^Build \S+ · \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/)
+    // Above every row and section of Settings (and above What's new, which stays closed).
+    const first = x.host.querySelector('.screen h2, .screen .row')!
+    expect(line.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(x.host.querySelector('.whats-new')).toBeNull()
   })
 })
 

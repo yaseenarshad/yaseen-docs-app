@@ -78,9 +78,10 @@ import { freePort } from './freePort'
  *    by draw.io's viewer in its frame, its picture inside the page's width, the page picker of a diagram of several
  *    pages inside the screen with a 44 px tap; a pick draws that page; the page never scrolls sideways; a picture of
  *    each box.
+ *  - Settings (`#fixture=settings`, YAZ-5555), light and dark, at 320 and 375 px: the build's line at the top, one line.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_SETTINGS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -1201,6 +1202,31 @@ if (process.env.LAYOUT_DIAGRAMS !== 'no') {
       const ok = boxes.length === 6 && boxes.every((b) => b.drawn && b.fits) && pickers.length === 2 && pickers.every((b) => b.picker!.left >= 0 && b.picker!.right <= w && b.picker!.height >= 44) && /Details/.test(String(picked)) && !pageWide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  page-diagrams at ${w}x${h}, ${scheme}: ${boxes.map((b) => `${b.path} ${b.drawn ? (b.fits ? 'drawn, fits' : 'drawn, TOO WIDE') : `NOT DRAWN (${b.text})`}${b.picker ? `, picker ${b.picker.pages} pages ${b.picker.left}-${b.picker.right} x${b.picker.height}` : ''}`).join('; ')}; a pick drew "${picked}"; page ${pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${file.replace('.png', `-${scheme}-*.png`)}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5555: the build's line at the top of Settings (`#fixture=settings`), light and dark, at 320 and 375 px: it shows
+// without opening anything, one line, muted, under the top bar and above the first section, inside the screen.
+const BUILD_LINE = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const line = document.querySelector('.settings__build')
+  if (!line) return { error: 'no build line' }
+  const first = document.querySelector('.screen h2.section')
+  const lh = parseFloat(getComputedStyle(line).lineHeight) || parseFloat(getComputedStyle(line).fontSize) * 1.4
+  return { text: line.textContent, oneLine: r(line).height <= lh * 1.5, below: r(line).top >= r(document.querySelector('.topbar')).bottom - 0.5, above: !first || r(line).bottom <= r(first).top, inside: r(line).left >= 0 && r(line).right <= innerWidth + 0.5, colour: getComputedStyle(line).color, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_SETTINGS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of [[320, 568], [375, 667]] as const) {
+      const file = await open('settings', w, h)
+      const shot = file.replace('.png', `-build-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(BUILD_LINE)
+      const ok = !m.error && /^Build \S+ · \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/.test(m.text) && m.oneLine && m.below && m.above && m.inside && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  settings build line at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.text}", ${m.oneLine ? 'one line' : 'WRAPS'}, ${m.below && m.above ? 'at the top' : 'NOT AT THE TOP'}, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.colour}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

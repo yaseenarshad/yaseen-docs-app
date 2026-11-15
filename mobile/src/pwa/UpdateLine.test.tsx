@@ -103,7 +103,7 @@ describe('the update line', () => {
     expect(u.applied).toBe(0)
   })
 
-  it(`back from the background after ${RESUME_AFTER_MS / 60_000} minutes on a calm tab, once the new version took over: the page loads it; it asks for a newer version`, async () => {
+  it(`back from the background after ${RESUME_AFTER_MS / 1000} s on a calm tab, once the new version took over: the page loads it; it asks for a newer version`, async () => {
     const u = fakeUpdates(true)
     const now = { t: 0 }
     await draw(u, {}, 0, now)

@@ -3,7 +3,7 @@ import { useApp } from '../app/AppState'
 import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
-import { BUILD, versionWords } from '../settings/buildInfo'
+import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
@@ -46,6 +46,8 @@ export function Settings() {
 
   return (
     <Frame title="Settings" back={() => app.go({ type: 'back' })} tabs={app.phase === 'ready'}>
+      {/* YAZ-5555: which build runs, seen at once (the Version row below has the whole words). */}
+      <p className="muted settings__build">{buildLine(BUILD)}</p>
       <InstallHint />
       <h2 className="section">Vaults</h2>
       <ul className="rows" aria-label="Vaults">
