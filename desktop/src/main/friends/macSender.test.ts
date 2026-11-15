@@ -465,6 +465,43 @@ describe('a vault that counts and is closed on this Mac (YAZ-5252: "holds" means
     for (const k of Object.keys(phone.totals) as (keyof typeof phone.totals)[]) expect(after[k], k).toBeGreaterThanOrEqual(phone.totals[k])
   })
 
+  it('YAZ-5401: a closed vault whose copy is CURRENT (HEAD = its remote-tracking branch): a real drop takes the totals DOWN', async () => {
+    // The gist: streak 12, 500 cards, 40 due (sent by the phone). The truth now, counted from the current closed copy:
+    // the streak broke, 100 cards were archived, every due card is done. Friends must see it.
+    const handle = await withFriends(rig, 1, ['yaseen/cards'])
+    const high = friendStats([vaultWith(answered(30, START - 60_000))], START)
+    const sent = numbersFor({ ...high, totals: { ...high.totals, cards: 500, streak: 12, bestStreak: 12, dueLeft: 40 } }, { login: 'yaseen', name: 'Yaseen A', avatar: 'https://avatars.githubusercontent.com/u/7', nickname: null }, START)
+    await rig.phone.update(handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(sent) })
+    closedData.set('/current', vaultWith(answered(4, START - 3 * 86_400_000)))
+    rig.held.clear()
+    rig.cards.value = []
+    rig.sender = createMacSender({ ...depsOf(rig), closed: async () => new Map([['yaseen/cards', { root: '/current', key: 'now', current: true }]]) })
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    const truth = friendStats([closedData.get('/current')!], START)
+    const after = numbersOf(rig, handle.index.stats!).totals
+    expect(after.cards).toBe(truth.totals.cards)
+    expect(after.streak).toBe(truth.totals.streak)
+    expect(after.dueLeft).toBe(truth.totals.dueLeft)
+    expect(after.cards).toBeLessThan(500)
+    expect(after.streak).toBeLessThan(12)
+  })
+
+  it('YAZ-5401: the same drop from a closed copy that is NOT current (no remote-tracking branch, or ahead of it): the totals never go lower', async () => {
+    const handle = await withFriends(rig, 1, ['yaseen/cards'])
+    const high = friendStats([vaultWith(answered(30, START - 60_000))], START)
+    const sent = numbersFor({ ...high, totals: { ...high.totals, cards: 500, streak: 12, bestStreak: 12, dueLeft: 40 } }, { login: 'yaseen', name: 'Yaseen A', avatar: 'https://avatars.githubusercontent.com/u/7', nickname: null }, START)
+    await rig.phone.update(handle.index.stats!, { [NUMBERS_FILE]: JSON.stringify(sent) })
+    closedData.set('/unknown', vaultWith(answered(4, START - 3 * 86_400_000)))
+    rig.held.clear()
+    rig.cards.value = []
+    rig.sender = createMacSender({ ...depsOf(rig), closed: async () => new Map([['yaseen/cards', { root: '/unknown', key: 'now', current: false }]]) })
+    expect((await rig.sender.attempt('pass')).status).toBe('sent')
+    const after = numbersOf(rig, handle.index.stats!).totals
+    expect(after.cards).toBe(500)
+    expect(after.streak).toBe(12)
+    expect(after.dueLeft).toBe(40)
+  })
+
   it('a closed vault whose copy is behind the newest the Mac knows (its remote-tracking branch): not counted, nothing is sent (YAZ-5391)', async () => {
     await withFriends(rig, 1, ['yaseen/vault', 'yaseen/cards'])
     closedData.set('/behind', vaultWith(answered(2, START - 30_000)))

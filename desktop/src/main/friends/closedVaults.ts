@@ -13,6 +13,8 @@
  *   file's time. So a second edit of a file that was already changed moves the key too. Hashed: one short text.
  * - Behind (YAZ-5391): a HEAD behind its remote-tracking branch (`git status --branch`: the last fetch, no network call)
  *   is a copy older than the newest the Mac knows. It is found, marked `behind`, and not counted.
+ * - Current (YAZ-5401): a HEAD EQUAL to its remote-tracking branch (`+0 -0`) is the newest copy the Mac knows. Its
+ *   count may take a total DOWN (a broken streak, archived cards); only a copy that is not current keeps "never lower".
  * - Cheap on main: one git call (`remote get-url`) for each known folder, and one more (`status --porcelain=v2
  *   --branch`) only for a folder of a vault that counts. Each is a child process; main parses short text.
  */
@@ -28,6 +30,8 @@ export interface ClosedVault {
   key: string
   /** YAZ-5391: the HEAD is behind the remote-tracking branch: this copy is older than the newest the Mac knows. */
   behind?: boolean
+  /** YAZ-5401: the HEAD equals its remote-tracking branch: the newest copy the Mac knows (a total may go down). */
+  current?: boolean
 }
 
 /** What git says of a folder (`gitFolderFacts`; tests give their own). */
@@ -35,7 +39,7 @@ export interface FolderGit {
   /** The fetch URL of `origin`; null: not a repo here, or no `origin`. */
   remote(root: string): Promise<string | null>
   /** The HEAD, the changed files with their marks, and "behind"; null: not a repo. */
-  state(root: string): Promise<{ head: string | null; dirty: string[]; behind: boolean } | null>
+  state(root: string): Promise<{ head: string | null; dirty: string[]; behind: boolean; current?: boolean } | null>
 }
 
 /** A test's made-up facts of a folder. */
@@ -44,6 +48,7 @@ export interface FolderFacts {
   head: string | null
   dirty: string[]
   behind?: boolean
+  current?: boolean
 }
 
 /** The change key: one short text of the HEAD and the changed files (each with its marks). */
@@ -66,7 +71,7 @@ export async function knownClosedVaults(paths: readonly string[], open: Readonly
     if (repo == null || out.has(repo) || (wanted !== undefined && !wanted.has(repo))) continue
     const s = await facts.state(root).catch(() => null)
     if (s == null) continue
-    out.set(repo, { root, key: changeKey(s.head, s.dirty), behind: s.behind })
+    out.set(repo, { root, key: changeKey(s.head, s.dirty), behind: s.behind, current: s.current === true })
   }
   return out
 }
@@ -75,10 +80,12 @@ export async function knownClosedVaults(paths: readonly string[], open: Readonly
  * One `git status --porcelain=v2 --branch -z --untracked-files=all` answer: the HEAD, "behind", and the changed paths.
  * Entries: `1 XY … path`, `2 XY … path` (then the old path), `u XY … path`, `? path`; `#` lines are the branch facts.
  */
-export function parseStatusV2(out: string): { head: string | null; behind: boolean; paths: string[] } {
+export function parseStatusV2(out: string): { head: string | null; behind: boolean; current: boolean; paths: string[] } {
   const parts = out.split('\0')
   let head: string | null = null
   let behind = false
+  // YAZ-5401: `# branch.ab +0 -0`, a line git writes only when the branch has a remote-tracking branch.
+  let current = false
   const paths: string[] = []
   for (let i = 0; i < parts.length; i++) {
     const e = parts[i]
@@ -88,6 +95,8 @@ export function parseStatusV2(out: string): { head: string | null; behind: boole
     } else if (e.startsWith('# branch.ab ')) {
       const m = / -(\d+)/.exec(e)
       behind = m !== null && Number(m[1]) > 0
+      const a = /\+(\d+) -(\d+)/.exec(e)
+      current = a !== null && Number(a[1]) === 0 && Number(a[2]) === 0
     }
     else if (e.startsWith('1 ')) paths.push(e.split(' ').slice(8).join(' '))
     else if (e.startsWith('2 ')) {
@@ -96,7 +105,7 @@ export function parseStatusV2(out: string): { head: string | null; behind: boole
     } else if (e.startsWith('u ')) paths.push(e.split(' ').slice(10).join(' '))
     else if (e.startsWith('? ')) paths.push(e.slice(2))
   }
-  return { head, behind, paths }
+  return { head, behind, current, paths }
 }
 
 /** The facts of a folder from git on this Mac. A `.git` entry must be AT the folder (as `detectRepo`). */
@@ -120,7 +129,7 @@ export function gitFolderFacts(bin: string): FolderGit {
           return st === null ? `${p}\tgone` : `${p}\t${st.mtimeMs}\t${st.size}`
         }),
       )
-      return { head: s.head, dirty, behind: s.behind }
+      return { head: s.head, dirty, behind: s.behind, current: s.current }
     },
   }
 }

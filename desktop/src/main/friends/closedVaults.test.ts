@@ -30,7 +30,7 @@ describe('knownClosedVaults (YAZ-5252)', () => {
     await mkdir(cards)
     remotes.set(cards, { remoteUrl: 'git@github.com:Me/Cards.git', head: 'abc', dirty: ['b.md', 'a.md'] })
     const found = await knownClosedVaults([cards], new Set(), facts)
-    expect([...found]).toEqual([['me/cards', { root: cards, key: changeKey('abc', ['a.md', 'b.md']), behind: false }]])
+    expect([...found]).toEqual([['me/cards', { root: cards, key: changeKey('abc', ['a.md', 'b.md']), behind: false, current: false }]])
     expect(changeKey('abc', ['b.md', 'a.md'])).toBe(changeKey('abc', ['a.md', 'b.md']))
     expect(changeKey('abd', ['a.md', 'b.md'])).not.toBe(changeKey('abc', ['a.md', 'b.md']))
   })
@@ -105,9 +105,17 @@ describe('the real git facts of a closed vault (YAZ-5252 bugs)', () => {
     await run(vault, 'remote', 'set-url', 'origin', 'git@github.com:me/cards.git')
     const facts = gitFolderFacts(bin)
     const found = await knownClosedVaults([vault], new Set(), facts)
-    expect(found.get('me/cards')).toMatchObject({ root: vault, behind: true })
+    expect(found.get('me/cards')).toMatchObject({ root: vault, behind: true, current: false })
     await run(vault, 'merge', '-q', '--ff-only', 'origin/main')
-    expect((await knownClosedVaults([vault], new Set(), facts)).get('me/cards')?.behind).toBe(false)
+    // YAZ-5401: HEAD equals its remote-tracking branch: current (a total may go down from this copy).
+    expect((await knownClosedVaults([vault], new Set(), facts)).get('me/cards')).toMatchObject({ behind: false, current: true })
+    // A local commit not pushed (ahead): not current; a copy with no remote-tracking branch: not current.
+    await writeFile(path.join(vault, 'c.md'), '# c\n')
+    await run(vault, 'add', '-A')
+    await run(vault, 'commit', '-q', '-m', 'local')
+    expect((await knownClosedVaults([vault], new Set(), facts)).get('me/cards')).toMatchObject({ behind: false, current: false })
+    await run(vault, 'branch', '-q', '--unset-upstream')
+    expect((await knownClosedVaults([vault], new Set(), facts)).get('me/cards')).toMatchObject({ behind: false, current: false })
   })
 
   it('a second edit of a file that is already changed moves the change key (the key holds each changed file\'s time and size)', async () => {

@@ -378,7 +378,10 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       }
       // YAZ-5391: a closed vault's files can be older than the gist's numbers (the app syncs only open vaults): with one
       // in the count, no total goes lower than the gist's (the days never do). The phone's next send sets them again.
-      const { outcome, budget } = await sendNumbers(api, { statsId: list.index.stats, fresh: numbers, budget: s.budget, reserve: reserveFor(pointers), now, totalsNeverLower: closed.length > 0 })
+      // YAZ-5401: "never lower" is for a copy that MAY be stale, not for a real drop. A closed copy whose HEAD equals its
+      // remote-tracking branch is the newest the Mac knows: with only such copies (and open vaults), a total may go
+      // down (a broken streak, archived cards, due cards finished). A copy behind is not counted at all (above).
+      const { outcome, budget } = await sendNumbers(api, { statsId: list.index.stats, fresh: numbers, budget: s.budget, reserve: reserveFor(pointers), now, totalsNeverLower: closed.some((c) => c.current !== true) })
       if (epoch !== tokenEpoch) return view // the token changed meanwhile: this answer is of the old token
       switch (outcome.kind) {
         case 'sent':
