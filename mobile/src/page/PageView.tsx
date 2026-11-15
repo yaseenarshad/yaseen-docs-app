@@ -177,6 +177,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       gear
       tabs
       reader
+      kind="page"
       chip={pageId !== null && <PageIdChip id={pageId} path={path} />}
       foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
     >

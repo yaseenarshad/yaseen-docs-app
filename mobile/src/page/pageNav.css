@@ -111,3 +111,14 @@
   color: var(--fg);
   font: 13px ui-monospace, 'SF Mono', Menlo, monospace;
 }
+
+/* YAZ-5475: the kind glyph before a title, very small; the Mac's glyph (`styles.css`) scaled down. */
+.page-arrows__kind {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  vertical-align: -1px;
+  mask-size: 11px 11px;
+  -webkit-mask-size: 11px 11px;
+}

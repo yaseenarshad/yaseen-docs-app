@@ -4,6 +4,7 @@ import { vaultPageId } from '@shared/pageId'
 import type { AppModel } from '../app/AppState'
 import type { Route } from '../app/nav'
 import type { VaultData } from '../search/vaultData'
+import { KIND_WORD, KindIcon, type FileKind } from '../screens/Frame'
 import { buildTree, fileKind, levelOf, type TreeFolder } from '../search/vaultTree'
 import './pageNav.css'
 
@@ -28,6 +29,8 @@ import './pageNav.css'
 export interface Stop {
   route: Route
   label: string
+  /** YAZ-5475: the kind of file the stop opens (a small glyph before its title). */
+  kind: FileKind
 }
 
 /** The files of `root`, depth-first, in the tree's order. */
@@ -47,9 +50,9 @@ export function vaultOrder(data: VaultData): { pages: Stop[]; cards: Stop[] } {
   const pages: Stop[] = []
   const cards: Stop[] = []
   for (const record of walkFiles(buildTree(data.records, data.folders))) {
-    if (fileKind(record) === 'page') pages.push({ route: { kind: 'page', path: record.path }, label: record.title.trim() !== '' ? record.title : record.basename })
+    if (fileKind(record) === 'page') pages.push({ route: { kind: 'page', path: record.path }, label: record.title.trim() !== '' ? record.title : record.basename, kind: 'page' })
     for (const card of record.cards ?? [])
-      if (card.id !== null) cards.push({ route: { kind: 'card', path: record.path, id: card.id }, label: card.title?.trim() || card.id })
+      if (card.id !== null) cards.push({ route: { kind: 'card', path: record.path, id: card.id }, label: card.title?.trim() || card.id, kind: record.kind === 'card' ? 'card-file' : 'card' })
   }
   orders.set(data, (order = { pages, cards }))
   return order
@@ -104,10 +107,13 @@ export function PageArrows({ data, at, go, noun }: { data: VaultData | null; at:
       type="button"
       className={after ? 'page-arrows__go page-arrows__go--after' : 'page-arrows__go'}
       disabled={stop === null}
-      aria-label={stop === null ? (after ? `Last ${noun}` : `First ${noun}`) : `${after ? 'Next' : 'Previous'} ${noun}: ${stop.label}`}
+      aria-label={stop === null ? (after ? `Last ${noun}` : `First ${noun}`) : `${after ? 'Next' : 'Previous'}: ${KIND_WORD[stop.kind]}, ${stop.label}`}
       onClick={() => stop !== null && stepTo(go, stop.route)}
     >
-      {after ? `${stop?.label ?? `Last ${noun}`} ›` : `‹ ${stop?.label ?? `First ${noun}`}`}
+      {/* YAZ-5475: a very small kind glyph before the title ("‹ ▤ Trip plan", "▣ Café notes ›"). */}
+      {after ? '' : '‹ '}
+      {stop !== null && <KindIcon kind={stop.kind} className="page-arrows__kind" hidden />}
+      {after ? `${stop?.label ?? `Last ${noun}`} ›` : (stop?.label ?? `First ${noun}`)}
     </button>
   )
   return (

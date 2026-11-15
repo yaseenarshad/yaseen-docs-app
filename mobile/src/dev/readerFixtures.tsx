@@ -195,7 +195,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         await wait(80)
       }
       await open(/^Capital of Spain/, '.page-arrows')
-      press(/^Next card:/)
+      press(/^Next: card/)
       await until(() => document.querySelector('.topbar__title')?.textContent === 'Two cards in one')
       await wait(300)
       break

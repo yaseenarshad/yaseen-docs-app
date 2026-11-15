@@ -79,7 +79,10 @@ describe('YAZ-5449, YAZ-5468: the page arrows, in the Mac sidebar order, within 
     expect(h.button('First page')!.disabled).toBe(true)
     await h.click('First page')
     expect(title(h)).toBe('Git cheat sheet')
-    await step(h, /^Next page: Merge$/, 'Merge')
+    // YAZ-5475: each side names its kind, and draws its glyph before the title; the top bar draws the open file's.
+    expect(h.button(/^Next: page, Merge$/)!.querySelector('.page-arrows__kind')?.getAttribute('data-kind')).toBe('markdown')
+    expect(h.host.querySelector('.topbar .topbar__kind')?.getAttribute('aria-label')).toBe('page')
+    await step(h, /^Next: page, Merge$/, 'Merge')
     expect(arrows(h)).toEqual({ before: '‹ Git cheat sheet', place: '2 / 2', after: 'Last page › (dim)' })
     // Back: not through each page the arrows went by, but to Search, where the reading started.
     await h.click('Back')
@@ -91,8 +94,8 @@ describe('YAZ-5449, YAZ-5468: the page arrows, in the Mac sidebar order, within 
     h = await openSearch()
     await openRow(h, /^Café notes, page/, '.reader__body')
     expect(arrows(h)).toEqual({ before: '‹ First page (dim)', place: '1 / 3', after: 'Spanish words ›' })
-    await step(h, /^Next page: Spanish words$/, 'Spanish words')
-    await step(h, /^Next page: Trip plan$/, 'Trip plan')
+    await step(h, /^Next: page, Spanish words$/, 'Spanish words')
+    await step(h, /^Next: page, Trip plan$/, 'Trip plan')
     expect(arrows(h)).toEqual({ before: '‹ Spanish words', place: '3 / 3', after: 'Last page › (dim)' })
   })
 
@@ -110,7 +113,7 @@ describe('YAZ-5449, YAZ-5468: the page arrows, in the Mac sidebar order, within 
     const link = [...h.host.querySelectorAll<HTMLElement>('.reader__body a, .reader__body [role="link"]')].find((a) => a.textContent === 'Trip plan')!
     await act(async () => link.click())
     await waitFor(h, () => title(h!) === 'Trip plan' && h!.host.querySelector('.page-arrows') !== null)
-    await step(h, /^Previous page: Spanish words$/, 'Spanish words')
+    await step(h, /^Previous: page, Spanish words$/, 'Spanish words')
     await h.click('Back')
     await waitFor(h, () => title(h!) === 'Spanish words')
     await h.click('Back')
@@ -122,7 +125,7 @@ describe('YAZ-5449, YAZ-5468: the page arrows, in the Mac sidebar order, within 
     window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof matchMedia
     h = await openSearch()
     await openRow(h, /^Café notes, page/, '.reader__body')
-    await step(h, /^Next page: Spanish words$/, 'Spanish words')
+    await step(h, /^Next: page, Spanish words$/, 'Spanish words')
     const app = h.host.querySelector<HTMLElement>('.app')!
     let stamp = 0
     const touch = (type: string, x: number) => {
@@ -146,10 +149,12 @@ describe('YAZ-5449, YAZ-5468: the page arrows, in the Mac sidebar order, within 
     await waitFor(h, () => h!.host.querySelector('.page-arrows') !== null)
     // cards/ holds three cards (DEMO-40, and DEMO-41 and DEMO-42 in one card file); the pages' cards are other folders'.
     expect(arrows(h)).toEqual({ before: '‹ First card (dim)', place: '1 / 3', after: 'Two cards in one ›' })
-    await step(h, /^Next card: Two cards in one$/, 'Two cards in one')
+    expect(h.host.querySelector('.topbar .topbar__kind')?.getAttribute('aria-label')).toBe('card file')
+    expect(h.button(/^Next: card file, Two cards in one$/)!.querySelector('.page-arrows__kind')?.getAttribute('data-kind')).toBe('card')
+    await step(h, /^Next: card file, Two cards in one$/, 'Two cards in one')
     // The second card of the same card file has no title: its ID names it.
     expect(arrows(h)!.after).toBe('DEMO-42 ›')
-    await h.click(/^Next card: DEMO-42$/)
+    await h.click(/^Next: card file, DEMO-42$/)
     await waitFor(h, () => h!.host.querySelector('.card-view__id')?.textContent === ' · DEMO-42')
     expect(arrows(h)).toEqual({ before: '‹ Two cards in one', place: '3 / 3', after: 'Last card › (dim)' })
     await h.click('Back')
