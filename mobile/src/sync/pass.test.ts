@@ -1,5 +1,6 @@
 import { MAX_FILE_BYTES } from '@shared/types'
 import { describe, expect, it } from 'vitest'
+import { budgetMs } from '../../../client/src/test-perf'
 import { GithubError } from '../github/client'
 import { INDEX_STATE, type PhoneIndex } from './phoneIndex'
 import { syncPass, type PassProgress } from './pass'
@@ -307,21 +308,40 @@ describe('nothing heavy on the UI thread: a made-up 1,700-file vault', () => {
       if (probing) setTimeout(probe, 0)
     }
     setTimeout(probe, 0)
+    // YAZ-5092 H2: the CPU time of the work between two yields (`process.cpuUsage`, as `media/ahead.test.ts`): another
+    // process on a busy machine does not add to it, so this check never skips. `budgetMs(50)`: a long task, with slack.
+    const cpuMs = () => {
+      const u = process.cpuUsage()
+      return (u.user + u.system) / 1000
+    }
+    let cpuMark = cpuMs()
+    let cpuHolds: number[] = []
+    const realYield = () => {
+      cpuHolds.push(cpuMs() - cpuMark)
+      return new Promise<void>((r) =>
+        setTimeout(() => {
+          cpuMark = cpuMs()
+          r()
+        }, 0),
+      )
+    }
     const measure = async (run: () => Promise<unknown>) => {
       await new Promise((r) => setTimeout(r, 5))
       gaps = []
       last = performance.now()
+      cpuHolds = []
+      cpuMark = cpuMs()
       const t0 = performance.now()
       await run()
-      return { ms: performance.now() - t0, longest: Math.max(...gaps, performance.now() - last) }
+      cpuHolds.push(cpuMs() - cpuMark)
+      return { ms: performance.now() - t0, longest: Math.max(...gaps, performance.now() - last), cpu: Math.max(...cpuHolds) }
     }
-    const realYield = () => new Promise<void>((r) => setTimeout(r, 0))
     // The machine that runs the tests may be busy (other agents): the OS then stops this process at random points, and
     // a gap is not the pass's. So: the best of up to five runs, each on a fresh vault, for the first download and the
     // refresh each, and an idle calibration first.
-    let idle = { ms: 0, longest: Infinity }
-    let first = { ms: 0, longest: Infinity }
-    let refresh = { ms: 0, longest: Infinity }
+    let idle = { ms: 0, longest: Infinity, cpu: Infinity }
+    let first = { ms: 0, longest: Infinity, cpu: Infinity }
+    let refresh = { ms: 0, longest: Infinity, cpu: Infinity }
     let idx: PhoneIndex | undefined
     for (let run = 0; run < 5 && (first.longest >= 50 || refresh.longest >= 50); run++) {
       const s = await syncSetup(files)
@@ -330,8 +350,10 @@ describe('nothing heavy on the UI thread: a made-up 1,700-file vault', () => {
       expect(s.count('blob')).toBe(611)
       await s.git.push(Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`pages/p${i}.md`, pageText(`Changed ${i}`, `NC-${i + 1}`)])))
       const r = await measure(() => pass(s, { yieldToUi: realYield }))
-      if (f.longest < first.longest) first = f
-      if (r.longest < refresh.longest) refresh = r
+      if (f.longest < first.longest) first = { ...f, cpu: Math.min(f.cpu, first.cpu) }
+      else first.cpu = Math.min(f.cpu, first.cpu)
+      if (r.longest < refresh.longest) refresh = { ...r, cpu: Math.min(r.cpu, refresh.cpu) }
+      else refresh.cpu = Math.min(r.cpu, refresh.cpu)
       if (calm.longest < idle.longest) idle = calm
       idx = await index(s)
     }
@@ -340,10 +362,13 @@ describe('nothing heavy on the UI thread: a made-up 1,700-file vault', () => {
     structuredClone(idx)
     const cloneMs = performance.now() - t2
 
-    console.log(`[3B perf] idle probe ${idle.longest.toFixed(1)} ms; 1,700 files: first download ${first.ms.toFixed(0)} ms, longest hold ${first.longest.toFixed(1)} ms; refresh of 60 ${refresh.ms.toFixed(0)} ms, longest hold ${refresh.longest.toFixed(1)} ms; index ${Object.keys(idx!.records).length} records, clone ${cloneMs.toFixed(1)} ms, ${JSON.stringify(idx).length} bytes`)
-    // A "long task" is 50 ms. The pass gives the thread back every ~8 ms of work.
+    console.log(`[3B perf] idle probe ${idle.longest.toFixed(1)} ms; 1,700 files: first download ${first.ms.toFixed(0)} ms, longest hold ${first.longest.toFixed(1)} ms (CPU ${first.cpu.toFixed(1)} ms); refresh of 60 ${refresh.ms.toFixed(0)} ms, longest hold ${refresh.longest.toFixed(1)} ms (CPU ${refresh.cpu.toFixed(1)} ms); index ${Object.keys(idx!.records).length} records, clone ${cloneMs.toFixed(1)} ms, ${JSON.stringify(idx).length} bytes`)
+    // A "long task" is 50 ms. The pass gives the thread back every ~8 ms of work. The CPU check always holds.
+    expect(first.cpu).toBeLessThan(budgetMs(50))
+    expect(refresh.cpu).toBeLessThan(budgetMs(50))
+    // The wall clock (what the phone feels) only when the machine is calm enough to measure it.
     if (idle.longest > 15 && (first.longest >= 50 || refresh.longest >= 50)) {
-      console.log('[3B perf] the machine is too busy to measure holds (the idle probe alone waited > 15 ms): check skipped')
+      console.log('[3B perf] the machine is too busy to measure wall-clock holds (the idle probe alone waited > 15 ms): the wall check skipped, the CPU check ran')
       return
     }
     expect(first.longest).toBeLessThan(50)
