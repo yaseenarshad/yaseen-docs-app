@@ -4,7 +4,7 @@ import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, 
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
 import { type ColorStrengthValue, calLine, writeColorStrength } from '@shared/types'
-import { calLineColor, hideWeekendsDefault, hidesWeekends } from '../calendar'
+import { CALENDAR_SCALES, calLineColor, calendarScaleOf, hideWeekendsDefault, hidesWeekends } from '../calendar'
 import { CalLineControls } from './CalendarLineControls'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
@@ -209,13 +209,13 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             </>
           )}
           <p className="view-menu__label">Layout</p>
-          {/* The toolbar's Month / Week switch as a setting (D59): the same write as `ViewsPane`'s `onScale`. */}
+          {/* The toolbar's Month / Week / Rolling switch as a setting (D59): the same write as `ViewsPane`'s `onScale`. */}
           <div className="view-settings-row">
             <RowLabel icon="opensIn">Opens in</RowLabel>
             <ChoiceSeg
               label="Opens in"
-              value={view.calendarScale === 'week' ? 'week' : 'month'}
-              options={[['month', 'Month'], ['week', 'Week']] as const}
+              value={calendarScaleOf(view)}
+              options={CALENDAR_SCALES}
               // Settings' scale removes the key (YAZ-4558 D22, YAZ-4585): Month, unless Settings › Folder pages says Week.
               onChange={(next) => onUpdate((d) => chooseOwn(d.views[viewIndex], 'calendarScale', next, defaults))}
             />

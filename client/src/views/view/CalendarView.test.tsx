@@ -1369,3 +1369,129 @@ describe('the day names\' header row (YAZ-4864 round 3): the Table view\'s heade
     expect(ruleOf('color', 'blue')?.body).toContain('--table-header-hue: var(--table-fill-solid-blue)')
   })
 })
+
+describe('calendar Rolling scale (YAZ-5588)', () => {
+  const ROLLING = `${CALENDAR}    calendarScale: rolling\n`
+  const weeksIn = (el: ParentNode) => [...el.querySelectorAll<HTMLElement>('[data-week]')].map((r) => r.dataset.week)
+  const grid = (el: ParentNode) => q<HTMLElement>(el, '.view-cal__grid')
+  const title = (el: ParentNode) => q(el, '.view-cal__month').textContent
+  /**
+   * A laid-out grid: its box at 100…600, the day names 30 px under its top, each week row 100 px tall from there, moved
+   * up by the grid's scrollTop, so a load above moves the rows by its own height unless the place rule holds them.
+   */
+  const box = (top: number, height: number) => ({ top, bottom: top + height, left: 0, right: 700, width: 700, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const g = this.closest<HTMLElement>('.view-cal__grid')
+      if (g === null) return box(0, 0)
+      if (this === g) return box(100, 500)
+      if (this.dataset.week !== undefined) {
+        const i = [...g.querySelectorAll('[data-week]')].indexOf(this)
+        return box(130 + i * 100 - g.scrollTop, 100)
+      }
+      if (this.classList.contains('view-cal__week')) return box(100, 30)
+      return box(0, 0)
+    })
+  })
+  afterEach(() => vi.restoreAllMocks())
+  const scrollTo = (el: ParentNode, top: number) => {
+    grid(el).scrollTop = top
+    fire(grid(el), 'scroll')
+  }
+  const rowTop = (el: ParentNode, week: string) => q<HTMLElement>(el, `[data-week="${week}"]`).getBoundingClientRect().top
+
+  it('the switch says Month · Week · Rolling and saves calendarScale: rolling for the view; Settings › Folder pages can open it', () => {
+    const { el, yaml } = mount(CALENDAR)
+    expect([...el.querySelectorAll('[aria-label="Calendar scale"] button')].map((b) => b.textContent)).toEqual(['Month', 'Week', 'Rolling'])
+    click(q(el, '[aria-label="Calendar scale"] [data-scale="rolling"]'))
+    expect(yaml()).toContain('calendarScale: rolling')
+    expect(grid(el).classList.contains('view-cal__grid--rolling')).toBe(true)
+    act(() => root?.unmount())
+    container?.remove()
+    const opened = mount(CALENDAR, { folderPages: { ...DEFAULT_FOLDER_PAGES, calendarScale: 'rolling' } })
+    expect(grid(opened.el).classList.contains('view-cal__grid--rolling')).toBe(true)
+    expect(opened.yaml()).not.toContain('calendarScale')
+  })
+
+  it('opens on this week at the top, two weeks above it drawn, 10 week rows in all, no other-month days, a 1st says its month', () => {
+    const { el } = mount(ROLLING)
+    expect(weeksIn(el)).toHaveLength(10)
+    expect(weeksIn(el)[0]).toBe('2026-11-22')
+    expect(rowTop(el, '2026-12-06')).toBe(130)
+    expect(title(el)).toBe('December 2026')
+    expect(el.querySelectorAll('.view-cal__day--other')).toHaveLength(0)
+    expect(q(el, '[data-day="2026-12-01"] .view-cal__date').textContent).toBe('Dec 1')
+    expect(q(el, '[data-day="2026-12-02"] .view-cal__date').textContent).toBe('2')
+  })
+
+  it('weeks load above without a jump: the week at the top stays where it was', () => {
+    const { el } = mount(ROLLING)
+    scrollTo(el, 50)
+    expect(weeksIn(el)[0]).toBe('2026-11-08')
+    expect(weeksIn(el)).toHaveLength(10)
+    // Before the load the 22 Nov row's top was 20 px above the grid's (130 − 50 − 100); it still is.
+    expect(rowTop(el, '2026-11-22') - 100).toBe(-20)
+    expect(grid(el).scrollTop).toBe(250)
+  })
+
+  it('stays 10 week rows however far it scrolls, up or down; the title is the month of the week at the top', () => {
+    const { el } = mount(ROLLING)
+    for (let i = 0; i < 30; i++) scrollTo(el, 0)
+    expect(weeksIn(el)).toHaveLength(10)
+    expect(weeksIn(el)[0]).toBe('2025-09-28')
+    expect(el.querySelectorAll('.view-cal__day')).toHaveLength(70)
+    expect(title(el)).toBe('October 2025')
+    for (let i = 0; i < 40; i++) scrollTo(el, 600)
+    expect(weeksIn(el)).toHaveLength(10)
+    expect(weeksIn(el)[0]! > '2026-12-31').toBe(true)
+  })
+
+  it('Hide weekends: five days a row, still this week at the top (a row keeps its whole week as its key)', () => {
+    const { el } = mount(`${ROLLING}    hideWeekends: true\n`)
+    expect(el.querySelectorAll('[data-week="2026-12-06"] .view-cal__day')).toHaveLength(5)
+    expect(rowTop(el, '2026-12-06')).toBe(130)
+  })
+
+  it('the month label follows the scroll: January once its first week is at the top', () => {
+    const { el } = mount(ROLLING)
+    scrollTo(el, 600)
+    expect(title(el)).toBe('January 2027')
+    expect(q(el, '[data-day="2027-01-01"] .view-cal__date').textContent).toBe('Jan 1')
+  })
+
+  it('Today scrolls back to this week; ‹ › put the week before or after at the top', () => {
+    const { el } = mount(ROLLING)
+    for (let i = 0; i < 10; i++) scrollTo(el, 0)
+    expect(weeksIn(el)).not.toContain('2026-12-06')
+    click(q(el, '[aria-label="Today"]'))
+    expect(rowTop(el, '2026-12-06')).toBe(130)
+    expect(title(el)).toBe('December 2026')
+    click(q(el, '[aria-label="Next week"]'))
+    expect(rowTop(el, '2026-12-13')).toBe(130)
+    click(q(el, '[aria-label="Previous week"]'))
+    click(q(el, '[aria-label="Previous week"]'))
+    expect(rowTop(el, '2026-11-29')).toBe(130)
+    expect(title(el)).toBe('December 2026')
+  })
+
+  it('a card drags to a day of another week; a drag held near the bottom scrolls the grid', () => {
+    let frame: FrameRequestCallback | null = null
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frame = cb
+      return 1
+    })
+    const { el } = mount(ROLLING)
+    Object.defineProperty(grid(el), 'scrollHeight', { value: 1030, configurable: true })
+    Object.defineProperty(grid(el), 'clientHeight', { value: 500, configurable: true })
+    drag(cardOf(el, 'Timed'), day(el, '2026-12-16'))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Timed.md', 'due', '2026-12-16 10:30')
+    fire(cardOf(el, 'Bare'), 'dragstart')
+    const before = grid(el).scrollTop
+    act(() => void day(el, '2026-12-20').dispatchEvent(new MouseEvent('dragover', { bubbles: true, cancelable: true, clientY: 595 })))
+    expect(frame).not.toBeNull()
+    act(() => frame!(performance.now()))
+    expect(grid(el).scrollTop).toBeGreaterThan(before)
+    fire(day(el, '2026-12-20'), 'drop')
+    expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'due', '2026-12-20')
+  })
+})

@@ -2228,6 +2228,27 @@
   border-left: var(--cal-day-line, 1px) solid var(--cal-day-line-color, var(--border));
 }
 
+/* Rolling (YAZ-5588): the grid is the scroller, between the toolbar and the "No date" tray, and the day names stick at
+   its top. Only the place rule in CalendarView moves it when weeks load above, so the browser's scroll anchoring is off. */
+.view-cal__grid--rolling {
+  flex: 1 1 0;
+  min-height: 320px;
+  overflow: hidden auto;
+  overflow-anchor: none;
+}
+
+.view-cal__grid--rolling > .view-cal__week:first-child {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+}
+
+/* A month's 1st in Rolling says its month ("Dec 1"), the only mark where one month meets the next. */
+.view-cal__date--first {
+  font-weight: 600;
+}
+
 /* Week (YAZ-4558 D22): 7 tall days, each with every card. */
 .view-cal__grid--week .view-cal__week--days {
   min-height: 360px;

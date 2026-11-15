@@ -95,8 +95,8 @@ export interface ViewDef {
   dateProperty?: string
   /** A calendar's "End date" (YAZ-4858): the canonical date column a card ends on; a later end makes it a bar over its days. Absent = none. */
   endDateProperty?: string
-  /** A calendar's scale (YAZ-4558 D22): `week` = 7 tall day columns. Absent = month. */
-  calendarScale?: 'month' | 'week'
+  /** A calendar's scale (YAZ-4558 D22): `week` = 7 tall day columns; `rolling` (YAZ-5588) = week rows that scroll with no month breaks. Absent = month. */
+  calendarScale?: 'month' | 'week' | 'rolling'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
   /** A Calendar's or Board's "Clicking a card opens" (YAZ-5582): a plain click's `window` or `background` tab. Absent = Same as Settings. */
