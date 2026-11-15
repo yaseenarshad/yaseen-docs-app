@@ -29,7 +29,6 @@ import { FILTER_ICON, NEEDS_FIX, UNDO_SHOWN_MS, filterDone, filterLabel, hintTex
 import { DiscardAnswer } from '../screens/DiscardAnswer'
 import { useReviewTop } from '../screens/reviewTop'
 import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
-import { ScrollJump } from '../page/ScrollJump'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import './review.css'
@@ -588,8 +587,6 @@ function SessionScreen({
             <div className="review__more-cue" data-on={more || undefined} aria-hidden="true">
               ↓ more
             </div>
-            {/* YAZ-5467: a long card's own scroll, to its top or its end; its buttons are the screen's own taps, never a step. */}
-            <ScrollJump scroller={cardBox} />
           </div>
           <button type="button" className="sr-only" onClick={advance} disabled={done}>
             {done ? 'The card is fully shown' : 'Show the next part'}
