@@ -113,7 +113,8 @@ export async function mountCheck4Erase(root: Root, name: string): Promise<void> 
   root.render(<App services={services} />)
   await wait(300)
   press('Settings')
-  await wait(100)
+  // Settings is its own chunk: wait until it draws.
+  for (let i = 0; i < 100 && document.querySelector('.settings__version') === null; i++) await wait(20)
   press('Sign out and erase this phone')
   await wait(300)
   ;(window as unknown as { c4: unknown }).c4 = { store, tokens }

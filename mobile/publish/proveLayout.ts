@@ -97,6 +97,8 @@ const evaluate = async (expression: string) => (await send('Runtime.evaluate', {
 
 async function open(name: string, width: number, height: number) {
   await send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: true }, page)
+  // A fresh document each time: the same URL again (light, then dark) must never find the last one's "ready" mark.
+  await send('Page.navigate', { url: 'about:blank' }, page)
   await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/?${name}-${width}#fixture=${name}` }, page)
   for (let i = 0; i < 100; i++) {
     await wait(100)
