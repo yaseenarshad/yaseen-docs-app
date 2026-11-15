@@ -13,6 +13,12 @@ const glyph = (body: ReactElement, size = 14): ReactElement => (
 
 /** All cards: an inbox tray, as Mochi's menu draws it; the sidebar's Inbox row wears the same shape (YAZ-5131). */
 export const InboxTrayIcon = () => glyph(<path d={INBOX_TRAY_PATH} />)
+/**
+ * The wrench of Fix later (YAZ-5097; YAZ-5197: a pencil read as "Edit card"): the To fix row and the Inbox ⋯'s Fix later.
+ * Tabler's `tool`, the wrench the app already draws for the Present tab (`toolsIcon`), redrawn at 2/3 for the 16 px grid.
+ */
+export const FIX_PATH = 'M4.67 6.67h2v-2l-2.33 -2.33a4 4 0 0 1 5.33 5.33l4 4a1.33 1.33 0 0 1 -2 2l-4 -4a4 4 0 0 1 -5.33 -5.33l2.33 2.33'
+export const FixIcon = () => glyph(<path d={FIX_PATH} />)
 /** Up next (YAZ-5028): the ⋯ row's "Put at top of Inbox" arrow, a line with an arrow up to it. */
 export const UpNextIcon = () => glyph(<path d="M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3" />)
 /** Due today: a circle with a check. */

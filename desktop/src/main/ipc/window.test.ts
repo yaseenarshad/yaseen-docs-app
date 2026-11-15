@@ -673,6 +673,9 @@ describe('registerWindowIpc', () => {
     expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v', folder: 'n', filter: 'next', card })
     expect(await toNew({ sender }, { root: '/v', folder: '../x', page: '/elsewhere/p.md', filter: 'bogus', card: { path: 1 } })).toEqual(ok(undefined))
     expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v' })
+    // YAZ-5097: the To fix list moves too.
+    expect(await toNew({ sender }, { root: '/v', filter: 'fix' })).toEqual(ok(undefined))
+    expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v', filter: 'fix' })
     expect(await toNew({ sender }, { root: '/other' })).toEqual(bad('BAD_REQUEST'))
     expect(await toNew({ sender }, 'Inbox')).toEqual(bad('BAD_REQUEST'))
     expect(await toNew({ sender: stranger }, { root: '/v' })).toEqual(bad('BAD_REQUEST'))

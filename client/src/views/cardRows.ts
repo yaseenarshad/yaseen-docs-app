@@ -8,8 +8,8 @@
  *    `cardRowPath(page, id)`: no file has it, it keys the row.
  *  - The name is the card's title, off its card line (YAZ-5308); a card with none reads as its ID.
  *  - The page's properties do not apply to a card: a row holds the card's OWN properties, off its card line (YAZ-5349
- *    option A, YAZ-5385), and the two card fields a cell edits, `card.status` and `card.upNext`, under those keys. A
- *    card property is a column as a page's is (`note.level`): it filters, sorts and groups; its cell edit writes the
+ *    option A, YAZ-5385), and the card fields a cell edits, `card.status`, `card.fix` (YAZ-5430) and `card.upNext`,
+ *    under those keys. A card property is a column as a page's is (`note.level`): it filters, sorts and groups; its cell edit writes the
  *    card line (`cardLineChange`). No page's own property is a card's column (Yaseen: no pre-made "Page tags").
  *  - The card columns are `card.*` keys, read through the scope's `card` (`cardValues`): `card.status == "Archived"`
  *    filters as a page column does. Review numbers come from `cardSchedule.ts` and are read-only.
@@ -17,7 +17,7 @@
  * The setting is on the VIEW (`ViewDef.rows`), so a Board or a Calendar can read it later; this round only the Table
  * does (`cardRowsOf`). It is offered only while the vault has Cards and IDs on; off, a view shows its pages again.
  */
-import { cardsWithIds, withCardNext, withCardOff, withCardProperty, withoutCardProperty, type CardLine, type CardRecord } from '@shared/cardLine'
+import { cardsWithIds, withCardFix, withCardNext, withCardOff, withCardProperty, withoutCardProperty, type CardLine, type CardRecord } from '@shared/cardLine'
 import { cardDueAt, cardReviewNumbers } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -38,12 +38,13 @@ export interface CardRow {
 }
 
 /** The card columns, in the order a view in cards mode shows them first (Yaseen's Q40 list). */
-export const CARD_KEYS = ['card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id'] as const
+export const CARD_KEYS = ['card.page', 'card.status', 'card.fix', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id'] as const
 
 /** Their names, each "Card …" but the Page (YAZ-5319). */
 export const CARD_FIELD_LABELS: Readonly<Record<string, string>> = {
   'card.page': 'Page',
   'card.status': 'Card status',
+  'card.fix': 'Card fix status',
   'card.nextReview': 'Card next review',
   'card.lastReview': 'Card last review',
   'card.reviews': 'Card reviews',
@@ -55,18 +56,26 @@ export const CARD_FIELD_LABELS: Readonly<Record<string, string>> = {
 /** Card status's two words: what the cell, the filter and the line's `off` mean. */
 export const CARD_STATUSES = ['Active', 'Archived'] as const
 
+/**
+ * Card fix status's one word (YAZ-5430, Yaseen's Q53): "Needs fixing" while the line holds `fix` (Fix later, YAZ-5097);
+ * blank when it does not. A card can be Active AND need a fix, so it is not a Card status.
+ */
+export const CARD_FIX_STATUS = 'Needs fixing'
+export const CARD_FIX_STATUSES = [CARD_FIX_STATUS] as const
+
 /** A key of the card columns: `card.status`, … (they are no page's property). */
 export const isCardKey = (key: string): boolean => key.startsWith('card.')
 
-/** The two card columns a cell edits (status writes the line's `off`, Up next its `next`); null for any other key. */
-export const cardEditKey = (key: string): 'card.status' | 'card.upNext' | null => (key === 'card.status' || key === 'card.upNext' ? key : null)
+/** The card columns a cell edits (status writes the line's `off`, fix status its `fix`, Up next its `next`); null for any other key. */
+export const cardEditKey = (key: string): 'card.status' | 'card.fix' | 'card.upNext' | null => (key === 'card.status' || key === 'card.fix' || key === 'card.upNext' ? key : null)
 
 /** A card column's cell as text where it is not the value as written (YAZ-5319): the success rate in percent, "67%". Else null. */
 export const cardCellText = (key: string, value: Value): string | null => (key === 'card.successRate' && typeof value === 'number' ? `${value}%` : null)
 
 /**
  * The card line change a card row's writes make (YAZ-5319, YAZ-5385), in one write of its page: Card status writes
- * `off`, Card up next writes `next`, any other key the card's own property (`withCardProperty`; no value: it goes).
+ * `off`, Card fix status `fix` (YAZ-5430: "Needs fixing" sets it, blank clears it; `withCardFix`, the phone's place),
+ * Card up next writes `next`, any other key the card's own property (`withCardProperty`; no value: it goes).
  * A name the line cannot hold (a card line word) throws, and the cell says why.
  */
 export const cardLineChange =
@@ -74,7 +83,15 @@ export const cardLineChange =
   (line: CardLine): CardLine =>
     writes.reduce(
       (l, w) =>
-        w.key === 'card.status' ? withCardOff(l, w.value === 'Archived') : w.key === 'card.upNext' ? withCardNext(l, w.value === true) : w.value === undefined ? withoutCardProperty(l, w.key) : withCardProperty(l, w.key, w.value),
+        w.key === 'card.status'
+          ? withCardOff(l, w.value === 'Archived')
+          : w.key === 'card.fix'
+            ? withCardFix(l, w.value === CARD_FIX_STATUS)
+            : w.key === 'card.upNext'
+              ? withCardNext(l, w.value === true)
+              : w.value === undefined
+                ? withoutCardProperty(l, w.key)
+                : withCardProperty(l, w.key, w.value),
       line,
     )
 
@@ -114,7 +131,7 @@ export function cardRowRecords(pages: readonly IndexRecord[]): IndexRecord[] {
         path: own ? r.path : cardRowPath(r.path, id),
         title: card.title ?? id,
         kind: 'card',
-        properties: { ...card.properties, 'card.status': card.off ? 'Archived' : 'Active', 'card.upNext': card.next },
+        properties: { ...card.properties, 'card.status': card.off ? 'Archived' : 'Active', ...(card.fix === true && { 'card.fix': CARD_FIX_STATUS }), 'card.upNext': card.next },
         aliases: [],
         links: own ? r.links : [],
         embeds: own ? r.embeds : [],
@@ -140,6 +157,7 @@ export function cardValues(row: CardRow, settings: ReviewSettings | undefined): 
   return {
     page: row.pageTitle,
     status: card.off ? 'Archived' : 'Active',
+    fix: card.fix === true ? CARD_FIX_STATUS : null,
     nextReview: Number.isNaN(due) ? null : new DateValue(due, false),
     lastReview: numbers.last === null ? null : new DateValue(numbers.last, false),
     reviews: numbers.reviews === 0 ? null : numbers.reviews,

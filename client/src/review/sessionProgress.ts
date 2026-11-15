@@ -17,9 +17,12 @@ import type { CardRating } from '@shared/cardLine'
 import type { DueCard } from '@shared/cardSchedule'
 import type { CardFilter } from './useCardReview'
 
-/** Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never reviewed. */
+/**
+ * Whether `card` shows under `filter`: next = marked up next (YAZ-5028), due = reviewed before (due now), new = never
+ * reviewed; To fix (YAZ-5097) is a list of cards to look at, so none of the queue.
+ */
 export const matchesFilter = (card: Pick<DueCard, 'isNew' | 'next'>, filter: CardFilter): boolean =>
-  filter === 'all' || (filter === 'next' ? card.next : (filter === 'new') === card.isNew)
+  filter === 'all' || (filter === 'fix' ? false : filter === 'next' ? card.next : (filter === 'new') === card.isNew)
 
 /** One answer of the session: its card (`key`), its rating, what the card was when answered, and whether it was a due card's first answer. */
 export interface SessionAnswer {

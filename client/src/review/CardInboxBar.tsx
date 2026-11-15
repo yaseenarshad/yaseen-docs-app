@@ -20,6 +20,9 @@
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
+ * To fix (YAZ-5097): the cards marked Fix later, the last row, under a line. It is no review: its pick shows the
+ * cards as a list, to look at, each with Fixed (`CardInbox`).
+ *
  * Where new cards come from (YAZ-5322, "Final mockup — the New cards row"): the New cards row reads "New cards  from
  * Spanish ›  10 / 24" — the folder part between the name and the count, so it reads as New cards' only; grey "from All
  * folders ›" with no pick. A click on it opens the folder picker (`NewCardsPicker`) beside the menu; a click on the rest
@@ -39,7 +42,7 @@ import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
 import { pickLabel, useNewCardsPicker } from './NewCardsPicker'
-import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
+import { ChevronIcon, DueIcon, FixIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
 
@@ -53,6 +56,7 @@ export const CARD_FILTERS: readonly {
   { id: 'next', label: 'Up next', icon: UpNextIcon },
   { id: 'due', label: 'Due today', icon: DueIcon },
   { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
+  { id: 'fix', label: 'To fix', icon: FixIcon },
 ]
 
 /**
@@ -169,7 +173,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
-              const count = session.counts[f.id]
+              const count = f.id === 'fix' ? session.toFix.length : session.counts[f.id]
               const total = kind !== null && session.limited[kind] ? count + session.more[kind] : null
               const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
               if (kind !== null && adding === kind && add > 0)
@@ -202,33 +206,37 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                 setFilter(f.id)
               }
               return (
-                <div key={f.id} className="card-inbox__filter-row" role="none">
-                  <button type="button" role="menuitemradio" aria-checked={f.id === session.filter} className="ctx-menu__item card-inbox__filter-item" data-filter={f.id} onMouseDown={(e) => e.preventDefault()} onClick={pick}>
-                    <span className="card-inbox__filter-name">
-                      <f.icon />
-                      {f.label}
-                      {f.id === 'new' && pick !== undefined && (
-                        <span className="card-inbox__new-from" data-on={picked !== '' || undefined} title="Which folders new cards come from">
-                          from <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span> ›
-                        </span>
-                      )}
-                    </span>
-                    <span
-                      className="card-inbox__count"
-                      data-filter={f.id}
-                      data-empty={count === 0 || undefined}
-                      data-add={add > 0 || undefined}
-                      title={kind !== null && add > 0 ? `${session.more[kind]} more wait. Click to add.` : undefined}
-                    >
-                      {total === null ? count : `${count} / ${total}`}
-                    </span>
-                  </button>
-                  {reset && (
-                    <button type="button" role="menuitem" className="card-inbox__reset" data-kind={kind} aria-label={`Reset today's ${kind === 'new' ? 'new cards' : 'Up next cards'} to the Settings number`} onMouseDown={(e) => e.preventDefault()} onClick={() => resetCards?.(kind)}>
-                      Reset
+                <Fragment key={f.id}>
+                  {/* YAZ-5097: a line sets the To fix list apart: its cards are to look at, not to review. */}
+                  {f.id === 'fix' && <div className="card-inbox__filter-sep" role="separator" />}
+                  <div className="card-inbox__filter-row" role="none">
+                    <button type="button" role="menuitemradio" aria-checked={f.id === session.filter} className="ctx-menu__item card-inbox__filter-item" data-filter={f.id} onMouseDown={(e) => e.preventDefault()} onClick={pick}>
+                      <span className="card-inbox__filter-name">
+                        <f.icon />
+                        {f.label}
+                        {f.id === 'new' && pick !== undefined && (
+                          <span className="card-inbox__new-from" data-on={picked !== '' || undefined} title="Which folders new cards come from">
+                            from <span className="card-inbox__new-from-name">{picked === '' ? 'All folders' : picked}</span> ›
+                          </span>
+                        )}
+                      </span>
+                      <span
+                        className="card-inbox__count"
+                        data-filter={f.id}
+                        data-empty={count === 0 || undefined}
+                        data-add={add > 0 || undefined}
+                        title={kind !== null && add > 0 ? `${session.more[kind]} more wait. Click to add.` : undefined}
+                      >
+                        {total === null ? count : `${count} / ${total}`}
+                      </span>
                     </button>
-                  )}
-                </div>
+                    {reset && (
+                      <button type="button" role="menuitem" className="card-inbox__reset" data-kind={kind} aria-label={`Reset today's ${kind === 'new' ? 'new cards' : 'Up next cards'} to the Settings number`} onMouseDown={(e) => e.preventDefault()} onClick={() => resetCards?.(kind)}>
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                </Fragment>
               )
             })}
           </ContextMenuSurface>
