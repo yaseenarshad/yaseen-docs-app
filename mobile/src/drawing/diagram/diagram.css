@@ -13,7 +13,7 @@
   color: var(--fg-muted);
 }
 .page-drawing__select {
-  min-height: 36px;
+  min-height: 44px;
   max-width: 100%;
   min-width: 0;
   flex: 1;

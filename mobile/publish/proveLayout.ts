@@ -56,7 +56,11 @@ import { freePort } from './freePort'
  *    screen, above the page arrows and the tab bar; its first row on top.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_DIAGRAMS=no skip a part).
+ *  - plain draw.io diagrams (`#fixture=page-diagrams`, YAZ-5533), light and dark, at 320 and 375 px: each diagram drawn
+ *    by draw.io's viewer in its frame, its picture inside the page's width, the page picker of a diagram of several
+ *    pages inside the screen with a 44 px tap; a pick draws that page; the page never scrolls sideways; a picture of
+ *    each box.
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -801,6 +805,59 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-card-menu third card at ${w}x${h}: menu ${m.top}-${m.bottom} (${m.place}), the screen ${m.screenTop}-${m.screenBottom}; its first row ${m.hit ? 'is on top' : 'IS COVERED'}  ${shot}`)
   }
+}
+// YAZ-5533: plain draw.io diagrams, drawn by draw.io's viewer in its frame (the fixtures build under the real CSP).
+const DIAGRAM_BOXES = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  return [...document.querySelectorAll('.reader__body figure[data-vault-drawing]')].map((b) => {
+    const img = b.querySelector('img.page-drawing__img')
+    const select = b.querySelector('select')
+    return {
+      path: b.dataset.vaultDrawing.replace('Drawings/', ''),
+      drawn: img !== null && img.complete && img.naturalWidth > 0,
+      fits: img !== null && r(img).left >= r(b).left - 0.5 && r(img).right <= r(b).right + 0.5 && r(b).right <= innerWidth + 0.5,
+      picker: select && { left: Math.round(r(select).left), right: Math.round(r(select).right), height: Math.round(r(select).height), pages: select.options.length },
+      text: b.textContent.slice(0, 60),
+    }
+  })
+})()`
+if (process.env.LAYOUT_DIAGRAMS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of [[320, 568], [375, 667]] as const) {
+      const file = await open('page-diagrams', w, h)
+      const count = (await evaluate(`document.querySelectorAll('.reader__body figure[data-vault-drawing]').length`)) as number
+      // Each box near the screen in turn (a box draws as it nears); a picture of each.
+      for (let i = 0; i < count; i++) {
+        await evaluate(`document.querySelectorAll('.reader__body figure[data-vault-drawing]')[${i}].scrollIntoView({ block: 'start' })`)
+        for (let t = 0; t < 150 && (await evaluate(`!document.querySelectorAll('.reader__body figure[data-vault-drawing]')[${i}].classList.contains('page-drawing--wait') && (document.querySelectorAll('.reader__body figure[data-vault-drawing]')[${i}].querySelector('img')?.complete ?? true)`)) !== true; t++) await wait(100)
+        await wait(250)
+        writeFileSync(file.replace('.png', `-${scheme}-${i + 1}.png`), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      }
+      const boxes = (await evaluate(DIAGRAM_BOXES)) as { path: string; drawn: boolean; fits: boolean; picker: { left: number; right: number; height: number; pages: number } | null; text: string }[]
+      // A pick: the second page of the three-page diagram.
+      const picked = await evaluate(`(async () => {
+        const box = [...document.querySelectorAll('.reader__body figure[data-vault-drawing]')].find((b) => b.dataset.vaultDrawing.endsWith('multipage.drawio'))
+        const select = box.querySelector('select')
+        box.scrollIntoView({ block: 'start' })
+        select.value = select.options[1].value
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+        for (let t = 0; t < 100; t++) {
+          await new Promise((d) => setTimeout(d, 100))
+          if (/Details/.test(box.querySelector('img')?.alt ?? '') && box.querySelector('img').complete) return box.querySelector('img').alt
+        }
+        return box.querySelector('img')?.alt ?? 'none'
+      })()`)
+      await wait(250)
+      writeFileSync(file.replace('.png', `-${scheme}-picked.png`), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const pageWide = (await evaluate(`document.scrollingElement.scrollWidth > innerWidth + 1`)) as boolean
+      const pickers = boxes.filter((b) => b.picker !== null)
+      const ok = boxes.length === 6 && boxes.every((b) => b.drawn && b.fits) && pickers.length === 2 && pickers.every((b) => b.picker!.left >= 0 && b.picker!.right <= w && b.picker!.height >= 44) && /Details/.test(String(picked)) && !pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  page-diagrams at ${w}x${h}, ${scheme}: ${boxes.map((b) => `${b.path} ${b.drawn ? (b.fits ? 'drawn, fits' : 'drawn, TOO WIDE') : `NOT DRAWN (${b.text})`}${b.picker ? `, picker ${b.picker.pages} pages ${b.picker.left}-${b.picker.right} x${b.picker.height}` : ''}`).join('; ')}; a pick drew "${picked}"; page ${pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${file.replace('.png', `-${scheme}-*.png`)}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()
 server.close()
