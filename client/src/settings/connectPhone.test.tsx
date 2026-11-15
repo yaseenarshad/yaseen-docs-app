@@ -129,13 +129,13 @@ const settle = async () => {
   await flush()
 }
 
-async function mountReview(reviewOn = true) {
+async function mountCards(reviewOn = true) {
   el = document.createElement('div')
   document.body.appendChild(el)
   root = createRoot(el)
   const review = { settings: { ...DEFAULT_REVIEW_SETTINGS, enabled: reviewOn }, save: vi.fn() }
   act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, review, vaultRoot: ROOT }} onClose={vi.fn()} />))
-  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Cards')?.click()) // YAZ-5154: the Review section is Cards now
+  act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Cards')?.click())
   // The two rows are lazy chunks (the first load stays the same).
   await act(async () => void (await Promise.all([import('./GithubTokenControl'), import('./ConnectPhoneControl')])))
   await flush()
@@ -162,20 +162,20 @@ async function openCode() {
 }
 
 describe('Settings › Cards › Phone and friends (YAZ-5098)', () => {
-  it('is a group of the Review page, with the token row and Connect your phone, only while review is on', async () => {
-    await mountReview()
+  it('is a group of the Cards page, with the token row and Connect your phone, only while review is on', async () => {
+    await mountCards()
     expect([...el.querySelectorAll('.settings-group__title')].map((t) => t.textContent)).toContain('Phone and friends')
     expect(row('githubToken')).not.toBeNull()
     expect(row('connectPhone')).not.toBeNull()
     act(() => root?.unmount())
     el.remove()
-    await mountReview(false)
+    await mountCards(false)
     expect(row('githubToken')).toBeNull()
     expect(row('connectPhone')).toBeNull()
   })
 
   it('with no token: says so, tells how to make one and where to paste it, and Show code waits', async () => {
-    await mountReview()
+    await mountCards()
     expect(secretHas).toHaveBeenCalledWith({ name: 'githubToken' })
     const tokenRow = row('githubToken')!
     expect(tokenRow.textContent).toContain('No token saved.')
@@ -187,7 +187,7 @@ describe('Settings › Cards › Phone and friends (YAZ-5098)', () => {
   })
 
   it('a pasted token goes to main once, leaves the field, and is never in the page, a setting, a log or storage', async () => {
-    await mountReview()
+    await mountCards()
     await saveToken(`  ${TOKEN}\n`)
     expect(secretSet).toHaveBeenCalledExactlyOnceWith({ name: 'githubToken', value: TOKEN })
     expect(row('githubToken')!.querySelector<HTMLInputElement>('input')!.value).toBe('')
@@ -199,7 +199,7 @@ describe('Settings › Cards › Phone and friends (YAZ-5098)', () => {
   })
 
   it('a paste that cannot be a token is not sent, and says why in plain words', async () => {
-    await mountReview()
+    await mountCards()
     await saveToken('my github password')
     expect(secretSet).not.toHaveBeenCalled()
     expect(row('githubToken')!.textContent).toContain('This is not a GitHub token.')
@@ -207,7 +207,7 @@ describe('Settings › Cards › Phone and friends (YAZ-5098)', () => {
 
   it('Remove token removes it from this Mac, and Show code waits again', async () => {
     secretHas.mockResolvedValue(true)
-    await mountReview()
+    await mountCards()
     expect(row('githubToken')!.textContent).toContain('Token saved.')
     await act(async () => button(row('githubToken')!, 'Remove token')!.click())
     await act(async () => button(removeSheet()!, 'Remove')!.click())
@@ -221,7 +221,7 @@ describe('Settings › Cards › Phone and friends (YAZ-5098)', () => {
 describe('the checker\'s bugs of YAZ-5098', () => {
   it('Remove token asks first (YAZ-5219): no removal on the first click; Cancel keeps the token; Remove removes it', async () => {
     secretHas.mockResolvedValue(true)
-    await mountReview()
+    await mountCards()
     await act(async () => button(row('githubToken')!, 'Remove token')!.click())
     expect(secretSet).not.toHaveBeenCalled()
     expect(removeSheet()!.textContent).toContain('A phone that is already connected keeps working')
@@ -237,7 +237,7 @@ describe('the checker\'s bugs of YAZ-5098', () => {
   })
 
   it('a plain password of letters and digits is refused (YAZ-5220), and the words do not repeat it', async () => {
-    await mountReview()
+    await mountCards()
     await saveToken('CorrectHorseBatteryStaple2026')
     expect(secretSet).not.toHaveBeenCalled()
     expect(row('githubToken')!.textContent).toContain('This is not a GitHub token.')
@@ -249,7 +249,7 @@ describe('the checker\'s bugs of YAZ-5098', () => {
     secretHas.mockResolvedValue(true)
     let answer: (a: PhoneCodeAnswer) => void = () => undefined
     phoneCode.mockImplementationOnce(() => new Promise((r) => (answer = r)))
-    await mountReview()
+    await mountCards()
     await openCode()
     act(() => window.dispatchEvent(new Event('blur')))
     vi.spyOn(document, 'hasFocus').mockReturnValue(false)
@@ -262,7 +262,7 @@ describe('the checker\'s bugs of YAZ-5098', () => {
 
   it('each hide and each close tells main, so main lets a new code be asked (YAZ-5218)', async () => {
     secretHas.mockResolvedValue(true)
-    await mountReview()
+    await mountCards()
     await openCode()
     act(() => window.dispatchEvent(new Event('blur')))
     expect(vi.mocked(api.phone.hide)).toHaveBeenCalled()
@@ -273,7 +273,7 @@ describe('Connect your phone: the code (YAZ-5098)', () => {
   beforeEach(() => secretHas.mockResolvedValue(true))
 
   it('is not on the page until you click Show code; then a dialog paints a code the phone reads back', async () => {
-    await mountReview()
+    await mountCards()
     expect(phoneCode).not.toHaveBeenCalled()
     expect(sheet()).toBeNull()
     expect(document.querySelector('canvas')).toBeNull()
@@ -292,7 +292,7 @@ describe('Connect your phone: the code (YAZ-5098)', () => {
   })
 
   it(`hides by itself after ${PHONE_CODE_SECONDS} seconds: the canvas is wiped, and Show code paints a new one`, async () => {
-    await mountReview()
+    await mountCards()
     vi.useFakeTimers()
     await openCode()
     expect(ctxOf(canvas()!).squares.length).toBeGreaterThan(0)
@@ -311,7 +311,7 @@ describe('Connect your phone: the code (YAZ-5098)', () => {
   })
 
   it('hides when the window loses focus, and when the page is hidden', async () => {
-    await mountReview()
+    await mountCards()
     await openCode()
     let painted = canvas()!
     act(() => window.dispatchEvent(new Event('blur')))
@@ -328,7 +328,7 @@ describe('Connect your phone: the code (YAZ-5098)', () => {
   })
 
   it('Done and Esc close the dialog and wipe the code; Esc does not close Settings', async () => {
-    await mountReview()
+    await mountCards()
     await openCode()
     let painted = canvas()!
     await act(async () => button(sheet()!, 'Done')!.click())
@@ -345,7 +345,7 @@ describe('Connect your phone: the code (YAZ-5098)', () => {
   it('a code that arrives after the dialog closed is never painted', async () => {
     let answer: (a: PhoneCodeAnswer) => void = () => undefined
     phoneCode.mockImplementationOnce(() => new Promise((r) => (answer = r)))
-    await mountReview()
+    await mountCards()
     await openCode()
     await act(async () => button(sheet()!, 'Done')!.click())
     await act(async () => answer(SHOWN))
@@ -362,7 +362,7 @@ describe('Connect your phone: the code (YAZ-5098)', () => {
     ['no-branch', 'not on a branch'],
   ])('%s: plain words, and no code', async (problem, words) => {
     phoneCode.mockResolvedValue({ ok: false, problem })
-    await mountReview()
+    await mountCards()
     await openCode()
     expect(sheet()!.textContent).toContain(words)
     expect(canvas()).toBeNull()

@@ -1981,7 +1981,7 @@ export interface SecretHasRequest {
 export const PIXABAY_SECRET = 'pixabayApiKey'
 
 /**
- * The name the GitHub token is stored under (YAZ-5098; round 12, item 8: Settings › Review › "Phone and friends").
+ * The name the GitHub token is stored under (YAZ-5098; round 12, item 8: Settings › Cards › "Phone and friends").
  * ONE token for "Connect your phone" and for the friends sender (4E5, YAZ-5086), which reads it in main with
  * `secrets.read(GITHUB_TOKEN_SECRET)`. A fine-grained token: Contents (read and write) and Gists (decisions 13, 17).
  * A renderer may write it (`secrets:set`, checked with `cleanToken`) and ask `secrets:has`; it never reads it back.

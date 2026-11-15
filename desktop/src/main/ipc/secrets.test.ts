@@ -58,7 +58,7 @@ describe('registerSecretsIpc (🔒 YAZ-1775 D4, YAZ-1817)', () => {
     expect(await has({ name: 'shareUploadPassword' })).toEqual(ok(false))
   })
 
-  // YAZ-5098: the GitHub token of "Phone and friends" (Settings › Review). One token for the phone's code and for the
+  // YAZ-5098: the GitHub token of "Phone and friends" (Settings › Cards). One token for the phone's code and for the
   // friends sender (4E5, YAZ-5086), which reads it in main with `secrets.read(GITHUB_TOKEN_SECRET)`.
   it('the GitHub token: a renderer may write it (cleaned) and remove it, ask whether it is there, never read it', async () => {
     const token = 'github_pat_EXAMPLE0' + 'x'.repeat(74)
