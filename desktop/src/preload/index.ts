@@ -154,6 +154,15 @@ const api: YaseenDocsApi = {
         ? Promise.reject({ code: 'BAD_REQUEST', message: 'menu.edit runs only from a click or a key' })
         : call<void>(SPECIAL.menuEdit.channel, ...(arg === undefined ? [action] : [action, arg])),
   },
+  // YAZ-5218: the phone code (made from the GitHub token) only during a click or a key. This world is the preload's,
+  // so page code cannot change `navigator.userActivation`; the gate fails closed. Main checks again on its own.
+  phone: {
+    ...generated.phone,
+    code: (root) =>
+      navigator.userActivation?.isActive !== true
+        ? Promise.reject({ code: 'BAD_REQUEST', message: 'phone.code runs only from a click or a key' })
+        : generated.phone.code(root),
+  },
   // The page menu's spelling rows (YAZ-3653). On macOS Electron loads no dictionary, so `webFrame` always
   // says "spelled right" there: main asks the macOS checker instead (YAZ-4464). Windows keeps Hunspell here.
   spell: {
