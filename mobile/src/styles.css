@@ -224,6 +224,37 @@ body:has(.app--swiping) {
   color: var(--fg-muted);
 }
 
+/*
+ * YAZ-5526: NO PHONE SELECTION ON THE APP'S ROWS AND CONTROLS. A finger held on a row or a control (a folder held for
+ * its menu, a file row, a tab) starts nothing of the phone's own: no text selection over the screen, no Copy, Look Up,
+ * Translate bar, no link callout. The rows of every tree (Search, results, Favorites, Focus), the hold menu (it opens
+ * under the finger), the top bar, the tab bar, the Review buttons and the sheet heads. A page's and a card's TEXT (the
+ * reader body) keeps its selection: Copy there is wanted. A field in them stays a field. `holdGuard.ts` also stops
+ * `selectstart` while a finger is held on a tree.
+ */
+button,
+.topbar,
+.tabbar,
+.tree__row,
+.hold-menu,
+.review__top,
+.review__head,
+.review__answers,
+.review__dock,
+.review__undo,
+.explore-sheet__head,
+.headings-sheet__head,
+.status-sheet__head {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.topbar input,
+.topbar textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* ---- The Review tab's frame (YAZ-5415, as Mochi): one line at the top, the screen fills the rest, no page scroll ---- */
 
 .topbar--review {
