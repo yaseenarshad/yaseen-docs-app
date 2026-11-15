@@ -13,6 +13,7 @@ import { openFile } from '../media/ui/vaultMedia'
 import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
 import { PageArrows } from './pageNav'
+import { ScrollJump } from './ScrollJump'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 
 /** The words of a card file that is not valid (round 15, item 3). */
@@ -122,6 +123,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
         <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
+        <ScrollJump scroller={host} closest=".screen" />
         {card !== null && data !== null && (
           <>
             <p className="card-view__facts">{facts === null ? 'New card' : `${cardDueWords(cardNextReview(facts.due, facts.inSteps, now))}${facts.recall === null ? '' : ` · ${Math.round(facts.recall * 100)}% chance you remember it`}`}</p>
