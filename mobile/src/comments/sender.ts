@@ -6,6 +6,7 @@ import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { openCommentBox, type CommentBox, type WaitingComment } from './outbox'
 import type { TaskTick } from './taskWrite'
+import type { PageSetting } from './settingWrite'
 import { pageMark, sendComments } from './send'
 import { commentSigner } from './signer'
 
@@ -41,6 +42,8 @@ export interface NewCommentInput {
   holdMs?: number
   /** A tick of a task check box, not a comment (`body` is then empty). */
   task?: TaskTick
+  /** YAZ-5568: a page setting (`folding`), not a comment (`body` is then empty). */
+  setting?: PageSetting
 }
 
 export interface CommentSender {
@@ -209,7 +212,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
       setState({ sending: true })
       try {
         // A comment written before the phone knew the account: sign it now (the sign-in keeps the account).
-        const unsigned = own.waiting().filter((c) => c.by === undefined && c.refused === undefined && c.task === undefined)
+        const unsigned = own.waiting().filter((c) => c.by === undefined && c.refused === undefined && c.task === undefined && c.setting === undefined)
         if (unsigned.length > 0) {
           const by = await commentSigner(store, id)
           if (by !== undefined) await own.sign(unsigned.map((c) => c.id), by)
@@ -222,7 +225,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         slowedInRow = 0
         staleInRow = 0
         if (report.result === 'offline') return setState({ problem: 'OFFLINE', retryAt: null })
-        const stillUnsigned = own.waiting().some((c) => c.by === undefined && c.refused === undefined && c.task === undefined)
+        const stillUnsigned = own.waiting().some((c) => c.by === undefined && c.refused === undefined && c.task === undefined && c.setting === undefined)
         setState({ problem: stillUnsigned ? 'NO_LOGIN' : null, retryAt: null })
       } catch (error) {
         const problem = error instanceof GithubError ? error.code : 'FAILED'
@@ -279,6 +282,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         madeAt,
         notBefore: joined.length > 0 ? Math.min(...joined) : madeAt + hold,
         ...(input.task === undefined ? {} : { task: input.task }),
+        ...(input.setting === undefined ? {} : { setting: input.setting }),
         ...(was === undefined ? {} : { was }),
       }
       await box.add(comment)

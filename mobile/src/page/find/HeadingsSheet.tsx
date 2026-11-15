@@ -17,7 +17,8 @@ export default function HeadingsSheet({ host, onClose }: { host: RefObject<HTMLE
     const top = scroller.getBoundingClientRect().top + CURRENT_LINE_PX
     let at = -1
     rows.forEach((row, i) => {
-      if (row.element.getBoundingClientRect().top <= top) at = i
+      // A heading in a folded part is not on the screen (YAZ-5568): it is never the part read now.
+      if (row.element.closest('[data-fold-hidden]') === null && row.element.getBoundingClientRect().top <= top) at = i
     })
     return at
   }, [rows, host])

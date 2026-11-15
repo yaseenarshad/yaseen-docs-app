@@ -24,6 +24,8 @@ import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage, warmRenderer } from './pageRender'
 import { markSections, pageSwitchAttrs } from './pageSwitches'
+import { attachFolds, revealFolds, type PageFolds } from './folds'
+import { moveFolds, readFolds, writeFolds } from '../store/foldPref'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
 import { hasUnsentDraft } from './comments/unsentDrafts'
 import { useTaskTicks } from './taskTicks'
@@ -98,7 +100,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   doorRef.current = door
   // A tap on a task's box ticks it in the file, on the comments' safe path.
   // A tick that settled (also with no write: the Mac's state won) reads the stored file again.
-  const ticks = useTaskTicks(host, path, text, useCommentsPort(), setNotice, () => setReads((n) => n + 1))
+  const commentsPort = useCommentsPort()
+  const ticks = useTaskTicks(host, path, text, commentsPort, setNotice, () => setReads((n) => n + 1))
   const ticksRef = useRef(ticks)
   ticksRef.current = ticks
   // Each card's ⋯ (the card actions); the page reads its cards as the phone shows them (with waiting actions).
@@ -107,11 +110,60 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const cardMenu = usePageCardMenu(host, { path, answers, upNext: data?.review.enabled === true })
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
-  // "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
-  const tools = usePageTools(host, { title, path })
   // The page's own Guide lines and Section indent, from its frontmatter (`pageSwitches.ts`).
   const switches = useMemo(() => (typeof text === 'string' ? pageSwitchAttrs(text) : {}), [text])
   const sectionIndent = switches['data-section-indent'] === 'true'
+  // YAZ-5568: the Mac's folding, on unless the page says `folding: false`; the folds kept on this phone, by vault and path.
+  const fileFolding = switches['data-folding'] !== 'off'
+  // "Folding on this page" (⋯) writes the Mac's page setting on the comments' safe path; the page shows it at once, and
+  // follows the file again when the file says it (or the write was refused).
+  const [foldingWant, setFoldingWant] = useState<{ path: string; on: boolean; id: string | null } | null>(null)
+  const want = foldingWant?.path === path ? foldingWant : null
+  const foldingOn = want?.on ?? fileFolding
+  useEffect(() => {
+    if (want !== null && want.on === fileFolding && want.id !== null) setFoldingWant(null)
+  }, [want, fileFolding])
+  useEffect(() => {
+    if (commentsPort === null || want?.id == null) return
+    const id = want.id
+    const check = () => {
+      const entry = commentsPort.waiting(path).find((c) => c.id === id)
+      if (entry?.refused === undefined) return
+      setFoldingWant(null)
+      setNotice("The phone could not change this page's Folding setting. Nothing was changed.")
+    }
+    check()
+    return commentsPort.subscribe(check)
+  }, [commentsPort, path, want?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  const setFolding = (on: boolean) => {
+    if (commentsPort === null) return
+    setFoldingWant({ path, on, id: null })
+    commentsPort.add({ path, body: '', setting: { key: 'folding', on } }).then(
+      (c) => setFoldingWant((w) => (w !== null && w.path === path && w.on === on ? { ...w, id: c.id } : w)),
+      () => {
+        setFoldingWant(null)
+        setNotice("The phone could not change this page's Folding setting. Nothing was changed.")
+      },
+    )
+  }
+  const folds = useRef<PageFolds | null>(null)
+  const [foldsNow, setFoldsNow] = useState<PageFolds | null>(null)
+  useEffect(() => {
+    const el = host.current
+    if (el === null || !foldingOn) return
+    const made = attachFolds(el, { title, initial: readFolds(vault, path), onChange: (keys) => writeFolds(vault, path, keys) })
+    folds.current = made
+    setFoldsNow(made)
+    // The page is on the screen already (a page whose `folding` came back on): its arrows now.
+    made.apply()
+    return () => {
+      made.destroy()
+      if (folds.current === made) folds.current = null
+      setFoldsNow(null)
+    }
+  }, [vault, path, title, foldingOn])
+  // "⋯" → Find in page, Headings (each a lazy chunk), Collapse all; YAZ-5498: the full title when the top bar cuts it.
+  const tools = usePageTools(host, { title, path, folds: foldsNow, folding: typeof text === 'string' && commentsPort !== null ? { on: foldingOn, set: setFolding } : null })
   // The Mac's properties chip at the right of the title; the rows open under it, in the page.
   const props = usePageProperties({ path, record, data, door, slot: sameTitle ? propsSlot : null })
 
@@ -143,7 +195,10 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
           return
         }
         const renamed = diff.renamed.find((r) => r.from === path)
-        if (renamed !== undefined) setPath(renamed.to)
+        if (renamed !== undefined) {
+          moveFolds(vault, path, renamed.to)
+          setPath(renamed.to)
+        }
         else if (diff.changed.includes(path)) setReads((n) => n + 1)
       }),
     [sync, vault, path, title, app],
@@ -197,7 +252,10 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       // swapped in at once. Before, the page shrank to its first slice under the finger, the scroll place jumped, and
       // the embedded cards came again one by one: the page "hung" while the person scrolled.
       const into = first ? el : document.createElement('div')
-      await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, uiSlicer(), () => live)
+      // YAZ-5568: each slice of a long page gets its arrows and its folds as it comes (a section runs across slices).
+      const slicer = uiSlicer()
+      const slice = first ? async () => (folds.current?.scan(), await slicer()) : slicer
+      await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, slice, () => live)
       if (!live) return
       markSections(into, sectionIndent)
       if (!first) {
@@ -206,6 +264,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         el.replaceChildren(...into.childNodes)
       }
       ticksRef.current.paint()
+      folds.current?.apply()
       const head = el.firstElementChild
       // S2 (sweep1): the reader's own title hides NOW when the page's H1 says it (`--same` takes it out of the flow, and
       // the page moves up by its height). A landing measured before React drew that put the heading under the top bar.
@@ -230,7 +289,11 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         if (target !== null) landOn(target)
         else if (scroller !== null) scroller.scrollTop = 0
       }
-      if (first && at !== undefined) target?.scrollIntoView?.({ block: 'start' })
+      if (first && at !== undefined && target !== null) {
+        // A card in a folded part: its folds open first.
+        revealFolds(target)
+        target.scrollIntoView?.({ block: 'start' })
+      }
       const landed = scroller?.scrollTop
       if (first) await fillCardEmbeds(el, data, store, doorRef.current, () => live)
       if (!live) return
@@ -313,7 +376,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         )}
         {gone && <p className="muted">{record === undefined ? app.unit('This page is not on the phone.') : app.unit('This page is too large to show on the phone. Open it on the Mac.')}</p>}
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
-        <div className="reader__body" {...switches} ref={host} onClick={(e) => void onTap(e)} />
+        <div className="reader__body" {...switches} data-folding={foldingOn ? undefined : 'off'} ref={host} onClick={(e) => void onTap(e)} />
         {/* The page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}

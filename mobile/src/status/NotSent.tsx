@@ -19,9 +19,9 @@ export const WHY_NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string
   'too-large': 'The page is too large for the phone to change.',
 }
 
-/** What the person wrote: a comment's words, or the tick and its task ("Tick: Book hotel"). */
+/** What the person wrote: a comment's words, the tick and its task ("Tick: Book hotel"), or a page setting (YAZ-5568). */
 export const notSentWords = (c: WaitingComment): string =>
-  c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
+  c.setting !== undefined ? `Folding on this page: ${c.setting.on ? 'On' : 'Off'}` : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
 
 const pageName = (path: string): string => (path.split('/').pop() ?? path).replace(/\.md$/i, '')
 

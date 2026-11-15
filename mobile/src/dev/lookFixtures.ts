@@ -79,3 +79,30 @@ export const CENTRE_FILES: Record<string, string> = {
   'Centred table.md': `---\ntitle: Centred table\n---\n\n# Centred table\n\nThe vault puts its tables in the middle of the column.\n\n| Fruit | Count |\n| --- | --- |\n| Pear | 12 |\n| Fig | 140 |\n\nA wide table still fills the column:\n\n| Day | City | Where we stay | Notes |\n| --- | --- | --- | --- |\n| Mon | Lisbon | Small guest house near the river | Arrive by the morning train. |\n`,
   '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { position: 'center' } }),
 }
+
+/**
+ * YAZ-5568: the folding fixtures (`page-folds*`), made-up: the scoping's "Garden plan" with headings two deep, parent
+ * bullets, a parent task, a card embed in a section, and the same page with `folding: false` (`page-folds-off`).
+ */
+export const FOLDS_PAGE = [
+  '# Garden plan',
+  'What goes where this spring, and the jobs for each week.',
+  '## Beds',
+  ['- North bed', '    - Tomatoes, six plants', '    - Basil between them', '- South bed', '    - Beans on the fence', '        - Two rows, 20 cm apart', '    - Lettuce in the shade', '- Herb pots by the door'].join('\n'),
+  '## Watering',
+  'Water early, before 8 am. The hose reaches every bed but the far corner.',
+  ['- Drip line on the north bed', '- A can for the pots'].join('\n'),
+  '![[DEMO-40]]',
+  '## Jobs by week',
+  '### Week 1',
+  ['- [ ] Dig the beds', '    - [ ] North bed first', '- [x] Buy compost'].join('\n'),
+  '### Week 2',
+  ['- Sow the beans', '- Plant the tomatoes'].join('\n'),
+  '## Costs',
+  'Seeds 18, compost 40, the drip line 25.',
+].join('\n\n')
+
+export const FOLDS_FILES: Record<string, string> = {
+  'garden/Garden plan.md': `---\ntitle: Garden plan\n---\n\n${FOLDS_PAGE}\n`,
+  'garden/Garden plan, no folds.md': `---\ntitle: Garden plan, no folds\nfolding: false\n---\n\n${FOLDS_PAGE.replace('# Garden plan', '# Garden plan, no folds')}\n`,
+}
