@@ -139,3 +139,21 @@ describe('YAZ-5518 M2: in a Safari tab, Back with a sheet open closes the sheet,
     await waitFor(h, () => onTabs(h!))
   })
 })
+
+describe('YAZ-5518 M3: the left-edge swipe closes a sheet from the very edge (the Home Screen app)', { timeout: 20_000 }, () => {
+  it('sheet_edgeSwipeFromX2_closesSheet', async () => {
+    h = await open(EXPLORE, true)
+    await toSearch(h)
+    await act(async () => openSheet({ kind: 'page', path: 'Trip plan.md' }))
+    await waitFor(h, () => sheets().length === 1)
+    // The sheet sits 8 px in: a finger at x = 2 lands on the dim beside it.
+    const dim = document.querySelector('.explore-dim--top')!
+    await act(async () => {
+      touch(dim, 'touchstart', 2)
+      for (let x = 17; x <= 302; x += 15) touch(dim, 'touchmove', x)
+      touch(dim, 'touchend', 302)
+    })
+    await waitFor(h, () => sheetStack().length === 0)
+    expect(h.host.querySelector('.tree')).not.toBeNull()
+  })
+})
