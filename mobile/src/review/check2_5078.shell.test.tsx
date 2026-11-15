@@ -62,8 +62,9 @@ const state = () => ({ meta: h.host.querySelector('.review__meta')?.textContent,
 const many = async (n = 4) => {
   for (let i = 0; i < n; i++) await h.settle()
 }
+/** Waits (at most 3 s, by time: a cold lazy chunk such as the reader takes ~40 settles alone) until `ok`. */
 const until = async (ok: () => boolean) => {
-  for (let i = 0; i < 40 && !ok(); i++) await h.settle()
+  for (const end = Date.now() + 3000; !ok() && Date.now() < end; ) await h.settle()
 }
 
 describe('checker round 2: the kept Review tab', () => {
@@ -122,6 +123,8 @@ describe('checker round 2: the kept Review tab', () => {
     at('on Review')
     await h.click('More card actions')
     await h.click(/^Open (page|card)$/)
+    // The reader is a lazy chunk (bigger since YAZ-5455..5475): wait for it, as K2 does.
+    await until(() => h.button('Back') !== null)
     await many()
     at('page open')
     const onPage = held
