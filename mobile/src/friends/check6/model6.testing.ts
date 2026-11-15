@@ -217,6 +217,23 @@ export class Model6 extends Model5 {
       if (started && steps.every((x) => x === 'ok' || x === 'restart done') && l !== null && l.index.stats !== oldStats) done = true
       else this.clock.advance(11 * 60_000)
     }
+    // YAZ-5516 (R9-M1): the last try had the faults off, but a read can still be stale (a lagging replica gave
+    // "needs-repair" for one phone). Before I10 is reported, ask THAT phone again, once (a new open of Friends).
+    if (!done && started) {
+      for (const [i, d] of [d0, d1].entries()) {
+        if (last[i] === 'ok' || last[i] === 'restart done') continue
+        d.list = this.newList(d)
+        const rows = await this.act(d, 'rows', (x) => x.rows())
+        if (rows === 'crash') last[i] = 'crash'
+        else if (rows.kind !== 'home-gone') last[i] = rows.kind
+        else {
+          const r = await this.act(d, 'restart', (x) => x.restart(target.get(d)!))
+          last[i] = `restart ${r === 'crash' ? 'crash' : r.kind}`
+        }
+      }
+      const l = this.listOf('A')
+      if (last.every((x) => x === 'ok' || x === 'restart done') && l !== null && l.index.stats !== oldStats) done = true
+    }
     this.armed = true
     this.log.push(`${String(this.step).padStart(2)} fileGone two vaults (${how}): ${last.join(' | ')}`)
     if (!done) {

@@ -15,6 +15,7 @@ import {
   tombTag,
   tombText,
   readFriend,
+  pointerRedo,
   readPointerFile,
   readStatsFile,
   relinkPointers,
@@ -244,7 +245,8 @@ export async function settlePointers(api: GistsApi, handle: IndexHandle, opts: L
     const move = state.value.stats !== target
     if (!move && reads === state.value.reads) continue
     try {
-      await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: target, ...(reads !== undefined && { reads }) }) })
+      const ours = { ...state.raw, v: 1, stats: target, ...(reads !== undefined && { reads }) }
+      await api.update(pointer, { [POINTER_FILE]: JSON.stringify(ours) }, pointerRedo(state.raw, ours))
       cache?.delete(pointer)
     } catch (err) {
       // Gone (a remove at this moment), or GitHub's 409 (another write of it now): the next settle looks again.
@@ -273,7 +275,8 @@ async function setReads(api: GistsApi, pointer: string, reads: string, held: rea
   const allHeld = [...new Set([...before, ...held.filter(isGistId)])]
   if (state.value.reads === reads && allHeld.length === before.length) return
   try {
-    await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: state.value.stats, reads, ...(allHeld.length > 0 && { held: allHeld }) }) })
+    const ours = { ...state.raw, v: 1, stats: state.value.stats, reads, ...(allHeld.length > 0 && { held: allHeld }) }
+    await api.update(pointer, { [POINTER_FILE]: JSON.stringify(ours) }, pointerRedo(state.raw, ours))
   } catch (err) {
     if (gistErrorCode(err) !== 'NOT_FOUND') throw err
   }
@@ -1102,7 +1105,8 @@ async function moveForward(api: GistsApi, base: IndexHandle, target: string, bud
     if (state.kind !== 'ok' || state.value.stats === target) continue
     if (!mayUpdate(budget, now, 1, 0)) return { budget, stop: paused(base, budget, 'budget', now + sendGap(budget, now, 0)), wrote }
     try {
-      await api.update(pointer, { [POINTER_FILE]: JSON.stringify({ ...state.raw, v: 1, stats: target }) })
+      const ours = { ...state.raw, v: 1, stats: target }
+      await api.update(pointer, { [POINTER_FILE]: JSON.stringify(ours) }, pointerRedo(state.raw, ours))
     } catch (err) {
       if (gistErrorCode(err) === 'NOT_FOUND') continue // deleted in the meantime (a remove on another device)
       // GitHub's 409 (another device of mine writes this pointer at this moment, to the same generation): the proof of
