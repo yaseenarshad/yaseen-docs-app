@@ -24,6 +24,7 @@ import { TableMap } from '@milkdown/kit/prose/tables'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
 import { storage } from '../../../lib/storage'
+import { tableLookAt, type TableLookPlace } from '../tableLook'
 import { findThreadAnchor } from '../../find/findInPage'
 import { bodySpansRows, cellStartsAt } from '../cells'
 import { changedTables, typingOnly, type TableAttrs } from '../tableStyle'
@@ -102,8 +103,11 @@ export function setViews(view: EditorView, pos: number, views: readonly TableVie
 }
 
 /** A new table as Settings › Tables › New tables start as says (item 22): the slash menu's "Table" row. */
-export function newTableNode(table: ProseNode): ProseNode {
-  return storage.getSettings().tableNewStyle === 'super' ? table.type.create({ ...table.attrs, superTable: true }, table.content) : table
+export function newTableNode(table: ProseNode, at?: TableLookPlace): ProseNode {
+  // YAZ-5487: the vault's (`table-look.json`) of the editor that makes it; the app's with no file. A main process older
+  // than the vault file: the app's setting, as before.
+  const style = at === undefined ? storage.getSettings().tableNewStyle : tableLookAt(at).tableNewStyle
+  return style === 'super' ? table.type.create({ ...table.attrs, superTable: true }, table.content) : table
 }
 
 // ---------- where a table is ----------

@@ -78,6 +78,26 @@ describe('YAZ-5484: card-look.json merges key by key', () => {
   })
 })
 
+describe('YAZ-5487: table-look.json merges key by key', () => {
+  it('two Macs change different table settings: both stay, a header row part by part; a clash takes the remote\'s', () => {
+    const base = json({ version: 1, look: { rowBand: 'all', headerRow: { color: 'blue' } } })
+    const theirs = json({ version: 1, look: { rowBand: 'off', headerRow: { color: 'blue', weight: 'regular' } }, newTables: { dayStart: 360 } })
+    const mine = json({ version: 1, look: { rowBand: 'calendar', headerRow: { color: 'red' }, dimPast: 'text' } })
+    expect(JSON.parse(mergeConfigFile(base, theirs, mine).text)).toEqual({ version: 1, look: { rowBand: 'off', headerRow: { color: 'red', weight: 'regular' }, dimPast: 'text' }, newTables: { dayStart: 360 } })
+    expect(mergesByKey('.yaseendocs/table-look.json')).toBe(true)
+  })
+})
+
+describe('YAZ-5489: folder-pages.json merges key by key', () => {
+  it('two Macs change different folder page defaults: both stay; a clash takes the remote\'s', () => {
+    const base = json({ version: 1, rowHeight: 'tall' })
+    const theirs = json({ version: 1, rowHeight: 'medium', subfolders: 'rows' })
+    const mine = json({ version: 1, rowHeight: 'short', hideWeekends: true })
+    expect(JSON.parse(mergeConfigFile(base, theirs, mine).text)).toEqual({ version: 1, rowHeight: 'medium', subfolders: 'rows', hideWeekends: true })
+    expect(mergesByKey('.yaseendocs/folder-pages.json')).toBe(true)
+  })
+})
+
 describe('mergesByKey: the files AutoSync merges key by key, by rule', () => {
   it.each(['text-formatting.json', 'link-pills.json', 'link-click.json', 'show-ids.json', 'review.json', 'new-places.json', 'daily-pages.json', 'unit-word.json', 'read-only.json', 'github.json', 'card-look.json', 'some-file-of-a-later-build.json'])('%s: yes', (name) => {
     expect(mergesByKey(`.yaseendocs/${name}`)).toBe(true)

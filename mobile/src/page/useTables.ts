@@ -1,6 +1,7 @@
 import { useEffect, type RefObject } from 'react'
 import { watchCalendars, type CalendarOptions } from './tableCalendar'
 import { layoutTables } from './tableLayout'
+import { tableCalendarLook, type PhoneTableLook } from './tableLook'
 
 /**
  * The tables of an open page or card (YAZ-5471), for as long as it shows:
@@ -195,11 +196,12 @@ export function watchTables(host: HTMLElement, load: Load = () => import('./tabl
 }
 
 /** `watchTables` on a page's or a card's element, while it shows. */
-export function useTables(host: RefObject<HTMLElement | null>): void {
+export function useTables(host: RefObject<HTMLElement | null>, look: PhoneTableLook | null = null): void {
   useEffect(() => {
     const el = host.current
     if (el === null) return
-    const watch = watchTables(el)
+    // YAZ-5487: the vault's calendar look (`table-look.json`), else the Mac's defaults.
+    const watch = watchTables(el, undefined, { look: tableCalendarLook(look) })
     return () => watch.stop()
-  }, [host])
+  }, [host, look])
 }

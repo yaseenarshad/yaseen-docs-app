@@ -15,6 +15,7 @@ import { openFile } from '../explore/openFile'
 import { useFileText, useSheetTap } from '../explore/SheetBody'
 import { boardKindOf } from '../drawing/boardFiles'
 import { folderModel, type FolderModel } from './folderModel'
+import { useFolderPages } from './folderPagesFile'
 import { FolderViewPane } from './FolderViewPane'
 import './folders.css'
 
@@ -37,7 +38,9 @@ export default function FolderBody({ path, onDrawn, sheet = true }: { path: stri
   const app = useApp()
   const data = useVaultData()
   const repo = vaultName(app.vault?.repo ?? '')
-  const model = useMemo(() => (data === null ? null : folderModel(data, path, repo)), [data, path, repo])
+  // YAZ-5489: the vault's folder page defaults (folder-pages.json); the views wait for them (a few ms) so they draw once.
+  const defaults = useFolderPages(app.services.store, data)
+  const model = useMemo(() => (data === null || defaults === undefined ? null : folderModel(data, path, repo, defaults)), [data, path, repo, defaults])
   const key = `${app.vaultKey}\n${path}`
   const [tab, setTab] = useState<number | null>(lastTab.get(key) ?? null)
   const shown = model === null ? -1 : tab !== null && model.tabs.some((t) => t.index === tab) ? tab : model.start

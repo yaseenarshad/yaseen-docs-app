@@ -894,9 +894,14 @@
 
 /* The header row's Align (YAZ-4794): the view's own, else Settings' (on `.app`), for every column header; Follow
    column (no rule) keeps each header as its column (`view-table__cell--align-*`, below). The `#` gutter keeps its own. */
-.view-table[data-table-header-align]:not([data-table-header-align='follow']) thead th:not(.view-table__gutter),
-.app[data-table-header-align]:not([data-table-header-align='follow']) .view-table:not([data-table-header-align]) thead th:not(.view-table__gutter) {
+.view-table[data-table-header-align]:not([data-table-header-align='follow']) thead th:not(.view-table__gutter) {
   text-align: var(--table-header-align);
+}
+/* YAZ-5487: Settings' Align is `--table-header-aligned` on `.app`, or the vault's on its surface (nearest wins). */
+@container style(--table-header-aligned: on) {
+  .view-table:not([data-table-header-align]) thead th:not(.view-table__gutter) {
+    text-align: var(--table-header-align);
+  }
 }
 
 /* Header row (YAZ-4774): the page table's tint and text (`table.css` sets the variables from Settings and from the

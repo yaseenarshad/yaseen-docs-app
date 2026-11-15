@@ -70,6 +70,7 @@ import { cellPosAround, isListItem } from './outline/listNodes'
 import { inCellOrPage } from './table/cellBlocks'
 import { calendarTableNode, minutesOf } from './table/tableCalendar'
 import { timeFormatSetting } from './table/timeFormatSetting'
+import type { TableLookPlace } from './table/tableLook'
 
 /** One slash row as Crepe's builder takes it (`keywords` is the YAZ-3550 patch's field). */
 export interface SlashRow {
@@ -113,8 +114,8 @@ export function cellKindAt(selection: Selection): 'header' | 'cell' | null {
 export const CURRENT_TIME_KEYWORDS = ['current', 'now', 'clock', 'time']
 
 /** The time in the time format setting, then " - " (D22; YAZ-4163 D15): `9:05 am - ` by default. */
-export function formatCurrentTime(date: Date): string {
-  return `${formatTime(timeFormatSetting(), minutesOf(date))} - `
+export function formatCurrentTime(date: Date, at?: TableLookPlace): string {
+  return `${formatTime(timeFormatSetting(at), minutesOf(date))} - `
 }
 
 /** Crepe's own `isInList` (`utils/checker.ts`), the check the patch took out of `shouldShow`. */
@@ -144,7 +145,7 @@ export const currentTimeRow: SlashRow = {
   onRun: (ctx) => {
     ctx.get(commandsCtx).call(clearTextInCurrentBlockCommand.key)
     const view = ctx.get(editorViewCtx)
-    view.dispatch(view.state.tr.insertText(formatCurrentTime(new Date())))
+    view.dispatch(view.state.tr.insertText(formatCurrentTime(new Date(), view)))
   },
 }
 
@@ -206,7 +207,7 @@ function insertTable(ctx: Ctx, table: ProseNode): void {
 export const tableRow: SlashRow = {
   label: 'Table',
   icon: tableIcon,
-  onRun: (ctx) => insertTable(ctx, newTableNode(createTable(ctx, 3, 3))),
+  onRun: (ctx) => insertTable(ctx, newTableNode(createTable(ctx, 3, 3), ctx.get(editorViewCtx))),
 }
 
 /** A calendar page, drawn to match the stock 24px items. */
@@ -231,7 +232,7 @@ export const calendarTableRow: SlashRow = {
   label: 'Calendar table',
   icon: calendarIcon,
   keywords: CALENDAR_TABLE_KEYWORDS,
-  onRun: (ctx) => insertTable(ctx, calendarTableNode(ctx.get(editorViewCtx).state.schema)),
+  onRun: (ctx) => insertTable(ctx, calendarTableNode(ctx.get(editorViewCtx).state.schema, undefined, ctx.get(editorViewCtx))),
 }
 
 /**

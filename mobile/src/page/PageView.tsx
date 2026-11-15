@@ -60,11 +60,11 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   useMediaWatch(host, media)
   // YAZ-5440: its drawings, drawn on the phone when they near the screen; nothing is saved.
   useDrawings(host, media)
-  // YAZ-5471: its wide tables: the shadows at their sides, and ⤢ to open one full screen.
-  useTables(host)
-
   // YAZ-5455: the vault's own look (link pills, heading sizes) and its "Clicking a link", for the link door.
   const look = useVaultLook(store, data)
+  // YAZ-5471: its wide tables: the shadows at their sides, and ⤢ to open one full screen; YAZ-5487: the calendar look
+  // from the vault's table-look.json.
+  useTables(host, look?.table ?? null)
   const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: look?.click }
   const doorRef = useRef(door)
   doorRef.current = door
@@ -149,7 +149,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       // swapped in at once. Before, the page shrank to its first slice under the finger, the scroll place jumped, and
       // the embedded cards came again one by one: the page "hung" while the person scrolled.
       const into = first ? el : document.createElement('div')
-      await renderPage(splitFrontmatter(text).body, pageLook(data, path), into, uiSlicer(), () => live)
+      await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, uiSlicer(), () => live)
       if (!live) return
       if (!first) {
         await fillCardEmbeds(into, data, store, doorRef.current, () => live)

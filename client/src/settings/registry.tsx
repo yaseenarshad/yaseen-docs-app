@@ -30,9 +30,11 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type FolderPagesSettings, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
 import type { IconRule } from '@shared/vaultIcons'
 import { appCardLook, type CardLookSettings } from '@shared/cardLook'
+import { appTableLook, type TableLookSettings } from '@shared/tableLook'
+import type { FolderPagesVault } from '@shared/folderPages'
 import { cardLookVars } from '../review/cardLook'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
@@ -409,6 +411,17 @@ export interface SettingsCtx {
    * has a file), with the Vault dropdown as Spacing's. Absent with no vault: the Card look rows edit the app's settings.
    */
   cardLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: CardLookSettings; save: (next: CardLookSettings) => void }
+  /**
+   * The table look and new-table defaults (YAZ-5487): the picked vault's table-look.json as the 21 settings (`value`: the
+   * app's until the vault has a file), with the Vault dropdown as Spacing's. Absent with no vault: the rows edit the app's.
+   */
+  tableLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: TableLookSettings; save: (next: TableLookSettings) => void }
+  /**
+   * The folder page view and page defaults (YAZ-5489, replaces YAZ-4585 D34): the picked vault's folder-pages.json as
+   * its 27 parts (`value`: the app's until the vault has a file), with the Vault dropdown. Absent with no vault: the rows
+   * edit the app's settings.
+   */
+  folderPages?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: FolderPagesVault; save: (next: Partial<FolderPagesSettings>) => void }
   iconLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; rules: readonly IconRule[]; colors: SidebarIconColors; save: (look: { rules?: IconRule[]; colors?: SidebarIconColors }) => void }
   /** Daily pages › Change… (YAZ-5491): App writes the folder to the file of the vault it was picked in. Absent with no vault. */
   pickDailyFolder?: (folder: string, vault: string) => void
@@ -610,6 +623,47 @@ function cardLookItems(items: readonly SettingDef[]): SettingDef[] {
       ...(def.available !== undefined && { available: (ctx: SettingsCtx) => def.available!(cardLookCtx(ctx)) }),
       render: (ctx) => def.render(cardLookCtx(ctx)),
     })),
+  ]
+}
+/**
+ * The Tables rows of the 21 vault settings (YAZ-5487): each reads and writes the picked vault's table-look.json
+ * (`ctx.tableLook`; the app's values until the vault has a file) through a ctx whose `settings` carry that look and whose
+ * `onChange` saves the 21 keys into the vault. The table habits (Rows it marks, Add button, Keep cell notes open, All
+ * notes opens at, Now button) stay this Mac's. With no vault in the window, the app's settings, as before.
+ */
+const TABLE_LOOK_ROWS: ReadonlySet<string> = new Set([
+  'tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle',
+  'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteTemplate',
+  'tableNowMark', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat',
+])
+function tableLookCtx(ctx: SettingsCtx): SettingsCtx {
+  const look = ctx.tableLook
+  if (look === undefined) return ctx
+  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appTableLook(next)) }
+}
+function tableLookItems(items: readonly SettingDef[], vault = false): SettingDef[] {
+  const vaultRow: SettingDef = {
+    id: 'tableLookVault',
+    label: 'Vault',
+    keywords: ['table', 'tables', 'table look', 'vault'],
+    available: (ctx) => (ctx.tableLook?.vaults.length ?? 0) > 1,
+    render: ({ tableLook }) => tableLook && <Select options={tableLook.vaults.map((v) => ({ label: v.name, value: v.root }))} value={tableLook.root} onChange={tableLook.choose} ariaLabel="Vault" />,
+  }
+  const through = <T,>(f: T | ((ctx: SettingsCtx) => T)): T | ((ctx: SettingsCtx) => T) => (typeof f === 'function' ? (ctx: SettingsCtx) => (f as (ctx: SettingsCtx) => T)(tableLookCtx(ctx)) : f)
+  return [
+    ...(vault ? [vaultRow] : []),
+    ...items.map((def): SettingDef =>
+      !TABLE_LOOK_ROWS.has(def.id)
+        ? def
+        : {
+            ...def,
+            label: through(def.label),
+            ...(def.hint !== undefined && { hint: through(def.hint) }),
+            ...(def.available !== undefined && { available: (ctx: SettingsCtx) => def.available!(tableLookCtx(ctx)) }),
+            ...(def.wide !== undefined && { wide: through(def.wide) }),
+            render: (ctx) => def.render(tableLookCtx(ctx)),
+          },
+    ),
   ]
 }
 /** Card spacing's own four rows (YAZ-5050): only with Custom. */
@@ -1473,7 +1527,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
         // "All tables" since YAZ-4775: on the Tables page a second "Tables" read as "Tables › Tables".
         title: 'All tables',
-        items: [
+        // YAZ-5487: the table look and new-table defaults are the vault's (table-look.json, `tableLookItems`), with the
+        // Vault dropdown where the window has two or more; the phone reads them too. "Rows it marks" stays this Mac's.
+        hint: "Saved in the vault's table-look.json: each vault has its own, on this Mac and on the phone. Rows it marks is this Mac's.",
+        items: tableLookItems([
           {
             // YAZ-4774: one look for both kinds of table; a page table's "Header row ›" and a folder table's View tab can say otherwise.
             id: 'tableHeaderRow',
@@ -1628,12 +1685,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <CellBulletStepper settings={settings} onChange={onChange} field="tableCellBulletGap" name="Bullet gap in cells" min={TABLE_CELL_BULLET_GAP_MIN} max={TABLE_CELL_BULLET_GAP_MAX} step={1} />
             ),
           },
-        ],
+        ], true),
       },
       {
-        // Round 3 of the YAZ-3818 demo: what a new cell note starts with. In the app's settings, never in the file.
+        // Round 3 of the YAZ-3818 demo: what a new cell note starts with. The vault's since YAZ-5487 (table-look.json);
+        // the Add button, Keep cell notes open and All notes opens at stay this Mac's.
         title: 'Cell notes',
-        items: [
+        items: tableLookItems([
           {
             // YAZ-4790: every table's "+", off by default (the YAZ-4790 demo); a table's 6-dot "Cell note button" sets its own.
             id: 'tableCellNoteButton',
@@ -1672,12 +1730,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ALL_NOTES_OPENS_AT_OPTIONS} value={settings.tableAllNotesOpensAt ?? 'cell'} onChange={(tableAllNotesOpensAt) => onChange({ ...settings, tableAllNotesOpensAt })} ariaLabel="All notes opens at" />
             ),
           },
-        ],
+        ]),
       },
       {
-        // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every page. Never in the file.
+        // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every page. Never in the
+        // page's file; the vault's table-look.json since YAZ-5487 (the Now button stays this Mac's).
         title: 'Calendar tables',
-        items: [
+        items: tableLookItems([
           {
             id: 'tableNowMark',
             label: 'Mark the current time',
@@ -1747,7 +1806,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: () => true,
             render: ({ settings, onChange }) => <TimeFormatControl settings={settings} onChange={onChange} />,
           },
-        ],
+        ]),
       },
     ],
   },

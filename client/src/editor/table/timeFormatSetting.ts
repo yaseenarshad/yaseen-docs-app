@@ -4,104 +4,64 @@
  * `code/languageHelpers.ts` is, so no editor rebuilds for a change.
  */
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT, isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
-import { DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, type HeaderRow, type TableTextInCells } from '@shared/types'
+import type { TableLookSettings } from '@shared/tableLook'
+import type { HeaderRow, TableTextInCells } from '@shared/types'
+import { appTableLookNow, onTableLookSticky, setAppTableLook, tableLookAt, type TableLookPlace } from './tableLook'
 
-let current = DEFAULT_TIME_FORMAT
+/*
+ * YAZ-5487: the table look and the new-table defaults are the VAULT's (`table-look.json`, `tableLook.ts`). Each reader
+ * takes where it reads (an editor's view or a node in the page) and reads the look of the vault that holds it; with
+ * nothing given, the app's (the fallback). The setters of before are gone: App sets the app's and each vault's look
+ * (`setAppTableLook`, `setVaultTableLook`).
+ */
 
-/** App's door: a style the reader cannot read back is the default. */
-export function setTimeFormatSetting(format: string): void {
-  current = isValidTimeFormat(format) ? format : DEFAULT_TIME_FORMAT
-}
+/** The doors of before, each one setting of the APP's look (the tests'; App sets the whole look with `setAppTableLook`). */
+const setApp = (patch: Partial<TableLookSettings>): void => setAppTableLook({ ...appTableLookNow(), ...patch })
+export const setTimeFormatSetting = (format: string): void => setApp({ tableTimeFormat: isValidTimeFormat(format) ? format : DEFAULT_TIME_FORMAT })
+export const setCalendarDaySetting = (start: number, end: number): void =>
+  setApp(isCalendarDayTime(start) && isCalendarDayTime(end) && start < end ? { tableDayStart: start, tableDayEnd: end } : { tableDayStart: DEFAULT_CALENDAR_DAY.start, tableDayEnd: DEFAULT_CALENDAR_DAY.end })
+export const setHeaderRowSetting = (value: HeaderRow): void => setApp({ tableHeaderRow: value })
+export const setSubheaderRowSetting = (value: HeaderRow): void => setApp({ tableSubheaderRow: value })
+export const setStickySubheadersSetting = (on: boolean): void => setApp({ tableStickySubheaders: on })
+export const setStickyHeaderSetting = (on: boolean): void => setApp({ tableStickyHeader: on })
+export const setTextInCellsSetting = (value: TableTextInCells): void => setApp({ tableTextInCells: value === 'clip' ? 'clip' : 'wrap' })
 
-export const timeFormatSetting = (): string => current
-
-let day: { start: number; end: number } = DEFAULT_CALENDAR_DAY
+/** "/Calendar table", "Time slots" and "Current time" read it at the click. */
+export const timeFormatSetting = (at?: TableLookPlace): string => tableLookAt(at).tableTimeFormat
 
 /**
- * Settings › Tables › Calendar tables › Calendar day (YAZ-4163 demo), App's door: "/Calendar table", "Time slots" on a
- * table with no times, and "Fill the calendar day" read it at the click. A day whose end is not after its start, or a
- * time off the half hour, is the default day.
+ * Settings › Tables › Calendar tables › Calendar day (YAZ-4163 demo): "/Calendar table", "Time slots" on a table with
+ * no times, and "Fill the calendar day" read it at the click. A day whose end is not after its start is the default day.
  */
-export function setCalendarDaySetting(start: number, end: number): void {
-  day = isCalendarDayTime(start) && isCalendarDayTime(end) && start < end ? { start, end } : DEFAULT_CALENDAR_DAY
+export const calendarDaySetting = (at?: TableLookPlace): { start: number; end: number } => {
+  const look = tableLookAt(at)
+  return { start: look.tableDayStart, end: look.tableDayEnd }
 }
-
-export const calendarDaySetting = (): { start: number; end: number } => day
-
-let headerRow: HeaderRow = DEFAULT_HEADER_ROW
 
 /**
- * Settings › Tables › All tables › Header row (YAZ-4774), App's door: a page table's "Header row ›" and a folder table's
- * View tab read it when they open, to show what a table follows. The page itself reads it from `.app` (`table.css`).
+ * Settings › Tables › All tables › Header row (YAZ-4774): a page table's "Header row ›" and a folder table's View tab
+ * read it when they open, to show what a table follows. The page itself reads it from its surface (`table.css`).
  */
-export function setHeaderRowSetting(value: HeaderRow): void {
-  headerRow = value
-}
+export const headerRowSetting = (at?: TableLookPlace): HeaderRow => tableLookAt(at).tableHeaderRow
 
-export const headerRowSetting = (): HeaderRow => headerRow
+/** Settings › Tables › All tables › Subheader row (YAZ-4899): a table's "Subheader row ›" panel reads it when it opens. */
+export const subheaderRowSetting = (at?: TableLookPlace): HeaderRow => tableLookAt(at).tableSubheaderRow
 
-let subheaderRow: HeaderRow = DEFAULT_SUBHEADER_ROW
-let stickySubheaders = true
+/** Sticky subheaders (YAZ-4899): a change of the default (the app's or a vault's) tells each sticky view at once. */
+export const onStickySubheadersSetting = onTableLookSticky
+
+export const stickySubheadersSetting = (at?: TableLookPlace): boolean => tableLookAt(at).tableStickySubheaders
 
 /**
- * Settings › Tables › All tables › Subheader row and Sticky subheaders (YAZ-4899), App's door: a table's "Subheader
- * row ›" panel and its "Sticky" switch read them when they open; a change of the sticky default tells each sticky view at once.
+ * Settings › Tables › All tables › Sticky header row (YAZ-4899 round 2): the header row frozen unless a table says
+ * otherwise (`tableFreeze.ts`); a change tells the frozen-row plugin of each editor, which draws again.
  */
-export function setSubheaderRowSetting(value: HeaderRow): void {
-  subheaderRow = value
-}
+export const onStickyHeaderSetting = onTableLookSticky
 
-export const subheaderRowSetting = (): HeaderRow => subheaderRow
+export const stickyHeaderSetting = (at?: TableLookPlace): boolean => tableLookAt(at).tableStickyHeader
 
-/** The sticky views to tell when the Settings default changes, so a table that follows it pins or stops at once. */
-const stickyListeners = new Set<() => void>()
-
-export function setStickySubheadersSetting(on: boolean): void {
-  if (stickySubheaders === on) return
-  stickySubheaders = on
-  for (const listener of stickyListeners) listener()
-}
-
-/** Calls `listener` on each change of the Settings default; returns the unsubscribe. */
-export function onStickySubheadersSetting(listener: () => void): () => void {
-  stickyListeners.add(listener)
-  return () => stickyListeners.delete(listener)
-}
-
-export const stickySubheadersSetting = (): boolean => stickySubheaders
-
-let stickyHeader = true
-const stickyHeaderListeners = new Set<() => void>()
-
-/**
- * Settings › Tables › All tables › Sticky header row (YAZ-4899 round 2), App's door: the header row frozen unless a
- * table says otherwise (`tableFreeze.ts`); a change tells the frozen-row plugin of each editor, which draws again.
- */
-export function setStickyHeaderSetting(on: boolean): void {
-  if (stickyHeader === on) return
-  stickyHeader = on
-  for (const listener of stickyHeaderListeners) listener()
-}
-
-/** Calls `listener` on each change of the Settings default; returns the unsubscribe. */
-export function onStickyHeaderSetting(listener: () => void): () => void {
-  stickyHeaderListeners.add(listener)
-  return () => stickyHeaderListeners.delete(listener)
-}
-
-export const stickyHeaderSetting = (): boolean => stickyHeader
-
-let textInCells: TableTextInCells = 'wrap'
-
-/**
- * Settings › Tables › All tables › Text in cells (YAZ-4900), App's door: a table's "Text in cells" reads it as its
- * Default. The page itself reads it from `.app` (`data-table-text`, `table.css`).
- */
-export function setTextInCellsSetting(value: TableTextInCells): void {
-  textInCells = value === 'clip' ? 'clip' : 'wrap'
-}
-
-export const textInCellsSetting = (): TableTextInCells => textInCells
+/** Settings › Tables › All tables › Text in cells (YAZ-4900): a table's "Text in cells" reads it as its Default. */
+export const textInCellsSetting = (at?: TableLookPlace): TableTextInCells => (tableLookAt(at).tableTextInCells === 'clip' ? 'clip' : 'wrap')
 
 let noteButton = false
 

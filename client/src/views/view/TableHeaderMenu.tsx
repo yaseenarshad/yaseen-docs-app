@@ -25,7 +25,7 @@ import { type Rule, inferType, propertyValues } from './filterRows'
 import { columnTyping } from '../editorType'
 import { isMentionsColumn } from '../mentionsColumn'
 import { TextField } from './TextField'
-import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, textInCellsOf, toggleHeaderRowPlain } from './TableLookSettings'
+import { plainHeaderRow, setHeaderRowPart, shownHeaderRow, textInCellsOf, toggleHeaderRowPlain, useFolderHeaderRow } from './TableLookSettings'
 import { HEADER_ROW_CHOICES, headerRowLabel, type HeaderRowOwn } from '@shared/types'
 import { headerSwatch } from '../../editor/table/colours'
 
@@ -219,7 +219,8 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
    * one write of the view's own `headerRow` (`setHeaderRowPart`, the View tab's writer) and the menu stays open, so
    * fill, strength, weight, text colour and align go in one visit, as a page table's "Header row ›".
    */
-  const header = shownHeaderRow(view)
+  const base = useFolderHeaderRow()
+  const header = shownHeaderRow(view, base)
   const headerItem = (part: keyof HeaderRowOwn, value: string, swatch?: string) => (
     <button
       key={value}
@@ -227,7 +228,7 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
       role="menuitem"
       className="ctx-menu__item"
       data-hint={header[part] === value ? '✓' : undefined}
-      onClick={() => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value))}
+      onClick={() => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], part, value, base))}
     >
       {swatch === undefined ? (
         headerRowLabel(value)
@@ -414,7 +415,7 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
             <div className="ctx-menu__group">
               <FlyoutParent label="Header row" open={flyout.open === 'header'} onHover={() => flyout.hover('header')} onOpen={() => flyout.openNow('header')} onCloseFlyout={() => flyout.openNow(null)}>
                 <div className="ctx-menu__group" role="group">
-                  <FlyoutItem label="Plain, like any row" checked={plainHeaderRow(header)} onSelect={() => onUpdate((d) => toggleHeaderRowPlain(d.views[viewIndex]))} />
+                  <FlyoutItem label="Plain, like any row" checked={plainHeaderRow(header)} onSelect={() => onUpdate((d) => toggleHeaderRowPlain(d.views[viewIndex], base))} />
                 </div>
                 {/* Three tabs, as Fill's Cell · Row · Column (YAZ-4794 demo): one short list at a time, not thirty rows. */}
                 <div className="fill-target" role="group" aria-label="Header row part">
@@ -428,7 +429,7 @@ export function TableHeaderMenu({ x, y, columnKey, rowNumbers = true, def, viewI
                   <>
                     <div className="fill-target fill-target--sub" role="group" aria-label="Strength">
                       {HEADER_ROW_CHOICES.strength.map((v) => (
-                        <button key={v} type="button" className="fill-target__opt" aria-pressed={header.strength === v} onClick={() => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], 'strength', v))}>
+                        <button key={v} type="button" className="fill-target__opt" aria-pressed={header.strength === v} onClick={() => onUpdate((d) => setHeaderRowPart(d.views[viewIndex], 'strength', v, base))}>
                           {headerRowLabel(v)}
                         </button>
                       ))}

@@ -2,6 +2,12 @@
  * SETTINGS › FOLDER PAGES (YAZ-4585, D34 of YAZ-4501): the global side of a folder page. Each setting has one home
  * besides Settings, and no setting lives on both the page and a view.
  *
+ * YAZ-5489 REPLACES D34's "global side": the view and page defaults (and Confirm changes, 27 parts in all) are the
+ * VAULT's, in its `.yaseendocs/folder-pages.json` (`shared/folderPages.ts`): each of those rows edits the picked vault's
+ * file (`ctx.folderPages`, with the Vault dropdown where the window has two or more), and the phone reads it too. The
+ * personal rows stay this Mac's: week start, row band, the page window's pin, Ask before deleting pages, and Preview on
+ * hover.
+ *
  * - Personal, here only: the week start, the folder views' "Preview on hover" (moved from Files & Links, the same
  *   `hoverPreviewIn.folderViews`), the table row band and the page window's pin. The last two follow the table block's
  *   settings (`folderRowBandOn`, `folderWindowPinned`) until they are set. "Ask before deleting pages" (YAZ-4592 S26)
@@ -12,9 +18,10 @@
  * Every row writes one part of `settings.folderPages`. Every default is the look before the page existed.
  */
 import { calLine, folderRowBandOn, folderWindowPinned, type FolderPagesSettings, writeColorStrength } from '@shared/types'
+import { FOLDER_PAGES_VAULT_PARTS } from '@shared/folderPages'
 import { calLineColor } from '../views/calendar'
 import { CalLineControls } from '../views/view/CalendarLineControls'
-import { Segmented } from './controls'
+import { Segmented, Select } from './controls'
 import { ON_OFF_OPTIONS, type Option } from './options'
 import type { SettingDef, SettingsCtx, SettingsSection } from './registry'
 import { unit } from './unitLabel'
@@ -75,6 +82,18 @@ const CARD_TITLES_OPTIONS: readonly Option<FolderPagesSettings['cardTitles']>[] 
 
 const WORDS = ['folder', 'folder page', 'views', 'table', 'board', 'calendar', 'cards', 'list']
 
+/**
+ * A vault part's row (YAZ-5489): reads and writes the picked vault's folder-pages.json (`ctx.folderPages`; the app's
+ * values until the vault has a file) through a ctx whose `settings.folderPages` carry those parts and whose `onChange`
+ * saves them into the vault. With no vault in the window, the app's settings, as before.
+ */
+const VAULT_PARTS: ReadonlySet<string> = new Set(FOLDER_PAGES_VAULT_PARTS)
+function folderPagesCtx(ctx: SettingsCtx, part: keyof FolderPagesSettings): SettingsCtx {
+  const vault = ctx.folderPages
+  if (vault === undefined || !VAULT_PARTS.has(part)) return ctx
+  return { ...ctx, settings: { ...ctx.settings, folderPages: { ...ctx.settings.folderPages, ...vault.value } }, onChange: (next) => vault.save(next.folderPages) }
+}
+
 /** One row that writes `folderPages[part]`; `shown` reads what the control shows, for the two that follow another setting. */
 function row<K extends keyof FolderPagesSettings>(
   part: K,
@@ -88,7 +107,8 @@ function row<K extends keyof FolderPagesSettings>(
     label: (ctx) => unit(ctx, label),
     hint: more.hint,
     keywords: [...WORDS, ...(more.keywords ?? [])],
-    render: (ctx) => {
+    render: (outer) => {
+      const ctx = folderPagesCtx(outer, part)
       const { settings, onChange } = ctx
       const value = more.shown?.(ctx) ?? (settings.folderPages[part] as NonNullable<FolderPagesSettings[K]>)
       return <Segmented options={typeof options === 'function' ? options((text) => unit(ctx, text)) : options} value={value} onChange={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [part]: next } })} ariaLabel={unit(ctx, label)} />
@@ -103,7 +123,9 @@ function lineRow(widthPart: 'weekLine' | 'dayLine', colorPart: 'weekLineColor' |
     label,
     hint,
     keywords: [...WORDS, 'calendar', 'lines', 'thickness', 'width', 'colour', 'color', 'px'],
-    render: ({ settings, onChange }) => (
+    render: (ctx) => {
+      const { settings, onChange } = folderPagesCtx(ctx, widthPart)
+      return (
       <CalLineControls
         label={label}
         width={calLine(settings.folderPages[widthPart])}
@@ -111,7 +133,8 @@ function lineRow(widthPart: 'weekLine' | 'dayLine', colorPart: 'weekLineColor' |
         onWidth={(px) => onChange({ ...settings, folderPages: { ...settings.folderPages, [widthPart]: px } })}
         onColor={(next) => onChange({ ...settings, folderPages: { ...settings.folderPages, [colorPart]: writeColorStrength(next) } })}
       />
-    ),
+      )
+    },
   }
 }
 
@@ -155,8 +178,16 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
     },
     {
       title: 'View defaults',
-      hint: 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them.',
+      hint: 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them. Saved in the vault\'s folder-pages.json, with the Page group and Confirm changes: each vault has its own, on this Mac and on the phone.',
       items: [
+        {
+          // YAZ-5489: the vault whose folder-pages.json the vault rows edit.
+          id: 'folderPagesVault',
+          label: 'Vault',
+          keywords: [...WORDS, 'vault'],
+          available: (ctx) => (ctx.folderPages?.vaults.length ?? 0) > 1,
+          render: ({ folderPages }) => folderPages && <Select options={folderPages.vaults.map((v) => ({ label: v.name, value: v.root }))} value={folderPages.root} onChange={folderPages.choose} ariaLabel="Vault" />,
+        },
         row('rowHeight', 'Row height', ROW_HEIGHT_OPTIONS, { keywords: ['row', 'height', 'short', 'tall'] }),
         row('rowNumbers', 'Row numbers', ON_OFF_OPTIONS, { keywords: ['row numbers', 'gutter', '#'] }),
         row('columnTypeIcons', 'Column type icons', ON_OFF_OPTIONS, { hint: "A table header shows each column's type icon before its name. A table's View settings can say otherwise.", keywords: ['icon', 'type', 'column', 'header', 'kind'] }),

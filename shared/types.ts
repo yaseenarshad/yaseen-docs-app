@@ -2076,6 +2076,9 @@ export const FOLDER_PAGE_CHOICES = {
 
 /**
  * Settings › Folder pages (YAZ-4585, D34 of YAZ-4501). Every default is the look before the page existed.
+ * YAZ-5489 REPLACES D34's "global side": the view and page defaults (27 parts, `FOLDER_PAGES_VAULT_PARTS`) are the
+ * vault's, in `.yaseendocs/folder-pages.json` (`shared/folderPages.ts`); these app values are the fallback for a vault
+ * with no file. The personal parts stay here.
  * - Personal, in Settings only: `weekStartsOn`, `rowBand`, `keepWindowPinned` (and "Preview rows on hover" and "Preview
  *   links on hover", which stay `hoverPreviewIn.folderViews` and `hoverPreviewIn.folderLinks`).
  * - View defaults: a view with no key of its own reads these (`views/viewDefaults.tsx`).

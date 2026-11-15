@@ -19,7 +19,8 @@ import { dailyPageName } from '@shared/dailyPage'
 import { IDS_FILE } from '@shared/pageId'
 import { TEXT_FORMATTING_FILE, TEXT_FORMATTING_KEYS } from '@shared/textFormatting'
 import { REVIEW_SETTINGS_KEYS } from '@shared/reviews'
-import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FolderPagesSettings, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
+import { FOLDER_PAGES_VAULT_PARTS } from '@shared/folderPages'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
 import { CREPE_THEME_STYLE_ID } from './editor/crepeTheme'
@@ -175,7 +176,7 @@ const captured = vi.hoisted(() => ({
   /** The card flow mounts the REAL page editor (`./editor/Editor`); every other test the stub. */
   realEditor: false,
   crepes: [] as import('@milkdown/crepe').Crepe[],
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; folderPages?: FolderPagesSettings }[],
 }))
 
 vi.mock('./editor/Editor', async (importOriginal) => {
@@ -197,8 +198,8 @@ vi.mock('./editor/createCrepe', async (importOriginal) => {
     },
   }
 })
-const EditorStub = ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
+const EditorStub = ({ folderPages, root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; folderPages?: FolderPagesSettings }) => {
+    captured.editors.push({ path, root, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, folderPages })
     if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.linkOpeners.push({ path, open: onOpenLink })
@@ -6412,12 +6413,12 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
       // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a page (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json']],
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'table-look.json'], ['/v', 'folder-pages.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'table-look.json'], ['/v', 'folder-pages.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json']],
       coldDiff: [['/v']],
       // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a page (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
       // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
-      // YAZ-5484: card-look.json too.
-      subscriptions: [2, 2, 22],
+      // YAZ-5484: card-look.json too; YAZ-5487: table-look.json too; YAZ-5489: folder-pages.json too.
+      subscriptions: [2, 2, 26],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -6479,6 +6480,88 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     show('/v/a.md')
     await act(async () => {})
     expect(app.style.getPropertyValue('--kind-folder')).toBe('#00bb00')
+  })
+
+  /**
+   * YAZ-5487: TWO vaults with different table looks draw differently, side by side: each page layer (and every surface
+   * that wears `textVarsFor`: the hover preview, Quick Look, the right panel, Explore's page layers) carries its vault's
+   * whole table look and its name (`--table-look`, which the editor's script reads); `.app` keeps the app's look (the
+   * fallback), and no table attribute is on it any more. A vault with no table-look.json reads `.app`'s.
+   */
+  /**
+   * YAZ-5489 (replaces YAZ-4585 D34): TWO vaults with different folder page defaults: each page's editor (and its folder
+   * page) gets its vault's folder-pages.json over the app's Settings › Folder pages, the personal parts the app's; a
+   * vault with no file the app's whole; the sidebar's folder page file rows follow each vault's switch.
+   */
+  describe('YAZ-5489: two vaults\' folder page defaults, side by side', () => {
+    const FILES: Record<string, unknown> = { '/v': { version: 1, rowHeight: 'tall', showFolderPageFiles: true } }
+    const withFiles = (b: Bridge) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'folder-pages.json' && vault !== undefined ? (FILES[vault] ?? null) : null))
+    }
+    const pagesOf = (path: string) => captured.editors.filter((e) => e.path === path).at(-1)?.folderPages
+
+    it('each editor its vault\'s; the personal parts and a vault with no file, the app\'s; the sidebar per vault; Settings writes the picked vault', async () => {
+      const app = { ...DEFAULT_SETTINGS, folderPages: { ...DEFAULT_SETTINGS.folderPages, rowHeight: 'medium' as const, weekStartsOn: 'monday' as const } }
+      const { el, bridge, emitStateChanged, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, withFiles)
+      act(() => emitStateChanged({ ...defaultAppState(), settings: app }))
+      show('/v/a.md')
+      await act(async () => {})
+      expect(pagesOf('/v/a.md')).toMatchObject({ rowHeight: 'tall', weekStartsOn: 'monday', showFolderPageFiles: true })
+      expect(pagesOf('/w/b.md')).toMatchObject({ rowHeight: 'medium', weekStartsOn: 'monday', showFolderPageFiles: false })
+      const pageFilesIn = (captured.sidebar as unknown as { pageFilesIn: (root: string) => boolean }).pageFilesIn
+      expect([pageFilesIn('/v'), pageFilesIn('/w')]).toEqual([true, false])
+      act(() => emitSettings())
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Folder pages')?.click())
+      const select = el.querySelector<HTMLSelectElement>('[data-setting="folderPagesVault"] select[aria-label="Vault"]') as HTMLSelectElement
+      expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
+      const height = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="folderPages.rowHeight"] button')]
+      expect(height().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Tall')
+      act(() => height().find((b) => b.textContent === 'Short')!.click())
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/v', 'folder-pages.json', { version: 1, showFolderPageFiles: true }, ['version', ...FOLDER_PAGES_VAULT_PARTS]]])
+    })
+  })
+
+  describe('YAZ-5487: two vaults\' table looks, side by side', () => {
+    const LOOKS: Record<string, unknown> = { '/v': { version: 1, look: { rowBand: 'calendar', dimPast: 'text', headerRow: { color: 'blue', align: 'center' } } }, '/w': { version: 1, look: { rowBand: 'off', nowMark: 'both', textInCells: 'clip', width: 900 } } }
+    const withLooks = (looks: Record<string, unknown>) => (b: Bridge) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'table-look.json' && vault !== undefined ? (looks[vault] ?? null) : null))
+    }
+    const look = (el: HTMLElement | null | undefined) => ['--table-row-band', '--table-dim-past', '--table-now-mark', '--table-text', '--table-width-set', '--table-header-hue', '--table-header-aligned'].map((name) => el?.style.getPropertyValue(name))
+    const layer = (el: HTMLElement, path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer')
+
+    it('page layers: each vault\'s own look and name; `.app` the app\'s, with no table attribute; a vault with no file reads `.app`\'s', async () => {
+      const looks = { ...LOOKS }
+      const { el, bridge } = await mount(defaultAppState(), TWO, {}, withLooks(looks))
+      show('/w/b.md')
+      await act(async () => {})
+      expect(look(layer(el, '/v/a.md'))).toEqual(['calendar', 'text', 'line', 'wrap', 'off', 'var(--table-fill-solid-blue)', 'on'])
+      expect(look(layer(el, '/w/b.md'))).toEqual(['off', 'shade', 'both', 'clip', 'on', 'initial', 'off'])
+      expect(layer(el, '/v/a.md')!.style.getPropertyValue('--table-look')).not.toBe(layer(el, '/w/b.md')!.style.getPropertyValue('--table-look'))
+      const app = el.querySelector<HTMLElement>('.app')!
+      expect(look(app)).toEqual(['all', 'shade', 'line', 'wrap', 'off', '', 'off'])
+      expect(el.querySelector('.app[data-table-row-band], .app[data-table-now], .app[data-table-dim-past], .app[data-table-text], .app[data-table-width], .app[data-table-header-color], .app[data-table-sticky-subheaders]')).toBeNull()
+      // The file of /w goes: its layers carry only its name, and read `.app`'s; /v keeps its style.
+      const before = layer(el, '/v/a.md')!.style.cssText
+      looks['/w'] = null
+      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: 'table-look.json' }))
+      expect(look(layer(el, '/w/b.md'))).toEqual(['', '', '', '', '', '', ''])
+      expect(layer(el, '/w/b.md')!.style.getPropertyValue('--table-look')).not.toBe('')
+      expect(layer(el, '/v/a.md')!.style.cssText).toBe(before)
+    })
+
+    it('Settings › Tables: the Vault dropdown starts on the active tab\'s vault, and a change writes only that vault\'s table-look.json', async () => {
+      const { bridge, el, emitSettings } = await mount(defaultAppState(), { ...TWO, file: '/w/b.md' }, {}, withLooks(LOOKS))
+      act(() => emitSettings())
+      act(() => [...el.querySelectorAll<HTMLButtonElement>('.settings-nav__item')].find((b) => b.textContent === 'Tables')?.click())
+      const select = el.querySelector<HTMLSelectElement>('[data-setting="tableLookVault"] select[aria-label="Vault"]') as HTMLSelectElement
+      expect([...select.options].map((o) => o.textContent)).toEqual(['w', 'v'])
+      const band = () => [...el.querySelectorAll<HTMLButtonElement>('[data-setting="tableRowBand"] button')]
+      expect(band().find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Off')
+      act(() => band().find((b) => b.textContent === 'All tables')!.click())
+      expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', 'table-look.json', { version: 1, look: { nowMark: 'both', textInCells: 'clip', width: 900 } }, ['version', 'look', 'newTables']]])
+    })
   })
 
   /**
@@ -6592,7 +6675,9 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     await act(async () => {})
     const layer = (path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer') as HTMLElement
     const right = () => el.querySelector<HTMLElement>('[data-testid="right-layer-/w/c.md"]') as HTMLElement
-    const vars = (node: HTMLElement) => Object.fromEntries([...node.style].filter((name) => name.startsWith('--')).map((name) => [name, node.style.getPropertyValue(name)]))
+    // `--table-look` names the layer's vault (YAZ-5487: the editor's script reads its table look by it); left out here.
+    const vars = (node: HTMLElement) => Object.fromEntries([...node.style].filter((name) => name.startsWith('--') && name !== '--table-look').map((name) => [name, node.style.getPropertyValue(name)]))
+    expect(layer('/v/a.md').style.getPropertyValue('--table-look')).not.toBe(layer('/w/b.md').style.getPropertyValue('--table-look'))
     expect(vars(layer('/v/a.md'))).toEqual({ '--text-size': '18px', '--h2-size': '21px' })
     expect(vars(layer('/w/b.md'))).toEqual({ '--h2-size': '30px', '--h2-decoration': 'underline' })
     expect(vars(right())).toEqual(vars(layer('/w/b.md')))
@@ -6650,7 +6735,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(20) // card-look.json (YAZ-5484), review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924), daily-pages.json (YAZ-5491) and new-places.json (YAZ-5486)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(24) // folder-pages.json (YAZ-5489), table-look.json (YAZ-5487), card-look.json (YAZ-5484), review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924), daily-pages.json (YAZ-5491) and new-places.json (YAZ-5486)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')

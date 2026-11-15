@@ -4,6 +4,8 @@ import { headingVars } from '@client/settings/headingStyles'
 import { DEFAULT_LINK_CLICK, LINK_CLICK_FILE, sanitizeLinkClick, type LinkClick } from '@shared/linkClick'
 import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills, type LinkPills } from '@shared/linkPills'
 import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, spacingVars } from '@shared/textFormatting'
+import { TABLE_LOOK_FILE, sanitizeTableLook, tableLookSettings } from '@shared/tableLook'
+import type { PhoneTableLook } from './tableLook'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
@@ -23,6 +25,8 @@ import './linkPills.css'
  *  - the card look (`card-look.json`, YAZ-5484, `cardLook.ts`): the Mac's card variables, so a card in a page and the
  *    card view draw with the vault's text and title size, hidden-word look, next mark and spacing. No file: none.
  *  - "Clicking a link" (`link-click.json`), for the link door (`openLink.ts`).
+ *  - the table look (`table-look.json`, YAZ-5487): the page's tables' defaults (`tableLook.ts`). No file: null, the
+ *    Mac's defaults.
  * Read once for each version of the vault's data (a sync that brings a new file makes a new version).
  */
 export interface VaultLook {
@@ -30,9 +34,11 @@ export interface VaultLook {
   click: LinkClick
   /** The CSS variables for the reader's root. */
   style: Record<string, string>
+  /** The vault's table look (`table-look.json`), or null with no file (or one that is not JSON). */
+  table: PhoneTableLook | null
 }
 
-export const NO_LOOK: VaultLook = { pills: NO_LINK_PILLS, click: DEFAULT_LINK_CLICK.click, style: {} }
+export const NO_LOOK: VaultLook = { pills: NO_LINK_PILLS, click: DEFAULT_LINK_CLICK.click, style: {}, table: null }
 
 async function readJson(store: VaultStore, vault: string, name: string): Promise<unknown> {
   const file = await store.read(vault, `${VAULT_CONFIG_DIR}/${name}`)
@@ -50,11 +56,12 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
   let held = looks.get(data)
   if (held === undefined) {
     held = (async () => {
-      const [rawPills, rawText, rawClick, card] = await Promise.all([readJson(store, data.vault, LINK_PILLS_FILE), readJson(store, data.vault, TEXT_FORMATTING_FILE), readJson(store, data.vault, LINK_CLICK_FILE), readCardLook(store, data.vault)])
+      const [rawPills, rawText, rawClick, card, rawTable] = await Promise.all([readJson(store, data.vault, LINK_PILLS_FILE), readJson(store, data.vault, TEXT_FORMATTING_FILE), readJson(store, data.vault, LINK_CLICK_FILE), readCardLook(store, data.vault), readJson(store, data.vault, TABLE_LOOK_FILE)])
       const clean = sanitizeLinkPills(rawPills)
       const pills = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
       const text = sanitizeTextFormatting(rawText)
-      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...headingVars(text), ...spacingVars(text.spacing), ...card } }
+      const table = rawTable === undefined ? null : tableLookSettings(sanitizeTableLook(rawTable))
+      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...headingVars(text), ...spacingVars(text.spacing), ...card }, table }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
   }
