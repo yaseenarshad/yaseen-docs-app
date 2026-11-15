@@ -749,3 +749,11 @@ body:has(.app--swiping) {
     animation: none;
   }
 }
+
+/* YAZ-5470: "Today", right of Search: the Mac's calendar glyph and the word; an action, never selected. */
+.tabbar__today {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}

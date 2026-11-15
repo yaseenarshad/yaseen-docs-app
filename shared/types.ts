@@ -9,7 +9,7 @@
 import type { IconRule } from './vaultIcons'
 import type { CardRecord } from './cardLine'
 import type { HotkeyOverrides } from './hotkeyBindings'
-import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPage'
+import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 

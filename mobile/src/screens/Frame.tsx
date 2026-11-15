@@ -2,6 +2,7 @@ import { useRef, type ReactNode } from 'react'
 import { useApp } from '../app/AppState'
 import { FORWARD_LABEL, type Forward } from '../app/help'
 import { TABS } from '../app/nav'
+import { TodayTab } from '../daily/TodayTab'
 import { setReviewTop } from './reviewTop'
 import { SyncStatus } from './SyncStatus'
 import { useEdgeBack } from './useEdgeBack'
@@ -83,6 +84,7 @@ export function Frame({
               {t.label}
             </button>
           ))}
+          <TodayTab />
         </nav>
       )}
     </div>
