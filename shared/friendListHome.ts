@@ -173,11 +173,18 @@ interface NoteGist {
   owner: string | null
   read: ReturnType<typeof readNote>
   gist: GistDoc
+  /** YAZ-5400: GitHub cut the gist at 300 files (an old list of more): it cannot be read whole. */
+  cut: boolean
 }
 
-/** The person's list gists (by the head's file name), oldest first, each read. A gist deleted meanwhile is skipped. */
+/**
+ * The person's list gists, oldest first, each read. A gist deleted meanwhile is skipped.
+ * YAZ-5400: a gist is one by ANY list file name, not only the head's: GitHub names at most 300 files of a gist (in the
+ * list call and in a read), in name order, and an old list's entry files (`notecards-friends.f.…`) sort BEFORE the head.
+ * Such a list is never taken for "no list" (that made a new, empty one).
+ */
 async function listGists(api: GistsApi): Promise<NoteGist[]> {
-  const items = (await api.list()).filter((g) => g.files.includes(INDEX_FILE)).sort(older)
+  const items = (await api.list()).filter((g) => g.files.some(isListFile)).sort(older)
   const out: NoteGist[] = []
   for (const item of items) {
     let gist: GistDoc | 'unchanged'
@@ -188,14 +195,14 @@ async function listGists(api: GistsApi): Promise<NoteGist[]> {
       throw err
     }
     if (gist === 'unchanged') continue
-    out.push({ id: item.id, createdAt: item.createdAt, owner: gist.owner ?? null, read: readNote(fileText(gist, INDEX_FILE)), gist })
+    out.push({ id: item.id, createdAt: item.createdAt, owner: gist.owner ?? null, read: readNote(fileText(gist, INDEX_FILE)), gist, cut: gist.truncated === true })
   }
   return out
 }
 
 /** An old list (a gist list, version 1 or 2) as a read-only handle (YAZ-5350: a list GitHub cut short is not read). */
 function legacyHandle(g: NoteGist): IndexFind {
-  if (g.gist.truncated === true) return { kind: 'broken', id: g.id }
+  if (g.cut) return { kind: 'broken', id: g.id, cut: true }
   const read = readListGist(g.gist)
   if (read.kind === 'newer') return { kind: 'newer', id: g.id }
   if (read.kind !== 'ok') return { kind: 'broken', id: g.id }
@@ -273,6 +280,7 @@ export async function findFriendsIndex(api: GistsApi, opts?: WriteOptions): Prom
   const gists = await listGists(api)
   const first = gists[0]
   if (first === undefined) return (await findOrphanList(ports, null, guard)) ?? { kind: 'none' }
+  if (first.cut) return { kind: 'broken', id: first.id, cut: true }
   switch (first.read.kind) {
     case 'note':
       return atHome(api, ports, first.read.home, first.id, first.owner, guard)
@@ -315,6 +323,8 @@ export async function openFriendsList(api: GistsApi, opts: WriteOptions, seed: L
   const gists = await listGists(api)
   const first = gists[0]
   if (first !== undefined) {
+    // YAZ-5400: an old list that GitHub cut at 300 files is not read, not moved, and never replaced by a new list.
+    if (first.cut) return { kind: 'broken', id: first.id, cut: true }
     if (first.read.kind === 'note') {
       const found = await atHome(api, ports, first.read.home, first.id, first.owner, guard, true)
       if (found.kind === 'ok') await tidyOldGist(api, first.gist)
@@ -591,7 +601,8 @@ export type RestartResult =
 
 /**
  * "Start the friends list again in <vault>" (YAZ-5399, the decision on the issue). Only when the note's home vault is
- * GONE (GitHub answers 404 for it: deleted, or this token has no access at all), so a working list is never replaced.
+ * GONE (GitHub answers 404 for it: deleted, or this token has no access at all), or the oldest list gist is an old list
+ * that GitHub CUT at 300 files (YAZ-5400), so a list that can be read is never replaced.
  * The old list cannot be read, so no single friend can be removed. This ends ALL sharing instead, then starts again:
  *
  * 1. EVERY pointer gist of mine (exactly our one file, in our format) is deleted: each friend, each group I am in, each
@@ -610,12 +621,13 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   const ports = await portsOf(api)
   const gists = await listGists(api)
   const first = gists[0]
-  if (first === undefined || first.read.kind !== 'note') return { kind: 'home-is-there' }
-  const home = first.read.home
+  // YAZ-5400: an old list that GitHub cut at 300 files cannot be read either: the same way out.
+  if (first === undefined || (first.read.kind !== 'note' && !first.cut)) return { kind: 'home-is-there' }
+  const home = first.read.kind === 'note' ? first.read.home : null
   const port = ports.find((p) => p.repo === target.toLowerCase())
   if (port === undefined || port.repo === home) return { kind: 'bad-target' }
   // Never over a list that is still there: the home must be gone NOW.
-  if ((await atHome(api, ports, home, first.id, first.owner, guard)).kind !== 'home-gone') return { kind: 'home-is-there' }
+  if (!first.cut && (await atHome(api, ports, home!, first.id, first.owner, guard)).kind !== 'home-gone') return { kind: 'home-is-there' }
   const deleted = { pointers: 0, numbers: 0, notes: 0 }
   // 1 and 2: every pointer, then every numbers gist, that is provably ours.
   const mine = await api.list()
@@ -648,7 +660,7 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   }
   // 4. The old list gists go (the note names a vault that is gone; an old one holds friends' pointer IDs), then the note.
   for (const g of gists) {
-    if (g.read.kind !== 'note' && g.read.kind !== 'legacy' && g.read.kind !== 'unreadable') continue
+    if (g.read.kind !== 'note' && g.read.kind !== 'legacy' && g.read.kind !== 'unreadable' && !g.cut) continue
     await removeQuietly(api, g.id)
     deleted.notes++
   }

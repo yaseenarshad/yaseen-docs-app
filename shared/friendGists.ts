@@ -634,7 +634,8 @@ export interface IndexHandle {
 export type IndexFind =
   | { kind: 'none' }
   | { kind: 'newer'; id: string }
-  | { kind: 'broken'; id: string }
+  /** `cut` (YAZ-5400): an old gist list of more than 300 files; GitHub gives only 300 names, so it cannot be read whole. */
+  | { kind: 'broken'; id: string; cut?: true }
   | { kind: 'ok'; handle: IndexHandle }
   | { kind: 'elsewhere'; home: string }
   | { kind: 'no-vault' }

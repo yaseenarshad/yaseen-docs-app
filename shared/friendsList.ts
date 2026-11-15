@@ -412,6 +412,9 @@ export const NO_LIST_ACCESS = 'Your token cannot write to the vault that holds y
 /** YAZ-5399: the words when the home vault is gone on GitHub (what happened, and what it means). */
 export const homeGoneMessage = (home: string): string =>
   `Your friends list was in the vault ${home}. GitHub does not have that vault for your account any more: it was deleted, or your token lost access to it. The list cannot be read, so no friend can be changed or removed.`
+/** YAZ-5400: the words when an old list gist has more than 300 files (GitHub gives the app only 300 of them). */
+export const LIST_CUT =
+  'Your old friends list on GitHub has more than 300 files. GitHub gives the app only 300 of them, so the app cannot read the whole list or move it. Nothing was changed, and no new list was started.'
 /** YAZ-5399: the way out, as a button. */
 export const restartAction = (vault: string): string => `Start the friends list again in ${vault}`
 /** YAZ-5399: what the way out does, said before it runs (its privacy effect). */

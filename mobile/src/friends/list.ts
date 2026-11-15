@@ -85,6 +85,12 @@ export type Unavailable =
    * out: `restartAction(vault)`, which runs `restart(vault)` after `restartWarning(vault)`.
    */
   | { kind: 'home-gone'; home: string; vaults: string[] }
+  /**
+   * YAZ-5400: my OLD friends list (a gist from before the move) has more than 300 files, and GitHub gives only 300: it
+   * cannot be read whole, so nothing is moved or written (and no new list starts). Show `LIST_CUT`, and the same way
+   * out as `home-gone`, in each of `vaults`.
+   */
+  | { kind: 'list-cut'; vaults: string[] }
   | { kind: 'failed' }
 
 export interface ShareResult {
@@ -262,6 +268,10 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       case 'newer':
         return { kind: 'newer-app' }
       case 'broken':
+        if (found.cut === true) {
+          const vaults = ((await api.repos?.()) ?? []).map((p) => p.repo)
+          return { kind: 'list-cut', vaults: [...new Set(vaults)] }
+        }
         return { kind: 'needs-repair' }
       case 'elsewhere':
         return { kind: 'list-elsewhere', home: found.home }

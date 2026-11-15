@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
-import { NO_LIST_ACCESS, homeGoneMessage, listElsewhereMessage, pasteMessage, restartAction, restartWarning, type PasteResult } from '@shared/friendsList'
+import { LIST_CUT, NO_LIST_ACCESS, homeGoneMessage, listElsewhereMessage, pasteMessage, restartAction, restartWarning, type PasteResult } from '@shared/friendsList'
 import { useApp } from '../../app/AppState'
 import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
@@ -79,7 +79,9 @@ function Unreadable({ board, refresh, service }: { board: Unavailable; refresh: 
   const app = useApp()
   switch (board.kind) {
     case 'home-gone':
-      return <HomeGone home={board.home} vaults={board.vaults} service={service} refresh={refresh} />
+      return <HomeGone message={homeGoneMessage(board.home)} vaults={board.vaults} service={service} refresh={refresh} />
+    case 'list-cut':
+      return <HomeGone message={LIST_CUT} vaults={board.vaults} service={service} refresh={refresh} />
     case 'needs-repair':
       return <Problem message={LIST_NEEDS_REPAIR} action="Try again" onAction={() => void refresh()} />
     case 'newer-app':
@@ -122,10 +124,11 @@ function Unreadable({ board, refresh, service }: { board: Unavailable; refresh: 
 }
 
 /**
- * YAZ-5399: the vault that held the friends list is gone on GitHub. The tab says what happened, and offers the way out
+ * YAZ-5399: the vault that held the friends list is gone on GitHub (or, YAZ-5400, an old list has more than 300 files
+ * and cannot be read whole). The tab says what happened, and offers the way out
  * for each other vault of this phone: "Start the friends list again in <vault>", after a confirm that says its effect.
  */
-function HomeGone({ home, vaults, service, refresh }: { home: string; vaults: readonly string[]; service: FriendsService; refresh: () => Promise<void> }) {
+function HomeGone({ message, vaults, service, refresh }: { message: string; vaults: readonly string[]; service: FriendsService; refresh: () => Promise<void> }) {
   const [asking, setAsking] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [said, setSaid] = useState<string | null>(null)
@@ -143,7 +146,7 @@ function HomeGone({ home, vaults, service, refresh }: { home: string; vaults: re
   }
   return (
     <div>
-      <Problem message={homeGoneMessage(home)} />
+      <Problem message={message} />
       {vaults.length === 0 ? (
         <p className="muted">Add another of your vaults on this phone to start the friends list again there.</p>
       ) : (
@@ -597,6 +600,7 @@ const UNAVAILABLE_WORDS: Record<Unavailable['kind'], string> = {
   'list-elsewhere': 'Your friends list is in another of your vaults. Add that vault on this phone to use Friends here.',
   'no-list-access': NO_LIST_ACCESS,
   'home-gone': 'The vault that held your friends list is gone on GitHub. Open Friends to start the list again.',
+  'list-cut': LIST_CUT,
   failed: 'Something went wrong. Try again.',
 }
 
