@@ -96,7 +96,7 @@ describe('YAZ-5456: find in page', () => {
     await act(async () => void box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, bubbles: true })))
     expect(count(h)).toBe('5 of 5')
     await type(h, 'zebra')
-    expect(count(h)).toBe('0 of 0')
+    expect(count(h)).toBe('No matches') // YAZ-5522 N13: was "0 of 0"
     expect(h.button('Next match')!.disabled).toBe(true)
     await act(async () => void box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
     expect(h.host.querySelector('.find-line')).toBeNull()

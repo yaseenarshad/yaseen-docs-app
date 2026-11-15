@@ -8,7 +8,7 @@ import { landingTop } from '../headings'
  * and its ID do not. The matching is the Mac's own (`textMatches`), and so is the paint: the CSS Custom Highlight API
  * (`paintFindRanges`, `::highlight(find-match)`), ranges over the text, no change to the page's DOM.
  *
- * "2 of 7" (the Mac's words; "0 of 0" for none), ↑ and ↓ step (and wrap), Enter steps on, Shift-Enter back; each step
+ * "2 of 7" (the Mac's words), "No matches" for none (YAZ-5522 N13; the Mac says "0 of 0"), ↑ and ↓ step (and wrap), Enter steps on, Shift-Enter back; each step
  * puts the match in the upper third of the screen. ✕ or Escape closes, and the paint goes. A page that draws again (a
  * long page still drawing its slices, or the sync's redraw) is found again, at the same match.
  *
@@ -82,7 +82,7 @@ export default function FindBar({ host, onClose }: { host: RefObject<HTMLElement
     } else if (s.matches.length > 0) s.active = (s.active + delta + s.matches.length) % s.matches.length
     show(true)
   }
-  const count = query === '' ? '' : result.total === 0 ? '0 of 0' : `${result.active + 1} of ${result.total}`
+  const count = query === '' ? '' : result.total === 0 ? 'No matches' : `${result.active + 1} of ${result.total}`
   return (
     <div className="find-line" role="search">
       <input
