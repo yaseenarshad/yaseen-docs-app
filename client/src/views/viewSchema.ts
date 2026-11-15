@@ -1,6 +1,7 @@
 import { type Document, isMap, parseDocument } from 'yaml'
 import { isRecord } from '@shared/guards'
 import { headerRowOwn, type HeaderRowOwn } from '@shared/types'
+import type { CardTable } from './cardView'
 
 /**
  * The Obsidian Bases view-schema model — the shape a folder's `views` block round-trips
@@ -124,8 +125,12 @@ export interface ViewDef {
    * has Cards and IDs on.
    */
   rows?: 'pages' | 'cards'
-  /** The columns the view shows while it lists cards (YAZ-5319), as `order` for pages: each mode keeps its own. */
-  cardOrder?: string[]
+  /**
+   * The view's table of cards (YAZ-5349 follow-up, `cardView.ts`): while it lists cards, its columns, their types and
+   * labels, sorts, filters, groups, widths … are these, and its own keys above are its pages' table, untouched.
+   * A YAZ-5319 view's `cardOrder` reads as this table's `order` until the next write moves it here.
+   */
+  cardView?: CardTable
   [extra: string]: unknown
 }
 

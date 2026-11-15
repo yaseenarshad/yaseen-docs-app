@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import { IMAGE_SIZE_DEFAULT, IMAGE_SIZE_MAX, IMAGE_SIZE_MIN, type ImageShape, type IndexRecord, type PropertiesResponse, type PropertyFormat, type PropertyKind } from '@shared/types'
 import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
@@ -13,6 +13,7 @@ import { isCardKey } from '../cardRows'
 import { displayNameOf, setDisplayName } from './columnLabel'
 import { declarationForKind } from './declarationForKind'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
+import { afterAllow, EditLockContext } from '../editGuard'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import type { SeparateCounts, SeparateKeep } from '../separateValues'
 import { PROPERTY_LABELS, PropertyOptionsEditor, PropertyTypeIcon } from './PropertyDefinitionEditor'
@@ -369,6 +370,7 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
   const [saving, setSaving] = useState(false)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [deleting, setDeleting] = useState<string | null>(null)
+  const editLock = useContext(EditLockContext)
   /** "Add to <folder>" on a ◌ field (YAZ-4772): the C4A ask, open. */
   const [adding, setAdding] = useState(false)
   /** Turning "Separate value for <folder>" off, awaiting its ask (YAZ-4713 1B): the numbers, taken once as it opens. */
@@ -822,7 +824,8 @@ export function ColumnDetail({ columnKey: key, def, view, viewIndex, records, on
             aria-label={`Delete column ${label}`}
             disabled={reason !== null}
             title={reason ?? undefined}
-            onClick={() => setDeleting(key)}
+            // Read only asks first (YAZ-5411): "Allow edits?", then the sheet; Cancel opens nothing.
+            onClick={() => void afterAllow(editLock, undefined, () => setDeleting(key), () => undefined)}
           >
             <RowLabel icon="trash">Delete column…</RowLabel>
           </button>

@@ -49,6 +49,7 @@ import './outline/bulletThreading.css'
 import './outline/sectionIndent.css'
 import './softBreaks.css'
 import { splitFrontmatter } from '@shared/frontmatter'
+import { withLf } from '@shared/lineEnds'
 import { CODE_WIDTH_KEY, readBlockWidth, readFindFolds, readOutsideGlow, readPageSwitches, writeBlockWidth, writeFindFolds, writeOutsideGlow, writePageSwitch, TABLE_WIDTH_KEY, type PageSwitchKey } from '@shared/pageSwitches'
 import { watchBlockRoom } from './blockRoom'
 import { undo } from '@milkdown/kit/prose/history'
@@ -929,6 +930,8 @@ function CrepeHost({
     el.className = 'editor-instance'
     host.appendChild(el)
     const { frontmatter, body } = splitFrontmatter(file.content)
+    // The editor holds the body with `\n` alone; the save writes the page's own line end back (YAZ-5150).
+    const text = withLf(body)
     // A copied page starts with its source's LIVE folds (YAZ-2951 S2), never the ones another copy stored last.
     const start = startViewRef.current
     const startFolds = start?.folds ?? storage.getFolds(root, file.path)
@@ -948,7 +951,7 @@ function CrepeHost({
     const linkPlace = wikilinkCandidates === undefined ? undefined : { root, pagePath: file.path, candidates: wikilinkCandidates, candidatesOf }
     const crepe = createCrepe({
       root: el,
-      defaultValue: body,
+      defaultValue: text,
       onMarkdownUpdated: (md) => controller?.update(md),
       // Cards (YAZ-4961): `/card` takes its ID from the vault's door at once; the card's open hook names this page.
       cards: { path: file.path, mintId: takePageId, convert: convert.door },
@@ -1146,7 +1149,7 @@ function CrepeHost({
       // path (Links E1, GRO-2194): apply it OVER the fresh disk baseline as an unsaved
       // change, so autosave writes it to the NEW path — the buffer survives the rename.
       const buf = takeRenameBuffer(file.path)
-      if (buf !== null && buf.body !== body) {
+      if (buf !== null && buf.body !== text) {
         setMarkdown(crepe, buf.body)
         // A rebuilt state starts zoomed out: back to the tab's bullet, as a rebuild from disk does (E1). A rename keeps
         // its zoom (YAZ-3676 F3); a bullet the buffer does not have stays zoomed out, and the report below says so.
@@ -1207,8 +1210,9 @@ function CrepeHost({
       const fresh = await api.readFile(file.path)
       if (cancelled) return
       const split = splitFrontmatter(fresh.content)
+      const freshText = withLf(split.body)
       // A rewrite rebuilds the page, so nothing can glow: the one-line note says the whole page changed (YAZ-3704).
-      if (applyExternalMarkdown(crepe, split.body, quiet) === 'rebuilt' && !quiet) outsideChanges.markWholePage()
+      if (applyExternalMarkdown(crepe, freshText, quiet) === 'rebuilt' && !quiet) outsideChanges.markWholePage()
       // A rebuild makes new plugin views, so the zoom's settle timer is gone: a bullet the rewrite removed is told here (YAZ-3676 F3).
       tellRealZoom(crepe, zoomKeyRef.current ?? null)
       markReloaded(() => getMarkdownForSave(crepe), fresh.mtime, split.frontmatter, split.body)
@@ -1253,10 +1257,11 @@ function CrepeHost({
         // placed (D2), and then nothing changed. A merge makes the new file the baseline, so the merged
         // page differs from it and the autosave writes it 500 ms later, against the new mtime.
         const split = splitFrontmatter(fresh.content)
-        const merge = mergeExternalMarkdown(crepe, diskParts().body, split.body, quiet)
+        const freshText = withLf(split.body)
+        const merge = mergeExternalMarkdown(crepe, diskParts().body, freshText, quiet)
         if (merge === 'conflict') return reportConflict(mtime)
         // 'unchanged': the file already holds the typing, so the live page is the baseline and nothing saves.
-        markReloaded(merge === 'unchanged' ? () => getMarkdownForSave(crepe) : () => split.body, fresh.mtime, split.frontmatter, split.body)
+        markReloaded(merge === 'unchanged' ? () => getMarkdownForSave(crepe) : () => freshText, fresh.mtime, split.frontmatter, split.body)
         c.update(getMarkdownForSave(crepe))
         setDisk(fresh.content)
         diskLanded()

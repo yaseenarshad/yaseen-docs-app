@@ -13,7 +13,8 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { fileKind } from '@shared/fileKind'
 import { api } from '../api'
-import { boardFolder } from '../lib/paths'
+import { boardFolder, dirname } from '../lib/paths'
+import { PlaceName } from './PlaceName'
 import { portalTarget, usePlacement, type PreviewAnchor } from './previewPlacement'
 import './boardPreview.css'
 
@@ -70,7 +71,7 @@ export default function MediaHoverPreview({ root, path, name, hint, anchor }: Me
     <div className="board-preview media-hover" role="group" aria-label={`Preview of ${name}`} style={placement}>
       <div className="board-preview__header" role="status">
         <span className="board-preview__name">{name}</span>
-        <span className="board-preview__folder">{boardFolder(root, path)}</span>
+        <PlaceName className="board-preview__folder" path={dirname(path)} kind="folder" label={boardFolder(root, path)} />
       </div>
       {hint !== undefined && <div className="board-preview__hint">{hint}</div>}
       <div className="board-preview__body">

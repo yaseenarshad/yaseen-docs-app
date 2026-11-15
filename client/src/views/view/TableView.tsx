@@ -46,6 +46,7 @@ import { useViewDefaults } from '../viewDefaults'
 import { orderOf } from './DirectionPicker'
 import { TextField } from './TextField'
 import { ConfirmDeleteColumn } from './ConfirmDeleteColumn'
+import { afterAllow, EditLockContext } from '../editGuard'
 import { ColumnMark, columnMark } from './ColumnMark'
 import { HoverTip } from '../../components/HoverTip'
 import { FileFieldIcon, FormulaIcon } from './icons'
@@ -375,6 +376,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number; key: string | null } | null>(null)
   /** "Delete column…" awaiting its confirm (YAZ-1513). */
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  /** The folder page's Read only (YAZ-5411): a sheet of a change that writes files, and a locked cell's edit, ask "Allow edits?" first. */
+  const editLock = useContext(EditLockContext)
   const wrapRef = useRef<HTMLDivElement>(null)
   /**
    * The ancestor that scrolls the table vertically (YAZ-4636 T6): in a folder page the wrap takes the table's whole
@@ -1688,6 +1691,18 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
     setHeaderMenu({ x: event.clientX, y: event.clientY, key })
   }
 
+  /**
+   * A cell the vault's Read only locks (YAZ-5411): its edit — a double-click, Enter or a typed letter — asks "Allow
+   * edits?" first, and once allowed the cell opens as that edit would have. False: no ask (a cell the box does not
+   * open: a page's own switch keeps its tip).
+   */
+  const askToEdit = (path: string, open: () => void): boolean => {
+    if (editLock === null || !readOnly.has(path) || !editLock.locked(path)) return false
+    void editLock.ask().then((ok) => ok && open())
+    return true
+  }
+  const openCellEditor = (r: number, c: number) => () => wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${r}:${c}"] [data-edit]`)?.click()
+
   /** Arrow keys move between body cells (`data-cell="row:col"`); Enter on the name column opens the page. */
   const onKeyDown = (e: ReactKeyboardEvent) => {
     const at = (e.target as HTMLElement).dataset.cell
@@ -1711,6 +1726,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
       const bare = bares[c]
       const kind = bare == null || flat[r] === undefined ? null : cellEditor(flat[r].record.properties[bare], typings[c])
       const open = (e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')
+      if (open === null && kind !== null && flat[r] !== undefined && askToEdit(flat[r].record.path, openCellEditor(r, c))) return e.preventDefault()
       if (open === null || kind === null || !TYPE_KINDS.has(kind)) return
       e.preventDefault()
       // The click mounts the field now, so the letter goes into it.
@@ -1729,7 +1745,9 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
         if (flat[r]) openByKey(e, flat[r].record.path, { ...openHandlers, onOpenWindow })
       } else {
         // Start editing (or toggle the checkbox) through the same delegated control (5B, GRO-2142).
-        ;(e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')?.click()
+        const open = (e.target as HTMLElement).querySelector<HTMLElement>('[data-edit]')
+        if (open !== null) open.click()
+        else if (flat[r] !== undefined && bares[c] != null) askToEdit(flat[r].record.path, openCellEditor(r, c))
       }
       return
     }
@@ -1917,7 +1935,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
               data-row={line.r}
               // The row's only drag source (YAZ-4603 D53), a ⋮⋮ on hover (views.css): onto another group, or the Other
               // files tray, the only target of an ungrouped row (YAZ-4597 D46). A drag across cells selects.
-              {...(cardRows ? {} : line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path)))}
+              {...(cardRows ? {} : line.g === null || line.at === null ? trayRowDrag(moveToTray, line.row.record.path) : dnd.source(line.row.record.path, line.g, line.at, readOnly.has(line.row.record.path) && editLock?.locked(line.row.record.path) !== true))}
               onClick={(e) => (e.currentTarget.draggable ? wrapRef.current?.querySelector<HTMLElement>(`[data-cell="${line.r}:0"]`)?.focus({ preventScroll: true }) : undefined)}
             >
               {numbered && line.n}
@@ -1949,7 +1967,11 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                 // A clipped cell shows its full value on hover only when it is cut (YAZ-4582 D29, YAZ-4867): `cutCellCard`.
                 title={c === nameCol && locked ? readOnlyTip(unit) : undefined}
                 data-clip-title={c === nameCol && locked ? undefined : clipped[c] ? (c === nameCol ? title : clipTitle(v, resolve)) : undefined}
-                onDoubleClick={c === nameCol ? (locked || cardRows ? undefined : () => setTitleEdit(rowKey(line))) : bares[c] === null ? undefined : activateEditorFromCell}
+                onDoubleClick={
+                  c === nameCol
+                    ? cardRows ? undefined : locked ? () => void askToEdit(path, () => setTitleEdit(rowKey(line))) : () => setTitleEdit(rowKey(line))
+                    : bares[c] === null ? undefined : locked ? () => void askToEdit(path, openCellEditor(line.r, c)) : activateEditorFromCell
+                }
                 {...(c !== nameCol && !locked && typings[c]?.assigned === 'image' ? imageDrop(line.r, c) : {})}
               >
                 {c === nameCol ? (
@@ -2348,7 +2370,8 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
             rowNumbers={numbered}
             onUpdate={onUpdate}
             declareColumn={declareColumn}
-            onDeleteColumn={deleteColumn && setConfirmDelete}
+            // Read only asks first (YAZ-5411): "Allow edits?", then the sheet; Cancel opens nothing.
+            onDeleteColumn={deleteColumn && ((key: string) => void afterAllow(editLock, undefined, () => setConfirmDelete(key), () => undefined))}
             onOpenFilter={onOpenFilter}
             onClose={() => setHeaderMenu(null)}
           />

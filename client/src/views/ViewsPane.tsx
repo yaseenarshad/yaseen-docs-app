@@ -13,7 +13,7 @@ import { isMentionsColumn, mentionsColumns } from './mentionsColumn'
 import { useVaultReviewSettings } from '../review/useReviewSettings'
 import { absFrom, relTo } from '../lib/paths'
 import { storage } from '../lib/storage'
-import { type FilterNode, type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderPages, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
+import { type FilterNode, type Mutate, type ViewSet, type ViewDef, type ParsedViews, folderColumnOf, groupDepthOf, hidesSubfolderPages, parseViews, rewriteViews, serializeViews, showsFolderRows, updateViews } from './viewSchema'
 import { type GroupLevelStepActions, type LevelNode, GroupLevelStepsContext, branchSteps, levelSteps } from './groupLevelSteps'
 import { type Group, type Row, propertyKeys, propertyLabel, runView } from './engine'
 import { equals, fromYaml, render } from './expr'
@@ -40,6 +40,9 @@ import { type ViewTabsProps, viewTypeLabel } from './view/ViewTabs'
 import { PAGE_VIEW_TYPE } from './pageView'
 import { NO_READ_ONLY, readOnlyTip, writableKey } from './readOnlyRows'
 import { type CardRow, cardLineChange, cardRowOfRecord, cardRowRecords, cardRowsOf } from './cardRows'
+import { cardColumnsOf, cardLensOn, throughCardLens } from './cardView'
+import { cardFolderHost } from './cardHost'
+import { createCardFile } from '../review/newCardFile'
 import { CardRows, type CardRowsValue } from './view/cardRowsContext'
 import { landOnCard } from '../editor/card/cardOpen'
 import { changeCardLine } from '../review/cardFile'
@@ -63,6 +66,8 @@ import { copyText } from '../editor/linkMenu'
 import { FindBar } from '../editor/find/FindBar'
 import { ViewFind, useViewFind } from './view/viewFind'
 import { CHANGE_CANCELLED, useConfirmChanges } from './confirmChanges'
+import { afterAllow, EditLockContext, guardEdits, type EditLock } from './editGuard'
+import { isViewOnlyChange } from './viewOnlyChange'
 
 /** What Edit column says of a column's other side (YAZ-4781 R1): a link column's Relation folder and choice, or the link column a tied column belongs to. */
 export type RelationSide = { shows: string | null; both?: boolean; tiedTo?: undefined } | { tiedTo: string; shows?: undefined }
@@ -186,8 +191,14 @@ export interface FolderHost {
    * sound, the Undo toast). The pane asks first (`useDeletePages`). Absent: no such item.
    */
   trash?: (paths: readonly string[], asked?: boolean) => Promise<void>
-  /** The read-only door (YAZ-4985), asked BEFORE the delete sheet; `trash` then hears `asked`. Absent: no ask. */
-  allowDelete?: () => Promise<boolean>
+  /**
+   * The vault's file-action door (YAZ-4985: "This vault is read only" › Just this once · 1 minute · 10 minutes · Cancel):
+   * asked BEFORE the delete sheet (`trash` then hears `asked`), and before a Cards table's "+ New" makes a card file, as
+   * a page's New does (YAZ-5411). Absent: no ask.
+   */
+  allowFileAction?: () => Promise<boolean>
+  /** The folder page's Read only, which a change that writes files asks first (YAZ-5411, `editGuard.ts`). Absent: never locked. */
+  editLock?: EditLock
   /** The row menu's "Duplicate page" (YAZ-4592 S26): a copy beside the page (`file.duplicate`). Absent: no such item. */
   duplicate?: (path: string) => void
 }
@@ -306,7 +317,7 @@ const PILL_HOVER = '\u0000pill'
 /** A folder row has no page to preview (YAZ-4579 D32): the hover panel is the pages', so its dwell never starts. */
 const noHover = (): void => undefined
 
-export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: pageRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder, hoverPreview = false, hoverLinks = false, confirmChanges = false, onConfirmChangesOff, showNewButtons = true, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
+export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, records: pageRecords, folderRows = NO_FOLDER_ROWS, readOnly = NO_READ_ONLY, properties = null, onOpenFile, folder: pageHost, hoverPreview = false, hoverLinks = false, confirmChanges = false, onConfirmChangesOff, showNewButtons = true, previewScope, diagramDarkColors = 'adapt', folderPages: defaults = DEFAULT_FOLDER_PAGES }: ViewsPaneProps) {
   const unit = useUnit()
   // The START may persist (YAZ-1104); which view is ACTIVE stays session state — switching still
   // writes nothing, and YAZ-1471 re-ruling 🔒 rule 4 (the tabs edit again) did not move that line:
@@ -384,20 +395,25 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     const { id, by } = itemHover.store.getState()
     if (by === 'hover' && (id === PILL_HOVER ? !hoverLinks : !hoverPreview)) closeItemHover()
   }, [hoverPreview, hoverLinks, itemHover.store, closeItemHover])
-  const { def } = parsed
-  const views = def.views
+  const views = parsed.def.views
   const index = Math.max(0, Math.min(active, views.length - 1))
+  // The vault's card settings (YAZ-4967): the "Due" column counts with them; published by the vault's scope, off while IDs are.
+  const cardSettings = useVaultReviewSettings(root)
+  // "Show cards as rows" (YAZ-5319) is offered while the vault has Cards and IDs on; off, a view that lists cards lists its pages.
+  const cardsOffered = cardSettings?.enabled === true && pageHost.wikilinks.ids
+  /**
+   * A view that lists cards is a table OF CARDS (YAZ-5349 follow-up): every reader below sees the def through the card
+   * lens (`cardView.ts`), the cards' own table where the pages' stands, and every write goes back through it (`update`).
+   */
+  const lensed = cardsOffered && cardRowsOf(views[index]!)
+  const def = useMemo(() => (lensed ? cardLensOn(parsed.def, index) : parsed.def), [lensed, parsed.def, index])
   /**
    * NEVER undefined (YAZ-861): `views` cannot be empty — `folderSettings` and the one mount's
    * `folderViewSet` both fall back to `DEFAULT_VIEWS` — and `index` is clamped into that list.
    */
-  const own = views[index]!
+  const own = def.views[index]!
   // Settings › Folder pages (YAZ-4585, D34): every reader below sees the view's own keys, then Settings'. The menus
   // read `def.views[viewIndex]` for the view as written ("from Settings").
-  // The vault's card settings (YAZ-4967): the "Due" column counts with them; published by the vault's scope, off while IDs are.
-  const cardSettings = useVaultReviewSettings(root)
-  // "Show cards as rows" (YAZ-5319) is offered while the vault has Cards and IDs on; off, a view that lists cards lists its pages.
-  const cardsOffered = cardSettings?.enabled === true && folder.wikilinks.ids
   const view = useMemo(() => {
     const filled = withDefaults(own, defaults)
     return filled.rows === 'cards' && !cardsOffered ? { ...filled, rows: undefined } : filled
@@ -413,8 +429,47 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   cardInPage.current = useMemo(() => (cardRowAt === null ? null : new Map([...cardRowAt].filter(([, row]) => row.pageTitle !== null))), [cardRowAt])
   /** A card row in a read-only page is read only (YAZ-3076 D6); the pages' set for pages. */
   const rowsReadOnly = useMemo(() => (cardRowAt === null || readOnly.size === 0 ? readOnly : new Set([...cardRowAt].filter(([, row]) => readOnly.has(row.page)).map(([path]) => path))), [cardRowAt, readOnly])
+  /** The views' one write, for the Cards table's host: set once `update` is made below. */
+  const updateRef = useRef<Mutate>(() => undefined)
+  const defRef = useRef(def)
+  defRef.current = def
+  const cardColumns = cards ? cardColumnsOf(own) : null
+  /**
+   * The folder's bundle as this view's rows have it (YAZ-5349 follow-up): a Cards table's column doors and "+ New" are
+   * the cards' (`cardHost.ts`), the rest the page's. Everything below reads `folder`, never which kind it shows.
+   */
+  const doors = useMemo(
+    () =>
+      cardColumns === null
+        ? pageHost
+        : cardFolderHost(pageHost, {
+            viewIndex: index,
+            columns: cardColumns,
+            records,
+            here: relTo(root, folderPath),
+            dir: folderPath,
+            readOnly,
+            update: (...a) => updateRef.current(...a),
+            def: () => defRef.current,
+            changeLine: changeCardLine,
+            createCard: createCardFile,
+          }),
+    [cardColumns, pageHost, index, records, root, folderPath, readOnly],
+  )
+  /**
+   * Read only asks first (YAZ-5411): every door that writes files waits on the folder page's "Allow edits?", Pages rows
+   * and Cards rows alike (`editGuard.ts`); one that waited runs on the doors of the render after the unlock.
+   */
+  const latestDoors = useRef(doors)
+  latestDoors.current = doors
+  const folder = useMemo(() => guardEdits(doors, () => latestDoors.current), [doors])
+  const lock = folder.editLock
+  /** The page a row's change writes: a card row's page (YAZ-5319), else the row itself. */
+  const pageOfRow = (path: string): string => cardRowAt?.get(path)?.page ?? path
+  /** The lock as the views ask it, by row: a card row is its page's (YAZ-5319). */
+  const rowLock = useMemo<EditLock | null>(() => (lock === undefined ? null : { locked: (row) => lock.locked(row === undefined ? undefined : cardRowAt?.get(row)?.page ?? row), ask: lock.ask }), [lock, cardRowAt])
   // "Delete page…" (YAZ-4592 S26): the confirm sheet, unless Settings › Folder pages › Ask before deleting pages is off.
-  const { confirmDeletePages, sheet: deleteSheet } = useDeletePages(defaults.askBeforeDelete, folder.trash, folder.allowDelete, (path) => pageRecords.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, ''))
+  const { confirmDeletePages, sheet: deleteSheet } = useDeletePages(defaults.askBeforeDelete, folder.trash, folder.allowFileAction, (path) => pageRecords.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, ''))
   useEffect(() => {
     if (backKey !== undefined) keepBackView(backKey, view.name)
   }, [backKey, view.name])
@@ -489,8 +544,14 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * keeps a write off the history.
    */
   const update = (mutate: (def: ViewSet) => void, undo?: string, after?: () => void, onHistory = true) => {
+    // A change of what is there — a column's label, its declaration — asks "Allow edits?" first (YAZ-5411); a view change never does.
+    const changes = lensed ? throughCardLens(index, mutate) : mutate
+    if (lock?.locked() === true && !isViewOnlyChange(latest.current.parsed.def, rewriteViews(latest.current.parsed, changes).def)) {
+      void lock.ask().then((ok) => ok && updateRef.current(mutate, undo, after, onHistory))
+      return
+    }
     const before = latest.current.parsed.def
-    const next = write(mutate)
+    const next = write(changes)
     if ((undo === undefined && !onHistory) || next === null || JSON.stringify(next) === JSON.stringify(before)) return
     /** Lays the change from `from` to `to` onto the def current then: `restore` inverts the gesture, the redo repeats it. */
     const lay = (from: ViewSet, to: ViewSet) => () =>
@@ -507,6 +568,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     if (step !== null) history.push(step)
     if (undo !== undefined) folder.onNotice?.(undo, 'info', 'undo', { label: 'Undo', run: step === null ? restore : () => void history.undoStep(step), fades: true })
   }
+  updateRef.current = update
 
   // 5B's clearing discipline: a pending move holds until the index refetch moves that key off the
   // raw it had at commit time (our write landing, or a concurrent writer winning) — never before.
@@ -794,19 +856,25 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   }, [])
   const titleOf = (path: string) => records.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, '')
   /** A drop that names where it went asks first (13AN); undo's write back (no `to`) does not. */
-  const moveValues = (path: string, writes: PendingMove, to?: string) => {
+  const moveValues = (path: string, writes: PendingMove, to?: string): void =>
+    void afterAllow(lock, pageOfRow(path), () => paneDoors.current.moveValuesNow(path, writes, to), () => undefined)
+  const moveValuesNow = (path: string, writes: PendingMove, to?: string) => {
     if (confirmChange === undefined || to === undefined) return applyMove(path, writes, to)
     void confirmChange({ kind: 'Move', page: titleOf(path), to, action: 'Move', point: lastPointer.current }).then((ok) => ok && applyMove(path, writes, to))
   }
   /** A List or Cards cell's write (13AN): asked by the item; a cancel puts the old value back (`CHANGE_CANCELLED`). */
-  const askedWriteValue = (path: string, key: string, value: unknown): Promise<unknown> => {
+  const askedWriteValue = (path: string, key: string, value: unknown): Promise<unknown> =>
+    afterAllow(lock, pageOfRow(path), () => paneDoors.current.askedWriteValueNow(path, key, value), () => Promise.reject(CHANGE_CANCELLED))
+  const askedWriteValueNow = (path: string, key: string, value: unknown): Promise<unknown> => {
     if (confirmChange === undefined) return writeValue(path, key, value)
     const anchor = document.activeElement instanceof Element ? document.activeElement.closest('li, .view-card, td') : null
     const was = records.find((r) => r.path === path)?.properties[key]
     return confirmChange({ kind: propertyLabel(def, key), page: titleOf(path), from: was, to: value, anchor }).then((ok) => (ok ? writeValue(path, key, value) : Promise.reject(CHANGE_CANCELLED)))
   }
   /** A title edit renames the page (13AN): asked first. */
-  const askedRetitle = (path: string, title: string): void => {
+  const askedRetitle = (path: string, title: string): void =>
+    void afterAllow(lock, pageOfRow(path), () => paneDoors.current.askedRetitleNow(path, title), () => undefined)
+  const askedRetitleNow = (path: string, title: string): void => {
     if (confirmChange === undefined) return folder.retitle(path, title)
     const anchor = document.activeElement instanceof Element ? document.activeElement.closest('td') : null
     void confirmChange({ kind: 'Rename', from: titleOf(path), to: title, action: 'Rename', anchor }).then((ok) => ok && folder.retitle(path, title))
@@ -824,7 +892,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       },
       (err: unknown) => {
         setMoves((m) => Object.fromEntries(Object.entries(m).filter(([p]) => p !== path)))
-        setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
+        // A Cancel of "Allow edits?" (YAZ-5411): the card snaps back, and nothing is wrong.
+        if (err !== CHANGE_CANCELLED) setMoveError({ path, message: err instanceof Error ? err.message : String(err) })
       },
     )
   }
@@ -957,7 +1026,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       .then((path) => {
         if (name === undefined) open(path)
       })
-      .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+      .catch((err: unknown) => err !== CHANGE_CANCELLED && setCreateError(err instanceof Error ? err.message : String(err)))
   }
 
   /**
@@ -1001,7 +1070,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         return path
       },
       (err: unknown) => {
-        setCreateError(err instanceof Error ? err.message : String(err))
+        if (err !== CHANGE_CANCELLED) setCreateError(err instanceof Error ? err.message : String(err))
         throw err
       },
     )
@@ -1044,9 +1113,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * in one write of its page (`changeCardLine`, `cardLineChange`): Card status writes `off`, Card up next writes `next`, a
    * card property its part (YAZ-5385).
    */
-  const writeRowValues = (path: string, writes: readonly PropertyWrite[]): Promise<unknown> => {
+  const writeRowValues = (path: string, writes: readonly PropertyWrite[]): Promise<unknown> =>
+    afterAllow(lock, pageOfRow(path), () => paneDoors.current.writeRowValuesNow(path, writes), () => Promise.reject(CHANGE_CANCELLED))
+  const writeRowValuesNow = (path: string, writes: readonly PropertyWrite[]): Promise<unknown> => {
     const card = cardRowAt?.get(path)
-    if (card === undefined) return folder.writeValues(path, writes)
+    if (card === undefined) return doors.writeValues(path, writes)
     if (readOnly.has(card.page)) return Promise.reject(new Error(readOnlyTip(unit)))
     return changeCardLine(card.page, card.id, cardLineChange(writes), card.index)
   }
@@ -1163,7 +1234,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         search={search}
         onSearch={setSearch}
         onUpdate={update}
-        onNew={newButtons && !cards ? () => onNewPage(null) : undefined}
+        onNew={newButtons ? () => onNewPage(null) : undefined}
         allGroupKeys={allGroupKeys}
         collapsed={collapsed}
         onSetAllGroups={writeCollapsed}
@@ -1189,6 +1260,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
         </p>
       )}
       {/* A Number or Date cell's format (YAZ-4591): the views alone read the declarations, never the page window's own panel. */}
+      <EditLockContext.Provider value={rowLock}>
       <ColumnDecls.Provider value={folder.settings.columns}>
       {/* An Image column's pictures (YAZ-4802) load from this vault. */}
       <ImageVault.Provider value={root}>
@@ -1220,9 +1292,10 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onNotice={folder.onNotice}
           onMoveToGroup={onMoveToGroup}
           moveError={moveError}
-          // A card row is no page (YAZ-5319): no new row, no Duplicate, no Delete page.
-          onNewInGroup={cards ? undefined : onNewPage}
-          newRows={newButtons && !cards}
+          // A card row is no page (YAZ-5319): no Duplicate, no Delete page, no title edit below. "+ New" makes a card
+          // file (`cardHost.ts`).
+          onNewInGroup={onNewPage}
+          newRows={newButtons}
           root={root}
           properties={properties}
           settings={folder.settings}
@@ -1394,6 +1467,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
       </ViewFind.Provider>
       </ImageVault.Provider>
       </ColumnDecls.Provider>
+      </EditLockContext.Provider>
       {pages.length > 0 && (
         <p className="views-pane__notes" role="note">
           {pages.join(' · ')}
@@ -1436,7 +1510,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   )
   // The vault's link pills look (YAZ-4924): the pieces a cell's pill gains, from the vault's resolve source.
   const pillLook = usePillLook(folder.wikilinks)
+  /** This render's writes, for a change that waited on "Allow edits?" (YAZ-5411): it runs on the doors current then. */
+  const paneDoors = useRef({ writeRowValuesNow, moveValuesNow, askedWriteValueNow, askedRetitleNow })
+  paneDoors.current = { writeRowValuesNow, moveValuesNow, askedWriteValueNow, askedRetitleNow }
   // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564); the cells show links as pills (YAZ-4601).
+
   return (
     <ViewDefaults.Provider value={defaults}>
       <LinkFoldersContext.Provider value={linkFolders}>

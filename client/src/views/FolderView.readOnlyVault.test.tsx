@@ -191,7 +191,7 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     expect(duplicate).toHaveBeenCalledExactlyOnceWith({ path: LEAD })
   })
 
-  it('the vault On: the chip shows with no `readonly` in `.folder.md`; the title and every cell are locked; a content write (a column rename) is refused; nothing is written; the box has no "Turn Read only off"', async () => {
+  it('the vault On: the chip shows with no `readonly` in `.folder.md`; the title and every cell are locked; a content write (a column rename) asks "Allow edits?" first (YAZ-5411); nothing is written; the box has no "Turn Read only off"', async () => {
     const el = await mount(true)
     expect(chip(el)?.textContent).toBe('Read only')
     expect(q<HTMLElement>(el, '.page-title').getAttribute('tabindex')).toBeNull()
@@ -200,23 +200,20 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     renameColumn(el, 'Priority', 'Importance')
     await flush()
     expect(writeFile).not.toHaveBeenCalled()
-    expect(errorLine(el)).toBe('Could not update the folder: This folder page is read only')
-    click(chip(el)!)
+    expect(errorLine(el)).toBeNull()
     expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
   })
 
-  // Round 3: his picture — the chip read "Editing · 0:58" while the red line still said the page is read only.
-  it('the red line of a refused write goes when the page unlocks, and the same write then goes through', async () => {
+  // Round 3: his picture — the chip read "Editing · 0:58" while the red line still said the page is read only. YAZ-5411:
+  // no red line at all now — the rename asks first, and goes on once allowed, with no second rename.
+  it('a content write asks first; a time choice unlocks the tab and the same write goes through, with no red line', async () => {
     const el = await mount(true)
     renameColumn(el, 'Priority', 'Importance')
     await flush()
-    expect(errorLine(el)).toBe('Could not update the folder: This folder page is read only')
-    click(chip(el)!)
-    click(boxButton(el, 'Allow edits for 1 minute'))
-    expect(chip(el)?.textContent).toBe('Editing · 1:00')
     expect(errorLine(el)).toBeNull()
-    renameColumn(el, 'Priority', 'Importance')
+    click(boxButton(el, 'Allow edits for 1 minute'))
     await flush()
+    expect(chip(el)?.textContent).toBe('Editing · 1:00')
     expect(writeFile).toHaveBeenCalledTimes(1)
     expect(disk.get(SETTINGS_FILE)?.content).toContain('displayName: Importance')
     expect(errorLine(el)).toBeNull()
@@ -257,12 +254,15 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     expect(lockedCell(el, 'Lead Gen')).toBe(true)
   })
 
-  it('a mixed write — Add column to the right, a declaration and the view\'s order in one — is refused whole', async () => {
+  it('a mixed write — Add column to the right, a declaration and the view\'s order in one — asks first; Cancel writes none of it (YAZ-5411)', async () => {
     const el = await mount(true)
     addColumnRight(el, 'Priority', 'owner')
     await flush()
+    expect(boxLabels(el)).toContain('Cancel')
+    click(boxButton(el, 'Cancel'))
+    await flush()
     expect(writeFile).not.toHaveBeenCalled()
-    expect(errorLine(el)).toBe('Could not update the folder: This folder page is read only')
+    expect(errorLine(el)).toBeNull()
     expect([...el.querySelectorAll('.view-table thead th')].map((t) => t.textContent)).not.toContain('Owner')
   })
 
@@ -307,5 +307,187 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     const open = await mount(false)
     click(chip(open)!)
     expect(boxLabels(open)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
+  })
+})
+
+/**
+ * YAZ-5411 (Yaseen, YAZ-5349 2026-11-15): in a Read only vault a folder table's change that writes files asks the page's
+ * "Allow edits?" FIRST — before its confirm sheet, before any write. Allow: the change goes on. Cancel: nothing changes,
+ * no red line, and the page keeps working.
+ */
+describe('YAZ-5411: a table change in a Read only vault asks "Allow edits?" first', () => {
+  const sheet = () => document.querySelector('.confirm')
+  const asking = (el: ParentNode) => el.querySelector('.read-only-chip__ask') !== null
+  const deleteColumn = (el: ParentNode, label: string) => {
+    openHeaderMenu(el, label)
+    click(menuItem(el, 'Delete column…'))
+  }
+
+  it('Delete column: the ask comes before the confirm sheet; Cancel writes nothing and shows no error', async () => {
+    const el = await mount(true)
+    deleteColumn(el, 'Priority')
+    await flush()
+    expect(asking(el)).toBe(true)
+    expect(sheet()).toBeNull()
+    click(boxButton(el, 'Cancel'))
+    await flush()
+    expect(asking(el)).toBe(false)
+    expect(sheet()).toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(errorLine(el)).toBeNull()
+    expect(chip(el)?.textContent).toBe('Read only')
+  })
+
+  it('Delete column: Allow unlocks the tab and the confirm sheet follows; its Delete writes the folder and the page, never a page with its own switch', async () => {
+    disk.set(LEAD, { content: '---\npriority: High\n---\nBody\n', mtime: 10 })
+    disk.set(OWN, { content: '---\npriority: Low\nreadonly: true\n---\n', mtime: 10 })
+    const el = await mount(true)
+    deleteColumn(el, 'Priority')
+    await flush()
+    click(boxButton(el, 'Allow edits for 1 minute'))
+    await flush()
+    expect(chip(el)?.textContent).toBe('Editing · 1:00')
+    expect(sheet()).not.toBeNull()
+    click(q(document, '.confirm__btn--danger'))
+    await flush()
+    expect(disk.get(SETTINGS_FILE)?.content).not.toContain('priority:')
+    expect(disk.get(LEAD)?.content).not.toContain('priority')
+    expect(disk.get(OWN)?.content).toContain('priority: Low')
+    expect(errorLine(el)).toBeNull()
+  })
+
+  it('a read-only file on disk: the write fails after Allow, the message is one short line, and the next change works and clears it', async () => {
+    const el = await mount(true)
+    writeFile.mockImplementation(async ({ path, content }) => {
+      if (path === LEAD) throw new Error('permission denied')
+      disk.set(path, { content, mtime: ++clock })
+      return { path, mtime: clock, size: content.length }
+    })
+    disk.set(LEAD, { content: '---\npriority: High\n---\n', mtime: 10 })
+    deleteColumn(el, 'Priority')
+    await flush()
+    click(boxButton(el, 'Until I close this tab'))
+    await flush()
+    click(q(document, '.confirm__btn--danger'))
+    await flush()
+    expect(errorLine(el)).toMatch(/^Could not update the folder: .*Lead Gen/)
+    expect(asking(el)).toBe(false)
+    addColumnRight(el, 'Name', 'owner')
+    await flush()
+    expect(disk.get(SETTINGS_FILE)?.content).toContain('owner:')
+    expect(errorLine(el)).toBeNull()
+  })
+
+  it('Rename column: Cancel keeps the name and writes nothing; Escape in the box is a Cancel', async () => {
+    const el = await mount(true)
+    renameColumn(el, 'Priority', 'Importance')
+    await flush()
+    click(boxButton(el, 'Cancel'))
+    await flush()
+    expect(writeFile).not.toHaveBeenCalled()
+    expect([...el.querySelectorAll('.view-table thead th')].map((t) => t.textContent)).toContain('Priority')
+    renameColumn(el, 'Priority', 'Importance')
+    await flush()
+    press(q(el, '.read-only-chip__ask button'), 'Escape')
+    await flush()
+    expect(asking(el)).toBe(false)
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(errorLine(el)).toBeNull()
+  })
+
+  it('Add column: Allow writes the column once, with no second Save', async () => {
+    const el = await mount(true)
+    addColumnRight(el, 'Priority', 'owner')
+    await flush()
+    expect(writeFile).not.toHaveBeenCalled()
+    click(boxButton(el, '10 minutes'))
+    await flush()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(disk.get(SETTINGS_FILE)?.content).toContain('owner:')
+  })
+
+  it('a cell edit: a double-click on a locked cell asks first; Cancel opens no editor; Allow opens it, and its value is written', async () => {
+    disk.set(LEAD, { content: '---\npriority: High\n---\n', mtime: 10 })
+    const el = await mount(true)
+    const cell = () => [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Lead Gen'))!.querySelector<HTMLElement>('td[data-cell$=":1"]')!
+    act(() => void cell().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    expect(asking(el)).toBe(true)
+    click(boxButton(el, 'Cancel'))
+    await flush()
+    expect(cell().querySelector('input')).toBeNull()
+    act(() => void cell().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    click(boxButton(el, 'Allow edits for 1 minute'))
+    await flush()
+    const input = cell().querySelector<HTMLInputElement>('input')!
+    expect(input).not.toBeNull()
+    setValue(input, 'Urgent')
+    press(input, 'Enter')
+    await flush()
+    const go = document.querySelector<HTMLButtonElement>('.change-ask__go')
+    if (go !== null) click(go)
+    await flush()
+    expect(disk.get(LEAD)?.content).toContain('priority: Urgent')
+    expect(errorLine(el)).toBeNull()
+  })
+
+  it('Enter on a locked cell asks too', async () => {
+    const el = await mount(true)
+    const cell = [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Lead Gen'))!.querySelector<HTMLElement>('td[data-cell$=":1"]')!
+    press(cell, 'Enter')
+    await flush()
+    expect(asking(el)).toBe(true)
+  })
+
+  it('nearby: a page with its own Read only switch never asks — in a locked vault after Allow, and in an unlocked vault — its cell keeps the tip and writes nothing', async () => {
+    const el = await mount(true)
+    const ownCell = () => [...el.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Own switch'))!.querySelector<HTMLElement>('td[data-cell$=":1"]')!
+    click(chip(el)!)
+    click(boxButton(el, 'Until I close this tab'))
+    act(() => void ownCell().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    expect(asking(el)).toBe(false)
+    expect(lockedCell(el, 'Own switch')).toBe(true)
+    act(() => root?.unmount())
+    container?.remove()
+    const open = await mount(false)
+    const cell = [...open.querySelectorAll<HTMLElement>('tbody tr')].find((tr) => tr.textContent?.includes('Own switch'))!.querySelector<HTMLElement>('td[data-cell$=":1"]')!
+    act(() => void cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    expect(asking(open)).toBe(false)
+    expect(cell.querySelector('input')).toBeNull()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('nearby: a folder page with its own Read only switch in an unlocked vault asks too; "Turn Read only off" lets the change go on', async () => {
+    disk.set(SETTINGS_FILE, { content: VIEWS.replace('---\n', '---\nreadonly: true\n'), mtime: 50 })
+    const el = await mount(false)
+    addColumnRight(el, 'Priority', 'owner')
+    await flush()
+    expect(boxLabels(el)).toContain('Turn Read only off')
+    click(boxButton(el, 'Turn Read only off'))
+    await flush()
+    const content = disk.get(SETTINGS_FILE)?.content ?? ''
+    expect(content).toContain('owner:')
+    expect(content).not.toContain('readonly')
+  })
+
+  it('+ New: the vault\'s file-action ask refused makes nothing and shows no error line', async () => {
+    const ask = vi.fn(async () => false)
+    const el = await mount(true, ask)
+    await act(async () => void q<HTMLElement>(el, '.view-toolbar__new').click())
+    await flush()
+    expect(ask).toHaveBeenCalledWith('/vault')
+    expect(writeFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.views-pane__error')).toBeNull()
+  })
+
+  it('a view change still never asks (YAZ-4939 round 3): a sort saves at once', async () => {
+    const el = await mount(true)
+    addSort(el)
+    await flush()
+    expect(asking(el)).toBe(false)
+    expect(writeFile).toHaveBeenCalledTimes(1)
   })
 })

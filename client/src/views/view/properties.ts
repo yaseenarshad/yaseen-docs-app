@@ -32,10 +32,12 @@ export function allPropertyKeys(
   }
   const declared = Object.keys(columns)
   for (const k of propertyKeys(def, view, records, declared)) add(k)
-  // A view listing cards (YAZ-5319): the name, the card columns, the cards' own properties (YAZ-5385), the Folder and
-  // the formulas; a page's own properties are no card's.
+  // A view listing cards (YAZ-5319): the name, the card columns, the cards' declared columns and own properties
+  // (YAZ-5385; `columns` are the card columns' types through the card lens), the Folder and the formulas; a page's own
+  // properties are no card's.
   if (cardRowsOf(view)) {
     for (const k of DEFAULT_CARD_ORDER) add(k)
+    for (const k of Object.keys(columns)) add(`note.${k}`)
     for (const k of cardPropertyKeys(records)) add(k)
     add('file.folder')
     for (const name of Object.keys(def.formulas ?? {})) add(`formula.${name}`)
