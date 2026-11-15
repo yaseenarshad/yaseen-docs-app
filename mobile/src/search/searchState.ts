@@ -45,7 +45,17 @@ export function takeSearchNotice(): string | null {
   return text
 }
 
-/** Forgets the box, the Type and the line (a test starts clean). */
+/** YAZ-5438: the tree's open folders, for each vault, kept while the app runs (as the Mac's sidebar keeps them). */
+const opened = new Map<string, Set<string>>()
+export function openFoldersOf(vault: string | null): Set<string> {
+  const key = vault ?? ''
+  let set = opened.get(key)
+  if (set === undefined) opened.set(key, (set = new Set()))
+  return set
+}
+
+/** Forgets the box, the Type, the line and the open folders (a test starts clean). */
 export function forgetSearch(): void {
   Object.assign(held, { vault: null, query: '', type: 'all', shown: null, scroll: 0, notice: null })
+  opened.clear()
 }

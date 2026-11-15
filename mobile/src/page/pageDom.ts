@@ -32,7 +32,7 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
     const from = document.createElement('button')
     from.type = 'button'
     from.className = 'card-embed__from'
-    from.setAttribute('aria-label', `Open the original: ${embedName(data, card)}`)
+    from.setAttribute('aria-label', `Embedded from "${embedName(data, card)}"`)
     const arrow = document.createElement('span')
     arrow.className = 'card-embed__arrow'
     arrow.setAttribute('aria-hidden', 'true')

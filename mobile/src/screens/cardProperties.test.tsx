@@ -59,7 +59,7 @@ describe('card properties on the phone (YAZ-5349, stage one)', () => {
     await seedReaderVault(phone.store, phone.tokens, FILES)
     h = await mount({ phone })
     await h.click('Search')
-    await waitFor(h, () => h!.host.querySelector('.search__rows') !== null)
+    await waitFor(h, () => h!.host.querySelector('.search__rows, .tree') !== null)
     await typeQuery(h, '1,000')
     expect([...h.host.querySelectorAll('.search__rows .row__main')].map((r) => r.textContent)).toEqual(['1,000 islands'])
     await h.click(/^1,000 islands/)

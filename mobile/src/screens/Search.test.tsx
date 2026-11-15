@@ -31,7 +31,7 @@ async function openSearch(files?: Record<string, string | Uint8Array>): Promise<
   const x = await mount({ phone })
   await x.click('Search')
   // The rows build in slices (real timeouts).
-  await waitFor(x, () => x.host.querySelector('.search__rows') !== null || x.text().includes('No pages yet'))
+  await waitFor(x, () => x.host.querySelector('.search__rows, .tree') !== null || x.text().includes('No pages yet'))
   return x
 }
 
@@ -44,7 +44,13 @@ async function waitFor(x: Harness, done: () => boolean, ms = 3000): Promise<void
 }
 
 const box = (x: Harness) => x.host.querySelector<HTMLInputElement>('input[type="search"]')!
-const rows = (x: Harness) => [...x.host.querySelectorAll('.search__rows .row')].map((r) => `${r.querySelector('.row__main')?.textContent} | ${r.querySelector('.row__side')?.textContent}`)
+/** A row as the person sees it (YAZ-5438): its name, then its icon's kind (a card's ID beside it). Tree rows and result rows. */
+const rows = (x: Harness) =>
+  [...x.host.querySelectorAll('.search__rows .row, .tree .tree__row')].map((r) => {
+    const kind = { folder: 'folder', markdown: 'page', card: 'card' }[r.querySelector('.file-icon')?.getAttribute('data-kind') ?? ''] ?? '?'
+    const side = r.querySelector('.row__side')?.textContent
+    return `${r.querySelector('.row__main, .tree__label')?.textContent} | ${kind}${side ? ` · ${side}` : ''}`
+  })
 
 async function typeQuery(x: Harness, value: string): Promise<void> {
   await act(async () => {
@@ -56,11 +62,11 @@ async function typeQuery(x: Harness, value: string): Promise<void> {
 }
 
 describe('the Search tab (YAZ-5079)', () => {
-  it('the empty box lists the pages, by name; no card file; the keyboard opens only here', async () => {
+  it('the empty box shows the Mac\'s sidebar tree (YAZ-5438): folders first, then pages, by name; the keyboard opens only here', async () => {
     h = await openSearch()
     expect(box(h).getAttribute('placeholder')).toBe('Search cards and pages')
     expect(h.host.querySelector('h2.section')?.textContent).toBe('Pages')
-    expect(rows(h)).toEqual(['Café notes | page', 'Git cheat sheet | page', 'Spanish words | page', 'Trip plan | page'])
+    expect(rows(h)).toEqual(['cards | folder', 'git | folder', 'Café notes | page', 'Spanish words | page', 'Trip plan | page'])
     expect(h.host.querySelectorAll('input, textarea, [contenteditable="true"]')).toHaveLength(1)
   })
 
@@ -108,6 +114,7 @@ describe('the Search tab (YAZ-5079)', () => {
     await h.click(/All types/)
     expect([...h.host.querySelectorAll('[role="menuitemradio"]')].map((m) => m.textContent)).toEqual(['All types✓', 'Pages'])
     await h.click('All types✓')
+    await typeQuery(h, 'capital')
     expect(rows(h)).toContain('Capital of Spain | page')
     await typeQuery(h, 'biblioteca')
     expect(rows(h)).toEqual([])
@@ -148,7 +155,9 @@ describe('a page, read only (YAZ-5079)', () => {
     expect(body.querySelector('.page-card[data-card-id="DEMO-12"] .card__side, .page-card[data-card-id="DEMO-12"]')?.textContent).toContain('la biblioteca')
     // Round 15, item 1: the embedded card in place, read only, under its head.
     await waitFor(h, () => body.querySelector('.card-embed__from') !== null && body.querySelector('.card-embed__body')?.textContent !== '')
-    expect(body.querySelector('.card-embed__from')?.textContent).toBe('Embedded from "Capital of Spain" · DEMO-40')
+    // YAZ-5437: the Mac's embed head, then the card's title band.
+    expect(body.querySelector('.card-embed .card__head')?.textContent).toBe('↗Embedded from "Capital of Spain"·DEMO-40')
+    expect(body.querySelector('.card-embed .card-band')?.textContent).toBe('Capital of Spain')
     expect(body.querySelector('.card-embed__body')?.textContent).toContain('Madrid')
     expect(body.querySelector('.card-embed--missing')?.textContent).toBe('Missing card · DEMO-77')
     expect(h.host.querySelectorAll('input, textarea, [contenteditable="true"]')).toHaveLength(0)
@@ -273,7 +282,7 @@ describe('a page, read only (YAZ-5079)', () => {
     await typeQuery(h, 'trip')
     await openPage(h, 'Trip plan')
     await h.click('‹ Back')
-    await waitFor(h, () => h!.host.querySelector('.search__rows') !== null)
+    await waitFor(h, () => h!.host.querySelector('.search__rows, .tree') !== null)
     expect(box(h).value).toBe('trip')
     expect(rows(h)).toEqual(['Trip plan | page'])
   })
@@ -318,6 +327,8 @@ describe('the top bar and Back (YAZ-5210, YAZ-5211)', () => {
     const files: Record<string, string | Uint8Array> = { ...READER_FILES }
     for (let i = 0; i < 300; i++) files[`many/Page ${String(i).padStart(3, '0')}.md`] = `---\ntitle: Page ${String(i).padStart(3, '0')}\n---\n\nText ${i}.\n`
     h = await openSearch(files)
+    // YAZ-5438: the tree; the folder of 300 pages opens with a tap, and draws its rows in steps.
+    await h.click(/^many/)
     await h.click('Show more')
     const count = rows(h).length
     expect(count).toBeGreaterThan(100)
@@ -327,7 +338,7 @@ describe('the top bar and Back (YAZ-5210, YAZ-5211)', () => {
     await h.click(/^Page 250/)
     await waitFor(h, () => h!.host.querySelector('.reader__body')?.childNodes.length !== 0)
     await h.click('‹ Back')
-    await waitFor(h, () => h!.host.querySelector('.search__rows') !== null)
+    await waitFor(h, () => h!.host.querySelector('.search__rows, .tree') !== null)
     await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
     expect(rows(h)).toHaveLength(count)
     expect(screen().scrollTop).toBe(900)
@@ -384,7 +395,7 @@ describe('a card alone (YAZ-5079; round 12 item 10)', () => {
     await waitFor(h, () => h!.host.querySelector('.card-view__card')?.textContent !== '')
     expect(h.text()).toContain('This card file needs a fix on the Mac.')
     expect(h.host.querySelector('.card-view__card')?.textContent).toContain('One')
-    expect(h.host.querySelector('.card-view__card')?.textContent).not.toContain('Two')
+    expect(h.host.querySelector('.card-view__card .card__body')?.textContent).not.toContain('Two')
   })
 
   it('a page with every block type and a card file with no card: both still show', async () => {

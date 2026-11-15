@@ -43,11 +43,17 @@ async function openSearch(): Promise<Harness> {
   await seedReaderVault(phone.store, phone.tokens, FILES)
   const x = await mount({ phone })
   await x.click('Search')
-  await waitFor(x, () => x.host.querySelector('.search__rows') !== null)
+  await waitFor(x, () => x.host.querySelector('.search__rows, .tree') !== null)
   return x
 }
 const box = (x: Harness) => x.host.querySelector<HTMLInputElement>('input[type="search"]')!
-const rows = (x: Harness) => [...x.host.querySelectorAll('.search__rows .row')].map((r) => `${r.querySelector('.row__main')?.textContent} | ${r.querySelector('.row__side')?.textContent}`)
+/** A row as the person sees it (YAZ-5438): its name, then its icon's kind (a card's ID beside it). Tree rows and result rows. */
+const rows = (x: Harness) =>
+  [...x.host.querySelectorAll('.search__rows .row, .tree .tree__row')].map((r) => {
+    const kind = { folder: 'folder', markdown: 'page', card: 'card' }[r.querySelector('.file-icon')?.getAttribute('data-kind') ?? ''] ?? '?'
+    const side = r.querySelector('.row__side')?.textContent
+    return `${r.querySelector('.row__main, .tree__label')?.textContent} | ${kind}${side ? ` · ${side}` : ''}`
+  })
 async function typeQuery(x: Harness, value: string): Promise<void> {
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box(x), value)
