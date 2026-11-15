@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { LOGO_CANVAS, LOGO_CROP, LOGO_SOURCE, iconSvg, pngSize, SPLASH_SCREENS } from './images'
 import { WORKER_SOURCES, shellFiles } from './pwaPlugin'
+import { freePort } from './freePort'
 
 /** The home-screen app (YAZ-5087): the manifest, the icons, the iOS tags, the splash, the publish config. */
 
@@ -171,6 +172,23 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
     expect(root.scripts['mobile:publish:preview']).toMatch(/^npm run mobile:build && npm run mobile:prove-edge-back && npm run mobile:keep-previous && npx --yes wrangler@\d+\.\d+\.\d+ deploy --config mobile\/wrangler\.jsonc$/)
     // YAZ-5303: the live build's chunks stay on the host for one more deploy.
     expect(root.scripts['mobile:keep-previous']).toBe('vite-node mobile/publish/keepPreviousCli.ts')
+  })
+
+  it('the publish proofs take free ports: a Chrome that holds a port does not fail the publish', async () => {
+    for (const f of ['proveEdgeBack.ts', 'proveLayout.ts']) {
+      const src = readFileSync(new URL(`./${f}`, import.meta.url), 'utf8')
+      expect([f, src.includes('const DEBUG = await freePort(process.env.PROOF_DEBUG)'), src.includes('const PORT = await freePort(process.env.PROOF_PORT)')]).toEqual([f, true, true])
+    }
+    const { createServer } = await import('node:net')
+    const held = createServer()
+    await new Promise<void>((r) => held.listen(0, '127.0.0.1', r))
+    const taken = (held.address() as { port: number }).port
+    const port = await freePort()
+    expect(port).not.toBe(taken)
+    const probe = createServer()
+    await new Promise<void>((resolve, reject) => (probe.once('error', reject), probe.listen(port, '127.0.0.1', resolve)))
+    await Promise.all([new Promise((r) => probe.close(r)), new Promise((r) => held.close(r))])
+    expect(await freePort('9354')).toBe(9354)
   })
 
   it('YAZ-5285: one script publishes the kill switch to the PREVIEW; the README says what to do when a bad version ships', () => {

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { freePort } from './freePort'
 
 /**
  * The layout check in headless Chrome (YAZ-5360, YAZ-5364). jsdom has no layout, so this runs the fixtures build in
@@ -60,8 +61,9 @@ import { join } from 'node:path'
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const mobile = new URL('..', import.meta.url).pathname
 const DIST = process.env.LAYOUT_DIST ?? join(mobile, 'dist-fixtures')
-const PORT = Number(process.env.PROOF_PORT ?? 8931)
-const DEBUG = Number(process.env.PROOF_DEBUG ?? 9351)
+// PROOF_PORT, PROOF_DEBUG: the file server's port and Chrome's debug port; each a free port when not named.
+const PORT = await freePort(process.env.PROOF_PORT)
+const DEBUG = await freePort(process.env.PROOF_DEBUG)
 const out = process.env.PROOF_DIR ?? mkdtempSync(join(tmpdir(), 'notecards-layout-'))
 mkdirSync(out, { recursive: true })
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
