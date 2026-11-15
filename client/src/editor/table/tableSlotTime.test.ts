@@ -8,7 +8,11 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { mount, unmountAll } from '../marks/markTestKit'
 import { nowPlace, slotTimeLabel } from './tableCalendar'
-import { setSlotTimeSetting } from './timeFormatSetting'
+import { TABLE_LOOK_DEFAULTS, type TableSlotTime } from '@shared/tableLook'
+import { setAppTableLook } from './tableLook'
+
+/** Time in slot is the vault's (YAZ-5602 round 2); an editor of no vault reads the app's look, set here. */
+const setSlotTimeSetting = (mode: TableSlotTime, seconds: boolean): void => setAppTableLook({ ...TABLE_LOOK_DEFAULTS, tableSlotTime: mode, tableSlotSeconds: seconds })
 import calendarCss from './tableCalendar.css?inline'
 
 afterEach(async () => {

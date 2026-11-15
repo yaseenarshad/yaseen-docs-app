@@ -21,8 +21,8 @@ import {
   TABLE_SHADE_MIN,
   TABLE_SHADE_STEP,
 } from '@shared/types'
-import { headerRowVars, setAppTableLook, setVaultTableLook, tableLookAt, tableLookKey, tableLookOfRoot, tableLookVars } from './tableLook'
-import { calendarDaySetting, headerRowSetting, stickyHeaderSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
+import { headerRowVars, onTableLookSlot, setAppTableLook, setVaultTableLook, tableLookAt, tableLookKey, tableLookOfRoot, tableLookVars } from './tableLook'
+import { calendarDaySetting, headerRowSetting, slotTimeSetting, stickyHeaderSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
 
 afterEach(() => {
   setAppTableLook(TABLE_LOOK_DEFAULTS)
@@ -32,8 +32,11 @@ afterEach(() => {
 
 describe('table-look.json (shared/tableLook.ts)', () => {
   it('the defaults and ranges are the app\'s (DEFAULT_SETTINGS, types.ts), written out for the phone', () => {
-    expect(TABLE_LOOK_DEFAULTS).toEqual(Object.fromEntries(TABLE_LOOK_SETTINGS.map((k) => [k, DEFAULT_SETTINGS[k]])))
-    expect(TABLE_LOOK_SETTINGS).toHaveLength(23)
+    // YAZ-5602 round 2: Time in slot and Show seconds are the vault's only (no app setting): off, with seconds.
+    const app = TABLE_LOOK_SETTINGS.filter((k) => k !== 'tableSlotTime' && k !== 'tableSlotSeconds')
+    expect(TABLE_LOOK_DEFAULTS).toEqual({ ...Object.fromEntries(app.map((k) => [k, DEFAULT_SETTINGS[k]])), tableSlotTime: 'off', tableSlotSeconds: true })
+    expect(TABLE_LOOK_SETTINGS).toHaveLength(25)
+    expect(Object.hasOwn(DEFAULT_SETTINGS, 'tableSlotTime') || Object.hasOwn(DEFAULT_SETTINGS, 'tableSlotSeconds')).toBe(false)
     const ok = (look: object) => Object.keys(sanitizeTableLook({ look }).look ?? {}).length === 1
     expect([ok({ bandStrength: TABLE_BAND_STRENGTH_MIN }), ok({ bandStrength: TABLE_BAND_STRENGTH_MAX }), ok({ bandStrength: TABLE_BAND_STRENGTH_MAX + 1 })]).toEqual([true, true, false])
     expect([ok({ width: BLOCK_WIDTH_MIN }), ok({ width: BLOCK_WIDTH_MAX }), ok({ width: BLOCK_WIDTH_MIN - 1 })]).toEqual([true, true, false])
@@ -146,5 +149,41 @@ describe('two vaults side by side: the editor reads the look of the vault that h
     // The file goes: the app's again.
     setVaultTableLook('/a', null)
     expect(stickyHeaderSetting(a)).toBe(true)
+  })
+})
+
+describe('Time in slot in table-look.json (YAZ-5602 round 2)', () => {
+  it('off and with seconds by default; only what differs is written, as `slotTime` and `slotSeconds`; read back, the same', () => {
+    expect([TABLE_LOOK_DEFAULTS.tableSlotTime, TABLE_LOOK_DEFAULTS.tableSlotSeconds]).toEqual(['off', true])
+    for (const mode of ['down', 'up'] as const) {
+      const look = tableLookOf({ ...TABLE_LOOK_DEFAULTS, tableSlotTime: mode, tableSlotSeconds: false })
+      expect(look).toEqual({ look: { slotTime: mode, slotSeconds: false } })
+      expect(tableLookFile(look)).toEqual({ version: 1, look: { slotTime: mode, slotSeconds: false } })
+      expect(tableLookSettings(look)).toMatchObject({ tableSlotTime: mode, tableSlotSeconds: false })
+    }
+    expect(tableLookOf({ ...TABLE_LOOK_DEFAULTS, tableSlotTime: 'off', tableSlotSeconds: true })).toEqual({})
+    // The app's settings have none: the app's look is off, with seconds.
+    expect(appTableLook(DEFAULT_SETTINGS)).toMatchObject({ tableSlotTime: 'off', tableSlotSeconds: true })
+  })
+
+  it('sanitised like nextShade: one of off, down, up; a boolean; each wrong key dropped alone', () => {
+    expect(sanitizeTableLook({ look: { slotTime: 'up', slotSeconds: true } })).toEqual({ look: { slotTime: 'up', slotSeconds: true } })
+    expect(sanitizeTableLook({ look: { slotTime: 'sideways', slotSeconds: 'yes', nowMark: 'both' } })).toEqual({ look: { nowMark: 'both' } })
+  })
+
+  it('the clock reads the look of the vault that holds it; a change of a vault\'s Time in slot tells the clocks', () => {
+    const told: number[] = []
+    const off = onTableLookSlot(() => told.push(1))
+    const holder = document.createElement('div')
+    holder.style.setProperty('--table-look', tableLookKey('/a'))
+    const inside = document.createElement('p')
+    holder.appendChild(inside)
+    setVaultTableLook('/a', { ...TABLE_LOOK_DEFAULTS, tableSlotTime: 'down', tableSlotSeconds: false })
+    expect(slotTimeSetting(inside)).toEqual({ mode: 'down', seconds: false })
+    expect(slotTimeSetting()).toEqual({ mode: 'off', seconds: true })
+    expect(told).toHaveLength(1)
+    setVaultTableLook('/a', { ...TABLE_LOOK_DEFAULTS, tableSlotTime: 'down', tableSlotSeconds: false, tableRowBand: 'off' })
+    expect(told).toHaveLength(1)
+    off()
   })
 })

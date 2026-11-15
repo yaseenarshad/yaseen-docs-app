@@ -11,7 +11,8 @@ import { createConfig, readConfigDetailed, writeConfig } from './vaultConfig'
  * `seedVaultPart` writes `part` (the app's value, as the file holds it) into `<root>/.yaseendocs/<name>`:
  *  - only once per Mac and vault (`store.seededConfig`): a file or part a person deleted later is not made again;
  *  - only when the file has none of `owns` (absent, or a file that has other keys: the part is ADDED and the file's
- *    other keys stay); a file that already has the part is left alone, and marked as seeded;
+ *    other keys stay); a file that already has the part is left alone, and marked as seeded. An owned key `a.b` is the
+ *    key `b` inside the file's object `a`, and a part's object merges into the file's one level in (YAZ-5602 round 2);
  *  - never over a file that is not valid JSON (marked, never written);
  *  - never for a root that is not a folder now (a drive not connected: `writeConfig` would make the folder again);
  *  - never for the default value (`part` null): nothing to move, and nothing is marked, so a later value still moves;
@@ -49,7 +50,7 @@ export async function seedVaultPart(
     return 'malformed'
   }
   const held = now.state === 'ok' && isRecord(now.value) ? now.value : null
-  if (now.state === 'ok' && (held === null || owns.some((k) => k !== 'version' && Object.hasOwn(held, k)))) {
+  if (now.state === 'ok' && (held === null || owns.some((k) => k !== 'version' && holds(held, k)))) {
     store.markSeededConfig(root, mark)
     return 'present'
   }
@@ -62,10 +63,25 @@ export async function seedVaultPart(
       return 'present'
     }
   } else {
-    await writeConfig(root, name, { ...held, ...part })
+    await writeConfig(root, name, mergeIn(held, part))
   }
   store.markSeededConfig(root, mark)
   return 'written'
+}
+
+/** `held` has `key`; `a.b` is the key `b` of its object `a` (a part inside a part, as `look.slotTime`). */
+function holds(held: Record<string, unknown>, key: string): boolean {
+  const [top, inner] = key.split('.', 2)
+  if (inner === undefined) return Object.hasOwn(held, top)
+  const at = held[top]
+  return isRecord(at) && Object.hasOwn(at, inner)
+}
+
+/** `part` into the file: an object both have is merged one level in (the file's other keys of it stay). */
+function mergeIn(held: Record<string, unknown>, part: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...held }
+  for (const [key, value] of Object.entries(part)) out[key] = isRecord(value) && isRecord(held[key]) ? { ...held[key], ...value } : value
+  return out
 }
 
 /**

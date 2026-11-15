@@ -2351,10 +2351,6 @@ export interface SettingsState {
   tableNextColour: string
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
-  /** Settings › Editor › Calendar tables › Time in slot (YAZ-5602): a pill at the right end of the now line says the time left in the current slot (`down`), the time since it started (`up`), or nothing (`off`, the default). Also on the Now button. `data-table-slot-time` on `.app`; the clock reads it through `slotTimeSetting` (`timeFormatSetting.ts`). */
-  tableSlotTime: TableSlotTime
-  /** Settings › Editor › Calendar tables › Show seconds (YAZ-5602): the Time in slot pill counts seconds (`19:14 left`, ticks each second) or minutes only (`20 min left`, ticks each minute). On by default. */
-  tableSlotSeconds: boolean
   /** Settings › Tables › Cell notes › Add button (YAZ-4790): the "+" on the corner of a table cell that adds a cell note. Off by default (YAZ-4790 demo). A table's own `notebutton` / `nonotebutton` turns its button on or off alone. `data-cell-note-button` on `.app`. */
   tableCellNoteButton: boolean
   /** Settings › Tables › All tables › New tables start as (YAZ-4869 item 22): the slash menu's "Table" makes a plain table (default) or a Super table. Read at the click. */
@@ -2803,10 +2799,6 @@ export const calLine = (value: unknown): number => (typeof value === 'number' &&
 export type TableNowMark = 'line' | 'tint' | 'both'
 export const TABLE_NOW_MARKS: readonly TableNowMark[] = ['line', 'tint', 'both']
 
-/** Calendar tables (YAZ-5602): what the pill on the now line says of the current slot: nothing, the time left, or the time since it started. */
-export type TableSlotTime = 'off' | 'down' | 'up'
-export const TABLE_SLOT_TIMES: readonly TableSlotTime[] = ['off', 'down', 'up']
-
 /** Calendar tables (YAZ-4162 D14, the YAZ-4163 demo): how the rows before now look. */
 export type TableDimPast = 'off' | 'text' | 'shade'
 export const TABLE_DIM_PASTS: readonly TableDimPast[] = ['off', 'text', 'shade']
@@ -3084,8 +3076,6 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableNextShade: false,
   tableNextColour: 'red',
   tableNowButton: true,
-  tableSlotTime: 'off',
-  tableSlotSeconds: true,
   tableCellNoteButton: false,
   tableNewStyle: 'plain',
   tableDimPast: 'shade',

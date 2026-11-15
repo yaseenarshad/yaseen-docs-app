@@ -17,7 +17,7 @@ import { DEFAULT_REVIEW_SETTINGS, type ReviewSettings } from '@shared/reviews'
 import type { ShowIdsSettings } from '../search/showIds'
 import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
-import { appTableLook } from '@shared/tableLook'
+import { appTableLook, type TableLookSettings } from '@shared/tableLook'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { UNIT_WORDS, unitTextOf } from '../vault/unitWord'
 import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
@@ -156,7 +156,7 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
  */
-const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableSlotTime', 'tableNextShade', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNextShade', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -945,10 +945,10 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tablePosition: 'center' })
   })
 
-  it('YAZ-5541: "Shade the next time slot" sits under "Mark the current time" (after YAZ-5602\'s "Time in slot"), Off by default; its colour row (the band colour\'s picker, Red by default) shows only while it is On; a vault\'s look is saved to its table-look.json', () => {
+  it('YAZ-5541: "Shade the next time slot" sits under "Mark the current time" (after YAZ-5602\'s "Time in slot" in a vault), Off by default; its colour row (the band colour\'s picker, Red by default) shows only while it is On; a vault\'s look is saved to its table-look.json', () => {
     const { el, onChange } = mountOn('Tables')
     const ids = [...row(el, 'tableNowMark')!.closest('.settings-group')!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)
-    expect(ids.slice(ids.indexOf('tableNowMark'), ids.indexOf('tableNowMark') + 3)).toEqual(['tableNowMark', 'tableSlotTime', 'tableNextShade'])
+    expect(ids.slice(ids.indexOf('tableNowMark'), ids.indexOf('tableNowMark') + 2)).toEqual(['tableNowMark', 'tableNextShade'])
     expect(row(el, 'tableNextShade')?.querySelector('.setting__label')?.textContent).toBe('Shade the next time slot')
     expect(rowButtons(el, 'tableNextShade').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'false'], ['Off', 'true']])
     expect(row(el, 'tableNextColour')).toBeNull()
@@ -957,7 +957,7 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     unmount()
     const on = mountOn('Tables', { ...DEFAULT_SETTINGS, tableNextShade: true })
     const ids2 = [...row(on.el, 'tableNowMark')!.closest('.settings-group')!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)
-    expect(ids2.slice(ids2.indexOf('tableNowMark'), ids2.indexOf('tableNowMark') + 4)).toEqual(['tableNowMark', 'tableSlotTime', 'tableNextShade', 'tableNextColour'])
+    expect(ids2.slice(ids2.indexOf('tableNowMark'), ids2.indexOf('tableNowMark') + 3)).toEqual(['tableNowMark', 'tableNextShade', 'tableNextColour'])
     expect(row(on.el, 'tableNextColour')?.querySelector('.setting__label')?.textContent).toBe('Next slot colour')
     const radios = [...row(on.el, 'tableNextColour')!.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
     expect(radios.find((b) => b.getAttribute('aria-checked') === 'true')?.title).toBe('Red')
@@ -987,18 +987,39 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableNowButton: false })
   })
 
-  it('Calendar tables › Time in slot (YAZ-5602): Off by default, under Mark the current time; Show seconds shows only while it counts', () => {
-    const { el, onChange } = mountOn('Tables')
+  it('Calendar tables › Time in slot (YAZ-5602): the vault\'s (table-look.json, round 2): Off by default, under Mark the current time; Show seconds shows only while it counts; each writes the vault, the other look kept; no row with no vault', () => {
+    const mountLook = (value: TableLookSettings) => {
+      container = document.createElement('div')
+      document.body.appendChild(container)
+      root = createRoot(container)
+      const save = vi.fn()
+      const onChange = vi.fn()
+      const tableLook = { vaults: [{ root: '/a', name: 'Alpha' }], root: '/a', choose: vi.fn(), value, save }
+      act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, tableLook }} onClose={vi.fn()} />))
+      clickNav(container, 'Tables')
+      return { el: container, save, onChange }
+    }
+    const base = { ...appTableLook(DEFAULT_SETTINGS), tableRowBand: 'calendar' as const }
+    const { el, save, onChange } = mountLook(base)
     expect(row(el, 'tableSlotTime')?.querySelector('.setting__label')?.textContent).toBe('Time in slot')
     expect(rowButtons(el, 'tableSlotTime').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'true'], ['Count down', 'false'], ['Count up', 'false']])
     expect(row(el, 'tableSlotTime')?.previousElementSibling?.getAttribute('data-setting')).toBe('tableNowMark')
     expect(row(el, 'tableSlotSeconds')).toBeNull()
     act(() => rowButtons(el, 'tableSlotTime')[1].click())
-    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableSlotTime: 'down' })
-    const on = mountOn('Tables', { ...DEFAULT_SETTINGS, tableSlotTime: 'down' })
+    expect(save).toHaveBeenLastCalledWith({ ...base, tableSlotTime: 'down' })
+    expect(onChange).not.toHaveBeenCalled()
+    unmount()
+    const on = mountLook({ ...base, tableSlotTime: 'down' })
     expect(rowButtons(on.el, 'tableSlotSeconds').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
     act(() => rowButtons(on.el, 'tableSlotSeconds')[1].click())
-    expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })
+    expect(on.save).toHaveBeenLastCalledWith({ ...base, tableSlotTime: 'down', tableSlotSeconds: false })
+    // Another vault row keeps the vault's Time in slot.
+    act(() => rowButtons(on.el, 'tableRowBand').find((b) => b.textContent === 'Off')!.click())
+    expect(on.save).toHaveBeenLastCalledWith({ ...base, tableRowBand: 'off', tableSlotTime: 'down' })
+    unmount()
+    const none = mountOn('Tables')
+    expect(row(none.el, 'tableSlotTime')).toBeNull()
+    expect(row(none.el, 'tableSlotSeconds')).toBeNull()
   })
 
   it('Calendar tables › Shade darkness (YAZ-4163 demo): 6% by default, a stepper in steps of 2 from 2% to 30%, and Reset off the default', () => {

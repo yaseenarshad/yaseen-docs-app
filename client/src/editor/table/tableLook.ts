@@ -81,6 +81,12 @@ const listeners = new Set<() => void>()
 const tell = (): void => {
   for (const listener of listeners) listener()
 }
+/** Called on each change of Time in slot or Show seconds (YAZ-5602), so every calendar clock draws its pill again. */
+const slotListeners = new Set<() => void>()
+const slotChanged = (a: TableLookSettings | undefined, b: TableLookSettings | undefined | null): boolean => a?.tableSlotTime !== b?.tableSlotTime || a?.tableSlotSeconds !== b?.tableSlotSeconds
+const tellSlot = (): void => {
+  for (const listener of slotListeners) listener()
+}
 
 /** A vault's key (`--table-look` on its surfaces): one short name per root for this window's life. */
 export function tableLookKey(root: string): string {
@@ -92,8 +98,10 @@ export function tableLookKey(root: string): string {
 /** App's door: the app's 21 settings (every one set). */
 export function setAppTableLook(next: TableLookSettings): void {
   const sticky = app.tableStickyHeader !== next.tableStickyHeader || app.tableStickySubheaders !== next.tableStickySubheaders
+  const slot = slotChanged(app, next)
   app = next
   if (sticky) tell()
+  if (slot) tellSlot()
 }
 
 /** App's door: a vault's look (null: it has no table-look.json, so it reads the app's). */
@@ -103,12 +111,20 @@ export function setVaultTableLook(root: string, next: TableLookSettings | null):
   if (next === null) looks.delete(key)
   else looks.set(key, next)
   if (before?.tableStickyHeader !== next?.tableStickyHeader || before?.tableStickySubheaders !== next?.tableStickySubheaders) tell()
+  // A vault with no file reads the app's, so its clocks compare against the app's look.
+  if (slotChanged(before ?? app, next ?? app)) tellSlot()
 }
 
 /** Calls `listener` on each change of a sticky default (the app's or a vault's); returns the unsubscribe. */
 export function onTableLookSticky(listener: () => void): () => void {
   listeners.add(listener)
   return () => listeners.delete(listener)
+}
+
+/** Calls `listener` on each change of Time in slot or Show seconds (the app's or a vault's); returns the unsubscribe. */
+export function onTableLookSlot(listener: () => void): () => void {
+  slotListeners.add(listener)
+  return () => slotListeners.delete(listener)
 }
 
 /** What `at` is: an editor's view (its `dom`), or a node in the page. */

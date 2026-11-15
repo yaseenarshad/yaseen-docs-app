@@ -42,7 +42,6 @@ import {
   FIND_FOLDS,
   ALL_NOTES_OPENS_AT,
   TABLE_NOW_MARKS,
-  TABLE_SLOT_TIMES,
   TABLE_DIM_PASTS,
   TABLE_SHADE_MAX,
   TABLE_SHADE_MIN,
@@ -72,7 +71,6 @@ import {
   type DailyPageOpens,
   type TableDimPast,
   type TableNowMark,
-  type TableSlotTime,
   type TableRowBand,
   TABLE_NEW_STYLES,
   type TableNewStyle,
@@ -269,6 +267,11 @@ export interface Store {
   approvePictureFolder(folder: string): boolean
   /** Settings › Files & Links › "Allowed picture folders" › Remove: off the list only; no file moves or goes. Not on it: no commit. */
   removePictureFolder(folder: string): void
+  /**
+   * YAZ-5602 round 2: Time in slot and Show seconds as this Mac's state file held them at start (an app setting of
+   * before; the state omits them, so the next write drops them). `tableLookMoves` writes them into each vault once.
+   */
+  slotTimeToMove(): SlotTimeToMove
   /** YAZ-5487 (the YAZ-5491 rule): this Mac seeded (or found) `<root>/.yaseendocs/<name>` once already. */
   seededConfig(root: string, name: string): boolean
   /** Marks `<root>/.yaseendocs/<name>` as seeded or found, so it is never seeded again. */
@@ -753,8 +756,6 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableNextShade: (v): v is boolean => typeof v === 'boolean',
   tableNextColour: isBandColour,
   tableNowButton: (v): v is boolean => typeof v === 'boolean',
-  tableSlotTime: (v): v is TableSlotTime => typeof v === 'string' && (TABLE_SLOT_TIMES as readonly string[]).includes(v),
-  tableSlotSeconds: (v): v is boolean => typeof v === 'boolean',
   tableCellNoteButton: (v): v is boolean => typeof v === 'boolean',
   tableNewStyle: (v): v is TableNewStyle => typeof v === 'string' && (TABLE_NEW_STYLES as readonly string[]).includes(v),
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
@@ -1316,6 +1317,22 @@ export function parseState(text: string): AppState | null {
 interface Loaded {
   state: AppState
   legacyHeadingStyles: HeadingStyles
+  /** YAZ-5602 round 2: Time in slot and Show seconds as an app setting of before, for the move into table-look.json. */
+  slotTimeToMove?: SlotTimeToMove
+}
+
+/** Time in slot and Show seconds (YAZ-5602) as a build of before saved them in `settings`: each only when it reads. */
+export interface SlotTimeToMove {
+  tableSlotTime?: 'off' | 'down' | 'up'
+  tableSlotSeconds?: boolean
+}
+const slotTimeOf = (settings: unknown): SlotTimeToMove => {
+  if (!isRecord(settings)) return {}
+  const mode = settings.tableSlotTime
+  return {
+    ...(mode === 'off' || mode === 'down' || mode === 'up' ? { tableSlotTime: mode } : {}),
+    ...(typeof settings.tableSlotSeconds === 'boolean' ? { tableSlotSeconds: settings.tableSlotSeconds } : {}),
+  }
 }
 
 /**
@@ -1333,7 +1350,7 @@ function parseStateDetailed(text: string): Loaded | null {
   const state = sanitizeState(raw)
   if (state === null) return null
   const legacy = isRecord(raw) && isRecord(raw.settings) ? raw.settings.headingStyles : undefined
-  return { state, legacyHeadingStyles: isHeadingStyles(legacy) ? legacy : {} }
+  return { state, legacyHeadingStyles: isHeadingStyles(legacy) ? legacy : {}, slotTimeToMove: slotTimeOf(isRecord(raw) ? raw.settings : undefined) }
 }
 
 /** Reads the file synchronously; a corrupt one is moved aside as `<file>.corrupt-<epoch>` and defaults are used. */
@@ -1364,6 +1381,8 @@ export function createStore(filePath: string): Store {
   let state = loaded.state
   /** The 1.0.15 heading styles (YAZ-3066 D11), handed out once. */
   let legacyHeadingStyles: HeadingStyles | null = loaded.legacyHeadingStyles
+  /** YAZ-5602 round 2: the Time in slot this file held at start; the state omits it, so the next write drops it. */
+  const slotTimeToMove: SlotTimeToMove = Object.freeze({ ...loaded.slotTimeToMove })
   const listeners = new Set<(state: AppState) => void>()
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -1431,6 +1450,10 @@ export function createStore(filePath: string): Store {
       if (!isAbsolute(folder) || state.approvedPictureFolders.length >= MAX_PICTURE_FOLDERS) return false
       commit({ ...state, approvedPictureFolders: [...state.approvedPictureFolders, folder] })
       return true
+    },
+
+    slotTimeToMove() {
+      return slotTimeToMove
     },
 
     seededConfig(root, name) {

@@ -542,7 +542,8 @@ const TABLE_LOOK_ROWS: ReadonlySet<string> = new Set([
 function tableLookCtx(ctx: SettingsCtx): SettingsCtx {
   const look = ctx.tableLook
   if (look === undefined) return ctx
-  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appTableLook(next)) }
+  // `next` carries the look's own keys too (YAZ-5602's Time in slot has no app setting), so a row keeps them.
+  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appTableLook({ ...look.value, ...next })) }
 }
 function tableLookItems(items: readonly SettingDef[], vault = false): SettingDef[] {
   const vaultRow: SettingDef = {
@@ -1635,14 +1636,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-5602 (Option A): a pill at the right end of the now line, and on the Now button.
+            // YAZ-5602 (Option A): a pill at the right end of the now line, and on the Now button. The vault's only (round 2:
+            // `look.slotTime` in table-look.json, no app setting): no row in a window with no vault.
             id: 'tableSlotTime',
             label: 'Time in slot',
             hint: 'In a calendar table, a pill on the red line says how long is left in the current time slot, or how long since it started.',
             keywords: ['calendar', 'now', 'slot', 'time left', 'countdown', 'count down', 'count up', 'timer', 'remaining', 'elapsed', 'table'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={TABLE_SLOT_TIME_OPTIONS} value={settings.tableSlotTime} onChange={(tableSlotTime) => onChange({ ...settings, tableSlotTime })} ariaLabel="Time in slot" />
-            ),
+            available: ({ tableLook }) => tableLook !== undefined,
+            render: ({ tableLook }) =>
+              tableLook && <Segmented options={TABLE_SLOT_TIME_OPTIONS} value={tableLook.value.tableSlotTime} onChange={(tableSlotTime) => tableLook.save({ ...tableLook.value, tableSlotTime })} ariaLabel="Time in slot" />,
           },
           {
             // YAZ-5602: shows only while Time in slot counts, as Shade darkness shows only with "Grey text and shade".
@@ -1650,10 +1652,9 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'Show seconds',
             hint: 'The Time in slot pill counts the seconds too, or the minutes only.',
             keywords: ['calendar', 'slot', 'seconds', 'minutes', 'countdown', 'timer', 'table'],
-            available: ({ settings }) => settings.tableSlotTime !== 'off',
-            render: ({ settings, onChange }) => (
-              <Segmented options={ON_OFF_OPTIONS} value={settings.tableSlotSeconds} onChange={(tableSlotSeconds) => onChange({ ...settings, tableSlotSeconds })} ariaLabel="Show seconds" />
-            ),
+            available: ({ tableLook }) => tableLook !== undefined && tableLook.value.tableSlotTime !== 'off',
+            render: ({ tableLook }) =>
+              tableLook && <Segmented options={ON_OFF_OPTIONS} value={tableLook.value.tableSlotSeconds} onChange={(tableSlotSeconds) => tableLook.save({ ...tableLook.value, tableSlotSeconds })} ariaLabel="Show seconds" />,
           },
           {
             // YAZ-5541: a tint on the row after the now row, at the now tint's strength.

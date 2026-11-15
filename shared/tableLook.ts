@@ -3,7 +3,7 @@ import { isValidTimeFormat } from './timeFormat'
 import type { HeaderRow, HeaderRowOwn, SettingsState } from './types'
 
 /**
- * A vault's table look and new-table defaults (YAZ-5487, scoping B3, section 7 row 5): the 21 table settings (23 with YAZ-5541's next slot) that were
+ * A vault's table look and new-table defaults (YAZ-5487, scoping B3, section 7 row 5): the 21 table settings (23 with YAZ-5541's next slot, 25 with YAZ-5602's Time in slot) that were
  * the Mac's app settings (YAZ-4167, YAZ-3818, YAZ-4774, YAZ-4899, YAZ-4900, YAZ-4163 …: no vault decision) belong to
  * the vault, so a vault's tables read the same on every Mac and on the phone, and two vaults can differ. It lives in
  * `<vault>/.yaseendocs/table-look.json`, through the generic `vaultConfig` door, as `card-look.json`. Pure: no React, no
@@ -48,7 +48,13 @@ export interface TableLookLook {
   /** YAZ-5541: Shade the next time slot, and its colour (a band colour's choices). */
   nextShade?: boolean
   nextColour?: string
+  /** YAZ-5602 round 2: Time in slot (the pill on the now line) and Show seconds. The vault's only: no app setting. */
+  slotTime?: TableSlotTime
+  slotSeconds?: boolean
 }
+
+/** Time in slot (YAZ-5602): off, a count down of the time left in the now row's slot, or a count up since it started. */
+export type TableSlotTime = 'off' | 'down' | 'up'
 
 /** How a new table of the vault starts (the file's `newTables`). */
 export interface TableLookNew {
@@ -65,7 +71,7 @@ export interface TableLook {
   newTables?: TableLookNew
 }
 
-/** The table look's settings, by their app names (`SettingsState`): the 21 of YAZ-5487, then YAZ-5541's two. */
+/** The table look's settings, by their app names (`SettingsState`): the 21 of YAZ-5487, then YAZ-5541's two, then YAZ-5602's two (no app setting: `VaultOnly`). */
 export const TABLE_LOOK_SETTINGS = [
   'tableHeaderRow',
   'tableSubheaderRow',
@@ -85,13 +91,17 @@ export const TABLE_LOOK_SETTINGS = [
   'tableNowMark',
   'tableNextShade',
   'tableNextColour',
+  'tableSlotTime',
+  'tableSlotSeconds',
   'tableNewStyle',
   'tableTimeFormat',
   'tableDayStart',
   'tableDayEnd',
   'tableCellNoteTemplate',
 ] as const
-export type TableLookSettings = Pick<SettingsState, (typeof TABLE_LOOK_SETTINGS)[number]>
+/** The two settings with no app setting (YAZ-5602 round 2): a vault with no file, and a window with no vault, read the defaults. */
+type VaultOnly = 'tableSlotTime' | 'tableSlotSeconds'
+export type TableLookSettings = Pick<SettingsState, Exclude<(typeof TABLE_LOOK_SETTINGS)[number], VaultOnly>> & { tableSlotTime: TableSlotTime; tableSlotSeconds: boolean }
 
 /**
  * The defaults: `DEFAULT_SETTINGS`', written out, as the ranges below are (the `cardLook.ts` rule: an import of
@@ -116,6 +126,8 @@ export const TABLE_LOOK_DEFAULTS: Readonly<TableLookSettings> = /*#__PURE__*/ Ob
   tableNowMark: 'line',
   tableNextShade: false,
   tableNextColour: 'red',
+  tableSlotTime: 'off',
+  tableSlotSeconds: true,
   tableNewStyle: 'plain',
   tableTimeFormat: 'h:mm a',
   tableDayStart: 5 * 60,
@@ -162,6 +174,8 @@ const LOOK_OK: { [K in Exclude<keyof TableLookLook, 'headerRow' | 'subheaderRow'
   nowMark: oneOf(['line', 'tint', 'both']),
   nextShade: bool,
   nextColour: isBandColour,
+  slotTime: oneOf(['off', 'down', 'up']),
+  slotSeconds: bool,
 }
 
 const NEW_OK: { [K in keyof TableLookNew]-?: (v: unknown) => boolean } = {
@@ -226,6 +240,8 @@ export function tableLookSettings(file: TableLook): TableLookSettings {
     tableNowMark: l.nowMark ?? d.tableNowMark,
     tableNextShade: l.nextShade ?? d.tableNextShade,
     tableNextColour: l.nextColour ?? d.tableNextColour,
+    tableSlotTime: l.slotTime ?? d.tableSlotTime,
+    tableSlotSeconds: l.slotSeconds ?? d.tableSlotSeconds,
     tableNewStyle: n.style ?? d.tableNewStyle,
     tableTimeFormat: n.timeFormat ?? d.tableTimeFormat,
     ...day,
@@ -267,6 +283,8 @@ export function tableLookOf(s: Partial<TableLookSettings>): TableLook {
       ...(differs('tableNowMark') && { nowMark: s.tableNowMark }),
       ...(differs('tableNextShade') && { nextShade: s.tableNextShade }),
       ...(differs('tableNextColour') && { nextColour: s.tableNextColour }),
+      ...(differs('tableSlotTime') && { slotTime: s.tableSlotTime }),
+      ...(differs('tableSlotSeconds') && { slotSeconds: s.tableSlotSeconds }),
     },
     newTables: {
       ...(differs('tableNewStyle') && { style: s.tableNewStyle }),

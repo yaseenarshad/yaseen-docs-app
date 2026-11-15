@@ -62,7 +62,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
-import { setCellNoteButtonSetting, setSlotTimeSetting } from './editor/table/timeFormatSetting'
+import { setCellNoteButtonSetting } from './editor/table/timeFormatSetting'
 import { setAppTableLook, setVaultTableLook, tableLookKey, tableLookVars } from './editor/table/tableLook'
 import { appTableLook, type TableLookSettings } from '@shared/tableLook'
 import { requestGoToNow } from './editor/table/goToNowRequest'
@@ -826,7 +826,6 @@ export function App() {
     roots.forEach((at, i) => setVaultTableLook(at, vaults[i]?.tableLook.settings ?? null))
   })
   useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
-  useEffect(() => setSlotTimeSetting(settings.tableSlotTime, settings.tableSlotSeconds), [settings.tableSlotTime, settings.tableSlotSeconds])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
   // Arrows while typing (YAZ-4273 D8): an open page reads it at its next keystroke. Absent from an older main process.
