@@ -96,6 +96,29 @@ describe('the Content-Security-Policy of the app', () => {
     }
   })
 
+  it("YAZ-5533: draw.io's frame has its own policy, stricter than the app's: this site's scripts, no call anywhere, no frame of its own; only the app may frame it", () => {
+    for (const path of ['/drawio/0123456789ab/render', '/drawio/0123456789ab/viewer-static.min.js', '/drawio/0123456789ab/stencils/aws4.js']) {
+      const policy = headersFor(rules, path)['content-security-policy'] ?? ''
+      // One policy (the app's is detached), never the app's joined to it.
+      expect([path, policy.split(', ').length, policy.includes('api.github.com')]).toEqual([path, 1, false])
+      const frame = cspOf(policy)
+      expect(frame.get('default-src')).toEqual(["'none'"])
+      expect(frame.get('script-src')).toEqual(["'self'"])
+      expect(frame.get('connect-src')).toEqual(["'none'"])
+      expect(frame.get('img-src')).toEqual(['data:', 'blob:'])
+      expect(frame.get('style-src')).toEqual(["'unsafe-inline'"])
+      for (const shut of ['frame-src', 'worker-src', 'object-src', 'base-uri', 'form-action']) expect([shut, frame.get(shut)]).toEqual([shut, ["'none'"]])
+      expect(frame.get('frame-ancestors')).toEqual(["'self'"])
+      expect(policy).not.toMatch(/unsafe-eval|wasm-unsafe-eval|\*|https?:/)
+      // The other headers stay (no referrer, no sniffing).
+      expect(headersFor(rules, path)['x-content-type-options']).toBe('nosniff')
+    }
+    // The one exception: every other path keeps frame-ancestors 'none'.
+    for (const path of ['/', '/friend', '/assets/index-abc.js', '/drawio', '/drawio.html', '/x/drawio/render']) expect([path, cspOf(headersFor(rules, path)['content-security-policy'] ?? '').get('frame-ancestors')]).toEqual([path, ["'none'"]])
+    // The app may frame its own page: its frame-src is its default-src, this site.
+    expect(csp.get('frame-src') ?? csp.get('default-src')).toEqual(["'self'"])
+  })
+
   it("the worker file has its own policy: it may fetch this site's files and nothing else", () => {
     const sw = cspOf(headersFor(rules, '/sw.js')['content-security-policy'] ?? '')
     expect(sw.get('default-src')).toEqual(["'none'"])
