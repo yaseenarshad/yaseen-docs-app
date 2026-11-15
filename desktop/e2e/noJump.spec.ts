@@ -31,8 +31,8 @@ async function sample(w: Page, text: string, act: () => Promise<void>, ms = 1500
   await w.evaluate(
     ({ text, ms, card }) => {
       const pick = (): Element | null => {
-        const ex = [...document.querySelectorAll('.explore:not([hidden])')].at(-1)
-        const all = [...(ex ?? document).querySelectorAll(card ? '.card' : 'p, .cm-line, li')].filter((el) => {
+        const ex = Array.from(document.querySelectorAll('.explore:not([hidden])')).at(-1)
+        const all = Array.from((ex ?? document).querySelectorAll(card ? '.card' : 'p, .cm-line, li')).filter((el) => {
           if (card ? !(el.textContent ?? '').includes(text) : !(el.textContent ?? '').trim().startsWith(text)) return false
           if (el.closest('.explore__body--incoming, .tabstack__layer--hidden, [hidden]') !== null) return false
           const r = el.getBoundingClientRect()
@@ -49,8 +49,8 @@ async function sample(w: Page, text: string, act: () => Promise<void>, ms = 1500
         return all.at(-1) ?? null
       }
       const titleBox = (): DOMRect | null => {
-        const ex = [...document.querySelectorAll('.explore:not([hidden])')].at(-1)
-        const t = [...(ex ?? document).querySelectorAll('.page-title__text, .page-title__input, .explore__title')].filter((el) => el.closest('.explore__body--incoming, .tabstack__layer--hidden, .card') === null && el.getBoundingClientRect().height > 0)
+        const ex = Array.from(document.querySelectorAll('.explore:not([hidden])')).at(-1)
+        const t = Array.from((ex ?? document).querySelectorAll('.page-title__text, .page-title__input, .explore__title')).filter((el) => el.closest('.explore__body--incoming, .tabstack__layer--hidden, .card') === null && el.getBoundingClientRect().height > 0)
         return t.at(-1)?.getBoundingClientRect() ?? null
       }
       const out: Array<{ t: number; top: number | null; left: number | null; width: number | null; title: number | null; titleKind: string | null }> = []
@@ -59,7 +59,7 @@ async function sample(w: Page, text: string, act: () => Promise<void>, ms = 1500
       const tick = () => {
         const el = pick()
         const r = el?.getBoundingClientRect()
-        const tEl = [...([...document.querySelectorAll('.explore:not([hidden])')].at(-1) ?? document).querySelectorAll('.page-title__text, .page-title__input, .explore__title')].filter((e) => e.closest('.explore__body--incoming, .tabstack__layer--hidden, .card') === null && e.getBoundingClientRect().height > 0).at(-1)
+        const tEl = Array.from((Array.from(document.querySelectorAll('.explore:not([hidden])')).at(-1) ?? document).querySelectorAll('.page-title__text, .page-title__input, .explore__title')).filter((e) => e.closest('.explore__body--incoming, .tabstack__layer--hidden, .card') === null && e.getBoundingClientRect().height > 0).at(-1)
         out.push({ t: Math.round(performance.now() - start), top: r ? Math.round(r.top) : null, left: r ? Math.round(r.left) : null, width: r ? Math.round(r.width) : null, title: titleBox() ? Math.round(titleBox()!.top) : null, titleKind: tEl?.className.split(' ')[0] ?? null })
         if (performance.now() - start < ms) requestAnimationFrame(tick)
       }
@@ -72,7 +72,7 @@ async function sample(w: Page, text: string, act: () => Promise<void>, ms = 1500
   await w.waitForTimeout(ms + 200)
   const frames = (await w.evaluate(() => (window as unknown as { __nojump: unknown }).__nojump)) as Array<{ t: number; top: number | null; left: number | null; width: number | null; title: number | null; titleKind: string | null }>
   const first = frames.find((f) => f.top !== null)!
-  const last = [...frames].reverse().find((f) => f.top !== null)!
+  const last = Array.from(frames).reverse().find((f) => f.top !== null)!
   const dev = (k: 'top' | 'left' | 'width') => Math.max(...frames.filter((f) => f[k] !== null).map((f) => Math.abs((f[k] as number) - (first[k] as number))))
   const missing = frames.filter((f) => f.top === null).length
   return {
@@ -92,7 +92,7 @@ async function scrollTo(w: Page, _sel: string, text: string, offset = 120): Prom
   await w.evaluate(
     ({ text, offset }) => {
       const ok = (e: Element) => e.closest('.explore__body--incoming, .tabstack__layer--hidden, [hidden]') === null && e.getBoundingClientRect().height > 0
-      const el = [...([...document.querySelectorAll('.explore:not([hidden])')].at(-1) ?? document).querySelectorAll('p')].filter(ok).filter((p) => (p.textContent ?? '').startsWith(text)).at(-1)!
+      const el = Array.from((Array.from(document.querySelectorAll('.explore:not([hidden])')).at(-1) ?? document).querySelectorAll('p')).filter(ok).filter((p) => (p.textContent ?? '').startsWith(text)).at(-1)!
       let sc: Element | null = el.parentElement
       for (; sc; sc = sc.parentElement) { const o = getComputedStyle(sc).overflowY; if ((o === 'auto' || o === 'scroll') && sc.scrollHeight > sc.clientHeight) break }
       sc!.scrollTop += el.getBoundingClientRect().top - sc!.getBoundingClientRect().top - offset
@@ -125,7 +125,6 @@ const editBtn = () => win.locator('.explore:not([hidden]) .explore__layer').last
 const doneBtn = () => win.locator('.explore:not([hidden]) .explore__layer').last().locator('.explore__head .explore__button', { hasText: 'Done' }).first()
 const soft = (name: string, r: Awaited<ReturnType<typeof sample>>) => {
   report[name] = r
-  if (process.env.NJ_PROBE !== "1") expect.soft(r.maxShift, name).toEqual({ top: 0, left: 0, width: 0 })
 }
 
 test('launch', async () => {
@@ -160,7 +159,7 @@ for (const [name, file, q] of [['cardInPageTab', 'Long page', 'nojump-card-quest
     await win.waitForTimeout(600)
     await win.evaluate((q) => {
       const s = document.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) .editor-host, .tabstack__layer:not(.tabstack__layer--hidden) .card-file') as HTMLElement
-      const card = [...document.querySelectorAll('.tabstack__layer:not(.tabstack__layer--hidden) .card')].find((c) => (c.textContent ?? '').includes(q))!
+      const card = Array.from(document.querySelectorAll('.tabstack__layer:not(.tabstack__layer--hidden) .card')).find((c) => (c.textContent ?? '').includes(q))!
       const sc = (function f(e: Element | null): Element | null { for (let a = e; a; a = a.parentElement) { const o = getComputedStyle(a).overflowY; if ((o === 'auto' || o === 'scroll') && a.scrollHeight > a.clientHeight) return a } return null })(card) ?? s
       sc.scrollTop += card.getBoundingClientRect().top - sc.getBoundingClientRect().top - 150
     }, q)
@@ -218,4 +217,10 @@ test('explore card file: E and Esc, at the top and halfway', async () => {
   }
   await win.keyboard.press('Escape')
   await win.keyboard.press('Escape')
+})
+
+// Last: every path, both ways, at most 1 px of motion in any frame (the line in view: top, left, width).
+test('nothing jumped', () => {
+  test.skip(process.env.NJ_PROBE === '1', 'probe: record only')
+  for (const [name, r] of Object.entries(report)) expect.soft((r as Awaited<ReturnType<typeof sample>>).maxShift, name).toEqual({ top: 0, left: 0, width: 0 })
 })
