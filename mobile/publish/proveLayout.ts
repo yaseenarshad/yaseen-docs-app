@@ -41,9 +41,11 @@ import { join } from 'node:path'
  *  - the card strip (`#fixture=card-strip`, `page-card-strip`, YAZ-5508), light and dark, at 375 px: closed under the
  *    card, each toggle a 44px tap, the bar inside the screen; a tap opens Reviews' drawer to its table (a picture of
  *    each); a page's card and a card embed with theirs; the page never scrolls sideways.
+ *  - the comment count of a card file (`#fixture=card-strip`, YAZ-5511), light and dark, at 375 px: on the screen above
+ *    the card, a 44 px tap, its centre the count's own; a tap brings the comments under the card up.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -646,6 +648,35 @@ if (process.env.LAYOUT_STRIP !== 'no') {
     const pageOk = inPage.error === undefined && inPage.drawer === 0 && inPage.short.length === 0 && !inPage.wide
     if (!pageOk) failed++
     console.log(`${pageOk ? 'PASS' : 'FAIL'}  page-card-strip ${scheme} at 375x667: ${JSON.stringify(inPage.tabs)}; closed drawer ${inPage.drawer}px; ${inPage.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${pageShot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5511: the comment count of a card file, light and dark, at 375 px: on the screen, above the card (not under it),
+// a 44 px tap whose centre is the count; a tap brings the comments (under the card and its strip) up, under the top bar
+// (to the top, or as far as the view scrolls: a short view ends first).
+const COUNT_CHECK = `(() => {
+  const count = document.querySelector('.card-view .comments-count')
+  if (!count) return { error: 'no count' }
+  const card = document.querySelector('.card-view .card-view__card')
+  const r = count.getBoundingClientRect()
+  const c = card.getBoundingClientRect()
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+  return { text: count.textContent, rect: [r.left, r.top, r.right, r.bottom].map(Math.round), onScreen: r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight, tap: r.height >= 44 && r.width >= 44, hit: hit !== null && hit.closest('.comments-count') === count, overCard: r.bottom > c.top + 0.5 }
+})()`
+if (process.env.LAYOUT_COUNT !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('card-strip', 375, 667)
+    const shot = file.replace('.png', `-count-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const m = await evaluate(COUNT_CHECK)
+    await evaluate(`document.querySelector('.card-view .comments-count').click()`)
+    await wait(800)
+    const went = await evaluate(`(() => { const s = document.querySelector('.card-view .page-comments').getBoundingClientRect(); const top = document.querySelector('.topbar').getBoundingClientRect().bottom; return Math.round(s.top - top) })()`)
+    writeFileSync(shot.replace('.png', '-tapped.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.error === undefined && m.text === '2' && m.onScreen && m.tap && m.hit && !m.overCard && went >= 0 && went <= 667 / 3
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip count ${scheme} at 375x667: "${m.text}" at ${m.rect?.join(',')}; ${m.onScreen ? 'on screen' : 'OFF SCREEN'}; ${m.tap ? '44px tap' : 'TAP TOO SMALL'}; its centre ${m.hit ? 'is the count' : 'IS COVERED'}; ${m.overCard ? 'OVER THE CARD' : 'above the card'}; a tap: the comments ${went}px under the top bar  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
