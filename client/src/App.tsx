@@ -32,6 +32,7 @@ import { fileClipboardVerb } from './lib/fileClipboardHotkey'
 import { focusOpenDocument, giveFocusBack } from './lib/focusHandoff'
 import { useEscapeLast } from './lib/escapeOrder'
 import { osVerbs } from './lib/osVerbs'
+import { TitleIsName } from './lib/titleRule'
 import { dragOutText, gestureNotice, namedItems, noticeMs, onDisk, shows, unlessFailed, type DragOutAsk, type NamedItem, type Notice, type NoticeKind, type NoticeType } from './lib/notice'
 import { allDirs, otherFiles, treeHasPath } from './lib/treeState'
 import { NoticeToast } from './components/NoticeToast'
@@ -582,6 +583,11 @@ export function App() {
     const home = rootOfPath(now.roots, path)
     return home === null ? now.first : now.vaults[now.roots.indexOf(home)]
   }, [])
+  /** Is a title typed for `path` its file's name (YAZ-5580): its vault, once indexed, does not use IDs. Every title field asks it. */
+  const titleIsName = useCallback((path: string): boolean => {
+    const { wikilinks } = scopeOf(path)
+    return wikilinks.resolve !== null && !wikilinks.ids
+  }, [scopeOf])
   /** The `[[` picker rows of the window's vault that holds `path`, or null (YAZ-3609 D14): links across the workspace. */
   const candidatesOf = useCallback((path: string) => (rootOfPath(live.current.roots, path) === null ? null : scopeOf(path).wikilinkCandidates), [scopeOf])
   /**
@@ -3932,6 +3938,7 @@ export function App() {
     <PageWindowEditorProps.Provider value={pageWindowEditorProps}>
     <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
+    <TitleIsName.Provider value={titleIsName}>
     <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-shown-hidden-words={settings.shownHiddenWords} {...nextHiddenAttrs(settings)} {...cardLookAttrs(settings)} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} {...subheaderRowAttrs(subheaderRow)} data-table-sticky-subheaders={stickySubheaders ? 'on' : 'off'} data-table-text={textInCells} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
@@ -4467,6 +4474,7 @@ export function App() {
         </Suspense>
       )}
     </div>
+    </TitleIsName.Provider>
     </CommentPrefsContext.Provider>
     </PageActions.Provider>
     </PageWindowEditorProps.Provider>

@@ -1187,7 +1187,8 @@ describe('Sidebar folder rename + file drag-move (E1b, GRO-2241)', () => {
   ])('where the vault does not use IDs "Rename" on %s edits a file name: one a file cannot hold is refused in the box, which stays open with what was typed (YAZ-2523 V3)', async (_, row) => {
     const { props, el } = await mount({ indexSource: indexFor(false) })
     await renameRow(el, row(el), 'a/b')
-    expect(el.querySelector('.create-inline__error')?.textContent).toBe('Name cannot contain "/"')
+    // The one title check (YAZ-5580): said under the box, which keeps the text.
+    expect(el.querySelector('.create-inline__error')?.textContent).toBe("A title can't contain / — remove it to save")
     expect(el.querySelector<HTMLInputElement>('.create-inline__input')?.value).toBe('a/b')
     expect(props.onRetitle).not.toHaveBeenCalled()
   })

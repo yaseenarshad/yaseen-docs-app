@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TreeNode } from '@shared/types'
 import { boardPath, datedSeed, DEFAULT_NEW_PAGE_TITLE, plainEntryName, renamedPath, renderTitleTemplate, targetDirFor, untitledNames, validateEntryName } from './createEntry'
+import { badNameChars, titleNameProblem } from '@shared/entryName'
 
 const dir = (path: string): TreeNode => ({ type: 'dir', name: path.split('/').pop()!, path, children: [] })
 const file = (path: string): TreeNode => ({ type: 'file', name: path.split('/').pop()!, path, size: 0, mtime: 1, kind: 'markdown' })
@@ -123,6 +124,22 @@ describe('plainEntryName (YAZ-2523 V3): the one rule for a name typed in a vault
   it('a name a file cannot hold is refused with the reason', () => {
     expect(() => plainEntryName('a/b', 'file')).toThrow('Name cannot contain "/"')
     expect(() => plainEntryName('.git', 'dir')).toThrow('Names starting with "." are hidden')
+  })
+})
+
+describe('the one check of a title that is a file name (YAZ-5580)', () => {
+  it('badNameChars: the characters a file name cannot hold, each once; none in a good name', () => {
+    expect(badNameChars('a/b/c')).toEqual(['/'])
+    expect(badNameChars('a/b\0')).toEqual(['/', '\0'])
+    expect(badNameChars('Q3: plans & more?')).toEqual([])
+  })
+
+  it('titleNameProblem: the message under the field, by the same rules as a file name', () => {
+    expect(titleNameProblem('Q3/Q4')).toBe("A title can't contain / — remove it to save")
+    expect(titleNameProblem('a\0b')).toBe("A title can't contain an invalid character — remove it to save")
+    expect(titleNameProblem(' .plan')).toBe('A title can\'t start with "." — remove it to save')
+    expect(titleNameProblem('Q3 and Q4')).toBeNull()
+    for (const t of ['Q3/Q4', 'a\0b', '.plan', 'Fine']) expect(titleNameProblem(t) === null).toBe(validateEntryName(t) === null)
   })
 })
 

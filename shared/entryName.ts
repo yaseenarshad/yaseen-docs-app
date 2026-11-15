@@ -8,12 +8,34 @@ import type { BoardKind } from './types'
 /** What the inline input creates: a markdown page, a folder, or a board — an Excalidraw drawing or a draw.io diagram (YAZ-3028 D9). */
 export type EntryKind = 'file' | 'dir' | BoardKind
 
+/** The characters a file name cannot hold. */
+const BAD_NAME_CHARS = ['/', '\0'] as const
+
+/** The characters of `name` a file name cannot hold, each once, in the rule's order: empty when there are none. */
+export function badNameChars(name: string): string[] {
+  return BAD_NAME_CHARS.filter((c) => name.includes(c))
+}
+
 /** Human-readable reason the name is unusable, or null when fine. */
 export function validateEntryName(name: string): string | null {
   const trimmed = name.trim()
-  if (trimmed.includes('/')) return 'Name cannot contain "/"'
-  if (trimmed.includes('\0')) return 'Name contains an invalid character'
+  const bad = badNameChars(trimmed)
+  if (bad.includes('/')) return 'Name cannot contain "/"'
+  if (bad.length > 0) return 'Name contains an invalid character'
   if (trimmed.startsWith('.')) return 'Names starting with "." are hidden'
+  return null
+}
+
+/**
+ * The short message under a title field where the title IS the file's name (a vault that does not use IDs, YAZ-5580):
+ * `validateEntryName`'s rules, said while typing, so the field keeps the text and nothing is renamed. Null when fine.
+ * A vault with IDs keeps its title in front matter: any character goes there, and no field asks this.
+ */
+export function titleNameProblem(title: string): string | null {
+  const trimmed = title.trim()
+  const bad = badNameChars(trimmed)
+  if (bad.length > 0) return `A title can't contain ${bad.map((c) => (c === '\0' ? 'an invalid character' : c)).join(' or ')} — remove it to save`
+  if (trimmed.startsWith('.')) return 'A title can\'t start with "." — remove it to save'
   return null
 }
 

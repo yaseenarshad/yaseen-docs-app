@@ -2830,6 +2830,25 @@
   max-width: 100%;
 }
 
+/* The Name cell's title a file cannot hold (YAZ-5580): said just under the cell, over the row below. */
+.view-cell-edit .title-problem {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 5;
+  margin: 0;
+  padding: 2px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.view-cell-edit__input[aria-invalid] {
+  outline-color: var(--danger);
+  border-color: var(--danger);
+}
+
 /* the display is a button so it can be clicked/focused, but looks like plain cell content */
 .view-cell-edit__display {
   display: inline-block;

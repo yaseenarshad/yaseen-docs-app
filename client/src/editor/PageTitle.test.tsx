@@ -8,6 +8,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { PageTitle } from './PageTitle'
 import { READ_ONLY_EDIT, type ReadOnlyEditEvent } from './readOnlyEdit'
 import type { PathTitles } from '../lib/pageLabel'
+import { TitleIsName } from '../lib/titleRule'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -307,5 +308,94 @@ describe('the ID after the title (YAZ-4940 "In the title")', () => {
   it('a read-only page shows the ID too', () => {
     const { el } = mountWithId('EMB-46', { readOnly: true })
     expect(idButton(el)?.textContent).toBe('EMB-46')
+  })
+})
+
+describe('a title its file cannot be named (YAZ-5580)', () => {
+  /** The title field under App's rule: `isName` says the vault does not use IDs (the title is the file's name). */
+  function mountRule(isName: boolean, text?: string) {
+    const onRetitle = vi.fn()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() =>
+      root?.render(
+        <TitleIsName.Provider value={() => isName}>
+          <PageTitle path={PATH} titles={new Map()} {...(text !== undefined && { text })} onRetitle={onRetitle} />
+        </TitleIsName.Provider>,
+      ),
+    )
+    act(() => heading(container!)?.click())
+    return { el: container, onRetitle }
+  }
+  /** Types `value` as a person does: React hears the input event. */
+  const typeLive = (el: HTMLElement, value: string) => {
+    const f = field(el)
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(f, value)
+      f.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
+  const problem = (el: HTMLElement) => el.querySelector('.title-problem')?.textContent ?? null
+
+  it('a "/" typed shows the message under the title at once, before Enter, and the title keeps the text', () => {
+    const { el, onRetitle } = mountRule(true)
+    typeLive(el, 'Q3/Q4')
+    expect(problem(el)).toBe("A title can't contain / — remove it to save")
+    expect(field(el).value).toBe('Q3/Q4')
+    expect(field(el).getAttribute('aria-invalid')).toBe('true')
+    expect(onRetitle).not.toHaveBeenCalled()
+  })
+
+  it('Enter, and leaving the field, keep the text and the message: nothing renamed, nothing cleared', () => {
+    const { el, onRetitle } = mountRule(true)
+    typeLive(el, 'Q3/Q4')
+    press(field(el), 'Enter')
+    blur(field(el))
+    expect(field(el).value).toBe('Q3/Q4')
+    expect(problem(el)).toBe("A title can't contain / — remove it to save")
+    expect(onRetitle).not.toHaveBeenCalled()
+  })
+
+  it('fixed, the message goes and Enter renames', () => {
+    const { el, onRetitle } = mountRule(true)
+    typeLive(el, 'Q3/Q4')
+    press(field(el), 'Enter')
+    typeLive(el, 'Q3 and Q4')
+    expect(problem(el)).toBeNull()
+    press(field(el), 'Enter')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('Q3 and Q4')
+    expect(input(el)).toBeNull()
+  })
+
+  it('a leading "." is said the same way (a hidden file)', () => {
+    const { el } = mountRule(true)
+    typeLive(el, '.plan')
+    expect(problem(el)).toBe('A title can\'t start with "." — remove it to save')
+  })
+
+  it('Escape still discards: the title is put back and the message goes', () => {
+    const { el, onRetitle } = mountRule(true)
+    typeLive(el, 'a/b')
+    press(field(el), 'Escape')
+    expect(input(el)).toBeNull()
+    expect(problem(el)).toBeNull()
+    expect(onRetitle).not.toHaveBeenCalled()
+  })
+
+  it('a vault with IDs keeps the title in front matter: "/" says nothing and renames', () => {
+    const { el, onRetitle } = mountRule(false)
+    typeLive(el, 'Q3/Q4')
+    expect(problem(el)).toBeNull()
+    press(field(el), 'Enter')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('Q3/Q4')
+  })
+
+  it('a card in a page has no file name: its title takes "/" even where titles are file names', () => {
+    const { el, onRetitle } = mountRule(true, 'Card')
+    typeLive(el, 'either/or')
+    expect(problem(el)).toBeNull()
+    press(field(el), 'Enter')
+    expect(onRetitle).toHaveBeenCalledExactlyOnceWith('either/or')
   })
 })

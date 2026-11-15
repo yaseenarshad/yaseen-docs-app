@@ -13,7 +13,8 @@ import { CARD_FORMATS_OPEN } from './editor/card/cardFormatHint'
 import { defaultCourseState } from '@shared/courseState'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { StrictMode, act } from 'react'
+import { StrictMode, act, useContext } from 'react'
+import { TitleIsName } from './lib/titleRule'
 import { createRoot, type Root } from 'react-dom/client'
 import { dailyPageName } from '@shared/dailyPage'
 import { IDS_FILE } from '@shared/pageId'
@@ -163,6 +164,8 @@ const captured = vi.hoisted(() => ({
   linkOpeners: [] as { path: string | null; open?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void }[],
   /** The page title's commit, as the newest editor was handed it (YAZ-2420 D16). */
   editorRetitle: undefined as ((path: string, title: string, kind: 'file' | 'dir') => void) | undefined,
+  /** The title fields' rule (YAZ-5580), as the newest editor reads it from App: is a title typed for a path its file's name? */
+  titleIsName: undefined as ((path: string) => boolean) | undefined,
   viewOnlyLinks: [] as Array<ViewOnlyLinkSource | undefined>,
   /** The new tab page (YAZ-2663 D3), as App last handed it its doors; null while it does not show. */
   startPage: null as { roots: readonly string[]; onOpen: (path: string) => void; onOpenBackground: (path: string) => void; onShowInFiles: (path: string) => void; onBack: () => void; onRowMenu: (path: string, x: number, y: number) => void; onBackToSearch: () => void; focusRef: { current: (() => boolean) | null }; previewPath?: string | null; onPreview?: (path: string | null) => void } | null,
@@ -202,6 +205,7 @@ const EditorStub = ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, 
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.linkOpeners.push({ path, open: onOpenLink })
     captured.editorRetitle = onRetitle
+    captured.titleIsName = useContext(TitleIsName)
     captured.viewOnlyLinks.push(viewOnlyLinks)
     return (
       <div data-editor data-root={root} data-path={path ?? ''}>
@@ -5095,6 +5099,20 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(sheetText(el)).toBe(asked)
       await act(async () => sheetBtn(el, 'Rename')?.click())
       expect(files['/v/A.md'].content).toBe(after)
+    })
+
+    it.each([
+      [false, true],
+      [true, false],
+    ])('every title field asks App whether a title is a file name (YAZ-5580): with IDs %s, a "/" is said under the field: %s', async (ids, isName) => {
+      await mount(askOff(), { ...identity(), file: '/v/B.md', tabs: ['/v/B.md'] }, {}, (b) => b.bridge.index.mockResolvedValue({ root: '/v', records, folders: [], generatedAt: 1, ids }))
+      expect(captured.titleIsName?.('/v/B.md')).toBe(isName)
+      expect(captured.titleIsName?.('/v/Docs')).toBe(isName)
+    })
+
+    it('before the vault’s index lands its kind is not known: no title field says anything yet (the rename door says so) (YAZ-5580)', async () => {
+      await mount(askOff(), { ...identity(), file: '/v/B.md', tabs: ['/v/B.md'] }, {}, (b) => b.bridge.index.mockReturnValue(new Promise(() => undefined)))
+      expect(captured.titleIsName?.('/v/B.md')).toBe(false)
     })
 
     it('the name it already has renames nothing; a name a file cannot hold is said in the notice and renames nothing', async () => {

@@ -17,6 +17,7 @@ import { createWikilinkResolveSource } from '../../editor/wikilink/wikilinkPlugi
 import { TEST_RECORDS } from '../testRecords'
 import { HOVER_PREVIEW_DWELL_MS } from '../../sidebar/HoverPreviewHost'
 import { spacePanel } from '../../tabs/cardPreview'
+import { TitleIsName } from '../../lib/titleRule'
 
 /** No store behind this mount: collapse state stays in the pane. */
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
@@ -68,7 +69,7 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let draw: () => void = () => {}
 
-function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { editorHost?: boolean } = {}) {
+function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { editorHost?: boolean; titleIsName?: boolean } = {}) {
   let parsed = parseViews(text)
   const onOpenFile = vi.fn()
   const onChange = vi.fn((next: ParsedViews) => {
@@ -95,7 +96,9 @@ function mount(text: string, props: Partial<ViewsPaneProps> = {}, options: { edi
           {...props}
         />
       )
-      root?.render(options.editorHost === true ? <div className="folder-view">{pane}</div> : pane)
+      const drawn = options.editorHost === true ? <div className="folder-view">{pane}</div> : pane
+      // App's title rule (YAZ-5580): whether the vault's titles are its files' names (no IDs).
+      root?.render(options.titleIsName === undefined ? drawn : <TitleIsName.Provider value={() => options.titleIsName === true}>{drawn}</TitleIsName.Provider>)
     })
   draw()
   const el = container
@@ -402,6 +405,34 @@ describe('the Name cell (YAZ-2420 D26, table F)', () => {
     // It was the Name cell itself; Enter now moves on, as after any cell's edit (S43).
     expect(document.activeElement).toBe(el.querySelector('td[data-cell="1:0"]'))
     expect(onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('a vault without IDs: a "/" is said under the cell as typed; Enter and leaving keep the text and rename nothing; fixed, it renames (YAZ-5580)', () => {
+    const retitle = vi.fn()
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) }, { titleIsName: true })
+    doubleClick(nameCell(el))
+    typeTitle(nameCell(el), 'Agentic/2026')
+    const input = byLabel<HTMLInputElement>(nameCell(el), 'Edit title')
+    expect(nameCell(el).querySelector('.title-problem')?.textContent).toBe("A title can't contain / — remove it to save")
+    act(() => {
+      input.focus()
+      input.blur()
+    })
+    expect(input.isConnected).toBe(true)
+    expect(input.value).toBe('Agentic/2026')
+    expect(retitle).not.toHaveBeenCalled()
+    typeTitle(nameCell(el), 'Agentic 2026')
+    expect(retitle).toHaveBeenCalledExactlyOnceWith(agentic, 'Agentic 2026')
+  })
+
+  it('a vault with IDs: the Name cell takes "/" with no message (YAZ-5580)', () => {
+    const retitle = vi.fn()
+    const { el } = mount(TYPED_BASE, { folder: testFolderHost({ retitle }) }, { titleIsName: false })
+    doubleClick(nameCell(el))
+    typeTitle(nameCell(el), 'Agentic/2026', 'Tab')
+    expect(nameCell(el).querySelector('.title-problem')).toBeNull()
+    typeTitle(nameCell(el), 'Agentic/2026')
+    expect(retitle).toHaveBeenCalledExactlyOnceWith(agentic, 'Agentic/2026')
   })
 
   it('Escape discards the edit, and an empty title or the title it has commits nothing', () => {
