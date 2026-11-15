@@ -309,3 +309,20 @@ describe('YAZ-5518 S8: a link to a heading opens a sheet at that heading', { tim
     expect(body.scrollTop).toBe(4418 - 24)
   })
 })
+
+describe('YAZ-5518 S9: Today tapped again is one entry', { timeout: 20_000 }, () => {
+  it('todayTappedTwice_isOneHistoryEntry', async () => {
+    h = await open({ ...READER_FILES, ...DAILY })
+    await toSearch(h)
+    await waitFor(h, () => h!.host.querySelector('.tabbar__today') !== null)
+    for (let i = 0; i < 3; i++) {
+      await act(async () => h!.host.querySelector<HTMLElement>('.tabbar__today')!.click())
+      await waitFor(h, () => h!.text().includes('Today words'))
+      await h.settle()
+    }
+    // One ← goes back to Search.
+    await h.click('Back')
+    await waitFor(h, () => onTabs(h!))
+    expect(h.host.querySelector('.tree')).not.toBeNull()
+  })
+})
