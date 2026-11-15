@@ -15,7 +15,7 @@ export function SetupGuide() {
   const app = useApp()
   return (
     <Frame title="Set up your phone" back={() => app.go({ type: 'back' })}>
-      <p className="lead">Notecard works with one GitHub account and one token. Give the token two permissions: Contents and Gists.</p>
+      <p className="lead">Yaseen Docs works with one GitHub account and one token. Give the token two permissions: Contents and Gists.</p>
 
       <h2 className="section">1. The repo</h2>
       <ol className="guide-steps">
@@ -31,11 +31,11 @@ export function SetupGuide() {
             Open this page on GitHub
           </a>
         </li>
-        <li>Name: Notecard. Expiration: your choice.</li>
+        <li>Name: Yaseen Docs. Expiration: your choice.</li>
         <li>Repository access: Only select repositories, then your vault repo.</li>
         <li>Repository permissions › Contents: Read and write.</li>
         <li>Account permissions › Gists: Read and write. Friends needs it. Review works without it.</li>
-        <li>Generate the token and copy it. Paste it in Notecard, then choose your vault repo.</li>
+        <li>Generate the token and copy it. Paste it in Yaseen Docs, then choose your vault repo.</li>
       </ol>
       <p className="muted">Or, on your Mac, open Settings › Cards › Connect your phone, and tap Scan a code here.</p>
 
@@ -45,7 +45,7 @@ export function SetupGuide() {
           <SpokenThreeLines text={safariLine()} />
         </li>
         <li>{HOME_SCREEN.olderSafari}</li>
-        <li>Open Notecard from the Home Screen, and connect your vault there. {HOME_SCREEN.apart.split('. ')[0]}.</li>
+        <li>Open Yaseen Docs from the Home Screen, and connect your vault there. {HOME_SCREEN.apart.split('. ')[0]}.</li>
       </ol>
     </Frame>
   )

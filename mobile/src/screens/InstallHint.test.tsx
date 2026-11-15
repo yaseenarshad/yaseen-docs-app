@@ -24,7 +24,7 @@ describe('the install hint', () => {
     const c = card(h)!
     expect(c).not.toBeNull()
     expect(c.compareDocumentPosition(h.host.querySelector('form')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(c.querySelector('h2')?.textContent).toBe('Add Notecard to your Home Screen')
+    expect(c.querySelector('h2')?.textContent).toBe('Add Yaseen Docs to your Home Screen')
     // Yaseen's order on iOS 26; the first tap is the drawn ☰ (three lines), with a VoiceOver name.
     expect([...c.querySelectorAll('ol li')].map((li) => li.textContent!.replace(/\s+/g, ' '))).toEqual(['Tap at the left of the address bar.', 'Tap Share.', 'Tap View More.', 'Tap Add to Home Screen.'])
     expect(c.querySelector('ol li svg[role="img"]')?.getAttribute('aria-label')).toBe('the three lines')

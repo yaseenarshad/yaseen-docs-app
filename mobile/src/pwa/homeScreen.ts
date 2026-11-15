@@ -1,5 +1,5 @@
 /**
- * How to add Notecard to the Home Screen: ONE source for the words, for the app's install hint (`InstallHint.tsx`),
+ * How to add Yaseen Docs to the Home Screen: ONE source for the words, for the app's install hint (`InstallHint.tsx`),
  * "Set up your phone" and the `/friend` landing page (`landing.ts`). Safari and the Home Screen app keep their data
  * apart (iOS), so the person adds the app first and signs in there.
  * The iOS 26 Safari steps are Yaseen's, from his iPhone (compact address bar at the bottom): "three lines on the left
@@ -7,7 +7,7 @@
  * Home Screen from their own Share menu.
  */
 export const HOME_SCREEN = {
-  title: 'Add Notecard to your Home Screen',
+  title: 'Add Yaseen Docs to your Home Screen',
   why: 'It opens like an app, works with no signal, and keeps your cards on this phone.',
   /** Safari on iOS 26: each tap in order. */
   safari: [{ tap: '☰', where: 'at the left of the address bar' }, { tap: 'Share' }, { tap: 'View More' }, { tap: 'Add to Home Screen' }] as { tap: string; where?: string }[],

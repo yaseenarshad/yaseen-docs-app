@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { TABS, navigate, openingTab, topRoute, type NavState } from './nav'
+import { PLAIN_VAULT, TABS, navigate, openingTab, showsTabBar, tabIn, tabsOf, topRoute, type NavState } from './nav'
 
 describe('the shell navigation (decision 21)', () => {
   it('has three tabs, Friends · Review · Search, and no Pages tab', () => {
     expect(TABS.map((t) => t.label)).toEqual(['Friends', 'Review', 'Search'])
   })
 
-  it('opens on Friends; with no friend yet, on Review', () => {
-    expect(openingTab(true)).toBe('friends')
-    expect(openingTab(false)).toBe('review')
+  it('opens on Friends; with no friend yet, on Review; in a vault with Review off, on Search', () => {
+    const cards = { review: true, daily: false }
+    expect(openingTab(true, cards)).toBe('friends')
+    expect(openingTab(false, cards)).toBe('review')
+    expect(openingTab(true, PLAIN_VAULT)).toBe('search')
+    expect(openingTab(false, { review: false, daily: true })).toBe('search')
   })
 
   it('stacks screens over the tabs; Back closes the top one; a tab closes all', () => {
@@ -22,5 +25,28 @@ describe('the shell navigation (decision 21)', () => {
     s = navigate(s, { type: 'tab', tab: 'search' })
     expect(s).toEqual({ tab: 'search', stack: [] })
     expect(topRoute(navigate(s, { type: 'home' }))).toBeNull()
+  })
+})
+
+describe('YAZ-5476: the tabs follow the open vault', () => {
+  const label = (v: { review: boolean; daily: boolean }) => tabsOf(v).map((t) => t.label)
+
+  it('Search always; Review and Friends only with Review on', () => {
+    expect(label(PLAIN_VAULT)).toEqual(['Search'])
+    expect(label({ review: false, daily: true })).toEqual(['Search'])
+    expect(label({ review: true, daily: false })).toEqual(['Friends', 'Review', 'Search'])
+  })
+
+  it('a plain vault: Search alone, and no tab bar; Today alone with Search brings the bar', () => {
+    expect(showsTabBar(PLAIN_VAULT)).toBe(false)
+    expect(showsTabBar({ review: false, daily: true })).toBe(true)
+    expect(showsTabBar({ review: true, daily: false })).toBe(true)
+  })
+
+  it('a tab the vault does not have shows Search', () => {
+    expect(tabIn('review', PLAIN_VAULT)).toBe('search')
+    expect(tabIn('friends', { review: false, daily: true })).toBe('search')
+    expect(tabIn('friends', { review: true, daily: false })).toBe('friends')
+    expect(tabIn('search', PLAIN_VAULT)).toBe('search')
   })
 })

@@ -10,22 +10,22 @@ import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from './homeScr
 
 const WORDS: Record<LandingKind, { title: string; lead: string; label: string; missing: string; paste: string }> = {
   friend: {
-    title: 'A friend sent you a Notecard link',
-    lead: 'Notecard is the phone app of Yaseen Docs. You review your cards with it. Your friends see your review numbers. They never see your cards.',
+    title: 'A friend sent you a Yaseen Docs link',
+    lead: 'Yaseen Docs puts your notes on your phone. You review your cards with it. Your friends see your review numbers. They never see your cards.',
     label: "Your friend's code",
     missing: 'This link has no friend code. Ask your friend to send the link again.',
     paste: "Paste a friend's link",
   },
   group: {
-    title: 'You are invited to a Notecard group',
-    lead: 'Notecard is the phone app of Yaseen Docs. You review your cards with it. The people in a group see each other’s review numbers. They never see your cards.',
+    title: 'You are invited to a Yaseen Docs group',
+    lead: 'Yaseen Docs puts your notes on your phone. You review your cards with it. The people in a group see each other’s review numbers. They never see your cards.',
     label: "The group's code",
     missing: 'This link has no group code. Ask for the group link again.',
     paste: "Paste a friend's link",
   },
   join: {
-    title: 'Someone asks to join your Notecard group',
-    lead: 'You are the admin of a Notecard group. Add this person to the group in the app.',
+    title: 'Someone asks to join your Yaseen Docs group',
+    lead: 'You are the admin of a Yaseen Docs group. Add this person to the group in the app.',
     label: 'The join link',
     missing: 'This link has no join code. Ask the person to send the link again.',
     paste: "Paste a friend's link",
@@ -66,7 +66,7 @@ if (landing.code === null) {
   byId('copy').addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(copy)
-      said.textContent = 'Copied. Now open Notecard and tap Paste.'
+      said.textContent = 'Copied. Now open Yaseen Docs and tap Paste.'
     } catch {
       // No clipboard access: select the code, so one tap on "Copy" in the iOS menu copies it.
       field.focus()

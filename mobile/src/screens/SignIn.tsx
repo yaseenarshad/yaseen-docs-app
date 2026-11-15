@@ -97,7 +97,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
     setStep('typed')
   }
   const ready = app.phase === 'ready'
-  const title = mode.kind === 'first' ? 'Notecard' : mode.kind === 'add' ? 'Add a vault' : 'Sign in again'
+  const title = mode.kind === 'first' ? 'Yaseen Docs' : mode.kind === 'add' ? 'Add a vault' : 'Sign in again'
   return (
     <Frame title={title} back={mode.kind === 'first' || (mode.kind === 'again' && !ready) ? undefined : () => app.go({ type: 'back' })}>
       {mode.kind !== 'again' && step === 'token' && <InstallHint />}

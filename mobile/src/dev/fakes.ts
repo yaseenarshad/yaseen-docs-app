@@ -3,6 +3,7 @@ import { localFriends } from '../app/friendsPort'
 import { IDLE, type ShellSync, type ShellSyncEvent, type ShellSyncState } from '../app/syncPort'
 import { ScanError, type ScanProblem, type Scanner } from '../scan/scanner'
 import { vaultId, type PhoneVault, type VaultStore } from '../store'
+import { readVaultTabs } from '../app/vaultTabs'
 
 /**
  * Fakes of the shell's services, for the tests and the screen fixtures (`fixtures.tsx`). They never touch the network,
@@ -93,3 +94,9 @@ export function fakeScanner(): FakeScanner {
 export function fakeFriends(store: VaultStore, hasFriends: boolean): FriendsPort {
   return { ...localFriends(store), hasFriends: async () => hasFriends }
 }
+
+/**
+ * YAZ-5476: the tabs of a made-up vault for the tests and fixtures of other features: the vault's own files, but Review
+ * on (their vaults have no IDs, and their screens are the Review and Friends tabs).
+ */
+export const reviewOnTabs: typeof readVaultTabs = async (store, vault, index) => ({ ...(await readVaultTabs(store, vault, index)), review: true })

@@ -166,7 +166,7 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     h = await mount()
     await h.click('Scan a code')
     await h.scan('https://example.com/menu')
-    expect(h.text()).toContain('This is not a Notecard code.')
+    expect(h.text()).toContain('This is not a Yaseen Docs code.')
     // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
     await vi.waitFor(() => expect(h.scanner.on).toBe(true), { timeout: 5000 })
     await h.scan(code())
@@ -189,7 +189,7 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     h = await mount()
     h.scanner.failWith = 'denied'
     await h.click('Scan a code')
-    expect(h.text()).toContain('Notecard may not use the camera.')
+    expect(h.text()).toContain('Yaseen Docs may not use the camera.')
     await h.click('Paste a token')
     expect(h.button('Show my repos')).not.toBeNull()
   })

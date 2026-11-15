@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Notecard",
-  "short_name": "Notecard",
-  "description": "Review the cards of your Yaseen Docs vault on your phone.",
+  "name": "Yaseen Docs",
+  "short_name": "Yaseen Docs",
+  "description": "Your Yaseen Docs vault on your phone: search it, read it, and review your cards.",
   "lang": "en",
   "start_url": "/",
   "scope": "/",

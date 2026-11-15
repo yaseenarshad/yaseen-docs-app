@@ -15,7 +15,7 @@ function MenuIcon() {
 }
 
 /**
- * "Add Notecard to your Home Screen": at the top of the sign-in and of Settings, only in a browser tab (never in the
+ * "Add Yaseen Docs to your Home Screen": at the top of the sign-in and of Settings, only in a browser tab (never in the
  * Home Screen app). "Not now" hides it for this browser.
  */
 export function InstallHint() {

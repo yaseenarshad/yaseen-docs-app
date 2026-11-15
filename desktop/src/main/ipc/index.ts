@@ -10,6 +10,7 @@ import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/copyLibrary'
 import { libraryFolderOf } from '../library/folder'
+import { keepDailyPagesFiles, type DailyPagesKeeper } from '../dailyPagesVaultFile'
 import { registerBoardIpc } from './board'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
@@ -111,5 +112,19 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerShareIpc(userData, secrets, places)
   // The Draw import (YAZ-3044 A5) merges Draw's secrets through this same instance.
   // `libraryMoves.settled()`: the launch's copy and its marker write are done — what a caller waits on before it lets go of `userData`.
-  return { sync: registerGithubIpc(store), secrets, lsp, libraryMoves }
+  // YAZ-5476: each open vault's `.yaseendocs/daily-pages.json` mirrors Settings › Daily pages, for the phone. A vault
+  // that has none gets one only after its first pull (its pass ended `synced`), or when its sync is off.
+  const pulled = new Set<string>()
+  let daily: DailyPagesKeeper | null = null
+  const sync = registerGithubIpc(store, (status) => {
+    if (status.state !== 'synced' || pulled.has(status.root)) return
+    pulled.add(status.root)
+    daily?.pulled(status.root)
+  })
+  daily = keepDailyPagesFiles(store, async (root) => {
+    if (pulled.has(root)) return true
+    const status = await sync.status(root)
+    return status.enabled !== true || status.state === 'off' || status.state === 'synced'
+  })
+  return { sync, secrets, lsp, libraryMoves }
 }

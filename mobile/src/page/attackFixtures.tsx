@@ -2,7 +2,7 @@ import type { Root } from 'react-dom/client'
 import { App } from '../App'
 import { answersSetup } from '../answers/testing'
 import type { AppServices } from '../app/AppState'
-import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
+import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from '../dev/fakes'
 import type { VaultMedia } from '../media/ui/vaultMedia'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
@@ -28,7 +28,7 @@ export async function mountAttackFixture(root: Root): Promise<void> {
   await saveVaultList(store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 1 }], open: VAULT })
   const sync = fakeSync()
   sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
-  const services: AppServices = { store, tokens, sync, media, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, media, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
   root.render(<App services={services} />)
   await wait(800)
   // Show every hidden word and side, then tap each Play.

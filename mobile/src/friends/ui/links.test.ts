@@ -85,4 +85,15 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     expect(parseAnyLink(`https://preview.notecard.yaseenarshad.com/join#${ID}-${ID}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
     expect(groupLink(ID)).toBe(`https://notecard.yaseenarshad.com/group#${ID}`)
   })
+
+  it('YAZ-5476: a link made on the new address (preview.docs.yaseenarshad.com, later docs.yaseenarshad.com) pastes; a look-alike host does not', () => {
+    for (const site of ['https://preview.docs.yaseenarshad.com', 'https://docs.yaseenarshad.com']) {
+      expect(parseFriendLink(`${site}/friend#${ID}`)).toEqual({ kind: 'ok', id: ID })
+      expect(parseAnyLink(`${site}/friend#${ID}`)).toEqual({ kind: 'friend', id: ID })
+      expect(parseAnyLink(`${site}/group#${ID}`)).toEqual({ kind: 'group', id: ID })
+      expect(parseAnyLink(`${site}/join#${ID}-${ID}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
+    }
+    expect(parseFriendLink(`https://docs.yaseenarshad.com.evil.example/friend#${ID}`)).toEqual({ kind: 'other-app' })
+    expect(parseFriendLink(`https://notdocs.yaseenarshad.com/friend#${ID}`)).toEqual({ kind: 'other-app' })
+  })
 })

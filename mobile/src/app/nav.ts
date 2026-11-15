@@ -1,6 +1,10 @@
 /**
- * The shell's navigation (decision 21): three tabs at the bottom, Friends · Review · Search, and screens that open
- * over them (Settings from the gear, and the screens Settings opens). Pure, so it is tested without React.
+ * The shell's navigation (decision 21): the tabs at the bottom, Friends · Review · Search, and screens that open over
+ * them (Settings from the gear, and the screens Settings opens). Pure, so it is tested without React.
+ *
+ * YAZ-5476: the tabs follow the OPEN vault's own settings (`vaultTabs.ts`). Search is always there. Review and Friends
+ * only while the vault's Review is on (Friends compares review numbers). The Today button (YAZ-5470) only while its
+ * Daily pages are on. A plain vault has Search alone, and then there is no tab bar at all (`showsTabBar`).
  */
 
 export type Tab = 'friends' | 'review' | 'search'
@@ -12,9 +16,30 @@ export const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'search', label: 'Search' },
 ]
 
-/** Decision 21: the app opens on Friends. With no friend yet, it opens on Review. */
-export function openingTab(hasFriends: boolean): Tab {
-  return hasFriends ? 'friends' : 'review'
+/** What the open vault turns on (`vaultTabs.ts`): its Review (cards), its Daily pages. */
+export interface VaultTabs {
+  review: boolean
+  daily: boolean
+}
+
+/** A vault with neither: Search alone. Also the answer while nothing is known yet. */
+export const PLAIN_VAULT: VaultTabs = Object.freeze({ review: false, daily: false })
+
+/** The tab may show in this vault: Search always; Review and Friends with Review on. */
+export const hasTab = (tab: Tab, vault: VaultTabs): boolean => tab === 'search' || vault.review
+
+/** The tabs of the bar for this vault, in order. */
+export const tabsOf = (vault: VaultTabs): readonly { id: Tab; label: string }[] => TABS.filter((t) => hasTab(t.id, vault))
+
+/** More than one thing in the bar (a tab or Today): with Search alone, the bar is not drawn. */
+export const showsTabBar = (vault: VaultTabs): boolean => tabsOf(vault).length + (vault.daily ? 1 : 0) > 1
+
+/** The tab to show: `tab`, or Search when this vault has no such tab (it went away, or the vault changed). */
+export const tabIn = (tab: Tab, vault: VaultTabs): Tab => (hasTab(tab, vault) ? tab : 'search')
+
+/** Decision 21: the app opens on Friends. With no friend yet, it opens on Review. A vault with Review off: Search. */
+export function openingTab(hasFriends: boolean, vault: VaultTabs): Tab {
+  return tabIn(hasFriends ? 'friends' : 'review', vault)
 }
 
 /** A screen over the tabs (or over the first sign-in). The last one in the stack shows; Back closes it. */

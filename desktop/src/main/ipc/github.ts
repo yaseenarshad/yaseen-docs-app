@@ -41,14 +41,18 @@ async function inspect(root: string): Promise<GithubSyncStatus> {
  * manager because `main/index.ts` owns the three triggers no renderer can send: window focus,
  * OS wake, and the final flush on quit.
  */
-export function registerGithubIpc(store: Store): GitSyncManager {
+export function registerGithubIpc(store: Store, onStatus?: (status: GithubSyncStatus) => void): GitSyncManager {
   const manager = createGitSync({
     readConfig,
     writeConfig,
     subscribeVault: subscribe,
     subscribeConfig,
     // Every live window hears about every vault; renderers filter by `status.root` (the `state:changed` posture).
-    onStatus: (status) => broadcastAll(CONTRACT.github.onStatus.channel, status),
+    onStatus: (status) => {
+      broadcastAll(CONTRACT.github.onStatus.channel, status)
+      // Main's own listener (YAZ-5476: a vault's first pull lets the daily pages file be made).
+      onStatus?.(status)
+    },
     syncPass,
     lookAtRemote,
     inspect,

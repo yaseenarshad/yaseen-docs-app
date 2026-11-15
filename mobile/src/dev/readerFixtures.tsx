@@ -3,7 +3,7 @@ import { App } from '../App'
 import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
-import { fakeFriends, fakeScanner, fakeSync } from './fakes'
+import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
@@ -189,7 +189,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       return file === null ? shown : { ...shown, url: URL.createObjectURL(new Blob([file.content as BlobPart], { type: 'image/svg+xml' })), type: 'image/svg+xml' }
     },
   }
-  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
   root.render(<App services={services} />)
   await until(() => document.querySelector('[role="tab"]') !== null)
   press('Search')

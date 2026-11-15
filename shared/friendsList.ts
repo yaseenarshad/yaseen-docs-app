@@ -66,7 +66,8 @@ export const FRIEND_LINK_BASE = 'https://notecard.yaseenarshad.com/friend'
  * The app's sites (the stable one and its preview). Yaseen, 2026-11-14: the address is `notecard.yaseenarshad.com`. A
  * link shared before that names `notecards.yaseenarshad.com`; the paste box still reads it (it carries the same code).
  */
-const SITES = ['notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
+// YAZ-5476: the app is Yaseen Docs, at `docs.yaseenarshad.com` (now its preview, `preview.docs.yaseenarshad.com`).
+const SITES = ['docs.yaseenarshad.com', 'notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
 const isOurSite = (host: string) => SITES.some((site) => host === site || host.endsWith(`.${site}`))
 /** A gist ID: 20 (old gists) or 32 hex characters. */
 const LINK_ID = /^[0-9a-f]{20,40}$/i
@@ -75,8 +76,8 @@ export const friendLink = (pointer: string, base = FRIEND_LINK_BASE): string => 
 
 /** The text of the iOS share sheet ("Share my link"). */
 export const shareText = (link: string): { title: string; text: string; url: string } => ({
-  title: 'Notecard friend link',
-  text: 'Add me as a friend on Notecard. Open this link, copy the code, then paste it in the app.',
+  title: 'Yaseen Docs friend link',
+  text: 'Add me as a friend on Yaseen Docs. Open this link, copy the code, then paste it in the app.',
   url: link,
 })
 
@@ -382,15 +383,15 @@ export function pasteMessage(result: PasteResult): string {
       return 'Paste the link that your friend sent you.'
     case 'not-a-link':
     case 'not-a-friend-link':
-      return 'That is not a Notecard friend link. Ask your friend to tap Share my link and send it again.'
+      return 'That is not a Yaseen Docs friend link. Ask your friend to tap Share my link and send it again.'
     case 'other-app':
-      return "That link is from another app. Paste the link from your friend's Notecard."
+      return "That link is from another app. Paste the link from your friend's Yaseen Docs."
     case 'own-link':
       return 'That is your own link. Send it to a friend, and paste the link they send you.'
     case 'not-found':
       return 'That link does not work any more. Ask your friend for a new one.'
     case 'newer-app':
-      return 'Your friend has a newer Notecard. Update this app, then paste the link again.'
+      return 'Your friend has a newer Yaseen Docs. Update this app, then paste the link again.'
     case 'offline':
       return 'No connection. Try again when you are online.'
     case 'rate-limited':
@@ -428,7 +429,7 @@ export const LIST_CUT =
 export const restartAction = (vault: string): string => `Start the friends list again in ${vault}`
 /** YAZ-5399: what the way out does, said before it runs (its privacy effect). */
 export const restartWarning = (vault: string): string =>
-  `This stops sharing with everyone. Notecard deletes every friend link, group link and numbers file that you made, so no old friend or group can read your numbers. Then it makes a new, empty friends list in ${vault}. To share again, send your link to each friend.`
+  `This stops sharing with everyone. Yaseen Docs deletes every friend link, group link and numbers file that you made, so no old friend or group can read your numbers. Then it makes a new, empty friends list in ${vault}. To share again, send your link to each friend.`
 
 /** A thrown failure as a paste result. */
 function failureResult(err: unknown): PasteResult {

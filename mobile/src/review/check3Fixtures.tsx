@@ -2,7 +2,7 @@ import type { Root } from 'react-dom/client'
 import { App } from '../App'
 import { answersSetup } from '../answers/testing'
 import type { AppServices } from '../app/AppState'
-import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
+import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from '../dev/fakes'
 import type { Updates } from '../pwa/updates'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
@@ -38,7 +38,7 @@ export async function mountCheck3Fixture(root: Root, name: string): Promise<void
   await saveVaultList(store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 1 }], open: VAULT })
   const sync = fakeSync()
   sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
-  const services: AppServices = { store, tokens, sync, media, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, media, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
   const updates: Updates | null = name.includes('-update')
     ? ({ start: async () => {}, ready: () => true, tookOver: () => false, subscribe: () => () => {}, apply: () => {}, prepare: () => {}, check: async () => {} } as unknown as Updates)
     : null

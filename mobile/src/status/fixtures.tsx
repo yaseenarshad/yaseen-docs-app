@@ -3,7 +3,7 @@ import { App } from '../App'
 import type { AppServices } from '../app/AppState'
 import { saveAccount, type VaultAccount } from '../auth/account'
 import type { TokenEndWarning } from '../auth/expiry'
-import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
+import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from '../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
 import { syncDot, type DotInput } from './dot'
 import { DotWords, dotIsLoud } from './SyncStatus'
@@ -86,7 +86,7 @@ export async function mountDotFixture(root: Root, name: string): Promise<void> {
   const answers = fakeAnswers(vaultId(VAULT))
   Object.assign(sync, { review: async () => ({ answers }) })
   const refuseAll = async () => new Response(JSON.stringify({ message: 'Bad credentials' }), { status: 401 })
-  const services: AppServices = { store, tokens, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, now: () => now }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, now: () => now }
   root.render(<App services={services} />)
   await wait(80)
   sync.set({ lastSyncedAt: now - 2 * 60 * MIN })

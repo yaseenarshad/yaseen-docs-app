@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { MASKABLE_SCALE, iconSvg, pngSize, SPLASH_SCREENS } from './images'
+import { LOGO_CANVAS, LOGO_CROP, LOGO_SOURCE, iconSvg, pngSize, SPLASH_SCREENS } from './images'
 import { WORKER_SOURCES, shellFiles } from './pwaPlugin'
 
 /** The home-screen app (YAZ-5087): the manifest, the icons, the iOS tags, the splash, the publish config. */
@@ -16,9 +16,11 @@ const token = (block: 'light' | 'dark', name: string) => {
 const manifest = JSON.parse(read('public/manifest.webmanifest'))
 const html = read('index.html')
 
-describe("the app's name (Yaseen, 2026-11-14: \"it should just be notecard without an S\")", () => {
-  it('"Notecard" in each place iOS and the browser read it: the manifest name and short name, the page title, the Home Screen title', () => {
-    const NAME = 'Notecard'
+describe("the app's name (YAZ-5476, Yaseen: \"make it actually call it like Yaseen Docs\")", () => {
+  it('"Yaseen Docs" in each place iOS and the browser read it: the manifest name and short name, the page title, the Home Screen title, the landing page', () => {
+    const NAME = 'Yaseen Docs'
+    expect(read('friend.html')).toContain('<title>A friend on Yaseen Docs</title>')
+    expect(read('friend.html')).not.toContain('Notecard')
     expect([manifest.name, manifest.short_name]).toEqual([NAME, NAME])
     expect(html).toContain(`<title>${NAME}</title>`)
     expect(html).toContain(`<meta name="apple-mobile-web-app-title" content="${NAME}" />`)
@@ -26,9 +28,9 @@ describe("the app's name (Yaseen, 2026-11-14: \"it should just be notecard witho
 })
 
 describe('the web app manifest', () => {
-  it('"Notecard" (round 10 item 11, renamed by Yaseen), standalone, the whole site', () => {
-    expect(manifest.name).toBe('Notecard')
-    expect(manifest.short_name).toBe('Notecard')
+  it('"Yaseen Docs" (YAZ-5476), standalone, the whole site', () => {
+    expect(manifest.name).toBe('Yaseen Docs')
+    expect(manifest.short_name).toBe('Yaseen Docs')
     expect(manifest.display).toBe('standalone')
     expect(manifest.start_url).toBe('/')
     expect(manifest.scope).toBe('/')
@@ -40,14 +42,22 @@ describe('the web app manifest', () => {
     expect(manifest.theme_color).toBe(token('light', '--bg'))
   })
 
-  it('the icon is logo option 1, "Hidden word" (Yaseen, 2026-11-14): the source in the repo is the approved art, full-bleed', () => {
-    const svg = read('public/icons/icon.svg')
-    expect(svg).toBe(iconSvg())
-    expect(svg).toContain('<rect width="512" height="512" fill="#5b6cff"/>')
-    expect(svg).toContain('<rect x="204" y="234" width="140" height="44" rx="12" fill="#1f1f1f"/>') // the covered word
-    // The maskable icon: the same card, scaled so its corners sit inside a circle of 66% of the width.
-    const corner = Math.hypot(420 - 256, 366 - 256) * MASKABLE_SCALE
-    expect(corner).toBeLessThan(0.33 * 512)
+  it('YAZ-5476: the icon is the Mac app\'s own logo (desktop/build/icon.png), full-bleed; the Y is inside the maskable safe circle', () => {
+    expect(LOGO_SOURCE.endsWith('/desktop/build/icon.png')).toBe(true)
+    expect(pngSize(LOGO_SOURCE)).toEqual({ width: LOGO_CANVAS, height: LOGO_CANVAS })
+    const svg = iconSvg()
+    expect(svg).toContain(`data:image/png;base64,${readFileSync(LOGO_SOURCE).toString('base64')}`)
+    expect(svg).toContain('<rect width="512" height="512" fill="url(#bg)"/>')
+    // The crop is inside the Mac picture's rounded square (822 px from 101 px), past its bevel.
+    expect(LOGO_CROP.from).toBeGreaterThan(101)
+    expect(LOGO_CROP.from + LOGO_CROP.size).toBeLessThan(101 + 822)
+    // The Y's farthest corner (its arms' tops, about x 346 and 677, y 325 in the Mac picture) inside a circle of 40% of the width.
+    const k = 512 / LOGO_CROP.size
+    const corner = Math.hypot((677 - LOGO_CROP.from) * k - 256, (325 - LOGO_CROP.from) * k - 256)
+    expect(corner).toBeLessThan(0.4 * 512)
+    // No old drawing left: the favicon is the 192 px icon.
+    expect(existsSync(join(here, 'public/icons/icon.svg'))).toBe(false)
+    expect(html).toContain('<link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192" />')
   })
 
   it('icons: 192, 512 and a maskable 512, each a real PNG of its size', () => {
@@ -66,7 +76,7 @@ describe('the web app manifest', () => {
 
 describe('the page head for iOS', () => {
   it('the Home Screen tags: the name, the 180 px icon, standalone, the status bar', () => {
-    expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Notecard" />')
+    expect(html).toContain('<meta name="apple-mobile-web-app-title" content="Yaseen Docs" />')
     expect(html).toContain('<meta name="apple-mobile-web-app-capable" content="yes" />')
     expect(html).toContain('<meta name="mobile-web-app-capable" content="yes" />')
     expect(html).toContain('<meta name="apple-mobile-web-app-status-bar-style" content="default" />')
@@ -145,7 +155,11 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
     expect(config.account_id).toBe('06ed69083fae875c626d37f9c05405a3')
     expect(config.workers_dev).toBe(false)
     expect(config.preview_urls).toBe(false)
-    expect(config.routes).toEqual([{ pattern: 'preview.notecard.yaseenarshad.com', custom_domain: true }])
+    // YAZ-5476: the new address and the old one, on the same Worker; never the stable docs.yaseenarshad.com before "release".
+    expect(config.routes).toEqual([
+      { pattern: 'preview.notecard.yaseenarshad.com', custom_domain: true },
+      { pattern: 'preview.docs.yaseenarshad.com', custom_domain: true },
+    ])
     expect(config.assets).toEqual({ directory: './dist', not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
     expect(config.main).toBeUndefined()
     expect(config.assets.binding).toBeUndefined()

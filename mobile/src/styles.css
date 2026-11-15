@@ -1,4 +1,4 @@
-/* Notecard on the phone (YAZ-5077). The look is tuned with Yaseen in the demo round (7-); this is the clean first build.
+/* Yaseen Docs on the phone (YAZ-5077). The look is tuned with Yaseen in the demo round (7-); this is the clean first build.
    The colours start from the Mac app's tokens (`client/src/app.css`) and the font is the Mac's. YAZ-5179 (B6): the
    PHONE moves the lightness (never the hue) of a colour whose contrast is low; the Mac keeps its own. `src/theme.test.ts`
    computes every colour pair the phone's screens can make, light and dark: text 4.5:1, large text and control
