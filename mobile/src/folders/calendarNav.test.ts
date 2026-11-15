@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Row } from '@client/views/engine'
-import { agendaDays, emptyText, modeOf, periodOf, periodTitle, rollingMonth, rollingTarget, stepAnchor } from './calendarNav'
+import { MODES, agendaDays, emptyText, modeOf, periodOf, periodTitle, rollingMonth, rollingTarget, stepAnchor } from './calendarNav'
 
 /** YAZ-5597: which days each mode lists, its title, ‹ › and the empty words. Made-up days in November 2026 (the 15th a Sunday). */
 const row = (path: string) => ({ record: { path } }) as unknown as Row
@@ -43,6 +43,11 @@ describe('the calendar modes (YAZ-5597)', () => {
     expect(modeOf(undefined)).toBe('month')
     expect(modeOf('month')).toBe('month')
     expect(modeOf('week')).toBe('week')
+    // A Rolling the Mac may write later; an unknown value is Month.
+    expect(modeOf('rolling')).toBe('rolling')
+    expect(modeOf('year')).toBe('month')
+    expect(modeOf(7)).toBe('month')
+    expect(MODES.map(([, label]) => label)).toEqual(['Week', 'Month', 'Rolling'])
     expect(emptyText('month', '2026-12-01', '2026-11-15', true)).toBe('Nothing in December')
     expect(emptyText('month', '2027-02-01', '2026-11-15', true)).toBe('Nothing in February 2027')
     expect(emptyText('week', '2026-11-15', '2026-11-15', true)).toBe('Nothing this week')

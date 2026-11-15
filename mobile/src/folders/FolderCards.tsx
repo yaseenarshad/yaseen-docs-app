@@ -8,6 +8,7 @@ import { useApp } from '../app/AppState'
 // A folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
 import { openFile } from '../explore/openFile'
 import { rowTarget, type ViewRun } from './folderModel'
+import { saveCalendarMode, savedCalendarMode } from '../store/calendarModePref'
 import { MODES, MONTHS, agendaDays, emptyText, modeOf, periodOf, periodTitle, periodUnit, rollingMonth, rollingTarget, stepAnchor, type CalendarMode } from './calendarNav'
 
 /**
@@ -20,7 +21,7 @@ import { MODES, MONTHS, agendaDays, emptyText, modeOf, periodOf, periodTitle, pe
  *  - CALENDAR: an AGENDA, not the Mac's month grid: seven columns of 50 px cannot show a title. The days that have
  *    pages, in order under their month, today marked, a page over several days on its first day with its range;
  *    then "No date", as the Mac's tray. YAZ-5597: the Mac's header over it (the period's title, ‹ ›, Today) and a
- *    Month / Week / Rolling switch that picks which days the list holds, so a far month is one tap away.
+ *    Week / Month / Rolling switch that picks which days the list holds, so a far month is one tap away.
  * A tap on a card opens its page through the one file door, as on the Mac.
  */
 
@@ -130,7 +131,7 @@ function scrollUnder(el: HTMLElement, nav: HTMLElement | null) {
 
 /**
  * The calendar's header (YAZ-5597), the Mac's in its order and words: the period's title, ‹ and › (a period back or
- * on), Today, then the Month / Week / Rolling switch. It sticks at the top of the list, so the arrows are in reach
+ * on), Today, then the Week / Month / Rolling switch. It sticks at the top of the list, so the arrows are in reach
  * anywhere in a long month. Each control a 44 pt target; the title and the arrows share a row, the switch is the row
  * under it (the title takes its own row when a long week's title must wrap).
  */
@@ -164,17 +165,18 @@ function CalendarHeader(props: { mode: CalendarMode; title: string; canBack: boo
 
 /**
  * THE CALENDAR (YAZ-5460, YAZ-5597): always the agenda list, the mode picks its days (`calendarNav.ts`). It opens on the
- * view's own scale (the Mac's `calendarScale`: Month unless Week) at the period that holds today; the phone never
- * writes the scale back. Month and Week list their period and say "Nothing in November" when it is empty; Rolling lists
+ * pick this phone saved for the view (`calendarModePref`, local only), else the view's own scale (the Mac's
+ * `calendarScale`: Month unless Week), at the period that holds today; the folder page file is never written. Month and Week list their period and say "Nothing in November" when it is empty; Rolling lists
  * every day, opens scrolled to today and its ‹ › go from month heading to month heading. "No date" stays last in every
  * mode. The count over it is the pages the list shows of the view's.
  */
-export function FolderCalendar({ run }: { run: ViewRun }) {
+export function FolderCalendar({ run, place = null }: { run: ViewRun; place?: string | null }) {
   const app = useApp()
   const keys = fieldsOf(run)
   const today = todayKey()
   const sundayFirst = run.sundayFirst
-  const [mode, setMode] = useState<CalendarMode>(() => modeOf(run.view.calendarScale))
+  // This phone's pick for the view (YAZ-5597, `calendarModePref`), else the view's own scale (Month unless Week).
+  const [mode, setMode] = useState<CalendarMode>(() => (place === null ? null : savedCalendarMode(place, MODES.map(([m]) => m))) ?? modeOf(run.view.calendarScale))
   // The day whose period shows: today at first, as the Mac's `anchor`; ‹ › move it, Today brings it back.
   const [anchor, setAnchor] = useState<DayKey>(today)
   // Rolling: the month heading in sight under the header (the title, and where ‹ › step from).
@@ -257,6 +259,7 @@ export function FolderCalendar({ run }: { run: ViewRun }) {
     // The switch keeps the place, as the Mac's: Rolling from Month or Week lands on the period's first day.
     if (next === 'rolling' && mode !== 'rolling' && period !== null) setAnchor(period.start <= today && today <= period.end ? today : period.start)
     setMode(next)
+    if (place !== null) saveCalendarMode(place, next)
     setMoved((n) => n + 1)
   }
   const title = mode === 'rolling' ? periodTitle(mode, `${seen}-01`, sundayFirst) : periodTitle(mode, anchor, sundayFirst)

@@ -3,6 +3,7 @@ import { useApp } from '../app/AppState'
 import { runFolderView, type FolderModel } from './folderModel'
 import { FolderTable } from './FolderTable'
 import { FolderBoard, FolderCalendar, FolderCards } from './FolderCards'
+import { calendarPlace } from '../store/calendarModePref'
 
 /**
  * THE OPEN VIEW OF A FOLDER'S PAGE: the Mac's engine runs the view (`runFolderView`), and the phone draws it,
@@ -19,12 +20,12 @@ export function FolderViewPane({ model, index, vault }: { model: FolderModel; in
       {/* YAZ-5597: a calendar counts the pages its period shows of these ("12 of 930 pages"), over its header. */}
       {(run.view.type !== 'calendar' || run.result.total === 0) && <p className="folder-view__count">{count}</p>}
       {run.result.errors.length > 0 && <p className="reader__notice">{run.result.errors[0].message}</p>}
-      <ViewBody run={run} />
+      <ViewBody run={run} place={calendarPlace(vault, model.dir, run.view.name)} />
     </div>
   )
 }
 
-function ViewBody({ run }: { run: ReturnType<typeof runFolderView> }) {
+function ViewBody({ run, place }: { run: ReturnType<typeof runFolderView>; place: string }) {
   if (run.result.total === 0) return <p className="muted folder-view__none">Nothing in this view.</p>
   switch (run.view.type) {
     case 'table':
@@ -36,7 +37,7 @@ function ViewBody({ run }: { run: ReturnType<typeof runFolderView> }) {
     case 'list':
       return <FolderCards run={run} />
     case 'calendar':
-      return <FolderCalendar run={run} />
+      return <FolderCalendar run={run} place={place} />
     default:
       return <p className="muted folder-view__none">This view shows on the Mac.</p>
   }

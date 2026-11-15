@@ -73,7 +73,7 @@ export const FOLDER_FILES: Record<string, string | Uint8Array> = {
 }
 
 /**
- * YAZ-5597: a made-up `Events` folder for the calendar's Month / Week / Rolling: a calendar on Start with an End date,
+ * YAZ-5597: a made-up `Events` folder for the calendar's Week / Month / Rolling: a calendar on Start with an End date,
  * pages around `today` (a few months back and on), one over several days across a week's start, two with no date.
  */
 export function calendarFiles(today: string): Record<string, string | Uint8Array> {

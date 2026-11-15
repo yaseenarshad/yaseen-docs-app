@@ -21,6 +21,8 @@ beforeEach(() => {
 })
 afterEach(async () => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
+  localStorage.clear()
   await act(async () => closeAll())
   h?.unmount()
   h = null
@@ -82,7 +84,7 @@ const count = (x: Harness) => x.host.querySelector('.folder-agenda .folder-view_
 const undated = (x: Harness) => [...[...x.host.querySelectorAll('.folder-agenda__block')].at(-1)!.querySelectorAll('.folder-card__title')].map((t) => t.textContent)
 
 /**
- * YAZ-5597: the Mac's header over the same list: the title, ‹ ›, Today, and Month / Week / Rolling, which pick the
+ * YAZ-5597: the Mac's header over the same list: the title, ‹ ›, Today, and Week / Month / Rolling, which pick the
  * days the list holds. The made-up Events folder: pages from September to January around Sunday, Nov 15, 2026, a ski
  * trip from Fri Nov 13 to Wed Nov 18, two with no date.
  */
@@ -92,6 +94,7 @@ describe('the calendar header and modes (YAZ-5597)', () => {
 
   it('Month: that month only; ‹ › a month back or on; Today back; an empty month says so', async () => {
     h = await events()
+    expect([...h.host.querySelectorAll('.folder-cal__modes button')].map((b) => b.textContent)).toEqual(['Week', 'Month', 'Rolling'])
     expect(pressed(h)).toBe('Month')
     expect(title(h)).toBe('November 2026')
     expect(days(h)).toEqual([
@@ -163,11 +166,49 @@ describe('the calendar header and modes (YAZ-5597)', () => {
     expect(h.text()).toContain('Nothing in Oct 25 – Oct 31, 2026')
   })
 
+  it('opens on Rolling when the view says rolling (a Mac Rolling to come)', async () => {
+    const files = calendarFiles('2026-11-15')
+    h = await openFolder('Events', { ...files, 'Events/.folder.md': (files['Events/.folder.md'] as string).replace('      name: Calendar\n', '      name: Calendar\n      calendarScale: rolling\n') })
+    expect(pressed(h)).toBe('Rolling')
+    expect(days(h)).toHaveLength(12)
+  })
+
   it('opens on Week when the view says Week (the Mac calendarScale)', async () => {
     const files = calendarFiles('2026-11-15')
     h = await openFolder('Events', { ...files, 'Events/.folder.md': (files['Events/.folder.md'] as string).replace('      name: Calendar\n', '      name: Calendar\n      calendarScale: week\n') })
     expect(pressed(h)).toBe('Week')
     expect(title(h)).toBe('Nov 15 – Nov 21, 2026')
+  })
+
+  it('this phone keeps the picked mode for the view after a reload; the folder page file is not written', async () => {
+    h = await events()
+    expect(pressed(h)).toBe('Month')
+    await press(h, 'Rolling')
+    const before = (await import('../dev/folderVault')).calendarFiles('2026-11-15')['Events/.folder.md']
+    h.unmount()
+    await act(async () => closeAll())
+    forgetFolderTabs()
+    document.body.replaceChildren()
+    h = await events()
+    expect(pressed(h)).toBe('Rolling')
+    expect(title(h)).toBe('November 2026')
+    expect(localStorage.getItem('notecard.calendarModes')).toContain('Rolling'.toLowerCase())
+    // The pick is the phone's: the view's own setting in the file is as it was.
+    expect(before).not.toContain('calendarScale')
+  })
+
+  it("storage that fails: the view's own scale, and the switch still works", async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('full')
+    })
+    const files = calendarFiles('2026-11-15')
+    h = await openFolder('Events', { ...files, 'Events/.folder.md': (files['Events/.folder.md'] as string).replace('      name: Calendar\n', '      name: Calendar\n      calendarScale: week\n') })
+    expect(pressed(h)).toBe('Week')
+    await press(h, 'Rolling')
+    expect(pressed(h)).toBe('Rolling')
   })
 
   it('Rolling: every page in one list, opening at today; ‹ › go to the month heading before or after; Today back', async () => {

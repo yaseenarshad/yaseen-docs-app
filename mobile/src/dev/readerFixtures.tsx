@@ -450,7 +450,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     case 'folder-calendar-rolling':
       await hold('Events')
       await folderTab('')
-      if (name !== 'folder-calendar-month') press(name === 'folder-calendar-week' ? 'Week' : 'Rolling')
+      // Each picks its mode: this phone remembers the last pick (YAZ-5597), so one fixture's would carry to the next.
+      press(name === 'folder-calendar-week' ? 'Week' : name === 'folder-calendar-rolling' ? 'Rolling' : 'Month')
       await wait(300)
       if (name !== 'folder-calendar-rolling') document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
       await wait(150)

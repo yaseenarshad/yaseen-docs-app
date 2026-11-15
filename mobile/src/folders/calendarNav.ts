@@ -9,21 +9,22 @@ import { addDays, monthStart, weekDays, weekLabel, type DayKey, type Span } from
  *    `weekLabel`, "Nov 15 – Nov 21, 2026"; ‹ › a week back or on.
  *  - Rolling: every day, no range. It opens at today; ‹ › go to the month heading before or after; Today back to today.
  * The Mac (`CalendarView.tsx`) keeps one anchor day, today at first, and shows the period that holds it; its switch is
- * Month / Week (the view's `calendarScale`, Month by default). The phone starts on the view's own scale.
+ * Month / Week (the view's `calendarScale`, Month by default). The phone starts on this phone's pick for the view
+ * (`calendarModePref`), else the view's own scale (a future Mac `rolling` too), else Month.
  */
 export type CalendarMode = 'month' | 'week' | 'rolling'
 
-/** The switch, in the Mac's order, Rolling after. */
+/** The switch, in Yaseen's order (YAZ-5597): Week, Month, Rolling. */
 export const MODES: readonly (readonly [CalendarMode, string])[] = [
-  ['month', 'Month'],
   ['week', 'Week'],
+  ['month', 'Month'],
   ['rolling', 'Rolling'],
 ]
 
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-/** The mode a view opens in: its `calendarScale` as the Mac reads it (`week`, else Month). */
-export const modeOf = (scale: unknown): CalendarMode => (scale === 'week' ? 'week' : 'month')
+/** The mode a view opens in: its `calendarScale` (`week`, or a Mac `rolling` to come), anything else Month. */
+export const modeOf = (scale: unknown): CalendarMode => (scale === 'week' || scale === 'rolling' ? scale : 'month')
 
 /** The first and last day the mode lists, or null for every day (Rolling). */
 export function periodOf(mode: CalendarMode, anchor: DayKey, sundayFirst: boolean): { start: DayKey; end: DayKey } | null {
