@@ -258,6 +258,14 @@ describe('YAZ-5517: comments and ticks that could not be sent', () => {
     expect(of({ n: 2, ticks: 2, gone: 2 }).words).toBe("2 check boxes couldn't be sent: their page is gone")
     expect(of({ n: 3, ticks: 1, gone: 2 }).words).toBe("3 changes couldn't be sent")
   })
+  it('YAZ-5521 (sweep2 S-B): the top bar never says the sentence: "1 not sent" at every width, the count alone beside an ID chip', () => {
+    const d = of({ n: 1, ticks: 0, gone: 1 })
+    expect(d).toMatchObject({ bar: '1 not sent', short: '1 not sent', count: 1 })
+    expect(d.words).toBe("1 comment couldn't be sent: its page is gone")
+    const waiting = syncDot({ ...base, answers: { ...base.answers, waiting: 2, comments: 2 } })
+    expect(waiting).toMatchObject({ words: '2 comments waiting', bar: '2 comments waiting', count: 2 })
+    expect(syncDot(base)).toMatchObject({ count: null, bar: 'Synced' })
+  })
   it('it stays offline too, and red still wins', () => {
     expect(of({ n: 1, ticks: 1, gone: 1 }, { online: false }).reason).toBe('not-sent')
     expect(of({ n: 1, ticks: 1, gone: 1 }, { token: ENDED }).state).toBe('attention')

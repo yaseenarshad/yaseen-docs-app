@@ -52,8 +52,10 @@ import { fixtureAnswers } from './fixtureAnswers'
  * YAZ-5506: `search-sticky` a made-up tree nine folders deep, every folder open, scrolled to its deepest pages: the open
  * folders stuck at the top (`STICKY_FILES`).
  * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
+ * YAZ-5521 (sweep2 S-B): `page-not-sent`, `page-waiting`, `page-long-id-not-sent`, `page-long-id-waiting`: `page` and
+ * `page-long-id` with the dot amber: one comment not sent (its page gone), or two comments waiting.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -159,7 +161,10 @@ const STRIP_CARD = COMMENTED_CARD.replace(
   '<!-- card: DEMO-45, title "River of Seville", tags "spain" "rivers", level "B1", 2026-09-08T08:00Z good, 2026-09-12T08:00Z good, 2026-09-25T08:00Z good, 2026-11-13T08:00Z good -->',
 )
 
-export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
+export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Promise<void> {
+  // YAZ-5521: the amber dot's variants are their page's fixture, with a made-up answer list's state under the dot.
+  const dotKind = /-(not-sent|waiting)$/.exec(fixture)?.[1] as 'not-sent' | 'waiting' | undefined
+  const name = (dotKind === undefined ? fixture : fixture.slice(0, -dotKind.length - 1)) as ReaderFixture
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
@@ -269,6 +274,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   // YAZ-5504: the card menu's fixtures get a made-up answer list (in memory; nothing is sent).
   if (name === 'card-menu' || name === 'page-card-menu') {
     const answers = fixtureAnswers(store, READER_ID)
+    sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
+  }
+  if (dotKind !== undefined) {
+    const state = { vault: READER_ID, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null, comments: dotKind === 'waiting' ? 2 : 0, ticks: 0, notSent: dotKind === 'not-sent' ? { n: 1, ticks: 0, gone: 1 } : undefined }
+    const answers = { state: () => state, subscribe: () => () => {}, waiting: () => [] }
     sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
   }
   const services: AppServices = { store, tokens, vaultTabs: name === 'page-headings-alone' ? undefined : reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
@@ -637,5 +647,5 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       break
   }
   await wait(100)
-  document.documentElement.dataset.fixtureReady = name
+  document.documentElement.dataset.fixtureReady = fixture
 }

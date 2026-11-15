@@ -63,6 +63,25 @@
   }
 }
 
+/* YAZ-5521 (sweep2 S-B): with a page's ID chip in the bar, the amber dot says its number alone ("2", "1"): the words
+   pushed the ⚙ off the screen. The full words are in the sheet and the button's VoiceOver name. */
+.sync-status__words--count {
+  display: none;
+}
+
+.topbar:has(.page-id) .sync-status:has(.sync-status__words--count) {
+  min-width: var(--tap);
+  justify-content: center;
+}
+
+.topbar:has(.page-id) .sync-status:has(.sync-status__words--count) .sync-status__words {
+  display: none;
+}
+
+.topbar:has(.page-id) .sync-status:has(.sync-status__words--count) .sync-status__words--count {
+  display: inline;
+}
+
 .sync-dot {
   width: 10px;
   height: 10px;

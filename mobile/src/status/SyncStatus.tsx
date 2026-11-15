@@ -44,7 +44,7 @@ export function SyncStatus() {
   const stuck = useStuck(app.services.store, app.vaultKey, answers.state !== null || answers.noList)
   const said = syncDot({ sync: app.sync, answers: answersPart(answers.state, answers.waiting, answers.noList, stuck), online, token })
   const loud = dotIsLoud(said)
-  const dot: Dot = busy && !loud ? { ...said, state: 'syncing', words: 'Syncing…', short: 'Syncing…', reason: 'syncing' } : said
+  const dot: Dot = busy && !loud ? { ...said, state: 'syncing', words: 'Syncing…', short: 'Syncing…', bar: 'Syncing…', count: null, reason: 'syncing' } : said
   const lastAt = useLastSync(app.services.store, app.vaultKey, app.sync.lastSyncedAt, answers.state?.lastSentAt)
   const tap = () => {
     if (loud) return setOpen(true)
@@ -93,22 +93,35 @@ export function SyncStatus() {
 /** YAZ-5451: the states whose words stay in the top bar: the person must know (amber, red) or act ("Can't sync now"). */
 export const dotIsLoud = (dot: Dot): boolean => dot.state === 'pending' || dot.state === 'attention' || dot.reason === 'no-list'
 
-/** The words next to the dot: one span, or the full and the short form when they differ (YAZ-5216: CSS picks by width). */
+/**
+ * The words next to the dot: one span, or the bar's words and the short form when they differ (YAZ-5216: CSS picks by
+ * width). YAZ-5521: and the count alone, which a top bar with a page's ID chip shows in their place.
+ */
 export function DotWords({ dot }: { dot: Dot }) {
-  if (dot.short === dot.words)
-    return (
-      <span className="sync-status__words" aria-hidden="true">
-        {dot.words}
+  const count =
+    dot.count === null ? null : (
+      <span className="sync-status__words sync-status__words--count" aria-hidden="true">
+        {dot.count}
       </span>
+    )
+  if (dot.short === dot.bar)
+    return (
+      <>
+        <span className="sync-status__words" aria-hidden="true">
+          {dot.bar}
+        </span>
+        {count}
+      </>
     )
   return (
     <>
       <span className="sync-status__words sync-status__words--full" aria-hidden="true">
-        {dot.words}
+        {dot.bar}
       </span>
       <span className="sync-status__words sync-status__words--short" aria-hidden="true">
         {dot.short}
       </span>
+      {count}
     </>
   )
 }

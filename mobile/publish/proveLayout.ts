@@ -47,6 +47,7 @@ import { join } from 'node:path'
  *    bar, a small gap between.
  *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
  *    control inside the screen, the dot clear of the ⚙; the title cut first, then the ID's letters; its number shows.
+ *    YAZ-5521: the same with the dot amber (`page-not-sent`, `page-waiting`, and with the long ID), at 390 px too.
  *  - a page card's ⋯ menu low on the screen (`#fixture=page-card-menu`, YAZ-5519 S6) at 375 and 430 px: inside the
  *    screen, above the page arrows and the tab bar; its first row on top.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
@@ -725,16 +726,19 @@ const TOPBAR_FITS = `(() => {
   const numberEl = bar.querySelector('.page-id__number')
   const number = numberEl && numberEl.scrollWidth <= numberEl.clientWidth ? box(numberEl) : null
   const title = bar.querySelector('.topbar__title')
-  return { at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5, titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
+  const words = [...bar.querySelectorAll('.sync-status__words')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.textContent).join('|')
+  return { words, at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5, titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
 })()`
 if (process.env.LAYOUT_TOPBAR !== 'no') {
-  for (const [w, h] of [[320, 568], [375, 667], [430, 932]] as const) {
-    for (const name of ['page', 'page-long-id']) {
+  // YAZ-5521 (sweep2 S-B): also with the dot amber, one comment not sent or two waiting, at 390 too:
+  // topBar_allControlsInsideViewport_withDotWords_1notSent_and_Nwaiting.
+  for (const [w, h] of [[320, 568], [375, 667], [390, 844], [430, 932]] as const) {
+    for (const name of ['page', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting']) {
       const file = await open(name, w, h)
       const m = await evaluate(TOPBAR_FITS)
       const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}  ${file}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}; the dot says "${m.words}"  ${file}`)
     }
   }
 }
