@@ -57,7 +57,8 @@ import { freePort } from './freePort'
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
- *    under the finger, the lift keeps it; a cell's text selectable (`user-select: text`).
+ *    under the finger, the lift keeps it; a cell's text selectable (`user-select: text`). A folder table: its Name cells
+ *    44 px tall; a tap on another cell only moves the band, a tap on a Name opens the page.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_BAND=no skip a part).
@@ -817,7 +818,7 @@ const BAND_CHECK = `(() => {
   const cells = [...row.cells].map(bg)
   const frozen = row.querySelector('[data-pin-col]')
   const other = row.closest('tbody').rows[row.sectionRowIndex + 3] ?? row.closest('tbody').rows[1]
-  return { rows: rows.length, text: row.cells[0].textContent.trim(), same: cells.every((c) => c === cells[0]), colour: cells[0], page, otherBg: bg(other.cells[1]), frozen: frozen ? getComputedStyle(frozen).position + ' ' + bg(frozen) : null, select: getComputedStyle(row.cells[1]).userSelect }
+  return { rows: rows.length, text: row.cells[0].textContent.trim(), same: cells.every((c) => c === cells[0]), colour: cells[0], page, otherBg: bg(other.cells[1]), frozen: frozen ? getComputedStyle(frozen).position + ' ' + bg(frozen) : null, select: getComputedStyle(row.cells[1]).userSelect, nameTap: [...root.querySelectorAll('td[data-name]')].map((td) => Math.round(td.getBoundingClientRect().height)).reduce((a, b) => Math.min(a, b), 999) }
 })()`
 /** The middle of a cell of the `n`th body row of the shown table (on the screen), and that row's first text. */
 const CELL_AT = (n: number) => `(() => {
@@ -863,9 +864,29 @@ if (process.env.LAYOUT_BAND !== 'no') {
       const moved = onDown.length === 1 && onDown[0] === a2.text && onMove.length === 1 && (under === null || onMove[0] === under) && afterLift.join() === onMove.join()
       writeFileSync(shot.replace('.png', '-touched.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page)
-      const ok = marked && moved
+      // YAZ-5532 (A): on a folder table a tap on another cell only moves the band; a tap on the Name (44 px tall) opens.
+      let taps = true
+      let tapNote = ''
+      if (name === 'folder-table-band') {
+        const tap = async (x: number, y: number) => {
+          await touch('touchStart', x, y)
+          await wait(60)
+          await touch('touchEnd', x, y)
+          await wait(500)
+        }
+        const other = await evaluate(`(() => { const row = document.querySelector('.folder-table tbody tr[data-row]:nth-child(2)'); const r = row.cells[1].getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), text: row.cells[0].textContent.trim() } })()`)
+        await tap(other.x, other.y)
+        const afterOther = await evaluate(`({ table: !!document.querySelector('.folder-table table'), band: [...document.querySelectorAll('.folder-table tr[data-band]')].map((r) => r.cells[0].textContent.trim()) })`)
+        const nameAt = await evaluate(`(() => { const td = document.querySelector('.folder-table tbody tr[data-row]:nth-child(3) td[data-name]'); const r = td.getBoundingClientRect(); return { x: Math.round(r.left + 20), y: Math.round(r.top + r.height / 2) } })()`)
+        await tap(nameAt.x, nameAt.y)
+        await wait(400)
+        const opened = await evaluate(`/Build the shed before winter\./.test(document.body.textContent)`)
+        taps = m.nameTap >= 44 && afterOther.table && afterOther.band.join() === other.text && opened
+        tapNote = `; Name cells ${m.nameTap}px tall; a tap on "${other.text}"'s Status: table ${afterOther.table ? 'stays' : 'GONE'}, band ${JSON.stringify(afterOther.band)}; a tap on a Name ${opened ? 'opens its page' : 'DID NOT OPEN'}`
+      }
+      const ok = marked && moved && taps
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: band on "${m.text}" (${m.rows} row), cells ${m.same ? 'one colour' : 'DIFFER'} ${m.colour} (page ${m.page}, a row without ${m.otherBg}), frozen cell ${m.frozen ?? 'none'}, cell text ${m.select}; finger down on "${a.text}" -> ${JSON.stringify(onDown)}, moved -> ${JSON.stringify(onMove)} (under the finger ${JSON.stringify(under)}), after the lift ${JSON.stringify(afterLift)}  ${shot}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: band on "${m.text}" (${m.rows} row), cells ${m.same ? 'one colour' : 'DIFFER'} ${m.colour} (page ${m.page}, a row without ${m.otherBg}), frozen cell ${m.frozen ?? 'none'}, cell text ${m.select}; finger down on "${a.text}" -> ${JSON.stringify(onDown)}, moved -> ${JSON.stringify(onMove)} (under the finger ${JSON.stringify(under)}), after the lift ${JSON.stringify(afterLift)}${tapNote}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

@@ -168,11 +168,11 @@
 .folder-table .page-table-box[data-wide] {
   margin-top: calc(-1 * var(--tap) - 2px);
 }
-/* YAZ-5532: a finger's band marks the row it touches (`tables.css`, `rowBand.ts`): no grey flash of its own. */
-.folder-table tr[data-row] {
-  cursor: pointer;
-}
+/* YAZ-5532: a finger's band marks the row it touches (`tables.css`, `rowBand.ts`): no grey flash of its own. A tap on
+   the Name opens the row: the Name cell (so its row) is at least a finger's tap tall (a table cell's height is its least). */
 .folder-table td[data-name] {
+  height: var(--tap);
+  cursor: pointer;
   font-weight: 500;
 }
 .folder-table tr[data-folder] td[data-name]::before {

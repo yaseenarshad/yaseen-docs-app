@@ -21,12 +21,12 @@ import { rowTarget, type ViewRun } from './folderModel'
  * scrolls sideways in its box, and ⤢ opens it full screen. The view's own column widths (`columnSize`), alignment,
  * fills and Clip come with it, as a page's table brings the file's (`data-widths`, `align`, `data-fill`, `data-clip`).
  * A group is a header row (its name and count in the Name column, so it stays in sight while the table scrolls
- * sideways), its rows under it, its inner groups after. A tap on a row opens its page (a subfolder's row, its folder's
- * page; a card row, its card) through the one file door.
+ * sideways), its rows under it, its inner groups after. A tap on a row's Name opens its page (a subfolder's row, its
+ * folder's page; a card row, its card) through the one file door.
  *
  * YAZ-5532: a finger on a row bands it, as the Mac's hover band (`rowBand.ts`, the vault's band look): the band follows
- * the finger and stays on the last row after the lift. A tap still opens the row; a long press on a cell's text selects
- * in that cell.
+ * the finger and stays on the last row after the lift. A tap on the row's Name opens it (its cell at least 44 px tall);
+ * a tap on another cell only moves the band; a long press on a cell's text selects in that cell.
  *
  * The table is drawn into its host by hand, as the reader draws a page's table: the phone's table layout
  * (`layoutTables`) wraps and measures it, which React must not see.
@@ -46,8 +46,10 @@ export function FolderTable({ run }: { run: ViewRun }) {
     el.replaceChildren(table)
     layoutTables(el)
   }, [run])
+  // YAZ-5532 (Yaseen picked A): only a tap on the row's Name opens it; a tap elsewhere only moves the band.
   const onClick = (e: React.MouseEvent) => {
-    const tr = (e.target as Element).closest<HTMLElement>('tr[data-row]')
+    const name = (e.target as Element).closest<HTMLElement>('td[data-name]')
+    const tr = name?.closest<HTMLElement>('tr[data-row]') ?? null
     if (tr === null) return
     const row = rows.current[Number(tr.dataset.row)]
     if (row !== undefined) openFile(app, rowTarget(row))
