@@ -17,6 +17,7 @@ const EACH: Record<SignInError['kind'], SignInError> = {
   'no-vault': { kind: 'no-vault', repo: 'yaseen/vault', branch: 'main' },
   'read-only': { kind: 'read-only', repo: 'yaseen/vault' },
   'already-added': { kind: 'already-added', repo: 'yaseen/vault', branch: 'main' },
+  'other-account': { kind: 'other-account', login: 'other', expected: 'yaseen' },
   'no-repos': { kind: 'no-repos' },
   offline: { kind: 'offline' },
   'github-down': { kind: 'github-down' },
