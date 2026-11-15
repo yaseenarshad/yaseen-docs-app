@@ -93,7 +93,7 @@ export interface CardRecord {
   title?: string
   /** The title is hidden on the Inbox's front (the line's `notitle` part, YAZ-5030); absent: it shows. */
   notitle?: true
-  /** The card is marked "Fix later" (the line's `fix`, YAZ-5097): the To fix list; absent: no mark. */
+  /** The card is marked "Fix later" (the line's `fix`, YAZ-5097): the Cards table's Card fix status; absent: no mark. */
   fix?: true
   /** The card's own properties (its line's property parts, YAZ-5379, `cardPropertiesOf`); absent for a card with none. */
   properties?: Record<string, CardPropertyValue>
@@ -446,7 +446,7 @@ export function withCardNoTitle(line: CardLine, hide: boolean): CardLine {
 /**
  * The "Fix later" mark (YAZ-5097; round 10, addition 3 of YAZ-5055): the word `fix` on the card line, its own part kind
  * as `off`, `next` and `notitle` are. The phone writes it (YAZ-5073, the `fix` action), the Mac's ⋯ menus and the Cards
- * table's Card fix status (YAZ-5430) too; the To fix list reads it off the index (`CardRecord.fix`). An older build
+ * table's Card fix status (YAZ-5430) too; that column reads it off the index (`CardRecord.fix`). An older build
  * reads it as the unknown part `fix` and keeps it as its text, in its place (the older-app rule, addition 17): the
  * bytes on disk are the same for both. It is a card-line word, never a property's name (`CARD_LINE_WORDS`).
  */

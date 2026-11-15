@@ -1,7 +1,7 @@
 /**
  * YAZ-5197 (decided by Yaseen's delegation): the "Fix later" glyph is a WRENCH, not a pencil (a pencil reads as "Edit
  * card"). The wrench is Tabler's `tool`, the one the app already draws for the Present tab (`toolsIcon`), redrawn on the
- * Inbox's 16 px grid. Every place that shows the Fix later glyph draws `FIX_PATH`: the Inbox ⋯ row and the To fix list.
+ * Inbox's 16 px grid. Every place that shows the Fix later glyph draws `FIX_PATH`: the Inbox ⋯ row.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -25,9 +25,5 @@ describe('the Fix later glyph (YAZ-5197)', () => {
     const inbox = readFileSync(join(__dirname, 'CardInbox.tsx'), 'utf8')
     expect(inbox).toMatch(/const ICON_FIX = icon\(FIX_PATH\)/)
     expect(inbox.match(/icon: ICON_FIX/g)?.length).toBe(2)
-    const icons = readFileSync(join(__dirname, 'cardInboxIcons.tsx'), 'utf8')
-    expect(icons).toMatch(/export const FixIcon = \(\) => glyph\(<path d=\{FIX_PATH\} \/>\)/)
-    const bar = readFileSync(join(__dirname, 'CardInboxBar.tsx'), 'utf8')
-    expect(bar).toMatch(/\{ id: 'fix', label: 'To fix', icon: FixIcon \}/)
   })
 })

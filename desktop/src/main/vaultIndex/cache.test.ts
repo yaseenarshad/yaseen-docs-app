@@ -363,7 +363,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       embeds: ['img.png', 'photo.png'],
       // A card's title (off its card line, YAZ-5308) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
-      // Its `fix` (YAZ-5097, CACHE_VERSION 18) too: the To fix count and the Card fix status column read no file.
+      // Its `fix` (YAZ-5097, CACHE_VERSION 18) too: the Card fix status column reads no file.
       cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true, fix: true }],
     },
     // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's (off its card line, YAZ-5308).

@@ -96,7 +96,6 @@ function Screen({ settings }: { settings: ReviewSettings }) {
       review={review}
       session={review.session}
       vaultOf={() => ({ root: ROOT, wikilinks, wikilinkCandidates: { candidates: [], subscribe: () => () => undefined } as never })}
-      nameOf={() => 'Cards'}
       openPage={vi.fn()}
       editCard={vi.fn()}
       openInTab={vi.fn()}
