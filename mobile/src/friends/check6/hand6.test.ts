@@ -205,6 +205,20 @@ it('YAZ-5444 a2: an OLD note, but this phone saw the list 2 minutes ago: a missi
   expect((await a.list.rows()).kind).toBe('home-gone')
 })
 
+it('YAZ-5444 a3: a NEW phone of A (no memory of the list) and a note written 2 minutes ago: a missing file may be a lag, so no way out yet', async () => {
+  const m = await world(1)
+  const mine = bMine(m)
+  m.world.repos!.push('ali/vault', { [LIST_PATH]: null }, 'main', 'the list file is not there yet on this replica')
+  m.clock.advance(2 * 60_000)
+  const fresh = (await (m as any).device('A', 1)) as any
+  m.devs.A.push(fresh)
+  expect((await fresh.list.rows()).kind).not.toBe('home-gone')
+  expect((await fresh.list.restart('ali/vault')).kind).toBe('home-is-there')
+  expect(m.gist(mine)).toBeDefined()
+  m.clock.advance(9 * 60_000)
+  expect((await fresh.list.rows()).kind).toBe('home-gone')
+})
+
 it('YAZ-5444 b: the way out offers the home vault itself, and starts the list again THERE (B`s pointer gone, a new numbers gist)', async () => {
   const m = await world(1)
   const a = m.devs.A[0] as any
