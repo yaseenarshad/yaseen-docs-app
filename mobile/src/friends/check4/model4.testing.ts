@@ -715,7 +715,13 @@ export function plan(seed: number): Plan {
 
 export async function runPlan(p: Plan): Promise<Model4> {
   const m = new Model4(p.seed)
+  // BUILDER CHANGE (YAZ-5492): the setup is the world before the order, not a step of it: the model's random 409 on a
+  // gist PATCH is off there (as `runPlan6` does; seed 9302520's setup stopped at B's group create when three random
+  // 409s in a row met it). The draws of the random source stay the same.
+  const p409 = m.p409
+  m.p409 = 0
   await m.setup4(...p.setup)
+  m.p409 = p409
   m.bPairedEver = false
   for (const e of p.events) {
     await m.run(e)

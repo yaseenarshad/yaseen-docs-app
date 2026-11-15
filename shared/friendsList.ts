@@ -1174,7 +1174,17 @@ export async function healNumbers(api: GistsApi, handle: IndexHandle, budget: Gi
   } catch (err) {
     if (gistErrorCode(err) !== 'NOT_FOUND') return null
   }
-  return remakeNumbers(api, handle, budget, opts)
+  // The list read AGAIN after the 404: a remove on another device that just finished made a new generation and then
+  // deleted the old gist (the one this copy names). Only a list that still names the gone gist, with no remove
+  // waiting, gets a new one (else this would make a second generation over another device's).
+  let fresh: IndexHandle
+  try {
+    fresh = await latestList(handle)
+  } catch {
+    return null
+  }
+  if (fresh.index.stats !== stats || pendingRemove(fresh) !== null || (fresh.state?.pending.length ?? 0) > 0) return null
+  return remakeNumbers(api, fresh, budget, opts)
 }
 
 /** Reads the list (read only), for a caller that holds no handle yet. */
