@@ -18,6 +18,7 @@ import { rowId, useIdsForm } from './showIds'
 import { openFile } from '../explore/openFile'
 import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
 import { useFolderHold } from './holdFolder'
+import { blockSelectionUntilLift } from './holdGuard'
 import { TreeLook } from './treeLook'
 
 export { SearchBar } from './SearchBar'
@@ -74,7 +75,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
       <h2 className="section">{app.unit('Pages')}</h2>
       <TreeIconsContext.Provider value={icons}>
       <TreeLook rows={drawn} icons={icons} />
-      <ul className="tree" role="tree" aria-label={app.unit('Pages')} style={icons.style} data-icon-colors={icons.colored}>
+      <ul className="tree" role="tree" aria-label={app.unit('Pages')} style={icons.style} data-icon-colors={icons.colored} onPointerDown={() => blockSelectionUntilLift()}>
         {drawn.map((row) => (
           <li key={row.path} role="treeitem" aria-expanded={row.kind === 'folder' ? row.open : undefined}>
             <button
@@ -189,7 +190,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
     <>
       <TreeIconsContext.Provider value={icons}>
       <TreeLook rows={shownRows} icons={icons} />
-      <ul className="tree search__found" role="tree" aria-label="Results" style={icons.style} data-icon-colors={icons.colored}>
+      <ul className="tree search__found" role="tree" aria-label="Results" style={icons.style} data-icon-colors={icons.colored} onPointerDown={() => blockSelectionUntilLift()}>
         {shownRows.map((row) => {
           const hit = row.hit
           // `ID — ` in front of a row the search found by its ID (the Mac's "Only when it matches"), its digits marked.

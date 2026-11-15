@@ -16,6 +16,7 @@ import { fileKind, fileLabel, type TreeKind } from './vaultTree'
 import { openFile } from '../explore/openFile'
 import { fileRecord } from '../drawing/boardFiles'
 import { useFolderHold } from './holdFolder'
+import { blockSelectionUntilLift } from './holdGuard'
 import { TreeLook } from './treeLook'
 
 /** What a list is called, and its line when it holds nothing the phone can show. */
@@ -147,7 +148,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
       <h2 className="section">{words.title}</h2>
       <TreeIconsContext.Provider value={icons}>
       <TreeLook rows={drawn} icons={icons} />
-      <ul className="tree" role="tree" aria-label={words.title} style={icons.style} data-icon-colors={icons.colored}>
+      <ul className="tree" role="tree" aria-label={words.title} style={icons.style} data-icon-colors={icons.colored} onPointerDown={() => blockSelectionUntilLift()}>
         {drawn.map((row) => (
           <li key={row.key} role="treeitem" aria-expanded={row.kind === 'folder' || row.kind === 'group' ? row.open : undefined}>
             <button
