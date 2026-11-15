@@ -19,19 +19,16 @@
   pointer-events: auto;
 }
 
-/* The sheet's place: under the status bar and a little under the top bar, so the screen under it shows at the top. The
-   one under the top sheet steps back: a little smaller, its top a little up (iOS). */
+/* The sheet's place: under the status bar and a little under the top bar, so the screen under it shows at the top.
+   YAZ-5540: a sheet stays STILL when a sheet opens over it or closes off it: no transform, no transition here (only
+   the top sheet's box slides, `sheetMotion.ts`). Each sheet sits 8 px lower than the one under it (`--sheet-step`, its
+   place in the stack, set once), so the one under shows its top edge above it, still. */
 .explore-sheet {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  top: calc(env(safe-area-inset-top, 0px) + 52px + var(--sheet-step, 0) * 8px);
   left: calc(env(safe-area-inset-left, 0px) + 8px);
   right: calc(env(safe-area-inset-right, 0px) + 8px);
   bottom: 0;
-  transform-origin: 50% 0;
-  transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
-}
-.explore-sheet--under {
-  transform: translate3d(0, -10px, 0) scale(0.94);
 }
 /* Two or more down: covered by the sheets over it; not drawn at all. */
 .explore-sheet--deep {
@@ -157,10 +154,4 @@
   border-top: 1px solid var(--border);
   font-size: 14px;
   color: var(--fg-muted);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .explore-sheet {
-    transition: none;
-  }
 }

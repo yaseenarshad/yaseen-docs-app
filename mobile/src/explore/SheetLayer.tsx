@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
 import { useOverlay } from '../app/browserHistory'
@@ -20,15 +20,21 @@ import '../page/pageNav.css'
  * THE SHEETS ON THE SCREEN (YAZ-5472), a chunk of its own: loaded on the first open, or when the app is idle.
  *
  * Over the whole app (the tabs too), in `document.body`: the screen under them stays as it is, mounted, at its scroll
- * place. Each sheet has its dim under it, so each sheet down the stack is a little darker, and the one under the top
- * sheet steps back (a little smaller, a little up), as on iOS. A tap on the dim above the top sheet closes it, as do a
+ * place. Each sheet has its dim under it, so each sheet down the stack is a little darker. YAZ-5540: a sheet never moves
+ * for the sheets over it: no step back, no scale, on an open or a close (only the top sheet slides). Each sheet sits a
+ * little lower than the one under it (`SHEET_STEP`, by its place in the whole stack, which never changes while it
+ * lives), so the top edge of the one under shows above it, still. A tap on the dim above the top sheet closes it, as do a
  * drag down (`sheetMotion.ts`), the left-edge Back, and Escape. Only the top `MAX_MOUNTED` sheets are drawn; an older
  * one keeps its route and scroll place in the stack, and is drawn again when the stack comes back down to it.
  */
+/** The steps down a sheet sits, at most: past it, a sheet sits where the one under it does. */
+const SHEET_STEPS = 6
+
 export default function SheetLayer() {
   const stack = useSyncExternalStore(subscribeSheets, sheetStack)
   const app = useApp()
   const mounted = stack.slice(-MAX_MOUNTED)
+  const below = stack.length - mounted.length
   const top = stack.at(-1)
 
   // Each sheet opened goes to this phone's Recent (YAZ-5457), as `go` records a page opened full screen.
@@ -52,7 +58,7 @@ export default function SheetLayer() {
   return createPortal(
     <div className="explore-layer">
       {mounted.map((sheet, i) => (
-        <SheetView key={sheet.id} sheet={sheet} level={i} depth={mounted.length - 1 - i} />
+        <SheetView key={sheet.id} sheet={sheet} level={i} depth={mounted.length - 1 - i} step={Math.min(below + i, SHEET_STEPS)} />
       ))}
     </div>,
     document.body,
@@ -71,7 +77,7 @@ export function headWords(data: VaultData | null, route: SheetRoute): string {
   return folder === '' ? titleOf(data, route.path) : folder.split('/').join(' / ')
 }
 
-function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth: number }) {
+function SheetView({ sheet, level, depth, step }: { sheet: Sheet; level: number; depth: number; step: number }) {
   const app = useApp()
   const data = useVaultData()
   const box = useRef<HTMLDivElement>(null)
@@ -142,7 +148,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
   return (
     <>
       <div ref={dim} className={isTop ? 'explore-dim explore-dim--top' : 'explore-dim'} style={{ zIndex: level * 2 }} onClick={isTop ? closeTop : undefined} aria-hidden="true" />
-      <div className={`explore-sheet${place}`} style={{ zIndex: level * 2 + 1 }} aria-hidden={isTop ? undefined : true}>
+      <div className={`explore-sheet${place}`} style={{ zIndex: level * 2 + 1, '--sheet-step': step } as CSSProperties} aria-hidden={isTop ? undefined : true}>
         <div ref={box} className="explore-sheet__box" role="dialog" aria-modal={isTop} aria-label={title} tabIndex={-1}>
           <div ref={head} className="explore-sheet__head">
             <span className="explore-sheet__grab" aria-hidden="true" />
