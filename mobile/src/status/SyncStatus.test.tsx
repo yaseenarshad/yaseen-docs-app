@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { loadAccount, saveAccount } from '../auth/account'
 import { GOOD, mount, newPhone, NOW, signInWithForm, type Harness } from '../screens/testing'
 import { clockTime } from './dot'
@@ -38,10 +38,16 @@ async function signedIn(options: { phone?: Awaited<ReturnType<typeof newPhone>>;
 }
 
 const status = (x: Harness) => x.host.querySelector<HTMLButtonElement>('.sync-status')!
+/**
+ * What the dot says: its colour, its words (YAZ-5451: in the bar for amber and red, else only in its VoiceOver name),
+ * whether the words show in the bar, and the name.
+ */
 const shown = (x: Harness) => {
   const b = status(x)
   const dot = b.querySelector('.sync-dot')!
-  return { colour: [...dot.classList].find((c) => c.startsWith('sync-dot--'))!.slice('sync-dot--'.length), words: b.querySelector('.sync-status__words--full, .sync-status__words')!.textContent, label: b.getAttribute('aria-label') }
+  const label = b.getAttribute('aria-label')
+  const inBar = b.querySelector('.sync-status__words--full, .sync-status__words')?.textContent ?? null
+  return { colour: [...dot.classList].find((c) => c.startsWith('sync-dot--'))!.slice('sync-dot--'.length), words: inBar ?? label!.replace(/^Sync status: /, '').replace(/\. Sync now$/, ''), inBar: inBar !== null, label }
 }
 const answersDo = async (x: Harness, fn: () => void) => {
   await act(async () => fn())
@@ -51,11 +57,12 @@ const answersDo = async (x: Harness, fn: () => void) => {
 describe('the dot in the top bar: always shown (decision 12)', () => {
   it('green "Synced" after sign-in, next to the vault name and before the gear', async () => {
     ;({ h } = await signedIn())
-    expect(shown(h)).toEqual({ colour: 'synced', words: 'Synced', label: 'Sync status: Synced' })
+    // YAZ-5451: green is the dot only; VoiceOver reads the state and what a tap does.
+    expect(shown(h)).toEqual({ colour: 'synced', words: 'Synced', inBar: false, label: 'Sync status: Synced. Sync now' })
     const bar = [...h.host.querySelector('.topbar')!.children].map((e) => e.className)
     // YAZ-5415: on the Review tab the bar is one line: the dot, the Review count in the middle, the gear; the vault's
     // name stays for VoiceOver.
-    expect(bar).toEqual(['topbar__title sr-only', 'sync-status', 'topbar__review', 'icon-btn'])
+    expect(bar).toEqual(['topbar__title sr-only', 'sync-status sync-status--dot', 'topbar__review', 'icon-btn'])
   })
 
   it('each engine state: blue while a pass runs, grey with no signal, amber on "slow down", red on 401', async () => {
@@ -63,11 +70,11 @@ describe('the dot in the top bar: always shown (decision 12)', () => {
     await h.syncSet({ status: 'syncing' })
     expect(shown(h)).toMatchObject({ colour: 'syncing', words: 'Syncing…' })
     await h.syncSet({ status: 'off', problem: 'OFFLINE' })
-    expect(shown(h)).toMatchObject({ colour: 'off', words: 'No signal' })
+    expect(shown(h)).toMatchObject({ colour: 'off', words: 'No signal', inBar: false })
     await h.syncSet({ status: 'slowed', problem: 'RATE_LIMITED', retryAt: NOW + 120_000 })
-    expect(shown(h)).toMatchObject({ colour: 'pending', words: 'Waiting for GitHub' })
+    expect(shown(h)).toMatchObject({ colour: 'pending', words: 'Waiting for GitHub', inBar: true })
     await h.syncSet({ status: 'attention', problem: 'UNAUTHORIZED', retryAt: null })
-    expect(shown(h)).toMatchObject({ colour: 'attention', words: 'Sign in again', label: 'Sync status: Sign in again' })
+    expect(shown(h)).toMatchObject({ colour: 'attention', words: 'Sign in again', inBar: true, label: 'Sync status: Sign in again' })
     await h.syncSet({ status: 'synced', problem: null })
     expect(shown(h)).toMatchObject({ colour: 'synced', words: 'Synced' })
   })
@@ -115,26 +122,62 @@ describe('the dot in the top bar: always shown (decision 12)', () => {
     ;({ h } = await signedIn())
     const b = status(h)
     expect(b.tagName).toBe('BUTTON')
-    expect(b.getAttribute('aria-haspopup')).toBe('dialog')
+    // YAZ-5451: a green dot syncs now (no sheet); amber and red open the sheet.
+    expect(b.getAttribute('aria-haspopup')).toBeNull()
     expect(b.querySelector('.sync-dot')!.getAttribute('aria-hidden')).toBe('true')
     await h.syncSet({ status: 'off', problem: 'OFFLINE' })
-    expect(b.getAttribute('aria-label')).toBe('Sync status: No signal')
+    expect(b.getAttribute('aria-label')).toBe('Sync status: No signal. Sync now')
+    await h.syncSet({ status: 'attention', problem: 'UNAUTHORIZED' })
+    expect(b.getAttribute('aria-label')).toBe('Sync status: Sign in again')
+    expect(b.getAttribute('aria-haspopup')).toBe('dialog')
   })
 })
 
-describe('a tap on the dot shows the time of the last sync (decision 12)', () => {
-  it('green: "Last synced 2h ago" and the clock time; Close and Escape close it', async () => {
+describe('YAZ-5451: a tap on a green, blue or grey dot syncs now', () => {
+  it('green: a tap calls syncNow, the dot is blue while it runs, no sheet opens; the 15 s checks are the engine\'s own', async () => {
     ;({ h } = await signedIn())
+    let end!: () => void
+    const calls = h.sync.syncNowCalls
+    h.sync.syncNow = async () => {
+      h!.sync.syncNowCalls++
+      await new Promise<void>((r) => (end = r))
+    }
+    await h.click('Sync status: Synced. Sync now')
+    expect(h.sync.syncNowCalls).toBe(calls + 1)
+    expect(h.host.querySelector('[role="dialog"]')).toBeNull()
+    expect(shown(h)).toMatchObject({ colour: 'syncing', words: 'Syncing…', inBar: false, label: 'Sync status: Syncing…' })
+    await act(async () => end())
+    await h.settle()
+    expect(shown(h)).toMatchObject({ colour: 'synced', words: 'Synced' })
+  })
+
+  it('grey (no signal): a tap tries a sync now too', async () => {
+    ;({ h } = await signedIn())
+    await h.syncSet({ status: 'off', problem: 'OFFLINE' })
+    const calls = h.sync.syncNowCalls
+    await h.click('Sync status: No signal. Sync now')
+    expect(h.sync.syncNowCalls).toBe(calls + 1)
+  })
+})
+
+describe('a tap on an amber or red dot shows what is wrong (decision 12)', () => {
+  it('amber: the words stay in the bar; the sheet says why and the last sync; Close and Escape close it', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
     await h.syncSet({ lastSyncedAt: NOW - 2 * 3_600_000 })
-    await h.click('Sync status: Synced')
+    await answersDo(h, () => answers.set({ waiting: 1 }))
+    expect(shown(h)).toMatchObject({ colour: 'pending', words: '1 answer waiting', inBar: true })
+    const calls = h.sync.syncNowCalls
+    await h.click('Sync status: 1 answer waiting')
+    expect(h.sync.syncNowCalls).toBe(calls)
     const sheet = h.host.querySelector('[role="dialog"]')!
     expect(sheet.getAttribute('aria-label')).toBe('Sync status')
-    expect(sheet.textContent).toContain('Synced')
+    expect(sheet.textContent).toContain('1 answer waiting')
     expect(sheet.textContent).toContain(`Last synced 2h ago, at ${clockTime(NOW - 2 * 3_600_000)}`)
     expect(document.activeElement?.textContent).toBe('Close')
     await h.click('Close')
     expect(h.host.querySelector('[role="dialog"]')).toBeNull()
-    await h.click('Sync status: Synced')
+    await h.click('Sync status: 1 answer waiting')
     await act(async () => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     expect(h.host.querySelector('[role="dialog"]')).toBeNull()
     // The focus goes back to the dot.
@@ -145,9 +188,22 @@ describe('a tap on the dot shows the time of the last sync (decision 12)', () =>
     let answers: FakeAnswers
     ;({ h, answers } = await signedIn())
     await h.syncSet({ lastSyncedAt: NOW - 3 * 3_600_000 })
-    await answersDo(h, () => answers.set({ lastSentAt: NOW - 5 * 60_000 }))
-    await h.click('Sync status: Synced')
+    await answersDo(h, () => answers.set({ lastSentAt: NOW - 5 * 60_000, waiting: 1 }))
+    await h.click('Sync status: 1 answer waiting')
     expect(h.text()).toContain('Last synced 5 min ago')
+  })
+
+  it('"Can\'t sync now" (grey, the sync could not start) keeps its words and its sheet, which says what to do', async () => {
+    const real = { ...DOT_TIMES }
+    onTestFinished(() => void Object.assign(DOT_TIMES, real))
+    Object.assign(DOT_TIMES, { checkMs: 40, probeMs: 40 })
+    ;({ h } = await signedIn({ answers: null }))
+    for (let i = 0; i < 60 && shown(h).words === 'Checking…'; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 50))))
+    await h.settle()
+    expect(shown(h)).toMatchObject({ colour: 'off', words: "Can't sync now", inBar: true, label: "Sync status: Can't sync now" })
+    await h.click("Sync status: Can't sync now")
+    expect(h.text()).toContain('The app could not start its sync.')
+    expect(h.button('Try again')).not.toBeNull()
   })
 
   it('no signal: the words say that review still works and the answers wait on the phone', async () => {
@@ -178,7 +234,7 @@ describe('a tap on the dot shows the time of the last sync (decision 12)', () =>
     expect(h.host.querySelector('input[name="token"]')).not.toBeNull()
     expect(h.host.querySelector('[role="dialog"]')).toBeNull()
     await h.syncSet({ status: 'synced', problem: null })
-    await h.click('‹ Back')
+    await h.click('Back')
     expect(shown(h)).toMatchObject({ colour: 'synced', words: 'Synced' })
   })
 })

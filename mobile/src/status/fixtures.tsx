@@ -6,14 +6,15 @@ import type { TokenEndWarning } from '../auth/expiry'
 import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
 import { syncDot, type DotInput } from './dot'
-import { DotWords } from './SyncStatus'
+import { DotWords, dotIsLoud } from './SyncStatus'
 import { fakeAnswers, lostAnswer } from './testing'
 import './status.css'
 
 /**
  * The dot's screen fixtures (`#fixture=dot-…`), made-up data only, for the screenshots of YAZ-5080. Only the
  * `--mode fixtures` build reaches this file (`dev/fixtures.tsx`). Nothing calls GitHub.
- *  - `dot-all`: the five states of decision 12 in five top bars, with the words of each.
+ *  - `dot-all`: the five states of decision 12 in five top bars. YAZ-5451: green, blue and grey are the dot only (a
+ *    tap syncs now); amber and red keep their words.
  *  - `dot-<state>`: the whole app with that state; `dot-<state>-sheet`: the same, after a tap on the dot;
  *    `dot-lost-ask`: the ask of the first Discard.
  */
@@ -37,13 +38,14 @@ function Gallery() {
     <div className="app" style={{ overflow: 'auto' }}>
       {ALL.map(([what, over]) => {
         const dot = syncDot({ ...base, ...over })
+        const loud = dotIsLoud(dot)
         return (
           <section key={what} style={{ marginBottom: 14 }}>
             <header className="topbar">
               <h1 className="topbar__title">demo-vault</h1>
-              <button type="button" className="sync-status" aria-label={`Sync status: ${dot.words}`}>
+              <button type="button" className={loud ? 'sync-status' : 'sync-status sync-status--dot'} aria-label={`Sync status: ${dot.words}${loud ? '' : '. Sync now'}`}>
                 <span className={`sync-dot sync-dot--${dot.state}`} aria-hidden="true" />
-                <DotWords dot={dot} />
+                {loud && <DotWords dot={dot} />}
               </button>
               <button type="button" className="icon-btn" aria-label="Settings">
                 ⚙

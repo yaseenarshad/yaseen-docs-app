@@ -338,6 +338,7 @@ body:has(.app--swiping) {
 
 .back {
   margin-left: -8px;
+  color: var(--accent);
 }
 
 /* ---- Text ---- */

@@ -49,7 +49,7 @@ describe('the Review tab in the app shell', () => {
     expect(h.text()).toContain('Words for a trip to Madrid.')
     expect(h.host.querySelector('[data-card-id="TB-1"]')).not.toBeNull()
     expect(h.button('Remembered')).toBeNull()
-    await h.click('‹ Back')
+    await h.click('Back')
     for (let i = 0; i < 30 && !h.text().includes('TB-1'); i++) await h.settle()
     expect(h.text()).toContain('Hola · TB-1')
   })
@@ -77,7 +77,7 @@ describe('the Review tab in the app shell', () => {
     const state = () => ({ meta: h.host.querySelector('.review__meta')?.textContent, head: h.host.querySelector('.review__head')?.textContent, last: h.host.querySelector('.review__last')?.textContent, card: h.host.querySelector('.phone-card__body')?.textContent })
     const before = state()
     expect(before.last).toContain('Undo')
-    for (const away of [['Friends'], ['Search'], ['Settings', '‹ Back'], ['More card actions', 'Open card', '‹ Back']]) {
+    for (const away of [['Friends'], ['Search'], ['Settings', 'Back'], ['More card actions', 'Open card', 'Back']]) {
       for (const name of away) {
         await h.click(name)
         for (let i = 0; i < 4; i++) await h.settle()

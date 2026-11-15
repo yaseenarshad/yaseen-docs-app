@@ -11,6 +11,7 @@ import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
+import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
 
 /**
@@ -139,8 +140,17 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
   }
 
   const gone = text === null && data !== null
+  const pageId = pageIdOf(data, record)
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader>
+    <Frame
+      title={title}
+      back={() => app.go({ type: 'back' })}
+      gear
+      tabs
+      reader
+      chip={pageId !== null && <PageIdChip id={pageId} path={path} />}
+      foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
+    >
       <article className="reader" aria-label={title}>
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
         {notice !== null && (

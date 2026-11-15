@@ -13,7 +13,7 @@ import type { DotAnswersView } from './useDotAnswers'
  * to do: "Sign in again" (red), "Replace token" (the token ends soon), Discard for each lost answer (round 12 item 9).
  * A sheet at the bottom of the screen, near the thumb. Close, Escape or a tap outside closes it.
  */
-export function StatusSheet({ dot, token, answers, now, lastAt, onClose }: { dot: Dot; token: TokenEndWarning; answers: DotAnswersView; now: number; lastAt: number | null; onClose: () => void }) {
+export default function StatusSheet({ dot, token, answers, now, lastAt, onClose }: { dot: Dot; token: TokenEndWarning; answers: DotAnswersView; now: number; lastAt: number | null; onClose: () => void }) {
   const app = useApp()
   const close = useRef<HTMLButtonElement>(null)
   const nav = useRef(app.nav)

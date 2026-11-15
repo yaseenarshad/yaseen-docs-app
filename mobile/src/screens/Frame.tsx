@@ -18,10 +18,12 @@ export function Frame({
   notice,
   review = false,
   reader = false,
+  chip,
+  foot,
   children,
 }: {
   title: string
-  /** Shows "‹ Back" before the title. */
+  /** Shows "←" (VoiceOver: "Back") before the title (YAZ-5451). */
   back?: () => void
   /** Shows the status slot (4D) and the gear. */
   gear?: boolean
@@ -35,6 +37,10 @@ export function Frame({
   review?: boolean
   /** A page or a card (YAZ-5436): no scroll bar; a soft fade at the bottom, as the Review card. */
   reader?: boolean
+  /** After the title: the page's ID chip (YAZ-5450). */
+  chip?: ReactNode
+  /** Over the tab bar: the page arrows (YAZ-5449). */
+  foot?: ReactNode
   children: ReactNode
 }) {
   const app = useApp()
@@ -46,11 +52,12 @@ export function Frame({
     <div className="app" ref={frame}>
       <header className={review ? 'topbar topbar--review' : 'topbar'}>
         {back && (
-          <button type="button" className="link-btn back" onClick={back}>
-            ‹ Back
+          <button type="button" className="icon-btn back" aria-label="Back" onClick={back}>
+            ←
           </button>
         )}
         <h1 className={review ? 'topbar__title sr-only' : 'topbar__title'}>{title}</h1>
+        {chip}
         {gear && <SyncStatus />}
         {review && <div ref={setReviewTop} className="topbar__review" />}
         {gear && (
@@ -61,6 +68,7 @@ export function Frame({
       </header>
       {notice}
       <main className={review ? 'screen screen--review' : reader ? 'screen screen--reader' : 'screen'}>{children}</main>
+      {foot}
       {tabs && (
         <nav className="tabbar" role="tablist" aria-label="Tabs">
           {TABS.map((t) => (

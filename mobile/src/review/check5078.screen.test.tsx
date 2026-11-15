@@ -54,7 +54,7 @@ describe('4B checker: the screen', () => {
     await app.click('Open page')
     for (let i = 0; i < 8 && !app.text().includes('A long page'); i++) await app.settle()
     console.log('[4B-A] page scrolled to:', JSON.stringify(scrolled), 'nav top:', JSON.stringify((app.services as unknown as { nav?: unknown }).nav ?? null))
-    await app.click('‹ Back')
+    await app.click('Back')
     for (let i = 0; i < 8 && !app.text().includes('DC-'); i++) await app.settle()
     for (let i = 0; i < 6; i++) await app.settle()
     Element.prototype.scrollIntoView = orig
