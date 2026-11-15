@@ -23,8 +23,9 @@ import { freePort } from './freePort'
  *    full screen, the copy marked too.
  *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
  *    area, a done task struck through.
- *  - numbered tasks (`#fixture=page-tasks-numbered`, YAZ-5510), light and dark, at 375 px: for 1. to 11., the number, then
- *    the box (right of the number, its middle a tap on it), then the text.
+ *  - numbered tasks (`#fixture=page-tasks-numbered`, YAZ-5510, the Mac's rule), light and dark, at 375 px: for 1. to 11.,
+ *    no number, only the box in the number's column (its middle a tap on it, a 44 px tap), then the text; the lines
+ *    that wrap under the text.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
  *  - the Headings sheet (`#fixture=page-headings`, `page-headings-few`, `page-headings-alone`, YAZ-5497) and the properties
@@ -377,8 +378,9 @@ if (process.env.LAYOUT_PAGES !== 'no') {
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
-// YAZ-5510: numbered tasks, light and dark, at 375 px: each number (its `::marker`, outside the item, so it ends at the
-// item's left edge) shows, its box starts right of it, the text right of the box; a tap at the box's middle is the box.
+// YAZ-5510 (the Mac's rule: Crepe's `renderLabel`): numbered tasks, light and dark, at 375 px: the number is hidden,
+// the box in the number's column (inside the list, ending before the text), the text and each wrapped line where the
+// item's text starts; a tap at the box's middle is the box, its tap area 44 px.
 const NUMBERED_CHECK = `(() => {
   const items = [...document.querySelectorAll('.reader__body ol > li')].flatMap((li) => {
     const box = li.querySelector(':scope > .page-task, :scope > p:first-child > .page-task')
@@ -386,10 +388,12 @@ const NUMBERED_CHECK = `(() => {
     const b = box.getBoundingClientRect()
     const range = document.createRange()
     range.selectNodeContents(li)
-    const words = [...range.getClientRects()].filter((r) => r.width > 0 && r.left >= b.right - 0.5)
+    const lines = [...range.getClientRects()].filter((r) => r.width > 0 && r.left >= b.right - 0.5)
     const n = li.parentElement.start + [...li.parentElement.children].indexOf(li)
     const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === box
-    return [{ n, gap: Math.round((b.left - li.getBoundingClientRect().left) * 10) / 10, text: words.length ? Math.round((Math.min(...words.map((r) => r.left)) - b.right) * 10) / 10 : null, shown: getComputedStyle(li).listStyleType !== 'none', hit }]
+    const start = li.getBoundingClientRect().left + parseFloat(getComputedStyle(li).paddingLeft)
+    const tap = getComputedStyle(box, '::before')
+    return [{ n, shown: getComputedStyle(li).listStyleType !== 'none' && getComputedStyle(li, '::marker').content !== 'none', inList: b.left >= li.parentElement.getBoundingClientRect().left, gap: Math.round((start - b.right) * 10) / 10, lines: lines.length ? Math.round((Math.max(...lines.map((r) => Math.abs(r.left - start)))) * 10) / 10 : null, hit, tap: Math.min(parseFloat(tap.width), parseFloat(tap.height)) }]
   })
   return { items, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
 })()`
@@ -400,10 +404,10 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     const shot = file.replace('.png', `-${scheme}.png`)
     writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
     const m = await evaluate(NUMBERED_CHECK)
-    const items = m.items as { n: number; gap: number; text: number | null; shown: boolean; hit: boolean }[]
-    const ok = items.map((i) => i.n).join(',') === '1,2,10,11' && items.every((i) => i.shown && i.gap >= 0 && i.text !== null && i.text > 0 && i.hit) && !m.pageWide
+    const items = m.items as { n: number; shown: boolean; inList: boolean; gap: number; lines: number | null; hit: boolean; tap: number }[]
+    const ok = items.map((i) => i.n).join(',') === '1,2,10,11' && items.every((i) => !i.shown && i.inList && i.gap > 0 && i.lines !== null && i.lines <= 0.5 && i.hit && i.tap >= 44) && !m.pageWide
     if (!ok) failed++
-    console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks-numbered at 375x667, ${scheme}: ${items.map((i) => `${i.n}. ${i.shown ? '' : 'NO NUMBER '}box ${i.gap}px right of the number, text ${i.text}px right of the box${i.hit ? '' : ' (TAP MISSES)'}`).join('; ')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks-numbered at 375x667, ${scheme}: ${items.map((i) => `${i.n} ${i.shown ? 'NUMBER SHOWS ' : 'no number, '}box ${i.inList ? 'in the number column' : 'OUT OF THE LIST'} ${i.gap}px before the text, lines ${i.lines}px off the text start, tap ${i.tap}px${i.hit ? '' : ' (TAP MISSES)'}`).join('; ')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

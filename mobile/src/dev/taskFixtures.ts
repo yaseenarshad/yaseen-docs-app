@@ -40,8 +40,8 @@ export const TASKS_PAGE = [
 ].join('\n')
 
 /**
- * YAZ-5510: numbered tasks, one and two digits (`1.`, `2.`, `10.`, `11.`), one done, one that wraps: the number, then
- * the box, then the text. For `page/numberedTasks.test.ts` and the screen fixture `page-tasks-numbered`.
+ * YAZ-5510: numbered tasks, one and two digits (`1.`, `2.`, `10.`, `11.`), one done, one that wraps: only the box, in
+ * the number's place (the Mac's rule), then the text. For `page/numberedTasks.test.ts` and the screen fixture `page-tasks-numbered`.
  */
 export const NUMBERED_TASKS_PAGE = [
   '---',
