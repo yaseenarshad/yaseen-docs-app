@@ -77,3 +77,24 @@ export const TABLE_PAGE = [
   EIGHT_SPARSE,
   'The end of the tables.',
 ].join('\n\n')
+
+/**
+ * YAZ-5480: a tall table whose file freezes its first two rows and its first column, as the Mac writes it: the table
+ * comment after the table, a blank line between. 7 columns, 46 rows of made-up readings: taller than a phone, also full screen.
+ */
+export const FROZEN = [
+  '| Station | Region | Mon | Tue | Wed | Thu | Notes |',
+  '| --- | --- | --: | --: | --: | --: | --- |',
+  '| (units) | | mm | mm | mm | mm | |',
+  ...Array.from({ length: 44 }, (_, i) => {
+    const name = ['North Ridge', 'Lake Shore', 'Old Mill', 'Pine Hollow', 'Stone Bridge', 'Harbor Point', 'Willow Bend', 'Cedar Flats', 'Fox Hill', 'Mossy Glen', 'Iron Gate'][i % 11]
+    const n = (k: number) => ((i * 7 + k * 13) % 41) + 2
+    return `| ${name} ${Math.floor(i / 11) + 1} | ${['East', 'West', 'Coast', 'Hills'][i % 4]} | ${n(1)} | ${n(2)} | ${n(3)} | ${n(4)} | ${i % 3 === 0 ? 'Gauge cleaned in the morning; reading taken after the shower passed.' : i % 3 === 1 ? 'Dry.' : ''} |`
+  }),
+].join('\n')
+
+/** The comment the Mac writes after `FROZEN`. */
+export const FROZEN_COMMENT = '<!-- table: freeze 2 rows 1 col -->'
+
+/** A page with the frozen table, a line before and text after it, so the page scrolls past its end. */
+export const FROZEN_PAGE = ['# Frozen table', 'Rain gauges, two header rows and the station column frozen on the Mac:', FROZEN, FROZEN_COMMENT, 'After the table.', ...Array.from({ length: 12 }, (_, i) => `Line ${i + 1} after the table, so the page goes on.`)].join('\n\n')

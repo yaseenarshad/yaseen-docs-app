@@ -11,7 +11,10 @@ import './tables.css'
  *    (`GROW_MIN` .. `GROW_MAX`, a comfortable line), sharing the screen by weight (`tables.css`, a container query unit).
  *    The min follows the column's longest word and its length, so a column of paragraphs never turns into a tower.
  *  - The first column of a table of three columns or more stays in place while it scrolls sideways (`data-sticky`),
- *    at most `STICKY_MAX` em wide.
+ *    at most `STICKY_MAX` em wide. A table whose file freezes columns (`freeze 2 cols`, YAZ-5480, `tableFile.ts`)
+ *    keeps THOSE in place instead, each at most `STICKY_MAX` em wide (`frozenColumns`).
+ *  - YAZ-5480: the frozen rows (the file's `freeze N rows`, else the header row, as the Mac's sticky header) stay at the
+ *    top while the page scrolls down through the table (`markFrozen`, `tables.css`).
  *
  * A table wider than the screen scrolls in its own box, with a soft shadow at the side with more, and a ⤢ button that
  * opens it full screen (`useTables`, `tableView`). The widths are counted from the text, not measured: no layout runs
@@ -137,12 +140,84 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     const min = Math.min(max, Math.max(GROW_MIN, whole + PAD, Math.min(GROW_MIN_LONG, Math.max(word + PAD, natural / 4))))
     cols.push({ kind: 'grow', num: false, max: round(max), min: round(min) })
   }
-  // The first column of a wide table stays in place; then it is at most STICKY_MAX wide.
-  if (cols.length >= 3 && cols[0].kind === 'grow') {
-    cols[0].max = Math.min(cols[0].max, STICKY_MAX)
-    cols[0].min = Math.min(cols[0].min, cols[0].max)
+  // The columns that stay in place (the first of a wide table, or the file's frozen ones): each at most STICKY_MAX wide.
+  for (const col of cols.slice(0, frozenColumns(table, cols.length))) {
+    if (col.kind !== 'grow') continue
+    col.max = Math.min(col.max, STICKY_MAX)
+    col.min = Math.min(col.min, col.max)
   }
   return cols
+}
+
+/**
+ * The columns that stay at the left while the table scrolls sideways (YAZ-5480): the file's frozen columns
+ * (`data-freeze-cols`, `tableFile.ts`) when it freezes any; else the phone's own rule, the first column of a table of
+ * three columns or more (YAZ-5471). The Mac freezes no column by default.
+ */
+export function frozenColumns(table: HTMLTableElement, count: number): number {
+  const own = Number(table.getAttribute('data-freeze-cols') ?? 0)
+  return own > 0 ? Math.min(own, count) : count >= 3 ? 1 : 0
+}
+
+/**
+ * The rows that stay at the top while the page scrolls down through the table (YAZ-5480): the file's
+ * (`data-freeze-rows`, the Mac's rule in `tableFile.ts`: its own `freeze N rows`, else the header row unless the table
+ * says `nostickyheader`); a table with no comment, the header row: the Mac's Sticky header row is on by default.
+ */
+export function frozenRows(table: HTMLTableElement): number {
+  const own = table.getAttribute('data-freeze-rows')
+  const rows = own === null ? (table.tHead !== null ? 1 : 0) : Number(own)
+  return Math.max(0, Math.min(rows, table.rows.length))
+}
+
+/**
+ * Each cell's grid column, a merged cell's (`colspan`, `rowspan`) at its left: the cells a `rowspan` covers in the rows
+ * under it push the later cells right. Pure: no layout.
+ */
+export function gridColumns(table: HTMLTableElement): Map<HTMLTableCellElement, number> {
+  const out = new Map<HTMLTableCellElement, number>()
+  const taken: number[][] = []
+  ;[...table.rows].forEach((row, r) => {
+    let c = 0
+    for (const cell of row.cells) {
+      while (taken[r]?.[c] !== undefined) c++
+      out.set(cell, c)
+      for (let dr = 0; dr < Math.max(1, cell.rowSpan); dr++) for (let dc = 0; dc < Math.max(1, cell.colSpan); dc++) (taken[r + dr] ??= [])[c + dc] = 1
+      c += Math.max(1, cell.colSpan)
+    }
+  })
+  return out
+}
+
+/**
+ * Marks the frozen rows and columns of a table (YAZ-5480), once: the table's `data-pin-rows` and `data-pin-cols`, each
+ * cell of a frozen row `data-pin-row` (the last row's `data-pin-row-end`), each cell of a frozen column `data-pin-col`
+ * with its `left` (`--pin-left`, the column's offset that `useTables` measures, `--freeze-x-<n>`), the last column's
+ * `data-pin-col-end`. `tables.css` makes them stay; nothing runs on a scroll.
+ */
+export function markFrozen(table: HTMLTableElement): void {
+  if (table.hasAttribute('data-pin-rows')) return
+  const grid = gridColumns(table)
+  const count = Math.max(0, ...[...grid].map(([cell, c]) => c + Math.max(1, cell.colSpan)))
+  const rows = frozenRows(table)
+  const cols = frozenColumns(table, count)
+  table.setAttribute('data-pin-rows', String(rows))
+  table.setAttribute('data-pin-cols', String(cols))
+  table.toggleAttribute('data-sticky', cols > 0)
+  ;[...table.rows].forEach((row, r) => {
+    for (const cell of row.cells) {
+      if (r < rows) {
+        cell.setAttribute('data-pin-row', '')
+        if (r + Math.max(1, cell.rowSpan) >= rows) cell.setAttribute('data-pin-row-end', '')
+      }
+      const c = grid.get(cell)!
+      if (c < cols) {
+        cell.setAttribute('data-pin-col', '')
+        cell.style.setProperty('--pin-left', `var(--freeze-x-${c}, 0px)`)
+        if (c + Math.max(1, cell.colSpan) >= cols) cell.setAttribute('data-pin-col-end', '')
+      }
+    }
+  })
 }
 
 /**
@@ -171,7 +246,6 @@ export function layoutTable(table: HTMLTableElement): void {
   table.style.setProperty('--table-fixed', `${round(fixed)}em`)
   // Its width with every column at its widest: the full-screen view lays it out so.
   table.style.setProperty('--table-full', `${round(fixed + grow)}em`)
-  if (cols.length >= 3) table.setAttribute('data-sticky', '')
   for (const row of table.rows) {
     ;[...row.cells].forEach((cell, c) => {
       const col = cols[c]
@@ -222,6 +296,7 @@ export function layoutTables(root: ParentNode): void {
     }
     scroll.classList.add('page-table')
     layoutTable(table)
+    markFrozen(table)
     frame(scroll)
   }
 }

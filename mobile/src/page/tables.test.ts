@@ -154,7 +154,9 @@ describe('the look (YAZ-5471)', () => {
     const [six, two] = [...body.querySelectorAll('table')]
     for (const row of six.rows) {
       expect(getComputedStyle(row.cells[0]).position).toBe('sticky')
-      expect(getComputedStyle(row.cells[0]).left).toBe('0px')
+      // YAZ-5480: at its column's measured offset, the first column's 0 (jsdom does not resolve the variable).
+      expect(getComputedStyle(row.cells[0]).left).toBe('var(--pin-left, 0px)')
+      expect(row.cells[0].style.getPropertyValue('--pin-left')).toBe('var(--freeze-x-0, 0px)')
       expect(getComputedStyle(row.cells[1]).position).not.toBe('sticky')
     }
     for (const row of two.rows) expect(getComputedStyle(row.cells[0]).position).not.toBe('sticky')

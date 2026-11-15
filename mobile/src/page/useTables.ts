@@ -7,7 +7,8 @@ import { layoutTables } from './tableLayout'
  *    size (the phone turns) and when its box does;
  *  - its frame says which side has more to see (`data-more-left`, `data-more-right`): the soft shadows;
  *  - a tap on ⤢ opens the table full screen (`tableView.ts`, a chunk of its own, loaded on the first tap);
- *  - a table that comes later (an embedded card, filled after the page) gets its widths and frame (`layoutTables`).
+ *  - a table that comes later (an embedded card, filled after the page) gets its widths and frame (`layoutTables`);
+ *  - its frozen rows and columns are measured (YAZ-5480, `measureFreeze`) with it, never on a scroll.
  * The full-screen view closes with the page.
  */
 export interface TableWatch {
@@ -28,25 +29,121 @@ export function markTable(box: HTMLElement): void {
   frame.toggleAttribute('data-more-right', wide && scroll.scrollLeft < over - 1)
 }
 
+/** A frozen block taller than this share of the screen does not stay (it would hide the table): the rows scroll. */
+export const PIN_ROWS_MAX = 0.45
+/** Frozen columns wider than this share of the table's box do not stay: the rest would have no room. */
+export const PIN_COLS_MAX = 0.6
+
+/** The browser moves the frozen rows itself, on a scroll-driven animation (`tables.css`); else `useTables` does. */
+const scrollDriven = (): boolean => typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('animation-timeline: view()')
+
+/**
+ * Measures a table's frozen parts (YAZ-5480), when it comes and when it or the screen changes size, never on a scroll:
+ * each frozen column's offset (`--freeze-x-<n>`, a merged header cell gives each column it spans its own left), the
+ * run of the frozen rows (`--pin-run`: the table's height less theirs), and whether they may stay (`PIN_ROWS_MAX`,
+ * `PIN_COLS_MAX`). `screen` is the height of the page's scroll box.
+ */
+export function measureFreeze(box: HTMLElement, screen: number): void {
+  const table = box.querySelector<HTMLTableElement>('table')
+  const scroll = box.querySelector<HTMLElement>('.page-table')
+  if (table === null || scroll === null) return
+  const rows = Number(table.getAttribute('data-pin-rows') ?? 0)
+  const cols = Number(table.getAttribute('data-pin-cols') ?? 0)
+  if (cols > 0) {
+    const first = table.rows[0]
+    const start = first?.cells[0]?.offsetLeft ?? 0
+    let c = 0
+    let right = 0
+    for (const cell of first?.cells ?? []) {
+      if (c >= cols) break
+      const left = cell.offsetLeft - start
+      right = left + cell.offsetWidth
+      for (let span = 0; span < Math.max(1, cell.colSpan) && c < cols; span++, c++) table.style.setProperty(`--freeze-x-${c}`, `${left}px`)
+    }
+    table.toggleAttribute('data-pin-cols-off', scroll.clientWidth > 0 && right > scroll.clientWidth * PIN_COLS_MAX)
+  }
+  if (rows > 0) {
+    const top = table.rows[0]!.offsetTop
+    const last = table.rows[rows - 1]!
+    const height = last.offsetTop + last.offsetHeight - top
+    table.style.setProperty('--pin-run', `${Math.max(0, table.offsetHeight - height)}px`)
+    table.toggleAttribute('data-pin-rows-off', screen > 0 && height > screen * PIN_ROWS_MAX)
+  }
+}
+
+/**
+ * Without scroll-driven animations (`tables.css`): the frozen rows of each table move by the page's scroll, once a frame
+ * (passive), with `transform` only. The frames' places in the page are measured with the tables, never on a scroll.
+ */
+function pinByScript(host: HTMLElement, scroller: HTMLElement): { measure(): void; stop(): void } {
+  let pins: Array<{ cells: HTMLElement[]; top: number; run: number; at: number }> = []
+  let frame = 0
+  const sync = () => {
+    frame = 0
+    const y = scroller.scrollTop
+    for (const pin of pins) {
+      const at = Math.max(0, Math.min(pin.run, y - pin.top))
+      if (at === pin.at) continue
+      pin.at = at
+      for (const cell of pin.cells) cell.style.transform = at === 0 ? '' : `translateY(${at}px)`
+    }
+  }
+  const schedule = () => {
+    if (frame === 0) frame = requestAnimationFrame(sync)
+  }
+  scroller.addEventListener('scroll', schedule, { passive: true })
+  return {
+    measure() {
+      const base = scroller.getBoundingClientRect().top - scroller.scrollTop
+      pins = [...host.querySelectorAll<HTMLElement>('.page-table-frame')].flatMap((el) => {
+        const table = el.querySelector('table')
+        if (table === null || table.hasAttribute('data-pin-rows-off')) return []
+        const cells = [...table.querySelectorAll<HTMLElement>('[data-pin-row]')]
+        if (cells.length === 0) return []
+        return [{ cells, top: el.getBoundingClientRect().top - base, run: parseFloat(table.style.getPropertyValue('--pin-run')) || 0, at: -1 }]
+      })
+      schedule()
+    },
+    stop() {
+      scroller.removeEventListener('scroll', schedule)
+      if (frame !== 0) cancelAnimationFrame(frame)
+    },
+  }
+}
+
 type Load = () => Promise<{ showTable(box: HTMLElement, back?: HTMLElement | null): { close(): void } }>
 
 export function watchTables(host: HTMLElement, load: Load = () => import('./tableView')): TableWatch {
   const boxes = () => host.querySelectorAll<HTMLElement>('.page-table-box')
-  const measure = () => boxes().forEach(markTable)
+  // The page's scroll box (`.screen`); the frozen rows stay at its top.
+  const scroller = host.closest<HTMLElement>('.screen')
+  const script = scroller !== null && !scrollDriven() ? pinByScript(host, scroller) : null
+  const measure = () => {
+    const screen = scroller?.clientHeight ?? window.innerHeight
+    boxes().forEach((box) => {
+      markTable(box)
+      measureFreeze(box, screen)
+    })
+    script?.measure()
+  }
   let view: { close(): void } | null = null
   let stopped = false
 
   const sizes = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => measure())
+  // Text above a table that changes height moves it: its place, for the script's frozen rows.
+  if (script !== null) sizes?.observe(host)
   const seen = new WeakSet<Element>()
   const take = () => {
     // A table that came without its frame (a card filled in later).
     if (host.querySelector('table:not([data-cols]):not([data-sized])') !== null) layoutTables(host)
+    let fresh = false
     for (const box of boxes()) {
       if (seen.has(box)) continue
       seen.add(box)
       sizes?.observe(box)
-      markTable(box)
+      fresh = true
     }
+    if (fresh) measure()
   }
   take()
   const added = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => take())
@@ -80,6 +177,7 @@ export function watchTables(host: HTMLElement, load: Load = () => import('./tabl
       stopped = true
       sizes?.disconnect()
       added?.disconnect()
+      script?.stop()
       host.removeEventListener('scroll', scrolled, { capture: true })
       window.removeEventListener('resize', measure)
       host.removeEventListener('click', tapped)

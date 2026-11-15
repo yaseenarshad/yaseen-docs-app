@@ -119,18 +119,61 @@
   margin: 0;
 }
 
-/* The first column stays in place while a table of three columns or more scrolls sideways. */
-.page-table-box .page-table-frame .page-table table[data-sticky] tr > :first-child {
+/* The frozen columns stay at the left while the table scrolls sideways (YAZ-5480): the first column of a table of
+   three columns or more, or the file's `freeze N cols` (`tableLayout.ts`: `markFrozen`). Each at its column's offset,
+   which `useTables` measures (`--freeze-x-<n>`). Columns that would cover most of the box do not stay (`data-pin-cols-off`). */
+.page-table-box .page-table-frame .page-table table:not([data-pin-cols-off]) :is(th, td)[data-pin-col] {
   position: sticky;
-  left: 0;
+  left: var(--pin-left, 0px);
   z-index: 1;
   background: var(--bg);
 }
-.page-table-box .page-table-frame .page-table table[data-sticky] tr > th:first-child {
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-col][data-pin-row] {
+  z-index: 3;
+}
+.page-table-box .page-table-frame .page-table table th[data-pin-col] {
   background: var(--table-head-bg);
 }
-.page-table-frame[data-more-left] .page-table table[data-sticky] tr > :first-child {
+.page-table-frame[data-more-left] .page-table table:not([data-pin-cols-off]) [data-pin-col-end] {
   box-shadow: 6px 0 8px -6px var(--table-edge-shadow);
+}
+
+/* The frozen rows stay at the top while the page scrolls down through the table (YAZ-5480): the file's `freeze N rows`,
+   else the header row (the Mac's Sticky header row, on by default). The table box scrolls sideways, so `position:
+   sticky` cannot reach the page's scroll: each frozen cell moves down with a scroll-driven animation instead, on the
+   frame's view timeline (its top crossing the screen's top: `view-timeline-inset` makes the screen one line at its
+   top). The browser runs it while it scrolls: no script, transform only. It moves by the scroll, from the frame's top
+   at the screen's top, and stops `--pin-run` later, with the frozen rows at the table's end (`useTables` measures it).
+   A browser without scroll-driven animations gets the same transform from `useTables`, once a frame. */
+.page-table-frame {
+  view-timeline: --page-table-y block;
+  view-timeline-inset: 0px 100%;
+}
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row] {
+  position: relative;
+  z-index: 2;
+  background: var(--bg);
+}
+.page-table-box .page-table-frame .page-table table th[data-pin-row] {
+  background: var(--table-head-bg);
+}
+.page-table-box .page-table-frame .page-table table td[data-pin-row-end] {
+  border-bottom-color: var(--table-head-line);
+}
+@keyframes page-table-pin {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(var(--pin-run, 0px));
+  }
+}
+@supports (animation-timeline: view()) {
+  .page-table-box .page-table-frame .page-table table:not([data-pin-rows-off]) [data-pin-row] {
+    animation: page-table-pin linear both;
+    animation-timeline: --page-table-y;
+    animation-range: cover 0px cover var(--pin-run, 0px);
+  }
 }
 /* The soft shadows at a side with more to see. */
 .page-table-frame::before,
@@ -153,7 +196,7 @@
   right: 0;
   background: linear-gradient(to left, var(--table-edge-shadow), transparent);
 }
-.page-table-frame[data-more-left]:not(:has(table[data-sticky]))::before,
+.page-table-frame[data-more-left]:not(:has(table[data-sticky]:not([data-pin-cols-off])))::before,
 .page-table-frame[data-more-right]::after {
   opacity: 1;
 }
@@ -236,7 +279,7 @@
   transform-origin: 0 0;
   overflow-wrap: anywhere;
 }
-/* In the view every column is at its widest, and nothing is sticky (the whole table is there). */
+/* In the view every column is at its widest. */
 .table-view .page-table-box {
   margin: 0;
   container-type: normal;
@@ -250,9 +293,63 @@
 .table-view .page-table-box col.page-table__grow {
   width: var(--col-max);
 }
-.table-view .page-table-box .page-table-frame .page-table table[data-sticky] tr > :first-child {
-  position: static;
+/* In the view, the frozen rows and columns stay too (YAZ-5480), each moved by the pane's own scroll (a scroll-driven
+   animation on the pane's timelines; the table is scaled, so `tableView.ts` sets the ranges and runs for the scale:
+   `--tv-y-from`, `--tv-y-to`, `--tv-y-run`, and the same for x). Rows move with `transform`, columns with `translate`,
+   so a cell of both moves both ways. */
+.table-view__pane {
+  scroll-timeline: --tv-y block, --tv-x inline;
+}
+.table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-col] {
+  position: relative;
+  left: auto;
   box-shadow: none;
+}
+/* The frozen column's edge, and a strip of the header's shade over the pane's top (a part of a pixel shows the row under). */
+.table-view .page-table-box .page-table-frame .page-table table [data-pin-col-end] {
+  box-shadow: 6px 0 8px -6px var(--table-edge-shadow);
+}
+.table-view .page-table-box .page-table-frame .page-table table tr:first-child > [data-pin-row] {
+  box-shadow: 0 -3px 0 var(--table-head-bg);
+}
+.table-view .page-table-box .page-table-frame .page-table table tr:first-child > [data-pin-row][data-pin-col-end] {
+  box-shadow: 0 -3px 0 var(--table-head-bg), 6px 0 8px -6px var(--table-edge-shadow);
+}
+.table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row] {
+  animation: none;
+}
+@keyframes table-view-pin-y {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(var(--tv-y-run, 0px));
+  }
+}
+@keyframes table-view-pin-x {
+  from {
+    translate: none;
+  }
+  to {
+    translate: var(--tv-x-run, 0px) 0;
+  }
+}
+@supports (animation-timeline: scroll()) {
+  .table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row] {
+    animation: table-view-pin-y linear both;
+    animation-timeline: --tv-y;
+    animation-range: var(--tv-y-from, 0px) var(--tv-y-to, 0px);
+  }
+  .table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-col] {
+    animation: table-view-pin-x linear both;
+    animation-timeline: --tv-x;
+    animation-range: var(--tv-x-from, 0px) var(--tv-x-to, 0px);
+  }
+  .table-view .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row][data-pin-col] {
+    animation: table-view-pin-y linear both, table-view-pin-x linear both;
+    animation-timeline: --tv-y, --tv-x;
+    animation-range: var(--tv-y-from, 0px) var(--tv-y-to, 0px), var(--tv-x-from, 0px) var(--tv-x-to, 0px);
+  }
 }
 .table-view .page-table__bar {
   display: none;
