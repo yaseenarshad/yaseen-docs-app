@@ -1,0 +1,16 @@
+import { describe, expect, it } from 'vitest'
+import { checkCardSequence, type Finding } from './cardsFuzz.testing'
+
+/** 4,000 by default (well under a second); `CARD_FUZZ_RUNS` and `CARD_FUZZ_FROM` run other seeds. */
+const RUNS = Number(process.env.CARD_FUZZ_RUNS ?? 4000)
+const FROM = Number(process.env.CARD_FUZZ_FROM ?? 1)
+
+describe('YAZ-5514: card answers and marks (applyOps) on random pages with random actions', () => {
+  it(`${RUNS} random sequences: only the card lines change, each keeps its line end and its untouched parts, a resend changes nothing`, () => {
+    const all: Finding[] = []
+    for (let seed = FROM; seed < FROM + RUNS; seed++) all.push(...checkCardSequence(seed))
+    const byKind = new Map<string, Finding[]>()
+    for (const x of all) byKind.set(x.kind, [...(byKind.get(x.kind) ?? []), x])
+    expect([...byKind].map(([k, v]) => `${k}: ${v.length} (seed ${v[0].seed}) ${v[0].detail.slice(0, 300)}`)).toEqual([])
+  })
+})
