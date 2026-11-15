@@ -250,8 +250,6 @@ function SessionScreen({
   const guarded = !guard.taps
   const liveKey = useRef(cardKey)
   liveKey.current = cardKey
-  const liveAnswered = useRef(session.answered.length)
-  liveAnswered.current = session.answered.length
   // YAZ-5315: the guard's 400 ms start when the NEXT card is drawn on the screen (a new key, with its text).
   const { shown: cardShown } = guard
   // A DRAWING is one read of a card (its page object): the hook keeps the old card's object on the screen while the
@@ -400,16 +398,20 @@ function SessionScreen({
     const answeredBefore = session.answered.length
     setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id })
     // YAZ-5266: the guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
+    // YAZ-5502: whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
+    // the phone React may draw the next card AFTER a 0 ms timer, and the screen then still showed the old count, so a
+    // saved answer looked failed and its line (with the 4-second Undo) was put back to the one before.
+    let counted = false
     void guard.answer(
       async () => {
-        await review.answer(rating, seconds())
+        counted = await review.answer(rating, seconds())
         // Let the next card draw before the guard reads the screen.
         await new Promise((r) => setTimeout(r, 0))
         // YAZ-5316: a save that failed counts no answer; the line goes back to what it said (the earlier Undo stays).
-        if (liveAnswered.current === answeredBefore) setLine(earlier)
+        if (!counted) setLine(earlier)
       },
       // `sameCard`: the save failed (no answer counted; the card stays). The next card's drawing starts the 400 ms.
-      () => ({ sameCard: liveAnswered.current === answeredBefore, cardOnScreen: liveKey.current !== null }),
+      () => ({ sameCard: !counted, cardOnScreen: liveKey.current !== null }),
       fromDrawing,
     )
   }
