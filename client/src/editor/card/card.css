@@ -282,7 +282,8 @@
   padding: 0 2px;
   background: var(--mark-bg);
 }
-[data-shown-hidden-words='underline'] .card .card__cloze {
+[data-shown-hidden-words='underline'] .card .card__cloze,
+[data-shown-hidden-words='highlight'] [data-find-query] .card .card__cloze {
   border-radius: 0;
   background: none;
   text-decoration: underline;
@@ -609,8 +610,11 @@
   background: var(--mark-bg);
 }
 /* Settings › Review › Shown hidden words: Underline (YAZ-5005, app-wide, on `.app`): no highlight, a line under the
-   word in the accent colour, light and dark. The blanks (words not shown yet) do not change. */
-[data-shown-hidden-words='underline'] .card .card__hidden {
+   word in the accent colour, light and dark. The blanks (words not shown yet) do not change.
+   Highlight while ⌘F has a query (YAZ-5378 round 2, `data-find-query` on the searched view, FindBar): the same look,
+   so a hidden word's yellow is never taken for a find match. Box and Underline do not change. */
+[data-shown-hidden-words='underline'] .card .card__hidden,
+[data-shown-hidden-words='highlight'] [data-find-query] .card .card__hidden {
   border-radius: 0;
   background: none;
   text-decoration: underline;
