@@ -84,18 +84,25 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
 
   // R3, R5, R6 from the sync's diff of the open vault.
   const deletedWithDraft = useRef(false)
+  const deletedNotice = useRef<string | null>(null)
   useEffect(
     () =>
       sync.subscribe((event) => {
         if (event.type !== 'changed' || event.vault !== vault) return
         const diff = event.diff
         // N8 (sweep1): the page is gone, but its comment box holds words: it stays as it is drawn, with them.
-        if (deletedWithDraft.current) return
+        // Sweep3 N-2 (YAZ-5524): until the Mac brings it back: then it reads the file again (the text effect resumes).
+        if (deletedWithDraft.current) {
+          if (diff === undefined || diff === null || diff.added.includes(path) || diff.changed.includes(path)) setReads((n) => n + 1)
+          return
+        }
         if (diff === undefined || diff === null) return setReads((n) => n + 1)
         if (diff.removed.includes(path)) {
           if (hasUnsentDraft(path)) {
             deletedWithDraft.current = true
-            setNotice(`"${title}" was deleted on the Mac. Your comment is not sent: copy it before you leave this page.`)
+            const words = `"${title}" was deleted on the Mac. Your comment is not sent: copy it before you leave this page.`
+            deletedNotice.current = words
+            setNotice(words)
             return
           }
           setSearchNotice(`"${title}" was deleted.`)
@@ -116,6 +123,13 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       if (!live) return
       // N8: a page deleted while its comment box held words keeps the text it showed.
       if (deletedWithDraft.current && content === null) return
+      // Sweep3 N-2: the file is back at its path: the page follows the vault again, and its notice goes.
+      if (deletedWithDraft.current) {
+        deletedWithDraft.current = false
+        const words = deletedNotice.current
+        deletedNotice.current = null
+        setNotice((n) => (n === words ? null : n))
+      }
       setText(content)
       // YAZ-5521 (sweep2 S-D): the same text as the page on the screen draws nothing again; its boxes still show the
       // file (a settled tick's box kept the tap's state).
