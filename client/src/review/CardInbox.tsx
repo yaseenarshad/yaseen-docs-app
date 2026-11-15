@@ -237,7 +237,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   const { text, title } = useCardFront(pageText, card?.page?.title ?? '', card?.page?.notitle === true)
   // A card FILE (YAZ-5037): "Open card" in the key row, and no "in <page>". One look in the index the vault already holds.
   const cardFile = card !== null && recordAt(vaultOf(card.path).wikilinks.records, card.path)?.kind === 'card'
-  const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
+  // A card that comes back (YAZ-5594: same place, "3 of 3") is a new turn: the answers so far tell the two apart.
+  const cardKey = card === null ? null : `${session.answered.length}\n${card.path}\n${card.id}`
   /**
    * O (YAZ-5307): the card's file at its top, or a card in a page landed on it when Settings › Cards › Inbox: O opens the
    * page at says The card. The breadcrumb's page part and ⋯ › Open card open as O does; a card file opens as itself.

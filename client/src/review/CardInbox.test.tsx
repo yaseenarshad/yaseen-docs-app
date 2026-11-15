@@ -1237,7 +1237,7 @@ describe('sound and boards in the Inbox (YAZ-5014, YAZ-5015)', () => {
     press('p')
     expect(cardAudioPlaying()).toBe(true)
     // ← → or an answer: another card comes, and the sound stops.
-    session = { ...sessionOf('Next card'), position: 4 }
+    session = { ...sessionOf('Next card'), answered: ['good'] }
     render()
     expect(cardAudioPlaying()).toBe(false)
   })
@@ -1379,15 +1379,15 @@ describe('YAZ-5033: how long each answer took — the timer pauses when you are 
     mount(TWO_SIDES)
     await flush()
     work(20)
-    // The next card (a new place in the session): from zero.
-    session = sessionOf(TWO_SIDES, { position: 4 })
+    // The next card (one more answer in the session: a new turn, YAZ-5594): from zero.
+    session = sessionOf(TWO_SIDES, { answered: ['good'] })
     render()
     await flush()
     work(3)
     press('2')
     expect(secondsOfAnswer()).toBe(3)
     // ⌘Z shows the first card again: from zero again, not its old 20 s.
-    session = sessionOf(TWO_SIDES, { position: 3 })
+    session = sessionOf(TWO_SIDES, { answered: [] })
     render()
     await flush()
     work(2)

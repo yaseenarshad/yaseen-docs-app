@@ -159,9 +159,11 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     expect(steps()).toEqual(['-', '-', '-'])
     await h.click('Remembered')
     await h.click('Forgot')
-    // A Forgot card comes back at the end of the session (its same-day step): the bar grows one step.
-    expect(steps()).toEqual(['remembered', 'forgot', '-', '-'])
-    expect(q('.review__progress')?.getAttribute('aria-valuenow')).toBe('2')
+    // A Forgot card comes back at the end of the session (its same-day step): the same card, so no new step
+    // (YAZ-5594); its step is red, and it is not done.
+    expect(steps()).toEqual(['remembered', 'forgot', '-'])
+    expect(q('.review__progress')?.getAttribute('aria-valuenow')).toBe('1')
+    expect(q('.review__progress')?.getAttribute('aria-valuemax')).toBe('3')
   })
 })
 

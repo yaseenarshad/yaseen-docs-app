@@ -659,6 +659,10 @@
 .card-inbox__progress-part[data-missed] {
   background: var(--danger);
 }
+/* YAZ-5594: a card answered Remembered that comes back in its steps: not done, so its place stays empty. */
+.card-inbox__progress-part[data-open] {
+  background: transparent;
+}
 @media (prefers-reduced-motion: reduce) {
   .card-inbox__progress-part {
     transition: none;

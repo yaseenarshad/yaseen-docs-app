@@ -76,7 +76,7 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(listed()).toEqual(DUE)
   })
 
-  it('2. New cards alone: each new card comes back once (two Remembered), and no % screen ever stops them', async () => {
+  it('2. New cards alone: each new card once, no % screen ever stops them; its first Remembered moves it into Due today (YAZ-5610)', async () => {
     h = await reviewSetup(FILES)
     await pick('New cards')
     const seen: string[] = []
@@ -84,10 +84,10 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
       expect(q('.due-end')).toBeNull()
       seen.push(await answer('Remembered'))
     }
-    expect(seen).toHaveLength(6)
-    expect([...new Set(seen)].sort()).toEqual(NEW)
+    // Yaseen's rule (from Mochi): out of New cards after its first Remembered, back the same day under Due today.
+    expect([...seen].sort()).toEqual(NEW)
     expect(title()).toBe('No new cards left.')
-    expect(h.text()).toContain('5 more in All cards')
+    expect(h.text()).toContain(`${5 + NEW.length} more in All cards`)
   })
 
   it('3. Forgot → "You remembered 60% of 5 cards." with ONE button → the missed cards in order → "Due today is done." → Learn new cards', async () => {

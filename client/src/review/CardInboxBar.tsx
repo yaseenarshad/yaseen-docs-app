@@ -9,8 +9,9 @@
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
  * clock's hover box by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
- * Mochi's): it fills as the filter's cards are answered, a Forgot in red, a Remembered in grey; only the tab on show
- * counts (YAZ-5432, `filterProgress`), so Due today done fills it.
+ * Mochi's): one step per card of the filter (YAZ-5594), in the order answered: red while its last answer was a Forgot,
+ * grey once the session lets it go, empty while it waits; a card back in its steps adds no step and no "of". Only the tab
+ * on show counts (YAZ-5432, `filterProgress`), so Due today done fills it.
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
  * total is? like / 5"): the Up next row reads "today / total" — "2 / 5" (New cards' count stands alone, YAZ-5434); the total is every
@@ -261,6 +262,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
             key={i}
             className="card-inbox__progress-part"
             data-missed={run.missed || undefined}
+            data-open={run.open || undefined}
             style={{
               width: `${(100 * run.count) / Math.max(1, session.progress.size)}%`,
             }}
