@@ -573,7 +573,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const bar = place?.bar
     // The edges (YAZ-4858): a dated card's two ends; a bar's ends where its row does not cut it. None on a read-only page.
     const edges = !locked && (from !== null || bar !== undefined)
-    const className = `view-cal__card${wrap && bar === undefined ? ' view-cal__card--wrap' : ''}${bar === undefined ? '' : ` view-cal__bar${bar.cutStart ? ' view-cal__bar--cut-start' : ''}${bar.cutEnd ? ' view-cal__bar--cut-end' : ''}`}${drag?.path === path ? ' view-cal__card--drag' : ''}${resize?.path === path ? ' view-cal__card--resize' : ''}${row.crossed === true ? ' view-cal__card--crossed' : ''}${currentItemClass(windowLink, path)}`
+    // Wrap (D23) wraps a bar's title too (YAZ-5600): its lane is an `auto` row, so it grows and the days' cards move down.
+    const className = `view-cal__card${wrap ? ' view-cal__card--wrap' : ''}${bar === undefined ? '' : ` view-cal__bar${bar.cutStart ? ' view-cal__bar--cut-start' : ''}${bar.cutEnd ? ' view-cal__bar--cut-end' : ''}`}${drag?.path === path ? ' view-cal__card--drag' : ''}${resize?.path === path ? ' view-cal__card--resize' : ''}${row.crossed === true ? ' view-cal__card--crossed' : ''}${currentItemClass(windowLink, path)}`
     const props = {
       className,
       tabIndex: 0,

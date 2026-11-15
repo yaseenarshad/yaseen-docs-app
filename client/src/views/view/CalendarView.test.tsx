@@ -1072,6 +1072,31 @@ describe('cards over several days (YAZ-4858)', () => {
     at.mockRestore()
   })
 
+  it('Card titles: Wrap wraps every bar piece too (YAZ-5600): Month, Week and Rolling, fold On and Off, a cut piece and a one-day-wide piece; Clip keeps one line and a tooltip', () => {
+    const LONG = 'A long trip title that will not fit on one line of its bar'
+    const long = [...records, rec(LONG, { due: '2026-12-12', end: '2026-12-15' })]
+    const isWrap = (b: HTMLElement) => b.classList.contains('view-cal__card--wrap')
+    for (const scale of ['', '    calendarScale: week\n', '    calendarScale: rolling\n'])
+      for (const fold of ['', '    foldDays: false\n']) {
+        const wrapped = mount(`${SPAN}${scale}${fold}    cardTitles: wrap\n`, { records: long })
+        if (scale.includes('week')) click(q(wrapped.el, '[aria-label="Next week"]'))
+        const bars = [...wrapped.el.querySelectorAll<HTMLElement>('.view-cal__bar')]
+        expect(bars.length).toBeGreaterThan(0)
+        for (const bar of bars) expect(isWrap(bar)).toBe(true)
+        // Sat 12 is a one-day-wide piece that ends at the week's edge; Sun 13–Tue 15 goes on in the next row.
+        if (!scale.includes('week')) expect(barsOf(wrapped.el, LONG).map((b) => b.dataset.barDays)).toEqual(['2026-12-12', '2026-12-13 2026-12-14 2026-12-15'])
+        for (const bar of barsOf(wrapped.el, LONG)) expect(q(bar, '.view-cal__card-title').getAttribute('title')).toBeNull()
+        act(() => root?.unmount())
+        container?.remove()
+        const clipped = mount(`${SPAN}${scale}${fold}`, { records: long })
+        if (scale.includes('week')) click(q(clipped.el, '[aria-label="Next week"]'))
+        for (const bar of clipped.el.querySelectorAll<HTMLElement>('.view-cal__bar')) expect(isWrap(bar)).toBe(false)
+        for (const bar of barsOf(clipped.el, LONG)) expect(q(bar, '.view-cal__card-title').getAttribute('title')).toBe(LONG)
+        act(() => root?.unmount())
+        container?.remove()
+      }
+  })
+
   it('hide weekends: a bar over Saturday and Sunday alone is a one-day card on the Friday, marked Sat', () => {
     const { el } = mount(`${SPAN}    hideWeekends: true\n`, { records: [...RECORDS, rec('Away', { due: '2026-12-12', end: '2026-12-13' })] })
     expect(el.querySelector('.view-cal__bar')).toBeNull()
