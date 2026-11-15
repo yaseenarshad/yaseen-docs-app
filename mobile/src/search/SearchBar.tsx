@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useApp } from '../app/AppState'
-import { useOverlay } from '../app/browserHistory'
+import { useMenuToggle } from '../app/menuToggle'
 import { choose, chosenOf, heldList, loadScope, loadingScope, type ListKind, type Scope } from './lists'
 import { ALL_TYPES, PHONE_KINDS, type PhoneKind, type PhoneType } from './searchRun'
 import { RowIcon } from './rowIcon'
@@ -33,6 +33,9 @@ export function toggleType(type: PhoneType, kind: PhoneKind): PhoneType {
   return PHONE_KINDS.map(([k]) => k).filter((k) => on.includes(k))
 }
 
+/** The Type menu's own taps: the menu, and its chip (YAZ-5552). */
+const TYPE_MENU_OWN = '.search__menu, .search__type-chip'
+
 /**
  * THE FILTER BAR OF SEARCH (round 15 item 2; YAZ-5452), in Search's lazy chunk so the first load does not grow
  * (YAZ-5377). "All types ▾" opens the Type menu (YAZ-5534: the Mac's words and order, `searchFilter.ts`: All types,
@@ -50,8 +53,9 @@ export function SearchBar({ data, kind, cards, onType, onScope }: { data: VaultD
   const { vaultKey, unit } = app
   const store = app.services.store
   const [menu, setMenu] = useState(false)
-  // YAZ-5092 D3: the Type menu is an overlay of the app's one stack: a Back closes it, and Search stays.
-  useOverlay(menu, () => setMenu(false))
+  // YAZ-5092 D3: the Type menu is an overlay of the app's one stack: a Back closes it, and Search stays. The app's one
+  // rule for menus (YAZ-5552): the chip again, a tap outside (only that), Escape or Back closes it.
+  useMenuToggle(menu, () => setMenu(false), TYPE_MENU_OWN)
   const [on, setOn] = useState(() => chosenOf(vaultKey))
   const types = PHONE_KINDS.filter(([value]) => cards || value !== 'cards')
   // Two types joined only while the bar keeps one line (a 375 pt phone has no room for "Pages + Cards" and the three
@@ -97,7 +101,7 @@ export function SearchBar({ data, kind, cards, onType, onScope }: { data: VaultD
   return (
     <>
       <div className="search__bar" role="group" aria-label="Filters" ref={bar}>
-        <button type="button" className="pill" aria-haspopup="menu" aria-expanded={menu} data-on={kind.length > 0 || undefined} onClick={() => setMenu((m) => !m)}>
+        <button type="button" className="pill search__type-chip" aria-haspopup="menu" aria-expanded={menu} data-on={kind.length > 0 || undefined} onClick={() => setMenu((m) => !m)}>
           {typeLabel(kind, word, join)} ▾
         </button>
         {LISTS.map(([list, label]) => (

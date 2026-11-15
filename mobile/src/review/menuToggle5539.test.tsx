@@ -37,6 +37,7 @@ async function fingerTap(el: Element) {
   el.addEventListener('click', drain)
   try {
     el.dispatchEvent(new Event('pointerdown', { bubbles: true, cancelable: true }))
+    el.dispatchEvent(new Event('pointerup', { bubbles: true, cancelable: true }))
     ;(el as HTMLElement).click()
     await new Promise((r) => setTimeout(r, 0))
   } finally {

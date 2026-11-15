@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
-import { useOverlay } from '../app/browserHistory'
+import { useMenuToggle } from '../app/menuToggle'
 import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { swipeIsOurs } from '../app/edgeSwipe'
 import { useVaultData, type VaultData } from '../search/vaultData'
@@ -91,8 +91,9 @@ function SheetView({ sheet, level, depth, step }: { sheet: Sheet; level: number;
   const [cut, setCut] = useState(false)
   const isTop = depth === 0
   const isNew = useRef(sheet.scroll === 0)
-  // YAZ-5518: the ⋯ menu is an overlay of its own: a Back closes it, and the sheet stays.
-  useOverlay(menu, () => setMenu(false))
+  // YAZ-5518: the ⋯ menu is an overlay of its own: a Back closes it, and the sheet stays. The app's one rule for menus
+  // (YAZ-5552): ⋯ again, a tap outside (only that: the dim's tap leaves the sheet open), Escape or Back closes it.
+  useMenuToggle(menu, () => setMenu(false), (target) => head.current?.querySelector('.explore-sheet__more')?.contains(target) === true || head.current?.querySelector('.explore-sheet__menu')?.contains(target) === true)
 
   // The top sheet's motion; the one under it gets it when the top one goes.
   useLayoutEffect(() => {

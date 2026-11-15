@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
-import { useOverlay } from '../app/browserHistory'
+import { useMenuToggle } from '../app/menuToggle'
 import { useAnswerTimer } from '@client/review/answerTimer'
 import { cardStateText } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
@@ -394,8 +394,6 @@ function SessionScreen({
 
   // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards", YAZ-5495).
   const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
-  // YAZ-5518: an open menu is an overlay of the app's one stack: a Back closes it, and Review stays.
-  useOverlay(menu !== null, () => setMenu(null))
   const [line, setLine] = useState<Line | null>(null)
   // YAZ-5500 (reopened): the answer's "Last: … · ↶ Undo" stays until the first thing done on the next card (a tap that
   // shows a part, ← or →, the deck drawer); then the hint line is the plain hint again. No timer. Undo stays in ⋯.
@@ -403,25 +401,9 @@ function SessionScreen({
   const firstAction = () => void (line?.kind === 'answer' && putAway !== line && setPutAway(line))
   const ratings = answerRatings(review.settings)
 
-  // An open menu closes on a tap outside it, and that tap does nothing else (as the mockup).
-  const closedByTap = useRef(false)
-  useEffect(() => {
-    if (menu === null) return
-    const down = (e: Event) => {
-      if (e.target instanceof Element && e.target.closest(MENU_OWN_TAPS) !== null) return
-      closedByTap.current = true
-      // A press that never becomes a click on this screen (the tab bar, a scroll) leaves no flag behind.
-      setTimeout(() => void (closedByTap.current = false), 600)
-      setMenu(null)
-    }
-    const key = (e: KeyboardEvent) => void (e.key === 'Escape' && setMenu(null))
-    document.addEventListener('pointerdown', down, true)
-    document.addEventListener('keydown', key)
-    return () => {
-      document.removeEventListener('pointerdown', down, true)
-      document.removeEventListener('keydown', key)
-    }
-  }, [menu])
+  // An open menu closes on a tap outside it, and that tap does nothing else (as the mockup); a tap on its button again
+  // closes it (YAZ-5539); Escape and Back close it. The app's one rule for menus (YAZ-5552).
+  useMenuToggle(menu !== null, () => setMenu(null), MENU_OWN_TAPS)
 
   const answerWith = (rating: CardRating) => {
     if (page === null || card === null || guarded) return
@@ -545,10 +527,6 @@ function SessionScreen({
   // Mac's `cardMedia`), so a tap on its name or its empty part reaches here first.
   const onTap = (e: React.MouseEvent) => {
     const target = e.target instanceof Element ? e.target : null
-    if (closedByTap.current) {
-      closedByTap.current = false
-      return
-    }
     if (target === null || card === null) return
     // YAZ-5539: a tap on the button that opened the menu is left to that button (its second tap closes it). On a real
     // tap the browser lets React draw between this capture handler and the button's own click: had this closed the
