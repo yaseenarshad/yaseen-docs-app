@@ -30,8 +30,8 @@ export type PageTool = 'find' | 'headings' | null
  * The open file the ⋯ is for. YAZ-5498: when the top bar cuts its title, the menu shows `title` whole, and the folder
  * of `path`. A page, a card and a card file have the two tools; a drawing (no text to find, no headings) has "Copy path".
  *
- * YAZ-5504: the same ⋯ for a card's own view: `section` puts the card actions first (a section of rows, closed with
- * `close`), then "Find in card" (`find`); a card has no headings (`headings: false`). `label` names the button and menu.
+ * The same ⋯ for a card's own view: "Find in card" (`find`); a card has no headings (`headings: false`). `label` names
+ * the button and menu. The card's actions are on the card's own ⋯, on its head (YAZ-5527), not here.
  */
 export interface ToolsFor {
   title: string
@@ -40,11 +40,10 @@ export interface ToolsFor {
   label?: string
   find?: string
   headings?: boolean
-  section?: (close: () => void) => ReactNode
 }
 
 export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor): { button: ReactNode; bar: ReactNode; sheet: ReactNode } {
-  const { label = 'Page tools', find = 'Find in page', headings = true, section } = file
+  const { label = 'Page tools', find = 'Find in page', headings = true } = file
   const [menu, setMenu] = useState(false)
   const [tool, setTool] = useState<PageTool>(null)
   const [cut, setCut] = useState(false)
@@ -87,12 +86,6 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
       {menu && (
         <div className={cut ? 'page-tools__menu page-tools__menu--titled' : 'page-tools__menu'} role="menu" aria-label={label}>
           {cut && <MenuTitle title={file.title} path={file.path} />}
-          {section !== undefined && (
-            <>
-              {section(() => setMenu(false))}
-              <hr className="page-tools__line" />
-            </>
-          )}
           {file.drawing === true ? (
             <button type="button" role="menuitem" className="page-tools__item" onClick={() => void copy()}>
               <span aria-hidden="true">⧉</span> Copy path

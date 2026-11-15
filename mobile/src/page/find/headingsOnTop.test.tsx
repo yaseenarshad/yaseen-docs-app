@@ -121,7 +121,7 @@ describe('YAZ-5497: the Headings sheet is fully on screen, above the arrow bar a
     expectWholeOnTop(await openHeadings(h))
   })
 
-  // YAZ-5504: a card view's ⋯ holds the card actions and Find in card, no Headings: no card case here.
+  // A card view's top bar ⋯ holds Find in card, no Headings (its card actions are on the card's own ⋯, YAZ-5527): no card case here.
   it('the same cause, the properties panel: whole and on top of the top bar, the arrows and the tab bar', async () => {
     h = await open(FILES, /^Trip notes, page/, '.reader__body p')
     await h.click('Properties')

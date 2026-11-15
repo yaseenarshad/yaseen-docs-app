@@ -3,7 +3,7 @@ import type { CardActionRowsProps } from './CardActionRows'
 import type { CardMenuForProps } from './CardMenuFor'
 
 /**
- * The card actions as a lazy chunk (YAZ-5505): a host menu (Review's ⋯, the card view's ⋯, a page card's ⋯) puts
+ * The card actions as a lazy chunk (YAZ-5505): a host menu (Review's ⋯, the ⋯ on a card's head in a page or the card view) puts
  * `<CardActions … />` among its rows; the rows' code comes the first time a menu with them opens.
  */
 const Rows = lazy(() => import('./CardActionRows'))

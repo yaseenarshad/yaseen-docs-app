@@ -18,7 +18,9 @@ import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
 import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
-import { useCardViewMenu } from '../cardMenu/cardViewMenu'
+import { usePageCardMenu } from '../cardMenu/pageCardMenu'
+import { cardMoreButton } from '../cardMenu/moreButton'
+import { usePageTools } from './PageTools'
 
 /** YAZ-5508: the strip is its own lazy chunk (with the properties rows): the first load's list of chunks stays as it was. */
 const CardStrip = lazy(() => import('./cardStrip/CardStrip').then((m) => ({ default: m.CardStrip })))
@@ -32,9 +34,12 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  * hidden in review" while Review is on) and its title band (none for a card with no title: the ID names it). The top
  * bar says the title ("Untitled card" with none); the heading "Title · ID" is for VoiceOver only, which names a card
  * with no title by its ID, when it is due and how sure you are, its review history, and "Open
- * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card. YAZ-5504: ⋯ in the
- * top bar holds the card's actions (Archive card, Title on the front, …: two taps each) and Find in card; YAZ-5498: the
- * full title on top when the top bar cuts it.
+ * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card.
+ *
+ * TWO ⋯ (YAZ-5527): the CARD's own ⋯ sits at the right of its head (its ID row), the same ⋯ and menu as a card inside
+ * a page (`moreButton.ts`, `pageCardMenu.tsx`): Up next, Archive card, Fix later, Title on the front, two taps each.
+ * The top bar's ⋯ is the PAGE's: the full title when the top bar cuts it (YAZ-5498), and Find in card. A card with no
+ * ID has no card ⋯ (as in a page: the actions write its card line, found by its ID).
  *
  * A card file that is not valid (2 or more cards, text outside the card, or no card; from git or an agent): the first
  * card and one line, "This card file needs a fix on the Mac." (round 15, item 3). The fix actions stay on the Mac.
@@ -98,8 +103,9 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const label = name === '' ? (card?.id ?? id) : name
 
   const reviewOn = data?.review.enabled === true
-  // YAZ-5504: ⋯ in the top bar: the card actions (two taps each), then Find in card.
-  const tools = useCardViewMenu(host, { title, path, id: card?.id ?? null, answers, upNext: reviewOn })
+  // YAZ-5527: the top bar's ⋯ holds the page tools only (the full title, Find in card); the card's own ⋯ is on its head.
+  const tools = usePageTools(host, { title, path, label: 'Card tools', find: 'Find in card', headings: false })
+  const cardMenu = usePageCardMenu(host, { path, answers, upNext: reviewOn })
   const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
   useEffect(() => {
     const el = host.current
@@ -107,7 +113,12 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(drawCard(data, path, card.text))
-    const parts = [cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true }), titleBand(card.title), body]
+    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true })
+    // YAZ-5527: the card's own ⋯ at the right of its head, as a card in a page (only a card with its own ID: it is what the actions write by).
+    if (top !== null && card.id !== null) top.append(cardMoreButton(card.id, card.title))
+    if (card.id !== null) el.dataset.cardId = card.id
+    else delete el.dataset.cardId
+    const parts = [top, titleBand(card.title), body]
     el.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null))
     el.classList.toggle('card--off', card.off)
     // `card.text` and the head's words are what is drawn: a new read with the same ones draws nothing again.
@@ -170,7 +181,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         )}
         {/* YAZ-5477: a card FILE's comments (its front matter's), and its Comment button; a card in a page has none. */}
         {isFile && typeof text === 'string' && <PageComments path={path} text={text} noun="card file" />}
-        {tools.toast}
+        {cardMenu}
       </article>
     </Frame>
   )

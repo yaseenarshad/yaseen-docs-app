@@ -87,11 +87,3 @@
   top: auto;
   bottom: calc(100% + 2px);
 }
-
-/* The card view's ⋯ (YAZ-5504): the card actions, a line, then Find in card. */
-.page-tools__line {
-  width: 100%;
-  margin: 4px 0;
-  border: 0;
-  border-top: 1px solid var(--border);
-}
