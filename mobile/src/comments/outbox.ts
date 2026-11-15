@@ -28,6 +28,12 @@ export interface WaitingComment {
   notBefore: number
   /** A send has put it in a commit: GitHub may hold it, so Undo can no longer take it back. */
   tried?: true
+  /**
+   * YAZ-5513: the commit that try made, and its parent (GitHub made it; the branch may or may not have moved to it). A
+   * retry after a lost answer asks whether the branch holds it: a tick whose commit is there was done, and is not
+   * written again.
+   */
+  commit?: { sha: string; parent: string }
   /** The fresh page refused it (`REFUSED_WORDS`): it is not sent again; the page shows it with Discard. */
   refused?: 'foreign' | 'invalid' | 'layout' | 'gone' | 'too-large' | 'changed'
   /**
@@ -52,6 +58,8 @@ export interface CommentBox {
   discard(id: string): Promise<boolean>
   /** Just before a commit: resolves with the ids it marked (one that Undo took meanwhile is not there). */
   markTried(ids: readonly string[]): Promise<string[]>
+  /** The commit a try made for `ids`, before the branch moves to it (`commit` above). */
+  noteCommit(ids: readonly string[], commit: { sha: string; parent: string }): Promise<void>
   /** After a send: `done` leave (GitHub holds them); `refused` stay, marked, never sent again. */
   settle(done: readonly string[], refused: readonly { id: string; why: NonNullable<WaitingComment['refused']> }[]): Promise<void>
   /** Signs the comments that had no `by` yet (the account was not known when they were written). */
@@ -112,6 +120,12 @@ export async function openCommentBox(store: VaultStore, vault: string): Promise<
         const marked = b.waiting.filter((w) => want.has(w.id)).map((w) => w.id)
         return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.id) ? { ...w, tried: true as const } : w)) }, out: marked }
       }, [] as string[]),
+    noteCommit: (ids, commit) =>
+      change((b) => {
+        const want = new Set(ids)
+        if (!b.waiting.some((w) => want.has(w.id))) return null
+        return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.id) ? { ...w, commit } : w)) }, out: undefined }
+      }, undefined),
     settle: (done, refused) =>
       change((b) => {
         const leave = new Set(done)

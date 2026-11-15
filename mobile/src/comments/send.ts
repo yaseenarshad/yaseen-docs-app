@@ -50,6 +50,8 @@ export async function sendComments(options: CommentSendOptions): Promise<Comment
   // An unsigned comment (no account known yet) waits for its `by`: the sender signs it first.
   // A tick (YAZ-5494) is signed by nothing: it changes one box, not the comments.
   const due = () => box.waiting().filter((c) => c.refused === undefined && (c.by !== undefined || c.task !== undefined) && c.notBefore <= now())
+  /** Commits GitHub refused to move the branch to (`STALE_HEAD`): never in it. */
+  const notLanded = new Set<string>()
   if (due().length === 0) return report
   try {
     for (;;) {
@@ -57,14 +59,21 @@ export async function sendComments(options: CommentSendOptions): Promise<Comment
       await box.refresh()
       const list = due()
       if (list.length === 0) return report
-      const plan = await planComments(store, vault, list)
+      const plan = await planComments(store, vault, list, await landedTicks(remote, store, vault, list, notLanded))
       if (plan.changes.length > 0) {
         // From here GitHub may hold them: Undo can no longer take them back. One that Undo took meanwhile: plan again.
         const marked = await box.markTried(plan.added.map((c) => c.id))
         if (marked.length < plan.added.length) continue
+        // YAZ-5513: each tick knows its try's commit before the branch moves, so a lost answer can be settled later.
+        const made: { sha: string | null } = { sha: null }
+        const ticks = plan.added.filter((c) => c.task !== undefined).map((c) => c.id)
         try {
-          report.commit = await remote.commit(plan.parent, plan.changes, commitSubject(plan.changes.map((c) => c.path)))
+          report.commit = await remote.commit(plan.parent, plan.changes, commitSubject(plan.changes.map((c) => c.path)), async (sha) => {
+            made.sha = sha
+            if (ticks.length > 0) await box.noteCommit(ticks, { sha, parent: plan.parent })
+          })
         } catch (error) {
+          if (error instanceof GithubError && error.code === 'STALE_HEAD' && made.sha !== null) notLanded.add(made.sha)
           if (error instanceof GithubError && error.code === 'STALE_HEAD' && report.staleHeads < MAX_STALE_HEADS) {
             report.staleHeads++
             continue
@@ -99,8 +108,46 @@ interface CommentPlan {
   refused: Refusal[]
 }
 
-/** Step 2 and 3 on the stored copy, which the pass just brought to the head. */
-async function planComments(store: VaultStore, vault: string, list: readonly WaitingComment[]): Promise<CommentPlan> {
+/** How far back a retry looks for its try's commit (`landedTicks`): GitHub calls, one commit each. */
+export const LANDED_LOOK_BACK = 30
+
+/**
+ * YAZ-5513 (W3): the ticks whose earlier try's commit the branch holds. Its answer was lost, and the phone could not
+ * know whether GitHub took it; what the page says now is not the answer, since a later change may have set the box
+ * back (the Mac unticked it). So the history says: from the head the pass brought, back through the parents to the
+ * try's own parent, at most `LANDED_LOOK_BACK` commits. Found: the tick was done, and a change after it is someone
+ * else's, so it settles with no write. Not found: the try never reached the branch, and the tick goes on the fresh page
+ * as any tick. Too far back to tell: as not found (a tick, never a lost one).
+ */
+async function landedTicks(remote: GithubRemote, store: VaultStore, vault: string, list: readonly WaitingComment[], notLanded: ReadonlySet<string>): Promise<Set<string>> {
+  const tried = list.filter((c) => c.task !== undefined && c.tried === true && c.commit !== undefined && !notLanded.has(c.commit.sha))
+  const out = new Set<string>()
+  if (tried.length === 0) return out
+  const head = (await store.checkpoint(vault))?.commit
+  if (head === undefined) return out
+  const want = new Set(tried.map((c) => c.commit!.sha))
+  // A try's parent is older than its commit: the walk does not go past it.
+  const seen = new Set(tried.map((c) => c.commit!.parent))
+  const queue = [head]
+  const found = new Set<string>()
+  let asked = 0
+  while (queue.length > 0 && asked < LANDED_LOOK_BACK && found.size < want.size) {
+    const sha = queue.shift()!
+    if (seen.has(sha)) continue
+    seen.add(sha)
+    if (want.has(sha)) {
+      found.add(sha)
+      continue
+    }
+    asked++
+    queue.push(...(await remote.parents(sha)))
+  }
+  for (const c of tried) if (found.has(c.commit!.sha)) out.add(c.id)
+  return out
+}
+
+/** Step 2 and 3 on the stored copy, which the pass just brought to the head. `landed`: ticks done already (W3). */
+async function planComments(store: VaultStore, vault: string, list: readonly WaitingComment[], landed: ReadonlySet<string> = new Set()): Promise<CommentPlan> {
   const checkpoint = await store.checkpoint(vault)
   if (checkpoint === null) throw new Error('The phone has no full copy of the vault yet')
   const plan: CommentPlan = { parent: checkpoint.commit, changes: [], added: [], already: [], refused: [] }
@@ -116,6 +163,10 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
     }
     let content = file.content
     for (const c of comments) {
+      if (landed.has(c.id)) {
+        plan.already.push(c)
+        continue
+      }
       // YAZ-5494: a tick finds its task on the page as it is NOW, and sets its box; a task that changed is refused.
       const out = c.task !== undefined ? applyTask(content, c.task) : applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
       if (out.kind === 'added' || out.kind === 'ticked') {
