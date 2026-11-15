@@ -349,6 +349,19 @@ button {
   overflow: hidden;
 }
 
+/* A title its file cannot be named (YAZ-5580): the field's edge and a short line under it, as the title is typed. */
+.page-title__input[aria-invalid] {
+  border-color: var(--danger);
+}
+.title-problem {
+  flex-basis: 100%;
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--danger);
+}
+
 /* The properties panel (⚡ YAZ-883, folded into the header row by YAZ-918): its box dissolved
    (`display: contents` above), so only its PIECES carry styles now. Collapsed it is one small
    muted chip — chevron + properties glyph + bare count, the words in its tooltip (YAZ-1758) —

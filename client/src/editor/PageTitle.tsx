@@ -23,11 +23,17 @@
  * ONE TITLE FOR BOTH KINDS OF CARD (YAZ-5164 part 3): a card file's tab shows its title here, and so does the head of a
  * card in a page (`text`: the card's title, `editor/card/cardTitle.ts`), the Inbox's head and Explore's card window. A
  * click renames it the same way everywhere; where the title is stored is the caller's.
+ *
+ * A TITLE THAT IS A FILE NAME (YAZ-5580, `useTitleCheck`): in a vault that does not use IDs, a character a file name
+ * cannot hold shows a short message under the field as it is typed. Enter or leaving the field then keeps the field,
+ * the text and the message: nothing is renamed and nothing is cleared, until the character goes. A card in a page's
+ * title (`text`) is no file's name: any character goes.
  */
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useId, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import type { NoticeKind, NoticeType } from '../lib/notice'
 import { tellReadOnlyEdit, type ReadOnlyWhat } from './readOnlyEdit'
+import { useTitleCheck } from '../lib/titleRule'
 
 interface PageTitleProps {
   /** The open page; its title is what the field edits. */
@@ -67,16 +73,22 @@ interface PageTitleProps {
 export function PageTitle({ path, titles, text, placeholder, onRetitle, onArrowDown, kind = 'file', readOnly = false, locked = readOnly, id, onNotice }: PageTitleProps) {
   const title = text ?? pageLabel(path, kind === 'dir', titles)
   const [editing, setEditing] = useState(false)
+  // The message under the field (YAZ-5580): a character the file's name cannot hold, said as it is typed.
+  const check = useTitleCheck(text === undefined ? path : null)
+  const [problem, setProblem] = useState<string | null>(null)
+  const problemId = useId()
   // ONE door (YAZ-1553): leaving the field is the commit, so `onBlur` is `leave`'s only caller.
   // `settled` flips the moment the edit is over — Chromium fires one last blur when a focused
   // field is removed, and that blur must do nothing. Same three verbs as `RenameInline`.
   const settled = useRef(false)
   const open = (): void => {
     settled.current = false
+    setProblem(null)
     setEditing(true)
   }
   const discard = (): void => {
     settled.current = true
+    setProblem(null)
     setEditing(false)
   }
 
@@ -97,6 +109,12 @@ export function PageTitle({ path, titles, text, placeholder, onRetitle, onArrowD
   /** The one door: the title the user left behind, whichever way they left. */
   const leave = (value: string): void => {
     if (settled.current) return
+    // A title its file cannot be named (YAZ-5580): the field stays, with the text and the message; nothing is renamed.
+    const bad = check(value)
+    if (bad !== null) {
+      setProblem(bad)
+      return
+    }
     settled.current = true
     setEditing(false)
     const next = value.trim()
@@ -116,25 +134,38 @@ export function PageTitle({ path, titles, text, placeholder, onRetitle, onArrowD
           className="page-title__input"
           defaultValue={title}
           spellCheck={false}
+          aria-invalid={problem !== null || undefined}
+          aria-describedby={problem !== null ? problemId : undefined}
           onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setProblem(check(e.currentTarget.value))}
           onKeyDown={(e) => {
             // Enter and ArrowDown only take focus away; onBlur is the one commit door.
             // preventDefault on Enter stays load-bearing: the sheet focuses CANCEL on mount,
             // and Enter's own default activation would land on it and cancel the rename.
             if (e.key === 'Enter') {
               e.preventDefault()
-              e.currentTarget.blur()
+              // A title that cannot be saved keeps the keyboard: Enter only says so (YAZ-5580).
+              const bad = check(e.currentTarget.value)
+              if (bad !== null) setProblem(bad)
+              else e.currentTarget.blur()
             } else if (e.key === 'Escape') {
               e.preventDefault()
               discard()
             } else if (e.key === 'ArrowDown') {
               e.preventDefault()
+              const bad = check(e.currentTarget.value)
+              if (bad !== null) return setProblem(bad)
               e.currentTarget.blur()
               onArrowDown?.()
             }
           }}
           onBlur={(e) => leave(e.currentTarget.value)}
         />
+        {problem !== null && (
+          <p id={problemId} className="title-problem" role="alert">
+            {problem}
+          </p>
+        )}
       </div>
     )
   }

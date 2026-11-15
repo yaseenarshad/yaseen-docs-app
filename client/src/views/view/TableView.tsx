@@ -65,6 +65,7 @@ import { ViewFind } from './viewFind'
 import { CHANGE_CANCELLED, type ChangeAsk, type ConfirmChange } from '../confirmChanges'
 import { clipboardImage, imageValue, saveImageFile } from './imageCell'
 import { imageFile } from '../../editor/image/insertImage'
+import { useTitleChecks } from '../../lib/titleRule'
 
 export interface TableViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -324,6 +325,8 @@ function selectCell(event: ReactMouseEvent<HTMLTableCellElement>): void {
  */
 export function TableView({ def, view, viewIndex, records, rows, groups, collapsed, onToggleGroup, onUpdate, onOpenFilter, matchRows, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToGroup, moveError, onNewInGroup, newRows = true, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, setColumn, declareColumn, deleteColumn, addColumn, sources, valueCount, separate, relation, onWriteValue, onWriteValues, onRetitle, onDeletePages, onDuplicatePage, onNewRowBelow, history, selectionChip, reservedKeys, readOnly = NO_READ_ONLY, cardRows = false, hover, confirmChange }: TableViewProps) {
   const unit = useUnit()
+  // The Name cell's check (YAZ-5580): a title its page's file cannot be named is said under the cell, and not saved.
+  const titleCheck = useTitleChecks()
   /**
    * YAZ-4799: the deepest Folder group a row line is drawn in (its group and the groups above it), or null: a shortcut's
    * copy under its second folder wears ↗ there, its home copy none. The page folder otherwise (`ViewFolder`).
@@ -1984,6 +1987,7 @@ export function TableView({ def, view, viewIndex, records, rows, groups, collaps
                           aria-label="Edit title"
                           value={title}
                           normalize={(draft) => draft.trim() || null}
+                          check={titleCheck(path)}
                           onCommit={(next) => onRetitle(path, next)}
                           onDone={() => {
                             setTitleEdit(null)

@@ -35,6 +35,12 @@ const error = (el: HTMLElement) => el.querySelector('.create-inline__error')?.te
 const press = (field: HTMLInputElement, key: string) => act(() => void field.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })))
 const leave = (field: HTMLInputElement) => act(() => void field.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
 const flush = () => act(async () => {})
+/** Types `value` as a person does: React hears the input event. */
+const typeLive = (field: HTMLInputElement, value: string) =>
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(field, value)
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+  })
 
 describe('RenameInline (YAZ-1553)', () => {
   it('mounts focused with the current name selected', () => {
@@ -94,8 +100,33 @@ describe('RenameInline (YAZ-1553)', () => {
     await flush()
     expect(onSubmit).not.toHaveBeenCalled()
     expect(onCancel).not.toHaveBeenCalled()
-    expect(error(el)).toBe('Name cannot contain "/"')
+    expect(error(el)).toBe("A title can't contain / — remove it to save")
     expect(field.isConnected).toBe(true)
+  })
+
+  it('a "/" typed is said under the box at once, before Enter (YAZ-5580); fixed, the message goes and the name submits', async () => {
+    const { el, field, onSubmit } = mount()
+    typeLive(field, 'Q3/Q4')
+    expect(error(el)).toBe("A title can't contain / — remove it to save")
+    press(field, 'Enter')
+    await flush()
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(field.value).toBe('Q3/Q4')
+    expect(error(el)).toBe("A title can't contain / — remove it to save")
+    typeLive(field, 'Q3 and Q4')
+    expect(error(el)).toBeNull()
+    press(field, 'Enter')
+    await flush()
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith('Q3 and Q4')
+  })
+
+  it('a TITLE (a vault with IDs) takes "/": no message, and it submits (YAZ-5580)', async () => {
+    const { el, field, onSubmit } = mount(undefined, true)
+    typeLive(field, 'Q3/Q4')
+    expect(error(el)).toBeNull()
+    press(field, 'Enter')
+    await flush()
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith('Q3/Q4')
   })
 
   it('Escape discards, and the trailing blur Chromium fires on removal submits nothing', async () => {
