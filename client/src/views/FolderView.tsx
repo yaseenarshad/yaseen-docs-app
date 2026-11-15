@@ -61,6 +61,7 @@ import { BacklinksSection } from '../links/BacklinksSection'
 import { alsoIn } from '@shared/alsoIn'
 import { addShortcut, folderId, folderRecord, folderRows, isShortcut, removeShortcut, rowPage, setShortcutEntries, subfolderRows } from '../links/shortcuts'
 import { ShortcutActions, type ShortcutDoors } from './view/shortcutDoors'
+import { ItemLocksShown } from './view/ReadOnlyMark'
 import { columnReservedKeys, reservedKeyText } from '../links/reservedKeys'
 import { vaultDirs } from '../links/folderLinks'
 import { type ParsedViews, type ViewDef, type ViewSet, parseViews, rewriteViews, serializeViews, updateViews } from './viewSchema'
@@ -1588,6 +1589,8 @@ export function FolderView({
               <OtherFilesMove.Provider value={trayMoves ? moveToTray : null}>
               <OtherFilesFolderMove.Provider value={trayMoves ? folderDoor : null}>
               <ShortcutActions.Provider value={shortcutDoors}>
+              {/* The vault's Read only locks every item: the chip says it once, and no card or row wears a lock (YAZ-5587). */}
+              <ItemLocksShown.Provider value={!vaultLockedHere}>
               <div className="folder-view__views" {...trayBackTarget(trayMoves ? moveBack : null)}>
               <ViewsPane
                 parsed={parsed}
@@ -1612,6 +1615,7 @@ export function FolderView({
                 folderPages={folderPages}
               />
               </div>
+              </ItemLocksShown.Provider>
               </ShortcutActions.Provider>
               </OtherFilesFolderMove.Provider>
               </OtherFilesMove.Provider>

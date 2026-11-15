@@ -468,6 +468,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const pageOfRow = (path: string): string => cardRowAt?.get(path)?.page ?? path
   /** The lock as the views ask it, by row: a card row is its page's (YAZ-5319). */
   const rowLock = useMemo<EditLock | null>(() => (lock === undefined ? null : { locked: (row) => lock.locked(row === undefined ? undefined : cardRowAt?.get(row)?.page ?? row), ask: lock.ask }), [lock, cardRowAt])
+  /**
+   * A read-only page nothing here opens (its own switch, YAZ-3076 S53): its move or style is dropped, not even shown. A
+   * page the vault's Read only locks moves on, and its write asks "Allow edits?" first (YAZ-5411, YAZ-5587).
+   */
+  const fixedRow = (path: string): boolean => readOnly.has(path) && lock?.locked(pageOfRow(path)) !== true
   // "Delete page…" (YAZ-4592 S26): the confirm sheet, unless Settings › Folder pages › Ask before deleting pages is off.
   const { confirmDeletePages, sheet: deleteSheet } = useDeletePages(defaults.askBeforeDelete, folder.trash, folder.allowFileAction, (path) => pageRecords.find((r) => r.path === path)?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/i, ''))
   useEffect(() => {
@@ -918,7 +923,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   const onMoveToGroup = (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => {
     const key = groupByKey(view, drop?.level ?? 0, folder.settings.columns)
     // A read-only page never moves, not even optimistically: the move writes a property (YAZ-3076 S53).
-    if (key === null || readOnly.has(path)) return
+    if (key === null || fixedRow(path)) return
     const props = records.find((r) => r.path === path)?.properties
     const prevRaw = props?.[key]
     /**
@@ -952,7 +957,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   )
   const dateKey = view.type === 'calendar' ? calendarDateKey(view, calendarColumns, folder.settings.columns) : null
   const onMoveToDay = (path: string, day: DayKey | null) => {
-    if (dateKey === null || readOnly.has(path)) return
+    if (dateKey === null || fixedRow(path)) return
     const prevRaw = records.find((r) => r.path === path)?.properties[dateKey]
     moveValues(path, [{ key: dateKey, value: day === null ? undefined : movedDate(prevRaw, day), prevRaw }], day === null ? 'No date' : dayLabel(day))
   }
@@ -960,7 +965,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // left out stays, `null` clears it. The toast names the days the card is on after it.
   const endKey = view.type === 'calendar' ? calendarEndKey(view, dateKey, folder.settings.columns) : null
   const onMoveSpan = (path: string, next: { start?: DayKey | null; end?: DayKey | null }) => {
-    if (dateKey === null || readOnly.has(path)) return
+    if (dateKey === null || fixedRow(path)) return
     const props = records.find((r) => r.path === path)?.properties
     const writes: PendingMove = []
     const add = (key: string | null, day: DayKey | null | undefined) => {
@@ -983,8 +988,11 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
    * index echoes the first undoes to the first, YAZ-4834 P3). A deliberate menu pick, as the table's Fill: it does not
    * ask Confirm changes.
    */
-  const onCardStyle = (path: string, picks: readonly CardStyleWrite[]) => {
-    if (readOnly.has(path) || picks.length === 0) return
+  const onCardStyle = (path: string, picks: readonly CardStyleWrite[]): void => {
+    if (fixedRow(path) || picks.length === 0) return
+    void afterAllow(lock, pageOfRow(path), () => paneDoors.current.cardStyleNow(path, picks), () => undefined)
+  }
+  const cardStyleNow = (path: string, picks: readonly CardStyleWrite[]) => {
     const props = shown.find((r) => r.path === path)?.properties
     const writes: PendingMove = picks.map(({ key, value }) => ({ key, value, prevRaw: props?.[key] }))
     const back: PendingMove = writes.map((w) => ({ key: w.key, value: w.prevRaw, prevRaw: w.value }))
@@ -1517,8 +1525,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
   // The vault's link pills look (YAZ-4924): the pieces a cell's pill gains, from the vault's resolve source.
   const pillLook = usePillLook(folder.wikilinks)
   /** This render's writes, for a change that waited on "Allow edits?" (YAZ-5411): it runs on the doors current then. */
-  const paneDoors = useRef({ writeRowValuesNow, moveValuesNow, askedWriteValueNow, askedRetitleNow })
-  paneDoors.current = { writeRowValuesNow, moveValuesNow, askedWriteValueNow, askedRetitleNow }
+  const paneDoors = useRef({ writeRowValuesNow, moveValuesNow, askedWriteValueNow, askedRetitleNow, cardStyleNow })
+  paneDoors.current = { writeRowValuesNow, moveValuesNow, askedWriteValueNow, askedRetitleNow, cardStyleNow }
   // The Folder column's chips and the Folder group headers' ↗ read the page's folders (YAZ-4564); the cells show links as pills (YAZ-4601).
 
   return (

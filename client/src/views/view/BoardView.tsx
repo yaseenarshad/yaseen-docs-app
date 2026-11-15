@@ -1,5 +1,4 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import { EditLockContext } from '../editGuard'
 import { useUnit } from '../../vault/unitWord'
 import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
@@ -22,7 +21,7 @@ import { PageContextMenu } from './PageContextMenu'
 import { type CardPageDoors, cardMenuItems } from './rowMenuItems'
 import { type PageWindowLink, currentItemClass, shownRows, usePageWindowItems } from './PageWindow'
 import { NO_READ_ONLY } from '../readOnlyRows'
-import { ReadOnlyName } from './ReadOnlyMark'
+import { ItemName, useItemLock } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 /** Board windowing (YAZ-3746 13AX): the cards a list draws first, the cards each step adds, and how far ahead (px) of the screen a list's end starts the next step. */
@@ -194,7 +193,8 @@ export function BoardView({
   )
   // ⌘F's jump to a card not drawn yet draws its list down to it; the find bar scrolls to it once it mounts.
   const find = useContext(ViewFind)
-  const editLock = useContext(EditLockContext)
+  /** The read-only cards (YAZ-5587): which ask, which never move, which wear a lock. */
+  const itemLock = useItemLock(readOnly)
   useEffect(() => {
     if (find === null) return
     find.scrollTo = (path) => void revealCard(path)
@@ -217,7 +217,7 @@ export function BoardView({
    */
   const cardMenu = (path: string) => {
     const items = cardMenuItems(pageDoors, path, () => setMenu(null), pageDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => pageDoors.newBelow!(path) })
-    if (onStyle === undefined || readOnly.has(path)) return items
+    if (onStyle === undefined || itemLock.fixed(path)) return items
     const properties = records.find((r) => r.path === path)?.properties ?? {}
     return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(path, writes)} />] }
   }
@@ -294,7 +294,7 @@ export function BoardView({
             if (!newWindowClick(event, rowPage(row.record.path))) openCard(row, event)
           }}
         >
-          {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
+          <ItemName mark={itemLock.mark(row.record.path)}>{rowTitle(row)}</ItemName>
         </button>
       )
     return <CardProp def={def} view={view} row={row} field={key} resolve={resolve} />
@@ -313,7 +313,7 @@ export function BoardView({
   }
   const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
     // A page the vault's Read only locks still drags: its drop asks "Allow edits?" first (YAZ-5411).
-    const source = dnd.source(row.record.path, group, at, readOnly.has(row.record.path) && editLock?.locked(row.record.path) !== true)
+    const source = dnd.source(row.record.path, group, at, itemLock.fixed(row.record.path))
     const onDragEnd = source.onDragEnd as ((event: ReactDragEvent) => void) | undefined
     if (onDragEnd === undefined) return source
     return {
