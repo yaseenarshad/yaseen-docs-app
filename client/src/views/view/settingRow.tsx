@@ -25,6 +25,8 @@ const ICONS = {
   lineWidth: <><path d="M2.5 4.5h11" /><path d="M2.5 10.5h11" strokeWidth="3" /></>,
   groupLineStyle: <path d="M2.5 3h6M4 4.5v4.5a3 3 0 0 0 3 3h6.5M8 8h5.5" />,
   columnWidth: <path d="M3 8h10M5 6 3 8l2 2M11 6l2 2-2 2M1.5 3v10M14.5 3v10" />,
+  // YAZ-5582: a pointer over a card (Clicking a card opens).
+  clickOpens: <><rect x="2" y="2.5" width="9" height="6.5" rx="1.2" /><path d="M8 7.5l5.5 2-2.3.9 1.8 2.3-1 .8-1.8-2.3-1.4 2z" /></>,
   opensIn: <path d="M2.5 3.5h11v10h-11zM2.5 7h11M6.2 7v6.5M9.8 7v6.5" />,
   cardTitles: <><rect x="2" y="4" width="12" height="8" rx="1.5" /><path d="M4.5 7h7M4.5 9.5h4" /></>,
   hideWeekends: <><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M5 11l6-5" /></>,

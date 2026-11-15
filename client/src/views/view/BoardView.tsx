@@ -3,7 +3,7 @@ import { EditLockContext } from '../editGuard'
 import { useUnit } from '../../vault/unitWord'
 import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
-import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
+import { type CardClick, type Modifiers, openByKey, openCardByClick } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
 import { rowPage } from '../../links/shortcuts'
 import { pageColumnKeys, type FolderSettings } from '../folderSettings'
@@ -53,6 +53,8 @@ export interface BoardViewProps {
   onOpenFileBackground?: (path: string) => void
   /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
+  /** What a plain click on a card, title or body, opens (YAZ-5582, `cardClickOf`): the mini window or a background tab. Absent: a background tab. */
+  clickOpens?: CardClick
   /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's page (D24). */
   windowLink?: PageWindowLink
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
@@ -80,10 +82,10 @@ export interface BoardViewProps {
  * as kanban columns on one horizontally scrolling row. With two group levels, each outer remains
  * one column: merge-rule `direct` cards come first, then compact inner sections stack vertically.
  * Every level uses the shared `GroupHeader` (chevron, typed value, count, per-section summaries)
- * over its cards: `file.name`, when present in `order`, as the title button → `onOpenFile`, then
+ * over its cards: `file.name`, when present in `order`, as the title button (a click on the card), then
  * the view's other `order` properties as small label/value rows typed like table cells. A card is
- * a focusable cell (YAZ-1557 D2): a plain click selects it, arrows walk the cards, and the title,
- * Enter, or a modifier opens through `lib/openGesture.ts` — the table's exact rule. Column
+ * a focusable cell (YAZ-1557 D2): a click selects it and opens it the Calendar's way (YAZ-5582: "Clicking a card
+ * opens", ⌘ a background tab, ⌥ the right panel), arrows walk the cards, and Enter opens by the table's rule. Column
  * width follows `cardSize` (shared `cardWidth`: a number = px, legacy small/medium/large values
  * remain readable as 220/280/340, and absent or invalid values default to 280). Collapsing a
  * column hides its cards and
@@ -116,6 +118,7 @@ export function BoardView({
   onOpenFileRight,
   onOpenFileBackground,
   onOpenWindow,
+  clickOpens = 'background',
   windowLink,
   onNotice,
   onMoveToGroup,
@@ -226,11 +229,12 @@ export function BoardView({
       suppressClick.current = false
     })
   }
-  /** The one open rule (YAZ-1557), shared with the table: ⌘ → background tab, ⌥ → right panel, plain → current tab, ⇧ → nothing. */
+  /** Enter's rule (YAZ-1557, YAZ-4605 D56), the table's: plain → this tab, ⌘ → a background tab, ⌥ → the right panel, ⇧ → the mini window. */
   const openHandlers = { onOpenFile, onOpenFileRight, onOpenFileBackground }
+  /** A click's rule (YAZ-5582), the Calendar's: plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧ → nothing. */
   const openCard = (row: Row, e: Modifiers): void => {
     if (suppressClick.current) return
-    openByGesture(e, row.record.path, openHandlers)
+    openCardByClick(e, row.record.path, clickOpens, { onOpenFileRight, onOpenFileBackground, onOpenWindow })
   }
   /**
    * Arrow keys walk cards like table cells (YAZ-1557 D2): ↑↓ through the column's cards in DOM
@@ -335,15 +339,15 @@ export function BoardView({
           {...cardStyleAttrs(row.record.properties)}
           {...dragSource(row, group, at)}
           {...hover.itemProps(row.record.path)}
-          // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
-          // title, Enter, or a modifier opens — so a card without a title still has a name to read.
+          // Every card is a focusable "cell" (YAZ-1557 D2): a click selects it (arrows walk on from it) and
+          // opens it as "Clicking a card opens" says (YAZ-5582), so a card without a title still has a name to read.
           tabIndex={0}
           aria-label={nameKey === undefined ? row.record.title : undefined}
           // ⇧⌘-click opens the page in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
           onClick={(event) => {
             if (newWindowClick(event, rowPage(row.record.path))) return
-            if (openTarget(event) === 'current') event.currentTarget.focus()
-            else openCard(row, event)
+            event.currentTarget.focus()
+            openCard(row, event)
           }}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || event.key !== 'Enter') return

@@ -188,6 +188,7 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
               <span>px</span>
             </span>
           </label>
+          <CardClickRow own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
         </>
       )}
       {view.type === 'calendar' && (
@@ -246,6 +247,7 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="hideWeekends" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
+          <CardClickRow own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* The day names' look (YAZ-4864 round 3): the Table view's header row, the same keys and Settings default. */}
           <HeaderRowStyleRow label="Header row" own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* The grid's lines (YAZ-4878): each a width (1–4 px, or a custom whole number up to 12) and a colour with a strength. */}
@@ -336,6 +338,35 @@ function CalendarLineRow({ label, widthKey, colorKey, view, own, viewIndex, onUp
         onColor={(next: ColorStrengthValue) => onUpdate((d) => chooseOwn(d.views[viewIndex], colorKey, writeColorStrength(next), defaults))}
       />
       <FromSettings own={own} viewKey={widthKey} also={colorKey} viewIndex={viewIndex} onUpdate={onUpdate} />
+    </div>
+  )
+}
+
+/** YAZ-5582: "Clicking a card opens" on a Calendar or a Board. Same as Settings writes no key; the other two are the view's own. */
+const CARD_CLICK_CHOICES = [['settings', 'Same as Settings'], ['window', 'Mini window'], ['background', 'Background tab']] as const
+
+/**
+ * A Calendar's or Board's "Clicking a card opens" (YAZ-5582): Same as Settings (no `clickOpens` key: Settings › Folder
+ * pages decides), Mini window or Background tab, saved with the view. Its own three choices say where it comes from,
+ * so the slot after it stays empty (no ↺).
+ */
+function CardClickRow({ own, viewIndex, onUpdate }: { own: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+  const value = own.clickOpens === 'window' || own.clickOpens === 'background' ? own.clickOpens : 'settings'
+  return (
+    <div className="view-settings-row">
+      <RowLabel icon="clickOpens">Clicking a card opens</RowLabel>
+      <ChoiceSeg
+        label="Clicking a card opens"
+        value={value}
+        options={CARD_CLICK_CHOICES}
+        onChange={(next) =>
+          onUpdate((d) => {
+            if (next === 'settings') delete d.views[viewIndex].clickOpens
+            else d.views[viewIndex].clickOpens = next
+          })
+        }
+      />
+      <span className="view-from-settings" aria-hidden="true" />
     </div>
   )
 }

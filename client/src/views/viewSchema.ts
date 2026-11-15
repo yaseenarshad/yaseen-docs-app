@@ -99,6 +99,8 @@ export interface ViewDef {
   calendarScale?: 'month' | 'week'
   /** A calendar's card titles (YAZ-4558 D23): `wrap` = the full title on more lines. Absent = clip, one line with "…". */
   cardTitles?: 'clip' | 'wrap'
+  /** A Calendar's or Board's "Clicking a card opens" (YAZ-5582): a plain click's `window` or `background` tab. Absent = Same as Settings. */
+  clickOpens?: 'window' | 'background'
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
   hideWeekends?: boolean
   /** A calendar's line between weeks (YAZ-4878): whole px, 1–12. Absent = the Settings › Folder pages default. */

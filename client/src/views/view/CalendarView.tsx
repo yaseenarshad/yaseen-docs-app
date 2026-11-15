@@ -1,7 +1,7 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useUnit } from '../../vault/unitWord'
 import { holdFrames } from '../../lib/colResize'
-import { openByKey, openTarget } from '../../lib/openGesture'
+import { type CardClick, openByKey, openCardByClick } from '../../lib/openGesture'
 import {
   type BarPlace, type DayKey, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
@@ -53,6 +53,8 @@ export interface CalendarViewProps {
   onOpenFileBackground?: (path: string) => void
   /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
   onOpenWindow?: (path: string) => void
+  /** What a plain click on a card opens (YAZ-5582, `cardClickOf`): the mini window or a background tab. Absent: a background tab. */
+  clickOpens?: CardClick
   /** The card's link: the calendar writes its order and marks the card's page (D24). */
   windowLink?: PageWindowLink
   /** Where a failed page action of the right-click menu says so. */
@@ -128,7 +130,7 @@ const stretched = (span: { start: DayKey; end: DayKey }, edge: 'start' | 'end', 
  * The calendar view (YAZ-4540, YAZ-949): a month grid, Monday first (D11), with ‹, › and Today.
  * Each page goes on the date part of its `dateKey` value as written (S3); a day shows 3 cards and
  * "+N more", which opens the whole day in place. Today's date wears a ring (S7). A plain click opens
- * the page in a background tab, ⌥-click in the right panel, Enter in this tab (D11). Dragging a card
+ * the page as "Clicking a card opens" says (YAZ-5582: a background tab or the mini window), ⌘-click a background tab, ⌥-click in the right panel, Enter in this tab (D11). Dragging a card
  * to a day writes that day and keeps the time (D4); the "No date" tray below takes a card (its date
  * goes) and gives one. Only the drag and the shown day are state here: the rows go into days ONCE per
  * rows change, in a `useMemo`, and a dragover sets state only when the hovered target changes.
@@ -159,7 +161,7 @@ function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
   } as CSSProperties
 }
 
-export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, pageDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, clickOpens = 'background', windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, pageDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
   const unitText = useUnit()
   // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
   const folderIcons = useContext(FolderPages)?.folderIcons ?? true
@@ -310,12 +312,10 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   /** The other date columns, for the message's End date picker (YAZ-4858). */
   const endChoices = dateColumns.filter((k) => canonicalKey(k) !== `note.${dateKey}`)
 
-  /** The click rule here (D11): plain and ⌘ → a background tab, ⌥ → the right panel, ⇧ / ⌃ → nothing. */
+  /** The click rule (YAZ-5582, the Board's too): plain → "Clicking a card opens", ⌘ → a background tab, ⌥ → the right panel, ⇧ / ⌃ → nothing. */
   const open = (e: ReactMouseEvent, path: string) => {
     if (resized.current) return
-    const target = openTarget(e)
-    if (target === 'right') onOpenFileRight?.(path)
-    else if (target !== null) onOpenFileBackground?.(path)
+    openCardByClick(e, path, clickOpens, { onOpenFileRight, onOpenFileBackground, onOpenWindow })
   }
 
   /**

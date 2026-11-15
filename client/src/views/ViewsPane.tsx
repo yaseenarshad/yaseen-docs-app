@@ -60,7 +60,7 @@ import { useDeletePages } from './view/deletePages'
 import { directlyIn, isFolderRow, rowPage, rowsByFolder } from '../links/shortcuts'
 import { onPageTabAsk, takePageTab } from './pageTabRequest'
 import { pageViewIndex } from './pageView'
-import { ViewDefaults, chooseOwn, withDefaults } from './viewDefaults'
+import { ViewDefaults, cardClickOf, chooseOwn, withDefaults } from './viewDefaults'
 import { csvName, downloadText, shownRows, toCsv, toTsv, viewTable } from './exportView'
 import { copyText } from '../editor/linkMenu'
 import { FindBar } from '../editor/find/FindBar'
@@ -496,11 +496,15 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
     folder.renderPageEditor === undefined
       ? undefined
       : (path: string) => {
+          // An open card takes the page in place (YAZ-5582: a click on another card swaps it, never a second card); an
+          // unpinned card that a click outside just closed comes back as it was, the same click.
           const open = openPageWindow(windowKey)
-          const { pinned } = open ?? lastWindow.current ?? pageWindowMemory(path, defaults.keepWindowPinned)
+          const last = open ?? lastWindow.current
+          const { pinned } = last ?? pageWindowMemory(path, defaults.keepWindowPinned)
           // The place and size: the open card's, else the page's last (YAZ-3746 13H, also from before a restart), else the default.
           const { placed, width, height } = open ?? savedPageWindowBox(folderPath) ?? lastWindow.current ?? pageWindowMemory(path)
-          keepPageWindow(windowKey, { path, placed, width, height, pinned })
+          // The Properties panel stays open or closed over the swap (YAZ-3746 13Q).
+          keepPageWindow(windowKey, { path, placed, width, height, pinned, properties: last?.properties })
           setOpens((n) => n + 1)
         }
   const closeWindow = useCallback(() => {
@@ -1341,6 +1345,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFileRight={openRowRight}
           onOpenFileBackground={openRowBackground}
           onOpenWindow={openWindow}
+          clickOpens={cardClickOf(view, defaults)}
           windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToGroup={onMoveToGroup}
@@ -1374,6 +1379,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           onOpenFileRight={openRowRight}
           onOpenFileBackground={openRowBackground}
           onOpenWindow={openWindow}
+          clickOpens={cardClickOf(view, defaults)}
           windowLink={windowLink}
           onNotice={folder.onNotice}
           onMoveToDay={onMoveToDay}

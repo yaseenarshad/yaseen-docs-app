@@ -345,9 +345,10 @@ describe('nested Board styling contract', () => {
 })
 
 describe('cards', () => {
-  it('a card is the file name title over label/value rows rendered by type; the title opens the page in the current tab', () => {
+  it('a card is the file name title over label/value rows rendered by type; the title opens the page as a card click does (YAZ-5582)', () => {
     const openRight = vi.fn()
-    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight }) })
+    const openBackground = vi.fn()
+    const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight, openBackground }) })
     const card = q<HTMLElement>(cols(el)[1], '.view-board__card') // idea → Agentic Agency
     expect(q(card, '.view-board__title').textContent).toBe('Agentic Agency')
     // the order properties minus file.name, as label/value rows
@@ -359,11 +360,12 @@ describe('cards', () => {
     const gold = [...cols(el)[1].querySelectorAll<HTMLElement>('.view-board__card')][1]
     expect([...gold.querySelectorAll('.view-board__prop-value')][0].textContent).toBe('')
     click(q(card, '.view-board__title'))
-    expect(onOpenFile).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
+    expect(onOpenFile).not.toHaveBeenCalled()
     expect(openRight).not.toHaveBeenCalled()
   })
 
-  it('a plain click on the card body SELECTS the card — focus, nothing opens (YAZ-1557 D2)', () => {
+  it('a plain click on the card body selects the card (YAZ-1557 D2) and opens it as "Clicking a card opens" says (YAZ-5582: a background tab by default)', () => {
     const openRight = vi.fn()
     const openBackground = vi.fn()
     const { el, onOpenFile } = mount(BOARD_BASE, { folder: testFolderHost({ openRight, openBackground }) })
@@ -371,9 +373,9 @@ describe('cards', () => {
     expect(card.tabIndex).toBe(0)
     click(q(card, '.view-board__prop-value'))
     expect(document.activeElement).toBe(card)
+    expect(openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Content Pillars/1. Agentic Agency/Agentic Agency.md')
     expect(onOpenFile).not.toHaveBeenCalled()
     expect(openRight).not.toHaveBeenCalled()
-    expect(openBackground).not.toHaveBeenCalled()
   })
 
   it('⇧⌘-click opens the card\'s page in a new window, title or body (YAZ-4444 D32): no tab', () => {
@@ -1088,9 +1090,10 @@ ${cardStyle}
 
   it('the title is UN-PINNED: it renders at its order position and can itself join (2 - Title.md)', () => {
     const openRight = vi.fn()
+    const openBackground = vi.fn()
     const { el, onOpenFile } = mount(
       STYLED('      - note.priority\n      - file.name', '      note.priority: { hideLabel: true }\n      file.name: { join: true }'),
-      { folder: testFolderHost({ openRight }) },
+      { folder: testFolderHost({ openRight, openBackground }) },
     )
     const card = cardIn(el)
     const rows = linesIn(card)
@@ -1099,8 +1102,9 @@ ${cardStyle}
     expect(kids[0].classList.contains('view-board__prop')).toBe(true)
     expect(kids[1].classList.contains('view-board__dash')).toBe(true)
     expect(kids[2].classList.contains('view-board__title')).toBe(true)
-    click(kids[2]) // still the name link wherever it sits: plain click → current tab (YAZ-1557)
-    expect(onOpenFile).toHaveBeenCalledTimes(1)
+    click(kids[2]) // wherever it sits, a click on it is a click on the card (YAZ-5582): a background tab by default
+    expect(openBackground).toHaveBeenCalledTimes(1)
+    expect(onOpenFile).not.toHaveBeenCalled()
     expect(openRight).not.toHaveBeenCalled()
   })
 

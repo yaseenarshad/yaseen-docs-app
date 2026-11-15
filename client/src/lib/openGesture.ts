@@ -48,3 +48,26 @@ export function openByKey(e: Modifiers, path: string, handlers: OpenHandlers & {
   }
   return openByGesture(e, path, handlers)
 }
+
+/** Where a plain click on a Calendar or Board card opens (YAZ-5582): Settings › Folder pages, or the view's own choice. */
+export type CardClick = 'window' | 'background'
+
+/**
+ * A click on a Calendar or Board card (YAZ-5582), the ONE rule both views use: a plain click opens the page where
+ * `choice` says (the mini window or a background tab); the modifiers keep the open rule's meaning (⌘ a background
+ * tab, ⌥ the right panel, ⇧ / ⌃ nothing). A host with no mini window opens a background tab instead.
+ */
+export function openCardByClick(e: Modifiers, path: string, choice: CardClick, handlers: Pick<OpenHandlers, 'onOpenFileRight' | 'onOpenFileBackground'> & { onOpenWindow?: (path: string) => void }): OpenTarget | 'window' | null {
+  const target = openTarget(e)
+  if (target === null) return null
+  if (target === 'right') {
+    handlers.onOpenFileRight?.(path)
+    return 'right'
+  }
+  if (target === 'current' && choice === 'window' && handlers.onOpenWindow !== undefined) {
+    handlers.onOpenWindow(path)
+    return 'window'
+  }
+  handlers.onOpenFileBackground?.(path)
+  return 'background'
+}
