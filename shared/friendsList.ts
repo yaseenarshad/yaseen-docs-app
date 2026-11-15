@@ -28,6 +28,7 @@ import {
   type WriteOptions,
 } from './friendGists'
 import { BrokenList, ListError, NewerList, findFriendsIndex, latestList, listErrorCode, openFriendsList, updateList, writeList } from './friendListHome'
+import { LIST_PATH } from './friendListStore'
 import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
 
 /**
@@ -153,7 +154,7 @@ async function latest(api: GistsApi, handle: IndexHandle, opts: WriteOptions): P
   if (found.kind === 'ok' && found.handle.store !== undefined) return found.handle
   if (found.kind === 'newer') throw new NewerList()
   if (found.kind === 'elsewhere') throw new Elsewhere(found.home)
-  if (found.kind === 'home-gone') throw new HomeGone(found.home)
+  if (found.kind === 'home-gone') throw new HomeGone(found.home, found.fileGone === true)
   if (found.kind === 'ok' || found.kind === 'broken') throw new BrokenList()
   throw Object.assign(new Error('The friends list is gone'), { code: 'NOT_FOUND' })
 }
@@ -165,10 +166,16 @@ export class Elsewhere extends Error {
   }
 }
 
-/** YAZ-5399: the list's home vault is gone on GitHub (deleted, or no access at all). The way out: `restartList`. */
+/**
+ * YAZ-5399: the list's home vault is gone on GitHub (deleted, or no access at all). The way out: `restartList`.
+ * YAZ-5444 `fileGone`: the vault answers, but the list file is gone from it.
+ */
 export class HomeGone extends Error {
-  constructor(readonly home: string) {
-    super('The vault of the friends list is gone')
+  constructor(
+    readonly home: string,
+    readonly fileGone = false,
+  ) {
+    super(fileGone ? 'The friends list file is gone from its vault' : 'The vault of the friends list is gone')
   }
 }
 
@@ -357,7 +364,7 @@ export type PasteResult =
   /** YAZ-5083: the token cannot read or write the vault that holds my friends list. */
   | { kind: 'no-list-access' }
   /** YAZ-5399: the vault that held my friends list is gone on GitHub. The way out: start the list again. */
-  | { kind: 'home-gone'; home: string }
+  | { kind: 'home-gone'; home: string; fileGone?: boolean }
   | { kind: 'offline' }
   | { kind: 'rate-limited'; retryAt?: number | null }
   | { kind: 'refused' }
@@ -397,7 +404,7 @@ export function pasteMessage(result: PasteResult): string {
     case 'no-list-access':
       return NO_LIST_ACCESS
     case 'home-gone':
-      return homeGoneMessage(result.home)
+      return homeGoneMessage(result.home, result.fileGone === true)
     case 'unauthorized':
       return 'Sign in again, then paste the link.'
     default:
@@ -410,8 +417,10 @@ export const listElsewhereMessage = (home: string): string => `Your friends list
 /** YAZ-5083: the words when the token cannot read or write the vault that holds the list. */
 export const NO_LIST_ACCESS = 'Your token cannot write to the vault that holds your friends list. Give the token Contents (read and write) on that vault, then try again.'
 /** YAZ-5399: the words when the home vault is gone on GitHub (what happened, and what it means). */
-export const homeGoneMessage = (home: string): string =>
-  `Your friends list was in the vault ${home}. GitHub does not have that vault for your account any more: it was deleted, or your token lost access to it. The list cannot be read, so no friend can be changed or removed.`
+export const homeGoneMessage = (home: string, fileGone = false): string =>
+  fileGone
+    ? `Your friends list was in the vault ${home}. The list file ${LIST_PATH} is gone from that vault on GitHub: it was deleted, or the vault was made again. The list cannot be read, so no friend can be changed or removed.`
+    : `Your friends list was in the vault ${home}. GitHub does not have that vault for your account any more: it was deleted, or your token lost access to it. The list cannot be read, so no friend can be changed or removed.`
 /** YAZ-5400: the words when an old list gist has more than 300 files (GitHub gives the app only 300 of them). */
 export const LIST_CUT =
   'Your old friends list on GitHub has more than 300 files. GitHub gives the app only 300 of them, so the app cannot read the whole list or move it. Nothing was changed, and no new list was started.'
@@ -426,7 +435,7 @@ function failureResult(err: unknown): PasteResult {
   if (err instanceof NewerList) return { kind: 'newer-app' }
   if (err instanceof BrokenList) return { kind: 'needs-repair' }
   if (err instanceof Elsewhere) return { kind: 'list-elsewhere', home: err.home }
-  if (err instanceof HomeGone) return { kind: 'home-gone', home: err.home }
+  if (err instanceof HomeGone) return { kind: 'home-gone', home: err.home, ...(err.fileGone && { fileGone: true }) }
   if (listErrorCode(err) === 'NO_LIST_ACCESS') return { kind: 'no-list-access' }
   switch (gistErrorCode(err)) {
     case 'OFFLINE':

@@ -41,6 +41,7 @@ import {
   readRepoList,
   repoKey,
   staleReadError,
+  STALE_WINDOW_MS,
   type ReadGuard,
   type RepoListRead,
   type RepoListSnapshot,
@@ -118,7 +119,7 @@ export async function latestList(handle: IndexHandle): Promise<IndexHandle> {
 function fromRead(store: ListStore, read: RepoListRead, owner: string | null): IndexHandle {
   if (read.kind === 'ok') return handleOf(store, read.snap, owner)
   if (read.kind === 'newer') throw new NewerList()
-  throw new BrokenList()
+  throw new BrokenList(read.kind === 'missing')
 }
 
 /** One change of the list: the files to write (`null` deletes one), and what the caller learns. `patch: null`: no write. */
@@ -220,8 +221,20 @@ const repoGone = (err: unknown): boolean => listErrorCode(err) === 'NO_LIST_ACCE
  *   the new name. A device that may write (`renote`) writes the new name into the note at once.
  * - YAZ-5398: the note proves that the list file was there (the note is written after it), so a head with no list file
  *   is first taken as a stale read and read again; only a file that stays missing is "needs repair".
+ * - YAZ-5444: a file that stays missing PAST the stale window (`fileGoneForGood`) is a real change on GitHub (deleted by
+ *   hand, or the vault made again under the same name), not a lag: `home-gone` with `fileGone`, so the person gets the
+ *   same way out (`restartList`). Inside the window it stays "needs repair" (nothing is offered on a lag).
  */
-async function atHome(api: GistsApi, ports: readonly RepoPort[], home: string, note: string | null, owner: string | null, guard: ReadGuard | undefined, renote = false): Promise<IndexFind> {
+async function atHome(
+  api: GistsApi,
+  ports: readonly RepoPort[],
+  home: string,
+  note: string | null,
+  owner: string | null,
+  guard: ReadGuard | undefined,
+  renote = false,
+  noteAt: string | null = null,
+): Promise<IndexFind> {
   // A vault of this device, or (with the same token) the repo the note names, also one this device has not added.
   let port: RepoPort | undefined
   try {
@@ -249,8 +262,26 @@ async function atHome(api: GistsApi, ports: readonly RepoPort[], home: string, n
     return { kind: 'ok', handle: handleOf({ port, note, guard }, read.snap, owner) }
   }
   if (read.kind === 'newer') return { kind: 'newer', id: note ?? '' }
+  // YAZ-5444: the file stayed missing on every guarded read, and no lag can explain it any more.
+  if (read.kind === 'missing' && r.stale && note !== null && fileGoneForGood(port, guard, noteAt)) return { kind: 'home-gone', home, fileGone: true }
   // The note names this vault and the file is gone (deleted by hand) or broken: nothing is written (YAZ-5191).
   return { kind: 'broken', id: note ?? '' }
+}
+
+/**
+ * YAZ-5444: a list file that is missing at the home is GONE (not a lag) only when nothing in the stale window can
+ * explain it: this device saw no list there in the last `STALE_WINDOW_MS` (its memory, YAZ-5398), and the note was last
+ * written more than `STALE_WINDOW_MS` ago (the note is always written AFTER its list file, so a lagging replica of a
+ * list that another device made a moment ago is never taken for a gone file). A lag is seconds; the window is minutes.
+ */
+function fileGoneForGood(port: RepoPort, guard: ReadGuard | undefined, noteAt: string | null): boolean {
+  const now = (guard?.now ?? Date.now)()
+  const floor = guard?.memory?.floor(repoKey(port)) ?? null
+  // A list (rev 1 or more) seen inside the window: a missing file may be a lag. (A missing file that the stale rule
+  // already took is remembered as rev 0: that is no sign of a lag.)
+  if (floor !== null && floor.rev > 0 && Math.abs(now - floor.at) < STALE_WINDOW_MS) return false
+  const at = noteAt === null ? NaN : Date.parse(noteAt)
+  return Number.isFinite(at) && now - at >= STALE_WINDOW_MS
 }
 
 /** A list file in one of the device's vaults with no note (the note was deleted, or a stop before it was written). */
@@ -283,7 +314,7 @@ export async function findFriendsIndex(api: GistsApi, opts?: WriteOptions): Prom
   if (first.cut) return { kind: 'broken', id: first.id, cut: true }
   switch (first.read.kind) {
     case 'note':
-      return atHome(api, ports, first.read.home, first.id, first.owner, guard)
+      return atHome(api, ports, first.read.home, first.id, first.owner, guard, false, first.gist.updatedAt)
     case 'legacy':
       return legacyHandle(first)
     case 'newer':
@@ -326,7 +357,7 @@ export async function openFriendsList(api: GistsApi, opts: WriteOptions, seed: L
     // YAZ-5400: an old list that GitHub cut at 300 files is not read, not moved, and never replaced by a new list.
     if (first.cut) return { kind: 'broken', id: first.id, cut: true }
     if (first.read.kind === 'note') {
-      const found = await atHome(api, ports, first.read.home, first.id, first.owner, guard, true)
+      const found = await atHome(api, ports, first.read.home, first.id, first.owner, guard, true, first.gist.updatedAt)
       if (found.kind === 'ok') await tidyOldGist(api, first.gist)
       return found
     }
@@ -390,7 +421,7 @@ async function withNote(api: GistsApi, handle: IndexHandle, ports: readonly Repo
   if (first.read.kind === 'note') {
     if (first.read.home === home) return { kind: 'ok', handle: { ...handle, id: first.id, owner: first.owner, store: { port: handle.store!.port, note: first.id, guard: guardOf(opts) } } }
     // The oldest note names another vault: that list is the one (a new list that lost the race is left empty).
-    return atHome(api, ports, first.read.home, first.id, first.owner, guardOf(opts), true)
+    return atHome(api, ports, first.read.home, first.id, first.owner, guardOf(opts), true, first.gist.updatedAt)
   }
   if (first.read.kind === 'legacy') return moveOldList(api, ports, first, opts)
   return first.read.kind === 'newer' ? { kind: 'newer', id: first.id } : { kind: 'broken', id: first.id }
@@ -594,15 +625,20 @@ export type RestartResult =
   | { kind: 'ok'; handle: IndexHandle; deleted: { pointers: number; numbers: number; notes: number } }
   /** The home vault answers again (or there is no note): nothing is changed. */
   | { kind: 'home-is-there' }
-  /** `target` is not one of this device's vaults on the friends account, or it is the gone home itself. */
+  /**
+   * `target` is not one of this device's vaults on the friends account, or it is the gone home itself (YAZ-5444: a home
+   * vault that answers but lost its list FILE may be the target).
+   */
   | { kind: 'bad-target' }
   /** The target vault holds a list file of a newer app: nothing is written to it. */
   | { kind: 'newer' }
 
 /**
  * "Start the friends list again in <vault>" (YAZ-5399, the decision on the issue). Only when the note's home vault is
- * GONE (GitHub answers 404 for it: deleted, or this token has no access at all), or the oldest list gist is an old list
- * that GitHub CUT at 300 files (YAZ-5400), so a list that can be read is never replaced.
+ * GONE (GitHub answers 404 for it: deleted, or this token has no access at all), or its list FILE is gone past the stale
+ * window (YAZ-5444: deleted by hand, or the vault made again under the same name; then the home itself may be the
+ * target, and only while the file there is still missing), or the oldest list gist is an old list that GitHub CUT at 300
+ * files (YAZ-5400), so a list that can be read is never replaced.
  * The old list cannot be read, so no single friend can be removed. This ends ALL sharing instead, then starts again:
  *
  * 1. EVERY pointer gist of mine (exactly our one file, in our format) is deleted: each friend, each group I am in, each
@@ -625,9 +661,15 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   if (first === undefined || (first.read.kind !== 'note' && !first.cut)) return { kind: 'home-is-there' }
   const home = first.read.kind === 'note' ? first.read.home : null
   const port = ports.find((p) => p.repo === target.toLowerCase())
-  if (port === undefined || port.repo === home) return { kind: 'bad-target' }
-  // Never over a list that is still there: the home must be gone NOW.
-  if (!first.cut && (await atHome(api, ports, home!, first.id, first.owner, guard)).kind !== 'home-gone') return { kind: 'home-is-there' }
+  if (port === undefined) return { kind: 'bad-target' }
+  // Never over a list that is still there: the home (or its list file, YAZ-5444) must be gone NOW.
+  let fileGone = false
+  if (!first.cut) {
+    const at = await atHome(api, ports, home!, first.id, first.owner, guard, false, first.gist.updatedAt)
+    if (at.kind !== 'home-gone') return { kind: 'home-is-there' }
+    fileGone = at.fileGone === true
+  }
+  if (port.repo === home && !fileGone) return { kind: 'bad-target' }
   const deleted = { pointers: 0, numbers: 0, notes: 0 }
   // 1 and 2: every pointer, then every numbers gist, that is provably ours.
   const mine = await api.list()
@@ -653,10 +695,10 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   const numbers = await api.create(opts.describe('numbers'), { [NUMBERS_FILE]: JSON.stringify(seed.numbers ?? emptyNumbers(now())) })
   await opts.sleep(1000)
   const files = newListFiles(seed, numbers.id)
-  const made = await replaceRepoList(port, files, guard, opts.sleep)
-  if (made === 'newer') {
+  const made = await replaceRepoList(port, files, guard, opts.sleep, port.repo === home)
+  if (made === 'newer' || made === 'there') {
     await removeQuietly(api, numbers.id)
-    return { kind: 'newer' }
+    return { kind: made === 'newer' ? 'newer' : 'home-is-there' }
   }
   // 4. The old list gists go (the note names a vault that is gone; an old one holds friends' pointer IDs), then the note.
   for (const g of gists) {
@@ -669,19 +711,26 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   return { kind: 'ok', handle: found.handle, deleted }
 }
 
-/** Writes `files` as THE list of `port`, over any list file there (compare-and-swap; a newer app's file is not touched). */
-async function replaceRepoList(port: RepoPort, files: Record<string, string>, guard: ReadGuard | undefined, sleep: (ms: number) => Promise<void>): Promise<RepoListSnapshot | 'newer'> {
+/**
+ * Writes `files` as THE list of `port`, over any list file there (compare-and-swap; a newer app's file is not touched).
+ * `onlyIfMissing` (YAZ-5444, the home vault that lost its list file): a list file that is there again is never replaced
+ * (`'there'`). The new `rev` is above any this device remembers for the repo, so no device that read the old list takes
+ * the new one for a stale read.
+ */
+async function replaceRepoList(port: RepoPort, files: Record<string, string>, guard: ReadGuard | undefined, sleep: (ms: number) => Promise<void>, onlyIfMissing = false): Promise<RepoListSnapshot | 'newer' | 'there'> {
+  const remembered = guard?.memory?.floor(repoKey(port))?.rev ?? 0
   for (let attempt = 0; ; attempt++) {
     const r = await readGuarded(port, guard)
     if (r.kind === 'unchanged') throw new Error('a head read with no ETag cannot be unchanged')
     if (r.stale) throw staleReadError()
     const read = r.read
     if (read.kind === 'newer') return 'newer'
+    if (onlyIfMissing && read.kind !== 'missing') return 'there'
     // An unreadable file has no snapshot: the branch head now (a stale one is refused by the compare-and-swap below).
     const head = read.kind === 'ok' ? read.snap.sha : read.kind === 'missing' ? read.sha : await port.head()
     if (head === 'unchanged') throw new Error('a head read with no ETag cannot be unchanged')
     const sha = typeof head === 'string' ? head : head.sha
-    const rev = (read.kind === 'ok' ? read.snap.rev : 0) + 1
+    const rev = Math.max(read.kind === 'ok' ? read.snap.rev : 0, remembered) + 1
     let made: string
     try {
       made = await port.commit(sha, LIST_PATH, listFileText(files, {}, rev), LIST_COMMIT)

@@ -274,8 +274,10 @@ export async function syncPass(root: string, opts?: { candidates?: readonly stri
   const done = (status: GithubSyncStatus): GithubSyncStatus => withTooLarge(merged.length > 0 ? { ...status, merged } : status, tooLarge)
 
   // YAZ-5083 round 5: a local commit that changed the friends list (an older build, a commit by hand) never reaches
-  // GitHub: one commit on top puts GitHub's file back first.
-  const followed = hasUpstream && !flush ? await followRemoteList(bin, root) : false
+  // GitHub: one commit on top puts GitHub's file back first. YAZ-5445: the quit flush too (it is local, no fetch): with
+  // HEAD on top of the last fetch its push is a fast forward, so it must not carry the list. Behind it (no rebase on a
+  // flush), the push is refused anyway, and the next open rebases and follows.
+  const followed = hasUpstream && (!flush || behind === 0) ? await followRemoteList(bin, root) : false
 
   // ---------- 4. publish ----------
   if (ahead > 0 || followed) {
