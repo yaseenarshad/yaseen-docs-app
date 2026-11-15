@@ -349,3 +349,28 @@ describe('YAZ-5596 item 3: a pass stuck on the phone storage (iOS after a wake)'
     expect(t.refs()).toBe(refs + 2)
   })
 })
+
+describe('YAZ-5596 item 4: a quiet poll', () => {
+  it('a poll that finds nothing new does not read the stored index again; a commit synced by another tab is still read', async () => {
+    const t = await setup()
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    const getState = t.s.store.getState.bind(t.s.store)
+    let reads = 0
+    t.s.store.getState = (async (scope: string, name: string) => {
+      if (name === INDEX_STATE) reads++
+      return getState(scope, name)
+    }) as typeof t.s.store.getState
+    await t.tick(POLL_MS)
+    await t.tick(POLL_MS)
+    expect(t.engine.state().status).toBe('synced')
+    expect(reads).toBe(0)
+    // Another tab (here: a pass on the same store) syncs a new commit; this tab's next poll gets a 304 and reads it.
+    await t.s.git.push({ 'b.md': pageText('B', 'NC-2') })
+    await pass(t.s)
+    reads = 0 // the other tab's own pass read it
+    await t.tick(POLL_MS)
+    expect(reads).toBe(1)
+    expect(Object.keys(t.engine.index()!.records)).toContain('b.md')
+  })
+})

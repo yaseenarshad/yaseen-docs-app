@@ -278,8 +278,12 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   async function loadIndex(id: string, gen: number) {
-    let saved = await store.getState<PhoneIndex>(id, INDEX_STATE)
     const checkpoint = await store.checkpoint(id)
+    if (gen !== generation) return
+    // YAZ-5596 (4): the engine holds the index of the stored commit already (a poll that found nothing new): no read
+    // of the whole stored index again.
+    if (checkpoint !== null && current?.commit === checkpoint.commit && ofTheseRules(current)) return
+    let saved = await store.getState<PhoneIndex>(id, INDEX_STATE)
     if (gen !== generation) return
     // The stored index counts only with its checkpoint: a first download that stopped shows no partial vault (F5, F6).
     if (saved === undefined || checkpoint === null || saved.commit !== checkpoint.commit) return
