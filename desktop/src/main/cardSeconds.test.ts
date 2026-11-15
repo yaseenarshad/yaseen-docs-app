@@ -122,12 +122,12 @@ describe('the union of a card`s copies: a review is its time and its rating; the
     const held = line('WIKI-1, 2026-11-12T14:05Z good 13s')
     expect(withCardReviews(held, [{ at: '2026-11-12T14:05Z', rating: 'good' }])).toBe(held)
     expect(withCardReviews(held, [{ at: '2026-11-12T14:05Z', rating: 'good', seconds: 99 }])).toBe(held)
-    // Two new copies of one review: one review, the timed one.
+    // YAZ-5620: two copies of one name on ONE side are two reviews (two answers of one minute), the timed one first.
     const fresh = withCardReviews(line('WIKI-1'), [
       { at: '2026-11-12T14:05Z', rating: 'good' },
       { at: '2026-11-12T14:05Z', rating: 'good', seconds: 7 },
     ])
-    expect(formatCardLine(fresh)).toBe('<!-- card: WIKI-1, 2026-11-12T14:05Z good 7s -->')
+    expect(formatCardLine(fresh)).toBe('<!-- card: WIKI-1, 2026-11-12T14:05Z good 7s, 2026-11-12T14:05Z good -->')
     // Another rating at the same minute is another review.
     expect(cardReviewsOf(withCardReviews(held, [{ at: '2026-11-12T14:05Z', rating: 'again', seconds: 2 }]))).toHaveLength(2)
   })
