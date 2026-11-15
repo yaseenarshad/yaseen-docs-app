@@ -97,3 +97,45 @@ describe('YAZ-5512 X1: a phone comment never stops the Mac sync', { timeout: REA
     expect(b.read('words.md')).toBe(page)
   })
 })
+
+describe('YAZ-5515 X2: a phone write next to a Mac edit makes no conflict copy', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
+  /** GitHub gets `phone` (the phone's write, here pushed by machine B); the Mac (A) made `mac` before it synced. */
+  async function merge(base: string, phone: string, mac: string) {
+    const p = await makeTwoMachines({ 'list.md': base })
+    cleanups.push(p.cleanup)
+    await p.b.write('list.md', phone)
+    expect((await syncPass(p.b.root)).state).toBe('synced')
+    await p.a.write('list.md', mac)
+    const status = await syncPass(p.a.root)
+    expect(status.state).toBe('synced')
+    expect(readdirSync(p.a.root).filter((f) => f.includes('(conflict,'))).toEqual([])
+    expect(status.merged?.[0]?.copy).toBeUndefined()
+    return p.a.read('list.md')
+  }
+
+  it('a phone tick or card line write merges with a Mac edit of the adjacent line without a conflict copy', async () => {
+    // M1: the phone ticks One; the Mac edits Two, the next line.
+    expect(await merge('# List\n\n- [ ] One\n- [ ] Two\n', '# List\n\n- [x] One\n- [ ] Two\n', '# List\n\n- [ ] One\n- [ ] Two edited\n')).toBe('# List\n\n- [x] One\n- [ ] Two edited\n')
+    // M9: the phone answers the card; the Mac edits the line right below its card line.
+    const card = '# Words\n\n```card\nQ\n```\n<!-- card: NC-1 -->\nNext para\n'
+    expect(await merge(card, card.replace('NC-1 -->', 'NC-1, 2026-11-14T06:01Z good -->'), card.replace('Next para', 'Next para edited'))).toBe(
+      '# Words\n\n```card\nQ\n```\n<!-- card: NC-1, 2026-11-14T06:01Z good -->\nNext para edited\n',
+    )
+  })
+
+  it('M7: the phone ticks a task while the Mac ticks the task right below it: both ticks', async () => {
+    expect(await merge('- [ ] One\n- [ ] Two\n', '- [x] One\n- [ ] Two\n', '- [ ] One\n- [x] Two\n')).toBe('- [x] One\n- [x] Two\n')
+  })
+
+  it('the SAME line on both sides still keeps both (a copy)', async () => {
+    const p = await makeTwoMachines({ 'list.md': '- [ ] One\n- [ ] Two\n' })
+    cleanups.push(p.cleanup)
+    await p.b.write('list.md', '- [x] One\n- [ ] Two\n')
+    expect((await syncPass(p.b.root)).state).toBe('synced')
+    await p.a.write('list.md', '- [ ] One, edited\n- [ ] Two\n')
+    const status = await syncPass(p.a.root)
+    expect(status.state).toBe('synced')
+    expect(p.a.read('list.md')).toBe('- [x] One\n- [ ] Two\n')
+    expect(p.a.read(status.merged?.[0]?.copy ?? '')).toBe('- [ ] One, edited\n- [ ] Two\n')
+  })
+})
