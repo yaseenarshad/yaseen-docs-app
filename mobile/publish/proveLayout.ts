@@ -380,7 +380,6 @@ if (process.env.LAYOUT_SHEETS !== 'no') {
     ['page-headings-few', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__none', '.headings-sheet__title')],
     ['page-headings-alone', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list', '.headings-sheet__title')],
     ['page-properties', ON_TOP('.props', '.props__panel', '.props__rows', '.props__title')],
-    ...(process.env.LAYOUT_CARD_SHEETS === 'no' ? [] : [['card-headings', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list, .headings-sheet__none', '.headings-sheet__title')]]),
   ] as const
   for (const [w, h] of SIZES.slice(1)) {
     for (const [name, check] of CASES) {

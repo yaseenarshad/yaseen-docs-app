@@ -79,8 +79,8 @@ async function search(x: Harness, value: string): Promise<void> {
   await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
 }
 /** Opens the top bar's ⋯; the menu's full title and folder, or null when it shows none. */
-async function menuTitle(x: Harness): Promise<{ name: string; folder: string | null } | null> {
-  await x.click('Page tools')
+async function menuTitle(x: Harness, label = 'Page tools'): Promise<{ name: string; folder: string | null } | null> {
+  await x.click(label)
   const menu = x.host.querySelector('.page-tools__menu')!
   expect(menu).not.toBeNull()
   const top = menu.querySelector('.menu-title')
@@ -115,17 +115,18 @@ describe('YAZ-5498: the ⋯ menu shows the full title when the top bar cuts it',
     expect(await menuTitle(h)).toEqual({ name: 'Trip plan', folder: null })
   })
 
-  it('a card in a page: its ⋯ (Find in page, Headings); cut, its title and its page\'s folder; fits, none', async () => {
+  it('a card in a page: its ⋯ (YAZ-5504: the card actions, then Find in card; no Headings); cut, its title and its page\'s folder; fits, none', async () => {
     h = await openSearch()
     await search(h, 'la bib')
     await h.click(/^la biblioteca/)
     await waitFor(h, () => h!.host.querySelector('.card-view__card .card__body') !== null)
     cut = true
-    expect(await menuTitle(h)).toEqual({ name: 'la biblioteca', folder: null })
-    expect(items(h)).toEqual(['🔍 Find in page', '☰ Headings'])
-    await h.click('Page tools')
+    expect(await menuTitle(h, 'Card tools')).toEqual({ name: 'la biblioteca', folder: null })
+    expect(items(h).slice(-1)).toEqual(['🔍 Find in card'])
+    expect(items(h)).not.toContain('☰ Headings')
+    await h.click('Card tools')
     cut = false
-    expect(await menuTitle(h)).toBeNull()
+    expect(await menuTitle(h, 'Card tools')).toBeNull()
   })
 
   it('a card file: cut, its title and its folder; fits, none', async () => {
@@ -134,10 +135,10 @@ describe('YAZ-5498: the ⋯ menu shows the full title when the top bar cuts it',
     await h.click(/^Capital of Spain/)
     await waitFor(h, () => h!.host.querySelector('.card-view__card .card__body') !== null)
     cut = true
-    expect(await menuTitle(h)).toEqual({ name: 'Capital of Spain', folder: 'cards' })
-    await h.click('Page tools')
+    expect(await menuTitle(h, 'Card tools')).toEqual({ name: 'Capital of Spain', folder: 'cards' })
+    await h.click('Card tools')
     cut = false
-    expect(await menuTitle(h)).toBeNull()
+    expect(await menuTitle(h, 'Card tools')).toBeNull()
   })
 
   it('a drawing: its ⋯ has Copy path; cut, its name and its folder at the top; fits, none', async () => {

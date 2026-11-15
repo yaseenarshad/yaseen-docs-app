@@ -7,6 +7,7 @@ import { Marked, Renderer, type Token, type TokenizerAndRendererExtension, type 
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
 import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
 import { taskCore } from '../comments/taskWrite'
+import { cardMoreButton } from '../cardMenu/moreButton'
 import { applyTableFile, readTableComment } from './tableFile'
 import { layoutTables } from './tableLayout'
 
@@ -471,7 +472,10 @@ function drawCards(root: DocumentFragment, look: PageLook, cards: Parse['cards']
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(look.card(card.text))
-    for (const part of [cardHead(card), titleBand(card.title)]) if (part !== null) slot.append(part)
+    const head = cardHead(card)
+    // YAZ-5504: a card with an ID has its ⋯ (the card actions) at the right of its head.
+    if (head !== null && card.id !== null) head.append(cardMoreButton(card.id, card.title))
+    for (const part of [head, titleBand(card.title)]) if (part !== null) slot.append(part)
     slot.append(body)
   }
 }

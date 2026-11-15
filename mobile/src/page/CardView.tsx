@@ -18,7 +18,8 @@ import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
-import { usePageTools } from './PageTools'
+import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
+import { useCardViewMenu } from '../cardMenu/cardViewMenu'
 
 /** The words of a card file that is not valid (round 15, item 3). */
 export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
@@ -29,8 +30,9 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  * hidden in review" while Review is on) and its title band (none for a card with no title: the ID names it). The top
  * bar says the title ("Untitled card" with none); the heading "Title · ID" is for VoiceOver only, which names a card
  * with no title by its ID, when it is due and how sure you are, its review history, and "Open
- * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card in stage one. Its ⋯
- * (YAZ-5498) is a page's: Find in page, Headings, and the full title when the top bar cuts it.
+ * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card. YAZ-5504: ⋯ in the
+ * top bar holds the card's actions (Archive card, Title on the front, …: two taps each) and Find in card; YAZ-5498: the
+ * full title on top when the top bar cuts it.
  *
  * A card file that is not valid (2 or more cards, text outside the card, or no card; from git or an agent): the first
  * card and one line, "This card file needs a fix on the Mac." (round 15, item 3). The fix actions stay on the Mac.
@@ -66,15 +68,18 @@ export default function CardView({ path, id }: { path: string; id: string }) {
       }),
     [sync, vault, path],
   )
+  // YAZ-5504: the card as the phone shows it (with the waiting actions), so a change from its ⋯ shows at once.
+  const answers = useAnswers()
+  useAnswersChanged(answers, path, () => setReads((n) => n + 1))
   useEffect(() => {
     let live = true
-    void store.read(vault, path).then((file) => {
-      if (live) setText(file === null ? null : typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content))
+    void shownText(store, vault, path, answers).then((content) => {
+      if (live) setText(content)
     })
     return () => {
       live = false
     }
-  }, [store, vault, path, reads])
+  }, [store, vault, path, reads, answers])
 
   const record = data?.byPath[path]
   const isFile = record?.kind === 'card'
@@ -87,10 +92,9 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const title = name === '' ? UNTITLED_CARD : name
   const label = name === '' ? (card?.id ?? id) : name
 
-  // YAZ-5498: the card's ⋯ (Find in page, Headings, as a page's), with the full title when the top bar cuts it.
-  const tools = usePageTools(host, { title, path })
-
   const reviewOn = data?.review.enabled === true
+  // YAZ-5504: ⋯ in the top bar: the card actions (two taps each), then Find in card.
+  const tools = useCardViewMenu(host, { title, path, id: card?.id ?? null, answers, upNext: reviewOn })
   const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
   useEffect(() => {
     const el = host.current
@@ -141,7 +145,6 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
         <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
-        {tools.sheet}
         {card !== null && data !== null && (
           <>
             <p className="card-view__facts">{facts === null ? 'New card' : `${cardDueWords(cardNextReview(facts.due, facts.inSteps, now))}${facts.recall === null ? '' : ` · ${Math.round(facts.recall * 100)}% chance you remember it`}`}</p>
@@ -155,6 +158,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         )}
         {/* YAZ-5477: a card FILE's comments (its front matter's), and its Comment button; a card in a page has none. */}
         {isFile && typeof text === 'string' && <PageComments path={path} text={text} noun="card file" />}
+        {tools.toast}
       </article>
     </Frame>
   )

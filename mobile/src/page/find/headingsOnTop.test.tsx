@@ -121,14 +121,7 @@ describe('YAZ-5497: the Headings sheet is fully on screen, above the arrow bar a
     expectWholeOnTop(await openHeadings(h))
   })
 
-  it('a card view (YAZ-5498 gave it the ⋯): whole and on top of its arrows and the tab bar', async () => {
-    h = await open(FILES, /^Capital of Spain/, '.card-view__card .card__body', 'review', 'capital of spain')
-    expect(h.host.querySelector('.page-arrows')).not.toBeNull()
-    const sheet = await openHeadings(h)
-    expectWholeOnTop(sheet)
-    expect(sheet.querySelector('.headings-sheet__none')?.textContent).toBe('This page has no headings to list.')
-  })
-
+  // YAZ-5504: a card view's ⋯ holds the card actions and Find in card, no Headings: no card case here.
   it('the same cause, the properties panel: whole and on top of the top bar, the arrows and the tab bar', async () => {
     h = await open(FILES, /^Trip notes, page/, '.reader__body p')
     await h.click('Properties')

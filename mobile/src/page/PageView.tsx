@@ -24,6 +24,8 @@ import { renderPage } from './pageRender'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
 import { useTaskTicks } from './taskTicks'
 import { useTables } from './useTables'
+import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
+import { usePageCardMenu } from '../cardMenu/pageCardMenu'
 
 /**
  * A PAGE, READ ONLY (YAZ-5079, 4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
@@ -67,6 +69,10 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const ticks = useTaskTicks(host, path, text, useCommentsPort(), setNotice)
   const ticksRef = useRef(ticks)
   ticksRef.current = ticks
+  // YAZ-5504: each card's ⋯ (the card actions); the page reads its cards as the phone shows them (with waiting actions).
+  const answers = useAnswers()
+  useAnswersChanged(answers, path, () => setReads((n) => n + 1))
+  const cardMenu = usePageCardMenu(host, { path, answers, upNext: data?.review.enabled === true })
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
   // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
@@ -91,17 +97,16 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     [sync, vault, path, title, app],
   )
 
-  // The text, from storage only.
+  // The text, from storage, with the answer list's waiting actions (YAZ-5504: a card's change shows at once).
   useEffect(() => {
     let live = true
-    void store.read(vault, path).then((file) => {
-      if (!live) return
-      setText(file === null ? null : typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content))
+    void shownText(store, vault, path, answers).then((content) => {
+      if (live) setText(content)
     })
     return () => {
       live = false
     }
-  }, [store, vault, path, reads])
+  }, [store, vault, path, reads, answers])
 
   // Draw it, in slices; again when the text or the vault's index changes, at the same reading place (R3).
   const drawn = useRef<{ text: string; version: number; look: object } | null>(null)
@@ -211,6 +216,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {/* YAZ-5461: the page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}
+        {cardMenu}
         <PropertiesTab record={record} data={data} door={door} />
         {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
       </article>
