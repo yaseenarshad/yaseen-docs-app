@@ -132,7 +132,7 @@ export async function aheadPlan(input: AheadInput): Promise<AheadPlan> {
         const id = block.line.parts.find((p) => p.kind === 'id')
         if (id === undefined || id.kind !== 'id' || id.id.toLowerCase() !== c.id.toLowerCase()) continue
         for (const path of cardMediaPaths(block.text, holder, resolve)) {
-          // An unknown size counts as too large (YAZ-5187): never a large file ahead by mistake; it downloads when it shows.
+          // An unknown size counts as too large: never a large file ahead by mistake; it downloads when it shows.
           const size = input.sizes.get(path)
           if (size === undefined || size > maxBytes) tooLarge.add(path)
           else wanted.add(path)

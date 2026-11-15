@@ -1,13 +1,13 @@
 import { cardBand } from '@client/editor/card/cardBand'
 
 /**
- * A CARD'S HEAD AND TITLE BAND ON THE PHONE (YAZ-5437), as the Mac draws them read (`cardBlockView.ts`, `cardEmbed.ts`,
+ * A CARD'S HEAD AND TITLE BAND ON THE PHONE, as the Mac draws them read (`cardBlockView.ts`, `cardEmbed.ts`,
  * `cardTitle.ts`, `cardBand.ts` on the Mac's latest branch):
  *  - The head (`.card__head`): the card ID first (small and grey), then "Archived" (`off`), then "Title hidden in review"
  *    (`notitle`, YAZ-5030: the title still shows here; only the Inbox's front waits with it).
- *  - Under it, the title band (`.card-band`, YAZ-5308 A3): the title off the card line, bold, a long title wraps. Read, a
+ *  - Under it, the title band (`.card-band`): the title off the card line, bold, a long title wraps. Read, a
  *    card with no title has NO band: the ID in the head names it ("Untitled card" is Edit card's grey hint only).
- *  - Card look › Card title size (YAZ-5387) lives in the Mac's settings folder, which never reaches the phone: the band
+ *  - Card look › Card title size lives in the Mac's settings folder, which never reaches the phone: the band
  *    takes Default, 1.125× the card's text (`card.css`, `--card-title-size` unset).
  * No React and no HTML: every word goes in with `textContent`.
  */

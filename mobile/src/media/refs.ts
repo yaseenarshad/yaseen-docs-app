@@ -96,7 +96,7 @@ function walk(tokens: readonly Token[], out: string[]): void {
       const target = src === null ? null : mediaTarget(src)
       if (target !== null) out.push(target)
     } else if (token.type === 'html') {
-      // An HTML picture (YAZ-5189): DOMPurify's HTML profile keeps `<img>`, and the Mac's `applyLook` gives each `<img>`
+      // An HTML picture: DOMPurify's HTML profile keeps `<img>`, and the Mac's `applyLook` gives each `<img>`
       // of the card the vault URL. Its `src` reaches `imageSrc` as the attribute holds it (no `cleanUrl`).
       for (const src of htmlImageSources((token as Tokens.HTML).raw)) {
         const target = mediaTarget(src)
@@ -136,7 +136,7 @@ export const folderOf = (path: string): string => path.slice(0, Math.max(0, path
 /**
  * The vault files a card shows: each source resolved by the shared lookup (`makeAssetResolver`, 2B) from the folder of
  * `holder`, the file that HOLDS the card. An embedded card's links resolve from its own card file, never from the page
- * that embeds it (YAZ-5074). A link to no file gives nothing.
+ * that embeds it. A link to no file gives nothing.
  */
 export function cardMediaPaths(text: string, holder: string, resolve: (target: string, from?: string) => string | null): string[] {
   const out: string[] = []

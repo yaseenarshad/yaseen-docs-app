@@ -11,7 +11,7 @@ import type { VaultStore } from '../../store'
 import { vaultMediaPath, vaultMediaUrl } from './vaultMedia'
 
 /**
- * A CARD ON THE PHONE (YAZ-5242): the ONE drawing of a card's text for every phone screen: Review (`PhoneCard`), the card
+ * A CARD ON THE PHONE: the ONE drawing of a card's text for every phone screen: Review (`PhoneCard`), the card
  * view, a page's own card and an embedded card (`drawCard`). Before, Review drew with its own copy of this code, which
  * gave a source that is not a vault file back AS IT WAS, so the browser fetched it. Now:
  *  - The text goes through the phone's one allow list (`renderCard` with `onlyLocalMedia()`: `localOnly.ts`).
@@ -93,7 +93,7 @@ export function drawLocalCard(text: string, show: CardShow, place: { links: Wiki
     const written = url.startsWith(MISSING_PREFIX) ? decodeURIComponent(url.slice(MISSING_PREFIX.length)) : url
     player.replaceWith(calm(`Missing sound · ${nameOf(written)}`))
   }
-  // A link opens only the web (Safari), mail, or a part of the card; any other address is text (YAZ-5243).
+  // A link opens only the web (Safari), mail, or a part of the card; any other address is text.
   for (const a of el.querySelectorAll<HTMLAnchorElement>('a[href]')) {
     const { kind, href } = urlOf(a.getAttribute('href') ?? '')
     if (kind === 'web') {
@@ -106,7 +106,7 @@ export function drawLocalCard(text: string, show: CardShow, place: { links: Wiki
 }
 
 /**
- * THE VAULT'S CARD LOOK ON THE PHONE (YAZ-5484), read only, from the phone's copy of `.yaseendocs/card-look.json`: the
+ * THE VAULT'S CARD LOOK ON THE PHONE, read only, from the phone's copy of `.yaseendocs/card-look.json`: the
  * Mac's own variables (`cardLookStyle`), which the Mac's `card.css` and `cardScreens.css` (loaded by the phone) read,
  * so a card draws as on the Mac: the text and title size, the hidden-word look (Highlight, Underline, Box) and the next
  * mark with its colour, Clean's look and the spacing. The width is only a max on the phone (`reader.css`,

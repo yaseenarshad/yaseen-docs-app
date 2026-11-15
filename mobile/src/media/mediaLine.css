@@ -1,4 +1,4 @@
-/* YAZ-5363: the media line, on a page AND on Review's card. `page/pageLook.ts` and `review/PhoneCard.tsx` load it. */
+/* The media line, on a page AND on Review's card. `page/pageLook.ts` and `review/PhoneCard.tsx` load it. */
 
 /* What the phone cannot show now: one calm line, the text around it still there (N3, C3). */
 .page-media {
@@ -11,7 +11,7 @@
   font-size: 14px;
 }
 
-/* A web picture, sound or video: a link to tap (Safari), never loaded by the app (YAZ-5208). */
+/* A web picture, sound or video: a link to tap (Safari), never loaded by the app. */
 a.page-media--web {
   color: var(--accent);
   text-decoration: none;
