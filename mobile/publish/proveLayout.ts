@@ -23,6 +23,9 @@ import { freePort } from './freePort'
  *    full screen, the copy marked too. YAZ-5541 (`page-calendar-next`): the next slot tinted as the now row.
  *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
  *    area, a done task struck through.
+ *  - tasks in table cells (`#fixture=page-cell-tasks`, `page-cell-tasks-full`, YAZ-5618), light and dark, at 375 px: each
+ *    a box with the page's look, done ones struck, a tap area 44 px wide and a line tall, the fold arrow its own button left of the box in
+ *    its cell; a real tap ticks the box, full screen too (the page's box takes it).
  *  - numbered tasks (`#fixture=page-tasks-numbered`, YAZ-5510, the Mac's rule), light and dark, at 375 px: for 1. to 11.,
  *    no number, only the box in the number's column (its middle a tap on it, a 44 px tap), then the text; the lines
  *    that wrap under the text.
@@ -118,7 +121,7 @@ import { freePort } from './freePort'
  *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -496,6 +499,73 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     const ok = items.map((i) => i.n).join(',') === '1,2,10,11' && items.every((i) => !i.shown && i.inList && i.gap > 0 && i.lines !== null && i.lines <= 0.5 && i.hit && i.tap >= 44) && !m.pageWide
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks-numbered at 375x667, ${scheme}: ${items.map((i) => `${i.n} ${i.shown ? 'NUMBER SHOWS ' : 'no number, '}box ${i.inList ? 'in the number column' : 'OUT OF THE LIST'} ${i.gap}px before the text, lines ${i.lines}px off the text start, tap ${i.tap}px${i.hit ? '' : ' (TAP MISSES)'}`).join('; ')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5618: tasks in table cells (`#fixture=page-cell-tasks`, `page-cell-tasks-full`), light and dark, at 375 px: each
+// cell task a box (the page's look, a check box), done ones checked and their own line struck through; the box answers a
+// tap at its middle and 12 px to each side and 9 px up and down (its area: 44 px wide, as tall as a line of the cell's
+// list, so it never covers the next box); the fold arrow
+// of a task with children is its own button, left of the box, inside its cell; a real tap on a box ticks it (the box
+// and its line); full screen, a tap on a box of the copy ticks the page's box. The page never scrolls sideways.
+const CELL_TASKS_CHECK = `(() => {
+  const view = document.querySelector('.table-view')
+  const root = view || document.querySelector('.reader__body')
+  const boxes = [...root.querySelectorAll('td .page-task[data-task]')]
+  const vis = boxes.filter((b) => b.getBoundingClientRect().width > 0)
+  const at = (b, dx, dy) => { const r = b.getBoundingClientRect(); const x = r.left + r.width / 2 + dx, y = r.top + r.height / 2 + dy; return x < 0 || y < 60 || y > innerHeight - 60 || x > innerWidth || document.elementFromPoint(x, y) === b }
+  // Full screen the table is scaled to fit: the tap area with it.
+  const k = view ? parseFloat(view.dataset.scale || '1') : 1
+  const shifts = [[0, 0], [12, 0], [-12, 0], [0, 9], [0, -9]].map(([dx, dy]) => [dx * k, dy * k])
+  const misses = vis.flatMap((b) => (shifts.every(([dx, dy]) => at(b, dx, dy)) ? [] : [b.dataset.task + ' ' + shifts.map(([dx, dy]) => (at(b, dx, dy) ? 'y' : 'n')).join('')]))
+  const tap = vis[0] ? getComputedStyle(vis[0], '::before') : null
+  const done = vis.filter((b) => b.dataset.checked === 'true')
+  const struck = done.filter((b) => { const li = b.closest('li'); return getComputedStyle(li).textDecorationLine.includes('line-through') || li.querySelector(':scope > ul, :scope > ol') }).length
+  const fold = root.querySelector('td li > .fold-btn--bullet[data-fold-label^="3- Weekly"]')
+  let arrow = null
+  if (fold) {
+    const svg = fold.querySelector('svg').getBoundingClientRect()
+    const own = fold.parentElement.querySelector(':scope > .page-task').getBoundingClientRect()
+    const cell = fold.closest('td').getBoundingClientRect()
+    const hit = document.elementFromPoint(svg.left + svg.width / 2, svg.top + svg.height / 2)
+    arrow = { hit: !!hit && fold.contains(hit), inCell: svg.left >= cell.left - 0.5 && svg.right <= cell.right + 0.5, left: svg.right <= own.left + 0.5, gap: Math.round((own.left - svg.right) * 10) / 10 }
+  }
+  return { boxes: boxes.length, roles: boxes.every((b) => b.getAttribute('role') === 'checkbox'), size: vis[0] ? Math.round(vis[0].getBoundingClientRect().width) : 0, misses, tap: tap ? [parseFloat(tap.width), parseFloat(tap.height)] : [0, 0], line: vis[0] ? parseFloat(getComputedStyle(vis[0]).fontSize) * 2 : 0, done: done.length, struck, arrow, text: root.querySelector('td').closest('table').textContent.includes('[ ]'), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+const CELL_BOX = (core: string, view: boolean) => `(() => { const b = [...document.querySelectorAll('${view ? '.table-view ' : '.reader__body '}td .page-task[data-task]')].find((e) => e.dataset.task === ${JSON.stringify(core)}); if (!b) return null; b.scrollIntoView({ block: 'center', inline: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, checked: b.dataset.checked } })()`
+const PAGE_BOX = (core: string) => `(() => { const b = [...document.querySelectorAll('.reader__body td .page-task[data-task]')].find((e) => e.dataset.task === ${JSON.stringify(core)}); return b ? { checked: b.dataset.checked, struck: getComputedStyle(b.closest('li')).textDecorationLine } : null })()`
+if (process.env.LAYOUT_CELL_TASKS !== 'no') {
+  for (const name of ['page-cell-tasks', 'page-cell-tasks-full'] as const) {
+    for (const scheme of ['light', 'dark'] as const) {
+      await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+      const file = await open(name, 375, 667)
+      const full = name === 'page-cell-tasks-full'
+      if (!full) await evaluate(`document.querySelector('.reader__body td .page-task[data-task]').closest('table').scrollIntoView({ block: 'start' })`)
+      await wait(200)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(CELL_TASKS_CHECK)
+      // A real tap on Laundry's box (not done): it ticks, and its line is struck through.
+      const core = '|1|0.2.0|[ ] Laundry'
+      const at = await evaluate(CELL_BOX(core, full))
+      await wait(150)
+      const again = await evaluate(CELL_BOX(core, full))
+      if (again) {
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: again.x, y: again.y, button: 'left', clickCount: 1 }, page)
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: again.x, y: again.y, button: 'left', clickCount: 1 }, page)
+      }
+      await wait(300)
+      const after = await evaluate(CELL_BOX(core, full))
+      const own = await evaluate(PAGE_BOX(core))
+      const tapShot = file.replace('.png', `-${scheme}-ticked.png`)
+      writeFileSync(tapShot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const said = await evaluate(`document.querySelector('.reader__notice')?.textContent ?? ''`)
+      if (said) console.log(`  the page said: ${said}`)
+      const ticked = at?.checked === 'false' && after?.checked === 'true' && own?.checked === 'true' && String(own?.struck).includes('line-through')
+      const ok = m.boxes === 8 && m.roles && m.size > 0 && m.size < 30 && m.misses.length === 0 && m.tap[0] >= 44 && m.tap[1] >= m.line - 0.5 && m.done === 3 && m.struck === 3 && m.arrow !== null && m.arrow.hit && m.arrow.inCell && m.arrow.left && !m.text && ticked && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${m.boxes} cell boxes${m.roles ? ', check boxes' : ' NOT CHECK BOXES'}, ${m.size}px, tap area ${m.tap.map((n: number) => Math.round(n)).join('x')}px (44 wide, a line of the cell's list tall)${m.misses.length ? ` (MISSED ${m.misses.join(' | ')})` : ', a tap at the middle, 12 px aside and 9 px up and down hits'}; ${m.done} done, ${m.struck} struck; fold arrow ${m.arrow ? `${m.arrow.hit ? 'its own button' : 'NOT ITS BUTTON'}, ${m.arrow.inCell ? 'in the cell' : 'OUT OF THE CELL'}, ${m.arrow.gap}px left of the box` : 'NONE'}; brackets ${m.text ? 'SHOW' : 'gone'}; a tap ${ticked ? 'ticks Laundry (struck)' : `DID NOT TICK (${JSON.stringify({ at, after, own })})`}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot} ${tapShot}`)
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

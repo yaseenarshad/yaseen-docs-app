@@ -1,4 +1,5 @@
 import { Marked, Tokenizer, type Token, type TokenizerExtension, type Tokens } from 'marked'
+import { tableTasks } from './cellTasks'
 
 /**
  * THE READER'S MARKDOWN PARSER: the one `marked` (GitHub flavour, a single line break is a line break) with
@@ -206,6 +207,8 @@ export function markTasks(tokens: readonly Token[], text: string, firstLine = 0)
           from += newlines(item.raw)
         })
       } else if (token.type === 'blockquote') walk((token as Tokens.Blockquote).tokens, line, interrupting, null, off)
+      // YAZ-5618: the tasks in a table's cells (the Mac's HTML lists, `cellTasks.ts`).
+      else if (token.type === 'table' && !off) out.push(...tableTasks(token as Tokens.Table, lines, line, firstLine))
       line += newlines(token.raw)
     })
   }

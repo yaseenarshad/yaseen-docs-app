@@ -15,7 +15,7 @@ import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from 
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
 import { MOBILE_SETTINGS_FILES, STICKY_HEADINGS_FILES, CENTRE_FILES, FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
-import { NUMBERED_TASKS_PAGE, TASKS_PAGE } from './taskFixtures'
+import { CELL_TASKS_PAGE, NUMBERED_TASKS_PAGE, TASKS_PAGE } from './taskFixtures'
 import { writeFolds } from '../store/foldPref'
 import { fixtureAnswers } from './fixtureAnswers'
 import type { CommentsPort } from '../comments/bridge'
@@ -50,6 +50,8 @@ import { openSheet } from '../explore/sheets'
  * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
  * tap ticks (44 px around it), the card's box a glyph. YAZ-5510: `page-tasks-numbered` numbered tasks (`1.` to `11.`): only
  * the box, in the number's place (the Mac's rule), then the text.
+ * YAZ-5618: `page-cell-tasks` a planning table whose cells hold tasks (`CELL_TASKS_PAGE`): each a box a tap ticks, done ones
+ * struck through; `page-cell-tasks-full` the table full screen.
  * YAZ-5460: the folder page on the made-up `Projects` folder (`folderVault.ts`): `folder-hold` the menu of a held
  * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
  * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (the month of today) its other views;
@@ -89,7 +91,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'page-cell-tasks', 'page-cell-tasks-full', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -224,6 +226,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
           ? { 'home/Weekend jobs.md': TASKS_PAGE }
         : name === 'page-tasks-numbered'
           ? { 'home/Shed list.md': NUMBERED_TASKS_PAGE }
+        : name === 'page-cell-tasks' || name === 'page-cell-tasks-full'
+          ? { 'plans/Week plan.md': CELL_TASKS_PAGE }
         : name === 'page-calendar' || name === 'page-calendar-chip' || name === 'page-calendar-full'
           ? { 'Day plan.md': `---\ntitle: Day plan\n---\n\n${CALENDAR_PAGE}\n` }
         : name === 'page-calendar-next'
@@ -347,17 +351,19 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
   const sync = fakeSync()
   // YAZ-5504: the card menu's fixtures get a made-up answer list (in memory; nothing is sent).
   // YAZ-5591/5592: the sticky headings' ⋯ rows and Settings › This vault on mobile write through it too.
-  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name === 'settings-mobile' || name === 'page-sticky') {
+  // YAZ-5618: the cell tasks' ticks go to it too (they wait there: nothing is sent).
+  const cellTasks = name === 'page-cell-tasks' || name === 'page-cell-tasks-full'
+  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name === 'settings-mobile' || name === 'page-sticky' || cellTasks) {
     const answers = fixtureAnswers(store, READER_ID)
     // A comment list in memory (nothing is sent), so the rows that write show as they do with a sign-in.
-    if (name === 'settings-mobile' || name === 'page-sticky') {
+    if (name === 'settings-mobile' || name === 'page-sticky' || cellTasks) {
       const list: WaitingComment[] = []
       const heard = new Set<() => void>()
       ;(answers as { comments?: CommentsPort }).comments = {
         ready: async () => {},
         waiting: (path) => list.filter((c) => path === undefined || c.path === path),
         add: async (input) => {
-          const c: WaitingComment = { id: `f${list.length}`, path: input.path, body: input.body, at: '2026-11-15T09:00:00Z', madeAt: 0, notBefore: 0, ...(input.setting ? { setting: input.setting } : {}) }
+          const c: WaitingComment = { id: `f${list.length}`, path: input.path, body: input.body, at: '2026-11-15T09:00:00Z', madeAt: 0, notBefore: 0, ...(input.setting ? { setting: input.setting } : {}), ...(input.task ? { task: input.task } : {}) }
           list.push(c)
           for (const l of [...heard]) l()
           return c
@@ -818,6 +824,18 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     case 'page-tasks-numbered':
       await typed('shed list')
       await open(/^Shed list/, '.reader__body .page-task[data-task]')
+      break
+    case 'page-cell-tasks':
+    case 'page-cell-tasks-full':
+      // YAZ-5618: the planning table, its cells' tasks as boxes; full: the table full screen (⤢).
+      writeFolds(READER_ID, 'plans/Week plan.md', [])
+      await typed('week plan')
+      await open(/^Week plan/, '.reader__body td .page-task[data-task]')
+      if (name === 'page-cell-tasks-full') {
+        document.querySelector<HTMLElement>('.reader__body [data-table-open]')?.click()
+        await until(() => document.querySelector('.table-view .page-task[data-task]') !== null)
+      }
+      await wait(300)
       break
     case 'page-table-look':
       await typed('table look')

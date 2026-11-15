@@ -432,6 +432,12 @@
 .reader .page-table-box:not(.card .page-table-box) table li :is(ul, ol) {
   margin-left: calc(var(--list-indent) - var(--list-gutter) - var(--list-label-gap));
 }
+/* A task in a cell (YAZ-5618; `cellTasks.ts`): the page's box and look (`reader.css`). Its tap area is 44 px wide and
+   as tall as a line of the cell's list (the items of a cell list sit closer than a page's: a taller area would cover the
+   next box). */
+.reader__body table li > .page-task[data-task]:first-child::before {
+  height: 2em;
+}
 /* Table position (YAZ-5567; the Mac's one rule from one variable): Centre is `--page-table-inline: auto` (the vault's,
    `tableLookVars`); a card reads its own Card tables first (`card.css`: `--table-inline`). Left is 0. A table wider than
    the column fills it, so it gets no margin and scrolls in its box as before. */

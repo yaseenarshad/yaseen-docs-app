@@ -19,9 +19,9 @@ export const WHY_NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string
   'too-large': 'The page is too large for the phone to change.',
 }
 
-/** What the person wrote: a comment's words, the tick and its task ("Tick: Book hotel"), or a page setting (YAZ-5568). */
+/** What the person wrote: a comment's words, the tick and its task ("Tick: Book hotel"; YAZ-5618 a cell's task too, `|col|path|[ ] words`), or a page setting (YAZ-5568). */
 export const notSentWords = (c: WaitingComment): string =>
-  c.setting !== undefined ? settingWords(c.setting) : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
+  c.setting !== undefined ? settingWords(c.setting) : c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:(?:[-*+]|\d{1,9}[.)])[ \t]+|\|\d+\|[\d.]+\|)\[ \] ?/, '')}`
 
 /** A setting's row and what it becomes: "Folding on this page: Off", YAZ-5592 "This vault on mobile, Sticky headings: Off". */
 function settingWords(s: NonNullable<WaitingComment['setting']>): string {
