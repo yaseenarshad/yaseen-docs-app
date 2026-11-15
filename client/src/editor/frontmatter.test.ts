@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { renameFrontmatterKey, splitFrontmatter } from '@shared/frontmatter'
+import { parseFrontmatter, renameFrontmatterKey, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter, withCommentsHint } from '@shared/frontmatter'
 
 describe('frontmatter split/join', () => {
   it('returns body unchanged when no frontmatter', () => {
@@ -91,3 +91,34 @@ describe('renameFrontmatterKey (YAZ-4551)', () => {
   })
 })
 
+// YAZ-5512 C1: a page that starts with a byte order mark (a file saved by some Windows editors). Both the Mac and the
+// phone keep the BOM in the text; the reader did not see the block behind it, so a comment made a SECOND block before
+// the BOM and the page's own properties were read as body text.
+describe('a page that starts with a BOM (YAZ-5512 C1)', () => {
+  const BOM = '\uFEFF'
+  const page = `${BOM}---\ntitle: Plan\n---\n# Plan\n`
+
+  it('its block is read: the BOM rides on the block, the body is the same as without one', () => {
+    const r = splitFrontmatter(page)
+    expect(r.frontmatter).toBe(`${BOM}---\ntitle: Plan\n---\n`)
+    expect(r.body).toBe('# Plan\n')
+    expect(parseFrontmatter(r.frontmatter).properties).toEqual({ title: 'Plan' })
+    // No block: the BOM stays in the body, as before.
+    expect(splitFrontmatter(`${BOM}# Plan\n`)).toEqual({ frontmatter: '', body: `${BOM}# Plan\n` })
+  })
+
+  it('a property write goes into the one block, and the BOM stays first', () => {
+    expect(setFrontmatterProperty(page, 'status', 'done')).toBe(`${BOM}---\ntitle: Plan\nstatus: done\n---\n# Plan\n`)
+    expect(setFrontmatterProperty(page, 'title', undefined)).toBe(`${BOM}---\n---\n# Plan\n`)
+    expect(renameFrontmatterKey(page, [], 'title', 'name')).toBe(`${BOM}---\nname: Plan\n---\n# Plan\n`)
+    expect(replaceFrontmatter(page, 'a: 1')).toBe(`${BOM}---\na: 1\n---\n# Plan\n`)
+    expect(replaceFrontmatter(page, '')).toBe(`${BOM}# Plan\n`)
+    expect(withCommentsHint(page).startsWith(`${BOM}---\n# comments:`)).toBe(true)
+  })
+
+  it('a page with a BOM and no block grows its block AFTER the BOM', () => {
+    expect(setFrontmatterProperty(`${BOM}# Plan\n`, 'status', 'done')).toBe(`${BOM}---\nstatus: done\n---\n# Plan\n`)
+    expect(replaceFrontmatter(`${BOM}# Plan\n`, 'a: 1')).toBe(`${BOM}---\na: 1\n---\n# Plan\n`)
+    expect(withCommentsHint(`${BOM}# Plan\n`).startsWith(`${BOM}---\n`)).toBe(true)
+  })
+})

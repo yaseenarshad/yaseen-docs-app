@@ -20,9 +20,10 @@ export const INDEX_STATE = 'index'
  * never its first line nor a card file's `title` property. 3 (YAZ-5349): a card's own properties ride on its record
  * (`CardRecord.properties`, off its card line), and `fix` is a card line word (no property is named so); the Mac's
  * `CACHE_VERSION` 19. 4 (YAZ-5512 S1): an empty block (`---\n---`) ends at its own second fence, never at a later
- * `---` line (the cards above that line were missing); the Mac's `CACHE_VERSION` 20. Absent (1): every index stored before it.
+ * `---` line (the cards above that line were missing); the Mac's `CACHE_VERSION` 20. 5 (YAZ-5512 C1): a page that starts
+ * with a BOM has its block read; the Mac's `CACHE_VERSION` 21. Absent (1): every index stored before it.
  */
-export const INDEX_RULES = 4
+export const INDEX_RULES = 5
 
 export interface PhoneIndex {
   /** The commit the records are of. */
