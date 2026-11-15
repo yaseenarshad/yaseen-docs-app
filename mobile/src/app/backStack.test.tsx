@@ -159,7 +159,7 @@ describe('YAZ-5518 M3: the left-edge swipe closes a sheet from the very edge (th
 })
 
 describe('YAZ-5518 S1: Back closes only the top overlay of a page', { timeout: 30_000 }, () => {
-  it('historyBack_closesOverlayFirst_tableFullPropertiesHeadingsFind', async () => {
+  it('historyBack_closesOverlayFirst_tableFullHeadingsFind', async () => {
     h = await open(READER_FILES)
     await toSearch(h)
     await h.click(/^Spanish words/)
@@ -193,11 +193,7 @@ describe('YAZ-5518 S1: Back closes only the top overlay of a page', { timeout: 3
     await page()
     expect(document.querySelector('[role="dialog"][aria-label="Headings"]')).toBeNull()
 
-    // The properties panel.
-    await h.click('Properties')
-    await waitFor(h, () => document.querySelector('[role="dialog"][aria-label="Properties"]') !== null)
-    await page()
-    expect(document.querySelector('[role="dialog"][aria-label="Properties"]')).toBeNull()
+    // YAZ-5529: the properties open inline under the title, in the page: no overlay, so no Back of their own.
 
     // A table, full screen.
     await act(async () => h!.host.querySelector<HTMLElement>('[data-table-open]')!.click())
@@ -231,12 +227,6 @@ describe('YAZ-5518 S1: Back closes only the top overlay of a page', { timeout: 3
     await edge()
     await act(async () => void (await sleep(80)))
     expect(h.host.querySelector('[role="menu"]')).toBeNull()
-    expect(title(h)).toBe('Spanish words')
-    await h.click('Properties')
-    await waitFor(h, () => document.querySelector('[role="dialog"][aria-label="Properties"]') !== null)
-    await edge()
-    await waitFor(h, () => document.querySelector('[role="dialog"][aria-label="Properties"]') === null)
-    await act(async () => void (await sleep(80)))
     expect(title(h)).toBe('Spanish words')
     // A table full screen is over the frame: the swipe from its edge closes it too.
     await act(async () => h!.host.querySelector<HTMLElement>('[data-table-open]')!.click())

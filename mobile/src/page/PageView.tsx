@@ -16,7 +16,7 @@ import { openLink, type LinkDoor } from './openLink'
 import { resolveSourceOf } from './pageLook'
 import { useVaultLook } from './vaultLook'
 import { usePageTools } from './PageTools'
-import { PropertiesTab } from './PropertiesTab'
+import { usePageProperties } from './PageProperties'
 import { vaultName } from '../screens/Frame'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
@@ -54,6 +54,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const [notice, setNotice] = useState<string | null>(null)
   /** The page's first block is a heading with its title: the reader's own title is not drawn a second time. */
   const [sameTitle, setSameTitle] = useState(false)
+  /** YAZ-5529: then the box right after that heading, where the page's properties open (each draw puts a new one). */
+  const [propsSlot, setPropsSlot] = useState<HTMLElement | null>(null)
   const host = useRef<HTMLDivElement>(null)
   const media = useVaultMedia()
   // Pictures and sounds come as they near the screen; a new piece or an embedded card is watched too.
@@ -81,6 +83,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
   // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
   const tools = usePageTools(host, { title, path })
+  // YAZ-5529: the Mac's properties chip at the right of the title; the rows open under it, in the page.
+  const props = usePageProperties({ path, record, data, door, slot: sameTitle ? propsSlot : null })
 
   // R3, R5, R6 from the sync's diff of the open vault.
   const deletedWithDraft = useRef(false)
@@ -174,7 +178,18 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       const head = el.firstElementChild
       // S2 (sweep1): the reader's own title hides NOW when the page's H1 says it (`--same` takes it out of the flow, and
       // the page moves up by its height). A landing measured before React drew that put the heading under the top bar.
-      flushSync(() => setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase()))
+      const same = head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase()
+      // YAZ-5529: the properties open under the title: here, under the page's own heading.
+      let slot: HTMLElement | null = null
+      if (same && head !== null) {
+        slot = document.createElement('div')
+        slot.className = 'page-props__slot'
+        head.after(slot)
+      }
+      flushSync(() => {
+        setSameTitle(same)
+        setPropsSlot(slot)
+      })
       if (scroller !== null && !first) scroller.scrollTop = top
       // YAZ-5211: back on a page read before, at its reading place (a card asked for by `at` comes first).
       if (scroller !== null && first && at === undefined && heading === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
@@ -254,9 +269,12 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
     >
       <article className="reader" aria-label={title} style={look?.style}>
+        {/* YAZ-5529: the properties chip, at the right of the title (before the count, so it is the rightmost). */}
+        {props.toggle}
         {/* YAZ-5478: the comment count, at the top right of the column; a tap goes to the comments at the end. */}
         {typeof text === 'string' && <PageCommentsCount text={text} />}
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
+        {props.rows}
         {notice !== null && (
           <p className="reader__notice" role="status">
             {notice}
@@ -269,7 +287,6 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}
         {cardMenu}
-        <PropertiesTab record={record} data={data} door={door} />
         {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
       </article>
     </Frame>

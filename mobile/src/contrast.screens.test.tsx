@@ -110,6 +110,8 @@ const FIXTURES = [
   'page-find',
   'page-headings',
   'page-properties',
+  'page-properties-closed',
+  'page-properties-title',
   // YAZ-5458: the reading look, every block.
   'page-look',
   // YAZ-5504: the card's ⋯ in the card view (a row armed: "Tap again to archive") and on a page card.
