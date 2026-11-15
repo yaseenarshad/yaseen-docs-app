@@ -14,6 +14,7 @@ import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
 import { NUMBERED_TASKS_PAGE, TASKS_PAGE } from './taskFixtures'
 import { fixtureAnswers } from './fixtureAnswers'
+import { openSheet } from '../explore/sheets'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
@@ -46,7 +47,7 @@ import { fixtureAnswers } from './fixtureAnswers'
  * YAZ-5460: the folder page on the made-up `Projects` folder (`folderVault.ts`): `folder-hold` the menu of a held
  * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
  * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (every day, "Earlier" open) its other views;
- * `folder-sheet` the page in a sheet over Search (the vault says "explore").
+ * `folder-sheet` the page in a sheet over Search (the vault says "explore"), opened as a link in a page does (YAZ-5472 Q4).
  * YAZ-5504: `card-menu` a card file's view (YAZ-5527: River of Seville) with the card's own ⋯ (on its head) open, Archive
  * card tapped once ("Tap again to archive");
  * `page-card-menu` the page of three cards with the ⋯ of its first card open (a made-up answer list, `fixtureAnswers`).
@@ -360,9 +361,15 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       await hold('Projects')
       break
     case 'folder-page':
-    case 'folder-sheet':
       await hold('Projects')
       await folderTab('')
+      break
+    case 'folder-sheet':
+      // YAZ-5472 Q4: the hold's "Open folder page" in Search is a tab screen's first open, so a full page; a folder
+      // link inside a page is what opens the folder's sheet (the vault says "explore").
+      openSheet({ kind: 'folder', path: 'Projects' })
+      await until(() => document.querySelector('.explore-sheet .folder-view') !== null)
+      await wait(400)
       break
     case 'folder-table':
       await hold('Projects')
