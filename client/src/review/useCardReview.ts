@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { isCardSeconds, withCardFix, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
+import { isCardSeconds, withCardNext, withCardOff, type CardLine, type CardRating, type CardReview } from '@shared/cardLine'
 import { addStep, anyUpNext, cardPlan, newCardFolders, previewAnswers, reviewedToday, type AddKind, type CardAnswer, type CardPlan, type CardsAddedToday, type DueCard, type ReviewedToday } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -29,9 +29,8 @@ import { dueFirsts, filterProgress, matchesFilter, type FilterProgress, type Ses
  * Archived cards (YAZ-5046) are never in the queue. The Inbox lists none (YAZ-5319): a folder page's table finds them
  * (Show cards as rows, Card status), and a card's ⋯ menu unarchives it.
  *
- * Fix later (YAZ-5097): a marked card stays in review: the mark changes no count and no queue. `setFix` writes the
- * mark on or off (the Inbox ⋯'s Fix later) and reads the card again. The Inbox lists no marked cards (YAZ-5430, Yaseen:
- * "it should only be a column inside of folder pages"): a folder page's Cards table has Card fix status.
+ * Fix later (YAZ-5097): a marked card stays in review: the mark changes no count and no queue. The Inbox never shows or
+ * sets it (YAZ-5430): a card's ⋯ elsewhere does, and a folder page's Cards table has Card fix status.
  *
  * The filter (YAZ-5017, as Mochi's "All cards ▾"): All cards, Due today (cards with reviews, due now) or New cards
  * (never reviewed, within today's new-card limit: the queue's own). The queue stays whole; the filter picks which of its
@@ -223,8 +222,6 @@ export interface CardReviewApi {
   deleteReview: (path: string, id: string, review: CardReview) => Promise<void>
   /** Up next on or off for card `id` of `path` (YAZ-4999 D3, the Inbox head's chip ×): one write of the file, then the card read again. */
   setNext: (path: string, id: string, on: boolean) => Promise<void>
-  /** Fix later on or off for card `id` of `path` (YAZ-5097, the Inbox ⋯): one write, then the card read again; the card stays in review. */
-  setFix: (path: string, id: string, on: boolean) => Promise<void>
   /** ← (-1) and → (+1), YAZ-5004: the card before or after, with no answer; the card left stays in the queue. */
   move: (delta: -1 | 1) => void
   /** The Inbox ⋯'s Archive card (YAZ-5004, YAZ-5046): `off` on the card showing's line, and the card out of the queue. */
@@ -1014,7 +1011,6 @@ export function useCardReview(
     [onNotice, readAgain],
   )
   const setNext = useCallback((path: string, id: string, on: boolean) => setMark(path, id, (l) => withCardNext(l, on)), [setMark])
-  const setFix = useCallback((path: string, id: string, on: boolean) => setMark(path, id, (l) => withCardFix(l, on)), [setMark])
 
   const move = useCallback((delta: -1 | 1) => {
     setSession((s) => {
@@ -1169,5 +1165,5 @@ export function useCardReview(
     return { all, folders: list }
   }, [folderLabelOf])
 
-  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, setFix, move, turnOff, setFilter, addCards, resetCards, setNewFrom, newCardFolders: pickerFolders, goOn }
+  return { dueCount, settings, session: shownSession, start, showAnswers: fixAnswers, answer, undo, close, deleteReview, setNext, move, turnOff, setFilter, addCards, resetCards, setNewFrom, newCardFolders: pickerFolders, goOn }
 }

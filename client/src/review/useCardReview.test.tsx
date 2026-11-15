@@ -1082,26 +1082,13 @@ describe('YAZ-5322: the folder pick for new cards', () => {
 })
 
 describe('YAZ-5097: Fix later', () => {
-  it('a marked card stays in review; setFix clears the mark; the Inbox has no To fix filter (YAZ-5430)', async () => {
+  it('a card marked `fix` stays in review: the counts hold it; the Inbox has no To fix filter and no setFix (YAZ-5430)', async () => {
     page('Fix.md', ['Typo in this {{carf}}', 'WIKI-8, title "Typo in this carf", fix'], ['Kept', 'WIKI-9'])
     await mount()
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
-    // A card with the mark stays in review: the counts hold it.
     expect(review.session?.counts).toEqual({ all: 4, next: 0, due: 1, new: 3 })
     expect(review.session).not.toHaveProperty('toFix')
-    await step(() => review.setFix(`${ROOT}/Fix.md`, 'WIKI-8', false))
-    expect(vault.get(`${ROOT}/Fix.md`)).toContain('<!-- card: WIKI-8, title "Typo in this carf" -->')
-    expect(review.session?.counts.all).toBe(4)
-  })
-
-  it('setFix on the card on show writes `fix`, reads the card again, and the card stays on show', async () => {
-    page('Geo.md', ['Capital of {{Peru}}?', 'WIKI-2, next'])
-    await mount()
-    await act(async () => review.start())
-    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { next: true } }))
-    await step(() => review.setFix(`${ROOT}/Geo.md`, 'WIKI-2', true))
-    expect(vault.get(`${ROOT}/Geo.md`)).toContain('<!-- card: WIKI-2, next, fix -->')
-    await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { fix: true } }))
+    expect(review).not.toHaveProperty('setFix')
   })
 })

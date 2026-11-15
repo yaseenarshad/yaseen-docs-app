@@ -89,7 +89,6 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),
     setNext: vi.fn(async () => {}),
-    setFix: vi.fn(async () => {}),
     move: vi.fn(),
     turnOff: vi.fn(async () => {}),
     setFilter: vi.fn(),
@@ -606,7 +605,6 @@ describe('the Inbox screen (YAZ-4962)', () => {
       ['Undo last review', true],
       ['Archive card', false],
       ['Put at top of Inbox', false],
-      ['Fix later', false],
       ['Open card', false],
     ])
     expect(actions().every((b) => b.querySelector('svg') !== null)).toBe(true)
@@ -625,8 +623,6 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(review.turnOff).toHaveBeenCalledOnce()
     run('Put at top of Inbox')
     expect(review.setNext).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
-    run('Fix later')
-    expect(review.setFix).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', true)
     // YAZ-5145: Open card opens as O does: Explore's own layer.
     run('Open card')
     expect(props.openPage).toHaveBeenCalledExactlyOnceWith(PATH)
@@ -1634,16 +1630,28 @@ describe('YAZ-5319: no Archived row in the Inbox; YAZ-5430: no To fix row', () =
   })
 })
 
-describe('YAZ-5097: Fix later in the Inbox', () => {
-  it('a marked card shows a quiet "To fix" in its head, and ⋯ says Remove Fix later', () => {
+describe('YAZ-5430: To fix never shows in the Inbox (Yaseen: "As long as to fix doesn\'t show up in the inbox")', () => {
+  it('a card marked `fix` has no "To fix" on its head', () => {
     mount(TWO_SIDES)
-    expect(el.querySelector('.card-inbox__head .card__fix')).toBeNull()
     session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, fix: true } } }
     render()
-    expect(el.querySelector('.card-inbox__head .card__fix')?.textContent).toBe('To fix')
-    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
-    act(() => [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__more-action')].find((b) => b.getAttribute('aria-label') === 'Remove Fix later')!.click())
-    expect(review.setFix).toHaveBeenCalledExactlyOnceWith(PATH, 'WIKI-9', false)
+    expect(el.querySelector('.card-inbox__head')).not.toBeNull()
+    expect(el.querySelector('.card__fix')).toBeNull()
+    expect(el.textContent).not.toContain('To fix')
+  })
+
+  it('⋯ has no Fix later and no Remove Fix later, marked or not', () => {
+    mount(TWO_SIDES)
+    const labels = () => {
+      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+      const out = [...el.querySelectorAll<HTMLButtonElement>('.card-inbox__more-action')].map((b) => b.getAttribute('aria-label'))
+      press('Escape')
+      return out
+    }
+    expect(labels()).toEqual(['Undo last review', 'Archive card', 'Put at top of Inbox', 'Open card'])
+    session = { ...session, card: { ...session.card!, page: { ...session.card!.page!, fix: true } } }
+    render()
+    expect(labels()).toEqual(['Undo last review', 'Archive card', 'Put at top of Inbox', 'Open card'])
   })
 })
 

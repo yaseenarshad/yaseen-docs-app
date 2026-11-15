@@ -88,9 +88,9 @@
  *    button; nothing waiting, the screen is as before. The cards menu has the same Add (`CardInboxBar`). The add's
  *    line takes the last answer's line, "+ Added 10 new cards for today · Undo ⌘Z": its Undo, and ⌘Z, take the add
  *    back while it is the last thing done (the hook's own undo).
- *  - TO FIX (YAZ-5097, "Fix later"): the ⋯ row's Fix later / Remove Fix later writes the line's `fix`; the card stays in
- *    review, and its head says "To fix", quietly. The Inbox lists no marked cards (YAZ-5430, Yaseen: "it should only
- *    be a column inside of folder pages"): a folder page's Cards table has Card fix status.
+ *  - TO FIX (YAZ-5097, "Fix later") never shows in the Inbox (YAZ-5430, Yaseen: "As long as to fix doesn't show up in
+ *    the inbox"): no To fix row, no Fix later in ⋯, no "To fix" on the head. A marked card stays in review. The mark
+ *    shows on the card everywhere else (a page, an embed, its file tab, Explore) and in the Cards table's Card fix status.
  *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (Show cards as rows, Card status
  *    is Archived), and a card's ⋯ menu unarchives it.
  */
@@ -109,7 +109,6 @@ import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import type { CardReviewApi, CardReviewSession } from './useCardReview'
-import { FIX_PATH } from './cardInboxIcons'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
@@ -199,7 +198,6 @@ const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
 const ICON_OFF = icon('M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3')
 const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
 const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
-const ICON_FIX = icon(FIX_PATH)
 
 /** The last answer's line (YAZ-5025 round 2): its words, its answer, and the session's answer count with it. */
 interface AnswerLine {
@@ -476,10 +474,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
-          // YAZ-5097: Fix later (round 10, decision 11's ⋯: Archive card, Up next, Fix later, Open card).
-          card.page?.fix === true
-            ? { id: 'fix', label: 'Remove Fix later', icon: ICON_FIX, disabled: false, run: () => void review.setFix(card.path, card.id, false) }
-            : { id: 'fix', label: 'Fix later', icon: ICON_FIX, disabled: card.page === null, run: () => void review.setFix(card.path, card.id, true) },
           { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card, cardFile) },
         ]
 
@@ -518,7 +512,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
               <span className="card-inbox__head">
                 <CardId id={card.id} onNotice={onNotice} />
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
-                {card.page?.fix === true && <span className="card__state card__fix">To fix</span>}
               </span>
             </>
           )}
