@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
 import { addComment, readComments } from '@shared/comments'
 import { cardFileCard } from '@shared/cardFileFormat'
 import { cardPropertiesOf, cardRecords } from '@shared/cardLine'
@@ -127,7 +128,11 @@ describe('a comment from the phone reaches a card file (fake GitHub, made-up vau
     const made = await t.port.add({ path: PATH, body: 'Approved', by: 'yaseen' })
     await t.settle()
     const after = (await t.remote(PATH))!
-    expect(after).toBe(`---\nkind: card\ncomments:\n  - id: ${made.id}\n    n: 1\n    at: 2026-11-14T06:00:00Z\n    by: yaseen\n    body: Approved\n---\n\n${CARD}${LINE}\n`)
+    // YAZ-5516: the id is random hex, as on the Mac (the same `newCommentId`); one like `319e6535` or `12345678` reads as
+    // a NUMBER in YAML, so the Mac's writer quotes it (and reads it back as the same text). The test expects the same.
+    const idText = typeof parse(`id: ${made.id}`).id === 'string' ? made.id : `"${made.id}"`
+    expect(readComments(after).map((c) => c.id)).toEqual([made.id])
+    expect(after).toBe(`---\nkind: card\ncomments:\n  - id: ${idText}\n    n: 1\n    at: 2026-11-14T06:00:00Z\n    by: yaseen\n    body: Approved\n---\n\n${CARD}${LINE}\n`)
     expect(cardPart(after)).toBe(cardPart(start))
     expect(t.patches()).toBe(1)
     // An answer from Review on the same card file: the card line gains the review; the comment stays byte for byte.
