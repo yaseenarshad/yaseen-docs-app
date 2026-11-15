@@ -61,7 +61,7 @@ describe('card properties on the phone (YAZ-5349, stage one)', () => {
     await h.click('Search')
     await waitFor(h, () => h!.host.querySelector('.search__rows, .tree') !== null)
     await typeQuery(h, '1,000')
-    expect([...h.host.querySelectorAll('.search__rows .row__main')].map((r) => r.textContent)).toEqual(['1,000 islands'])
+    expect([...h.host.querySelectorAll('.search__found .tree__row:not(.tree__row--context) .tree__label')].map((r) => r.textContent)).toEqual(['1,000 islands'])
     await h.click(/^1,000 islands/)
     await waitFor(h, () => h!.host.querySelector('.card-view__card .card__body') !== null)
     expect(h.host.querySelector('.reader__title')?.textContent).toBe('1,000 islands · GEO-1')
@@ -75,6 +75,6 @@ describe('card properties on the phone (YAZ-5349, stage one)', () => {
     // A property value is never searched: it is no title.
     await h.click('‹ Back')
     await typeQuery(h, 'zebra-42')
-    expect(h.host.querySelectorAll('.search__rows .row')).toHaveLength(0)
+    expect(h.host.querySelectorAll('.search__found .tree__row')).toHaveLength(0)
   })
 })

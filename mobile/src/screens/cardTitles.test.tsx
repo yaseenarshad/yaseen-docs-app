@@ -67,19 +67,20 @@ describe('Search finds a card by the title on its card line (point 3)', () => {
   it('a card in a page and a card file by their new titles; a card with no title by its ID; never by its question', async () => {
     h = await openSearch()
     await typeQuery(h, 'longest')
-    expect(rows(h)).toEqual(['Longest river | card · GEO-1'])
+    // YAZ-5447: each under its page or its folder, as on the Mac.
+    expect(rows(h)).toEqual(['Geo | page', 'Longest river | card · GEO-1'])
     await typeQuery(h, 'capital of fr')
-    expect(rows(h)).toEqual(['Capital of France | card · GEO-3'])
+    expect(rows(h)).toEqual(['cards | folder', 'Capital of France | card · GEO-3'])
     await typeQuery(h, 'which river')
     expect(rows(h)).toEqual([])
     await typeQuery(h, 'GEO-2')
-    expect(rows(h)[0]).toBe('GEO-2 | card · GEO-2')
+    expect(rows(h)).toEqual(['Geo | page', 'GEO-2 | card · GEO-2'])
   })
 
   it('a card file by its new file name, `<kebab-title>-<id>.md`', async () => {
     h = await openSearch()
     await typeQuery(h, 'capital-of-france-geo-3')
-    expect(rows(h)[0]).toMatch(/Capital of France \| card · GEO-3$/)
+    expect(rows(h)).toEqual(['cards | folder', 'GEO-3 — Capital of France | card · GEO-3'])
   })
 })
 

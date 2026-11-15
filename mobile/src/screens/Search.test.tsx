@@ -73,25 +73,27 @@ describe('the Search tab (YAZ-5079)', () => {
   it('finds cards and pages in one list as each letter is typed: by title, alias and ID', async () => {
     h = await openSearch()
     await typeQuery(h, 'spa')
-    expect(rows(h)).toEqual(['Spanish words | page', 'Español — Spanish words | page', 'Capital of Spain | card · DEMO-40'])
+    // YAZ-5447: in the tree, as on the Mac: a page and its alias rows are one row; a match keeps its folder.
+    expect(rows(h)).toEqual(['Spanish words | page', 'cards | folder', 'Capital of Spain | card · DEMO-40'])
     await typeQuery(h, 'la bib')
-    expect(rows(h)).toEqual(['la biblioteca | card · DEMO-12'])
+    expect(rows(h)).toEqual(['Spanish words | page', 'la biblioteca | card · DEMO-12'])
     await typeQuery(h, 'demo-38')
-    expect(rows(h)[0]).toBe('DEMO-38 — git pull | card · DEMO-38')
+    expect(rows(h)).toEqual(['git | folder', 'Git cheat sheet | page', 'DEMO-38 — git pull | card · DEMO-38'])
     await typeQuery(h, 'DEMO-2')
-    expect(rows(h)[0]).toBe('DEMO-2 — Git cheat sheet | page')
+    expect(rows(h)[1]).toBe('DEMO-2 — Git cheat sheet | page')
   })
 
   it('regex characters, emoji and non-ASCII are plain text; no result says so', async () => {
     h = await openSearch()
     await typeQuery(h, '.*(')
-    expect(h.text()).toContain('Nothing matches ".*(".')
+    expect(h.text()).toContain('No matches')
+    expect(rows(h)).toEqual([])
     await typeQuery(h, 'café')
     expect(rows(h)).toEqual(['Café notes | page'])
     await typeQuery(h, '🙂')
-    expect(h.text()).toContain('Nothing matches "🙂".')
+    expect(h.text()).toContain('No matches')
     await typeQuery(h, '[[x]]')
-    expect(h.text()).toContain('Nothing matches "[[x]]".')
+    expect(h.text()).toContain('No matches')
   })
 
   it('the Type filter: All types, Pages, Cards; Cards lists the cards with an empty box', async () => {
@@ -103,10 +105,15 @@ describe('the Search tab (YAZ-5079)', () => {
     expect(rows(h)).toEqual(['Capital of Spain | card · DEMO-40', 'git pull | card · DEMO-38', 'la biblioteca | card · DEMO-12', 'Two cards in one | card · DEMO-41'])
     await typeQuery(h, 'spanish')
     expect(rows(h)).toEqual([])
+    expect(h.text()).toContain('No matches with these filters.')
     await h.click(/Cards/)
     await h.click('Pages')
     await typeQuery(h, 'spa')
-    expect(rows(h)).toEqual(['Spanish words | page', 'Español — Spanish words | page'])
+    expect(rows(h)).toEqual(['Spanish words | page'])
+    // A folder is no Page (the Mac's Type): `git` finds the page in it, not the folder.
+    await typeQuery(h, 'git')
+    expect(rows(h)).toEqual(['git | folder', 'Git cheat sheet | page'])
+    expect(h.host.querySelector('.search__found .tree__row--context .tree__label')?.textContent).toBe('git')
   })
 
   it('Review off: no Cards type; a card file is a page row; a card in a page has no row', async () => {
@@ -123,7 +130,7 @@ describe('the Search tab (YAZ-5079)', () => {
   it('an embedded card is found one time; the vault word for "page" is used', async () => {
     h = await openSearch({ ...READER_FILES, '.yaseendocs/unit-word.json': '{"unit": "doc"}' })
     await typeQuery(h, 'DEMO-40')
-    expect(rows(h)).toEqual(['DEMO-40 — Capital of Spain | card · DEMO-40'])
+    expect(rows(h)).toEqual(['cards | folder', 'DEMO-40 — Capital of Spain | card · DEMO-40'])
   })
 
   it('R4: a page that a pass adds is in search after that pass', async () => {

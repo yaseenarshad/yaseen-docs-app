@@ -9,8 +9,9 @@ import '../search/search.css'
 
 /** The tree (YAZ-5438): its own chunk, loaded when the box is empty. */
 const SearchTree = lazy(() => import('../search/SearchTree'))
-/** The result rows with their icons: the same chunk (the first load stays under its ceiling, YAZ-5377). */
+/** The cards of Cards (an empty box), and the results in the tree (YAZ-5447): the same chunk (the first load stays under its ceiling, YAZ-5377). */
 const ResultList = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultList })))
+const ResultTree = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultTree })))
 
 /** Rows drawn at first, and added at each "Show more" (5,000 pages are not drawn at once). */
 const STEP = 100
@@ -27,6 +28,7 @@ const STEP = 100
  * (a page, a card file, a card in a page) in place of the word "page".
  * YAZ-5439: the ✕ at the right of the box (and Escape) clears the text and leaves the search: the keyboard goes away
  * and the tree shows again.
+ * YAZ-5447: with text, the results stand in that tree, as on the Mac's Search tab (`ResultTree`, `foundTree.ts`).
  */
 export function Search() {
   const app = useApp()
@@ -172,18 +174,22 @@ export function Search() {
         </p>
       )}
       {data !== null && data.records.length === 0 && <p className="muted">{unit('No pages yet. They come with the next sync.')}</p>}
-      {results !== null && !empty && results.length === 0 && <p className="muted">{`Nothing matches "${query.trim()}".`}</p>}
       {tree && data !== null && data.records.length > 0 && (
         <Suspense fallback={null}>
           <SearchTree data={data} cards={cards} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
         </Suspense>
       )}
-      {!tree && results !== null && results.length > 0 && (
+      {!empty && found !== null && data !== null && (
+        <Suspense fallback={null}>
+          <ResultTree data={data} rows={found} query={query} type={kind} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
+        </Suspense>
+      )}
+      {list !== null && list.length > 0 && (
         <>
           <Suspense fallback={null}>
-            <ResultList rows={results.slice(0, shown)} cards={empty} />
+            <ResultList rows={list.slice(0, shown)} />
           </Suspense>
-          {results.length > shown && <ShowMore onMore={() => setShown((n) => n + STEP * 2)} />}
+          {list.length > shown && <ShowMore onMore={() => setShown((n) => n + STEP * 2)} />}
         </>
       )}
     </section>
