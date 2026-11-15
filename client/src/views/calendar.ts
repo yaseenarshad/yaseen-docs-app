@@ -179,6 +179,12 @@ export function spanLabel(start: DayKey, end: DayKey): string {
   return start.slice(0, 4) === year && end.slice(0, 4) === year ? `${monthDay(start)} – ${monthDay(end)}` : weekLabel([start, end])
 }
 
+/** A bar's hover (YAZ-5604 item 8): its days and how many, for example "Nov 12 – Nov 15 · 4 days". */
+export function spanDays(start: DayKey, end: DayKey): string {
+  const count = daysBetween(start, end) + 1
+  return `${spanLabel(start, end)} · ${count} ${count === 1 ? 'day' : 'days'}`
+}
+
 /** The days from the week's first day to `date`: Monday first (D11), or Sunday first (Settings › Folder pages, YAZ-4585). */
 const intoWeek = (date: Date, sundayFirst: boolean): number => (sundayFirst ? date.getDay() : (date.getDay() + 6) % 7)
 
