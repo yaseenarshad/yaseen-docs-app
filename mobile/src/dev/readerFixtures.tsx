@@ -152,9 +152,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
             ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
           : name === 'page-folder'
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
-          : name === 'page-drawing'
-            ? DRAWING_FILES
-            : {}
+          : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
