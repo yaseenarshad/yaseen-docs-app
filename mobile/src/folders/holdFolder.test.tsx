@@ -76,6 +76,28 @@ describe('hold a folder (YAZ-5460)', () => {
     expect(sheetStack()).toHaveLength(0)
   })
 
+  it('"Copy path" is the app\'s one copy (YAZ-5092 A3): the menu closes and the app\'s toast says so; a clipboard that says no gives the path to copy by hand', async () => {
+    const write = vi.fn(async (_text: string) => {})
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: write } })
+    h = await openSearch()
+    await hold(h, row(h, 'Projects')!)
+    await act(async () => void pointer(row(h!, 'Projects')!, 'pointerup'))
+    await act(async () => void (await new Promise((r) => setTimeout(r, 450))))
+    await act(async () => item('Copy path')!.click())
+    await h.settle()
+    expect(write).toHaveBeenCalledWith('Projects')
+    expect(menu()).toBeNull()
+    expect(h.host.querySelector('[role="status"].toast')?.textContent).toBe('Copied: Projects')
+    write.mockRejectedValue(new DOMException('Not allowed', 'NotAllowedError'))
+    await hold(h, row(h, 'Projects')!)
+    await act(async () => void pointer(row(h!, 'Projects')!, 'pointerup'))
+    await act(async () => void (await new Promise((r) => setTimeout(r, 450))))
+    await act(async () => item('Copy path')!.click())
+    await h.settle()
+    expect(menu()).toBeNull()
+    expect(h.host.querySelector<HTMLInputElement>('.copy-by-hand__path')?.value).toBe('Projects')
+  })
+
   it('a tap still opens and closes the folder; a finger that moves is no hold; Cancel closes the menu', async () => {
     h = await openSearch()
     const projects = row(h, 'Projects')!

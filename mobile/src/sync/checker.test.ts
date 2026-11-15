@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { budgetMs } from '../../../client/src/test-perf'
 import { githubClient, type FetchLike } from '../github/client'
 import { fakeGit, fakeGithub } from '../github/testing'
 import { memoryBackend, openVaultStore, tokenStoreOn, type PhoneVault, type TokenStore } from '../store'
@@ -266,14 +267,38 @@ describe('checker YAZ-5072: probes that are expected to pass', () => {
       if (probing) setTimeout(probe, 0)
     }
     setTimeout(probe, 0)
-    const realYield = () => new Promise<void>((r) => setTimeout(r, 0))
+    // YAZ-5092 H2: the CPU time of the work between two yields (`process.cpuUsage`, as `media/ahead.test.ts`): another
+    // process on a busy machine does not add to it, so this check never skips. `budgetMs(50)`: a long task, with slack.
+    const cpuMs = () => {
+      const u = process.cpuUsage()
+      return (u.user + u.system) / 1000
+    }
+    let cpuMark = cpuMs()
+    let cpuHolds: number[] = []
+    const realYield = () => {
+      cpuHolds.push(cpuMs() - cpuMark)
+      return new Promise<void>((r) =>
+        setTimeout(() => {
+          cpuMark = cpuMs()
+          r()
+        }, 0),
+      )
+    }
+    const cpuOf = async (run: () => Promise<unknown>) => {
+      cpuHolds = []
+      cpuMark = cpuMs()
+      await run()
+      cpuHolds.push(cpuMs() - cpuMark)
+      return Math.max(...cpuHolds)
+    }
     const runs: string[] = []
+    const cpus: number[] = []
     for (let run = 0; run < 5; run++) {
       const s = await syncSetup(files)
       await new Promise((r) => setTimeout(r, 5))
       gaps = []
       last = performance.now()
-      await syncPass({ remote: s.remote, store: s.store, vault: VAULT, yieldToUi: realYield })
+      cpus.push(await cpuOf(() => syncPass({ remote: s.remote, store: s.store, vault: VAULT, yieldToUi: realYield })))
       runs.push(Math.max(...gaps).toFixed(1))
     }
     const big = `---\ntitle: Big\n---\n\n${Array.from({ length: 40_000 }, (_, i) => `Line ${i} with [[Link ${i % 300}]] and #tag${i % 50} and words.`).join('\n')}\n`
@@ -281,9 +306,14 @@ describe('checker YAZ-5072: probes that are expected to pass', () => {
     await new Promise((r) => setTimeout(r, 5))
     gaps = []
     last = performance.now()
-    await syncPass({ remote: s.remote, store: s.store, vault: VAULT, yieldToUi: realYield })
+    const bigCpu = await cpuOf(() => syncPass({ remote: s.remote, store: s.store, vault: VAULT, yieldToUi: realYield }))
     const bigHold = Math.max(...gaps)
     probing = false
-    console.log(`[checker perf] 1,700 files, longest hold per run: ${runs.join(', ')} ms; one ${(big.length / 1e6).toFixed(1)} MB page: longest hold ${bigHold.toFixed(1)} ms`)
-  })
+    console.log(`[checker perf] 1,700 files, longest hold per run: ${runs.join(', ')} ms (CPU ${cpus.map((c) => c.toFixed(1)).join(', ')}); one ${(big.length / 1e6).toFixed(1)} MB page: longest hold ${bigHold.toFixed(1)} ms (CPU ${bigCpu.toFixed(1)})`)
+    // YAZ-5092 H2: each run, not the best: no slice of the pass's work holds the thread for a long task (CPU time, with
+    // slack for a loaded machine). The one big page is one file: it may take one longer slice, never 4 long tasks.
+    for (const cpu of cpus) expect(cpu).toBeLessThan(budgetMs(50))
+    expect(bigCpu).toBeLessThan(budgetMs(200))
+    // A loaded machine (the whole suite at once) can take over 5 s of wall time for the six passes: no time-out then.
+  }, 60_000)
 })

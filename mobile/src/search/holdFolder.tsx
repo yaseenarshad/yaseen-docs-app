@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
 import { useOverlay } from '../app/browserHistory'
 import { openFile } from '../explore/openFile'
+import { useCopyPath } from '../screens/copyPath'
 
 /**
  * HOLD A FOLDER (YAZ-5460): in Search's tree, Favorites and Focus, a finger held on a folder row for `HOLD_MS` opens a
@@ -121,13 +122,26 @@ export function useFolderHold(): { hold: (path: string, label: string) => HoldPr
     liftGuard.current = null
     setMenu(null)
   }
-  return { hold, layer: menu === null ? null : <FolderMenu folder={menu} onClose={close} /> }
+  // "Copy path" closes the menu; its toast, or the path to copy by hand, stays over Search (`useCopyPath`).
+  const { copyPath, layer: copied } = useCopyPath()
+  const copy = (path: string) => {
+    close()
+    void copyPath(path)
+  }
+  return {
+    hold,
+    layer: (
+      <>
+        {menu !== null && <FolderMenu folder={menu} onClose={close} onCopy={copy} />}
+        {copied}
+      </>
+    ),
+  }
 }
 
 /** The folder's menu, at the bottom of the screen over a dim, as the phone's own action sheets. */
-function FolderMenu({ folder, onClose }: { folder: { path: string; label: string }; onClose(): void }) {
+function FolderMenu({ folder, onClose, onCopy }: { folder: { path: string; label: string }; onClose(): void; onCopy(path: string): void }) {
   const app = useApp()
-  const [copied, setCopied] = useState<string | null>(null)
   const first = useRef<HTMLButtonElement>(null)
   // YAZ-5518: an overlay of the app's one stack: a Back closes the menu, and Search stays.
   useOverlay(true, onClose)
@@ -137,32 +151,19 @@ function FolderMenu({ folder, onClose }: { folder: { path: string; label: string
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
-  useEffect(() => {
-    if (copied === null) return
-    const timer = setTimeout(onClose, 1200)
-    return () => clearTimeout(timer)
-  }, [copied, onClose])
   const open = () => {
     onClose()
     openFile(app, { kind: 'folder', path: folder.path })
-  }
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(folder.path)
-      setCopied(`Copied: ${folder.path}`)
-    } catch {
-      setCopied(folder.path)
-    }
   }
   return createPortal(
     <div className="hold-menu">
       <div className="hold-menu__dim" onClick={onClose} aria-hidden="true" />
       <div className="hold-menu__sheet" role="menu" aria-label={folder.label}>
-        <p className="hold-menu__title">{copied ?? folder.label}</p>
+        <p className="hold-menu__title">{folder.label}</p>
         <button ref={first} type="button" role="menuitem" className="hold-menu__item" onClick={open}>
           Open folder page
         </button>
-        <button type="button" role="menuitem" className="hold-menu__item" onClick={() => void copy()}>
+        <button type="button" role="menuitem" className="hold-menu__item" onClick={() => onCopy(folder.path)}>
           Copy path
         </button>
         <button type="button" role="menuitem" className="hold-menu__item hold-menu__item--cancel" onClick={onClose}>

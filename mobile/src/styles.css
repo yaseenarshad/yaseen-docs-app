@@ -745,6 +745,41 @@ body:has(.app--swiping) {
   }
 }
 
+/* YAZ-5092 A3: "Copy path" when the clipboard says no (`screens/copyPath.tsx`): the path, selected, to copy by hand.
+   It stays until Close: a path in a toast that fades cannot be copied. */
+.copy-by-hand {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 120px);
+  z-index: 25;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-side);
+  color: var(--fg);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.copy-by-hand label {
+  display: grid;
+  gap: 6px;
+}
+
+.copy-by-hand__path {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--fg-muted);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
 /* YAZ-5470: "Today", right of Search: the Mac's calendar glyph and the word; an action, never selected. */
 .tabbar__today {
   display: inline-flex;

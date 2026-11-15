@@ -1,5 +1,6 @@
 import { it } from 'vitest'
 import { writeFileSync } from 'node:fs'
+import { researchOut } from '../researchOut.testing'
 import { plan, runPlan, violations } from './model4.testing'
 
 // The 409 retry of gistsApi waits 1 s and 2 s of real time: no wait in this model (the fake clock is the model's).
@@ -53,5 +54,5 @@ it(`check4 attack seeds ${FROM}..${FROM + COUNT - 1}`, async () => {
       if ((first.zoneLost ??= []).length < 4) first.zoneLost.push(m.st4.zoneLost[0])
     }
   }
-  writeFileSync(`${process.env.OUT ?? '.'}/check4-${FROM}.json`, JSON.stringify({ from: FROM, count: COUNT, totals: t, violations: sum, seeds, first }, null, 1))
+  writeFileSync(`${researchOut()}/check4-${FROM}.json`, JSON.stringify({ from: FROM, count: COUNT, totals: t, violations: sum, seeds, first }, null, 1))
 }, 3_600_000)

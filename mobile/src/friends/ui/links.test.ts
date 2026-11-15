@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { DESCRIPTIONS } from '@shared/friendGists'
 import { groupLink, joinLink, parseAnyLink } from '@shared/friendGroups'
 import { parseFriendLink } from '@shared/friendsList'
 import { friendLink, landingCopy } from '../../pwa/friendLink'
@@ -76,14 +77,18 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     expect(fixed.map((f) => f.slice(src.length))).toEqual([])
   })
 
-  it('the address is notecard.yaseenarshad.com (Yaseen, 2026-11-14); a link shared before that, on notecards.yaseenarshad.com, still pastes', () => {
+  it('a link shared on the old addresses (notecard.yaseenarshad.com, notecards.yaseenarshad.com) still pastes; the Mac\'s links open the phone app\'s preview (YAZ-5092 D1)', () => {
     for (const old of [`https://notecards.yaseenarshad.com/friend#${ID}`, `https://preview.notecards.yaseenarshad.com/friend#${ID}`]) {
       expect(parseFriendLink(old)).toEqual({ kind: 'ok', id: ID })
       expect(parseAnyLink(old)).toEqual({ kind: 'friend', id: ID })
     }
     expect(parseAnyLink(`https://preview.notecards.yaseenarshad.com/group#${ID}`)).toEqual({ kind: 'group', id: ID })
     expect(parseAnyLink(`https://preview.notecard.yaseenarshad.com/join#${ID}-${ID}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
-    expect(groupLink(ID)).toBe(`https://notecard.yaseenarshad.com/group#${ID}`)
+    expect(parseAnyLink(`https://notecard.yaseenarshad.com/group#${ID}`)).toEqual({ kind: 'group', id: ID })
+    expect(parseFriendLink(`https://notecard.yaseenarshad.com/friend#${ID}`)).toEqual({ kind: 'ok', id: ID })
+    expect(groupLink(ID)).toBe(`https://preview.docs.yaseenarshad.com/group#${ID}`)
+    // A NEW gist says the app's name on github.com (a gist made before keeps its words).
+    expect(Object.values(DESCRIPTIONS).every((d) => d.startsWith('Yaseen Docs: '))).toBe(true)
   })
 
   it('YAZ-5476: a link made on the new address (preview.docs.yaseenarshad.com, later docs.yaseenarshad.com) pastes; a look-alike host does not', () => {

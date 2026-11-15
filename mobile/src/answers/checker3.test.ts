@@ -218,12 +218,13 @@ describe('checker round 2: a review is named by its minute and its rating', () =
     expect({ github: await t.remoteReviews(), phone: (await host.readCard('a.md', 'NC-2'))!.reviews.length }).toEqual({ github: [at(1)], phone: 1 })
   })
 
-  it('probe: the Mac wrote the same review twice in one minute; one unreview sent two times takes ONE', () => {
+  it('the Mac wrote the same review twice in one minute: one unreview takes ONE; applied a second time it takes the other (so the send path, not applyOps, keeps a resend to one: the test above)', () => {
     const page = withLine(`<!-- card: NC-2, ${at(1)} again 3s, ${at(1)} again 4s -->`)['a.md']
     const op: CardOp = { kind: 'unreview', id: 'NC-2', at: at(1), rating: 'again' }
     const once = applyOps(page, [op]).content
     const twice = applyOps(once, [op]).content
-    console.log('Mac duplicates, unreview x1:', cardRecords(once).find((c) => c.id === 'NC-2')!.reviews.length, 'x2:', cardRecords(twice).find((c) => c.id === 'NC-2')!.reviews.length)
+    expect(cardRecords(once).find((c) => c.id === 'NC-2')!.reviews).toHaveLength(1)
+    expect(cardRecords(twice).find((c) => c.id === 'NC-2')!.reviews).toHaveLength(0)
   })
 
   it('probe: delete review uses the parsed line: the time with seconds (`12s`) and the rating name exactly that review', async () => {

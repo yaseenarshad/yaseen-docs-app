@@ -9,7 +9,7 @@ import { lostRows as dotLostRows, waitingCount } from '../status/dot'
 import { lostRows as tabLostRows } from './ReviewView'
 import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
-// Checker probes for YAZ-5078 (4B). Each `4B-x` test names a bug and fails now; the others print facts.
+// Checker probes for YAZ-5078 (4B). Each `4B-x` test names a bug; the `probe:` tests check the facts their names state.
 
 let h: ReviewHarness | undefined
 let app: Harness | undefined
@@ -106,7 +106,8 @@ describe('4B checker: the screen', () => {
     await h.click('Remembered')
     await h.click('Forgot')
     await h.click('Undo')
-    console.log('[undo x2] after one Undo: line=', JSON.stringify(h.last()), 'waiting=', JSON.stringify(ids(h)))
+    expect(h.last()).toBe('')
+    expect(ids(h)).toEqual(['DC-1'])
   })
 
   it('probe: Undo after the app went to the background (the send ran): the waiting count goes 0 → 1, by group', async () => {
@@ -120,7 +121,8 @@ describe('4B checker: the screen', () => {
     h.answers.setVisible(true)
     await h.click('Undo')
     const w3 = waitingCount(h.answers.waiting())
-    console.log(`[probe bg-undo] waiting groups: after answer ${w1}, after hidden+send ${w2}, after Undo ${w3}; ops ${JSON.stringify(h.answers.waiting().map((w) => w.op.kind))}`)
+    expect([w1, w2, w3]).toEqual([1, 0, 1])
+    expect(h.answers.waiting().map((w) => w.op.kind)).toEqual(['unreview', 'next'])
   })
 
   it('4B-E: the Review tab and the dot (4D) count the same lost answers: two answers to one deleted card', async () => {
@@ -152,7 +154,7 @@ describe('4B checker: the screen', () => {
     ] as const
     for (const op of ops) {
       const l = { seq: 1, group: 1, op, path: 'p.md', title: 'T', madeAt: 0 }
-      console.log(`[words] ${op.kind}: tab "${lostAction(op as never, s4)}" vs dot "${dotLostRows([l as never])[0].answer}"`)
+      expect(lostAction(op as never, s4)).toBe(dotLostRows([l as never])[0].answer)
     }
   })
 
@@ -163,10 +165,12 @@ describe('4B checker: the screen', () => {
     const rows = [...h.host.querySelectorAll('[role="menuitemradio"]')].map((r) => r.textContent)
     // YAZ-5321: no card is marked Up next, so the menu has no Up next row; New cards is the list with no card here.
     await h.click(/^New cards$/)
-    console.log('[filter] rows', JSON.stringify(rows), '| New cards screen:', h.text().slice(0, 160))
+    expect(rows.map((r) => r?.replace(/^\W+/u, ''))).toEqual(['All cards', 'Due today', 'New cards'])
+    expect(h.text()).toContain('No new cards left.')
     await h.click(/Choose what to review/)
     await h.click(/^All cards$/)
-    console.log('[filter] back on All:', h.head(), '| blanks hidden:', h.host.querySelectorAll('.card__blank').length)
+    expect(h.head()).toBe('DC-1')
+    expect(h.host.querySelectorAll('.card__blank')).toHaveLength(3)
   })
 
   it('probe: Add more never adds an answered card again; with 0 left there is no button', async () => {
@@ -175,7 +179,7 @@ describe('4B checker: the screen', () => {
     for (let i = 0; i < 12; i++) {
       const head = h.head()
       if (head !== '') {
-        seen.push(head.split(' · ')[1])
+        seen.push(head)
         await h.click('Remembered')
         continue
       }
@@ -184,12 +188,16 @@ describe('4B checker: the screen', () => {
       seen.push(`[${add.textContent}]`)
       await h.click(add.textContent!)
     }
-    console.log('[add more] sequence:', seen.join(' '), '| end:', h.text().slice(0, 120))
+    // Each new card shows (two taps: it has two sides), then one Add; a card once answered never comes back.
+    expect(seen).toEqual(['NN-1', 'NN-1', '[Add 1 new card]', 'NN-2', 'NN-2', '[Add 1 new card]', 'NN-3', 'NN-3'])
+    expect(h.button(/^Add \d+ new card/)).toBeNull()
+    expect(h.text()).toContain('Inbox complete')
   })
 
   it('probe: the empty vault, and the last card', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', 'No cards.') })
-    console.log('[empty]', h.text())
+    expect(h.host.querySelector('.review__card')).toBeNull()
+    expect(h.text()).toContain('Nothing else is due today.')
   })
 
   it('probe: a tap on a link inside the card does not show the next hidden word; a tap on a pill opens it', async () => {
@@ -197,13 +205,16 @@ describe('4B checker: the screen', () => {
     const before = h.cardText()
     const a = h.host.querySelector<HTMLElement>('.review__card a[href]')
     const pill = h.host.querySelector<HTMLElement>('.review__card [data-card-link], .review__card .wikilink, .review__card [class*="pill"]')
-    console.log('[links] anchors:', h.host.querySelectorAll('.review__card a').length, 'pill:', pill?.outerHTML.slice(0, 140))
+    expect(a).not.toBeNull()
+    expect(pill).not.toBeNull()
     if (a !== null) await act(async () => a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
     await h.settle()
-    console.log('[links] after link tap:', before === h.cardText() ? 'card unchanged' : 'card CHANGED', '| opened:', JSON.stringify(h.opened))
+    expect(h.cardText()).toBe(before)
+    expect(h.opened).toEqual([])
     if (pill !== null) await act(async () => pill.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })))
     await h.settle()
-    console.log('[links] after pill tap: opened', JSON.stringify(h.opened), '| card', before === h.cardText() ? 'unchanged' : 'CHANGED')
+    expect(h.opened).toEqual([{ kind: 'page', path: 'Other.md' }])
+    expect(h.cardText()).toBe(before)
   })
 
   it('4B-H: VoiceOver reads the question of the card; a hidden word that is not shown yet is not in the accessible text', async () => {

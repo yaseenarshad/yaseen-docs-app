@@ -20,9 +20,6 @@ export const DAILY_FILE = `${VAULT_CONFIG_DIR}/daily-pages.json`
 /** 3B's name of the stored index (`INDEX_STATE` in `sync/phoneIndex.ts`); `vaultTabs.test.ts` checks the two agree. */
 export const INDEX_NAME = 'index'
 
-/** The settings files whose change can change the tabs. */
-export const TAB_FILES: readonly string[] = [REVIEW_FILE, IDS_FILE, DAILY_FILE]
-
 async function json(store: Pick<VaultStore, 'read'>, vault: string, path: string): Promise<Record<string, unknown> | null> {
   try {
     const file = await store.read(vault, path)

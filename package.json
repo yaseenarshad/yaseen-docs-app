@@ -19,6 +19,7 @@
     "mobile:dev": "npm run dev -w mobile",
     "mobile:build": "npm run build -w mobile",
     "mobile:keep-previous": "vite-node mobile/publish/keepPreviousCli.ts",
+    "mobile:friends-research": "vitest run --config mobile/vitest.research.config.ts",
     "mobile:prove-edge-back": "npm run build:fixtures -w mobile && vite-node mobile/publish/proveEdgeBack.ts",
     "mobile:publish:preview": "npm run mobile:build && npm run mobile:prove-edge-back && npm run mobile:keep-previous && npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc",
     "mobile:publish:preview:kill-switch": "NOTECARDS_KILL_SWITCH=1 npm run mobile:build && npm run mobile:keep-previous && npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc",

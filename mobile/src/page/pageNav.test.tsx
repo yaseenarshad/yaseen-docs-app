@@ -173,9 +173,9 @@ describe('YAZ-5450: the page ID chip', () => {
     expect(chip.getAttribute('aria-label')).toBe('DEMO-2. Copy the path')
     await h.click('DEMO-2. Copy the path')
     expect(write).toHaveBeenCalledWith('git/Git cheat sheet.md')
-    expect(h.host.querySelector('[role="status"].page-toast')?.textContent).toBe('Copied: git/Git cheat sheet.md')
+    expect(h.host.querySelector('[role="status"].toast')?.textContent).toBe('Copied: git/Git cheat sheet.md')
     await act(async () => void (await new Promise((r) => setTimeout(r, 2100))))
-    expect(h.host.querySelector('.page-toast')).toBeNull()
+    expect(h.host.querySelector('.toast')).toBeNull()
   })
 
   it('topBar_allControlsInsideViewport_at320_withIdChip: the chip gives way, its letters first, never the dot or the ⚙ (S3)', async () => {
@@ -197,14 +197,14 @@ describe('YAZ-5450: the page ID chip', () => {
     h = await openSearch()
     await openRow(h, /^Spanish words, page/, '.reader__body')
     await h.click('DEMO-1. Copy the path')
-    const field = h.host.querySelector<HTMLInputElement>('.page-toast__path')!
+    const field = h.host.querySelector<HTMLInputElement>('.copy-by-hand__path')!
     expect(field.value).toBe('Spanish words.md')
     expect(field.readOnly).toBe(true)
     expect([field.selectionStart, field.selectionEnd]).toEqual([0, 'Spanish words.md'.length])
     expect(h.text()).toContain('The phone could not copy. Copy the path by hand:')
     expect(h.text()).not.toContain('Copied:')
     await h.click('Close')
-    expect(h.host.querySelector('.page-toast')).toBeNull()
+    expect(h.host.querySelector('.copy-by-hand')).toBeNull()
   })
 
   it('no clipboard at all (an old browser): the same by-hand path', async () => {
@@ -212,7 +212,7 @@ describe('YAZ-5450: the page ID chip', () => {
     h = await openSearch()
     await openRow(h, /^Trip plan, page/, '.reader__body')
     await h.click('DEMO-3. Copy the path')
-    expect(h.host.querySelector<HTMLInputElement>('.page-toast__path')!.value).toBe('Trip plan.md')
+    expect(h.host.querySelector<HTMLInputElement>('.copy-by-hand__path')!.value).toBe('Trip plan.md')
   })
 
   it('no chip for a page with no ID', async () => {

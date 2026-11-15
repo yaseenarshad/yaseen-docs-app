@@ -85,7 +85,8 @@ function expectClean(w: FakeGistWorld, login: string, handle: IndexHandle) {
 describe('the friend link (decision 20; round 10, addition 7)', () => {
   it('is the address of the landing page with the pointer ID after #: the ID never reaches a server log', () => {
     expect(friendLink(ID)).toBe(`${FRIEND_LINK_BASE}#${ID}`)
-    expect(FRIEND_LINK_BASE).toBe('https://notecard.yaseenarshad.com/friend')
+    // YAZ-5092 D1: the phone app's address (the preview until "release"; `shared/friendLinks.ts`).
+    expect(FRIEND_LINK_BASE).toBe('https://preview.docs.yaseenarshad.com/friend')
   })
 
   it('reads a pasted text in any shape', () => {

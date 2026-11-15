@@ -4,6 +4,7 @@ import type { FriendMark } from '@shared/friendStats'
 import { recordGistsRefused } from '../../auth/friends'
 import type { FetchLike } from '../../github/client'
 import { PHONE, VaultClosedError, type TokenStore, type VaultStore } from '../../store'
+import { webLock } from '../../sync/webLock'
 import { openFriendsApi } from '../friendsApi'
 import { friendsGuard } from '../guard'
 import { queuedMines } from '../removeQueue'
@@ -109,17 +110,6 @@ export function freeAt(b: GistBudget, now: number, need: number, reserve: number
   if (own > 0 && own <= mine.length) at = Math.max(at, mine[own - 1] + HOUR + 1)
   if (b.seen !== null && now < b.seen.resetAt && b.seen.remaining - (b.seen.after ?? 0) < need + reserve) at = Math.max(at, b.seen.resetAt)
   return Math.max(at, now + 1)
-}
-
-function webLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (
-    globalThis as {
-      navigator?: {
-        locks?: { request(name: string, fn: () => Promise<T>): Promise<T> }
-      }
-    }
-  ).navigator?.locks
-  return locks === undefined ? fn() : locks.request(name, fn)
 }
 
 interface SendSaved {

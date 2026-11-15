@@ -1,6 +1,8 @@
-import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, rateLimitedUntil, type GithubErrorCode } from '../github/client'
+import { slowedUntil, staleUntil } from '../github/backoff'
+import { GithubError, type GithubErrorCode } from '../github/client'
 import type { VaultStore } from '../store'
 import { SEND_AFTER_MS } from '../sync/cadence'
+import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { INDEX_STATE, phoneRecord, type PhoneIndex } from '../sync/phoneIndex'
 import { applyOps, type CardOp } from './ops'
@@ -82,11 +84,6 @@ export interface Answers {
   comments?: CommentsPort
 }
 
-const browserClock: Clock = {
-  now: () => Date.now(),
-  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
-}
 
 /** The person must act: no send by itself until `sendNow()` (after "Sign in again") or a new answer. */
 const NEEDS_PERSON: readonly SendProblem[] = ['UNAUTHORIZED', 'READ_ONLY', 'NOT_FOUND', 'NO_ACCESS']
@@ -243,9 +240,7 @@ function createAnswerList(options: AnswersOptions): Answers {
         const problem: SendProblem = error instanceof GithubError ? error.code : 'FAILED'
         if (problem === 'RATE_LIMITED') {
           slowedInRow++
-          const backoff = Math.min(MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS * 2 ** Math.min(slowedInRow - 1, 16))
-          const given = ((error as GithubError).resetAt ?? clock.now()) - clock.now()
-          const retryAt = clock.now() + Math.min(MAX_RATE_WAIT_MS, Math.max(MIN_RATE_WAIT_MS, given, backoff))
+          const retryAt = slowedUntil(error as GithubError, slowedInRow, clock.now())
           setState({ problem, retryAt })
           plan(retryAt)
         } else {
@@ -255,7 +250,7 @@ function createAnswerList(options: AnswersOptions): Answers {
           // the person or a trigger.
           if (problem === 'STALE_HEAD') {
             staleInRow++
-            const retryAt = rateLimitedUntil(clock.now() + MIN_RATE_WAIT_MS * 2 ** Math.min(staleInRow - 1, 16), clock.now())
+            const retryAt = staleUntil(staleInRow, clock.now())
             setState({ retryAt })
             plan(retryAt)
           }

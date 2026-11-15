@@ -69,12 +69,6 @@ export const SPLASH_SCREENS = [
 
 export type Scheme = 'light' | 'dark'
 export const splashFile = (s: (typeof SPLASH_SCREENS)[number], scheme: Scheme) => `/splash/${scheme}-${s.width * s.ratio}x${s.height * s.ratio}.png`
-export const splashMedia = (s: (typeof SPLASH_SCREENS)[number], scheme: Scheme) =>
-  `(device-width: ${s.width}px) and (device-height: ${s.height}px) and (-webkit-device-pixel-ratio: ${s.ratio}) and (orientation: portrait) and (prefers-color-scheme: ${scheme})`
-
-/** The `<link>` tags for `index.html`. */
-export const splashLinks = () =>
-  SPLASH_SCREENS.flatMap((s) => (['light', 'dark'] as const).map((scheme) => `<link rel="apple-touch-startup-image" media="${splashMedia(s, scheme)}" href="${splashFile(s, scheme)}" />`))
 
 /** The width and height of a PNG file (its IHDR). */
 export function pngSize(file: string): { width: number; height: number } {

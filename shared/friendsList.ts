@@ -29,6 +29,7 @@ import {
   type WriteOptions,
 } from './friendGists'
 import { BrokenList, ListError, NewerList, findFriendsIndex, latestList, listErrorCode, openFriendsList, updateList, writeList } from './friendListHome'
+import { FRIEND_LINK_BASE, LINK_ID, isOurSite } from './friendLinks'
 import { LIST_PATH } from './friendListStore'
 import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
 
@@ -60,18 +61,8 @@ import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
  * list first, then the gist step, then its result (each step safe to repeat, on any device).
  */
 
-/** The friend link: the landing page of the app's site (5-) with the pointer ID after `#`, which no server log sees. */
-export const FRIEND_LINK_BASE = 'https://notecard.yaseenarshad.com/friend'
-/**
- * The site and its preview (round 12, item 14). A link from another host is "a link of another app".
- * The app's sites (the stable one and its preview). Yaseen, 2026-11-14: the address is `notecard.yaseenarshad.com`. A
- * link shared before that names `notecards.yaseenarshad.com`; the paste box still reads it (it carries the same code).
- */
-// YAZ-5476: the app is Yaseen Docs, at `docs.yaseenarshad.com` (now its preview, `preview.docs.yaseenarshad.com`).
-const SITES = ['docs.yaseenarshad.com', 'notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
-const isOurSite = (host: string) => SITES.some((site) => host === site || host.endsWith(`.${site}`))
-/** A gist ID: 20 (old gists) or 32 hex characters. */
-const LINK_ID = /^[0-9a-f]{20,40}$/i
+// The link address and the sites a pasted link may name: `friendLinks.ts` (one place, YAZ-5092).
+export { FRIEND_LINK_BASE } from './friendLinks'
 
 export const friendLink = (pointer: string, base = FRIEND_LINK_BASE): string => `${base}#${pointer.toLowerCase()}`
 

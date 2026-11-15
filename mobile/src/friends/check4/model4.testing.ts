@@ -269,7 +269,9 @@ export class Model4 extends Model {
       if (p.kind !== 'added' || p.sendBack === null) throw new Error('setup paste ' + p.kind)
       this.give('C', 'A', p.sendBack.split('#')[1])
       const h = await this.oldHandle()
-      const q = await oldList.pasteLink(api, h!, p.sendBack, this.oldOpts())
+      // YAZ-5092 D1: the new app's link opens `preview.docs.yaseenarshad.com`, a site the frozen old app does not know
+      // ("a link of another app"); its paste box reads the bare code, as a person copies it from the landing page.
+      const q = await oldList.pasteLink(api, h!, p.sendBack.split('#')[1], this.oldOpts())
       if (q.kind !== 'added') throw new Error('old paste back ' + q.kind)
       await c.rows()
     } else {

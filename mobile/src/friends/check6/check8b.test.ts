@@ -115,5 +115,10 @@ it('R8-1b: why the original R7-1 timing answers "offline"', async () => {
     return undefined
   })
   const out = await a.list.restart('ali/vault')
-  console.log('R8-1b', out.kind, JSON.stringify(out), '\n' + calls.slice(-25).join('\n'))
+  // Why: the file comes back at the first gist DELETE; the way out finishes its new list, then reads the list file
+  // again until it stops with "offline" (no write after those reads). check8.test.ts R8-1 checks that nothing leaks.
+  expect(back).toBe(true)
+  expect(out).toEqual({ kind: 'offline' })
+  const tail = calls.slice(-12)
+  expect(tail.every((c) => c === 'GET /repos/ali/vault/git/ref/heads/main' || c === 'GET /repos/ali/vault/contents/.yaseendocs/friends.json')).toBe(true)
 })

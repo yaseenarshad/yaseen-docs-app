@@ -700,11 +700,14 @@ export interface WriteOptions {
   memory?: ListMemory
 }
 
-/** Default descriptions: what a person sees in their own gist list on GitHub. */
+/**
+ * Default descriptions: what a person sees in their own gist list on GitHub. Only a NEW gist takes them (`create`); a
+ * gist made before keeps its "Notecard: …" description (the app never renames one, and finds none by it).
+ */
 export const DESCRIPTIONS: Record<'numbers' | 'index' | 'pointer', string> = {
-  numbers: 'Notecard: my review numbers for friends (no card text)',
-  index: 'Notecard: my friends list',
-  pointer: 'Notecard: a friend link',
+  numbers: 'Yaseen Docs: my review numbers for friends (no card text)',
+  index: 'Yaseen Docs: my friends list',
+  pointer: 'Yaseen Docs: a friend link',
 }
 
 /** Spaces the writes of one task about 1 second apart (`WRITE_GAP_MS`). */

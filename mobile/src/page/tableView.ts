@@ -85,9 +85,6 @@ export interface TableView {
 
 let open: TableView | null = null
 
-/** The open view, if any (the page closes it when it closes). */
-export const openTableView = (): TableView | null => open
-
 function rowsAndColumns(table: HTMLTableElement): string {
   const rows = table.tBodies[0]?.rows.length ?? Math.max(0, table.rows.length - 1)
   const cols = Math.max(0, ...[...table.rows].map((r) => r.cells.length))

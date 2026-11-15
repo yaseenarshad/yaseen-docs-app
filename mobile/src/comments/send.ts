@@ -158,16 +158,13 @@ function movedTo(was: WaitingComment['was'], shas: Readonly<Record<string, strin
   return null
 }
 
-/** How far back a retry looks for its try's commit (`landedTicks`): GitHub calls, one commit each. */
-export const LANDED_LOOK_BACK = 30
-
 /**
  * YAZ-5513 (W3): the ticks whose earlier try's commit the branch holds. Its answer was lost, and the phone could not
  * know whether GitHub took it; what the page says now is not the answer, since a later change may have set the box
- * back (the Mac unticked it). So the history says: from the head the pass brought, back through the parents to the
- * try's own parent, at most `LANDED_LOOK_BACK` commits. Found: the tick was done, and a change after it is someone
- * else's, so it settles with no write. Not found: the try never reached the branch, and the tick goes on the fresh page
- * as any tick. Too far back to tell: as not found (a tick, never a lost one).
+ * back (the Mac unticked it). So the history says, one `remote.contains` per commit (as answers ask it, `heldByBranch`;
+ * one request, with no depth limit, so a busy branch far past the try still says yes). Held: the tick was done, and a
+ * change after it is someone else's, so it settles with no write. Not held: the try never reached the branch, and the
+ * tick goes on the fresh page as any tick.
  */
 async function landedTicks(remote: GithubRemote, store: VaultStore, vault: string, list: readonly WaitingComment[], notLanded: ReadonlySet<string>): Promise<Set<string>> {
   const tried = list.filter((c) => c.task !== undefined && c.tried === true && c.commit !== undefined && !notLanded.has(c.commit.sha))
@@ -175,24 +172,9 @@ async function landedTicks(remote: GithubRemote, store: VaultStore, vault: strin
   if (tried.length === 0) return out
   const head = (await store.checkpoint(vault))?.commit
   if (head === undefined) return out
-  const want = new Set(tried.map((c) => c.commit!.sha))
-  // A try's parent is older than its commit: the walk does not go past it.
-  const seen = new Set(tried.map((c) => c.commit!.parent))
-  const queue = [head]
-  const found = new Set<string>()
-  let asked = 0
-  while (queue.length > 0 && asked < LANDED_LOOK_BACK && found.size < want.size) {
-    const sha = queue.shift()!
-    if (seen.has(sha)) continue
-    seen.add(sha)
-    if (want.has(sha)) {
-      found.add(sha)
-      continue
-    }
-    asked++
-    queue.push(...(await remote.parents(sha)))
-  }
-  for (const c of tried) if (found.has(c.commit!.sha)) out.add(c.id)
+  const held = new Set<string>()
+  for (const sha of new Set(tried.map((c) => c.commit!.sha))) if (await remote.contains(sha, head)) held.add(sha)
+  for (const c of tried) if (held.has(c.commit!.sha)) out.add(c.id)
   return out
 }
 

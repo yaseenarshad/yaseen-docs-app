@@ -112,45 +112,6 @@
   }
 }
 
-/* "Copied: <path>", over the arrows, near the thumb. */
-.page-toast {
-  position: fixed;
-  left: 12px;
-  right: 12px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 120px);
-  z-index: 15;
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--fg);
-  color: var(--bg);
-  font-size: 14px;
-  overflow-wrap: anywhere;
-}
-
-.page-toast--by-hand {
-  display: grid;
-  gap: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-side);
-  color: var(--fg);
-}
-
-.page-toast--by-hand label {
-  display: grid;
-  gap: 6px;
-}
-
-.page-toast__path {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid var(--fg-muted);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--fg);
-  font: 13px ui-monospace, 'SF Mono', Menlo, monospace;
-}
-
 /* YAZ-5475: the kind glyph before a title, very small; the Mac's glyph (`styles.css`) scaled down. */
 .page-arrows__kind {
   display: inline-block;

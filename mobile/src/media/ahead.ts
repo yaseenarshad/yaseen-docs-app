@@ -4,6 +4,7 @@ import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, 
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { GithubError, SECONDARY_LIMIT_WAIT_MS } from '../github/client'
 import { StorageFullError, kindOnPhone, type Checkpoint, type VaultStore } from '../store'
+import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { isEager } from '../sync/plan'
 import { uiSlicer, yieldToUi as defaultYield } from '../sync/yieldToUi'
@@ -190,12 +191,6 @@ export function mediaType(path: string): string {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const dot = name.lastIndexOf('.')
   return (dot > 0 ? MIME[name.slice(dot + 1).toLowerCase()] : undefined) ?? 'application/octet-stream'
-}
-
-const browserClock: Clock = {
-  now: () => Date.now(),
-  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
 }
 
 /** The local calendar day of `ms`: the window moves at local midnight. */
