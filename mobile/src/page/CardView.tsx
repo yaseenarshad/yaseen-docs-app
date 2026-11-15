@@ -93,7 +93,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
 
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader>
       <article className="reader card-view" aria-label={label}>
         <h2 className="reader__title">
           {title}
