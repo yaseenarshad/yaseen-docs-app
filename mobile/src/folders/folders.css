@@ -190,3 +190,135 @@
   color: var(--fg-muted);
   font-size: 13px;
 }
+
+/*
+ * Cards, board, calendar (YAZ-5460): a card is a tappable box, its title then its fields (a small label, the value).
+ */
+.folder-cards {
+  display: grid;
+  gap: 8px;
+}
+.folder-card {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+}
+.folder-card:active {
+  background: var(--bg-side);
+}
+.folder-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.folder-card--crossed .folder-card__title {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+.folder-card__field {
+  display: flex;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.folder-card__label {
+  flex: none;
+  min-width: 5.5em;
+  color: var(--fg-muted);
+}
+.folder-card__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.folder-card__value--bold {
+  font-weight: 600;
+}
+
+/* The board: columns side by side, most of the screen wide, the next one peeking in; a sideways scroll that stops at each. */
+.folder-board {
+  display: flex;
+  gap: 10px;
+  margin: 0 -16px;
+  padding: 0 16px 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 0 16px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.folder-board__column {
+  flex: 0 0 min(78vw, 300px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--bg-side);
+  scroll-snap-align: start;
+}
+.folder-board__head {
+  margin: 2px 4px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.folder-board__count {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+.folder-board__empty {
+  margin: 4px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+/* The calendar as an agenda: the month, then each day with pages, today in the accent. */
+.folder-agenda__earlier {
+  margin-bottom: 8px;
+}
+.folder-agenda__month {
+  margin: 16px 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.folder-agenda__block:first-of-type .folder-agenda__month {
+  margin-top: 4px;
+}
+.folder-agenda__day {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+.folder-agenda__day--today {
+  border-left-color: var(--accent);
+}
+.folder-agenda__date {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.folder-agenda__day--today .folder-agenda__date {
+  color: var(--accent);
+}
+.folder-agenda__cards {
+  display: grid;
+  gap: 6px;
+}
+.folder-agenda__until {
+  display: block;
+  margin: 2px 0 0 12px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}

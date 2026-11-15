@@ -206,6 +206,8 @@ export interface ViewRun {
   settings: FolderSettings
   /** It lists cards: a row opens its card. */
   cards: boolean
+  /** The records the view ran over (a calendar finds its date columns in them). */
+  input: IndexRecord[]
 }
 
 /** Runs the view at `index` as the Mac's `ViewsPane` does. `now`: the run's clock (a test's fixed day). */
@@ -238,7 +240,7 @@ export function runFolderView(model: FolderModel, index: number, vaultName: stri
   const groups = boardOptionGroups(result.groups, view, (key) => columnTyping(key, shown, null, settings), optionParent)
   const keys = propertyKeys(def, view, shown, pageColumnKeys(settings))
   const ctx: CellTextContext = { resolve, decls: settings.columns, pageFolder: model.dir, folderTitle: (d) => folderTitleOf(data.folders, d) }
-  return { view, def, result, keys, rows: shownRows(result.rows, groups), groups, ctx, settings, cards }
+  return { view, def, result, keys, rows: shownRows(result.rows, groups), groups, ctx, settings, cards, input: shown }
 }
 
 /** Where a row of a view opens: a page; a subfolder's row, its folder's page; a card row, its card. */

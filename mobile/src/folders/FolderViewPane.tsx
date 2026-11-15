@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useApp } from '../app/AppState'
 import { runFolderView, type FolderModel } from './folderModel'
 import { FolderTable } from './FolderTable'
+import { FolderBoard, FolderCalendar, FolderCards } from './FolderCards'
 
 /**
  * THE OPEN VIEW OF A FOLDER'S PAGE (YAZ-5460): the Mac's engine runs the view (`runFolderView`), and the phone draws it,
@@ -27,6 +28,14 @@ function ViewBody({ run }: { run: ReturnType<typeof runFolderView> }) {
   switch (run.view.type) {
     case 'table':
       return <FolderTable run={run} />
+    case 'board':
+      return <FolderBoard run={run} />
+    // The Mac's List view is a column of cards too.
+    case 'cards':
+    case 'list':
+      return <FolderCards run={run} />
+    case 'calendar':
+      return <FolderCalendar run={run} />
     default:
       return <p className="muted folder-view__none">This view shows on the Mac.</p>
   }
