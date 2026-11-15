@@ -294,6 +294,28 @@ describe('a page, read only (YAZ-5079)', () => {
     await waitFor(h, () => !rows(h!).includes('Trip plan | page'))
   })
 
+  it('N8 (sweep1): the open page was deleted while a comment is half typed: the page stays, with the words, and says so', async () => {
+    h = await openSearch()
+    await openPage(h, 'Trip plan')
+    const field = () => h!.host.querySelector<HTMLTextAreaElement>('textarea.page-comments__box')!
+    await waitFor(h, () => h!.host.querySelector('textarea.page-comments__box') !== null)
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field(), 'Half a thought')
+      field().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const files = { ...READER_FILES }
+    delete files['Trip plan.md']
+    await h.store.remove(READER_ID, 'Trip plan.md')
+    const index = await writeVaultFiles(h.store, files, {}, 'c2')
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: [], diff: { added: [], changed: [], removed: ['Trip plan.md'], renamed: [] }, index })
+    // A later pass (no diff: the screens read again) does not take the words away either.
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: [], index })
+    await act(async () => void (await new Promise((r) => setTimeout(r, 50))))
+    expect(h.host.querySelector('.search')).toBeNull()
+    expect(field().value).toBe('Half a thought')
+    expect(h.host.querySelector('.reader__notice')?.textContent).toBe('"Trip plan" was deleted on the Mac. Your comment is not sent: copy it before you leave this page.')
+  })
+
   it('the box and the Type are kept while a page is open', async () => {
     h = await openSearch()
     await typeQuery(h, 'trip')

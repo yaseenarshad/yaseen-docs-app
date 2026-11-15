@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { threadsOf, type CommentsShape as CommentShape, type PageComment } from '@shared/comments'
 import type { CommentsPort } from '../../comments/bridge'
 import type { WaitingComment } from '../../comments/outbox'
 import { REFUSED_WORDS } from '../../comments/write'
+import { keepDraft } from './unsentDrafts'
 import './comments.css'
 
 /** The pre-fills beside the box (YAZ-5478: a tap fills the box; Comment sends). Yaseen: "just that one for right now". */
@@ -85,6 +86,11 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const box = useRef<HTMLTextAreaElement>(null)
+  // N8 (sweep1): the page keeps a draft open when the Mac deletes it (`unsentDrafts.ts`); gone with the box.
+  useEffect(() => {
+    keepDraft(path, draft)
+    return () => keepDraft(path, '')
+  }, [path, draft])
 
   const refused = shape === 'foreign' || shape === 'invalid' ? named(REFUSED_WORDS[shape], noun) : null
   void version

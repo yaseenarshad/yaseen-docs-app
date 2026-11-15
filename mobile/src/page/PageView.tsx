@@ -23,6 +23,7 @@ import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
+import { hasUnsentDraft } from './comments/unsentDrafts'
 import { useTaskTicks } from './taskTicks'
 import { useTables } from './useTables'
 import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
@@ -35,7 +36,8 @@ import { usePageCardMenu } from '../cardMenu/pageCardMenu'
  *
  * It follows the sync (3B's `changed` event, rows of the October record):
  *  - R3 the page changed: it draws again in place, at the same reading place.
- *  - R5 the page was deleted: back to the list, which says so.
+ *  - R5 the page was deleted: back to the list, which says so. N8 (sweep1): unless its comment box holds words not sent:
+ *    then the page stays as it is, with them, and says it was deleted, so they can be copied.
  *  - R6 the page was renamed: it stays open, under the new path.
  */
 /** YAZ-5211: where each page was read last (phone memory only), so Back shows a page at its place. */
@@ -80,13 +82,21 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const tools = usePageTools(host, { title, path })
 
   // R3, R5, R6 from the sync's diff of the open vault.
+  const deletedWithDraft = useRef(false)
   useEffect(
     () =>
       sync.subscribe((event) => {
         if (event.type !== 'changed' || event.vault !== vault) return
         const diff = event.diff
+        // N8 (sweep1): the page is gone, but its comment box holds words: it stays as it is drawn, with them.
+        if (deletedWithDraft.current) return
         if (diff === undefined || diff === null) return setReads((n) => n + 1)
         if (diff.removed.includes(path)) {
+          if (hasUnsentDraft(path)) {
+            deletedWithDraft.current = true
+            setNotice(`"${title}" was deleted on the Mac. Your comment is not sent: copy it before you leave this page.`)
+            return
+          }
           setSearchNotice(`"${title}" was deleted.`)
           app.go({ type: 'back' })
           return
@@ -102,7 +112,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   useEffect(() => {
     let live = true
     void shownText(store, vault, path, answers).then((content) => {
-      if (live) setText(content)
+      // N8: a page deleted while its comment box held words keeps the text it showed.
+      if (live && !(deletedWithDraft.current && content === null)) setText(content)
     })
     return () => {
       live = false
