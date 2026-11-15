@@ -1,10 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
+import { interceptBrowserBack } from '../app/browserHistory'
 import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { swipeIsOurs } from '../app/edgeSwipe'
 import { useVaultData, type VaultData } from '../search/vaultData'
 import { folderOf } from '../page/pageLook'
+import { MenuTitle, isCut } from '../page/menuTitle'
 import { countWords, linkCounts, type LinkCounts } from './linkCounts'
 import { SheetContent, titleOf } from './SheetBody'
 import { SHEET_MS } from './sheetDrag'
@@ -41,7 +43,12 @@ export default function SheetLayer() {
     if (top === undefined) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeTop()
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    // YAZ-5499: in a Safari tab, Safari's own back swipe closes the top sheet, as the app's swipe does in the Home Screen app.
+    interceptBrowserBack(() => (closeTop(), true))
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      interceptBrowserBack(null)
+    }
   }, [top])
 
   if (mounted.length === 0) return null
@@ -55,8 +62,13 @@ export default function SheetLayer() {
   )
 }
 
+/** A folder's name (YAZ-5460): its `.folder.md`'s title, else its last part (the tree's row says the same). */
+const folderName = (data: VaultData | null, dir: string): string => data?.folders.find((f) => f.folder === dir)?.title.trim() || dir.slice(dir.lastIndexOf('/') + 1)
+
 /** The sheet's head: the page's folder (as Mochi shows the deck), else its name. */
 export function headWords(data: VaultData | null, route: SheetRoute): string {
+  // A folder's page (YAZ-5460): the folders it is in, else "Folder".
+  if (route.kind === 'folder') return route.path.includes('/') ? folderOf(route.path).split('/').join(' / ') : 'Folder'
   const folder = folderOf(route.path)
   if (route.kind === 'card' && data?.byPath[route.path]?.kind !== 'card') return titleOf(data, route.path)
   return folder === '' ? titleOf(data, route.path) : folder.split('/').join(' / ')
@@ -72,6 +84,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
   const dim = useRef<HTMLDivElement>(null)
   const motion = useRef<SheetMotion | null>(null)
   const [menu, setMenu] = useState(false)
+  const [cut, setCut] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [cardText, setCardText] = useState<string | undefined>(undefined)
   const [counts, setCounts] = useState<LinkCounts | null>(null)
@@ -107,7 +120,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
 
   // The counts after the slide up (the map of every link is built once for the vault's data).
   useEffect(() => {
-    if (data === null) return
+    if (data === null || sheet.route.kind === 'folder') return
     const timer = setTimeout(() => setCounts(linkCounts(data, sheet.route, cardText)), isTop ? SHEET_MS : 0)
     return () => clearTimeout(timer)
   }, [data, sheet.route, cardText, isTop])
@@ -136,7 +149,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
     }
   }
   const route = sheet.route
-  const title = route.kind === 'card' ? (data?.byPath[route.path]?.cards?.find((c) => c.id?.toLowerCase() === route.id.toLowerCase())?.title ?? '') || route.id : titleOf(data, route.path)
+  const title = route.kind === 'folder' ? folderName(data, route.path) : route.kind === 'card' ? (data?.byPath[route.path]?.cards?.find((c) => c.id?.toLowerCase() === route.id.toLowerCase())?.title ?? '') || route.id : titleOf(data, route.path)
   const place = depth === 0 ? '' : depth === 1 ? ' explore-sheet--under' : ' explore-sheet--under explore-sheet--deep'
   return (
     <>
@@ -146,11 +159,18 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
           <div ref={head} className="explore-sheet__head">
             <span className="explore-sheet__grab" aria-hidden="true" />
             <span className="explore-sheet__where">{headWords(data, sheet.route)}</span>
-            <button type="button" className="explore-sheet__more" aria-label="More" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+            <button type="button" className="explore-sheet__more" aria-label="More" aria-expanded={menu}
+              onClick={() => {
+                // YAZ-5498: measured once, as the menu opens: is the head's line cut ("…")?
+                if (!menu) setCut(isCut(head.current?.querySelector('.explore-sheet__where')))
+                setMenu(!menu)
+              }}
+            >
               ⋯
             </button>
             {menu && (
-              <div className="explore-sheet__menu" role="menu">
+              <div className={cut ? 'explore-sheet__menu explore-sheet__menu--titled' : 'explore-sheet__menu'} role="menu">
+                {cut && <MenuTitle title={title} path={route.path} />}
                 <button type="button" role="menuitem" onClick={full}>
                   {app.unit('Open full page')}
                 </button>

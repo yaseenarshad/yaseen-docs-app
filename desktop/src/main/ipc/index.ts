@@ -15,6 +15,7 @@ import { PAGE_SPACING_MOVE } from '../textFormattingMove'
 import { NEW_PLACES_MOVE } from '../newPlaces'
 import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
 import { registerBoardIpc } from './board'
+import { registerCardSkillIpc } from './cardSkill'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
 import { handle } from './envelope'
@@ -26,6 +27,7 @@ import { registerFocusFoldersIpc } from './focusFolders'
 import { registerFsIpc } from './fs'
 import { registerGithubIpc } from './github'
 import { registerHomeIpc } from './home'
+import { registerCardFormatsIpc } from './cardFormats'
 import { registerLspIpc } from './lsp'
 import { registerMediaLibraryIpc } from './mediaLibrary'
 import { registerMediaStudioIpc } from './mediaStudio'
@@ -64,6 +66,7 @@ export type IpcPlaces = ShareIpcPlaces & {
 export function registerIpc(store: Store, windows: WindowManagerIpc, places: IpcPlaces, settingsFolder: Pick<SettingsFolder, 'missing' | 'hasOtherMacs' | 'settled'>): { sync: GitSyncManager; secrets: Secrets; lsp: LspPool; libraryMoves: LibraryMoves } {
   const { userData } = places
   registerFsIpc(store, windows)
+  registerCardSkillIpc(store, windows)
   // The folder window's pick of an outside pictures folder is what lets the app write there (YAZ-3943 demo round 3).
   // Settings' pick is approved at once; the cog's waits here until its move is confirmed (YAZ-4074 6A item 3).
   const pickedPictureFolders = new Set<string>()
@@ -83,6 +86,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerPictureFoldersIpc(store, pickedPictureFolders)
   registerSoundIpc()
   registerHomeIpc()
+  registerCardFormatsIpc(userData)
   // The code tabs' language helpers (YAZ-3454, YAZ-3455): the quit sequence stops them (`stopAllLanguageServers`).
   // They run only while Settings › Code › "Jump across files" is on, and are a download in `<userData>/lsp`
   // (YAZ-3500). A dev build also takes the `node_modules` copies, unless YASEEN_DOCS_LSP_DOWNLOAD_ONLY=1

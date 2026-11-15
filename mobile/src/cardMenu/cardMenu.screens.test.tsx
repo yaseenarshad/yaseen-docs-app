@@ -1,0 +1,199 @@
+// @vitest-environment jsdom
+import { act } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cardInContent } from '@client/review/cardRead'
+import { answersSetup } from '../answers/testing'
+import { mount, type Harness } from '../screens/testing'
+import { forgetSearch } from '../search/searchState'
+import { saveVaultList } from '../store'
+import { BRANCH, REPO, VAULT } from '../sync/testing'
+
+/**
+ * YAZ-5504: the card's ⋯ outside Review. The card view (a card opened from Search) has ⋯ in its top bar: the card
+ * actions, then Find in card. A card in a page has a small ⋯ at the right of its head, with the same actions for THAT
+ * card. Two taps each (YAZ-5505); the card's look changes at once; the write is the phone's safe card-line write (the
+ * real answer list on the fake GitHub). Made-up files.
+ */
+const block = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->`
+const RIVERS = `---\ntitle: Rivers\n---\n\n# Rivers\n\nThree cards.\n\n${block('Which river runs through Madrid?\n---\nThe Manzanares', 'RV-1, title "River of Madrid", 2026-11-01T09:00Z good')}\n\n${block('Which river runs through Paris?\n---\nThe Seine', 'RV-2')}\n\n${block('Which river runs through Vienna?\n---\nThe Danube', 'RV-3, title "River of Vienna", notitle, off')}\n`
+const LIGHT = `---\nkind: card\n---\n\n${block('How fast is light?\n---\nVery', 'RV-17, title "Speed of light"')}\n`
+const FILES = { '.yaseendocs/review.json': '{"enabled": true}', 'Rivers.md': RIVERS, 'cards/speed-of-light-rv-17.md': LIGHT }
+
+let h: Harness | null = null
+beforeEach(() => {
+  URL.createObjectURL = vi.fn(() => 'blob:phone/1')
+  URL.revokeObjectURL = vi.fn()
+})
+afterEach(() => {
+  h?.unmount()
+  h = null
+  forgetSearch()
+})
+
+async function waitFor(done: () => boolean, ms = 5000): Promise<void> {
+  const until = Date.now() + ms
+  while (!done()) {
+    if (Date.now() > until) throw new Error(`Timed out. Screen: ${h!.text().slice(0, 400)}`)
+    await act(async () => void (await new Promise((r) => setTimeout(r, 10))))
+  }
+}
+async function typeQuery(value: string): Promise<void> {
+  const box = h!.host.querySelector<HTMLInputElement>('input[type="search"]')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box, value)
+    box.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await h!.settle()
+  await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
+}
+async function app() {
+  const t = await answersSetup({ files: FILES })
+  t.s.github.offline = true // the menu works with no signal: the actions wait in the list
+  await saveVaultList(t.store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 0 }], open: VAULT })
+  h = await mount({ phone: { store: t.store, tokens: t.s.tokens } })
+  h.sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
+  await h.syncSet({ status: 'synced', vault: VAULT, ready: true })
+  await h.click('Search')
+  await waitFor(() => h!.host.querySelector('input[type="search"]') !== null)
+  return t
+}
+const rows = (box: ParentNode) => [...box.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].map((b) => b.textContent?.trim())
+const row = (box: ParentNode, kind: string) => box.querySelector<HTMLButtonElement>(`[data-action="${kind}"]`)!
+const tap = async (el: HTMLElement) => {
+  await act(async () => el.click())
+  await h!.settle()
+}
+async function openCard(query: string, name: RegExp) {
+  await typeQuery(query)
+  await waitFor(() => h!.button(name) !== null)
+  await h!.click(name)
+  await waitFor(() => h!.host.querySelector('.card-view__card .card__body') !== null)
+}
+async function openMenu(label: string) {
+  await h!.click(label)
+  await waitFor(() => h!.host.querySelector('[data-action="off"]') !== null && !row(h!.host, 'off').disabled)
+  return h!.host.querySelector<HTMLElement>('[role="menu"]')!
+}
+
+describe('the card view\'s ⋯ (YAZ-5504)', () => {
+  it('the card actions, then Find in card; one tap only arms; two taps archive; the card shows Archived at once', async () => {
+    const t = await app()
+    await openCard('river of madrid', /^River of Madrid/)
+    const menu = await openMenu('Card tools')
+    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title on the frontShow', '🔍 Find in card'])
+    expect(h!.button(/Headings/)).toBeNull()
+
+    await tap(row(menu, 'off'))
+    expect(row(menu, 'off').textContent).toBe('Tap again to archive')
+    expect(t.answers.waiting()).toEqual([])
+    await tap(row(menu, 'off'))
+    await waitFor(() => t.answers.waiting().length === 1)
+    expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-1', on: true }]])
+    // The menu closed; the card reads archived at once (before any send); the toast says so.
+    expect(h!.host.querySelector('[data-action]')).toBeNull()
+    await waitFor(() => h!.host.querySelector('.card-view__card.card--off') !== null)
+    expect(h!.host.querySelector('.card-view__card .card__head')?.textContent).toBe('RV-1Archived')
+    expect(h!.host.querySelector('.toast')?.textContent).toBe('Archived')
+
+    // The menu reads the new marks: Unarchive card.
+    const again = await openMenu('Card tools')
+    expect(rows(again)).toContain('Unarchive card')
+  })
+
+  it('Title on the front: two taps hide it ("Title hidden in review"); a tap outside cancels the first', async () => {
+    const t = await app()
+    await openCard('river of madrid', /^River of Madrid/)
+    let menu = await openMenu('Card tools')
+    await tap(row(menu, 'notitle'))
+    expect(row(menu, 'notitle').textContent).toBe('Tap again to hide the title')
+    await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+    await h!.settle()
+    // The tap outside cancels and (the reader's rule) closes the menu: nothing was written.
+    expect(t.answers.waiting()).toEqual([])
+    menu = await openMenu('Card tools')
+    expect(row(menu, 'notitle').textContent).toBe('Title on the frontShow')
+    await tap(row(menu, 'notitle'))
+    await tap(row(menu, 'notitle'))
+    await waitFor(() => t.answers.waiting().length === 1)
+    expect(t.answers.waiting()[0].op).toEqual({ kind: 'notitle', id: 'RV-1', on: true })
+    await waitFor(() => h!.host.querySelector('.card-view__card .card__notitle') !== null)
+  })
+
+  it('a card file: Fix later goes on the card file\'s line; sent, GitHub has only that word, and the Mac reads it', async () => {
+    const t = await app()
+    await openCard('speed of light', /^Speed of light/)
+    const menu = await openMenu('Card tools')
+    await tap(row(menu, 'fix'))
+    await tap(row(menu, 'fix'))
+    await waitFor(() => t.answers.waiting().length === 1)
+    expect(t.answers.waiting()[0]).toMatchObject({ path: 'cards/speed-of-light-rv-17.md', op: { kind: 'fix', id: 'RV-17', on: true } })
+    t.s.github.offline = false
+    await t.answers.sendNow()
+    const sent = (await t.s.git.filesAt(t.head()))['cards/speed-of-light-rv-17.md'] as string
+    expect(sent).toBe(LIGHT.replace('title "Speed of light" -->', 'title "Speed of light", fix -->'))
+    expect(cardInContent('cards/speed-of-light-rv-17.md', sent, 'RV-17', -1)).toMatchObject({ fix: true, off: false, notitle: false })
+  })
+})
+
+describe('a page card\'s ⋯ (YAZ-5504)', () => {
+  it('each card with an ID has a quiet ⋯ at the right of its head; it opens the actions for THAT card', async () => {
+    const t = await app()
+    await typeQuery('rivers')
+    await waitFor(() => h!.button(/^Rivers, page/) !== null)
+    await h!.click(/^Rivers, page/)
+    await waitFor(() => h!.host.querySelectorAll('.reader__body .page-card').length === 3)
+    const cards = [...h!.host.querySelectorAll<HTMLElement>('.reader__body .page-card')]
+    for (const card of cards) {
+      const head = card.querySelector('.card__head')!
+      // At the right: the last thing in the head; the head's words stay the card's own.
+      expect(head.lastElementChild?.classList.contains('card__more-box')).toBe(true)
+      expect(head.querySelector('.card__more')?.textContent).toBe('')
+    }
+    expect(cards.map((c) => c.querySelector('.card__more')!.getAttribute('aria-label'))).toEqual(['Card actions: River of Madrid', 'Card actions: RV-2', 'Card actions: River of Vienna'])
+    expect(cards.map((c) => c.querySelector('.card__head')!.textContent)).toEqual(['RV-1', 'RV-2', 'RV-3ArchivedTitle hidden in review'])
+
+    // The third card (archived, title hidden): its own marks.
+    await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
+    await waitFor(() => cards[2].querySelector('[data-action="off"]') !== null && !row(cards[2], 'off').disabled)
+    expect(cards[2].querySelector('.card__more')!.getAttribute('aria-expanded')).toBe('true')
+    expect(rows(cards[2].querySelector('.card-menu')!)).toEqual(['Up next', 'Unarchive card', 'Fix later', 'Title on the frontHide'])
+    // The ⋯ again closes it.
+    await tap(cards[2].querySelector<HTMLElement>('.card__more')!)
+    expect(h!.host.querySelector('.card-menu')).toBeNull()
+
+    // The second card: archive it with two taps; only RV-2 changes, at once.
+    await tap(cards[1].querySelector<HTMLElement>('.card__more')!)
+    await waitFor(() => cards[1].querySelector('[data-action="off"]') !== null && !row(cards[1], 'off').disabled)
+    await tap(row(cards[1], 'off'))
+    expect(t.answers.waiting()).toEqual([])
+    await tap(row(cards[1], 'off'))
+    await waitFor(() => t.answers.waiting().length === 1)
+    expect(t.answers.waiting().map((w) => [w.path, w.op])).toEqual([['Rivers.md', { kind: 'off', id: 'RV-2', on: true }]])
+    await waitFor(() => h!.host.querySelector('[data-card-id="RV-2"]')?.classList.contains('card--off') === true)
+    const now = [...h!.host.querySelectorAll<HTMLElement>('.reader__body .page-card')]
+    expect(now.map((c) => c.classList.contains('card--off'))).toEqual([false, true, true])
+    expect(now.map((c) => c.querySelector('.card__head')!.textContent)).toEqual(['RV-1', 'RV-2Archived', 'RV-3ArchivedTitle hidden in review'])
+    expect(h!.host.querySelector('.toast')?.textContent).toBe('Archived')
+
+    // Sent: GitHub's page differs by that ONE word.
+    t.s.github.offline = false
+    await t.answers.sendNow()
+    expect((await t.s.git.filesAt(t.head()))['Rivers.md']).toBe(RIVERS.replace('<!-- card: RV-2 -->', '<!-- card: RV-2, off -->'))
+  })
+
+  it('a tap outside the menu closes it, and nothing is written', async () => {
+    const t = await app()
+    await typeQuery('rivers')
+    await waitFor(() => h!.button(/^Rivers, page/) !== null)
+    await h!.click(/^Rivers, page/)
+    await waitFor(() => h!.host.querySelectorAll('.reader__body .page-card').length === 3)
+    const card = h!.host.querySelector<HTMLElement>('[data-card-id="RV-1"]')!
+    await tap(card.querySelector<HTMLElement>('.card__more')!)
+    await waitFor(() => card.querySelector('[data-action="fix"]') !== null && !row(card, 'fix').disabled)
+    await tap(row(card, 'fix'))
+    await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+    await h!.settle()
+    expect(h!.host.querySelector('.card-menu')).toBeNull()
+    expect(t.answers.waiting()).toEqual([])
+  })
+})

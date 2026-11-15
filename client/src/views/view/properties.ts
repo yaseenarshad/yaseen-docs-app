@@ -1,7 +1,7 @@
 import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
 import { READ_ONLY_KEY } from '@shared/readOnly'
 import type { ViewSet, ViewDef } from '../viewSchema'
-import type { ColumnDecl } from '../folderSettings'
+import type { ColumnDecl } from '../folderSettingsRead'
 import { defaultKeys, propertyKeys, propertyLabel } from '../engine'
 import { canonicalKey } from './keys'
 import { DEFAULT_CARD_ORDER, cardPropertyKeys, cardRowsOf } from '../cardRows'

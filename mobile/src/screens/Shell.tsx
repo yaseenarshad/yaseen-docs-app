@@ -19,6 +19,8 @@ const PageView = lazyScreen(() => import('../page/PageView'), { waiting: routeWa
 const CardView = lazyScreen(() => import('../page/CardView'), { waiting: routeWaiting })
 /** A drawing file on its own (YAZ-5473): with the sheets' reader parts. */
 const DrawingView = lazyScreen(() => import('../explore/DrawingView'), { waiting: routeWaiting })
+/** A folder's page and its views, read only (YAZ-5460): a chunk of its own, with the Mac's view engine. */
+const FolderView = lazyScreen(() => import('../folders/FolderView'), { waiting: routeWaiting })
 /** "You vs <friend>" (4E4, YAZ-5085): in the friends chunk. */
 const VsScreen = lazyScreen(() => import('../friends/ui/VsScreen'), { waiting: routeWaiting })
 /** "Set up your phone": a chunk of its own (YAZ-5446 keeps the first load under its ceiling). */
@@ -137,5 +139,7 @@ function RouteScreen({ route }: { route: Route }) {
       return <CardView key={`${route.path}#${route.id}`} path={route.path} id={route.id} onBack={back} />
     case 'drawing':
       return <DrawingView key={route.path} path={route.path} onBack={back} />
+    case 'folder':
+      return <FolderView key={route.path} path={route.path} onBack={back} />
   }
 }

@@ -22,6 +22,8 @@ export function cardPillSpan(title: string, id: string): HTMLElement {
   const span = document.createElement('span')
   span.className = `${WIKILINK_CLASS} ${WIKILINK_CARD_CLASS}`
   span.spellcheck = false
+  // A target of the course's guided tour (YAZ-5123): a click on a card pill.
+  span.dataset.tour = 'card-link-pill'
   const idSpan = document.createElement('span')
   idSpan.className = WIKILINK_CARD_ID_CLASS
   idSpan.textContent = id

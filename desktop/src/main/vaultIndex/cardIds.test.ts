@@ -88,6 +88,18 @@ describe('the sweep gives cards their IDs (YAZ-4960 D2)', () => {
   })
 })
 
+describe('a new card written by hand with `<!-- card: title "…", notitle -->` (YAZ-5139, YAZ-5308)', () => {
+  it('the sweep adds the ID first and keeps the title and `notitle`, in a page and in a card file; the text stays its sides', async () => {
+    const records = await vault({
+      'deck.md': `---\nid: YAZ-1\n---\n# Deck\n\n${card('Using few words: {{terse}}', 'title "Terse", notitle')}`,
+      'terse.md': `---\nkind: card\n---\n${card('Using very few words: {{laconic}}', 'title "Laconic", notitle')}`,
+    })
+    await sweepIds(root, records, [...records.values()], () => undefined)
+    expect(await read('deck.md')).toMatch(/```card\nUsing few words: \{\{terse\}\}\n```\n<!-- card: YAZ-\d+, title "Terse", notitle -->\n$/)
+    expect(await read('terse.md')).toMatch(/^---\nkind: card\n---\n```card\nUsing very few words: \{\{laconic\}\}\n```\n<!-- card: YAZ-\d+, title "Laconic", notitle -->\n$/)
+  })
+})
+
 describe('card files (YAZ-5037): the card\'s ID is the file\'s ID', () => {
   it('a card file takes no page ID: its card is given one, and a second pass gives nothing more', async () => {
     const records = await vault({ 'new-card.md': `---\nkind: card\n---\n${card('', 'title "Title"')}`, 'plain.md': 'No ID yet.\n' })

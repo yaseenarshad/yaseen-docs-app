@@ -1,7 +1,7 @@
 import type { CardRating } from '@shared/cardLine'
 import { answerLabel } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
-import type { CardFilter, ReviewFilter } from '@client/review/useCardReview'
+import type { CardFilter } from '@client/review/useCardReview'
 import type { CardOp } from '../answers/ops'
 import { lostRows } from '../status/dot'
 
@@ -11,7 +11,7 @@ import { lostRows } from '../status/dot'
  */
 
 /** The filter menu (round 10, addition 1), in the mockup's order: the Mac Inbox's four lists. */
-export const FILTERS: readonly { id: ReviewFilter; label: string }[] = [
+export const FILTERS: readonly { id: CardFilter; label: string }[] = [
   { id: 'all', label: 'All cards' },
   { id: 'next', label: 'Up next' },
   { id: 'due', label: 'Due today' },
@@ -19,7 +19,7 @@ export const FILTERS: readonly { id: ReviewFilter; label: string }[] = [
 ]
 
 /** The mockup's glyph of each list (YAZ-5415, round 3): the count at the top and the review sheet. */
-export const FILTER_ICON: Record<ReviewFilter, string> = { all: '▣', next: '⤒', due: '◷', new: '◌' }
+export const FILTER_ICON: Record<CardFilter, string> = { all: '▣', next: '⤒', due: '◷', new: '◌' }
 
 /** The hint line (YAZ-5415): "Tap anywhere · 3 left" while parts hide, "Did you remember it?" once all show. */
 export const hintText = (left: number): string => (left > 0 ? `Tap anywhere · ${left} left` : 'Did you remember it?')

@@ -46,6 +46,12 @@ const shown = () => [...el.querySelectorAll('.card__hidden')].map((s) => s.textC
 const sides = () => el.querySelectorAll('.card__side').length
 
 describe('Preview a card (YAZ-5152)', () => {
+  it('YAZ-5430: To fix never shows: no "To fix" on the head, no Fix later', () => {
+    mount()
+    expect(el.querySelector('.card__fix')).toBeNull()
+    expect(el.textContent).not.toMatch(/To fix|Fix later/)
+  })
+
   it('is the Inbox\'s card: the front with its hidden word, Space through the words and the sides, "Side n of 2", the Reviews strip from the last side; no answer buttons', () => {
     mount()
     expect(el.querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('Preview card')

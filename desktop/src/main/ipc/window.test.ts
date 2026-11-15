@@ -5,6 +5,7 @@ import path from 'node:path'
 import { ipcMain } from 'electron'
 import { MAX_FOLD_KEYS_PER_FILE, MAX_SESSIONS, MAX_VAULT_NAME, MAX_VAULT_SETS, MAX_WINDOW_ROOTS, defaultRightPanelIdentity, type PageView, type StartView, type TabRef, type TearOffResult, type WindowEntry, type WindowIdentity } from '@shared/types'
 import { CONTRACT, SPECIAL, type Envelope } from '@shared/ipc'
+import { setCardSkillVault } from '@shared/appVaults'
 import { createStore, type Store } from '../store'
 import * as windows from '../windows'
 import { MAX_CLOSE_REFS, registerWindowIpc } from './window'
@@ -122,6 +123,15 @@ describe('registerWindowIpc', () => {
 
   it('window:identity answers the complete per-window identity for a registered sender', async () => {
     expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files' }))
+  })
+
+  it('YAZ-5108: window:identity names the card skill\'s copy once main made it, and the window\'s own roots stay as stored', async () => {
+    setCardSkillVault('/Users/demo/Library/Application Support/Yaseen Docs/card-skill')
+    try {
+      expect(await registered(CONTRACT.window.identity.channel)({ sender })).toEqual(ok({ id: 'w1', root: '/v', roots: ['/v'], file: '/v/a.md', tabs: ['/v/a.md'], rightPanel: RIGHT, sidebarCollapsed: false, sidebarLens: 'files', cardSkill: '/Users/demo/Library/Application Support/Yaseen Docs/card-skill' }))
+    } finally {
+      setCardSkillVault(null)
+    }
   })
 
   it('window:identity rejects an unregistered sender (BAD_REQUEST) and a window the state no longer has (NOT_FOUND)', async () => {
@@ -673,9 +683,9 @@ describe('registerWindowIpc', () => {
     expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v', folder: 'n', filter: 'next', card })
     expect(await toNew({ sender }, { root: '/v', folder: '../x', page: '/elsewhere/p.md', filter: 'bogus', card: { path: 1 } })).toEqual(ok(undefined))
     expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v' })
-    // YAZ-5097: the To fix list moves too.
+    // YAZ-5430: no To fix filter any more: a carried `fix` is left out, so the Inbox opens on All cards.
     expect(await toNew({ sender }, { root: '/v', filter: 'fix' })).toEqual(ok(undefined))
-    expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v', filter: 'fix' })
+    expect(manager.inboxToNewWindow).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'w1' }), { root: '/v' })
     expect(await toNew({ sender }, { root: '/other' })).toEqual(bad('BAD_REQUEST'))
     expect(await toNew({ sender }, 'Inbox')).toEqual(bad('BAD_REQUEST'))
     expect(await toNew({ sender: stranger }, { root: '/v' })).toEqual(bad('BAD_REQUEST'))

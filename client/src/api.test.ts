@@ -49,6 +49,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     shell: vi.fn(),
     vaultConfig: vi.fn(),
     ids: vi.fn(),
+    cardSkill: vi.fn(),
     properties: vi.fn(),
     favorites: vi.fn(),
     newPlaces: vi.fn(),
@@ -63,6 +64,7 @@ function installBridge(): { [K in keyof YaseenDocsApi]: ReturnType<typeof vi.fn>
     storage: vi.fn(),
     share: vi.fn(),
     lsp: vi.fn(),
+    courseAudio: vi.fn(),
     spell: vi.fn(),
   }
   Object.defineProperty(window, 'yaseenDocs', { value: bridge, configurable: true, writable: true })

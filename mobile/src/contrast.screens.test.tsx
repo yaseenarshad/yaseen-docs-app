@@ -95,8 +95,8 @@ const FIXTURES = [
   'card-next',
   'page-tables',
   'page-table-full',
-  // YAZ-5455, YAZ-5456, YAZ-5459, YAZ-5467: links and "Linked from", the vault's pills, the ⋯ tools, find, the headings,
-  // the properties panel, the jump pill.
+  // YAZ-5455, YAZ-5456, YAZ-5459: links and "Linked from", the vault's pills, the ⋯ tools, find, the headings,
+  // the properties panel.
   'page-links',
   'page-linked-from',
   'page-pills',
@@ -104,12 +104,22 @@ const FIXTURES = [
   'page-find',
   'page-headings',
   'page-properties',
-  'page-jump',
   // YAZ-5458: the reading look, every block.
   'page-look',
+  // YAZ-5504: the card's ⋯ in the card view (a row armed: "Tap again to archive") and on a page card.
+  'card-menu',
+  'page-card-menu',
   // YAZ-5472: Explore's sheets.
   'explore-one',
   'explore-stack',
+  // YAZ-5460: a held folder's menu, the folder page and its views, in a sheet too.
+  'folder-hold',
+  'folder-page',
+  'folder-grouped',
+  'folder-board',
+  'folder-cards',
+  'folder-calendar',
+  'folder-sheet',
   // Last: it makes this page's navigator say iPhone.
   'sign-in-iphone',
 ]

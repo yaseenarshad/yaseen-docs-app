@@ -37,6 +37,8 @@ import { watchDailyPages } from './dailyPagesVaultFile'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
+import { COURSE_VOICE_HOST, type CourseAudio } from './courseAudio/courseAudio'
+import { registerCourseAudioIpc } from './ipc/courseAudio'
 import { followSettingsFolder } from './settingsFolder'
 import { drawingInFront, hotkeyRecording, noPageInFront } from './hotkeyRecording'
 import { createStore } from './store'
@@ -44,6 +46,8 @@ import { moveLegacyHeadingStyles } from './textFormattingMove'
 import { movePageSwitches } from './movePageSwitches'
 import { runQuitSequence } from './quitSequence'
 import { createSpeller, nativeMenuAsker, spellerPath } from './speller'
+import { cardSkillStamp, ensureCardSkill, shippedCardSkill } from './cardSkill'
+import { setCardSkillVault } from '@shared/appVaults'
 import { stopAllLanguageServers } from './lsp/server'
 import { subscribeNativeTheme, windowBackgroundColor } from './theme'
 import { appZoomFactor, subscribeAppZoom } from './appZoom'
@@ -288,6 +292,8 @@ let lastFocusedWcId: number | undefined
 
 /** The per-vault GitHub sync manager (YAZ-1081), created with the rest of the IPC once `ready` fires. */
 let gitSync: GitSyncManager | undefined
+/** The course sound (YAZ-5159): made with the other doors; `app://course-voice` answers 404 before. */
+let courseAudio: CourseAudio | null = null
 
 /** The memory meter (YAZ-3737 D1), made on `ready`: a window that closes drops its history. */
 let meter: MemoryMeter | undefined
@@ -332,6 +338,8 @@ app.whenReady().then(() => {
     // `app://drawio/…` (YAZ-3028 D5, Draw's 🔒 YAZ-1802 D4): the diagram editor's OWN origin, every
     // answer under its no-network CSP; every other host is the renderer bundle, exactly as before.
     if (host === 'vault') return serveVaultImage(req, (u) => net.fetch(u))
+    // `app://course-voice/<chapter>/<clip>.m4a` (YAZ-5159): a clip of a course chapter whose downloaded file was checked.
+    if (host === COURSE_VOICE_HOST) return courseAudio?.serve(req) ?? new Response(null, { status: 404 })
     if (host === DRAWIO_HOST) {
       return serveDrawio(DRAWIO_DIR, pathname, {
         fetchFile: (url) => net.fetch(url),
@@ -468,6 +476,10 @@ app.whenReady().then(() => {
   // launch must not wait on a disk, and a path that cannot be made is still what the Settings row names.
   void ensureLibraryFolder(store.get().settings.libraryFolder, app.getPath('userData'), store.get().settingsFolder)
   gitSync = sync
+  // The course sound (YAZ-5159): downloaded per chapter while the course is open. At start only the clean-up runs, at
+  // most once a day: the folder goes 30 days after the course was last open. No download starts here.
+  courseAudio = registerCourseAudioIpc({ userData: app.getPath('userData'), isPackaged: app.isPackaged })
+  void courseAudio.sweep().catch((err: unknown) => console.warn(`[course-audio] the clean-up failed: ${String(err)}`))
   registerUpdateIpc(updater, {
     openExternal: (url) => void shell.openExternal(url),
     restartToUpdate: () => {
@@ -535,9 +547,18 @@ app.whenReady().then(() => {
     const link = parseFileLink(url)
     return (link === null ? null : manager.rootFor(link.path, link.root)) ?? []
   })
+  // The card skill's copy in the profile (YAZ-5107): made before the first window, never while the app runs. A
+  // checkout stamps its version with the shipped files' hash, so an edit of `skills/card-skill` reaches the copy.
+  // A failed copy is logged and never stops the start.
+  const shippedSkill = shippedCardSkill({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, mainDir: __dirname })
+  const cardSkillReady = (app.isPackaged ? Promise.resolve(app.getVersion()) : cardSkillStamp(shippedSkill, app.getVersion()))
+    .then((version) => ensureCardSkill(app.getPath('userData'), shippedSkill, version))
+    // The copy is the app's own vault from now on (YAZ-5108): each window's identity names it, and no list of the person takes it.
+    .then((copy) => setCardSkillVault(copy))
+    .catch((err: unknown) => console.error(`[cardSkill] the copy failed: ${String(err)}`))
   // The first window waits for the settings folder's first read (YAZ-3276 D4), so a theme that the other Mac
   // changed shows no flash. At most 500 ms: a slow or lost folder never holds up a launch. No folder: at once.
-  void Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]).then(() => {
+  void Promise.all([Promise.race([settingsFolder.ready, new Promise((done) => setTimeout(done, 500))]), cardSkillReady]).then(() => {
     manager.restore(asked.length > 0 ? asked : store.get().settings.startupWindows)
     links.flush()
   })

@@ -8,16 +8,21 @@ import { CARD_PREVIEW, type CardPreviewRequest } from './card/cardOpen'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { FileResponse, IndexRecord } from '@shared/types'
+import type { CommentsOrder, FileResponse, IndexRecord } from '@shared/types'
+import { readComments } from '@shared/comments'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { CardFileView } from './CardFileView'
 import { cardBlockViewOfDom } from './card/cardBlockView'
+import { setCardFormatHints } from './card/cardFormatHint'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
 import { cardFileName } from '@shared/cardFileFormat'
 import { paintedFindRanges } from './find/cardFind'
 import { placeOf } from '../test-placeName'
+import { listenTour } from '../course/tourBus'
+import { createWikilinkCandidateSource, WIKILINK_PICKER_CLASS } from './wikilink/wikilinkPicker'
+import { nameCandidate } from '../links/completion'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -108,7 +113,7 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; pane?: boolean } = {}) {
+async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; pane?: boolean; candidates?: ReturnType<typeof createWikilinkCandidateSource>; comments?: CommentsOrder } = {}) {
   const path = opts.path ?? PATH
   disk.files.set(path, content)
   if (opts.review === false) disk.review = { enabled: false }
@@ -118,6 +123,7 @@ async function mount(content: string, opts: { readOnly?: boolean; review?: boole
   const onOpenFile = vi.fn()
   const onRetitle = vi.fn()
   const onReread = vi.fn()
+  const onChangeCommentsOrder = vi.fn()
   const allowFileAction = vi.fn(async () => opts.allow !== false)
   // `pane`: inside a tab's pane (`section.editor`), where the "Read only" chip hears an edit attempt (YAZ-5141).
   el = document.createElement(opts.pane === true ? 'section' : 'div')
@@ -128,12 +134,12 @@ async function mount(content: string, opts: { readOnly?: boolean; review?: boole
     root?.render(
       <VaultReadOnly.Provider value={{ on: opts.readOnly === true, allowFileAction }}>
         <ReviewScope />
-        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onRetitle={onRetitle} onReread={onReread} />
+        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} wikilinkCandidates={opts.candidates} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onRetitle={onRetitle} onReread={onReread} commentsOrder={opts.comments} onChangeCommentsOrder={opts.comments === undefined ? undefined : onChangeCommentsOrder} />
       </VaultReadOnly.Provider>,
     ),
   )
   await vi.waitFor(() => expect(el.querySelector('[data-card-file]')).not.toBeNull())
-  return { onPage, onNotice, onOpenFile, onRetitle, onReread, allowFileAction }
+  return { onPage, onNotice, onOpenFile, onRetitle, onReread, allowFileAction, onChangeCommentsOrder }
 }
 
 const notice = () => el.querySelector('.card-file-notice')
@@ -446,6 +452,52 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
  * "Read only" chip while the vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page:
  * a time choice unlocks this tab (the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
  */
+describe('the guided tour hears the card file tab (YAZ-5123)', () => {
+  it('open, Edit card (click or E) and Done each fire their event once, with the path; the marks are on the real controls', async () => {
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
+    try {
+      await mount(FILE)
+      expect(heard).toEqual([['card-file-open', PATH]])
+      expect(editButton()!.dataset.tour).toBe('card-edit')
+      expect(el.querySelector('[data-card-file] .card__more')!.getAttribute('data-tour')).toBe('card-menu')
+      act(() => editButton()!.click())
+      const dom = await cardEditor()
+      expect(el.querySelector('[data-explore-card-edit]')!.getAttribute('data-tour')).toBe('card-editor')
+      expect(el.querySelector<HTMLElement>('[data-explore-card-edit] .card__edit')!.dataset.tour).toBe('card-done')
+      expect(heard.map(([n]) => n)).toEqual(['card-file-open', 'card-edit-open'])
+      key(dom, { key: 'Enter', metaKey: true })
+      await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+      expect(heard).toEqual([['card-file-open', PATH], ['card-edit-open', PATH], ['card-edit-done', PATH]])
+      key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
+      expect(heard.at(-1)).toEqual(['card-edit-open', PATH])
+      expect(heard).toHaveLength(4)
+    } finally {
+      stop()
+    }
+  })
+
+  it('the ⋯ rows Archive card and Copy card link are marks of the tour; once archived, the same row Unarchive card is (YAZ-5330); Put at top of Inbox is not', async () => {
+    await mount(FILE)
+    await menu()
+    const tours = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"][data-tour]')].map((item) => [item.textContent, item.dataset.tour])
+    expect(tours()).toEqual([
+      ['Archive card', 'card-menu-archive'],
+      ['Copy card link', 'card-copy-link'],
+    ])
+    pick('Archive card')
+    await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('Archived'))
+    await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')).toBeNull())
+    await menu()
+    expect(tours()).toEqual([
+      ['Unarchive card', 'card-menu-unarchive'],
+      ['Copy card link', 'card-copy-link'],
+    ])
+    pick('Unarchive card')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
+  })
+})
+
 describe('Preview a card from its file (YAZ-5152)', () => {
   it('P and ⋯ › Preview ask for the preview with the card as the Inbox reads it (its title off the card line); no write', async () => {
     await mount(FILE)
@@ -590,8 +642,13 @@ describe('the top bar of a card file (YAZ-5102)', () => {
  */
 describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
   it('the typed name is `title`; the file is named after it; the card is empty and opens in Edit card; Done writes the card and renames nothing', async () => {
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
     const made = await createCardFile('/v/Geography', 'Capital of France')
+    stop()
     expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
+    // The guided tour (YAZ-5123) hears the new card file once, with its path.
+    expect(heard).toEqual([['card-file-created', made]])
     expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: WIKI-10, title "Capital of France" -->\n')
     const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())
@@ -608,6 +665,27 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
     await mount(disk.files.get(made)!, { path: made })
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     expect(editButton()).not.toBeNull()
+  })
+
+  it('YAZ-5114: the new card file shows the format hint under the key row; the first text removes it; an old card file never shows it', async () => {
+    setCardFormatHints({ on: true, byVault: new Map([['/v', { folder: '/v/Card skill/formats', formats: ['acronym', 'book', 'comparison', 'concept'] }]]) })
+    try {
+      const made = await createCardFile('/v/Geography', 'la biblioteca')
+      await mount(disk.files.get(made)!, { path: made })
+      await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__formats')).not.toBeNull())
+      expect(el.querySelector('[data-explore-card-edit] .card__formats')!.textContent).toBe('Formats in your card skill: acronym · book · comparison · 1 more. Learn the formats')
+      const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
+      const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+      act(() => view.dispatch(view.state.tr.insertText('El libro', 1)))
+      expect(el.querySelector('.card__formats')).toBeNull()
+      act(() => root?.unmount())
+      await mount(FILE)
+      act(() => editButton()!.click())
+      await cardEditor()
+      expect(el.querySelector('.card__formats')).toBeNull()
+    } finally {
+      setCardFormatHints({ byVault: new Map() })
+    }
   })
 
   it('a Done in Edit card never renames: the card`s text is its sides, not its title', async () => {
@@ -754,5 +832,302 @@ describe('⌘F in a card file tab (YAZ-5378 part 2): the page\'s find bar, over 
     act(() => input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     expect(el.querySelector('.find-bar')).toBeNull()
     expect(paintedFindRanges()).toEqual([])
+  })
+})
+
+describe('[[ in Edit card on a card file (YAZ-5185)', () => {
+  it('lists the vault\'s pages and cards, as in a page, not only "Create"', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ ...nameCandidate('Europe'), path: `${ROOT}/Europe.md` }, { name: 'Estar', insert: 'WIKI-12', label: 'Estar', lower: 'estar', card: true }])
+    await mount(FILE, { candidates })
+    act(() => editButton()!.click())
+    const dom = await cardEditor()
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText('[[', view.state.doc.content.size - 1)))
+    act(() => view.dispatch(view.state.tr.insertText('e')))
+    const rows = () => [...document.querySelectorAll(`.${WIKILINK_PICKER_CLASS} [role="option"]`)].map((o) => o.textContent ?? '')
+    await vi.waitFor(() => expect(rows()).toContain('Europe'))
+    expect(rows().some((r) => r.includes('Estar'))).toBe(true)
+    // YAZ-5407: each row has its icon, as in a page's picker: the page row the sidebar's file icon, the card row the card icon.
+    const option = (label: string) => [...document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"]`)].find((o) => o.textContent?.includes(label))!
+    expect(option('Europe').querySelector('.file-icon')).not.toBeNull()
+    expect(option('Estar').querySelector('.wikilink-picker__card-icon')).not.toBeNull()
+    expect(option('Estar').dataset.card).toBe('true')
+    document.querySelectorAll(`.${WIKILINK_PICKER_CLASS}`).forEach((p) => p.remove())
+  })
+})
+
+/**
+ * YAZ-5466: comments on a card file, the same as pages. The page's one `CommentsSection` under the card and its strip;
+ * the file's front matter `comments` is its store (decision D: the file's, beside `kind: card`). Every comment write
+ * keeps the card block and its card line byte for byte, and every card write keeps the comments. Comments are not
+ * edits (Q56): while the tab is Read only, every comment write goes through with no "Allow edits?" and the tab stays locked.
+ */
+describe('comments on a card file (YAZ-5466)', () => {
+  const ENTRIES =
+    'comments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-14T10:00:00Z\n    body: Is Paris right?\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-11-14T11:00:00Z\n    body: Check the spelling\n'
+  const WITH = `---\nkind: card\n${ENTRIES}---\n${CARD}`
+  const cardPart = (content: string) => content.slice(content.indexOf('```card'))
+  const block = () => el.querySelector<HTMLElement>('.card-file__page > section.comments')
+  const open = () => {
+    const header = block()!.querySelector<HTMLButtonElement>('button.comments__header')!
+    if (header.getAttribute('aria-expanded') !== 'true') act(() => header.click())
+  }
+  const composer = () => block()!.querySelector<HTMLElement>(':scope > .comments__composer')!
+  const textarea = (scope: ParentNode) => scope.querySelector<HTMLTextAreaElement>('textarea.comments__textarea')!
+  const setValue = (field: HTMLTextAreaElement, value: string) =>
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field, value)
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  const submit = (scope: ParentNode) => act(() => scope.querySelector<HTMLButtonElement>('button.btn--primary')!.click())
+  const items = () => [...block()!.querySelectorAll<HTMLElement>('article.comments__item')]
+  const itemSaying = (text: string) => items().find((a) => a.textContent?.includes(text))!
+  const action = (article: HTMLElement, label: string) => act(() => [...article.querySelectorAll<HTMLButtonElement>('.comments__action')].find((b) => b.textContent === label)!.click())
+  const settle = () => act(async () => await new Promise((r) => setTimeout(r, 0)))
+  const onDisk = () => disk.files.get(PATH)!
+  const chip = () => el.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const asks = () => el.querySelector('.read-only-chip__ask p')?.textContent ?? null
+  const answer = (label: string) => act(() => [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === label)!.click())
+
+  it('the block sits under the card and its strip, in the tab`s column: the page`s own component, its header "Comments (2)"', async () => {
+    await mount(WITH, { comments: 'oldest' })
+    expect(block()).not.toBeNull()
+    // After the card and after its strip, in the tab's column; the last thing in it.
+    for (const before of ['.card-screen', '.card-reviews--strip']) expect(el.querySelector(before)!.compareDocumentPosition(block()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(block()!.nextElementSibling).toBeNull()
+    expect(block()!.querySelector('.comments__title')?.textContent).toBe('Comments (2)')
+    expect(items().map((a) => a.querySelector('.comments__summary')?.textContent)).toEqual(['Is Paris right?', 'Check the spelling'])
+    // Not in the card itself, nor in the strip.
+    expect(el.querySelector('.card section.comments, .card-reviews section.comments')).toBeNull()
+  })
+
+  it('no order setting handed down: no block (a card shown anywhere else has no comments)', async () => {
+    await mount(WITH)
+    expect(el.querySelector('section.comments')).toBeNull()
+  })
+
+  it('write: the comment goes in the front matter after `kind: card`; the card block and line stay byte for byte', async () => {
+    await mount(FILE, { comments: 'oldest' })
+    open()
+    setValue(textarea(composer()), 'First, on a card')
+    submit(composer())
+    await settle()
+    expect(onDisk().startsWith('---\nkind: card\ncomments:\n')).toBe(true)
+    expect(cardPart(onDisk())).toBe(CARD)
+    expect(readComments(onDisk()).map((c) => c.body)).toEqual(['First, on a card'])
+    expect(items()).toHaveLength(1)
+  })
+
+  it('reply, edit your own, resolve (the Resolved group), reopen, delete (confirm): each keeps the card part byte for byte', async () => {
+    await mount(WITH, { comments: 'oldest' })
+    open()
+    // Reply.
+    action(itemSaying('Is Paris right?'), 'Reply')
+    const reply = block()!.querySelector<HTMLElement>('.comments__replies .comments__composer')!
+    setValue(textarea(reply), 'Yes, Paris.')
+    submit(reply)
+    await settle()
+    expect(readComments(onDisk()).find((c) => c.body === 'Yes, Paris.')?.reply_to).toBe('aaaaaaaa')
+    expect(cardPart(onDisk())).toBe(CARD)
+    // Edit.
+    action(itemSaying('Check the spelling'), 'Edit')
+    const edit = itemSaying('Check the spelling').querySelector<HTMLElement>('.comments__composer')!
+    setValue(textarea(edit), 'Check the spelling again')
+    submit(edit)
+    await settle()
+    expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.body).toBe('Check the spelling again')
+    expect(cardPart(onDisk())).toBe(CARD)
+    // Resolve: the thread goes to the Resolved group.
+    action(itemSaying('Check the spelling again'), 'Resolve')
+    await settle()
+    expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.resolved).toBeDefined()
+    expect(cardPart(onDisk())).toBe(CARD)
+    await act(async () => await new Promise((r) => setTimeout(r, 0)))
+    // Reopen it from the group.
+    act(() => block()!.querySelector<HTMLButtonElement>('.comments__resolved-link')?.click())
+    await vi.waitFor(() => expect(block()!.querySelector('.comments__list--resolved')).not.toBeNull())
+    action(block()!.querySelector<HTMLElement>('.comments__list--resolved article.comments__item')!, 'Reopen')
+    await settle()
+    expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.resolved).toBeUndefined()
+    // Delete, after the sheet's confirm: the thread and its reply go.
+    action(itemSaying('Is Paris right?'), 'Delete')
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent?.trim() === 'Delete')!.click())
+    await settle()
+    expect(readComments(onDisk()).map((c) => c.id)).toEqual(['bbbbbbbb'])
+    expect(cardPart(onDisk())).toBe(CARD)
+    expect(onDisk().startsWith('---\nkind: card\ncomments:\n')).toBe(true)
+  })
+
+  it('the order setting: the header toggle writes it through the door; "newest" reads the stream backwards', async () => {
+    const { onChangeCommentsOrder } = await mount(WITH, { comments: 'oldest' })
+    open()
+    act(() => [...block()!.querySelectorAll<HTMLButtonElement>('button.comments__tool')].find((b) => b.textContent === 'Oldest first')!.click())
+    expect(onChangeCommentsOrder).toHaveBeenCalledWith('newest')
+    act(() => root?.unmount())
+    el.remove()
+    await mount(WITH, { comments: 'newest' })
+    expect(items().map((a) => a.querySelector('.comments__summary')?.textContent)).toEqual(['Check the spelling', 'Is Paris right?'])
+  })
+
+  it('Edit card and Done keep the comments byte for byte', async () => {
+    await mount(WITH, { comments: 'oldest' })
+    act(() => editButton()!.click())
+    const dom = await cardEditor()
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText(' (Seine)', view.state.doc.content.size - 1)))
+    key(dom, { key: 'Enter', metaKey: true })
+    await vi.waitFor(() => expect(onDisk()).toBe(WITH.replace('Paris\n```', 'Paris (Seine)\n```')))
+  })
+
+  it('⋯ › Archive card and Fix later keep the comments byte for byte', async () => {
+    await mount(WITH, { comments: 'oldest' })
+    await menu()
+    pick('Archive card')
+    await vi.waitFor(() => expect(onDisk()).toBe(WITH.replace('title "Capital of France" -->', 'title "Capital of France", off -->')))
+    await menu()
+    pick('Fix later')
+    await vi.waitFor(() => expect(onDisk()).toContain(`---\nkind: card\n${ENTRIES}---\n`))
+    expect(onDisk()).toContain(', fix')
+  })
+
+  it('`comments` is never a card property: the strip`s Properties lists only the card line`s', async () => {
+    await mount(WITH.replace('title "Capital of France" -->', 'title "Capital of France", level "A2" -->'), { comments: 'oldest' })
+    const button = () => el.querySelector<HTMLButtonElement>('.card-file__properties')!
+    await vi.waitFor(() => expect(button()).not.toBeNull())
+    expect(button().getAttribute('aria-label')).toBe('Properties (1)')
+    act(() => button().click())
+    await vi.waitFor(() => expect(el.querySelector('.card-reviews--strip .frontmatter-panel--card')).not.toBeNull())
+    expect([...el.querySelectorAll<HTMLElement>('.frontmatter-panel--card .frontmatter-panel__row')].map((r) => r.dataset.key)).toEqual(['level'])
+  })
+
+  it('a write lands on the NEWEST bytes: an outside change to the card line made after the tab opened stays', async () => {
+    await mount(WITH, { comments: 'oldest' })
+    open()
+    disk.files.set(PATH, WITH.replace('title "Capital of France" -->', 'title "Capital of France", next -->'))
+    setValue(textarea(composer()), 'After an outside change')
+    submit(composer())
+    await settle()
+    expect(onDisk()).toContain('title "Capital of France", next -->')
+    expect(readComments(onDisk()).map((c) => c.body)).toEqual(['Is Paris right?', 'Check the spelling', 'After an outside change'])
+  })
+
+  it('a broken `comments` block: the one line that says why, no composer, nothing overwritten', async () => {
+    const broken = `---\nkind: card\ncomments: my own notes\n---\n${CARD}`
+    await mount(broken, { comments: 'oldest' })
+    open()
+    expect(block()!.querySelector('.comments__notice')?.textContent).toContain("isn't a comment list")
+    expect(block()!.querySelector('.comments__composer')).toBeNull()
+    expect(onDisk()).toBe(broken)
+  })
+
+  it('a Windows (CRLF) card file: a comment keeps its line ends and its card part', async () => {
+    const crlf = WITH.replace(/\n/g, '\r\n')
+    await mount(crlf, { comments: 'oldest' })
+    open()
+    setValue(textarea(composer()), 'From Windows')
+    submit(composer())
+    await settle()
+    expect(onDisk().replace(/\r\n/g, '')).not.toContain('\n')
+    expect(cardPart(onDisk())).toBe(CARD.replace(/\n/g, '\r\n'))
+  })
+
+  /** Q56 (Yaseen): comments are not edits. Read only never asks for one; the tab stays locked; the card part never moves. */
+  describe('Read only: comment writes never ask "Allow edits?" (Q56)', () => {
+    const stillLocked = () => {
+      expect(asks()).toBeNull()
+      // The chip reads "Read only" only while locked; an unlocked tab reads its time ("Editing …").
+      expect(chip()?.textContent).toContain('Read only')
+    }
+
+    it('a read-only vault: Comment writes at once with no ask; the tab stays locked; the card part byte for byte', async () => {
+      await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
+      open()
+      stillLocked()
+      setValue(textarea(composer()), 'Written while locked')
+      submit(composer())
+      expect(asks()).toBeNull()
+      await vi.waitFor(() => expect(readComments(onDisk()).map((c) => c.body)).toContain('Written while locked'))
+      await vi.waitFor(() => expect(textarea(composer()).value).toBe(''))
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
+      // The card itself is still guarded: Edit card shows the chip's "This card is Read only." and opens no editor.
+      act(() => editButton()!.click())
+      expect(el.querySelector('.read-only-message__card')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
+      expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
+    })
+
+    it('a read-only vault: reply, edit your own, resolve, reopen, delete: none asks; each keeps the card part byte for byte; the tab stays locked', async () => {
+      await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
+      open()
+      // Reply.
+      action(itemSaying('Is Paris right?'), 'Reply')
+      expect(asks()).toBeNull()
+      const reply = block()!.querySelector<HTMLElement>('.comments__replies .comments__composer')!
+      setValue(textarea(reply), 'Yes, Paris.')
+      submit(reply)
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.body === 'Yes, Paris.')?.reply_to).toBe('aaaaaaaa')
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
+      // Edit.
+      action(itemSaying('Check the spelling'), 'Edit')
+      expect(asks()).toBeNull()
+      const edit = itemSaying('Check the spelling').querySelector<HTMLElement>('.comments__composer')!
+      setValue(textarea(edit), 'Check the spelling again')
+      submit(edit)
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.body).toBe('Check the spelling again')
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
+      // Resolve.
+      action(itemSaying('Check the spelling again'), 'Resolve')
+      expect(asks()).toBeNull()
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.resolved).toBeDefined()
+      expect(cardPart(onDisk())).toBe(CARD)
+      await settle()
+      // Reopen from the Resolved group.
+      act(() => block()!.querySelector<HTMLButtonElement>('.comments__resolved-link')?.click())
+      await vi.waitFor(() => expect(block()!.querySelector('.comments__list--resolved')).not.toBeNull())
+      action(block()!.querySelector<HTMLElement>('.comments__list--resolved article.comments__item')!, 'Reopen')
+      expect(asks()).toBeNull()
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.resolved).toBeUndefined()
+      expect(cardPart(onDisk())).toBe(CARD)
+      // Delete, after the sheet's own confirm (that sheet is the delete's, not Read only's).
+      action(itemSaying('Is Paris right?'), 'Delete')
+      expect(asks()).toBeNull()
+      act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent?.trim() === 'Delete')!.click())
+      await settle()
+      expect(readComments(onDisk()).map((c) => c.id)).toEqual(['bbbbbbbb'])
+      expect(cardPart(onDisk())).toBe(CARD)
+      expect(onDisk().startsWith('---\nkind: card\ncomments:\n')).toBe(true)
+      stillLocked()
+    })
+
+    it('a read-only vault: typing in a comment field types (nothing is held back) and asks nothing', async () => {
+      await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
+      open()
+      const field = textarea(composer())
+      const event = new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: 'x' })
+      act(() => void field.dispatchEvent(event))
+      expect(event.defaultPrevented).toBe(false)
+      stillLocked()
+    })
+
+    it('a `readonly: true` card file: a comment writes at once with no ask; `readonly: true` stays; the tab stays locked', async () => {
+      const locked = WITH.replace('kind: card\n', 'kind: card\nreadonly: true\n')
+      await mount(locked, { comments: 'oldest', pane: true })
+      open()
+      stillLocked()
+      setValue(textarea(composer()), 'On a locked file')
+      submit(composer())
+      expect(asks()).toBeNull()
+      await vi.waitFor(() => expect(readComments(onDisk()).map((c) => c.body)).toContain('On a locked file'))
+      expect(onDisk()).toContain('readonly: true')
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
+    })
   })
 })

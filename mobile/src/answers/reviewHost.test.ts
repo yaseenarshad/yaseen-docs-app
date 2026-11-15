@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CardNotFoundError, withCardFix, withCardNext, withCardNoTitle, withCardOff, type CardLine, type CardReview } from '@shared/cardLine'
+import { CardNotFoundError, withCardFix, withCardNext, withCardNoTitle, withCardOff, withCardTitle, type CardLine, type CardReview } from '@shared/cardLine'
 import { openVaultStore, memoryBackend, newMemoryDisk } from '../store'
 import { SEND_AFTER_MS } from '../sync/cadence'
 import { VAULT, pageText } from '../sync/testing'
@@ -67,7 +67,7 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     expect((await t.s.git.filesAt(t.head()))['a.md']).toBe(FILES['a.md'])
   })
 
-  it('Archive, Up next and Fix later through changeCardLine; a change the phone cannot send is refused', async () => {
+  it('Archive, Up next, Fix later and Title on the front through changeCardLine; a change the phone cannot send is refused', async () => {
     const t = await setup()
     await t.host.changeCardLine('a.md', 'NC-3', (l) => withCardOff(l, true))
     await t.host.changeCardLine('a.md', 'NC-3', (l) => withCardNext(l, true))
@@ -75,8 +75,12 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     expect(await t.host.readCard('a.md', 'NC-3')).toMatchObject({ off: true, next: true })
     await t.host.changeCardLine('a.md', 'NC-3', (l) => l)
     expect(t.answers.waiting()).toHaveLength(2)
-    await expect(t.host.changeCardLine('a.md', 'NC-3', (l) => withCardNoTitle(l, true))).rejects.toThrow(/cannot send/)
+    await expect(t.host.changeCardLine('a.md', 'NC-3', (l) => withCardTitle(l, 'Renamed'))).rejects.toThrow(/cannot send/)
     expect(t.answers.waiting()).toHaveLength(2)
+    // YAZ-5503: Title on the front is an action of its own.
+    await t.host.changeCardLine('a.md', 'NC-3', (l) => withCardNoTitle(l, true))
+    expect(t.answers.waiting().map((w) => w.op)).toContainEqual({ kind: 'notitle', id: 'NC-3', on: true })
+    expect(await t.host.readCard('a.md', 'NC-3')).toMatchObject({ notitle: true })
   })
 
   it('delete a review, and its undo, are actions too', async () => {
@@ -168,15 +172,16 @@ describe('YAZ-5409: each action and its Undo change only their own part of the c
   })
 
   const ORDERS = {
-    new: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", tags "a", off, next, fix, ${R0}`],
-    older: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", off, next, fix, tags "a", ${R0}`],
-    own: [`${R0}, tags "a", title "x", NC-1`, `NC-1, fix, ${R0}, tags "a", next, title "x", off`],
-    raw: [`nc-1,title "a, b" ,level "A2, B1",${R0}`, `nc-1,title "a, b" ,off,next,fix,level "A2, B1",${R0}`],
+    new: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", tags "a", off, next, notitle, fix, ${R0}`],
+    older: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", off, next, notitle, fix, tags "a", ${R0}`],
+    own: [`${R0}, tags "a", title "x", NC-1`, `NC-1, fix, ${R0}, tags "a", next, notitle, title "x", off`],
+    raw: [`nc-1,title "a, b" ,level "A2, B1",${R0}`, `nc-1,title "a, b" ,off,next,notitle,fix,level "A2, B1",${R0}`],
   }
   const MARKS: [string, (l: CardLine, on: boolean) => CardLine][] = [
     ['off', withCardOff],
     ['next', withCardNext],
     ['fix', withCardFix],
+    ['notitle', withCardNoTitle],
   ]
   for (const [order, [bare, marked]] of Object.entries(ORDERS))
     for (const [mark, set] of MARKS) {

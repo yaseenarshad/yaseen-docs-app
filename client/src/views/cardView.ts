@@ -18,7 +18,7 @@
  * moves it into `cardView`.
  */
 import { isRecord } from '@shared/guards'
-import type { ColumnDecl } from './folderSettings'
+import type { ColumnDecl } from './folderSettingsRead'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 /** The keys of a view that are its table's, one set per row kind (the rest — its name, type, look — is the view's). */

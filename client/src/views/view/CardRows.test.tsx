@@ -33,7 +33,7 @@ const record = (name: string, over: Partial<IndexRecord> = {}): IndexRecord => (
 })
 const RECORDS = [
   record('Europe trip', { cards: [{ id: 'GEO-1', title: 'Capital of Spain', off: true, next: false, reviews: [] }, { id: 'GEO-2', off: false, next: false, reviews: [] }] }),
-  record('GEO-3', { kind: 'card', title: 'Longest river', cards: [{ id: 'GEO-3', title: 'Longest river', off: false, next: false, reviews: [] }] }),
+  record('GEO-3', { kind: 'card', title: 'Longest river', cards: [{ id: 'GEO-3', title: 'Longest river', off: false, next: false, reviews: [], fix: true }] }),
 ]
 const CARDS_VIEW = 'views:\n  - type: table\n    name: T\n    rows: cards\n'
 const PAGES_VIEW = 'views:\n  - type: table\n    name: T\n'
@@ -128,9 +128,9 @@ describe('YAZ-5319: Show cards as rows', () => {
 
   it('one row per card, each kind, with the card columns; a page\'s columns are hidden; the count says cards', () => {
     const { el } = mount(CARDS_VIEW)
-    expect(headers(el)).toEqual(['Name', 'Page', 'Card status', 'Card next review', 'Card last review', 'Card reviews', 'Card success rate', 'Card up next', 'Card ID'])
+    expect(headers(el)).toEqual(['Name', 'Page', 'Card status', 'Card fix status', 'Card next review', 'Card last review', 'Card reviews', 'Card success rate', 'Card up next', 'Card ID'])
     const rows = body(el)
-    expect(rows.map((r) => [r[0], r[1], r[2], r[8]])).toEqual([
+    expect(rows.map((r) => [r[0], r[1], r[2], r[9]])).toEqual([
       ['Capital of Spain', 'Europe trip', 'Archived', 'GEO-1'],
       ['GEO-2', 'Europe trip', 'Active', 'GEO-2'],
       ['Longest river', '', 'Active', 'GEO-3'],
@@ -159,9 +159,31 @@ describe('YAZ-5319: Show cards as rows', () => {
     expect(change(off)).toEqual({ parts: [{ kind: 'id', id: 'GEO-1' }] })
   })
 
+  it('YAZ-5430: Card fix status shows "Needs fixing" for a marked card, blank for the rest; Needs fixing writes `fix`, Clear takes it off', async () => {
+    const { el } = mount(CARDS_VIEW)
+    // Blank is the table's own muted "Empty", as any empty cell of an editable column shows.
+    expect(body(el).map((r) => r[3])).toEqual(['Empty', 'Empty', 'Needs fixing'])
+    doubleClick(cell(el, 0, 3))
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.textContent?.startsWith('Needs fixing'))!
+    await act(async () => void option.click())
+    expect(changeCardLine).toHaveBeenCalledOnce()
+    const [path, id, on, index] = vi.mocked(changeCardLine).mock.calls[0]
+    expect([path, id, index]).toEqual([TRIP, 'GEO-1', 0])
+    // After the ID and `off`, as the phone writes it.
+    const off: CardLine = { parts: [{ kind: 'id', id: 'GEO-1' }, { kind: 'off' }] }
+    expect(on(off)).toEqual({ parts: [{ kind: 'id', id: 'GEO-1' }, { kind: 'off' }, { kind: 'fix' }] })
+    doubleClick(cell(el, 2, 3))
+    const clear = [...document.querySelectorAll<HTMLButtonElement>('.property-value-picker__footer button')].find((b) => b.textContent === 'Clear')!
+    await act(async () => void clear.click())
+    expect(changeCardLine).toHaveBeenCalledTimes(2)
+    const [path2, id2, cleared] = vi.mocked(changeCardLine).mock.calls[1]
+    expect([path2, id2]).toEqual(['/vault/Geo/GEO-3.md', 'GEO-3'])
+    expect(cleared({ parts: [{ kind: 'id', id: 'GEO-3' }, { kind: 'fix' }] })).toEqual({ parts: [{ kind: 'id', id: 'GEO-3' }] })
+  })
+
   it('Card up next edits: a check writes `next` on the card file\'s line', async () => {
     const { el } = mount(CARDS_VIEW)
-    await act(async () => doubleClick(cell(el, 2, 7)))
+    await act(async () => doubleClick(cell(el, 2, 8)))
     expect(changeCardLine).toHaveBeenCalledOnce()
     const [path, id, change] = vi.mocked(changeCardLine).mock.calls[0]
     expect([path, id]).toEqual(['/vault/Geo/GEO-3.md', 'GEO-3'])

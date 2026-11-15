@@ -10,10 +10,12 @@
  */
 import type { IndexRecord, PropertyDecl } from '@shared/types'
 import { isReadOnlyProperties } from '@shared/readOnly'
-import { SAME_WORD, type UnitText } from '../vault/unitWord'
+import { SAME_WORD, type UnitText } from '../vault/unitWordText'
 import { reservedKeys } from '../links/reservedKeys'
 import { canonicalKey } from './view/keys'
-import type { PropertyWrite } from './writeProperty'
+
+/** One value written to a page (`writeProperty.ts`'s `PropertyWrite`): stated here, so this pure module reaches no bridge (YAZ-5460). */
+type PropertyWrite = { key: string; value: unknown }
 
 /** No read-only page: the default of every view's `readOnly` prop, one identity for all of them. */
 export const NO_READ_ONLY: ReadonlySet<string> = new Set()

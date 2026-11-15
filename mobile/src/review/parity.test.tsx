@@ -8,7 +8,7 @@ import { desktopReviewHost } from '@client/review/desktopReviewHost'
 import type { ReviewHost } from '@client/review/reviewHost'
 import { useCardReview, type CardReviewApi } from '@client/review/useCardReview'
 import { storage } from '@client/lib/storage'
-import { cardIdOf, pageCards } from '@shared/cardLine'
+import { cardIdOf, pageCards, withCardFix } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { sanitizeReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -79,6 +79,8 @@ interface Run {
   lines: () => Promise<Record<string, string>>
   /** Each file as it is now, by its path in the vault. */
   files: () => Promise<Record<string, string>>
+  /** Fix later through the host, as the phone's ⋯ writes it (the hook has no setFix since YAZ-5430). */
+  setFix: (path: string, id: string, on: boolean) => Promise<void>
   stop: () => void
 }
 
@@ -115,7 +117,7 @@ async function desktopRun(files: Record<string, string> = FILES): Promise<Run> {
   }
   const onDisk = async () => Object.fromEntries([...disk].map(([p, c]) => [p.slice(ROOT.length + 1), c]))
   const lines = async () => linesOf(await onDisk())
-  return { review: m.get, settle, lines, files: onDisk, stop: () => act(() => m.root.unmount()) }
+  return { review: m.get, settle, lines, files: onDisk, setFix: async (path, id, on) => void (await desktopReviewHost.changeCardLine(path, id, (l) => withCardFix(l, on))), stop: () => act(() => m.root.unmount()) }
 }
 
 async function phoneRun(files: Record<string, string> = FILES): Promise<Run> {
@@ -136,7 +138,7 @@ async function phoneRun(files: Record<string, string> = FILES): Promise<Run> {
     return out
   }
   const lines = async () => linesOf(await shown())
-  return { review: m.get, settle, lines, files: shown, stop: () => (act(() => m.root.unmount()), source.stop()) }
+  return { review: m.get, settle, lines, files: shown, setFix: async (path, id, on) => void (await host.changeCardLine(path, id, (l) => withCardFix(l, on))), stop: () => (act(() => m.root.unmount()), source.stop()) }
 }
 
 /** Each card's line as the file holds it: its bytes, not the parser's reading of them. */
@@ -170,7 +172,7 @@ async function script(run: Run): Promise<string[]> {
   await step(4, () => run.review().answer('good', 5))
   const c = () => run.review().session!.card!
   await step(5, () => run.review().setNext(c().path, c().id, true))
-  await step(5, () => run.review().setFix(c().path, c().id, true))
+  await step(5, () => run.setFix(c().path, c().id, true))
   await step(6, () => run.review().turnOff())
   await step(7, () => run.review().answer('again', 9))
   await step(7, () => run.review().answer('good', 4)) // the same minute: a second review (YAZ-5078)

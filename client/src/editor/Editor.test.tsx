@@ -330,6 +330,12 @@ describe('the card file route (YAZ-5037 phase 3)', () => {
     expect(createCrepeMock).not.toHaveBeenCalled()
   })
 
+  it('YAZ-5466: the card file tab (and so Explore`s card file, the same editor) gets the comments order setting and its door', async () => {
+    await mount(CARD_FILE)
+    expect(cardTab.props?.commentsOrder).toBe('oldest')
+    expect(typeof cardTab.props?.onChangeCommentsOrder).toBe('function')
+  })
+
   it('a page (another `kind`, or none) still gets the page editor', async () => {
     const view = await mount('---\nkind: page\n---\n```card\nQ\n```\n')
     expect(view.querySelector('[data-card-file-stub]')).toBeNull()
@@ -3317,5 +3323,51 @@ describe('a table collapse in a read-only page is a view change (YAZ-4939)', () 
     type(FOLDED.replace('| r |', '| x |'))
     await pastDebounce()
     expect(writeFile.mock.calls.at(-1)![0].content).toBe('---\nstatus: draft\nguide-lines: false\n---\n' + FOLDED.replace('| r |', '| x |'))
+  })
+})
+
+describe('a page keeps its own line end on save (YAZ-5150)', () => {
+  const CRLF = (text: string): string => text.replace(/\n/g, '\r\n')
+  const FM_LF = '---\nstatus: draft\n---\n'
+  const BODY_LF = '# Title\n\nText\n\n```js\nconst a = 1\n```\n\n```card\nFront\n---\nBack\n```\n'
+  const EDIT_LF = BODY_LF.replace('Text', 'Text, edited')
+
+  it('a Windows page: the editor gets the text with `\\n` alone, and one edit saves the whole file with `\\r\\n` again', async () => {
+    await mount(CRLF(FM_LF + BODY_LF))
+    expect(createCrepeMock.mock.calls.at(-1)![0].defaultValue).toBe(BODY_LF)
+    type(EDIT_LF)
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(writeFile.mock.calls[0]![0].content).toBe(CRLF(FM_LF + EDIT_LF))
+  })
+
+  it('a Mac page saves byte for byte as before', async () => {
+    await mount(FM_LF + BODY_LF)
+    expect(createCrepeMock.mock.calls.at(-1)![0].defaultValue).toBe(BODY_LF)
+    type(EDIT_LF)
+    await pastDebounce()
+    expect(writeFile.mock.calls[0]![0].content).toBe(FM_LF + EDIT_LF)
+  })
+
+  it('a Windows page: a property write from outside is still absorbed, and the next save keeps `\\r\\n`', async () => {
+    const el = await mount(CRLF(FM_LF + BODY_LF))
+    diskHas(CRLF('---\nstatus: done\n---\n' + BODY_LF), 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(setMarkdownMock).not.toHaveBeenCalled()
+    expect(el.querySelector('.conflict-bar')).toBeNull()
+    type(EDIT_LF)
+    await pastDebounce()
+    expect(writeFile.mock.calls[0]![0]).toEqual({ path: PATH, content: CRLF('---\nstatus: done\n---\n' + EDIT_LF), expectedMtime: 2 })
+  })
+
+  it('a Windows page changed outside: the editor gets the new text with `\\n` alone', async () => {
+    await mount(CRLF(FM_LF + BODY_LF))
+    // Read twice: the change handler's look, then the reload's.
+    diskHas(CRLF(FM_LF + EDIT_LF), 2)
+    diskHas(CRLF(FM_LF + EDIT_LF), 2)
+    await emit({ type: 'change', path: PATH, mtime: 2 })
+    expect(crepe().md).toBe(EDIT_LF)
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
   })
 })

@@ -56,7 +56,7 @@ describe('registerStateIpc', () => {
   it('registers every state channel the preload invokes (and nothing else)', () => {
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
     expect(channels).toEqual(
-      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
+      [CONTRACT.state.get.channel, CONTRACT.state.setSettings.channel, CONTRACT.state.setSidebarWidth.channel, CONTRACT.state.setFavoritesOrder.channel, CONTRACT.state.setFocusOrder.channel, CONTRACT.state.pushRecent.channel, CONTRACT.state.removeRecent.channel, CONTRACT.state.setFolder.channel, CONTRACT.state.setFolds.channel, CONTRACT.state.setTocFolds.channel, CONTRACT.state.setTocSource.channel, CONTRACT.state.setTocSwitch.channel, CONTRACT.state.setBaseGroups.channel, CONTRACT.state.settingsFolder.channel, CONTRACT.state.setSettingsFolder.channel, CONTRACT.state.setTabCanvas.channel, CONTRACT.state.setCourse.channel, CONTRACT.state.systemHotkeys.channel, CONTRACT.hotkeys.recording.channel, CONTRACT.hotkeys.drawingInFront.channel, CONTRACT.hotkeys.noPageInFront.channel].sort(),
     )
   })
 
@@ -301,6 +301,40 @@ describe('registerStateIpc', () => {
     expect(live.webContents.send).toHaveBeenCalledTimes(1)
     store.pushRecent('/v', 1)
     expect(live.webContents.send).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('state:set-course (YAZ-5120)', () => {
+  it('applies a good patch; is strict: a bad value or an unknown field rejects the call and stores nothing', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    expect(await set({ sender }, { chapter: 'inbox', clip: 'c3-04', finished: ['why'], speed: 1.25, muted: true })).toEqual(ok(undefined))
+    expect(store.get().course).toMatchObject({ chapter: 'inbox', clip: 'c3-04', finished: ['why'], speed: 1.25, muted: true })
+    const before = store.get().course
+    for (const patch of [null, [], 'x', { speed: 2 }, { muted: 'yes' }, { chapter: 'a b' }, { finished: ['why', 'why'] }, { finished: 'why' }, { folder: '/v' }]) {
+      expect(await set({ sender }, patch)).toEqual(bad('BAD_REQUEST'))
+    }
+    expect(store.get().course).toBe(before)
+  })
+
+  it('takes what the course made (YAZ-5124): absolute paths, one record per vault; a bad record rejects the call', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    const made = [{ vault: '/v', folder: '/v/course-cards', cards: ['/v/course-cards/a-tst-2.md'], page: '/v/course-cards/course-page-tst-3.md' }]
+    expect(await set({ sender }, { made })).toEqual(ok(undefined))
+    expect(store.get().course.made).toEqual(made)
+    for (const bad_ of [{ made: [{ ...made[0], cards: ['a.md'] }] }, { made: [made[0], made[0]] }, { made: [{ vault: '/v' }] }]) {
+      expect(await set({ sender }, bad_)).toEqual(bad('BAD_REQUEST'))
+    }
+    expect(store.get().course.made).toEqual(made)
+  })
+
+  it('YAZ-5202: takes the course folder`s ID as the renderer writes it (`{ ...made, folder, folderId }`); a bad ID rejects the call', async () => {
+    const set = registered(CONTRACT.state.setCourse.channel)
+    const was = { vault: '/v', folder: '', cards: [] as string[], page: null }
+    const made = [{ ...was, folder: '/v/course-cards', folderId: 'TST-4' }]
+    expect(await set({ sender }, { made })).toEqual(ok(undefined))
+    expect(store.get().course.made).toEqual(made)
+    expect(await set({ sender }, { made: [{ ...made[0], folderId: 'not an id' }] })).toEqual(bad('BAD_REQUEST'))
+    expect(store.get().course.made).toEqual(made)
   })
 })
 

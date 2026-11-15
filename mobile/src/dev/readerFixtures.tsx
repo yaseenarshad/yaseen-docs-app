@@ -4,12 +4,16 @@ import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
-import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
+import { READER_FILES, READER_ID, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
+import { FOLDER_FILES } from './folderVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
-import { FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
+import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
+import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
+import { TASKS_PAGE } from './taskFixtures'
+import { fixtureAnswers } from './fixtureAnswers'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
@@ -17,7 +21,7 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
  * YAZ-5449 to YAZ-5451: `page` has the ID chip, the dot alone and the page arrows; `page-copied` the toast after a tap
  * on the chip; `page-copy-by-hand` the path to copy by hand (the clipboard says no); `page-last` the last page (its
  * "next" side dim); `card-next` a card after one step of its arrows. YAZ-5468: `page-folder` the arrows of a page in a folder of
- * two pages ("1 / 2": the folder's pages only). YAZ-5467: `page-jump` a long page just scrolled, the ⤒ ⤓ pill at the right edge. The clipboard is a fake: nothing reaches the
+ * two pages ("1 / 2": the folder's pages only). The clipboard is a fake: nothing reaches the
  * phone's real one.
  * YAZ-5474: `search-collapsed` the tree after "Collapse all folders" in the box, its Expand all icon at the right end.
  * YAZ-5471: `page-tables` a page of made-up tables in the real shapes (`tableFixtures.ts`), at its six-column table;
@@ -25,10 +29,25 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
  * YAZ-5458: `page-look` a made-up page with every block and deep nesting (`readingLookFixture.ts`), for the reading look.
  * YAZ-5477: `card-file-comments` a card file's own view, scrolled to its comments under the card (its Comment button).
 
+ * YAZ-5497: `page-headings` the Headings sheet of a page with 60 headings (over the arrows and the tab bar);
+ * `page-headings-few` of a page with none ("no headings to list"); `page-headings-alone` in a vault with Search alone (no
+ * tab bar: Review off). (YAZ-5504: a card's ⋯ holds the card actions and Find in card, no Headings: no `card-headings`.)
+ * YAZ-5498: `page-menu-title` a page whose long title the top bar cuts, its ⋯ open: the full title and folder on top.
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
+ * YAZ-5493: `page-calendar` a made-up day plan as a calendar table, the clock frozen at 9:40 am (`CALENDAR_NOW`): the now
+ * line a third down the 9:30 row, the rows before it dimmed; `page-calendar-chip` the same (`proveLayout.ts` scrolls it past the now
+ * row: the Now pill at the bottom); `page-calendar-full` the table full screen.
+ * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
+ * tap ticks (44 px around it), the card's box a glyph.
+ * YAZ-5460: the folder page on the made-up `Projects` folder (`folderVault.ts`): `folder-hold` the menu of a held
+ * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
+ * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (every day, "Earlier" open) its other views;
+ * `folder-sheet` the page in a sheet over Search (the vault says "explore").
+ * YAZ-5504: `card-menu` a card's own view with its ⋯ open, Archive card tapped once ("Tap again to archive");
+ * `page-card-menu` the page of three cards with the ⋯ of its first card open (a made-up answer list, `fixtureAnswers`).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -120,6 +139,15 @@ const COMMENTED_CARD = [
   '',
 ].join('\n')
 
+/** YAZ-5504: the page of `page-card-menu`: three cards, none archived (an archived card is dim by design, the Mac's). */
+const MENU_CARDS = [
+  '# Rivers of Europe',
+  'Three cards for the trip.',
+  cardBlock('DEMO-51', 'Which river runs through Madrid?\n---\nThe Manzanares', ['title "River of Madrid"']),
+  cardBlock('DEMO-52', 'Which river runs through Paris?\n---\nThe Seine'),
+  cardBlock('DEMO-53', 'Which river runs through Vienna?\n---\nThe Danube', ['title "River of Vienna"', 'notitle', 'fix']),
+].join('\n\n')
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
@@ -127,6 +155,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const extra: Record<string, string | Uint8Array> =
     name === 'page-tricks'
       ? { 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` }
+      : name === 'page-card-menu'
+        ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${MENU_CARDS}\n` }
       : name === 'page-cards' || name === 'search-tree' || name === 'search-found' || name === 'search-collapsed'
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-code'
@@ -137,6 +167,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
           ? { 'Table shapes.md': `---\ntitle: Table shapes\n---\n\n${TABLE_PAGE}\n` }
         : name === 'page-table-frozen' || name === 'page-table-frozen-full'
           ? { 'Frozen table.md': `---\ntitle: Frozen table\n---\n\n${FROZEN_PAGE}\n` }
+        : name === 'page-tasks'
+          ? { 'home/Weekend jobs.md': TASKS_PAGE }
+        : name === 'page-calendar' || name === 'page-calendar-chip' || name === 'page-calendar-full'
+          ? { 'Day plan.md': `---\ntitle: Day plan\n---\n\n${CALENDAR_PAGE}\n` }
         : name === 'page-table-look'
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
         : name === 'page-drawing'
@@ -174,12 +208,20 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { shape: 'underline' }, parts: { id: { bold: true } } }),
                 '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 }, h2: { underline: true } }),
               }
-          : name === 'page-jump' || name === 'page-headings'
-            ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
+          : name === 'page-headings' || name === 'page-headings-alone'
+            ? {
+                'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n`,
+                // `page-headings-alone`: Review off in the vault's file, and the tabs read from it: Search alone, no tab bar.
+                ...(name === 'page-headings-alone' && { '.yaseendocs/review.json': '{"enabled": false}' }),
+              }
+          : name === 'page-menu-title'
+            ? { 'travel/2026/Madrid week.md': '---\ntitle: A very long page title about the first week of the trip to Madrid in May\n---\n\n# Week\n\nDay one.\n' }
           : name === 'page-folder'
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
           : name === 'card-file-comments'
             ? { 'cards/river-of-seville-demo-45.md': COMMENTED_CARD }
+          : name.startsWith('folder-')
+            ? { ...FOLDER_FILES, ...(name === 'folder-sheet' && { '.yaseendocs/link-click.json': '{"click":"explore"}' }) }
             : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
@@ -200,9 +242,15 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       return file === null ? shown : { ...shown, url: URL.createObjectURL(new Blob([file.content as BlobPart], { type: 'image/svg+xml' })), type: 'image/svg+xml' }
     },
   }
-  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
+  const sync = fakeSync()
+  // YAZ-5504: the card menu's fixtures get a made-up answer list (in memory; nothing is sent).
+  if (name === 'card-menu' || name === 'page-card-menu') {
+    const answers = fixtureAnswers(store, READER_ID)
+    sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
+  }
+  const services: AppServices = { store, tokens, vaultTabs: name === 'page-headings-alone' ? undefined : reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
   root.render(<App services={services} />)
-  await until(() => document.querySelector('[role="tab"]') !== null)
+  await until(() => document.querySelector('[role="tab"]') !== null || (name === 'page-headings-alone' && document.querySelector('input[name="search"]') !== null))
   press('Search')
   await until(() => document.querySelector('.search__rows, .tree') !== null)
 
@@ -219,7 +267,45 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   }
   const fakeClipboard = (works: boolean) =>
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => (works ? Promise.resolve() : Promise.reject(new DOMException('Not allowed', 'NotAllowedError'))) } })
+  /** YAZ-5460: a finger held on a folder row of the tree, as long as the hold. */
+  const hold = async (folder: string) => {
+    const row = [...document.querySelectorAll<HTMLElement>('.tree__row')].find((r) => r.querySelector('.tree__label')?.textContent === folder)
+    row?.dispatchEvent(new (typeof PointerEvent === 'function' ? PointerEvent : MouseEvent)('pointerdown', { bubbles: true, button: 0, clientX: 40, clientY: 40 }))
+    await until(() => document.querySelector('.hold-menu') !== null, 1500)
+    await wait(250)
+  }
+  const folderTab = async (tab: string) => {
+    press(/^Open folder page$/)
+    await until(() => document.querySelector('.folder-view') !== null)
+    if (tab !== '') press(tab)
+    await wait(400)
+  }
   switch (name) {
+    case 'folder-hold':
+      await hold('Projects')
+      break
+    case 'folder-page':
+    case 'folder-sheet':
+      await hold('Projects')
+      await folderTab('')
+      break
+    case 'folder-table':
+      await hold('Projects')
+      await folderTab('')
+      document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
+      await wait(150)
+      break
+    case 'folder-grouped':
+    case 'folder-board':
+    case 'folder-cards':
+    case 'folder-calendar':
+      await hold('Projects')
+      await folderTab({ 'folder-grouped': 'By status', 'folder-board': 'Board', 'folder-cards': 'Cards', 'folder-calendar': 'Calendar' }[name])
+      if (name === 'folder-calendar') press(/^Earlier/)
+      await wait(150)
+      document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
+      await wait(150)
+      break
     case 'page-copied':
     case 'page-copy-by-hand':
       fakeClipboard(name === 'page-copied')
@@ -231,14 +317,6 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       press(/Copy the path$/)
       await until(() => document.querySelector('.page-toast') !== null)
       break
-    case 'page-jump': {
-      await typed('long notes')
-      await open(/^Long notes/, '.reader__body h2')
-      const screen = document.querySelector<HTMLElement>('.screen--reader')
-      if (screen !== null) screen.scrollTop = 600
-      await until(() => document.querySelector('.scroll-jump[data-on]') !== null)
-      break
-    }
     case 'page-tools':
     case 'page-find':
       await open(/^Spanish words/, '.reader__body h1')
@@ -255,12 +333,23 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       }
       break
     case 'page-headings':
-      await typed('long notes')
-      await open(/^Long notes/, '.reader__body h2')
+    case 'page-headings-alone':
+    case 'page-headings-few':
+      if (name === 'page-headings-few') await open(/^Trip plan/, '.reader__body p')
+      else {
+        await typed('long notes')
+        await open(/^Long notes/, '.reader__body h2')
+      }
       press('Page tools')
       await wait(50)
       press(/Headings/)
-      await until(() => document.querySelector('.headings-sheet__row') !== null)
+      await until(() => document.querySelector('.headings-sheet__row, .headings-sheet__none') !== null)
+      break
+    case 'page-menu-title':
+      await typed('madrid week')
+      await open(/^A very long page title/, '.reader__body h1')
+      press('Page tools')
+      await until(() => document.querySelector('.page-tools__menu') !== null)
       break
     case 'page-properties':
       await typed('trip notes')
@@ -401,6 +490,20 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await open(/^Review notes/, '.page-comments')
       document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
       break
+    case 'card-menu':
+      await typed('la bib')
+      await open(/^la biblioteca/, '.card-view__card .card__body')
+      press('Card tools')
+      await until(() => document.querySelector('[data-action="off"]:not(:disabled)') !== null)
+      press('Archive card')
+      await wait(50)
+      break
+    case 'page-card-menu':
+      await typed('rivers')
+      await open(/^Rivers of Europe/, '.reader__body .page-card')
+      press('Card actions: River of Madrid')
+      await until(() => document.querySelector('.card-menu [data-action="off"]:not(:disabled)') !== null)
+      break
     case 'card-file-comments':
       await typed('seville')
       await open(/^River of Seville/, '.card-view .page-comments')
@@ -430,6 +533,23 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await wait(200)
       break
     }
+    case 'page-calendar':
+    case 'page-calendar-chip':
+    case 'page-calendar-full': {
+      setCalendarClock(() => CALENDAR_NOW)
+      await typed('day plan')
+      await open(/^Day plan/, '.reader__body .table-now-row')
+      if (name === 'page-calendar-full') {
+        document.querySelector<HTMLElement>('.reader__body [data-table-open]')?.click()
+        await until(() => document.querySelector('.table-view') !== null)
+      }
+      await wait(300)
+      break
+    }
+    case 'page-tasks':
+      await typed('weekend jobs')
+      await open(/^Weekend jobs/, '.reader__body .page-task[data-task]')
+      break
     case 'page-table-look':
       await typed('table look')
       await open(/^Table look/, '.reader__body .page-table-box')

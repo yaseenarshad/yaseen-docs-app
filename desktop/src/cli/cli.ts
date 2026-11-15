@@ -14,6 +14,7 @@
  * `HELP` IS the contract: it is the only documentation an agent reads, so its wording is UI copy.
  */
 import { execFile } from 'node:child_process'
+import { statSync } from 'node:fs'
 import { readFile as readRaw, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
@@ -38,17 +39,19 @@ import { folderBlocks } from '@shared/folderValues'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { PAGE_ID_KEY, canonicalPageId, isNumberId, vaultPageId } from '@shared/pageId'
 import { keyFold } from '@shared/propertyKeys'
-import { cardBlock, cardTitleOf, changeCard, isCardPropertyName, pageCards, withCardNext, withCardProperty, withCardTitle, type CardLine, type CardPropertyScalar, type CardPropertyValue } from '@shared/cardLine'
+import { cardBlock, cardTitleOf, changeCard, isCardPropertyName, pageCards, withCardNext, withCardNoTitle, withCardProperty, withCardTitle, type CardLine, type CardPropertyScalar, type CardPropertyValue } from '@shared/cardLine'
 import { lineKinds } from '@shared/fences'
 import { inLineEnds, withLf } from '@shared/lineEnds'
 import { cardQueue, cardState } from '@shared/cardSchedule'
 import { cardFileContent, cardFileName, isCardFileContent } from '@shared/cardFileFormat'
+import { CARD_SKILL_START_PAGE, cardSkillFolder } from '@shared/cardSkillFolder'
 import { makeCardResolver } from '@shared/cardLinks'
 import { isSkipped } from '@shared/fileKind'
 import { REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { AGENT_HANDLE, VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type IndexRecord, type SettingsState } from '@shared/types'
 import { makeResolver } from '@shared/linkResolver'
 import { mentionsOf } from '@shared/mentions'
+import { CARD_SKILL_DIR } from '../main/cardSkill'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { createFile } from '../main/fs/create'
 import { readFile, writeFile } from '../main/fs/file'
@@ -83,9 +86,10 @@ export const USAGE = `usage:
   yaseendocs links    <page.md> [--json]
   yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
-  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--prop <name>=<value> ...] [--after <heading>] [--json]
-  yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--json]
+  yaseendocs card add <page.md> --body <text | -> [--title <text>] [--prop <name>=<value> ...] [--after <heading>] [--hide-title] [--json]
+  yaseendocs card new <folder> --title <text> [--body <text | ->] [--prop <name>=<value> ...] [--hide-title] [--json]
   yaseendocs card next <id> [<folder>] [--off] [--json]
+  yaseendocs card guide [--path]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
@@ -146,8 +150,15 @@ the app counts it: by id, path, title, file name or alias, in the body or the pr
 A card is a spaced-repetition card inside a page: a \`\`\`card\` fence with its text, and the card
 line under it, \`<!-- card: <id>, title "<title>", <time> <answer>, ... -->\`, which holds the card's id, its title and each review.
 \`---\` alone on a line splits the front from the back, and \`{{word}}\` hides a word. Only a vault that
-gives its pages IDs has cards, and \`due\` and \`card\` are refused in any other. Never write or change a
-card line by hand: \`card add\` and \`card new\` write it, and the app writes each review.
+gives its pages IDs has cards, and \`due\` and \`card\` are refused in any other.
+Every card's title is on its card line, right after its ID: \`title "<title>"\`. A card's text is only its
+sides: its first line is part of the question, never its title. A card file's front matter holds only
+\`kind: card\`, never a \`title:\`. The title is plain text on one line; in it, write \`\\"\` for a quote,
+\`\\\\\` for a backslash and \`\\>\` for \`>\`. A card with no title shows "Untitled card" in its head, and its ID in links.
+\`card add\` and \`card new\` write the card line, and the app writes each review. Never change a card line that the
+app wrote: it holds the card's ID, its title and its reviews. On a new card that you write by hand, put the line
+\`<!-- card: title "<title>" -->\` directly below the closing fence (add \`, notitle\` to hide the title on the
+front); the app adds the ID and keeps the rest. With the command, use \`--title\` and \`--hide-title\`.
 
 \`due\` lists the cards due now under a folder (the whole vault for its root), as the app's Inbox
 shows them: first the cards up next (see \`card next\`), then the cards due today, most overdue first, then
@@ -181,12 +192,24 @@ card line, as every card's (never a \`title:\` property), and its name is \`<keb
 card's title, on its card line, and \`--body\` (\`--body -\` for stdin) the card's text. A name that is already taken is refused. It prints \`made <path>\`; \`--json\` gives
 \`id\`, \`path\` and \`title\`.
 
+\`--hide-title\` on \`card add\` and \`card new\` keeps the card's title off the front in review, as the app's
+⋯ › "Title on the front" › Hide: the card line gets the part \`notitle\`, after the title
+(\`<!-- card: <id>, title "<title>", notitle -->\`), and the title shows only once the whole card is shown. The
+part is the same for a card in a page and for a card file. Do not put the title in \`{{ }}\`. Use \`--hide-title\`.
+
 \`card next <id>\` puts a card at the top of the Inbox, as the app's "Put at top of Inbox" does: the card
 line gets the part \`next\`, and the Inbox shows the card first, due or not and outside the new cards a
 day, until it is answered one time (the answer removes \`next\`). \`--off\` removes it ("Remove from top of
 Inbox"). The card is found by its id in the vault of \`<folder>\` (the current folder when none is given).
 An archived card stays out of the Inbox. It prints \`<id> is up next (<page>)\` or \`<id> is not up
 next (<page>)\`; \`--json\` gives \`id\`, \`page\` and \`next\`.
+
+\`card guide\` prints the start page of the card skill: how to write a good card and the formats.
+Run \`yaseendocs card guide\` before you add or change a card. The skill is a folder of pages, and the start
+page names the others: \`--path\` prints the folder's path in double quotes (it has a space on macOS), so you can
+read them. Run inside a vault that has a \`Card skill\` folder at its top (the person's own copy of the skill), the
+command uses that folder; anywhere else, the app's copy, which the app makes at its start. Before the app has
+started once there is no copy, and the command says so (exit 1).
 
 \`vaults\` lists the vaults the app knows: the recent ones, last used first, then each other vault
 that is open or has a number. A line is the name, the folder, \`⌘<n>\` for number n, \`(open)\` for
@@ -238,7 +261,7 @@ const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date', '--a
 /** Flags that may come more than once: each value is kept, in order (`--prop`, YAZ-5386). */
 const REPEATED = new Set(['--prop'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen', '--off', '--path', '--hide-title'])
 
 class Usage extends Error {}
 
@@ -644,9 +667,16 @@ function cardProps(values: readonly string[] = []): Record<string, CardPropertyV
 /** `line` with `properties` on it, in their order (YAZ-5386). */
 const withCardProps = (line: CardLine, properties: Record<string, CardPropertyValue>): CardLine => Object.entries(properties).reduce((l, [name, value]) => withCardProperty(l, name, value), line)
 
+/**
+ * The new card's line (YAZ-5135, YAZ-5308, YAZ-5386): its ID, its title (`title "<text>"`, none for an empty one), `notitle`
+ * with `--hide-title`, as ⋯ › "Title on the front" › Hide writes it, and its `--prop` properties.
+ */
+const newCardLine = (id: string, title: string, flags: Map<string, string | true>, properties: Record<string, CardPropertyValue>): CardLine =>
+  withCardProps(withCardNoTitle(withCardTitle({ parts: [{ kind: 'id', id }] }, title), flags.has('--hide-title')), properties)
+
 /** `card add` (YAZ-4963, idea 16): a card with a real ID from the vault's counter, written atomically. */
 async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, props?: readonly string[]): Promise<void> {
-  onlyFlags('card add', flags, ['--body', '--title', '--prop', '--after', '--json'])
+  onlyFlags('card add', flags, ['--body', '--title', '--prop', '--after', '--hide-title', '--json'])
   const body = (await bodyOf(flags, io)).replace(/\r\n/g, '\n').replace(/^\n+|\s+$/g, '')
   if (body === '') throw new Usage('card add needs a --body with text')
   const title = cardTitleFlag(flags)
@@ -660,11 +690,11 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, 
   // The door (YAZ-2677 D4): the count file is on disk before the card is written (R18), the app's own number.
   const id = (await mintIds(root, 1))?.[0]
   if (id === undefined) throw new Error(`${page}'s vault does not give its pages IDs, so it has no cards`)
-  const block = cardBlock(body, withCardProps(withCardTitle({ parts: [{ kind: 'id', id }] }, title), properties))
+  const block = cardBlock(body, newCardLine(id, title, flags, properties))
   // The page keeps its own line end, `\r\n` or `\n` (YAZ-5146): the card is written with it.
-  await transformOnDisk(page, (fresh) => inLineEnds(fresh, (text) => {
-    if (isCardFileContent(text)) throw new Error(CARD_FILE_REFUSED)
-    const { frontmatter, body } = splitFrontmatter(text)
+  await transformOnDisk(page, (fresh) => inLineEnds(fresh, (lf) => {
+    if (isCardFileContent(lf)) throw new Error(CARD_FILE_REFUSED)
+    const { frontmatter, body } = splitFrontmatter(lf)
     const lines = body.split('\n')
     const at = cardPlace(body, after)
     // One blank line before the card and one after it; the page's own blank lines stay.
@@ -685,7 +715,7 @@ async function cardAdd(page: string, flags: Map<string, string | true>, io: Io, 
  * (the number is spent, as the app's New page spends one on a create that fails).
  */
 async function cardNew(dir: string, flags: Map<string, string | true>, io: Io, props?: readonly string[]): Promise<void> {
-  onlyFlags('card new', flags, ['--title', '--body', '--prop', '--json'])
+  onlyFlags('card new', flags, ['--title', '--body', '--prop', '--hide-title', '--json'])
   const title = cardTitleFlag(flags)
   if (title === '') throw new Usage('card new needs --title')
   const properties = cardProps(props)
@@ -700,7 +730,7 @@ async function cardNew(dir: string, flags: Map<string, string | true>, io: Io, p
   if (id === undefined) throw new Error(`${dir}'s vault does not give its pages IDs, so it has no cards`)
   const path = join(dir, cardFileName(title, id))
   // No door: a card file carries no page `id:` (its card's ID is the file's), so the content is written as it is.
-  await createFile({ path, content: cardFileContent(title, body, withCardProps({ parts: [{ kind: 'id', id }] }, properties)) }, null).catch((err: unknown) => {
+  await createFile({ path, content: cardFileContent(title, body, newCardLine(id, title, flags, properties)) }, null).catch((err: unknown) => {
     throw err instanceof BridgeFailure && err.code === 'ALREADY_EXISTS' ? new Error(`${path} is already there`) : err
   })
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, path, title, ...(Object.keys(properties).length > 0 && { properties }) }, null, 2)}\n` : `made ${path}\n`)
@@ -725,6 +755,26 @@ async function cardNext(ref: string, from: string, flags: Map<string, string | t
   await transformOnDisk(record.path, (content) => changeCard(content, id, (line) => withCardNext(line, on)))
   if (on && record.cards?.find((card) => card.id === id)?.off === true) io.stderr(`${id} is archived: it shows in the Inbox once it is unarchived\n`)
   io.stdout(flags.has('--json') ? `${JSON.stringify({ id, page: record.path, next: on }, null, 2)}\n` : `${id} is ${on ? '' : 'not '}up next (${record.path})\n`)
+}
+
+/**
+ * `card guide` (YAZ-5110, decision 6): the card skill's start page, or with `--path` its folder in double quotes. The
+ * vault is the one the current folder is in; its own `Card skill` folder wins over the app's copy (suggestion 18,
+ * `cardSkillFolder`). The app's copy is `<userData>/card-skill`, found as `vaults` finds the state file.
+ */
+async function cardGuide(args: readonly string[], flags: Map<string, string | true>, io: Io): Promise<void> {
+  onlyFlags('card guide', flags, ['--path'])
+  if (args.length > 0) throw new Usage('card guide takes no argument')
+  const appCopy = join(userDataDir(process.env, process.platform, homedir()), CARD_SKILL_DIR)
+  const folder = cardSkillFolder(await vaultRoot(process.cwd()), appCopy, (path) => statSync(path, { throwIfNoEntry: false })?.isDirectory() === true)
+  if (!(await stat(folder).catch(() => null))?.isDirectory()) throw new Error(`The card skill is not there yet: start Yaseen Docs once to make ${folder}`)
+  if (flags.has('--path')) {
+    io.stdout(`"${folder}"\n`)
+    return
+  }
+  const start = await readRaw(join(folder, CARD_SKILL_START_PAGE), 'utf8').catch(() => null)
+  if (start === null) throw new Error(`no ${CARD_SKILL_START_PAGE} in ${folder}`)
+  io.stdout(start.endsWith('\n') ? start : `${start}\n`)
 }
 
 async function run(argv: readonly string[], io: Io): Promise<void> {
@@ -752,7 +802,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       if (args[1] === undefined) throw new Usage('card new needs a folder')
       return cardNew(resolve(args[1]), flags, io, repeated.get('--prop'))
     }
-    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new or next' : `unknown card command: ${args[0]}`)
+    if (args[0] === 'guide') return cardGuide(args.slice(1), flags, io)
+    if (args[0] !== 'add') throw new Usage(args[0] === undefined ? 'card needs add, new, next or guide' : `unknown card command: ${args[0]}`)
     if (args[1] === undefined) throw new Usage('card add needs a page')
     const page = resolve(args[1])
     requireMarkdownFile(page)

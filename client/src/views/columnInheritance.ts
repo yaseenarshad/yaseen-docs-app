@@ -7,7 +7,7 @@ import { findKey, keyFold } from '@shared/propertyKeys'
 import { isReadOnlyProperties } from '@shared/readOnly'
 import { basename, dirname } from '../lib/paths'
 import { inFolder, type FolderPagesSettings, type IndexRecord } from '@shared/types'
-import { folderSettings, type ColumnDecl } from './folderSettings'
+import { folderSettings, type ColumnDecl } from './folderSettingsRead'
 
 /** The settings records by the folder each configures (root-relative, '' is the vault root). Build it once per index snapshot. */
 export type FolderMap = ReadonlyMap<string, IndexRecord>

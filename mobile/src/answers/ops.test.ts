@@ -17,6 +17,7 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     ['off', [{ kind: 'off', id: 'NC-2', on: true }], '<!-- card: NC-2, off -->'],
     ['next', [{ kind: 'next', id: 'NC-2', on: true }], '<!-- card: NC-2, next -->'],
     ['fix', [{ kind: 'fix', id: 'NC-2', on: true }], '<!-- card: NC-2, fix -->'],
+    ['notitle', [{ kind: 'notitle', id: 'NC-2', on: true }], '<!-- card: NC-2, notitle -->'],
   ]
   for (const [name, ops, want] of kinds) {
     it(`${name}: on a page, only that card's line changes`, () => {
@@ -179,8 +180,12 @@ describe('opsBetween: a change of one card line as actions (the review host\'s â
     expect(opsBetween('NC-2', two, one)).toEqual([{ kind: 'unreview', id: 'NC-2', at: R1.at, rating: 'again', nth: 2 }])
     expect(opsBetween('NC-2', one, two)).toEqual([{ kind: 'review', id: 'NC-2', review: { at: R1.at, rating: 'again', seconds: 4 }, nth: 2 }])
   })
-  it('a change the phone cannot send (for example the title on the front) is refused, not lost', () => {
-    expect(() => opsBetween('NC-2', line('<!-- card: NC-2 -->'), line('<!-- card: NC-2, notitle -->'))).toThrow(/cannot send/)
+  it('YAZ-5503: the title on the front is a mark: Hide is `notitle` on, Show is off', () => {
+    expect(opsBetween('NC-2', line('<!-- card: NC-2 -->'), line('<!-- card: NC-2, notitle -->'))).toEqual([{ kind: 'notitle', id: 'NC-2', on: true }])
+    expect(opsBetween('NC-2', line('<!-- card: NC-2, notitle, off -->'), line('<!-- card: NC-2, off -->'))).toEqual([{ kind: 'notitle', id: 'NC-2', on: false }])
+  })
+  it('a change the phone cannot send (for example the title) is refused, not lost', () => {
+    expect(() => opsBetween('NC-2', line('<!-- card: NC-2 -->'), line('<!-- card: NC-2, title "New" -->'))).toThrow(/cannot send/)
   })
 })
 

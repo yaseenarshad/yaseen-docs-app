@@ -16,11 +16,24 @@ import { join } from 'node:path'
  *  - the table look (`#fixture=page-table-look`, YAZ-5482), light and dark: the merged cells span their rows and
  *    columns, the fills and text colours paint (a custom dark ink made readable in dark mode), a clipped cell is one
  *    line, no column is too narrow to read, the page never scrolls sideways.
+ *  - the calendar table (`#fixture=page-calendar`, `page-calendar-chip`, `page-calendar-full`, YAZ-5493), light and dark at
+ *    375 px, the clock frozen at 9:40 am: the now line a third down the 9:30 row, red, across the row; the rows before
+ *    it dimmed, the kept to-do row not; scrolled past the row, the Now pill at the bottom of the screen pointing up;
+ *    full screen, the copy marked too.
+ *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
+ *    area, a done task struck through.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
+ *  - the Headings sheet (`#fixture=page-headings`, `page-headings-few`, `page-headings-alone`, YAZ-5497) and the properties
+ *    panel (`page-properties`) at 375×667 and 390×844: the box inside the screen, and on top: `elementFromPoint` at its
+ *    list's centre, its head and its bottom finds the sheet itself, and at the page arrows' and the tab bar's place too.
+ *  - the folder page (`#fixture=folder-*`, YAZ-5460), light and dark, at 375 px: a held folder's menu, the page with
+ *    its text and tabs, its table (in its box, the header row and the Name column marked to stay), the grouped table,
+ *    the board (its columns scroll sideways in their row), the cards, the calendar's agenda, the page in a sheet; the
+ *    page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -262,6 +275,138 @@ if (process.env.LAYOUT_PAGES !== 'no') {
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
+// YAZ-5493: the calendar table, light and dark, at 375 px (`src/dev/tableFixtures.ts`: CALENDAR, the clock at 9:40 am).
+const CALENDAR_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.reader__body table[data-calendar], .table-view table[data-calendar]')
+  if (!table) return { none: true }
+  const rows = [...table.rows]
+  const now = rows.findIndex((row) => row.classList.contains('table-now-row'))
+  const past = rows.flatMap((row, i) => (row.classList.contains('table-past-row') ? [i] : []))
+  const cell = rows[now].cells[1]
+  const after = getComputedStyle(cell, '::after')
+  const dot = getComputedStyle(rows[now].cells[0], '::before')
+  const ty = new DOMMatrix(after.transform).m42
+  // The line's middle: the pseudo starts 1px above the cell's top and its 2px border is the line.
+  const lineAt = Math.round(ty / r(rows[now]).height * 1000) / 1000
+  const colour = (el) => getComputedStyle(el).color
+  const chip = document.querySelector('.reader__body [data-table-now]')
+  const tab = document.querySelector('.tabbar')
+  const c = chip && !chip.hidden ? r(chip) : null
+  return {
+    now, past, lineAt, line: after.borderTopColor + ' ' + after.borderTopWidth, dot: dot.backgroundImage.includes('radial-gradient'),
+    pastInk: colour(rows[2].cells[1]), keptInk: colour(rows[1].cells[1]), nowInk: colour(rows[now].cells[1]),
+    shade: getComputedStyle(rows[2].cells[1]).backgroundImage.includes('color-mix') || getComputedStyle(rows[2].cells[1]).backgroundImage.includes('rgba'),
+    chip: c && { top: Math.round(c.top), bottom: Math.round(c.bottom), dir: chip.dataset.dir, tab: tab ? Math.round(r(tab).top) : innerHeight },
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['page-calendar', 'page-calendar-chip', 'page-calendar-full']) {
+      const file = await open(name, 375, 667)
+      if (name === 'page-calendar-chip') {
+        // Down the page until the now row is above the screen and the table's end is in view.
+        await evaluate(`(() => { const s = document.querySelector('.screen--reader'), row = document.querySelector('.reader__body table tbody tr:last-child'); s.scrollTop += row.getBoundingClientRect().bottom - s.getBoundingClientRect().bottom + 40 })()`)
+        await wait(400)
+      }
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(CALENDAR_CHECK)
+      const red = scheme === 'dark' ? 'rgb(255, 123, 114)' : 'rgb(192, 57, 43)'
+      const marks = !m.none && m.now === 7 && m.past.join() === '2,3,4,5,6' && Math.abs(m.lineAt - 0.333) < 0.02 && m.line === `${red} 2px` && m.dot && m.pastInk !== m.keptInk && m.keptInk === m.nowInk && m.shade && !m.pageWide
+      const chipOk = name !== 'page-calendar-chip' ? true : m.chip !== null && m.chip.dir === 'up' && m.chip.top > 0 && m.chip.bottom <= m.chip.tab
+      const ok = marks && chipOk
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `now row ${m.now}, the line ${m.lineAt} down it (${m.line}), dot ${m.dot}; past rows ${m.past.join(',')} (${m.pastInk}, shade ${m.shade}), the kept row ${m.keptInk}; Now pill ${m.chip ? `${m.chip.top}-${m.chip.bottom} above the tab bar at ${m.chip.tab}, arrow ${m.chip.dir}` : 'hidden'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5494: the task page, light and dark, at 375 px: each box of the page is a check box, a tap 18 px off its middle
+// still lands on it (its 44 px area), the box itself is the reader's size, a done task is struck through.
+const TASKS_CHECK = `(() => {
+  const boxes = [...document.querySelectorAll('.reader__body .page-task')]
+  const own = boxes.filter((b) => b.dataset.task)
+  // Sideways 18 px off the middle (44 px wide); up and down 9 px at least (tasks one line apart share the gap: 44 px where a task is alone).
+  const at = (b, dx, dy) => { const r = b.getBoundingClientRect(); const y = r.top + r.height / 2 + dy; return y < 60 || y > innerHeight - 60 || document.elementFromPoint(r.left + r.width / 2 + dx, y) === b }
+  const hits = own.map((b) => [[18, 0], [-18, 0], [0, 9], [0, -9]].every(([dx, dy]) => at(b, dx, dy)))
+  const misses = own.flatMap((b, i) => (hits[i] ? [] : [b.dataset.task + ' ' + [[18, 0], [-18, 0], [0, 9], [0, -9]].map(([dx, dy]) => (at(b, dx, dy) ? 'y' : 'n')).join('')]))
+  const done = own.find((b) => b.dataset.checked === 'true' && !b.closest('li').querySelector('ul, ol'))
+  const li = done && done.closest('li')
+  return { all: boxes.length, own: own.length, checkboxes: own.every((b) => b.getAttribute('role') === 'checkbox'), hits: hits.filter(Boolean).length, misses, size: own[0] ? Math.round(own[0].getBoundingClientRect().width) : 0, struck: li ? getComputedStyle(li).textDecorationLine : '', pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('page-tasks', 375, 667)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const m = await evaluate(TASKS_CHECK)
+    const ok = m.own === 11 && m.checkboxes && m.hits === m.own && m.size > 0 && m.size < 30 && m.struck.includes('line-through') && !m.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks at 375x667, ${scheme}: ${m.own} of ${m.all} boxes are the page's check boxes; ${m.hits} answer a tap 18 px to each side and 9 px up and down${m.misses.length ? ' (MISSED ' + m.misses.join(' | ') + ')' : ''}; a box is ${m.size}px; a done task ${m.struck}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5497: a sheet over the page is whole and on top. Its box is inside the screen; the point at its list's centre (the
+// words of a page with no headings), at its head and just above its bottom edge is the sheet's own; so is the point at
+// the page arrows' and the tab bar's centre (the sheet covers them: nothing at the bottom paints over it).
+const ON_TOP = (sheet: string, panel: string, list: string, head: string) => `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const s = document.querySelector(${JSON.stringify(sheet)}), p = s && s.querySelector(${JSON.stringify(panel)})
+  if (!p) return { none: true }
+  const box = r(p)
+  const inside = box.top >= -0.5 && box.left >= -0.5 && box.bottom <= innerHeight + 0.5 && box.right <= innerWidth + 0.5 && box.height > 40
+  const own = (x, y, el) => { const hit = document.elementFromPoint(x, y); return { ok: !!hit && el.contains(hit), at: Math.round(y), hit: hit ? (hit.className || hit.tagName).toString().slice(0, 40) : 'nothing' } }
+  const l = p.querySelector(${JSON.stringify(list)}), lb = l && r(l)
+  const h = p.querySelector(${JSON.stringify(head)}), hb = h && r(h)
+  const points = {
+    list: lb ? own(lb.left + lb.width / 2, lb.top + Math.min(lb.height, box.bottom - lb.top) / 2, p) : { ok: false, hit: 'no list' },
+    head: hb ? own(hb.left + hb.width / 2, hb.top + hb.height / 2, p) : { ok: false, hit: 'no head' },
+    bottom: own(box.left + box.width / 2, box.bottom - 8, p),
+  }
+  for (const bar of document.querySelectorAll('.page-arrows, .tabbar')) {
+    const b = r(bar)
+    points[bar.className.split(' ')[0]] = own(b.left + b.width / 2, b.top + b.height / 2, s)
+  }
+  const list2 = l ? { rows: l.children.length, scrolls: l.scrollHeight > l.clientHeight + 1 } : null
+  return { box: [Math.round(box.top), Math.round(box.bottom), Math.round(box.width)], inside, points, list: list2, tabbar: !!document.querySelector('.tabbar'), arrows: !!document.querySelector('.page-arrows') }
+})()`
+if (process.env.LAYOUT_SHEETS !== 'no') {
+  const CASES = [
+    ['page-headings', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list', '.headings-sheet__title')],
+    ['page-headings-few', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__none', '.headings-sheet__title')],
+    ['page-headings-alone', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list', '.headings-sheet__title')],
+    ['page-properties', ON_TOP('.props', '.props__panel', '.props__rows', '.props__title')],
+  ] as const
+  for (const [w, h] of SIZES.slice(1)) {
+    for (const [name, check] of CASES) {
+      const file = await open(name, w, h)
+      const m = await evaluate(check)
+      const pts = m.none ? [] : Object.entries(m.points as Record<string, { ok: boolean; at: number; hit: string }>)
+      const ok = !m.none && m.inside && pts.length >= 3 && pts.every(([, p]) => p.ok) && (name !== 'page-headings-alone' || !m.tabbar) && (name.startsWith('page-headings') ? m.arrows : true) && (name === 'page-headings' ? m.list?.scrolls === true : true)
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${h}: ${m.none ? 'NO SHEET' : `box ${m.box.join('..')} ${m.inside ? 'inside' : 'OUTSIDE'} the screen; ${m.tabbar ? 'tab bar' : 'no tab bar'}, ${m.arrows ? 'arrows' : 'no arrows'}; on top at ${pts.map(([k, p]) => `${k} ${p.ok ? 'yes' : `NO (${p.hit} at ${p.at})`}`).join(', ')}${m.list ? `; list ${m.list.rows} rows, ${m.list.scrolls ? 'scrolls' : 'fits'}` : ''}`}  ${file}`)
+    }
+  }
+}
+// YAZ-5498: the top bar cuts a long title; its ⋯ menu shows it whole (wrapped, never cut) and the folder, inside the screen.
+if (process.env.LAYOUT_SHEETS !== 'no') {
+  for (const [w, h] of SIZES.slice(1)) {
+    const file = await open('page-menu-title', w, h)
+    const m = await evaluate(`(() => {
+      const t = document.querySelector('.topbar__title'), menu = document.querySelector('.page-tools__menu'), top = menu && menu.querySelector('.menu-title')
+      if (!top) return { none: true, barCut: t.scrollWidth > t.clientWidth }
+      const name = top.querySelector('.menu-title__name'), r = menu.getBoundingClientRect()
+      return { barCut: t.scrollWidth > t.clientWidth, whole: name.scrollWidth <= name.clientWidth && name.textContent.length > 60, lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)), folder: top.querySelector('.menu-title__path')?.textContent, inside: r.left >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight, box: [Math.round(r.left), Math.round(r.right)] }
+    })()`)
+    const ok = !m.none && m.barCut && m.whole && m.lines >= 2 && m.folder === 'travel / 2026' && m.inside
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-menu-title at ${w}x${h}: ${m.none ? `NO TITLE in the menu (bar cut: ${m.barCut})` : `bar cut ${m.barCut}; the full title ${m.whole ? 'whole' : 'CUT'} on ${m.lines} lines; folder "${m.folder}"; menu ${m.box.join('..')} ${m.inside ? 'inside' : 'OUTSIDE'}`}  ${file}`)
+  }
+}
 // YAZ-5458: the reading look, light and dark, at 375 px: a picture of each screen down the page.
 if (process.env.LAYOUT_LOOK !== 'no') {
   for (const scheme of ['light', 'dark'] as const) {
@@ -279,6 +424,51 @@ if (process.env.LAYOUT_LOOK !== 'no') {
     const ok = m.blocks > 20 && !m.wide
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-look ${scheme} at 375x667: ${m.blocks} blocks, ${m.height}px tall; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}; ${shots.length} pictures  ${shots[0]}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5460: the folder page and its views, light and dark, at 375 px.
+const FOLDER_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.folder-table table')
+  const board = document.querySelector('.folder-board')
+  const narrow = table ? [...table.rows[0].cells].filter((c) => r(c).width < 44).map((c) => c.textContent) : []
+  return {
+    menu: !!document.querySelector('.hold-menu [role=menu]'),
+    page: !!document.querySelector('.folder-page'),
+    tabs: document.querySelectorAll('.folder-tabs__tab').length,
+    table: !!table,
+    pinned: table ? table.getAttribute('data-pin-rows') === '1' && table.getAttribute('data-pin-cols') === '1' : null,
+    inBox: table ? !!table.closest('.page-table-box') : null,
+    narrow,
+    board: board ? { columns: board.children.length, scrolls: board.scrollWidth > board.clientWidth + 1 } : null,
+    cards: document.querySelectorAll('.folder-card').length,
+    agenda: document.querySelectorAll('.folder-agenda__day').length,
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 || [...document.querySelectorAll('.screen, .explore-sheet__body')].some((s) => s.scrollWidth > s.clientWidth + 1),
+  }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  const want: Record<string, (m: any) => boolean> = {
+    'folder-hold': (m) => m.menu,
+    'folder-page': (m) => m.page && m.tabs === 5 && m.table && m.pinned && m.inBox,
+    'folder-table': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0,
+    'folder-grouped': (m) => m.table && m.pinned && m.narrow.length === 0,
+    'folder-board': (m) => m.board !== null && m.board.columns === 3 && m.board.scrolls && m.cards === 5,
+    'folder-cards': (m) => m.cards === 5,
+    'folder-calendar': (m) => m.agenda === 5,
+    'folder-sheet': (m) => m.page && m.table,
+  }
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [name, check] of Object.entries(want)) {
+      const file = await open(name, 375, 667)
+      const m = await evaluate(FOLDER_CHECK)
+      const ok = check(m) && !m.pageWide
+      if (!ok) failed++
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

@@ -533,3 +533,104 @@
 .table-view .page-table__bar {
   display: none;
 }
+
+/* Calendar tables (YAZ-5493, `tableCalendar.ts`), as the Mac's (`table.css`, YAZ-4162 D2 / D6 / D14). The now row
+   carries `--table-now` (0..1, how far down its slot now is). The line is 2px red across the row, with a dot in column A:
+   each cell's `::after` (and column A's `::before`, the dot) is as tall as the cell and moves down by `transform` only,
+   so a tick once a minute changes one custom property and lays nothing out. `data-now-mark` (the Mac's Mark the current
+   time: line, tint or both) and `data-dim-past` (Dim past rows: off, text or shade) come from `calendarLook.ts`. */
+/* Each cell its own stacking context (a frozen cell's z-index wins), so the line and the dot sit under its text. */
+.page-table-box .page-table .table-now-row > :is(th, td) {
+  position: relative;
+  z-index: 0;
+}
+.page-table-box .page-table .table-now-row > :is(th, td)::after,
+.page-table-box .page-table .table-now-row > :first-child::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  transform: translateY(calc(var(--table-now, 0) * 100%));
+}
+.page-table-box .page-table .table-now-row > :is(th, td)::after {
+  top: -1px;
+  border-top: 2px solid var(--table-text-red);
+}
+.page-table-box .page-table .table-now-row > :first-child::before {
+  top: -4px;
+  background: radial-gradient(circle 4px at 4px 4px, var(--table-text-red) 3.5px, transparent 4px);
+}
+.page-table-box .page-table table[data-now-mark='tint'] .table-now-row > :is(th, td)::after,
+.page-table-box .page-table table[data-now-mark='tint'] .table-now-row > :first-child::before {
+  content: none;
+}
+.page-table-box .page-table-frame .page-table table:is([data-now-mark='tint'], [data-now-mark='both']) .table-now-row > :is(th, td) {
+  background-image: linear-gradient(color-mix(in srgb, var(--table-text-red) 12%, transparent), color-mix(in srgb, var(--table-text-red) 12%, transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
+/* Past rows: grey text over a cell's own text colour (links keep theirs); `shade` also lays a light shade of the text
+   colour (`--table-past-shade`, the Mac's Shade darkness) over the cell's fill. */
+.page-table-box .page-table-frame .page-table table:is([data-dim-past='text'], [data-dim-past='shade']) .table-past-row > :is(th, td) {
+  color: var(--fg-muted);
+}
+.page-table-box .page-table-frame .page-table table[data-dim-past='shade'] .table-past-row > :is(th, td) {
+  background-image: linear-gradient(color-mix(in srgb, var(--fg) var(--table-past-shade, 6%), transparent), color-mix(in srgb, var(--fg) var(--table-past-shade, 6%), transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
+
+/* Go to now (the Mac's "Now" chip): a pill in a zero-height anchor after the table's frame, stuck to the bottom of the
+   screen while the table is in view; shown only while the now row is not (`tableCalendar.ts`). Its tap area is 44px
+   tall; the pill itself stays small. Not in the full-screen view (a copy). */
+.page-table__now-anchor {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  height: 0;
+  pointer-events: none;
+}
+.page-table__now {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transform: translateX(-50%);
+  padding: 5px 11px 5px 10px;
+  border: 1px solid var(--table-head-line);
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.14);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.page-table__now::before {
+  content: '';
+  position: absolute;
+  inset: -8px -6px;
+}
+.page-table__now[hidden],
+.table-view .page-table__now-anchor {
+  display: none;
+}
+.page-table__now-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--table-text-red);
+}
+.page-table__now > svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

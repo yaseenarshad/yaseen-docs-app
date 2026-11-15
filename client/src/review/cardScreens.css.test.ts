@@ -39,3 +39,37 @@ describe('the Inbox zoom on the whole card (YAZ-5372)', () => {
     expect(column.decls['width']).toBe('min(calc((var(--card-text-width) + 2 * var(--inbox-card-pad, 28px)) * var(--document-zoom, 1)), 100%)')
   })
 })
+
+/** The declarations of the rule whose selector list is exactly `selector` (the last such rule wins, as in CSS). */
+const decls = (css: string, selector: string) =>
+  rules(css)
+    .filter((r) => r.selectors.length === 1 && r.selectors[0] === selector)
+    .reduce<Record<string, string>>((all, r) => ({ ...all, ...r.decls }), {})
+
+describe('the block under the card stays at the bottom of the screen (YAZ-5431, as Mochi)', () => {
+  it('the column fills the Inbox\'s height and the dock (buttons, last line, keys) sits at its bottom: a short card leaves the room above it', () => {
+    expect(decls(cards, '.card-inbox__column')['flex']).toBe('1 0 auto')
+    expect(decls(cards, '.card-inbox__dock')['margin-top']).toBe('auto')
+  })
+
+  it('a long card: the same dock is sticky at the very same bottom edge, so it never moves between a short and a long card', () => {
+    const dock = decls(cards, '.card-inbox__dock')
+    expect(dock['position']).toBe('sticky')
+    // The view has no bottom padding: the short card's dock (end of the filled column) and the long card's (stuck) share the view's bottom edge.
+    expect(dock['bottom']).toBe('0')
+    expect(decls(cards, '.card-inbox')['padding']).toBe('0 16px')
+  })
+})
+
+describe('the last answer\'s line is quiet for every answer (YAZ-5433)', () => {
+  it('a Forgot line is the same grey as a Remembered one: only its small ✕ mark is red, as the ✓ is green; its Undo too stays grey', () => {
+    const all = rules(cards)
+    // Nothing colours the line itself (its text, its Undo) by the answer.
+    const byRating = all.filter((r) => r.selectors.some((s) => /^\.card-inbox__last\[data-rating='[a-z]+'\]$/.test(s)) && r.decls['color'] !== undefined)
+    expect(byRating).toEqual([])
+    expect(all.some((r) => r.selectors.some((s) => /\.card-inbox__last\[data-rating='again'\] \.card-inbox__last-(text|undo)/.test(s)))).toBe(false)
+    // The mark keeps its colour: red for Forgot / Again.
+    const mark = all.find((r) => r.selectors.includes(".card-inbox__last[data-rating='again'] .card-inbox__last-mark"))
+    expect(mark?.decls['color']).toBe('var(--danger)')
+  })
+})

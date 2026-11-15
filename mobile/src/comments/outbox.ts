@@ -1,4 +1,5 @@
 import type { VaultStore } from '../store'
+import type { TaskTick } from './taskWrite'
 
 /**
  * YAZ-5461: THE COMMENT LIST, the comments written on the phone that GitHub does not hold yet. It is the vault's
@@ -28,7 +29,13 @@ export interface WaitingComment {
   /** A send has put it in a commit: GitHub may hold it, so Undo can no longer take it back. */
   tried?: true
   /** The fresh page refused it (`REFUSED_WORDS`): it is not sent again; the page shows it with Discard. */
-  refused?: 'foreign' | 'invalid' | 'layout' | 'gone' | 'too-large'
+  refused?: 'foreign' | 'invalid' | 'layout' | 'gone' | 'too-large' | 'changed'
+  /**
+   * YAZ-5494: not a comment but a TICK of a task check box on the page (`taskWrite.ts`): what the box becomes, and how
+   * to find the same task again. It goes the comment's way (this list, the send, the dot); its `body` is empty and it
+   * needs no `by`.
+   */
+  task?: TaskTick
 }
 
 export interface CommentBook {

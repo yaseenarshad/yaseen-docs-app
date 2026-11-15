@@ -3,6 +3,7 @@ import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, rateLimitedUntil } fro
 import type { VaultStore } from '../store'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { openCommentBox, type CommentBox, type WaitingComment } from './outbox'
+import type { TaskTick } from './taskWrite'
 import { sendComments } from './send'
 import { commentSigner } from './signer'
 
@@ -16,6 +17,8 @@ export interface CommentsState {
   vault: string | null
   /** Comments not sent yet (refused ones not counted): the dot counts them as waiting. */
   waiting: number
+  /** YAZ-5494: of `waiting`, the check box ticks. */
+  ticks: number
   refused: number
   sending: boolean
   problem: CommentProblem | null
@@ -28,6 +31,8 @@ export interface NewCommentInput {
   by?: string
   /** A hold before any send, with its Undo (the one-tap "Approved" of YAZ-5461; since YAZ-5478 the page sends at once, 0). */
   holdMs?: number
+  /** YAZ-5494: a tick of a task check box, not a comment (`body` is then empty). */
+  task?: TaskTick
 }
 
 export interface CommentSender {
@@ -82,12 +87,13 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
   let stopped = false
   let slowedInRow = 0
   let staleInRow = 0
-  let state: CommentsState = { vault: null, waiting: 0, refused: 0, sending: false, problem: null, retryAt: null }
+  let state: CommentsState = { vault: null, waiting: 0, ticks: 0, refused: 0, sending: false, problem: null, retryAt: null }
 
   const all = () => box?.waiting() ?? []
   const setState = (next: Partial<CommentsState>) => {
     const list = all()
-    state = { ...state, ...next, vault, waiting: list.filter((c) => c.refused === undefined).length, refused: list.filter((c) => c.refused !== undefined).length }
+    const waiting = list.filter((c) => c.refused === undefined)
+    state = { ...state, ...next, vault, waiting: waiting.length, ticks: waiting.filter((c) => c.task !== undefined).length, refused: list.filter((c) => c.refused !== undefined).length }
     for (const l of [...listeners]) l({ ...state })
   }
   const clearTimer = () => {
@@ -163,7 +169,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
       setState({ sending: true })
       try {
         // A comment written before the phone knew the account: sign it now (the sign-in keeps the account).
-        const unsigned = own.waiting().filter((c) => c.by === undefined && c.refused === undefined)
+        const unsigned = own.waiting().filter((c) => c.by === undefined && c.refused === undefined && c.task === undefined)
         if (unsigned.length > 0) {
           const by = await commentSigner(store, id)
           if (by !== undefined) await own.sign(unsigned.map((c) => c.id), by)
@@ -176,7 +182,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         slowedInRow = 0
         staleInRow = 0
         if (report.result === 'offline') return setState({ problem: 'OFFLINE', retryAt: null })
-        const stillUnsigned = own.waiting().some((c) => c.by === undefined && c.refused === undefined)
+        const stillUnsigned = own.waiting().some((c) => c.by === undefined && c.refused === undefined && c.task === undefined)
         setState({ problem: stillUnsigned ? 'NO_LOGIN' : null, retryAt: null })
       } catch (error) {
         const problem = error instanceof GithubError ? error.code : 'FAILED'
@@ -230,6 +236,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         ...(input.by === undefined ? {} : { by: input.by }),
         madeAt,
         notBefore: madeAt + Math.max(0, input.holdMs ?? 0),
+        ...(input.task === undefined ? {} : { task: input.task }),
       }
       await box.add(comment)
       // A new comment from the person: a problem that waited for them is theirs to see again at the send.

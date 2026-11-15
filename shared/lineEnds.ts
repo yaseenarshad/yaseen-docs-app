@@ -4,10 +4,9 @@
  *
  * A writer works on the text with `\n` alone (`inLineEnds`) and gives it back with the page's line end. The page's line
  * end is the one most of its lines end with: a page all `\r\n` stays all `\r\n`, a page all `\n` stays all `\n`. A page
- * that already mixes them takes the one most of its lines have. That is how the card code agrees with the editor: the
- * editor saves its text with `\n` and keeps the properties block as it was (YAZ-5146 rule 7), so a `\r\n` page that the
- * editor saved is mostly `\n`, and the next card write makes it all `\n`. A lone `\r` (an old Mac file) is no line end
- * here. Pure: no DOM, no Node.
+ * that already mixes them takes the one most of its lines have. The editor follows the same rule (YAZ-5150): it holds
+ * the page's text with `\n` alone and saves the whole file with the page's own line end (`useAutosave`), so a card write
+ * after an editor save keeps it too. A lone `\r` (an old Mac file) is no line end here. Pure: no DOM, no Node.
  */
 
 /** The two line ends. */

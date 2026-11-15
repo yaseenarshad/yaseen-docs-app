@@ -1,4 +1,4 @@
-import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
@@ -39,6 +39,10 @@ import { absFrom, basename, dirname, relTo, stripExt } from './lib/paths'
 import { carryEditorAcrossRename, carryEditorsAcrossDirRename, flushRenamedDir, flushRenamedPath, retireDeletedDir, retireDeletedPath } from './lib/renameContinuity'
 import { EMPTY_SELECTION, orderedSelection } from './lib/selection'
 import { storage } from './lib/storage'
+import { FORMATS_CHAPTER_TITLE, courseLostLine, courseStartOverLabel, courseVaultAt, onCourseRequest, requestCourseChapter } from './course/openCourse'
+import { courseVaultView, type LiveCourseVault } from './course/courseVaultView'
+import { onTourShow } from './course/tourBus'
+import { COURSE_NOTICE, offerInInbox, offerNotice, type OfferVault } from './course/courseFacts'
 import { resolveItem } from './lists/focusFolders'
 import { useVaultListsHere } from './lists/useVaultListsHere'
 import { readPageView } from './lib/pageView'
@@ -64,6 +68,7 @@ import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
 import { CARD_OPEN, type CardOpenRequest } from './editor/card/cardBlockView'
+import { CARD_FORMATS_OPEN, cardFormatsOpenIn, setCardFormatHints, type CardFormatsOpenRequest } from './editor/card/cardFormatHint'
 import { CARD_PREVIEW, type CardPlace, type CardPreviewRequest } from './editor/card/cardOpen'
 import type { SearchVault } from './search/useSearchResults'
 import { dropHistoryPaths, renameHistoryPaths } from './views/view/valueHistory'
@@ -116,6 +121,8 @@ import { SAME_WORD, UnitContext, vaultUnit, type UnitText } from './vault/unitWo
 import { folderHome } from './vault/folderHome'
 import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
+import { CARD_SKILL_HIDDEN, CARD_SKILL_NAME, CARD_SKILL_READ_ONLY, cardSkillAgain, cardSkillDuplicated, cardSkillReadOnlyVault } from './vault/cardSkill'
+import { inAppVault, isAppVault } from '@shared/appVaults'
 import { FILE_ACTIONS_ALLOW, READ_ONLY_VAULT_FILE, sanitizeReadOnlyVault, type FileActionsFor } from './vault/readOnlyVault'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
@@ -146,6 +153,8 @@ const ExploreStack = lazy(() => import('./explore/ExploreStack').then((m) => ({ 
 const inboxLabel = (session: CardReviewSession): string => (session.scope === 'vault' ? 'Inbox' : `Inbox · ${session.label}`)
 /** The Inbox screen (YAZ-4962): lazy, loaded with the first review. */
 const CardInbox = lazy(() => import('./review/CardInbox').then((m) => ({ default: m.CardInbox })))
+/** The card course (YAZ-5059 decision 10, YAZ-5120): a full layer over the window, lazy, loaded when it opens. */
+const CardCourse = lazy(() => import('./course/CardCourse').then((m) => ({ default: m.VoicedCardCourse })))
 const CardPreview = lazy(() => import('./review/CardPreview').then((m) => ({ default: m.CardPreview })))
 
 /**
@@ -511,8 +520,19 @@ export function App() {
   const vaults = roots.map((vault) => scopes[slots.current.indexOf(vault)])
   /** The first vault's scope; on the Welcome window an idle one, so every reader below has a scope. */
   const first = vaults[0] ?? scopes[0]
-  const live = useRef({ roots, vaults, first })
-  live.current = { roots, vaults, first }
+  /**
+   * THE CARD SKILL (YAZ-5059 decision 2, YAZ-5108): the app's copy, `<userData>/card-skill`, as one more vault of the
+   * window — its own scope, never in `roots`, never in a slot, never counted in MAX_WINDOW_ROOTS. It loads while
+   * Settings › Cards › "Card skill in the sidebar" says Show; its row shows at the bottom of the sidebar while a vault of
+   * the window also has reviews on. It ships with IDs off and read only on (`.yaseendocs/`), so its pages open read only
+   * and the app writes nothing into it. Settings never shows it as "this vault": `active` is a vault of the person.
+   */
+  const [cardSkill] = useState(storage.getCardSkill)
+  const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
+  const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify)
+  const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true)
+  const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
+  live.current = { roots, vaults, first, skill: skillLoads ? skillScope : null }
   // The window's card files (YAZ-5037), from the vaults' index: a card file shows the card icon in the tree, the tabs,
   // search and Recents, with the sidebar hidden too. One Set, the same while no card file comes or goes.
   const cardFiles = useCardFiles(useSameList(vaults.map((vault) => vault.wikilinks)))
@@ -564,6 +584,7 @@ export function App() {
    */
   const scopeOf = useCallback((path: string): VaultScope => {
     const now = live.current
+    if (now.skill !== null && inAppVault(path)) return now.skill
     const home = rootOfPath(now.roots, path)
     return home === null ? now.first : now.vaults[now.roots.indexOf(home)]
   }, [])
@@ -583,6 +604,11 @@ export function App() {
   const [readOnlyAsk, setReadOnlyAsk] = useState<{ root: string; resolve: (ok: boolean) => void } | null>(null)
   const outsideAllowed = useRef(new Map<string, number>())
   const allowFileAction = useCallback(async (root: string): Promise<boolean> => {
+    // The card skill (YAZ-5108) is the app's: no file action, no allowance. Duplicate makes a copy the person can change.
+    if (isAppVault(root)) {
+      notify(CARD_SKILL_READ_ONLY, 'error')
+      return false
+    }
     const scope = scopeOf(root)
     if (scope.root === root) {
       if (scope.readOnlyVault.fileActionsAllowed()) return true
@@ -593,7 +619,7 @@ export function App() {
       if (!on) return true
     }
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
-  }, [scopeOf])
+  }, [scopeOf, notify])
   const allowFileChanges = useCallback((root: string, choice: FileActionsFor) => scopeOf(root).readOnlyVault.allowFileActions(choice), [scopeOf])
   const lockFileChanges = useCallback((root: string) => scopeOf(root).readOnlyVault.lockFileActions(), [scopeOf])
   /** The sheet's answer: false = Cancel; null = Just this once (no allowance); a time = that allowance, then go on. */
@@ -644,7 +670,7 @@ export function App() {
   const idLetters = vaults.map((scope) => scope?.wikilinks.letters.join(' ') ?? '').join('\n')
   const vaultLinks = useMemo(() => ({ candidatesOf, askToAdd, roots, names: vaultNames, vaultOf, vaultsOfLetters, letters: idLetters }), [candidatesOf, askToAdd, roots, vaultNames, vaultOf, vaultsOfLetters, idLetters])
   /** The scope of the ACTIVE tab's vault (R3, R4, R10); with no tab open, the first vault's. */
-  const active = file === null ? first : scopeOf(file)
+  const active = file === null || inAppVault(file) ? first : scopeOf(file)
   /**
    * The window's vaults for the place picker (YAZ-3556 D6): the active tab's first, then the others in the window's order.
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
@@ -1540,7 +1566,7 @@ export function App() {
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
-  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | undefined>(undefined)
+  const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
   // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
   useEffect(() => {
     if (!settingsOpen) setSpacingRoot(null)
@@ -1553,7 +1579,82 @@ export function App() {
     setSettingsPage('sharing')
     setSettingsOpen(true)
   }, [])
+  // The card skill's notice (YAZ-5108): "Open Settings" opens at Cards (was Review), where the switch is.
+  const openReviewSettings = useCallback(() => {
+    setSettingsPage('cards')
+    setSettingsOpen(true)
+  }, [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+
+  // THE CARD COURSE (YAZ-5120): one layer over the window, opened only by a person's click (Settings › Cards, the
+  // notice, the empty Inbox, `requestCourse` from any part). Settings closes first. `n` remounts it for a new request.
+  // `vault`: the ONE vault of this run (YAZ-5201, `courseVaultAt`), kept with the place; `lost`: the kept one is not in the window.
+  const [courseOpen, setCourseOpen] = useState<{ chapter?: string; n: number; vault: string | null; lost?: string } | null>(null)
+  const courseFront = useRef(active.root)
+  courseFront.current = active.root
+  const openCourse = useCallback((chapter?: string) => {
+    setSettingsOpen(false)
+    const at = courseVaultAt(chapter, storage.getCourse(), courseFront.current, live.current.roots)
+    if (at.vault !== null) storage.setCourse({ vault: at.vault })
+    setCourseOpen((open) => ({ ...(chapter === undefined ? {} : { chapter }), n: (open?.n ?? 0) + 1, ...at }))
+  }, [])
+  /** "Start over in <vault>" (YAZ-5201): the course from its start, bound to the vault in front. */
+  const startCourseOver = useCallback(() => {
+    const front = courseFront.current
+    storage.setCourse({ chapter: '', clip: '', vault: front })
+    setCourseOpen((open) => ({ n: (open?.n ?? 0) + 1, vault: front }))
+  }, [])
+  const closeCourse = useCallback(() => setCourseOpen(null), [])
+  useEffect(() => onCourseRequest(({ chapter }) => openCourse(chapter)), [openCourse])
+  const course = useSyncExternalStore(storage.subscribe, storage.getCourse)
+  // The course's vault (YAZ-5124, YAZ-5201): the scope of the run's ONE vault, read live, so the course's host stays one
+  // object while it is open. Never the active tab's: the person may bring another vault to the front during a tour.
+  const courseBound = courseOpen?.vault ?? null
+  const courseScope = courseBound === null ? undefined : vaults[roots.indexOf(courseBound)]
+  const courseLive = useRef(courseScope)
+  courseLive.current = courseScope
+  const courseIndex = courseScope?.wikilinks
+  /** The run's vault left the window, or the kept one is not in it (YAZ-5201): the one line, and "Start over" in the vault in front. */
+  const courseLostRoot = courseOpen === null ? null : (courseOpen.lost ?? (courseBound !== null && courseScope === undefined ? courseBound : null))
+  const courseLost =
+    courseLostRoot === null
+      ? undefined
+      : {
+          line: courseLostLine(storage.vaultName(courseLostRoot)),
+          ...(active.root === null ? {} : { startOver: { label: courseStartOverLabel(active.name ?? storage.vaultName(active.root)), run: startCourseOver } }),
+        }
+  // One view for the run, read live from the scope that holds the bound vault NOW (YAZ-5201): a vault removed and added
+  // again comes back in another slot, so the view never keeps a slot's index (`courseVaultView`).
+  const courseVault = useMemo<LiveCourseVault | undefined>(
+    () => (courseBound === null ? undefined : courseVaultView(courseBound, () => courseLive.current, cardSkill)),
+    [courseBound, cardSkill],
+  )
+  useEffect(() => {
+    if (courseVault === undefined || courseIndex === undefined) return
+    courseVault.changed()
+    return courseIndex.subscribe(() => courseVault.changed())
+  }, [courseVault, courseIndex])
+  // The offers (YAZ-5120, YAZ-5272): only for a person new to cards. A vault is read once its Review settings and its
+  // index have loaded: cards on, and no card in the index (`cards` holds the cards of card files and of pages).
+  const offerVaultOf = (scope: typeof active): OfferVault => ({
+    cardsOn: scope.root !== null && scope.reviewSettings.ready === true && scope.reviewSettings.settings.enabled,
+    hasCards: scope.ids === undefined ? null : scope.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0),
+  })
+  // The one notice: once per Mac, for the vault in front.
+  const front = offerVaultOf(active)
+  const noticeDue = offerNotice(course, settings, front)
+  useEffect(() => {
+    if (!noticeDue) return
+    storage.setCourse({ offered: true })
+    notify(COURSE_NOTICE, 'info', undefined, { label: 'Open the course', run: () => openCourse() })
+  }, [noticeDue, notify, openCourse])
+  // The empty Inbox's line (suggestion 24): for the Inbox's vault.
+  const inboxVault = offerVaultOf(reviewer ?? first)
+  const inboxOffered = offerInInbox(course, settings, inboxVault)
+  const inboxCourseOffer = useMemo(
+    () => (inboxOffered ? { onOpen: () => openCourse(), onDismiss: () => storage.setCourse({ dismissed: true }) } : undefined),
+    [inboxOffered, openCourse],
+  )
   // YAZ-4615: what every comment block reads — your profile (D2), where resolved threads go (D5), and
   // the composer's way to Settings › You (D7, the first page of the dialog).
   const commentPrefs = useMemo(
@@ -1643,6 +1744,38 @@ export function App() {
     return () => document.removeEventListener(CARD_PREVIEW, onPreview)
   }, [])
   const closeCardPreview = useCallback(() => setCardPreview(null), [])
+  // The format hint on a new card (YAZ-5114): Card tips, and the formats of each vault's card skill, read again when the
+  // window comes to the front (a Duplicate of the skill, an agent's new format page). "Learn the formats" opens the
+  // course at its chapter on good cards and formats; the skill's `formats` folder only when the course cannot open.
+  const cardTipsOn = settings.cardTips !== false
+  useEffect(() => setCardFormatHints({ on: cardTipsOn }), [cardTipsOn])
+  useEffect(() => {
+    if (!cardTipsOn) return
+    let live = true
+    const read = () =>
+      void Promise.all(roots.map((vault) => api.app.cardFormats(vault).then((skill) => [vault, skill] as const, () => [vault, null] as const))).then((byVault) => {
+        if (live) setCardFormatHints({ byVault: new Map(byVault) })
+      })
+    read()
+    window.addEventListener('focus', read)
+    return () => {
+      live = false
+      window.removeEventListener('focus', read)
+    }
+  }, [roots, cardTipsOn])
+  useEffect(() => {
+    const onOpenFormats = (event: Event) => {
+      const { folder } = (event as CustomEvent<CardFormatsOpenRequest>).detail
+      // YAZ-5114 with YAZ-5120: the course at its chapter on good cards and formats. The folder only when the course
+      // cannot open: in Files for the vault's own copy, in Finder for the app's copy.
+      void requestCourseChapter(FORMATS_CHAPTER_TITLE, () => {
+        if (cardFormatsOpenIn(folder, roots) === 'files') showRowInFiles(folder)
+        else void api.shell.reveal({ path: folder }).catch((err: unknown) => notify(`Can't open the formats: ${err instanceof Error ? err.message : String(err)}`, 'error'))
+      })
+    }
+    document.addEventListener(CARD_FORMATS_OPEN, onOpenFormats)
+    return () => document.removeEventListener(CARD_FORMATS_OPEN, onOpenFormats)
+  }, [roots, showRowInFiles, notify])
   /** This vault's "Clicking a link" (YAZ-4936), for the editors of `path`: read at each click. */
   const exploreOnClickFor = useCallback((path: string) => scopeOf(path).linkClick.isExplore, [scopeOf])
   const closeExplore = useCallback(() => {
@@ -2766,6 +2899,15 @@ export function App() {
     const vault = scopeOf(p).root
     return vault === null ? p : relTo(vault, p)
   }, [scopeOf])
+  // The course's guided tour (YAZ-5123): "Show me" brings a place into view with the app's own doors.
+  useEffect(() => onTourShow((place) => {
+    if (place.kind === 'sidebar') return void (sidebarCollapsed && toggleSidebar())
+    if (place.kind === 'folder') return showInSidebar(place.path)
+    if (place.kind === 'file') return openPage(place.path)
+    if (place.kind === 'review-folder') return startReview(scopeOf(place.path), { folder: relLabel(place.path) })
+    if (place.kind === 'inbox') return toggleInbox(scopeOf(place.path).root ?? '')
+    return place.page === 'cards' ? openReviewSettings() : openSettings()
+  }), [sidebarCollapsed, toggleSidebar, showInSidebar, openPage, startReview, scopeOf, relLabel, toggleInbox, openReviewSettings, openSettings])
   // What a Files window asks of THIS window (YAZ-3357 D2): the same doors its own sidebar uses. An Inbox opens its
   // review; one that is open already stays open (the Files window cannot see it, so a click must never close it).
   fromFiles.current = (action: FilesAction): void => {
@@ -3305,6 +3447,8 @@ export function App() {
     },
     [requestRename, scopeOf, notify],
   )
+  /** An Explore page layer's frame (YAZ-5164 Option A): the vault's property declarations and the title door, as a tab's editor has them. */
+  const explorePageFrameOf = useCallback((path: string) => ({ properties: scopeOf(path).properties, onRetitle: (title: string) => void requestRetitle(path, title, 'file') }), [scopeOf, requestRetitle])
 
   // `dontAskAgain` is the box of the rename sheet (YAZ-2690 D2): the rename runs, and "Ask before
   // renaming" goes off. A move has its own sheet (`confirmMoves`).
@@ -3529,11 +3673,51 @@ export function App() {
   }, [deleteWorkspaceDir, setVaultOpen])
 
   /**
+   * The card skill hides (YAZ-5108; decision 4, suggestion 7): by its row's "Hide card skill" or by the switch in Settings
+   * › Review. Its tabs close, and its row goes. Showing it again brings the row back
+   * CLOSED, as it is at a launch. Only a change of the switch closes tabs: a restart with Hide restores none (`bootTabs`).
+   */
+  const skillWasLoaded = useRef(skillLoads)
+  useEffect(() => {
+    const was = skillWasLoaded.current
+    skillWasLoaded.current = skillLoads
+    if (was && !skillLoads && cardSkill !== null) deleteWorkspaceDir(stripSlash(cardSkill))
+  }, [skillLoads, cardSkill, deleteWorkspaceDir])
+  useEffect(() => {
+    if (skillShown && cardSkill !== null) setVaultOpen(cardSkill, false)
+  }, [skillShown, cardSkill, setVaultOpen])
+  const hideCardSkill = useCallback(() => {
+    changeSettings({ ...storage.getSettings(), cardSkillInSidebar: false })
+    notify(CARD_SKILL_HIDDEN, 'info', undefined, { label: 'Open Settings', run: openReviewSettings })
+  }, [changeSettings, notify, openReviewSettings])
+  /**
+   * "Duplicate into <vault>…" (YAZ-5109; decision 5): main copies the app's skill into the top of the vault as `Card
+   * skill`, writable, and from then on `cardSkillFolder` picks it (the command, the format hint, the prompt). With
+   * `Card skill` there already, one sheet asks before a second copy (`Card skill 2`); nothing is ever written over.
+   * A read-only vault gets no write (YAZ-5204): one line says why, and how to go on (turn it off, or pick another vault).
+   */
+  const [skillAgain, setSkillAgain] = useState<string | null>(null)
+  const duplicateCardSkill = useCallback((vault: string, again = false) => {
+    const scope = live.current.vaults[live.current.roots.indexOf(vault)]
+    const name = scope?.name ?? storage.vaultName(vault)
+    if (scope?.readOnlyVault.settings.on === true) return notify(cardSkillReadOnlyVault(name), 'error')
+    api.cardSkill.duplicate(vault, again).then(
+      (out) => {
+        if ('exists' in out) return setSkillAgain(vault)
+        notify(cardSkillDuplicated(name, out.made.slice(out.made.lastIndexOf('/') + 1)))
+      },
+      (err: unknown) => notify(`Can't duplicate the card skill: ${err instanceof Error ? err.message : String(err)}`, 'error'),
+    )
+  }, [notify])
+
+  /**
    * A drag of a vault row (YAZ-2631 D5): the window's vaults in the new order. Each vault keeps
    * its slot, so nothing loads again. A saved workspace of exactly these vaults takes the order too:
    * main saves this window's vaults under its name, after the identity write that holds them.
    */
-  const reorderVaults = useCallback((next: string[]) => {
+  const reorderVaults = useCallback((order: string[]) => {
+    // The card skill's row (YAZ-5108) is no vault of the person: it never goes into the window's vaults.
+    const next = order.filter((vault) => !isAppVault(vault))
     storage.setRoots(next)
     setRoots(storage.getRoots())
     const set = storage.getVaultSets().find((one) => sameVaults(one.roots, next))
@@ -3872,7 +4056,12 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {courseOpen !== null && (
+        <Suspense fallback={null}>
+          <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />
+        </Suspense>
+      )}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}
@@ -3881,7 +4070,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -3932,7 +4121,11 @@ export function App() {
           key={sidebarKey.current}
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
-          vaults={vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null && inboxFront, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, fileChangesUntil: vault.readOnlyVault.allowedUntil }))}
+          vaults={[
+            ...vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null && inboxFront, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, fileChangesUntil: vault.readOnlyVault.allowedUntil })),
+            // The card skill (YAZ-5108): the app's own vault, last — one row at the bottom, read only, no Inbox.
+            ...(skillShown && cardSkill !== null ? [{ root: cardSkill, name: CARD_SKILL_NAME, watch: skillScope.watch, index: skillScope.wikilinks, review: false, dueCount: 0, reviewing: false, readOnly: true, app: true as const }] : []),
+          ]}
           lists={lists}
           icons={vaultIcons}
           recentVault={recentPick}
@@ -3948,6 +4141,8 @@ export function App() {
           onPickVault={pickVault}
           onRemoveVault={removeVault}
           onReorderVaults={reorderVaults}
+          onHideCardSkill={hideCardSkill}
+          onDuplicateCardSkill={duplicateCardSkill}
           // Under the blank tab no row is the open one (YAZ-2655): every row opens, the one of the tab that was active too.
           activeFile={pageOnShow}
           // A Files window's rows open in a full window (YAZ-3357 D2): its own doors, never this window's tabs.
@@ -4040,7 +4235,7 @@ export function App() {
         // A Files window (YAZ-3357 D1, D8): the sidebar alone, and Tabs Mission Control right of it while it shows. The
         // index bridges stay: the sidebar's titles, search and shortcut rows read what they feed.
         <>
-          {scopes.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
+          {[...scopes, skillScope].map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
           {filesBoard && (
             <div className="workspace">
               <div className="tabstack">{tabBoard()}</div>
@@ -4060,7 +4255,7 @@ export function App() {
         <div className="workspace" data-inbox-focus={inboxFocused || undefined}>
           {/* One per vault (YAZ-2602 D1): each feeds its own vault's sources from that vault's index.
               In SLOT order: a new order of the vaults moves none, so none reads its index again (YAZ-2631 D5). */}
-          {scopes.map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
+          {[...scopes, skillScope].map((vault) => vault.root !== null && <WikilinkIndexBridge key={vault.root} root={vault.root} watch={vault.watch} source={vault.wikilinks} candidates={vault.wikilinkCandidates} viewOnly={vault.viewOnlyLinks} onSnapshot={vault.onSnapshot} />)}
           {/* Tabs rule 2: the strip shows whenever a folder is open — even with one (or zero) tabs. */}
           <TabBar
             roots={roots}
@@ -4168,7 +4363,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} courseOffer={inboxCourseOffer} />
               </Suspense>
             )}
             {/* Preview a card (YAZ-5152 A): in the page area as the Inbox tab is, over it too; the sidebar and the tab row stay. */}
@@ -4242,6 +4437,19 @@ export function App() {
         />
       )}
       {/* A file action in a read-only vault (YAZ-4939, YAZ-4985): Enter is "Just this once" (or the choice ↓ ↑ moved to), Esc is Cancel. */}
+      {skillAgain !== null && (
+        <ConfirmSheet
+          labelId="confirm-card-skill-again-text"
+          text={cardSkillAgain(live.current.vaults[live.current.roots.indexOf(skillAgain)]?.name ?? storage.vaultName(skillAgain))}
+          confirmLabel="Make a second copy"
+          onConfirm={() => {
+            const vault = skillAgain
+            setSkillAgain(null)
+            duplicateCardSkill(vault, true)
+          }}
+          onCancel={() => setSkillAgain(null)}
+        />
+      )}
       {readOnlyAsk !== null && (
         <ConfirmSheet
           labelId="confirm-read-only-vault-text"

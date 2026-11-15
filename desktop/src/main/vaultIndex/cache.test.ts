@@ -300,6 +300,13 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5430 (YAZ-5097): a snapshot of version 17 held card records with no `fix` → version-mismatch, so a card marked Fix later is never served as unmarked', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(18)
+    const cards = [{ id: 'DEMO-105', off: false, next: false, reviews: [] }]
+    await writeFile(file, JSON.stringify({ version: 17, root: '/vault', records: [record('/vault/a.md', { cards } as never)] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -381,7 +388,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
       // A card's title (off its card line, YAZ-5308) and its `notitle` part ride on the record (YAZ-5030): a card link shows the title.
       // Its own properties too (YAZ-5349, CACHE_VERSION 19), off its card line.
       // A review's seconds (YAZ-5033, CACHE_VERSION 14) ride on it: today's total reads them off the index.
-      // Its `fix` (YAZ-5097) too: the To fix count reads no file. CACHE_VERSION 18 (YAZ-5309): the two version 17s met.
+      // Its `fix` (YAZ-5097) too: the Card fix status column reads no file. CACHE_VERSION 19: the demo (YAZ-5430) and the phone (YAZ-5309) each took 18.
       cards: [{ id: 'CAN-3', off: true, next: true, reviews: [{ at: '2026-11-12T14:05Z', rating: 'good' }, { at: '2026-11-13T09:00Z', rating: 'again', seconds: 13 }], title: 'Card, links', notitle: true, fix: true, properties: { tags: ['x', 'y'], level: 2 } }],
     },
     // A card file (YAZ-5037, CACHE_VERSION 15): `kind: card` in its properties, its title its card's (off its card line, YAZ-5308).

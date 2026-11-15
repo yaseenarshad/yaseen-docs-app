@@ -39,11 +39,11 @@ import { withOrder } from './view/columnOrder'
 import { canonicalKey } from './view/keys'
 import { valueHistory } from './view/valueHistory'
 import { stringify } from 'yaml'
-import { folderValues, withFolderValues } from '@shared/folderValues'
+import { withFolderValues } from '@shared/folderValues'
 import { DEFAULT_FOLDER_PAGES, folderSettingsPath, inFolder, type CommentsOrder, type DiagramDarkColors, type FileResponse, type FolderPagesSettings, type GithubSyncStatus, type IndexRecord, type PropertiesResponse, type ZoomStep } from '@shared/types'
 import { COLUMN_MARKS_KEY, CONFIRM_CHANGES_KEY, HOVER_LINKS_KEY, HOVER_PREVIEW_KEY, HOVER_ROWS_KEY, INHERIT_COLUMNS_KEY, SHOW_NEW_BUTTONS_KEY, SHOW_OTHER_FILES_KEY, SHOW_PAGE_FILE_KEY, columnMarksOf, confirmChangesOf, hoverLinksOf, hoverPreviewOf, hoverRowsOf, inheritColumnsOf, showNewButtonsOf, showOtherFilesOf, showPageFileOf } from '@shared/folderPage'
 import { exactLinkTarget } from '@shared/linkRewrite'
-import { findKey, heldKey, keyFold, respell, spellings } from '@shared/propertyKeys'
+import { findKey, keyFold, respell, spellings } from '@shared/propertyKeys'
 import { isReadOnlyProperties, READ_ONLY_KEY } from '@shared/readOnly'
 import { api, BridgeRequestError } from '../api'
 import { CommentsSection } from '../comments/CommentsSection'
@@ -73,13 +73,16 @@ import { propertyLabel, type RunOptions } from './engine'
 import { mentionsColumns } from './mentionsColumn'
 import { addTiedColumn, removeTiedColumn, tiedKeyFor, tiedKeyOf, writeTiedCell, type PairWritten } from './relationPair'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
+import type { EditLock } from './editGuard'
+import { CHANGE_CANCELLED } from './confirmChanges'
 import { writeProperties, writeProperty, writeRouted, type PropertyWrite } from './writeProperty'
 import { byFolder, declarationOf, folderName, foldersTaking, pageColumns, readOnlyRefusal, selfAndAncestors, takesFrom, withOwnerSwitch, type ColumnSources } from './columnInheritance'
 import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
 import { isViewOnlyChange } from './viewOnlyChange'
+import { declStamp, definedBelowOf, rowValues, withTied } from './folderPageValues'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
-import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { ViewFolder } from './view/GroupHeader'
 import { pageLinkOf } from './view/fills'
 import { OtherFiles, trayBackTarget } from './view/OtherFiles'
@@ -193,48 +196,6 @@ function folderViewSet({ views, formulas, properties, defaultView }: FolderSetti
     return parseViews(stringify({ views: folderSettings(undefined, ids).views }))
   }
 }
-
-/** A row's values with each tied column's links on it (YAZ-4781 R2); the same object when the page has none. */
-function withTied(properties: Record<string, unknown>, row: IndexRecord, tied: RunOptions['mentions']): Record<string, unknown> {
-  if (tied === undefined) return properties
-  const out = { ...properties }
-  for (const key of tied.keys) out[key] = tied.of(row, key)
-  return out
-}
-
-/**
- * A row's values as the views read them (YAZ-4713 C1/C3): its file's own fields less the keys no column may have
- * (`columnReservedKeys`: the app's, and a subfolder row's settings block, D31) — but the read-only switch, which a view
- * may still show (YAZ-3130) — and each separate column's value from this page's block. The same object when nothing changes.
- *
- * YAZ-4769 (one key, capitals ignored): each field whose key is a page column's in other capitals reads under the
- * column's spelling (`spell`, `respell`): a page's `dessert column` is the `Dessert Column` cell, so every view, filter,
- * sort, group, board and calendar reads it with no fold of its own. A page holding two spellings shows the column's;
- * the other stays in the file, and is no second column. The app's keys are never moved. A separate value is found in
- * the page's block in any capitals too.
- */
-function rowValues(properties: Record<string, unknown>, reserved: ReadonlySet<string>, pageId: string | undefined, separate: ReadonlySet<string>, spell: ReadonlyMap<string, string>): Record<string, unknown> {
-  const keys = Object.keys(properties)
-  const kept = keys.some((key) => reserved.has(key) && key !== READ_ONLY_KEY) ? Object.fromEntries(keys.filter((key) => !reserved.has(key) || key === READ_ONLY_KEY).map((key) => [key, properties[key]])) : properties
-  const own = respell(kept, spell, reserved)
-  if (separate.size === 0) return own
-  const block = folderValues(properties, pageId)
-  const out = { ...own }
-  for (const key of separate) {
-    const held = heldKey(block, key)
-    if (held !== undefined) out[key] = block[held]
-    else delete out[key]
-  }
-  return out
-}
-
-/** Order-insensitive identity for one declaration; a field that is undefined is one that is absent (YAZ-4637 M1), as on disk. */
-const declStamp = (decl: ColumnDecl): string =>
-  JSON.stringify(
-    Object.entries(decl)
-      .filter(([, value]) => value !== undefined)
-      .sort(([a], [b]) => (a < b ? -1 : 1)),
-  )
 
 /** Order-insensitive identity for a columns map: the index re-reads what we wrote, key order and all, but never trust that. */
 const columnsStamp = (columns: Readonly<Record<string, ColumnDecl>>): string =>
@@ -414,7 +375,8 @@ export function FolderView({
    * The read-only pages (YAZ-3076 D6), read off each page's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32).
    * In a read-only vault (YAZ-4939) every row's cell is locked until this tab's unlock; each page's own switch then still holds.
    */
-  const locked = useMemo(() => (vaultLockedHere ? new Set([...rows, ...subfolders].map((r) => r.path)) : readOnlyPaths([...rows, ...subfolders])), [rows, subfolders, vaultLockedHere])
+  const ownLocked = useMemo(() => readOnlyPaths([...rows, ...subfolders]), [rows, subfolders])
+  const locked = useMemo(() => (vaultLockedHere ? new Set([...rows, ...subfolders].map((r) => r.path)) : ownLocked), [rows, subfolders, vaultLockedHere, ownLocked])
   /**
    * The shortcut doors of this page's rows (YAZ-4797 demo): where a shortcut lives, Go to it, Remove the shortcut, Add one
    * to another folder. Vaults with IDs only (a shortcut names its folder by id). Each write is the sidebar's own
@@ -492,6 +454,38 @@ export function FolderView({
     chips.set({ readOnly: pageEffective })
     if (!pageBase) setAskingUnlock(false)
   }, [chips, pageEffective, pageBase])
+  /**
+   * The table's "Allow edits?" (YAZ-5411, `editGuard.ts`): a change that writes files opens the chip's own box and waits.
+   * A choice (or Turn Read only off) settles it true once the unlock has rendered, so the change goes on through the
+   * unlocked doors; Cancel settles it false. Read live: a door that waited asks the lock as it is then.
+   */
+  const lockNow = useRef({ page: pageEffective, rows: vaultLockedHere, own: ownLocked })
+  lockNow.current = { page: pageEffective, rows: vaultLockedHere, own: ownLocked }
+  const waiting = useRef<((ok: boolean) => void)[]>([])
+  const settleAsks = useCallback((ok: boolean) => {
+    const now = waiting.current
+    waiting.current = []
+    for (const settle of now) settle(ok)
+  }, [])
+  const [editLock] = useState<EditLock>(() => ({
+    locked: (page) => (page === undefined ? lockNow.current.page : lockNow.current.rows && !lockNow.current.own.has(page)),
+    ask: () =>
+      new Promise<boolean>((settle) => {
+        waiting.current.push(settle)
+        setAskingUnlock(true)
+      }),
+  }))
+  /** "Turn Read only off" writes `.folder.md`: a change that waited goes on once that write has landed, never beside it. */
+  const turningOff = useRef<Promise<unknown> | null>(null)
+  useEffect(() => {
+    if (pageEffective) return
+    const after = turningOff.current
+    turningOff.current = null
+    if (after === null) settleAsks(true)
+    else after.then(() => settleAsks(true), () => settleAsks(false))
+  }, [pageEffective, settleAsks])
+  // A tab that closes while it asks: the change never runs.
+  useEffect(() => () => settleAsks(false), [settleAsks])
   /** Per app tab and never stored, as a page's (D35). */
   const [zoom, setZoom] = useState(100)
   /** The folder's writes in flight, and whether one of them failed: the save chip says 'saving' until all settle. */
@@ -539,9 +533,16 @@ export function FolderView({
   const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings, ids)))
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [columnError, setColumnError] = useState<string | null>(null)
+  /** A new write starts with no red line (YAZ-5411): a failed one is said once, and never keeps the page looking stuck. */
+  const clearErrors = (): void => {
+    setSettingsError(null)
+    setColumnError(null)
+  }
   /** The red line of a refused write goes when the page unlocks (YAZ-4939 round 3); a real write error stays. */
   useEffect(() => {
-    if (!pageEffective) setSettingsError((now) => (now === FOLDER_READ_ONLY_TIP ? null : now))
+    if (pageEffective) return
+    setSettingsError((now) => (now === FOLDER_READ_ONLY_TIP ? null : now))
+    setColumnError((now) => (now === FOLDER_READ_ONLY_TIP ? null : now))
   }, [pageEffective])
 
   /**
@@ -631,26 +632,7 @@ export function FolderView({
    * The keys the subfolders below define (C11, locked 2026-11-08): the names of the subfolders that define each, and
    * its definition when they all agree. Once per snapshot: a column edit on this page does not walk them again.
    */
-  const definedBelow = useMemo(() => {
-    const out: Record<string, { names: string[]; decl?: ColumnDecl }> = {}
-    const stamps = new Map<string, Set<string>>()
-    /** YAZ-4769: one key in any capitals, spelled as the first subfolder (in path order) spells it. */
-    const spelled = new Map<string, string>()
-    for (const record of [...feed.folders].sort((a, b) => (a.folder < b.folder ? -1 : 1))) {
-      if (record.folder === folder || !inFolder(record.folder, folder)) continue
-      const name = folderName(folderMap, record.folder, vaultName)
-      for (const [declared, { separate: _own, ...decl }] of Object.entries(folderSettings(record, ids).columns)) {
-        const fold = keyFold(declared)
-        const key = spelled.get(fold) ?? declared
-        spelled.set(fold, key)
-        const entry = (out[key] ??= { names: [], decl })
-        if (!entry.names.includes(name)) entry.names.push(name)
-        stamps.set(key, (stamps.get(key) ?? new Set()).add(declStamp(decl)))
-      }
-    }
-    for (const [key, seen] of stamps) if (seen.size > 1) delete out[key].decl
-    return out
-  }, [feed.folders, folderMap, folder, ids, vaultName])
+  const definedBelow = useMemo(() => definedBelowOf(feed.folders, folderMap, folder, ids, vaultName), [feed.folders, folderMap, folder, ids, vaultName])
   /**
    * Of those, the keys no folder on this page's chain defines (in any capitals, YAZ-4769): a view that shows such a key
    * through "Other properties" types it by the subfolders' agreed definition (none when they differ), and its header
@@ -799,7 +781,7 @@ export function FolderView({
   }
   /** A key of the folder's own `.folder.md` that the cog sets (D36, D37); `undefined` removes it. */
   const writeOwnKey = (key: string, value: unknown): Promise<unknown> => {
-    setSettingsError(null)
+    clearErrors()
     const write = track(writeProperty(file, key, value))
     write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
     return write
@@ -814,7 +796,7 @@ export function FolderView({
     if (legacy === undefined) return writeOwnKey(key, value)
     const other = key === HOVER_ROWS_KEY ? HOVER_LINKS_KEY : HOVER_ROWS_KEY
     const otherOwn = record !== undefined && typeof record.properties[other] === 'boolean'
-    setSettingsError(null)
+    clearErrors()
     const write = track(writeProperties(file, [{ key: HOVER_PREVIEW_KEY, value: undefined }, ...(otherOwn ? [] : [{ key: other, value: legacy }]), { key, value }]))
     write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
     return write
@@ -864,7 +846,7 @@ export function FolderView({
   }
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
     if (refuseLocked(isViewOnlyChange({ columns: liveSettings.columns, properties: parsed.def.properties }, { columns, properties }))) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
-    setSettingsError(null)
+    clearErrors()
     const before = aheadRef.current
     setAhead(columns)
     // The views this write states are the page's at once, as a view change's are (`onChange`): a view write before the
@@ -912,7 +894,7 @@ export function FolderView({
   const onChange = (next: ParsedViews): boolean => {
     if (refuseLocked(isViewOnlyChange(parsed.def, next.def))) return false
     setParsed(next)
-    setSettingsError(null)
+    clearErrors()
     // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged;
     // the labels are the DEF's (YAZ-1513), since a rename is one of the edits that lands here.
     pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, properties: next.def.properties, defaultView: next.def.defaultView }))
@@ -1067,7 +1049,7 @@ export function FolderView({
    */
   const writeOtherFiles = (next: TrayLists): Promise<void> => {
     if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
-    setSettingsError(null)
+    clearErrors()
     const before = aheadOtherRef.current
     setAheadOther(next)
     return sendSettings((base) => block(base, { otherFiles: next.links, otherFilesKeepPages: next.keep })).then(
@@ -1305,8 +1287,8 @@ export function FolderView({
     // add types one). In a vault that does not use IDs (YAZ-2523 🔒 V3) only the name keeps two pages apart, so an
     // untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
-      // A new page in a read-only vault asks first (YAZ-4939); a refusal is the pane's one-line error.
-      if (!(await vault.allowFileAction(root))) throw new Error(VAULT_READ_ONLY_TIP)
+      // A new page in a read-only vault asks first (YAZ-4939); Cancel makes nothing and says nothing (YAZ-5411).
+      if (!(await vault.allowFileAction(root))) throw CHANGE_CANCELLED
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
       const dir = into === folder ? path : absFrom(root, into)
       const pageSeed = Object.fromEntries(Object.entries(seed.properties).filter(([key]) => separate.has(key)))
@@ -1456,7 +1438,9 @@ export function FolderView({
     // "Delete page…" and "Duplicate page" (YAZ-4592 S26): the sidebar's delete, and a copy beside the page.
     trash: onDeleteEntries,
     // A read-only vault asks before the delete sheet (YAZ-4985), and the delete then does not ask again.
-    allowDelete: () => vault.allowFileAction(root),
+    allowFileAction: () => vault.allowFileAction(root),
+    // Read only asks first (YAZ-5411): the views' writes wait on this page's "Allow edits?" (`editGuard.ts`).
+    editLock,
     // A duplicate is a New page: a read-only vault asks first (YAZ-4985), as the page's New does.
     duplicate: (page) =>
       void vault.allowFileAction(root).then((ok) => {
@@ -1491,11 +1475,16 @@ export function FolderView({
         }}
         onTurnOff={pageLocked && !vault.on ? () => {
           setAskingUnlock(false)
-          setPageLocked(false, writeOwnKey(READ_ONLY_KEY, undefined))
+          const write = writeOwnKey(READ_ONLY_KEY, undefined)
+          turningOff.current = write
+          setPageLocked(false, write)
         } : undefined}
         editingUntil={unlock.until}
         onLock={unlock.lock}
-        onCancel={() => setAskingUnlock(false)}
+        onCancel={() => {
+          setAskingUnlock(false)
+          settleAsks(false)
+        }}
         showPageFile={showPageFile}
         onChangeShowPageFile={(next) => setShowPageFile(next, writeOwnKey(SHOW_PAGE_FILE_KEY, next))}
         hoverRows={ownRows}

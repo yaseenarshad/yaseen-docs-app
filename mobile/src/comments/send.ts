@@ -3,6 +3,7 @@ import { GithubError } from '../github/client'
 import type { VaultStore } from '../store'
 import type { Change, GithubRemote } from '../sync/githubRemote'
 import type { CommentBox, WaitingComment } from './outbox'
+import { applyTask } from './taskWrite'
 import { applyComment } from './write'
 
 export interface CommentSendOptions {
@@ -29,7 +30,7 @@ export interface CommentSendReport {
 type Refusal = { id: string; why: NonNullable<WaitingComment['refused']> }
 
 /**
- * ONE SEND of the comment list (YAZ-5461), on the answer list's path (`answers/send.ts`, YAZ-5097 decision 2): the
+ * ONE SEND of the comment list (YAZ-5461; and the check box ticks, YAZ-5494: `taskWrite.ts`, on the same path), on the answer list's path (`answers/send.ts`, YAZ-5097 decision 2): the
  * write is compare-and-swap on the branch, never a force push, never a conflict copy.
  *  1. A sync pass brings the stored copy to the newest head: the page's FRESH bytes.
  *  2. Each comment that is due goes onto its page as it is NOW (`applyComment`): the number is taken on that page,
@@ -47,7 +48,8 @@ export async function sendComments(options: CommentSendOptions): Promise<Comment
   const now = options.now ?? Date.now
   const report: CommentSendReport = { result: 'nothing', commit: null, sent: 0, refused: 0, staleHeads: 0, stored: false }
   // An unsigned comment (no account known yet) waits for its `by`: the sender signs it first.
-  const due = () => box.waiting().filter((c) => c.refused === undefined && c.by !== undefined && c.notBefore <= now())
+  // A tick (YAZ-5494) is signed by nothing: it changes one box, not the comments.
+  const due = () => box.waiting().filter((c) => c.refused === undefined && (c.by !== undefined || c.task !== undefined) && c.notBefore <= now())
   if (due().length === 0) return report
   try {
     for (;;) {
@@ -114,8 +116,9 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
     }
     let content = file.content
     for (const c of comments) {
-      const out = applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
-      if (out.kind === 'added') {
+      // YAZ-5494: a tick finds its task on the page as it is NOW, and sets its box; a task that changed is refused.
+      const out = c.task !== undefined ? applyTask(content, c.task) : applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
+      if (out.kind === 'added' || out.kind === 'ticked') {
         content = out.content
         plan.added.push(c)
       } else if (out.kind === 'already') plan.already.push(c)

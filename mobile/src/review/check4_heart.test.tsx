@@ -2,6 +2,7 @@
 /// <reference path="../../../client/src/bridge.d.ts" />
 // Checker round 3 (YAZ-5078): one new made-up vault (based on round 2's harness); earlier: three made-up vaults of the checker's own, 40 actions each, through the Mac's host and the
 // phone's host. The due list (with its ORDER), the counts, and the bytes of every file must be the same.
+import { withCardFix } from '@shared/cardLine'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -158,7 +159,7 @@ async function desktopRun(files: Record<string, string>): Promise<Run> {
     settle,
     files: async () => Object.fromEntries([...disk].map(([p, c]) => [p.slice(ROOT.length + 1), c])),
     records: () => records,
-    setFix: async (path, id, on) => void (await m.get().setFix(path, id, on)),
+    setFix: async (path, id, on) => void (await host.changeCardLine(path, id, (l) => withCardFix(l, on))),
     stop: () => act(() => m.root.unmount()),
   }
 }
@@ -184,7 +185,7 @@ async function phoneRun(files: Record<string, string>) {
       return out
     },
     records: () => source.records,
-    setFix: async (path, id, on) => void (await m.get().setFix(path, id, on)),
+    setFix: async (path, id, on) => void (await host.changeCardLine(path, id, (l) => withCardFix(l, on))),
     stop: () => (act(() => m.root.unmount()), source.stop()),
   }
   return { run, t }

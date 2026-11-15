@@ -55,8 +55,8 @@ describe('YAZ-5319: card rows', () => {
   })
 
   it('shows the name and every card column by default, each named "Card …" but the Page', () => {
-    expect(propertyKeys(DEF, CARDS, [])).toEqual(['file.name', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id'])
-    expect(propertyKeys(DEF, CARDS, []).map(defaultLabel)).toEqual(['Name', 'Page', 'Card status', 'Card next review', 'Card last review', 'Card reviews', 'Card success rate', 'Card up next', 'Card ID'])
+    expect(propertyKeys(DEF, CARDS, [])).toEqual(['file.name', 'card.page', 'card.status', 'card.fix', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id'])
+    expect(propertyKeys(DEF, CARDS, []).map(defaultLabel)).toEqual(['Name', 'Page', 'Card status', 'Card fix status', 'Card next review', 'Card last review', 'Card reviews', 'Card success rate', 'Card up next', 'Card ID'])
   })
 
   it('each column\'s value: the page, the status, the reviews from the schedule, Up next, the ID', () => {
@@ -118,11 +118,11 @@ describe('YAZ-5319: card rows', () => {
       { 'card.status': 'Active', 'card.upNext': false },
     ])
     // By default: the name, the card columns, then each card property (no "Page tags": the page's own are not a card's).
-    expect(propertyKeys(DEF, CARDS, rows)).toEqual(['file.name', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.level', 'note.tags'])
+    expect(propertyKeys(DEF, CARDS, rows)).toEqual(['file.name', 'card.page', 'card.status', 'card.fix', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.level', 'note.tags'])
     // A view with its own card order keeps a card property it holds, and the menus offer the rest.
     const own: ViewDef = { ...CARDS, order: ['file.name', 'note.level'] }
     expect(propertyKeys({ views: [own] }, own, rows)).toEqual(['file.name', 'note.level'])
-    expect(allPropertyKeys({ views: [own] }, own, rows)).toEqual(['file.name', 'note.level', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.tags', 'file.folder'])
+    expect(allPropertyKeys({ views: [own] }, own, rows)).toEqual(['file.name', 'note.level', 'card.page', 'card.status', 'card.fix', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.tags', 'file.folder'])
     // Filter and sort as a page's column.
     const filtered: ViewDef = { ...CARDS, filters: 'note.tags.contains("europe")' }
     expect(runView({ views: [filtered] }, filtered, rows, { now: NOW }).rows.map((r) => r.record.title)).toEqual(['A'])
@@ -141,11 +141,73 @@ describe('YAZ-5319: card rows', () => {
   it('offers the card columns, the cards\' declared columns, the Folder and the formulas; no page property (YAZ-5349 scopes card properties)', () => {
     // `columns` is the Cards table's: the card columns' types through the card lens, never the page's.
     const keys = allPropertyKeys({ views: [CARDS], formulas: { x: '1' } }, CARDS, cardRowRecords(PAGES), { level: { kind: 'text' } })
-    expect(keys).toEqual(['file.name', 'card.page', 'card.status', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.level', 'file.folder', 'formula.x'])
+    expect(keys).toEqual(['file.name', 'card.page', 'card.status', 'card.fix', 'card.nextReview', 'card.lastReview', 'card.reviews', 'card.successRate', 'card.upNext', 'card.id', 'note.level', 'file.folder', 'formula.x'])
   })
 
   it('only a Table lists cards this round; the setting is on the view for a Board or a Calendar later', () => {
     const board: ViewDef = { type: 'board', name: 'B', rows: 'cards' }
     expect(propertyKeys({ views: [board] }, board, PAGES)).not.toContain('card.status')
+  })
+})
+
+describe('YAZ-5430: Card fix status (Q53): "Needs fixing" or blank, next to Card status', () => {
+  const FIX_PAGES = [
+    record('Europe trip', { cards: [card('GEO-1', { title: 'Capital of Spain', fix: true }), card('GEO-2', { title: 'Capital of Peru' }), card('GEO-4', { title: 'Both', off: true, fix: true })] }),
+    record('GEO-3', { kind: 'card', title: 'Longest river', cards: [card('GEO-3', { title: 'Longest river' })] }),
+  ]
+  const fixRun = (view: ViewDef) => run(view, cardRowRecords(FIX_PAGES))
+  const titles = (view: ViewDef) => fixRun(view).rows.map((r) => r.record.title)
+
+  it('the column sits right after Card status; a marked card reads "Needs fixing", any other blank; an archived card can need a fix', () => {
+    expect(propertyKeys(DEF, CARDS, []).slice(0, 4)).toEqual(['file.name', 'card.page', 'card.status', 'card.fix'])
+    expect(defaultLabel('card.fix')).toBe('Card fix status')
+    const rows = fixRun(CARDS).rows.map((r) => [r.record.title, r.values['card.status'], r.values['card.fix']])
+    expect(rows).toEqual([
+      ['Capital of Spain', 'Active', 'Needs fixing'],
+      ['Capital of Peru', 'Active', null],
+      ['Both', 'Archived', 'Needs fixing'],
+      ['Longest river', 'Active', null],
+    ])
+    // The row's record holds the edited value as Card status does; none when blank.
+    expect(cardRowRecords(FIX_PAGES).map((r) => r.properties['card.fix'])).toEqual(['Needs fixing', undefined, 'Needs fixing', undefined])
+  })
+
+  it('a Select with one option, Needs fixing; filter "is Needs fixing" and "is empty"; the rules read back as the Filter menu rows', () => {
+    const typing = columnTyping('card.fix', [])
+    expect(typing).toMatchObject({ assigned: 'select', options: ['Needs fixing'] })
+    expect(inferType('card.fix', [], typing)).toBe('select')
+    const is = { property: 'card.fix', op: 'is' as const, value: 'Needs fixing' }
+    const expr = ruleToExpr(is, inferType('card.fix', [], typing))
+    expect(expr).toBe('card.fix == "Needs fixing"')
+    expect(exprToRule(expr)).toEqual(is)
+    expect(titles({ ...CARDS, filters: expr })).toEqual(['Capital of Spain', 'Both'])
+    const empty = ruleToExpr({ property: 'card.fix', op: 'isEmpty', value: '' }, 'select')
+    expect(titles({ ...CARDS, filters: empty })).toEqual(['Capital of Peru', 'Longest river'])
+  })
+
+  it('sorts and groups by it', () => {
+    expect(titles({ ...CARDS, sort: [{ property: 'card.fix', direction: 'DESC' }, { property: 'file.name', direction: 'ASC' }] })).toEqual(['Both', 'Capital of Spain', 'Capital of Peru', 'Longest river'])
+    const asc = titles({ ...CARDS, sort: [{ property: 'card.fix', direction: 'ASC' }, { property: 'file.name', direction: 'ASC' }] })
+    // Blanks sort last either way, as in any column: the marked cards come first.
+    expect(asc).toEqual(['Both', 'Capital of Spain', 'Capital of Peru', 'Longest river'])
+    expect(fixRun({ ...CARDS, groupBy: { property: 'card.fix', direction: 'ASC' } }).groups?.map((g) => [g.label, g.rows.length])).toEqual([['Needs fixing', 2], ['No value', 2]])
+  })
+
+  it('its cell writes `fix` on the card line: Needs fixing sets it in the phone`s place; blank (Clear) takes it off; other parts keep their bytes', () => {
+    const line = parseCardLine('<!-- card: GEO-1, title "Capital of Spain", level "A2", off, 2026-11-01T09:00Z good -->')!
+    const on = cardLineChange([{ key: 'card.fix', value: 'Needs fixing' }])(line)
+    expect(formatCardLine(on)).toBe('<!-- card: GEO-1, title "Capital of Spain", level "A2", off, fix, 2026-11-01T09:00Z good -->')
+    for (const blank of [null, undefined, '']) expect(formatCardLine(cardLineChange([{ key: 'card.fix', value: blank }])(on))).toBe(formatCardLine(line))
+    // Set twice: one mark.
+    expect(cardLineChange([{ key: 'card.fix', value: 'Needs fixing' }])(on)).toBe(on)
+  })
+})
+
+describe('YAZ-5466: a card file`s comments are never a Cards table column', () => {
+  it('the row`s properties are its card line`s: a `comments` the file holds is not one, and makes no column', () => {
+    const file = record('river', { kind: 'card', properties: { kind: 'card', comments: [{ id: 'aaaaaaaa', body: 'Hi' }] } as IndexRecord['properties'], cards: [card('GEO-9', { properties: { level: 'A2' } } as Partial<CardRecord>)] })
+    const [row] = cardRowRecords([file])
+    expect(row.properties).not.toHaveProperty('comments')
+    expect(row.properties.level).toBe('A2')
   })
 })

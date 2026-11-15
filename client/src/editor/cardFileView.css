@@ -45,3 +45,7 @@
 .card-file__page > * {
   zoom: var(--document-zoom, 1);
 }
+/* The comments block (YAZ-5466, `comments.css`): the column's own padding is the block's; it adds none of its own here. */
+.card-file__page > .comments {
+  padding: 0;
+}

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defaultCourseState } from '@shared/courseState'
 import { mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -189,9 +190,24 @@ describe('createStore: loading', () => {
       settingsFolder: '/Sync/yaseen-docs-settings',
       settingsSavedAt: 42,
       tabCanvas: { allWindows: true, snap: true, cards: [{ win: 'w1', path: '/v/a.md', copy: 0, by: 'folder', x: 10, y: -20.5 }], frames: [] },
+      course: { chapter: 'inbox', clip: 'c3-04', finished: ['why', 'first-card'], done: false, dismissed: true, offered: true, muted: true, speed: 1.25, made: [], toured: ['first-card'], vault: '/v', dock: 'side', dockCorner: 'top-left', dockSide: 0.4 },
     }
     await seed(state)
     expect(createStore(file).get()).toEqual({ ...state, folders: { '/v': { ...state.folders['/v'], expanded: [], name: null, key: null } } })
+  })
+
+  it('YAZ-5120 the card course: absent is the default; each bad field reads its default; setCourse commits only a change', async () => {
+    await seed(valid({}))
+    expect(createStore(file).get().course).toEqual(defaultCourseState())
+    await seed(valid({ course: { chapter: 'inbox', clip: 'bad id!', finished: ['why', 'why', 3], muted: 'yes', speed: 2, extra: 1 } }))
+    expect(createStore(file).get().course).toEqual({ ...defaultCourseState(), chapter: 'inbox', finished: ['why'] })
+    const store = createStore(file)
+    const seen: unknown[] = []
+    store.onChange((s) => seen.push(s.course))
+    store.setCourse({ clip: 'c3-02', speed: 1.5 })
+    store.setCourse({ clip: 'c3-02' })
+    expect(store.get().course).toMatchObject({ chapter: 'inbox', clip: 'c3-02', speed: 1.5 })
+    expect(seen).toHaveLength(1)
   })
 
   it('settings fall back field by field (partial shapes, junk types, width/colour ranges)', async () => {
@@ -284,6 +300,19 @@ describe('createStore: loading', () => {
     expect(sanitizeSettings({})).toMatchObject({ markNextHidden: true, nextHiddenColour: null })
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, markNextHidden: false, nextHiddenColour: '#aa3399' })).toMatchObject({ markNextHidden: false, nextHiddenColour: '#aa3399' })
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, markNextHidden: 'yes', nextHiddenColour: 'blue' })).toMatchObject({ markNextHidden: true, nextHiddenColour: null })
+  })
+
+  it('Card tips (YAZ-5114): On by default, also in a file from before it; Off survives a restart; a wrong value reads On', async () => {
+    expect(DEFAULT_SETTINGS.cardTips).toBe(true)
+    const { cardTips: _gone, ...older } = DEFAULT_SETTINGS
+    await seed(valid({ settings: older }))
+    expect(createStore(file).get().settings.cardTips).toBe(true)
+    const store = createStore(file)
+    store.setSettings({ ...DEFAULT_SETTINGS, cardTips: false })
+    await store.flush()
+    expect(createStore(file).get().settings.cardTips).toBe(false)
+    expect(isSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toBe(false)
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardTips: 'off' })).toMatchObject({ cardTips: true })
   })
 
   it('"Jump across files" (YAZ-3500): a file from before it reads off; on survives a restart; a wrong value reads off; it stays on this Mac', async () => {

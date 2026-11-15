@@ -113,6 +113,10 @@
   background: var(--bg-side);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
+/* YAZ-5498: with the full title at its top, as wide as the sheet allows; the title wraps. */
+.explore-sheet__menu--titled {
+  width: min(320px, calc(100% - 16px));
+}
 .explore-sheet__menu button {
   min-height: var(--tap);
   padding: 0 12px;

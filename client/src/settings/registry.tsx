@@ -23,6 +23,7 @@
  */
 import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { spacingVars, type PageSpacing } from '@shared/textFormatting'
+import { COURSE_SETTINGS_GROUP } from '../course/courseSettings'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/pageId'
@@ -75,7 +76,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -400,6 +401,8 @@ export interface SettingsCtx {
   pickDailyFolder?: (folder: string, vault: string) => void
   /** The vault whose `daily-pages.json` Settings › Daily pages shows (YAZ-5491); named only where the window has two or more. */
   dailyPagesVault?: string
+  /** Review › Card course › "Open the course" (YAZ-5120): App closes Settings and opens the course. */
+  openCourse?: () => void
 }
 
 export interface SettingDef {
@@ -2048,6 +2051,37 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
                 </ul>
               </details>
             ),
+          },
+          {
+            // YAZ-5059 decision 3 (YAZ-5108): an app setting, not the vault's. Show puts the app's copy of the card skill at
+            // the bottom of the sidebar of each window whose vault has reviews on; Hide takes it away. Its row's "Hide card skill" sets Hide too.
+            id: 'cardSkillInSidebar',
+            label: 'Card skill in the sidebar',
+            hint: 'A guide for you and your AI agent on how to make good cards. It is read only: duplicate it into your vault to change it.',
+            keywords: [...REVIEW_KEYWORDS, 'skill', 'guide', 'agent', 'formats', 'show', 'hide'],
+            // As the skill's row: only where this vault reviews cards.
+            available: reviewOn,
+            render: ({ settings, onChange }) => (
+              <span data-tour="settings-card-skill">
+                <Segmented options={SHOW_HIDE_OPTIONS} value={settings.cardSkillInSidebar} onChange={(cardSkillInSidebar) => onChange({ ...settings, cardSkillInSidebar })} ariaLabel="Card skill in the sidebar" />
+              </span>
+            ),
+          },
+        ],
+      },
+      // YAZ-5120: Card course › Open the course, its own group (`course/courseSettings.tsx`), after the card skill's row and
+      // before Card tips (YAZ-5059: the three card-skill rows under "Use cards in this vault").
+      COURSE_SETTINGS_GROUP,
+      // YAZ-5114 (YAZ-5059 decision 8): the app's settings, for every vault, so it shows with Review off too: cards are
+      // made in a vault with IDs whether or not it reviews them.
+      {
+        items: [
+          {
+            id: 'cardTips',
+            label: 'Card tips',
+            hint: 'The format hint on a new card, and the offers of the course.',
+            keywords: [...REVIEW_KEYWORDS, 'tips', 'hint', 'formats', 'card skill'],
+            render: ({ settings, onChange }) => <Segmented options={ON_OFF_OPTIONS} value={settings.cardTips !== false} onChange={(cardTips) => onChange({ ...settings, cardTips })} ariaLabel="Card tips" />,
           },
         ],
       },

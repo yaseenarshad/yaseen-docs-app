@@ -130,3 +130,50 @@ export const LOOK_CLIP_COMMENT = '<!-- table: header red strong regular text-whi
 
 /** A page with both, a line before each. */
 export const LOOK_PAGE = ['# Table look', 'The house projects, as the Mac shows them:', LOOK, LOOK_COMMENT, 'Books, clipped on the Mac:', LOOK_CLIP, LOOK_CLIP_COMMENT, 'The end of the tables.'].join('\n\n')
+
+/**
+ * YAZ-5493: a made-up day plan as a calendar table, as the Mac writes it ("/Calendar table": `Time | Plan 1`, a row each
+ * 30 minutes, `calendar 30m`, compact rows, the header row and column A frozen), with a to-do row above the times that
+ * the file keeps out of the dimming (`nodim 2`). The fixture's clock is frozen at `CALENDAR_NOW`.
+ */
+export const CALENDAR = [
+  '| Time | Plan | Where |',
+  '| --- | --- | --- |',
+  '| To-do | Call the plumber, buy stamps | |',
+  ...[
+    ['7:00 am', 'Run by the river', 'Park'],
+    ['7:30 am', 'Breakfast', 'Home'],
+    ['8:00 am', 'Read the week\'s notes', ''],
+    ['8:30 am', '', ''],
+    ['9:00 am', 'Garden plan with Sam', 'Shed'],
+    ['9:30 am', 'Write the seed list', ''],
+    ['10:00 am', 'Bake bread', 'Kitchen'],
+    ['10:30 am', '', ''],
+    ['11:00 am', 'Walk to the market', 'Town'],
+    ['11:30 am', 'Lunch', ''],
+    ['12:00 pm', 'Library hour', 'Library'],
+    ['12:30 pm', '', ''],
+    ['1:00 pm', 'Paint the fence', 'Garden'],
+    ['1:30 pm', '', ''],
+    ['2:00 pm', 'Tea', ''],
+    ['2:30 pm', 'Call Ana about the trip', ''],
+    ['3:00 pm', '', ''],
+    ['3:30 pm', 'Pick beans', 'Garden'],
+    ['4:00 pm', 'Cook dinner', 'Kitchen'],
+    ['4:30 pm', '', ''],
+    ['5:00 pm', 'Dinner with the neighbours', 'Home'],
+    ['5:30 pm', '', ''],
+    ['6:00 pm', 'Wash up', ''],
+    ['6:30 pm', '', ''],
+    ['7:00 pm', 'Film night', 'Sofa'],
+    ['7:30 pm', '', ''],
+    ['8:00 pm', '', ''],
+    ['8:30 pm', 'Read in bed', ''],
+    ['9:00 pm', 'Lights out', ''],
+  ].map(([time, plan, where]) => `| ${time} | ${plan} | ${where} |`),
+].join('\n')
+export const CALENDAR_COMMENT = '<!-- table: nodim 2, height compact, freeze 1 row 1 col, calendar 30m -->'
+/** The fixture's frozen clock: 9:40 am on a made-up day, a third of the way into the 9:30 slot. */
+export const CALENDAR_NOW = new Date(2026, 10, 14, 9, 40, 0)
+/** A page with the calendar table, a line before and text after it. */
+export const CALENDAR_PAGE = ['# Day plan', 'Saturday, planned on the Mac:', CALENDAR, CALENDAR_COMMENT, 'Notes for the evening.', ...Array.from({ length: 20 }, (_, i) => `Line ${i + 1} after the table.`)].join('\n\n')
