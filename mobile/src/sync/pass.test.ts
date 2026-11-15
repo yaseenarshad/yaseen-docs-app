@@ -142,10 +142,10 @@ describe('the sync pass (October 2E)', () => {
     expect(await s.store.read(VAULT, 'assets/audio/perfect-fifth.mp3')).toBeNull()
   })
 
-  it('the 3D hook: alsoEager downloads chosen media in the pass, as bytes', async () => {
+  it('a pass downloads no media: the pictures come after it (media/ahead.ts), so the checkpoint never waits for them', async () => {
     const s = await syncSetup(DEMO)
-    await pass(s, { alsoEager: (p) => p.endsWith('.png') })
-    expect(await text(s, 'assets/images/tricolour-flag.png')).toEqual(DEMO['assets/images/tricolour-flag.png'])
+    await pass(s)
+    expect(await s.store.read(VAULT, 'assets/images/tricolour-flag.png')).toBeNull()
     expect(await s.store.read(VAULT, 'assets/audio/perfect-fifth.mp3')).toBeNull()
   })
 

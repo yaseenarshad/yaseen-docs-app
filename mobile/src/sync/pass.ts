@@ -21,12 +21,6 @@ export interface PassOptions {
   now?: () => number
   /** Gives the UI thread back (default: `scheduler.yield`, else a zero timeout). The pass calls it each ~8 ms of work. */
   yieldToUi?: () => Promise<void>
-  /**
-   * A file that is not eager but must download in this pass too. It is kept as bytes. Default: none. 3D does NOT use
-   * it: the media of the window downloads after the pass (`mobile/src/media/ahead.ts`), so the first download and the
-   * checkpoint never wait for pictures.
-   */
-  alsoEager?: (path: string) => boolean
   /** Downloads at one time. Proof 1B: six at a time made the first download 3 times faster. */
   parallel?: number
   onProgress?: (progress: PassProgress) => void
@@ -86,7 +80,9 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
   const trusted = checkpoint !== null && saved !== undefined && saved.commit === checkpoint.commit && ofTheseRules(saved)
   await slice()
 
-  const wanted = (path: string) => isEager(path) || (options.alsoEager?.(path) ?? false)
+  // Only the eager files: the media of the window downloads after the pass (`media/ahead.ts`), so the first download
+  // and the checkpoint never wait for pictures.
+  const wanted = isEager
   const tooBig = (path: string) => isEager(path) && (tree.bytes.get(path) ?? 0) > MAX_FILE_BYTES
   const todo: string[] = []
   for (const [path, sha] of tree) if (wanted(path) && !tooBig(path) && !(checkpoint !== null && old[path] === sha && stored.has(path))) todo.push(path)
