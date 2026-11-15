@@ -10,7 +10,7 @@ import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
-import { PageArrows } from './pageNav'
+import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { openLink, type LinkDoor } from './openLink'
 import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
@@ -103,6 +103,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const title = name === '' ? UNTITLED_CARD : name
   const label = name === '' ? (card?.id ?? id) : name
 
+  // YAZ-5556: a card file's ID in the top bar, as a page's (YAZ-5450); a card in a page is no file, and has no chip.
+  const fileId = isFile ? pageIdOf(data, record) : null
   const reviewOn = data?.review.enabled === true
   // YAZ-5527: the top bar's ⋯ holds the page tools only (the full title, Find in card); the card's own ⋯ is on its head.
   const tools = usePageTools(host, { title, path, label: 'Card tools', find: 'Find in card', headings: false })
@@ -139,7 +141,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   }
 
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} tools={tools.button} notice={tools.bar} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} chip={fileId !== null && <PageIdChip id={fileId} path={path} />} tools={tools.button} notice={tools.bar} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
       <article className="reader card-view" aria-label={label} style={look?.style}>
         {/* YAZ-5478: a card file's comment count, at the top right; a tap goes to its comments under the card. */}
         {isFile && typeof text === 'string' && <PageCommentsCount text={text} />}

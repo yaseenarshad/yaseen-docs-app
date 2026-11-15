@@ -3,6 +3,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { READER_ID, seedReaderVault, writeVaultFiles } from '../dev/readerVault'
 import { mount, newPhone, type Harness } from '../screens/testing'
+import { setCalendarClock } from '../page/tableCalendar'
 
 /**
  * YAZ-5470: the Today button of the tab bar. Only in a vault with Daily pages on (`.yaseendocs/daily-pages.json`); a tap
@@ -87,5 +88,31 @@ describe('YAZ-5470: the Today button', () => {
     const index = await writeVaultFiles(h.store, { ...OTHER, ...ON, 'Daily/2026-11-13.md': '# Today\n' }, {}, 'c0ffee2')
     await h.syncEmit({ type: 'changed', vault: READER_ID, settings: ['.yaseendocs/daily-pages.json'], diff: { added: ['.yaseendocs/daily-pages.json'], changed: [], removed: [], renamed: [] }, index })
     await until(h, () => today(h!) !== null)
+  })
+})
+
+/**
+ * YAZ-5557: the Today button opens today's page in the page view (`openFile`, a full page), so its calendar tables are
+ * drawn and marked by the same code as any page (`useTables` → `watchCalendars` → `markCalendar`): the next time slot
+ * shows there with the vault's Shade the next time slot on.
+ */
+describe('YAZ-5557: a calendar table on the Today page', () => {
+  const DAY = ['# Today words', '', '| Time | Plan |', '|---|---|', '| 9:00 am | Run |', '| 9:30 am | Swim |', '| 10:00 am | Rest |', '| 10:30 am | Read |', '', '<!-- table: calendar 30m -->', ''].join('\n')
+  const marks = (t: HTMLTableElement, cls: string) => [...t.rows].flatMap((r, i) => (r.classList.contains(cls) ? [i] : []))
+  afterEach(() => setCalendarClock(null))
+
+  it('the next time slot shows with the vault\'s Shade the next time slot on, after the now row; off, none', async () => {
+    setCalendarClock(() => new Date(2026, 10, 13, 9, 40))
+    for (const nextShade of [true, false]) {
+      h?.unmount()
+      h = await open({ ...ON, 'Daily/2026-11-13.md': DAY, '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { nextShade, nextColour: 'blue' } }) })
+      await until(h, () => today(h!) !== null)
+      await h.click('Today')
+      await h.waitText('Today words')
+      const table = () => h!.host.querySelector<HTMLTableElement>('.reader__body table[data-calendar]')
+      await until(h, () => table() !== null && marks(table()!, 'table-now-row').length > 0)
+      expect([marks(table()!, 'table-now-row'), marks(table()!, 'table-next-row'), marks(table()!, 'table-past-row')]).toEqual([[2], nextShade ? [3] : [], [1]])
+      if (nextShade) expect(table()!.style.getPropertyValue('--table-next-colour')).toBe('var(--table-text-blue)')
+    }
   })
 })
