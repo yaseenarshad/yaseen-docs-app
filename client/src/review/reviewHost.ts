@@ -50,8 +50,8 @@ export interface ReviewHost {
   /** The name of vault `root`, as its sidebar shows it (the breadcrumb's first part, the done screen's scope). */
   vaultName(root: string): string
   /**
-   * Undo takes back an Archive card (YAZ-5078: the phone's decision; the mockup shows "Archived · Undo"). Absent: no,
-   * as on the Mac, whose Undo takes back answers and adds only.
+   * Undo takes back an Archive card (YAZ-5078: the phone's decision; the mockup shows "Archived · Undo"). The phone's
+   * and the Mac's hosts both say yes (YAZ-5621). Absent: no (Undo takes back answers and adds only).
    */
   readonly undoesArchive?: boolean
 }
