@@ -1,5 +1,5 @@
 import type { VaultStore } from '../store'
-import { vaultLock } from '../sync/browser'
+import { vaultLock } from '../sync/vaultLock'
 import type { CardOp } from './ops'
 
 /**

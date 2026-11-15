@@ -4,7 +4,7 @@ import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, 
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { GithubError, SECONDARY_LIMIT_WAIT_MS } from '../github/client'
 import { StorageFullError, kindOnPhone, type Checkpoint, type VaultStore } from '../store'
-import { browserClock } from '../sync/browser'
+import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { isEager } from '../sync/plan'
 import { uiSlicer, yieldToUi as defaultYield } from '../sync/yieldToUi'

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { GITHUB_API, GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, backoffMs, githubClient, repoPath, slowedUntil, staleUntil, type FetchLike } from './client'
+import { GITHUB_API, GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, githubClient, repoPath, type FetchLike } from './client'
+import { backoffMs, slowedUntil, staleUntil } from './backoff'
 
 const TOKEN = 'github_pat_11SECRETSECRET0000000000_secretsecretsecretsecretsecretsecretsecretsecretsecretsecretsecret'
 
