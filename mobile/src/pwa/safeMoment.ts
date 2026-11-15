@@ -1,5 +1,5 @@
 /**
- * THE SAFE MOMENT (YAZ-5087): when a new version may take over (the page loads again).
+ * THE SAFE MOMENT: when a new version may take over (the page loads again).
  *
  * - At the start, before the app runs: always. Nothing is open yet, and the answer list is in IndexedDB, so it survives
  *   the reload (3C: "answers made with no signal, the app closed: at the next start they are still there").
@@ -8,7 +8,7 @@
  *   download still do.
  *
  * Held: answers that wait to be sent (a reload in the middle of a send is never done), the Review tab, and a review
- * in progress on ANY tab (YAZ-5269: the session lives on behind Friends and Search; `review/inProgress.ts`), a screen
+ * in progress on ANY tab (the session lives on behind Friends and Search; `review/inProgress.ts`), a screen
  * over the tabs or the sign-in form (typed text would be lost), the first download.
  */
 
@@ -26,7 +26,7 @@ export interface AppMoment {
   downloading: boolean
   /** The open vault's answers that wait to be sent (the stored answer list). */
   answersWaiting: number
-  /** A Review session is in its middle, on any tab (YAZ-5269, `reviewInProgress()`). Absent: none. */
+  /** A Review session is in its middle, on any tab (`reviewInProgress()`). Absent: none. */
   reviewInProgress?: boolean
 }
 

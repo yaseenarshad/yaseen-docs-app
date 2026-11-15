@@ -1,7 +1,7 @@
 import { PAGE_READY, SKIP_WAITING } from './swCore'
 
 /**
- * The page side of an update (YAZ-5087). The browser downloads a new version in the background (the worker installs
+ * The page side of an update. The browser downloads a new version in the background (the worker installs
  * it whole, or not at all). This file notices it and makes it take over ONLY when the page says so:
  * - `swapAtStart`: at the start, before the app runs, a version that waits takes over at once ("the next open uses it").
  * - `createUpdates`: while the app runs, `ready()` says a new version waits; `apply()` makes it take over, then the page
@@ -107,7 +107,7 @@ export function createUpdates(deps: { container: SwContainerLike | undefined; re
       // when a page opens, but not at once.
       lastCheck = now()
       void reg.update().catch(() => {})
-      // YAZ-5303: this page has started, so the page it replaced is gone: the worker may remove a version no page runs.
+      // This page has started, so the page it replaced is gone: the worker may remove a version no page runs.
       container.controller?.postMessage?.({ type: PAGE_READY })
       hadController = container.controller !== null
       container.addEventListener('controllerchange', () => {

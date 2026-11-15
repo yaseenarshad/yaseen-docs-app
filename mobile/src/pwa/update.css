@@ -1,4 +1,4 @@
-/* "A new version is ready." (YAZ-5087): a quiet line over the tab bar, clear of the home bar. */
+/* "A new version is ready.": a quiet line over the tab bar, clear of the home bar. */
 .update-line {
   position: fixed;
   left: calc(env(safe-area-inset-left, 0px) + 12px);

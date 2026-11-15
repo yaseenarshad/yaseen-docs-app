@@ -7,7 +7,7 @@ import type { Updates } from './updates'
 import './update.css'
 
 /**
- * "A new version is ready." (YAZ-5087): a line over the tab bar when a new version waits. Restart makes it take over at
+ * "A new version is ready.": a line over the tab bar when a new version waits. Restart makes it take over at
  * once; coming back from the background after a while does it by itself. Both only at a safe moment (`safeMoment.ts`).
  * Most updates never show the line: a version that waits starts at the next open, before the app runs (`main.tsx`).
  */

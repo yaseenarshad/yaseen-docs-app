@@ -1,7 +1,7 @@
 import { createUpdates, swapAtStart, type SwContainerLike, type Updates } from './updates'
 
 /**
- * The browser side of the home-screen app (YAZ-5087), for `main.tsx`. Only the real build has a service worker: not
+ * The browser side of the home-screen app, for `main.tsx`. Only the real build has a service worker: not
  * the dev server (`vite`), not the screenshot build (`--mode fixtures`), not the tests.
  */
 const enabled = import.meta.env.PROD && import.meta.env.MODE !== 'fixtures'
