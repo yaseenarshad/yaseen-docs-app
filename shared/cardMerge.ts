@@ -7,7 +7,8 @@ import { keyFold } from './propertyKeys'
  * page's line merge. Each card that BOTH sides changed (by ID) takes, on both sides, the same new line:
  *  - the reviews: the union of both sides' reviews (but a review in the base that one side removed and the other left
  *    as it was stays removed, YAZ-5155), each one ONE time, in time order (`withCardReviews`: of one review
- *    with and without seconds, the timed one);
+ *    with and without seconds, the timed one; YAZ-5620: by copies, so two reviews of one minute and rating stay two,
+ *    and a copy both sides hold is there one time);
  *  - the marks (`off`, `next`, `notitle`, `fix`, and each part this app does not know yet): a three-way result
  *    against the base. A mark that one side changed takes that change; a mark both sides left alone stays as it was.
  *  - the title (YAZ-5308: the `title` part, YAZ-5309): a three-way result against the base, as a mark's, by its text. A
@@ -91,10 +92,8 @@ function uniteLine(base: CardLine | null, theirs: CardLine, mine: CardLine): Car
   const [b, t, m] = [marksOf(base), marksOf(theirs), marksOf(mine)]
   // A mark both sides agree on stays as they have it; else the side that changed it from the base wins.
   const keep = (k: string): boolean => (t.has(k) === m.has(k) ? t.has(k) : t.has(k) === b.has(k) ? m.has(k) : t.has(k))
-  const gone = removedReviews(base, theirs, mine)
-  let parts = withCardReviews(theirs, cardReviewsOf(mine)).parts.filter((p) =>
-    p.kind === 'review' ? !gone.has(cardReviewKey(p.review)) : !keyOf(p).startsWith('mark ') || keep(keyOf(p)),
-  )
+  const [their, my] = withoutRemovedReviews(base, theirs, mine)
+  let parts = withCardReviews(their, cardReviewsOf(my)).parts.filter((p) => p.kind === 'review' || !keyOf(p).startsWith('mark ') || keep(keyOf(p)))
   // A mark only mine has goes after the part it follows in mine (`next` after the ID, `fix` after the reviews), else first.
   for (let i = 0; i < mine.parts.length; i++) {
     const part = mine.parts[i]
@@ -203,22 +202,68 @@ function uniteTitle(base: CardLine | null, theirs: CardLine, mine: CardLine, lin
 
 /**
  * YAZ-5155: the reviews that stay removed. A review in the base that one side removed (an undo, "Remove review", Reset
- * history) and the other side left as it was (the same seconds, or removed too) stays removed. A review the other side
+ * history) and the other side left as it was (the same bytes, or removed too) stays removed. A review the other side
  * changed (it took its seconds) stays: a change wins over a remove, so no review is lost by accident. With no base
- * line for the card, nothing stays removed: the union.
+ * line for the card, nothing stays removed: the union. YAZ-5620: by COPIES of a name (`cardReviewKey`, two ✕ of one
+ * minute are two): a side that holds fewer copies than the base removed that many, and the other side gives up as many
+ * of those base copies as it still holds unchanged (its last ones). Both sides removed copies: the side with fewer
+ * copies wins. Returns both lines with those copies taken out, for the union (`withCardReviews`).
  */
-function removedReviews(base: CardLine | null, theirs: CardLine, mine: CardLine): Set<string> {
-  const gone = new Set<string>()
-  if (base === null) return gone
-  const byKey = (line: CardLine) => new Map(cardReviewsOf(line).map((r) => [cardReviewKey(r), formatCardReview(r)]))
-  const [t, m] = [byKey(theirs), byKey(mine)]
-  for (const r of cardReviewsOf(base)) {
-    const k = cardReviewKey(r)
-    const was = formatCardReview(r)
-    const [inT, inM] = [t.get(k), m.get(k)]
-    if ((inT === undefined && (inM === undefined || inM === was)) || (inM === undefined && inT === was)) gone.add(k)
+function withoutRemovedReviews(base: CardLine | null, theirs: CardLine, mine: CardLine): [CardLine, CardLine] {
+  if (base === null) return [theirs, mine]
+  const copies = (line: CardLine) => {
+    const out = new Map<string, string[]>()
+    for (const r of cardReviewsOf(line)) out.set(cardReviewKey(r), [...(out.get(cardReviewKey(r)) ?? []), formatCardReview(r)])
+    return out
   }
-  return gone
+  const [b, t, m] = [copies(base), copies(theirs), copies(mine)]
+  /** The base copies (`was`) that `kept` no longer holds: what that side removed. */
+  const minus = (was: readonly string[], kept: readonly string[]) => {
+    const left = [...kept]
+    return was.filter((x) => {
+      const i = left.indexOf(x)
+      if (i === -1) return true
+      left.splice(i, 1)
+      return false
+    })
+  }
+  /** Of `removed`, those that `side` still holds unchanged, `limit` at most. */
+  const held = (removed: readonly string[], side: readonly string[], limit: number) => {
+    const left = [...side]
+    const out: string[] = []
+    for (const x of removed) {
+      const i = left.indexOf(x)
+      if (out.length >= limit || i === -1) continue
+      left.splice(i, 1)
+      out.push(x)
+    }
+    return out
+  }
+  const [dropT, dropM]: [string[], string[]] = [[], []]
+  for (const [k, was] of b) {
+    const [inT, inM] = [t.get(k) ?? [], m.get(k) ?? []]
+    const [rt, rm] = [was.length - inT.length, was.length - inM.length]
+    if (rt > 0 && rm > 0) {
+      if (inT.length > inM.length) dropT.push(...held(minus(was, inM), inT, inT.length - inM.length))
+      if (inM.length > inT.length) dropM.push(...held(minus(was, inT), inM, inM.length - inT.length))
+    } else if (rt > 0) dropM.push(...held(minus(was, inT), inM, rt))
+    else if (rm > 0) dropT.push(...held(minus(was, inM), inT, rm))
+  }
+  return [withoutCopies(theirs, dropT), withoutCopies(mine, dropM)]
+}
+
+/** The line without one review part for each text in `drop` (its last copy of those bytes). */
+function withoutCopies(line: CardLine, drop: readonly string[]): CardLine {
+  if (drop.length === 0) return line
+  const left = [...drop]
+  const out: CardPart[] = []
+  for (let i = line.parts.length - 1; i >= 0; i--) {
+    const p = line.parts[i]
+    const j = p.kind === 'review' ? left.indexOf(formatCardReview(p.review)) : -1
+    if (j === -1) out.push(p)
+    else left.splice(j, 1)
+  }
+  return { parts: out.reverse() }
 }
 
 const rank = (p: CardPart | undefined): number => (p?.kind === 'off' ? 1 : p?.kind === 'next' ? 2 : p?.kind === 'notitle' ? 3 : p?.kind === 'fix' ? 4 : 0)
