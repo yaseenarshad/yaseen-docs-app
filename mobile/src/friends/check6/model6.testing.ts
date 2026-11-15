@@ -73,9 +73,11 @@ export class Model6 extends Model5 {
     let last = ''
     for (let t = 0; t < 6 && !done; t++) {
       if (t === 5) {
-        // The last try: no fault, and the phone is online (the model's `offline` step may hold it offline still).
+        // The last try: no fault, the phone is online (the model's `offline` step may hold it offline still), and no
+        // crash is armed (the end phase clears them the same way).
         this.armed = false
         d.offlineUntil = -1
+        d.crashAt = null
       }
       this.st6.tries++
       const rows = await this.act(d, 'rows', (x) => x.rows())
@@ -103,6 +105,7 @@ export class Model6 extends Model5 {
     if (!done) this.st6.i10.push(`seed ${this.seed} step ${this.step}: the list file was ${how}, and no way out ran (last: ${last})`)
     else {
       this.st6.wayOut++
+      this.i2Kept = this.st.i2.length
       this.restarted = true
       for (const m of bMines) this.bMinesTargeted.add(m)
       for (const g of this.world.owned('ali')) for (const m of bMines) if (g.id === m) this.st6.i10.push(`seed ${this.seed} step ${this.step}: B's pointer ${m.slice(0, 6)} is still there after the way out`)
@@ -114,15 +117,18 @@ export class Model6 extends Model5 {
   /** Each I2 finding after the way out, set apart (not a violation): see `check`. */
   i2AfterWayOut = 0
 
+  /** The I2 findings before the way out (they stay); every later one is set apart. */
+  i2Kept = 0
+
   override async check(): Promise<void> {
-    const before = this.st.i2.length
     await super.check()
     // I2 is "C, whom A never removed, still reaches A's numbers". The way out removed C too (by design: it ends ALL
     // sharing), and C still holds A's old pointer (deleted) until C pastes A's new link; A may meanwhile add C again from
     // an old link of C. So after the way out, I2 does not apply to C's old pairing.
-    if (this.restarted && this.st.i2.length > before) {
-      this.i2AfterWayOut += this.st.i2.length - before
-      this.st.i2.length = before
+    // (Checks of parallel steps overlap, so the cut is by the count at the way out, not by the count at each check.)
+    if (this.restarted && this.st.i2.length > this.i2Kept) {
+      this.i2AfterWayOut += this.st.i2.length - this.i2Kept
+      this.st.i2.length = this.i2Kept
     }
   }
 
@@ -158,7 +164,12 @@ export async function runPlan6(seed: number, knobs: Knobs, keep?: number[]): Pro
   const p = keep === undefined ? p0 : { ...p0, events: keep.map((i) => p0.events[i]) }
   const m = new Model6(p.seed, knobs)
   m.hookRepos()
+  // The setup is the world before the order, not a step of it: the model's random 409 on a gist PATCH is off there (with
+  // it, seed 6450191's setup stopped at A's join of B's group, before any step; the same at the base of this branch).
+  const p409 = m.p409
+  m.p409 = 0
   await m.setup4(...p.setup)
+  m.p409 = p409
   m.armed = true
   for (const e of p.events) {
     await m.run(e)
