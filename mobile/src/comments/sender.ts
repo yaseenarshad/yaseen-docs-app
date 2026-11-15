@@ -34,7 +34,10 @@ export interface NewCommentInput {
   path: string
   body: string
   by?: string
-  /** A hold before any send, with its Undo (the one-tap "Approved" of YAZ-5461; since YAZ-5478 the page sends at once, 0). */
+  /**
+   * A hold before any send, with its Undo (the one-tap "Approved" of YAZ-5461; since YAZ-5478 the page sends at once, 0).
+   * YAZ-5522 N11: a tick's hold (`TICK_HOLD_MS`) joins the ticks already held, so they go in one commit.
+   */
   holdMs?: number
   /** YAZ-5494: a tick of a task check box, not a comment (`body` is then empty). */
   task?: TaskTick
@@ -49,7 +52,11 @@ export interface CommentSender {
   /** Undo of a comment not tried yet. False: it is gone, or a send has tried it (GitHub may hold it). */
   undo(id: string): Promise<boolean>
   discard(id: string): Promise<boolean>
+  /** Sends what is due, the held ticks too (YAZ-5522 N11: "Try now", a sync). */
   sendNow(): Promise<void>
+  /** YAZ-5522 N11: the held ticks go now (the page closes); a comment in its Undo keeps its time. */
+  flushTicks(): Promise<void>
+  /** Hidden: what is due goes at once, the held ticks too. */
   setVisible(visible: boolean): void
   online(): void
   idle(): Promise<void>
@@ -151,9 +158,32 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
     })()
   }
 
+  /**
+   * YAZ-5522 N11: the ticks in their hold (not tried) are made due now, in the stored list too. Never a comment in its
+   * Undo: only a tick's hold is cut short. A tick is in IndexedDB from its tap, so a closed app loses none either way;
+   * this sends them before the app sleeps, a sync, or the page closes.
+   */
+  async function hurryTicks(): Promise<void> {
+    await loading
+    const own = box
+    if (own === null) return
+    const now = clock.now()
+    const held = own.waiting().filter((c) => c.task !== undefined && c.refused === undefined && c.tried !== true && c.notBefore > now)
+    if (held.length === 0) return
+    await own.hurry(held.map((c) => c.id), now)
+    setState({})
+  }
+  const flush = () =>
+    hurryTicks().then(
+      () => soon(),
+      () => soon(),
+    )
+
   const unsubscribe = engine.subscribe((event) => {
     if (event.type !== 'state') return
     follow(event.state.vault)
+    // YAZ-5522 N11: a sync begins: the held ticks go (in the engine's lane, one send at a time).
+    if (event.state.status === 'syncing' && sendable().some((c) => c.task !== undefined && c.tried !== true && c.notBefore > clock.now())) void flush()
     if (event.state.status === 'synced' && running === null && state.problem !== null && NO_SIGNAL.includes(state.problem)) planNext()
   })
   follow(engine.state().vault)
@@ -236,6 +266,9 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
       await loading
       if (box === null || vault === null) throw new Error('No vault is open')
       const madeAt = clock.now()
+      const hold = Math.max(0, input.holdMs ?? 0)
+      // YAZ-5522 N11: a held tick joins the ticks held already: they are due together, when the first one's hold ends.
+      const joined = input.task === undefined || hold === 0 ? [] : all().filter((c) => c.task !== undefined && c.refused === undefined && c.tried !== true && c.notBefore > madeAt).map((c) => c.notBefore)
       const was = await pageMark(store, vault, input.path)
       const comment: WaitingComment = {
         id: newCommentId(),
@@ -244,7 +277,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         at: nowIso(madeAt),
         ...(input.by === undefined ? {} : { by: input.by }),
         madeAt,
-        notBefore: madeAt + Math.max(0, input.holdMs ?? 0),
+        notBefore: joined.length > 0 ? Math.min(...joined) : madeAt + hold,
         ...(input.task === undefined ? {} : { task: input.task }),
         ...(was === undefined ? {} : { was }),
       }
@@ -274,10 +307,12 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
     },
     sendNow: async () => {
       await loading
+      await hurryTicks().catch(() => {})
       await sendNow()
     },
+    flushTicks: flush,
     setVisible(visible) {
-      if (!visible) soon()
+      if (!visible) void flush()
     },
     online: soon,
     async idle() {

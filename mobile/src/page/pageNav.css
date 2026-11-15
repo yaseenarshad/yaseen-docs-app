@@ -105,6 +105,17 @@
   }
 }
 
+/* YAZ-5522 N14: under 400 px the chip shows only its number, "#1": the title gets the room. A tap still copies the
+   path, and VoiceOver still says the whole ID (the button's name). 400 px and wider: unchanged. */
+@media (max-width: 399.98px) {
+  .page-id__prefix {
+    display: none;
+  }
+  .page-id__number::before {
+    content: '#';
+  }
+}
+
 /* Dark: the accent on its soft fill is under 4.5:1; the text takes the page's colour. */
 @media (prefers-color-scheme: dark) {
   .page-id__pill {

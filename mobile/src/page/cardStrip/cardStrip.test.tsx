@@ -85,7 +85,7 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     h = await open(FILES, 'capital of spain', /^Capital of Spain/)
     await waitFor(h, () => h!.host.querySelector('.page-comments') !== null)
     const s = strip(h)
-    expect(tabs(s)).toEqual(['3 Reviews', 'Properties1', 'Linked mentions2', 'Embedded in1'])
+    expect(tabs(s)).toEqual(['3 Reviews', 'Properties1', 'Mentions2', 'Embeds1'])
     expect(toggle(s, 'properties').getAttribute('aria-label')).toBe('Properties, 1')
     // Closed by default: no drawer content, nothing open.
     expect(openPart(s)).toEqual([])
@@ -150,7 +150,7 @@ describe('the card strip on the phone (YAZ-5508)', () => {
   it("a new card: Reviews holds the Mac's header and its last line, \"Due today\", with no chance", async () => {
     h = await open(FILES, 'tram', /^Tram start/)
     const s = strip(h)
-    expect(tabs(s)).toEqual(['0 Reviews', 'Properties0', 'Linked mentions0', 'Embedded in0'])
+    expect(tabs(s)).toEqual(['0 Reviews', 'Properties0', 'Mentions0', 'Embeds0'])
     await tap(h, toggle(s, 'reviews'))
     expect([...s.querySelectorAll('.card-view__table th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Next due'])
     expect([...s.querySelectorAll('.card-view__table tbody tr')].map((r) => r.textContent)).toEqual(['Due today'])
@@ -158,10 +158,21 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     expect(s.textContent).not.toContain('No reviews yet')
   })
 
-  it('a card in a page: Reviews, Properties, Linked mentions (no "Embedded in", as the Mac\'s card window)', async () => {
+  it('cardStrip_emptyStripKept (YAZ-5522 N15, kept as on the Mac): a card with nothing in its strip still shows every part, dimmed, closed', async () => {
+    h = await open(FILES, 'tram', /^Tram start/)
+    const s = strip(h)
+    expect(tabs(s)).toEqual(['0 Reviews', 'Properties0', 'Mentions0', 'Embeds0'])
+    for (const part of ['reviews', 'properties', 'links', 'embeds']) expect(toggle(s, part).hasAttribute('data-empty')).toBe(true)
+    expect(openPart(s)).toEqual([])
+    // Each still opens (YAZ-5380), with the Mac's words for none.
+    await tap(h, toggle(s, 'links'))
+    expect(s.textContent).toContain('No page links to this card yet.')
+  })
+
+  it('a card in a page: Reviews, Properties, Mentions (no "Embeds", as the Mac\'s card window)', async () => {
     h = await open(FILES, 'islands', /^Islands/)
     const s = strip(h)
-    expect(tabs(s)).toEqual(['1 Review', 'Properties1', 'Linked mentions0'])
+    expect(tabs(s)).toEqual(['1 Review', 'Properties1', 'Mentions0'])
     expect(toggle(s, 'links').hasAttribute('data-empty')).toBe(true)
     await tap(h, toggle(s, 'links'))
     expect(s.textContent).toContain('No page links to this card yet.')

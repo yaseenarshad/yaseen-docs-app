@@ -1,6 +1,6 @@
 import { COMMENTS_KEY, addComment, commentsShape, rawComments } from '@shared/comments'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
-import { isMap, isScalar, parseDocument } from 'yaml'
+import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 
 /**
  * YAZ-5461: THE PHONE'S ONE WRITE TO A PAGE: it adds one top-level comment to the page's `comments` list, and changes no
@@ -18,6 +18,13 @@ import { isMap, isScalar, parseDocument } from 'yaml'
  * own `comments` entry, or, when the page has none, as the last entry of the block. Every other byte (the body, the
  * other keys, their order, their quoting and spacing, comments in the YAML, the fences, the line ends) stays. A page
  * with no block gets the Mac's new block, with the page's own line ends.
+ *
+ * YAZ-5522 N4: and within the `comments` list, only the comment that changed. The Mac's writer lays every comment out
+ * again (a one-line `- {id: …, body: …}` becomes six lines), which made noisy diffs on the Mac. So when the page's list
+ * is a block list, the phone keeps each entry the Mac's writer left with the same value byte for byte, takes the Mac's
+ * lines only for an entry it changed (the new comment; a hand-written one the Mac numbers, D10), and adds a new entry
+ * after the last one in the page's own indent. Anything else (a flow list `[…]`, an indent it cannot keep) takes the
+ * whole entry from the Mac's writer, as before; both ways go through the same read-back check.
  *
  * A layout the splice cannot hold (a flow-style block `{a: 1}`, a block indented as a whole) is refused, and the
  * result is checked before it is used: it must read back with exactly the Mac's comment list and exactly the page's
@@ -132,10 +139,81 @@ export function spliceComments(before: string, mac: string): string | null {
     } else {
       // The key starts a line (a top-level key of a block map); anything else is a layout the splice does not hold.
       if (at.start > 0 && interior[at.start - 1] !== '\n') return null
+      const items = spliceItems(interior, before, macBlock.interior, mac, eol)
+      if (items !== null) {
+        const fine = `${before.slice(0, open)}${items}${before.slice(close)}`
+        if (sameButComments(before, fine, mac)) return fine
+      }
       out = `${before.slice(0, open + at.start)}${entry}${before.slice(open + at.end)}`
     }
   }
   return sameButComments(before, out, mac) ? out : null
+}
+
+/** The `comments` list's entries in a block's interior: each one's text range [start, end), without its `- `; null: not a block list. */
+function commentsItems(interior: string): { start: number; end: number }[] | null {
+  const doc = parseDocument(interior)
+  if (doc.errors.length > 0 || !isMap(doc.contents)) return null
+  const pair = doc.contents.items.find((p) => isScalar(p.key) && p.key.value === COMMENTS_KEY)
+  const seq = pair?.value
+  if (!isSeq(seq) || seq.flow === true) return null
+  const out: { start: number; end: number }[] = []
+  for (const item of seq.items) {
+    const range = (item as { range?: [number, number, number] } | null)?.range
+    if (range == null) return null
+    let end = range[1]
+    while (end > range[0] && /[\r\n \t]/.test(interior[end - 1]!)) end--
+    out.push({ start: range[0], end })
+  }
+  return out
+}
+
+/** The column of `offset` in `text`. */
+const columnOf = (text: string, offset: number): number => offset - (text.lastIndexOf('\n', offset - 1) + 1)
+
+/** `text` (one entry, its first line after its `- `) moved from column `from` to column `to`; null: a line too far left. */
+function reindent(text: string, from: number, to: number, eol: string): string | null {
+  const lines = text.replace(/\r\n/g, '\n').split('\n')
+  const moved: string[] = [lines[0]!]
+  for (const line of lines.slice(1)) {
+    if (line.trim() === '') moved.push('')
+    else if (to >= from) moved.push(' '.repeat(to - from) + line)
+    else if (line.slice(0, from - to).trim() === '') moved.push(line.slice(from - to))
+    else return null
+  }
+  return moved.join(eol)
+}
+
+/**
+ * YAZ-5522 N4: the page's block interior with only the changed entries of its `comments` list in the Mac's bytes (and
+ * the Mac's new entries after its last one); every other entry byte for byte. Null: the splice cannot hold it.
+ */
+function spliceItems(interior: string, before: string, macInterior: string, mac: string, eol: string): string | null {
+  const was = commentsItems(interior)
+  const now = commentsItems(macInterior)
+  const wasList = rawComments(before)
+  const nowList = rawComments(mac)
+  if (was === null || now === null || was.length === 0 || was.length !== wasList.length || now.length !== nowList.length || now.length < was.length) return null
+  const col = columnOf(interior, was[was.length - 1]!.start)
+  const lineStart = was[was.length - 1]!.start - col
+  const dash = interior.slice(lineStart, lineStart + col).lastIndexOf('-')
+  if (dash === -1) return null
+  const macText = (i: number): string | null => reindent(macInterior.slice(now[i]!.start, now[i]!.end), columnOf(macInterior, now[i]!.start), col, eol)
+  const added: string[] = []
+  for (let i = was.length; i < now.length; i++) {
+    const text = macText(i)
+    if (text === null) return null
+    added.push(`${eol}${' '.repeat(dash)}-${' '.repeat(col - dash - 1)}${text}`)
+  }
+  let out = `${interior.slice(0, was[was.length - 1]!.end)}${added.join('')}${interior.slice(was[was.length - 1]!.end)}`
+  // From the last entry back, so each range still points at the page's own bytes.
+  for (let i = was.length - 1; i >= 0; i--) {
+    if (JSON.stringify(wasList[i]) === JSON.stringify(nowList[i])) continue
+    const text = macText(i)
+    if (text === null) return null
+    out = `${out.slice(0, was[i]!.start)}${text}${out.slice(was[i]!.end)}`
+  }
+  return out
 }
 
 /** The check: `out` reads back with the Mac's comment list, and with the page's own body and other properties. */

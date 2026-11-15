@@ -71,6 +71,8 @@ import { freePort } from './freePort'
  *    375 px: in an Explore panel no foot under the body (the body is the box's last part, to its bottom), the section in
  *    the page's scroll (not sticky: it moves when the body scrolls), collapsed with its count, a 44 px tap inside the
  *    screen; a tap opens it in place, its rows inside the screen; the same section on the full page, open, then closed.
+ *  - the Today tab (`#fixture=today-open`, YAZ-5522 N6), light and dark, at 375 px: today's page open, "Today" marked
+ *    (`aria-current="page"`) in the selected tab's colour and weight; on the tab bar alone (`today`) it is not.
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
@@ -88,7 +90,7 @@ import { freePort } from './freePort'
  *    and does nothing else.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -813,8 +815,17 @@ const TOPBAR_FITS = `(() => {
   const numberEl = bar.querySelector('.page-id__number')
   const number = numberEl && numberEl.scrollWidth <= numberEl.clientWidth ? box(numberEl) : null
   const title = bar.querySelector('.topbar__title')
+  // YAZ-5522 N3 (kept): the dot's and the ⚙'s tap boxes overlap (the 14 px pull less the bar's gap); a tap on each glyph is its own.
+  const dotTap = box(bar.querySelector('.sync-status'))
+  const gearTap = box(bar.querySelector('.topbar__gear'))
+  const overlap = Math.round(dotTap.right - gearTap.left)
+  const hit = (r, sel) => { const el = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2); return el !== null && el.closest(sel) !== null }
+  const ownTaps = hit(dot, '.sync-status') && hit(gear, '.topbar__gear')
+  // YAZ-5522 N14: what the chip shows: "#N" under 400 px, the whole ID at 400 and wider.
+  const prefixEl = bar.querySelector('.page-id__prefix')
+  const shown = noId ? null : (prefixEl && getComputedStyle(prefixEl).display !== 'none' ? prefixEl.textContent : '') + (getComputedStyle(numberEl, '::before').content === '"#"' ? '#' : '') + numberEl.textContent
   const words = [...bar.querySelectorAll('.sync-status__words')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.textContent).join('|')
-  return { words, at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: noId || (number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5), titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
+  return { overlap, ownTaps, shown, short: noId || shown === '#' + numberEl.textContent, whole: noId || shown === bar.querySelector('.page-id').getAttribute('aria-label').replace(/\. Copy the path$/, ''), words, at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: noId || (number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5), titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
 })()`
 if (process.env.LAYOUT_TOPBAR !== 'no') {
   // YAZ-5521 (sweep2 S-B): also with the dot amber, one comment not sent or two waiting, at 390 too:
@@ -826,11 +837,35 @@ if (process.env.LAYOUT_TOPBAR !== 'no') {
     for (const name of ['page', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'card-file']) {
       const file = await open(name, w, h)
       const m = await evaluate(TOPBAR_FITS)
-      const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways
+      const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways && (w < 400 ? m.short : m.whole) && m.overlap > 0 && m.overlap <= 14 && m.ownTaps
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}; the dot says "${m.words}"  ${file}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; tap boxes overlap ${m.overlap}px${m.overlap > 0 && m.overlap <= 14 ? '' : ' (NOT THE PULL)'}, ${m.ownTaps ? 'each glyph taps its own' : 'A GLYPH TAPS THE OTHER'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}${m.shown === null ? '' : ` ("${m.shown}"${(w < 400 ? m.short : m.whole) ? '' : (w < 400 ? ' NOT THE NUMBER ALONE' : ' NOT THE WHOLE ID')})`}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}; the dot says "${m.words}"  ${file}`)
     }
   }
+}
+// YAZ-5522 N6: todayTab_markedWhileTodaysPageIsOpen. The Today tab's look against Search's selected look (`#fixture=today`).
+const TODAY_TAB = `(() => {
+  const t = document.querySelector('.tabbar__today')
+  if (!t) return { error: 'no Today' }
+  const s = getComputedStyle(t)
+  return { current: t.getAttribute('aria-current'), color: s.color, weight: s.fontWeight, page: document.querySelector('.screen--reader') !== null }
+})()`
+const SELECTED_TAB = `(() => { const s = getComputedStyle(document.querySelector('.tabbar__tab[aria-selected="true"]')); return { color: s.color, weight: s.fontWeight } })()`
+if (process.env.LAYOUT_TODAY !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const barFile = await open('today', 375, 667)
+    const bar = await evaluate(TODAY_TAB)
+    const selected = await evaluate(SELECTED_TAB)
+    const file = await open('today-open', 375, 667)
+    const m = await evaluate(TODAY_TAB)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = bar.error === undefined && bar.current === null && bar.color !== selected.color && m.error === undefined && m.page && m.current === 'page' && m.color === selected.color && m.weight === selected.weight
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  Today tab ${scheme} at 375x667: on Search ${bar.current === null ? 'not marked' : 'MARKED'} (${bar.color}); today's page open: ${m.current === 'page' ? 'marked' : 'NOT MARKED'}, ${m.color} ${m.weight} (the selected tab: ${selected.color} ${selected.weight})  ${barFile} ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 // YAZ-5521 (sweep2 S-C): discardAsk_wrapsLongWords_buttonsInsideViewport. The dot's sheet (`#fixture=page-not-sent`:
 // one comment not sent, holding a long URL), Discard tapped: the ask wraps its words, every button is inside the screen.

@@ -140,7 +140,8 @@ export function pageIdOf(data: VaultData | null, record: IndexRecord | undefined
 
 /**
  * The ID chip in the top bar (YAZ-5450). One tap copies the page's path in the vault (`Spanish/Words/la biblioteca.md`),
- * to paste to an agent (`useCopyPath`: the app's toast, or the path to copy by hand).
+ * to paste to an agent (`useCopyPath`: the app's toast, or the path to copy by hand). YAZ-5522 N14: under 400 px it
+ * shows only the number, "#1" (`pageNav.css`); its name keeps the whole ID.
  */
 export function PageIdChip({ id, path, copy }: { id: string; path: string; copy?: (text: string) => Promise<void> }) {
   const { copyPath, layer } = useCopyPath(copy)
