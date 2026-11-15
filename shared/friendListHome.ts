@@ -111,7 +111,12 @@ export async function latestList(handle: IndexHandle): Promise<IndexHandle> {
   const store = handle.store
   if (store === undefined || handle.sha === undefined) throw new Error('This list is not in a vault yet')
   const r = await readGuarded(store.port, store.guard, { etag: handle.etag, known: handle.sha, min: handle.rev ?? 0, minAt: handle.seenAt })
-  if (r.kind === 'unchanged') return r.etag === handle.etag ? handle : { ...handle, etag: r.etag }
+  if (r.kind === 'unchanged') {
+    // YAZ-5444: the list is still there as this copy has it: this device saw it NOW (a later missing file within the
+    // stale window may be a lag, never a file gone for good).
+    if (handle.rev !== undefined) store.guard?.memory?.saw(repoKey(store.port), handle.rev, store.guard.now())
+    return r.etag === handle.etag ? handle : { ...handle, etag: r.etag }
+  }
   if (r.stale) throw staleReadError()
   return fromRead(store, r.read, handle.owner ?? null)
 }

@@ -189,6 +189,22 @@ it('YAZ-5444 a: a list file missing INSIDE the stale window (a lag, or a delete 
   expect(m.world.repos!.file('ali/notes', LIST_PATH)).toBeNull()
 })
 
+it('YAZ-5444 a2: an OLD note, but this phone saw the list 2 minutes ago: a missing file now may be a lag, so no way out yet', async () => {
+  const m = await world(1)
+  const a = m.devs.A[0] as any
+  const mine = bMine(m)
+  m.clock.advance(30 * 60_000)
+  expect((await a.list.rows()).kind).toBe('ok')
+  m.world.repos!.push('ali/vault', { [LIST_PATH]: null }, 'main', 'a person deleted the list file on github.com')
+  m.clock.advance(2 * 60_000)
+  expect((await a.list.rows()).kind).not.toBe('home-gone')
+  expect((await a.list.restart('ali/vault')).kind).toBe('home-is-there')
+  expect(m.gist(mine)).toBeDefined()
+  // Past the window from its last read of the list, the same phone gets the way out.
+  m.clock.advance(9 * 60_000)
+  expect((await a.list.rows()).kind).toBe('home-gone')
+})
+
 it('YAZ-5444 b: the way out offers the home vault itself, and starts the list again THERE (B`s pointer gone, a new numbers gist)', async () => {
   const m = await world(1)
   const a = m.devs.A[0] as any
