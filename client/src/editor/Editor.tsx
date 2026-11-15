@@ -31,6 +31,7 @@ import { TableOfContents } from './toc/TableOfContents'
 import { createTocChannel } from './toc/tocChannel'
 import { FrontmatterPanel } from './FrontmatterPanel'
 import { PageTitle } from './PageTitle'
+import { PageFrame } from './PageFrame'
 import { usePageId } from '../search/showIds'
 import type { WikilinkCandidateSource } from './wikilink/wikilinkPicker'
 import { redrawWikilinks, type WikilinkResolveSource } from './wikilink/wikilinkPlugin'
@@ -61,7 +62,7 @@ import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './ou
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
 import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
-import { StatusChips } from './StatusChips'
+import { HeadChipsSlot, LAYER_ESCAPE, StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
 import { NO_VAULT_READ_ONLY, VaultReadOnly, type VaultReadOnlyScope } from '../vault/readOnlyVault'
 import { PageMenu } from './pageMenu'
@@ -775,6 +776,8 @@ function CrepeHost({
    * under the same context, and must not take the folder's toolbar.
    */
   const chipsHere = useContext(FolderPageChips)
+  /** In an Explore layer (YAZ-5164 Option A): its head holds this page's chips, and Esc is the layer's (back to reading). */
+  const inExplore = useContext(HeadChipsSlot) !== null
   const folderChips = inFolderPage ? chipsHere : null
   /** A read-only folder page (YAZ-3746 D36) keeps its Page read only, whatever the `.folder.md` bytes say yet. */
   const folderLocked = useSyncExternalStore(folderChips?.subscribe ?? noSubscribe, () => folderChips?.getState().readOnly ?? false)
@@ -1130,6 +1133,8 @@ function CrepeHost({
       // Without folded lines says what it left out (YAZ-3653); Settings › Notifications › "Copy, cut or paste" can turn it off.
       onCopyNotice: onNotice === undefined ? undefined : (text) => onNotice(text, 'copy', 'clipboard'),
       lockAgain: () => lockAgainRef.current(),
+      // In Explore, Esc is the layer's: back to reading (YAZ-4997), never a step out to the sidebar.
+      onEscape: inExplore ? () => el.dispatchEvent(new CustomEvent(LAYER_ESCAPE, { bubbles: true })) || true : undefined,
     })
     crepeRef.current = crepe
     zoomedOutRef.current = () => tellRealZoom(crepe, zoomKeyRef.current ?? null)
@@ -1278,7 +1283,7 @@ function CrepeHost({
       offRefused()
       void ready.then(() => crepe.destroy()).finally(() => el.remove())
     }
-  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, linkActions, onNotice, newPageFolderFor, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom, inFolderPage])
+  }, [root, file, watch, attach, markReloaded, reportConflict, absorbFrontmatterOnly, diskParts, onSaveRefused, wikilinks, viewOnlyLinks, wikilinkCandidates, onOpenFile, onOpenFileBackground, onOpenLink, onOpenLinkBackground, onOpenExplore, exploreOnClick, linkActions, onNotice, newPageFolderFor, findChannel, outsideChanges, tocChannel, linkHover, reportZoom, tellRealZoom, inFolderPage, inExplore])
 
   /**
    * The cog's "Read only" row and the chip's "Allow edits" (YAZ-3076 D1), and the cog's on/off rows
@@ -1589,27 +1594,30 @@ function CrepeHost({
           <div className="editor-mount" ref={hostRef} {...mountWidths} />
         </div>
       ) : (
-        <div className="editor-host" data-page="page" {...scrollerData} style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}>
-          {/* Title and properties share ONE header row (YAZ-918): the panel sits to
-              the title's right and wraps under it when the title runs long. */}
-          <div className="page-header">
-            <PageTitle
-              path={file.path}
-              titles={titles}
-              readOnly={readOnly}
-              id={pageId}
-              onNotice={onNotice}
-              onRetitle={(title) => onRetitle(file.path, title, 'file')}
-              onArrowDown={() => {
-                const crepe = crepeRef.current
-                if (crepe !== null) focusEditor(crepe)
-              }}
-            />
-            {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
-                folder view — ONE registry, so a type declared in a row types the same column in
-                every folder's views. */}
-            <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
-          </div>
+        <PageFrame
+          {...scrollerData}
+          style={{ '--document-zoom': documentZoom / 100 } as CSSProperties}
+          header={
+            <>
+              <PageTitle
+                path={file.path}
+                titles={titles}
+                readOnly={readOnly}
+                id={pageId}
+                onNotice={onNotice}
+                onRetitle={(title) => onRetitle(file.path, title, 'file')}
+                onArrowDown={() => {
+                  const crepe = crepeRef.current
+                  if (crepe !== null) focusEditor(crepe)
+                }}
+              />
+              {/* Typed rows (⚡ YAZ-884) read the vault-wide declarations App also threads to the
+                  folder view — ONE registry, so a type declared in a row types the same column in
+                  every folder's views. */}
+              <MemoFrontmatterPanel file={diskFile} root={root} properties={properties} wikilinks={wikilinks} readOnly={readOnly} links={panelLinks} inheritColumns={folderPages?.inheritColumns} onNotice={onNotice} />
+            </>
+          }
+        >
           <div className="editor-mount" ref={hostRef} {...mountWidths} />
           {/* Reads the same disk truth the properties panel does (🔒 D4): its own frontmatter-only
               writes come back through the watcher as `absorbFrontmatterOnly` → `setDisk`. */}
@@ -1617,7 +1625,7 @@ function CrepeHost({
           {wikilinks !== undefined && (
             <MemoBacklinksSection path={file.path} source={wikilinks} openCurrent={onOpenFile} openBackground={onOpenFileBackground} hoverPreview={hoverBacklinks} previewScope={previewScope} diagramDarkColors={diagramDarkColors} />
           )}
-        </div>
+        </PageFrame>
       )}
       {/* CMD+F (YAZ-969) floats OVER that scroller rather than in it: `section.editor` is the
           positioned ancestor, so the bar holds its corner while the page scrolls under it. */}

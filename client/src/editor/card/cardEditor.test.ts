@@ -313,6 +313,17 @@ describe('the mirror, Done and the page`s undo', () => {
     expect(cardBody(view)).toBe('Front\n---\nBack')
   })
 
+  it('YAZ-5164: a card host hears `beforeDone` once, on Done, while Edit card still shows; never as you type', async () => {
+    const order: string[] = []
+    const { view } = await mount(page('Front'), { cards: { path: '/v/Page.md', onEditDone: () => order.push('done'), beforeDone: () => order.push(`before ${view.dom.querySelector('.card--editing') === null ? 'read' : 'editing'}`) } })
+    const { card, inner } = await edit(view)
+    caretAfter(inner, 'Front')
+    type(inner, ' one')
+    expect(order).toEqual([])
+    card.done()
+    expect(order).toEqual(['before editing', 'done'])
+  })
+
   it('Esc and ⌘↵ in the card editor are Done; a second Edit card does Done on the first', async () => {
     const { view } = await mount(`${page('One')}\n\`\`\`card\nTwo\n\`\`\`\n<!-- card: WIKI-8 -->\n`)
     let { card, inner } = await edit(view)

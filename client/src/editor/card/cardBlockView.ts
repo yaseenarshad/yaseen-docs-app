@@ -130,6 +130,11 @@ export interface CardHost {
    * card file tab's (`review/cardPane.tsx`): their own head shows its title.
    */
   onEditDone?: (text: string, title: string) => void
+  /**
+   * Done is about to draw the card again (YAZ-5164): the host reads where the card's lines stand while Edit card still
+   * shows them, so its read card can take the same line to the same spot (`useCardSwap`).
+   */
+  beforeDone?: () => void
   /** Edit card's Title field (`CardTitleField`): absent → `edit`. */
   titleField?: CardTitleField
   /** The convert actions of this page (YAZ-5037): absent → none (a preview, the card editor). */
@@ -292,8 +297,10 @@ export class CardBlockView implements NodeView {
     this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
     head.append(this.idButton, this.state, this.notitle, this.fix, this.next, this.previewButton, this.editButton, this.more)
-    // The title band under the head (YAZ-5308 A3): the body never repeats the title.
-    this.title = deps.host?.onEditDone === undefined ? mountCardTitle() : null
+    // The title band under the head (YAZ-5308 A3): the body never repeats the title. A card window's or a card file's
+    // Edit card has it too (YAZ-5164): after Done, until its host's read card takes over, the card keeps the read
+    // card's shape, band and all, so no line moves in between.
+    this.title = mountCardTitle()
     this.body = document.createElement('div')
     this.body.className = 'card__body'
     this.dom.append(head, ...(this.title === null ? [] : [this.title.dom]), this.body)
@@ -576,6 +583,7 @@ export class CardBlockView implements NodeView {
   private doneWithPage(): void {
     const inner = this.inner
     if (inner === null) return
+    this.deps.host?.beforeDone?.()
     clearTimeout(inner.timer)
     const text = inner.editor.text()
     const title = inner.editor.title()
@@ -602,6 +610,7 @@ export class CardBlockView implements NodeView {
   done(): void {
     if (this.inner !== null) return this.doneWithPage()
     if (this.code === null) return
+    this.deps.host?.beforeDone?.()
     this.code.destroy?.()
     this.code.dom.remove()
     this.keyRow?.remove()
