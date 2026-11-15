@@ -69,6 +69,8 @@ const FIXTURES = [
   'download',
   'token-ended',
   'settings',
+  // YAZ-5559: Vault health, its list open.
+  'settings-health',
   'erase',
   'dot-all',
   'dot-lost-sheet',

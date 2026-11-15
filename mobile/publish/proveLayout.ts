@@ -79,6 +79,7 @@ import { freePort } from './freePort'
  *    pages inside the screen with a 44 px tap; a pick draws that page; the page never scrolls sideways; a picture of
  *    each box.
  *  - Settings (`#fixture=settings`, YAZ-5555), light and dark, at 320 and 375 px: the build's line at the top, one line.
+ *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_SETTINGS=no skip a part).
@@ -1227,6 +1228,31 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const ok = !m.error && /^Build \S+ · \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/.test(m.text) && m.oneLine && m.below && m.above && m.inside && !m.pageWide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings build line at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.text}", ${m.oneLine ? 'one line' : 'WRAPS'}, ${m.below && m.above ? 'at the top' : 'NOT AT THE TOP'}, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.colour}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5559: Settings › Vault health (`#fixture=settings-health`, its list open), light and dark, at 320 and 375 px: the
+// line a 44 px tap inside the screen, its words; each row of the list inside the screen; the page never sideways.
+const HEALTH_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const toggle = document.querySelector('.vault-health__toggle')
+  const list = document.querySelector('#vault-health-list')
+  if (!toggle || !list) return { error: 'no vault health' }
+  const rows = [...list.querySelectorAll('li.row')]
+  return { line: toggle.querySelector('.vault-health__line').textContent, tap: Math.round(r(toggle).height), inside: r(toggle).left >= 0 && r(toggle).right <= innerWidth + 0.5, rows: rows.length, rowsInside: rows.every((li) => r(li).left >= 0 && r(li).right <= innerWidth + 0.5 && [...li.children].every((c) => r(c).right <= r(li).right + 0.5)), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_SETTINGS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of [[320, 568], [375, 667]] as const) {
+      const file = await open('settings-health', w, h)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(HEALTH_CHECK)
+      const ok = !m.error && m.line === 'Using defaults: link clicks, table look, icons' && m.tap >= 44 && m.inside && m.rows === 11 && m.rowsInside && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  settings-health at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.line}", a ${m.tap}px tap ${m.inside ? 'inside' : 'OUTSIDE'}; ${m.rows} rows ${m.rowsInside ? 'inside' : 'OUTSIDE'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
