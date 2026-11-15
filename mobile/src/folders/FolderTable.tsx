@@ -42,6 +42,10 @@ import { rowTarget, type ViewRun } from './folderModel'
  * phone's own, per vault, folder and view), which also holds the collapse all / expand all button. A redraw keeps the
  * table's sideways scroll.
  *
+ * YAZ-5599: a group row is one cell across the whole row, as the Mac's: its name on one line however narrow the
+ * Name column, cut with "…" only at the table's visible edge, the count after it, held at the left while the table
+ * scrolls sideways (`--folder-group-w`: the visible width, measured, kept on a resize).
+ *
  * The table is drawn into its host by hand, as the reader draws a page's table: the phone's table layout
  * (`layoutTables`) wraps and measures it, which React must not see.
  */
@@ -60,8 +64,16 @@ export function FolderTable({ run, folded = NONE_FOLDED, onFold }: { run: ViewRu
     rows.current = drawn
     el.replaceChildren(table)
     layoutTables(el)
-    const box = el.querySelector('.page-table')
+    const box = el.querySelector<HTMLElement>('.page-table')
     if (box !== null && left > 0) box.scrollLeft = left
+    if (box === null) return
+    // YAZ-5599: the group line's width: the table's visible part (the box's width, the table's when narrower).
+    const fit = () => table.style.setProperty('--folder-group-w', `${Math.max(0, Math.floor(box.clientWidth))}px`)
+    fit()
+    if (typeof ResizeObserver === 'undefined') return
+    const watch = new ResizeObserver(fit)
+    watch.observe(box)
+    return () => watch.disconnect()
   }, [run, folded])
   // Only a tap on the row's Name opens it; a tap elsewhere only moves the band. A group's ⌄ folds it.
   const onClick = (e: React.MouseEvent) => {
@@ -171,18 +183,24 @@ export function drawTable(run: ViewRun, folded: ReadonlySet<string> = new Set())
       const shut = folded.has(gk)
       tr.dataset.gk = gk
       if (shut) tr.dataset.folded = ''
-      if (numbered) tr.append(numberCell('td'))
       n = 0
+      // YAZ-5599: one cell across the whole row (the Mac's `view-table__group-cell`), the `#` column too; in it a line
+      // as wide as the table's visible part, held at the left while the table scrolls sideways: ⌄, the name on one
+      // line (cut with "…" at the visible edge), the count after it.
       const th = document.createElement('th')
       th.scope = 'rowgroup'
+      th.colSpan = gutter + columns.length
+      const line = document.createElement('div')
+      line.className = 'folder-table__group-line'
       const label = document.createElement('span')
+      label.className = 'folder-table__label'
       label.textContent = g.label
       const count = document.createElement('span')
       count.className = 'folder-table__count'
       count.textContent = ` ${g.rows.length}`
-      th.append(foldButton(g.label, !shut), label, count)
+      line.append(foldButton(g.label, !shut), label, count)
+      th.append(line)
       tr.append(th)
-      for (let i = 1; i < columns.length; i++) tr.append(document.createElement('td'))
       if (shut) continue
       for (const row of g.children === undefined ? g.rows : (g.direct ?? [])) addRow(row)
       if (g.children !== undefined) addGroups(g.children, level + 1, [...parents, g])

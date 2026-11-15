@@ -243,13 +243,40 @@
   text-align: left;
   vertical-align: middle;
 }
-.folder-table .folder-table__group[data-level='1'] > th {
+/* YAZ-5599: the group row is one cell across the row; its line (the arrow, the name, the count) is as wide as the
+   table's visible part (`--folder-group-w`, measured), so it never widens a column, and stays at the left while the
+   table scrolls sideways (sticky, the Mac's `.view-group`). The name is one line, cut with "…" at that edge; the count
+   always shows after it. Each level steps in (the Mac's indent), inside the line. */
+.folder-table .page-table-box .page-table-frame .page-table table tr.folder-table__group > th {
+  padding-inline: 0;
+  /* Clip, not hidden: a hidden cell would be the line's scroll box, and the line would not stay at the left. */
+  overflow: clip;
+}
+.folder-table__group-line {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: var(--folder-group-w, 100%);
+  height: var(--tap);
+  padding: 0 0.75em;
+  white-space: nowrap;
+}
+.folder-table__group[data-level='1'] .folder-table__group-line {
   padding-left: 1.5em;
 }
-.folder-table .folder-table__group[data-level='2'] > th {
+.folder-table__group[data-level='2'] .folder-table__group-line {
   padding-left: 2.25em;
 }
+.folder-table__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .folder-table__count {
+  flex: none;
   color: var(--fg-muted);
   font-weight: 400;
 }
@@ -269,7 +296,8 @@
   justify-content: center;
   width: var(--tap);
   height: var(--tap);
-  margin: 0 0 0 -14px;
+  flex: none;
+  margin: 0 -8px 0 -14px;
   padding: 0;
   border: 0;
   background: transparent;

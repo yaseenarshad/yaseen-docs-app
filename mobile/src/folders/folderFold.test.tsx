@@ -44,7 +44,7 @@ const rowsOf = (g: HTMLTableRowElement) => {
   for (let tr = g.nextElementSibling as HTMLTableRowElement | null; tr !== null && !tr.classList.contains('folder-table__group'); tr = tr.nextElementSibling as HTMLTableRowElement | null) out.push(tr)
   return out
 }
-const name = (g: HTMLTableRowElement) => g.querySelector('th > span:not(.folder-table__count)')!.textContent
+const name = (g: HTMLTableRowElement) => g.querySelector('.folder-table__label')!.textContent
 const count = (g: HTMLTableRowElement) => g.querySelector('.folder-table__count')!.textContent!.trim()
 const tap = async (el: Element) => {
   await act(async () => (el as HTMLElement).click())

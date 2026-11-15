@@ -102,8 +102,8 @@ describe('the folder table (YAZ-5460)', () => {
   it('a grouped view: its filter, its groups in the option order with their counts, the empty one kept', async () => {
     h = await openFolder()
     await tab(h, 'By status')
-    // YAZ-5549: the numbers start again from 1 under each group, as the Mac's.
-    expect(grid(h)).toEqual(['# | Name | Due | Owner', ' | Idea 2 |  | ', '1 | Kitchen paint | Dec 5, 2026 | Ana', '2 | Photo album | Nov 28, 2026 | Lee', ' | Doing 2 |  | ', '1 | Garden shed | Nov 20, 2026 | Sam', '2 | Lisbon weekend | Nov 14, 2026 | Lee', ' | Done 0 |  | '])
+    // YAZ-5549: the numbers start again from 1 under each group, as the Mac's. YAZ-5599: a group row is one cell.
+    expect(grid(h)).toEqual(['# | Name | Due | Owner', 'Idea 2', '1 | Kitchen paint | Dec 5, 2026 | Ana', '2 | Photo album | Nov 28, 2026 | Lee', 'Doing 2', '1 | Garden shed | Nov 20, 2026 | Sam', '2 | Lisbon weekend | Nov 14, 2026 | Lee', 'Done 0'])
     expect(h.host.querySelector('.folder-view__count')?.textContent).toBe('4 pages')
     expect(h.host.querySelectorAll('.folder-table__group')).toHaveLength(3)
   })

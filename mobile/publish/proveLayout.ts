@@ -85,6 +85,8 @@ import { freePort } from './freePort'
  *    their lines while the table scrolls sideways; the band across the whole row, its lines drawn.
  *  - a grouped folder table folds (`#fixture=folder-grouped`, YAZ-5598), light and dark, at 375 px: each group's ⌄ a
  *    44 px tap on top; a tap folds the group (count kept, arrow turned); the toolbar toggle folds and opens them all.
+ *  - a group row spans the folder table (`#fixture=folder-grouped`, YAZ-5599), light and dark, at 375 px: each name on
+ *    one line, the count after it; a long name cut with "…" at the visible edge; scrolled sideways, the line stays put.
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
@@ -703,7 +705,7 @@ const FOLD_STATE = `(() => {
       const a = g.querySelector('.folder-table__fold')
       const b = r(a)
       const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)
-      return { name: g.querySelector('th > span:not(.folder-table__count)').textContent, count: g.querySelector('.folder-table__count').textContent.trim(), rows: rowsOf(g).length, numbers: rowsOf(g).map((tr) => tr.cells[0].textContent).join(','), open: a.getAttribute('aria-expanded'), tap: [Math.round(b.width), Math.round(b.height)], row: Math.round(r(g).height), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), onTop: a.contains(hit), turn: getComputedStyle(a.querySelector('svg')).transform, lines: getComputedStyle(g.cells[0]).borderRightWidth }
+      return { name: g.querySelector('.folder-table__label').textContent, count: g.querySelector('.folder-table__count').textContent.trim(), rows: rowsOf(g).length, numbers: rowsOf(g).map((tr) => tr.cells[0].textContent).join(','), open: a.getAttribute('aria-expanded'), tap: [Math.round(b.width), Math.round(b.height)], row: Math.round(r(g).height), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), onTop: a.contains(hit), turn: getComputedStyle(a.querySelector('svg')).transform, lines: getComputedStyle(g.cells[0]).borderBottomWidth }
     }),
     all: all ? { label: all.getAttribute('aria-label'), tap: [Math.round(r(all).width), Math.round(r(all).height)], x: Math.round(r(all).left + r(all).width / 2), y: Math.round(r(all).top + r(all).height / 2) } : null,
     pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
@@ -733,13 +735,58 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
     await tapAt(allShut.all.x, allShut.all.y)
     const allOpen = await evaluate(FOLD_STATE)
     const ok =
-      before.groups.length > 1 && before.groups.every((g: any) => g.tap[0] >= 44 && g.tap[1] >= 44 && g.row >= 44 && g.row <= 46 && g.onTop && g.open === 'true' && g.rows === Number(g.count) && g.numbers.startsWith('1') && g.lines === '1px') &&
+      before.groups.length > 1 && before.groups.every((g: any) => g.tap[0] >= 44 && g.tap[1] >= 44 && g.row >= 44 && g.row <= 46 && g.onTop && g.open === 'true' && g.rows === Number(g.count) && (g.rows === 0 || g.numbers.startsWith('1')) && g.lines === '1px') &&
       f0 !== undefined && f0.rows === 0 && f0.count === g0.count && f0.open === 'false' && f0.turn !== 'none' && folded.groups.filter((g: any) => g.name !== g0.name).every((g: any) => g.rows === Number(g.count)) &&
       before.all !== null && before.all.label === 'Collapse all groups' && before.all.tap[0] >= 44 && before.all.tap[1] >= 44 &&
       allShut.groups.every((g: any) => g.rows === 0 && g.open === 'false') && allShut.all.label === 'Expand all groups' &&
       allOpen.groups.every((g: any) => g.rows === Number(g.count) && g.open === 'true') && !before.pageWide && !allShut.pageWide
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  folder-grouped fold ${scheme} at 375x667: before ${JSON.stringify(before.groups.map((g: any) => [g.name, g.count, g.rows, g.tap.join('x'), g.row, g.onTop]))}; tapped "${g0.name}": ${JSON.stringify(f0)}; collapse all: ${JSON.stringify(allShut.groups.map((g: any) => [g.name, g.rows, g.open]))} "${allShut.all?.label}"; expand all: ${JSON.stringify(allOpen.groups.map((g: any) => [g.name, g.rows]))}  ${shot} ${shotAll}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5599: a group row spans the folder table (`folder-grouped`), light and dark, at 375 px: each group's name on one
+// line, its count after it, inside the table's visible part; a long name (the Mac's month groups, "2026-11-November"
+// and more, set on the first group here) still one line, cut with "…" at the visible edge, the count kept; the table made
+// wider than the screen (a wide Due column, set here) and scrolled sideways: the line stays at the left, whole.
+const GROUP_LINE = `(async () => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.folder-table table')
+  const box = table.closest('.page-table')
+  const one = (el) => { const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; return r(el).height <= lh * 1.3 }
+  const read = () => {
+    const edge = r(box).right
+    return [...table.querySelectorAll('tr.folder-table__group')].map((g) => {
+      const line = g.querySelector('.folder-table__group-line'), label = g.querySelector('.folder-table__label'), count = g.querySelector('.folder-table__count')
+      return { name: label.textContent, cells: g.cells.length, span: g.cells[0].colSpan, oneLine: one(label) && Math.round(r(line).height) <= 46, cut: label.scrollWidth > label.clientWidth + 1, ellipsis: getComputedStyle(label).textOverflow, countIn: r(count).width > 0 && r(count).right <= edge + 0.5, lineLeft: Math.round(r(line).left), lineIn: r(line).right <= edge + 0.5 && r(line).left >= r(box).left - 0.5 }
+    })
+  }
+  const first = read()
+  table.querySelector('tr.folder-table__group .folder-table__label').textContent = '2026-11-November, the long month of the garden shed and the kitchen paint'
+  await new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)))
+  const long = read()[0]
+  const due = [...table.tHead.rows[0].cells].find((c) => c.textContent === 'Due')
+  due.style.minWidth = '420px'
+  await new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)))
+  box.scrollLeft = 200
+  await new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)))
+  const scrolled = box.scrollLeft
+  const after = read()
+  return { columns: table.tHead.rows[0].cells.length, first, long, scrolled, after, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('folder-grouped', 375, 667)
+    const m = await evaluate(GROUP_LINE)
+    const shot = file.replace('.png', `-group-line-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok =
+      m.first.length > 1 && m.first.every((g: any) => g.cells === 1 && g.span === m.columns && g.oneLine && !g.cut && g.countIn && g.lineIn) &&
+      m.long.oneLine && m.long.cut && m.long.ellipsis === 'ellipsis' && m.long.countIn && m.long.lineIn &&
+      m.scrolled > 0 && m.after.every((g: any, i: number) => g.oneLine && g.countIn && g.lineIn && g.lineLeft === m.first[i].lineLeft) && !m.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  folder-grouped group line ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
