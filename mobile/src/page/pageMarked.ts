@@ -97,7 +97,7 @@ export interface PageTask {
   core: string
 }
 
-/** A list item, with the task the parse found for it: `null` when its line does not read as that task. */
+/** A list item, with the task the parse found for it: `null` when it is no task the Mac reads (no box is drawn). */
 export type TaskItem = Tokens.ListItem & { pageTask?: PageTask | null }
 
 /**
@@ -120,6 +120,17 @@ export function linesOf(text: string): string[] {
   return text.split(LINE_END)
 }
 
+/** The columns of a line's leading spaces and tabs (a tab to the next stop of 4). */
+const indent = (line: string): number => {
+  let col = 0
+  for (const c of line) {
+    if (c === ' ') col++
+    else if (c === '\t') col += 4 - (col % 4)
+    else break
+  }
+  return col
+}
+
 const newlines = (raw: string): number => {
   let n = 0
   for (let i = raw.indexOf('\n'); i !== -1; i = raw.indexOf('\n', i + 1)) n++
@@ -130,37 +141,103 @@ const newlines = (raw: string): number => {
  * Each task item of `tokens` (the parse of `text`, its first line `firstLine` of a longer text) gets its task
  * (`pageTask`), and the tasks come back in document order. A token's `raw` is its text with the line ends made LF, so
  * counting its LFs walks the lines; a list item's and a quote's own tokens start on their first line. A task is kept
- * only when its line in `text` reads as that task (the same core, the same state): else it is no task (`null`), never
- * a guess at another line.
+ * only when its line in `text` reads as that task (the same core, the same state), and when the Mac reads it as a task
+ * (`lazyItems`): else it is no task (`null`, no box), never a guess at another line.
  */
 export function markTasks(tokens: readonly Token[], text: string, firstLine = 0): PageTask[] {
   const lines = linesOf(text)
   const out: PageTask[] = []
-  const walk = (list: readonly Token[], start: number) => {
+  /**
+   * `inside`: the first block of `list` opens where the Mac's parser would be interrupting (`interrupts`). `lazy`: these
+   * are the tokens of an item the Mac reads as paragraph text, whose line starts at that column (`lazyItems`). `dead`:
+   * the Mac reads none of this as a list.
+   */
+  const walk = (list: readonly Token[], start: number, inside: boolean, lazy: number | null, dead: boolean) => {
     let line = start
-    for (const token of list) {
+    list.forEach((token, at) => {
+      const interrupting = interrupts(list, at, inside)
+      // In a lazy item, a list is the Mac's only right after the item's text (a bullet list interrupts that paragraph)
+      // and at most 3 columns in from it; after a blank line or deeper, the Mac reads code or more text.
+      const off = dead || (lazy !== null && !(token.type === 'list' && (list[at - 1]?.type === 'text' || list[at - 1]?.type === 'paragraph') && indent(lines[line] ?? '') - lazy <= 3))
       if (token.type === 'list') {
+        const lazyN = interrupting ? lazyItems(token as Tokens.List) : 0
+        ;(token as LazyList).lazy = lazyN
         let from = line
-        for (const item of (token as Tokens.List).items as TaskItem[]) {
+        ;((token as Tokens.List).items as TaskItem[]).forEach((item, n) => {
           if (item.task) {
             const own = readTaskLine(lines[from] ?? '')
             const first = readTaskLine(item.raw.split('\n', 1)[0]!)
-            const ok = own !== null && first !== null && own.core === first.core && own.checked === item.checked
+            const ok = !off && n >= lazyN && own !== null && first !== null && own.core === first.core && own.checked === item.checked
             item.pageTask = ok ? { line: from + firstLine, box: own.box, checked: own.checked, core: own.core } : null
             if (item.pageTask) out.push(item.pageTask)
           }
-          walk(item.tokens, from)
+          walk(item.tokens, from, n === 0 && interrupting, n < lazyN ? indent(lines[from] ?? '') : null, off)
           from += newlines(item.raw)
-        }
-      } else if (token.type === 'blockquote') walk((token as Tokens.Blockquote).tokens, line)
+        })
+      } else if (token.type === 'blockquote') walk((token as Tokens.Blockquote).tokens, line, interrupting, null, off)
       line += newlines(token.raw)
-    }
+    })
   }
-  walk(tokens, 0)
+  walk(tokens, 0, false, null, false)
   return out
+}
+
+/** A list, with how many of its first items the Mac reads as paragraph text (`lazyItems`). */
+type LazyList = Tokens.List & { lazy?: number }
+
+/**
+ * T3, THE MAC'S RULE for a list that does not start at 1 (the Mac reads a page with micromark): such a list cannot
+ * INTERRUPT what is open before it. Open is a paragraph right before it (CommonMark: `- parent` then `  2) [ ] X` is
+ * the paragraph's own text, which `marked` makes a list), and, as micromark reads it, an indented code block before it
+ * (blank lines between do not close it), also for the first block of a quote or a list item that itself opens there
+ * (`para` then `> 2) [ ] X`). A list before it whose last item is such text leaves that text open, or the code it ends
+ * in. True when the block at `list[at]` opens so.
+ */
+function interrupts(list: readonly Token[], at: number, inside: boolean): boolean {
+  const before = list[at - 1]
+  if (before?.type === 'paragraph' || before?.type === 'text') return true
+  const lazyLast = (t: Token | undefined) => t?.type === 'list' && ((t as LazyList).lazy ?? 0) >= (t as LazyList).items.length
+  if (lazyLast(before)) return true
+  let i = at - 1
+  while (i >= 0 && list[i]!.type === 'space') i--
+  if (i < 0) return inside
+  const open = list[i]!
+  if (lazyLast(open)) return endsInCode((open as LazyList).items.at(-1)!)
+  return open.type === 'code' && (open as Tokens.Code).codeBlockStyle === 'indented'
+}
+
+/**
+ * How many of an interrupting ordered `list`'s first items the Mac reads as paragraph text (`interrupts`): the first,
+ * and each next one with no blank line before it (it cannot interrupt that text either), unless it is numbered 1; after
+ * a blank line, only when the text before ended in indented code. None for a list that starts at 1, or a bullet list.
+ */
+function lazyItems(list: Tokens.List): number {
+  if (!list.ordered || list.start === 1) return 0
+  let n = 1
+  for (; n < list.items.length; n++) {
+    const before = list.items[n - 1]!
+    const blank = /\n[ \t]*\n$/.test(before.raw)
+    if (blank ? !endsInCode(before) : /^[ \t]*0*1[.)]/.test(list.items[n]!.raw)) break
+  }
+  return n
+}
+
+/**
+ * An item the Mac reads as paragraph text ends, for the Mac, in an indented code block: its last lines after a blank
+ * line start 4 or more columns in from its marker (in a list item `marked` reads them as the item's own text).
+ */
+function endsInCode(item: Tokens.ListItem): boolean {
+  const lines = item.raw.replace(/\s+$/, '').split('\n')
+  let last = lines.length - 1
+  while (last > 0 && lines[last - 1]!.trim() !== '') last--
+  return last > 0 && indent(lines[last]!) - indent(lines[0]!) >= 4
 }
 
 /** The tasks of `text` (a page's body, its properties left out), as the reader draws them. */
 export function pageTasks(text: string): PageTask[] {
-  return markTasks(pageMarked.lexer(text), text)
+  const own = withoutBom(text)
+  return markTasks(pageMarked.lexer(own), own)
 }
+
+/** The text the reader parses: a byte order mark at its start is no text (as the Mac reads it). Its lines stay. */
+export const withoutBom = (text: string): string => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)

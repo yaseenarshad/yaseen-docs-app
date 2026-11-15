@@ -9,7 +9,7 @@ import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
 import { cardMoreButton } from '../cardMenu/moreButton'
 import { applyTableFile, readTableComment } from './tableFile'
 import { layoutTables } from './tableLayout'
-import { markTasks, pageMarked, type PageLinkToken, type TaskItem } from './pageMarked'
+import { markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } from './pageMarked'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (YAZ-5079, 4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -192,14 +192,17 @@ markdown.use({
     },
     // YAZ-5494, YAZ-5513: a task's box carries its core (`data-task`) and its line in the page's body (`data-task-line`),
     // as the parse found them (`markTasks`), so a tap names exactly the line it writes. `listitem` hands the item to its
-    // box: marked draws the box first.
+    // box: marked draws the box first. A list item marked reads as a task but the Mac does not (`pageTask` null) gets
+    // no box: its brackets show as the text they are on the Mac.
     listitem(item) {
       taskItem = item.task ? (item as TaskItem) : null
       return Renderer.prototype.listitem.call(this, item)
     },
     checkbox: ({ checked }) => {
-      const task = taskItem?.pageTask
+      const item = taskItem
       taskItem = null
+      const task = item?.pageTask
+      if (item !== null && task === null) return escapeHtml(/\[[ xX]\]/.exec(item.raw)?.[0] ?? (checked ? '[x]' : '[ ]'))
       const mark = task === undefined || task === null ? '' : ` ${localMark('task')}="${escapeHtml(task.core)}" ${localMark('task-line')}="${task.line}"`
       return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${mark}></span> `
     },
@@ -455,8 +458,9 @@ function drawCallouts(root: DocumentFragment): void {
  */
 export function pieceHtml(text: string, firstLine = 0): { html: string; cards: Parse['cards'] } {
   parse = { cards: [] }
-  const tokens = markdown.lexer(text)
-  markTasks(tokens, text, firstLine)
+  const own = withoutBom(text)
+  const tokens = markdown.lexer(own)
+  markTasks(tokens, own, firstLine)
   joinTableComments(tokens)
   return { html: markdown.parser(tokens), cards: parse.cards }
 }

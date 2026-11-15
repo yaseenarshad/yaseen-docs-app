@@ -1,5 +1,5 @@
 import { splitFrontmatter } from '@shared/frontmatter'
-import { pageTasks, readTaskLine } from '../page/pageMarked'
+import { pageTasks, readTaskLine, withoutBom } from '../page/pageMarked'
 
 /**
  * YAZ-5494: THE PHONE'S SECOND WRITE TO A PAGE: it ticks or unticks ONE task check box, and changes no other byte.
@@ -75,8 +75,9 @@ let last: { content: string; tasks: Array<TaskLine & { at: number; line: number 
 function readTasks(content: string): Array<TaskLine & { at: number; line: number }> {
   const { frontmatter, body } = splitFrontmatter(content)
   // Where each line of the body starts in `content` (a line ends at LF, CRLF or CR, as the parser reads it).
-  const starts = [frontmatter.length]
-  for (const m of body.matchAll(/\r\n|\r|\n/g)) starts.push(frontmatter.length + m.index + m[0].length)
+  const own = withoutBom(body)
+  const starts = [frontmatter.length + body.length - own.length]
+  for (const m of own.matchAll(/\r\n|\r|\n/g)) starts.push(frontmatter.length + body.length - own.length + m.index + m[0].length)
   return pageTasks(body).map((t) => ({ box: t.box, checked: t.checked, core: t.core, line: t.line, at: starts[t.line]! + t.box }))
 }
 

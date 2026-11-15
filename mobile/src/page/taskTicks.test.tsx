@@ -292,3 +292,25 @@ describe('no tap is refused when nothing changed (YAZ-5513, T2)', () => {
     expect(port.list).toHaveLength(1)
   })
 })
+
+describe('the boxes are the Mac\'s tasks (YAZ-5513, T3)', () => {
+  it('only tasks the Mac reads as tasks get a tappable box', async () => {
+    // CommonMark: a list that does not start at 1 cannot interrupt a paragraph, so `2) [ ] X` is the paragraph's text.
+    // As the Mac reads it (micromark), not after indented code either. Their brackets stay text, as on the Mac.
+    for (const page of ['- parent\n  2) [ ] Buy milk\n', 'Paragraph\n> 2) [ ] Buy milk\n', '    code\n\n2) [ ] Buy milk\n3) [x] Buy milk\n']) {
+      const p = await page2(page)
+      expect(p.boxes()).toHaveLength(0)
+      expect(p.body.textContent).toContain('[ ] Buy milk')
+      act(() => root?.unmount())
+    }
+    // The Mac's tasks keep theirs: a list at 1, a bullet list, one after a blank line.
+    for (const [page, n] of [['- parent\n  1) [ ] Buy milk\n', 1], ['- parent\n  - [ ] Buy milk\n', 1], ['Paragraph\n\n2) [ ] Buy milk\n', 1], ['﻿- [ ] Buy milk\n', 1]] as const) {
+      const p = await page2(page)
+      expect(p.boxes().filter((b) => b.dataset.task !== undefined)).toHaveLength(n)
+      act(() => root?.unmount())
+    }
+  })
+})
+
+/** A page drawn with the tap on, and no list. */
+const page2 = (text: string) => page(text, fakePort())
