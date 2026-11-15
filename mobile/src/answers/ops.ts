@@ -35,7 +35,12 @@ export type CardOp =
    */
   | { kind: 'unreview'; id: string; at: string; rating: CardRating; nth?: number }
   | { kind: 'off'; id: string; on: boolean } // archive, unarchive
-  | { kind: 'next'; id: string; on: boolean } // Up next
+  /**
+   * Up next. `at` (YAZ-5409): the part place to put `next` back at, from `cardNextIndex` before the answer that took it
+   * off; the Undo of a SENT answer gives it, as the Mac's Undo does. So `next` goes back where it was, in any order of
+   * the line. Absent (Up next from the ⋯ menu, or a list stored before YAZ-5409): the writer's place.
+   */
+  | { kind: 'next'; id: string; on: boolean; at?: number }
   | { kind: 'fix'; id: string; on: boolean } // Fix later (round 10, YAZ-5097)
 
 /**
@@ -64,7 +69,7 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
     case 'off':
       return withCardOff(line, op.on)
     case 'next':
-      return withCardNext(line, op.on)
+      return withCardNext(line, op.on, op.on ? op.at : undefined)
     case 'fix':
       return withCardFix(line, op.on)
   }

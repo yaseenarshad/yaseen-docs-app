@@ -143,7 +143,9 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
       if (waiting !== null && (await answers.undo(waiting.group))) return
       const { line, title } = await current(path, id)
       const rating = waiting?.rating ?? reviewAt(line, at)?.rating
-      const ops: CardOp[] = [...(rating === undefined ? [] : [unreviewOp(id, line, at, rating)]), ...(next >= 0 ? [{ kind: 'next', id, on: true } as const] : [])]
+      // YAZ-5409: `next` goes back at its place (`next`, from `cardNextIndex` before the answer), not the writer's place.
+      // The `unreview` goes first, so the line has the same parts as before the answer when `next` goes back.
+      const ops: CardOp[] = [...(rating === undefined ? [] : [unreviewOp(id, line, at, rating)]), ...(next >= 0 ? [{ kind: 'next', id, on: true, at: next } as const] : [])]
       if (ops.length > 0) await add(path, title, ops)
     },
     async deleteCardReview(path, id, at) {
