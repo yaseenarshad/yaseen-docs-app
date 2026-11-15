@@ -13,6 +13,7 @@ import { StartPage as Page, type StartPageProps } from './StartPage'
 import { recentlyClosed } from './recentlyClosed'
 import startCss from './startPage.css?inline'
 import { HOVER_PREVIEW_DWELL_MS } from '../sidebar/HoverPreviewHost'
+import { placeOf } from '../test-placeName'
 
 // The REAL rules of the third column behind a counter (R5): a test can say when the page ran them.
 vi.mock('./recentlyClosed', async (importOriginal) => {
@@ -189,6 +190,8 @@ describe('StartPage', () => {
     // The name is the page's title; a page at the top of its vault names no folder.
     expect([part(plan, 'start__name'), part(plan, 'start__where'), part(plan, 'start__when')]).toEqual(['The plan', 'Projects / Alpha', '2h'])
     expect([part(x, 'start__name'), part(x, 'start__where'), part(x, 'start__when')]).toEqual(['x', null, 'now'])
+    // YAZ-5402: the folder icon before the folder; the tooltip says the kind and the path.
+    expect(placeOf(plan.querySelector('.start__where'))).toEqual({ kind: 'folder', icon: 'folder', title: 'Folder: Projects / Alpha' })
     expect(part(n0, 'start__when')).toBe('3h')
     // Each row is a button that says its column and its place in it (the arrow keys of YAZ-2674 read them).
     expect(rowsOf(el, 'recent').map((button) => [button.type, button.dataset.col, button.dataset.row])).toEqual(Array.from({ length: 8 }, (_, at) => ['button', 'recent', String(at)]))

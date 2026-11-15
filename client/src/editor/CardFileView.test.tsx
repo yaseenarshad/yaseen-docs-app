@@ -17,6 +17,7 @@ import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
 import { cardFileName } from '@shared/cardFileFormat'
 import { paintedFindRanges } from './find/cardFind'
+import { placeOf } from '../test-placeName'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -82,7 +83,7 @@ const records = (mtime: number): IndexRecord[] => [
   rec(PATH, { mtime, kind: 'card', title: 'Capital of France', cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [], title: 'Capital of France' }] }),
   rec('/v/pages.md', { links: ['WIKI-9'] }),
   rec('/v/europe.md', { embeds: ['WIKI-9'] }),
-  rec('/v/trips.md', { embeds: ['wiki-9'] }),
+  rec('/v/Places/Europe/trips.md', { folder: 'Places/Europe', embeds: ['wiki-9'] }),
 ]
 
 /** Publishes the vault's review settings (`useReviewOn` reads them), as the vault's scope does. */
@@ -154,6 +155,8 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     await mount(FILE)
     expect(disk.reads).toBe(0)
     expect(el.querySelector('.card-file__path')?.textContent).toBe('Geography')
+    // YAZ-5402: the folder icon before the folder's name, the kind and the path in its tooltip.
+    expect(placeOf(el.querySelector('.card-file__path'))).toEqual({ kind: 'folder', icon: 'folder', title: 'Folder: Geography' })
     // The title shows one time (YAZ-5044): the big title is the file's `title`; the card holds only its sides.
     expect(el.querySelector('.card-file .card > .card-band .page-title__text')?.textContent).toBe('Capital of France')
     expect(el.querySelector('[data-card-file] .card__id')?.textContent).toBe('WIKI-9')
@@ -166,6 +169,9 @@ describe('the card file tab (YAZ-5037 phase 3)', () => {
     expect(el.querySelector('.card-backlinks__list')).toBeNull()
     act(() => part('embeds')!.click())
     expect(el.querySelector('.card-backlinks__list')?.textContent).toContain('europe')
+    // YAZ-5402: a page's folder in the strip, its last name with the folder icon; the whole path in its tooltip. A page at the vault's top names none.
+    expect([...el.querySelectorAll('.card-backlinks__folder')].map(placeOf)).toEqual([{ kind: 'folder', icon: 'folder', title: 'Folder: Places / Europe' }])
+    expect(el.querySelector('.card-backlinks__folder')?.textContent).toBe('Europe')
     expect(part('embeds')?.getAttribute('aria-expanded')).toBe('true')
     // The tab is the card's own page: none of the card window's words for a separate page.
     expect(el.textContent).not.toContain('Open page')

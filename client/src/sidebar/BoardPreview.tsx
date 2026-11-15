@@ -8,7 +8,8 @@
  */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { basename, boardFolder } from '../lib/paths'
+import { basename, boardFolder, dirname } from '../lib/paths'
+import { PlaceName } from './PlaceName'
 import { boardPreviews } from './boardPreviewCache'
 import { portalTarget, usePlacement, type PreviewAnchor } from './previewPlacement'
 import './boardPreview.css'
@@ -50,7 +51,7 @@ export default function BoardPreview({ root, node, cacheKey, hint, anchor }: Boa
     <div className="board-preview" role="status" aria-live="polite" aria-label={`Preview of ${name}`} style={placement}>
       <div className="board-preview__header">
         <span className="board-preview__name">{name}</span>
-        <span className="board-preview__folder">{boardFolder(root, node.path)}</span>
+        <PlaceName className="board-preview__folder" path={dirname(node.path)} kind="folder" label={boardFolder(root, node.path)} />
       </div>
       {hint !== undefined && <div className="board-preview__hint">{hint}</div>}
       <div className="board-preview__body">

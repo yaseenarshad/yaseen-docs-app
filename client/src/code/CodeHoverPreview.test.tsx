@@ -33,6 +33,7 @@ vi.mock('./monaco', () => ({
 }))
 
 import CodeHoverPreview, { CODE_HOVER_UNREADABLE } from './CodeHoverPreview'
+import { placeOf } from '../test-placeName'
 
 let root: Root | null = null
 afterEach(() => {
@@ -71,6 +72,7 @@ describe('CodeHoverPreview', () => {
     // The card's header: the file's name and its folder.
     expect(card.querySelector('.board-preview__name')!.textContent).toBe('app.ts')
     expect(card.querySelector('.board-preview__folder')!.textContent).toBe('src')
+    expect(placeOf(card.querySelector('.board-preview__folder'))).toEqual({ kind: 'folder', icon: 'folder', title: 'Folder: src' })
   })
 
   it('defines and sets the theme only when the appearance changes, never for each card (the checker on YAZ-3458)', async () => {

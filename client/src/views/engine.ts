@@ -423,10 +423,11 @@ function orderInColumnSpelling(order: readonly string[], spelled: ReadonlyMap<st
 export function propertyKeys(_def: ViewSet, view: ViewDef, records: readonly IndexRecord[], declared: readonly string[] = []): string[] {
   // A view listing cards (YAZ-5319) has its own columns: the name, the card columns and the cards' own properties
   // (YAZ-5385), never a page's property.
+  // The view is seen through the card lens (`cardView.ts`): `order` is the cards' own, `declared` the card columns.
   if (cardRowsOf(view)) {
-    const own = cardPropertyKeys(records)
-    // A page's column left in the card order never shows there: only a property some card holds does.
-    if (view.cardOrder !== undefined) return view.cardOrder.filter((key) => key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key) || own.includes(key))
+    const own = [...new Set([...declared.map((k) => `note.${k}`), ...cardPropertyKeys(records)])].sort()
+    // A page's column left in the card order never shows there: only a card column, or a property some card holds, does.
+    if (view.order !== undefined) return view.order.filter((key) => key.startsWith('file.') || key.startsWith('formula.') || isCardKey(key) || own.includes(key))
     return [...DEFAULT_CARD_ORDER, ...own]
   }
   // A page's view shows no card column: a card's are its rows' alone.

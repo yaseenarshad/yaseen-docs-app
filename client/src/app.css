@@ -3961,6 +3961,47 @@ body.drag-held iframe {
   mask: var(--icon) center / 14px 14px no-repeat;
 }
 
+/* A place name (YAZ-5402, `PlaceName.tsx`): the tree's icon before a folder's or a page's name, small and in the name's
+   own colour, so it reads as part of the grey name. The glyph is the row's: the Line set's (`--kind-icon`, also where
+   the part is portalled out of `.app`, a hover preview), or Material's and the user's own (`--icon`) as a silhouette.
+   It is the span's own `::before`, not the tree's rules (no `--dir`/`--file`), so its size and colour are its own.
+   The weights after the light theme's image rule, which this one ties and follows. */
+.place-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.place-name > .place-name__icon {
+  display: inline-flex;
+  flex: none;
+}
+.place-name > .file-icon.place-name__icon::before {
+  content: '';
+  display: block;
+  width: 12px;
+  height: 12px;
+  margin-right: 4px;
+  background: currentColor;
+  mask: var(--kind-icon) center / 12px 12px no-repeat;
+}
+.place-name > .file-icon.place-name__icon[data-icon]::before {
+  background: currentColor;
+}
+.app[data-sidebar-icon-set='material'] .place-name > .file-icon.place-name__icon[data-icon]:not([data-kind='markdown'][data-icon='markdown'], [data-kind='card'])::before,
+.place-name > .file-icon.place-name__icon[data-icon-custom]::before {
+  mask-image: var(--icon);
+}
+.app[data-sidebar-folder-icons='off'] .place-name > .place-name__icon[data-kind='folder'],
+.app[data-sidebar-file-icons='off'] .place-name > .place-name__icon:not([data-kind='folder']) {
+  display: none;
+}
+.place-name__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A drawing's or a diagram's extension (YAZ-3536 D4, D5): hidden while its icon says the kind; with File icons
    Off nothing else says it, so it shows. A page has none: no extension reads as a page. */
 .name-ending {
