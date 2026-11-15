@@ -113,6 +113,8 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       break
     case 'guide':
       press('How to make a token')
+      // Its own chunk (YAZ-5446): wait until it draws.
+      for (let i = 0; i < 100 && document.querySelector('.guide-steps') === null; i++) await wait(20)
       break
     case 'scan':
       press('Scan a code')

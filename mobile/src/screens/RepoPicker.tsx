@@ -37,33 +37,39 @@ export default function RepoPicker({ token, onOtherToken, onTyped }: { token: st
   const alive = useRef(true)
   const asked = useRef(new Set<string>())
   const lastPick = useRef<string | null>(null)
+  /** YAZ-5441: set in the same turn as the tap (as `checking` in `SignIn.tsx`), so a second tap before the next render does nothing. */
+  const checking = useRef(false)
 
   useEffect(() => {
     alive.current = true
     return () => void (alive.current = false)
   }, [])
 
-  /** Looks at each repo once, a few at a time. */
-  const look = useMemo(() => {
-    const queue: TokenRepo[] = []
+  /**
+   * Looks at each repo once, at most `LOOKS_AT_ONCE` at a time: the first looks and the rows' looks go through ONE
+   * queue (YAZ-5442). `queued` gives the look's answer; `look` (a row on screen) sets its mark.
+   */
+  const { look, queued } = useMemo(() => {
+    const queue: { repo: TokenRepo; done: (found: VaultLook) => void }[] = []
     let running = 0
     const pump = () => {
       while (running < LOOKS_AT_ONCE && queue.length > 0) {
-        const repo = queue.shift()!
+        const { repo, done } = queue.shift()!
         running++
         void lookForVault(token, repo, deps).then((found) => {
           running--
-          if (alive.current) setLooks((l) => ({ ...l, [repo.fullName]: found }))
+          done(found)
           pump()
         })
       }
     }
-    return (repo: TokenRepo) => {
+    const queued = (repo: TokenRepo) => new Promise<VaultLook>((done) => (queue.push({ repo, done }), pump()))
+    const look = (repo: TokenRepo) => {
       if (asked.current.has(repo.fullName)) return
       asked.current.add(repo.fullName)
-      queue.push(repo)
-      pump()
+      void queued(repo).then((found) => alive.current && setLooks((l) => ({ ...l, [repo.fullName]: found })))
     }
+    return { look, queued }
   }, [token, deps])
 
   useEffect(() => {
@@ -75,7 +81,7 @@ export default function RepoPicker({ token, onOtherToken, onTyped }: { token: st
       if (!current) return
       if (!out.ok) return setListed({ state: 'failed', error: out.error })
       const first = out.repos.slice(0, LOOK_FIRST)
-      const found = await Promise.all(first.map(async (r) => [r.fullName, await lookForVault(token, r, deps)] as const))
+      const found = await Promise.all(first.map(async (r) => [r.fullName, await queued(r)] as const))
       if (!current) return
       for (const r of first) asked.current.add(r.fullName)
       const known = Object.fromEntries(found)
@@ -83,7 +89,7 @@ export default function RepoPicker({ token, onOtherToken, onTyped }: { token: st
       setListed({ state: 'ready', repos: orderRepos(out.repos, known), capped: out.capped })
     })()
     return () => void (current = false)
-  }, [token, deps, attempt])
+  }, [token, deps, attempt, queued])
 
   const onPhone = useMemo(() => new Set(app.list.vaults.map((v) => vaultId(v))), [app.list.vaults])
   const repos = listed.state === 'ready' ? listed.repos : []
@@ -92,7 +98,8 @@ export default function RepoPicker({ token, onOtherToken, onTyped }: { token: st
   const shown = found.slice(0, ROWS_MAX)
 
   const pick = async (repo: TokenRepo) => {
-    if (picking !== null) return
+    if (picking !== null || checking.current) return
+    checking.current = true
     lastPick.current = repo.fullName
     setPicking(repo.fullName)
     setHelp(null)
@@ -100,9 +107,11 @@ export default function RepoPicker({ token, onOtherToken, onTyped }: { token: st
     try {
       outcome = await app.addVault({ repo: repo.fullName, token })
     } catch {
+      checking.current = false
       if (alive.current) (setPicking(null), setHelp(SAVE_FAILED))
       return
     }
+    checking.current = false
     if (!alive.current) return
     setPicking(null)
     if (outcome.ok) return

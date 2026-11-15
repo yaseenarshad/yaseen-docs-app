@@ -2,7 +2,8 @@ import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
 import { forbiddenImport, forbiddenUse, mayImportEngine } from './importRules'
-import { notecardsPwa } from './publish/pwaPlugin'
+import { commitOf, notecardsPwa } from './publish/pwaPlugin'
+import { readFileSync } from 'node:fs'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const shared = fileURLToPath(new URL('../shared', import.meta.url))
@@ -93,8 +94,22 @@ export const phoneResolve = {
   dedupe: ['react', 'react-dom'],
 }
 
+/**
+ * YAZ-5446: what Settings › Version shows, set at build time: the version of `mobile/package.json`, the time of the
+ * build (ISO, UTC; the phone shows it in its own time), and the short commit. A few bytes in the first load.
+ */
+export function buildDefine(now: Date = new Date()): Record<string, string> {
+  const version = (JSON.parse(readFileSync(`${here}package.json`, 'utf8')) as { version: string }).version
+  return {
+    __NOTECARDS_VERSION__: JSON.stringify(version),
+    __NOTECARDS_BUILT__: JSON.stringify(now.toISOString()),
+    __NOTECARDS_COMMIT__: JSON.stringify(commitOf()),
+  }
+}
+
 export default defineConfig({
   root: here,
+  define: buildDefine(),
   // The guard is for what the phone bundles. `vitest.config.ts` leaves it out on purpose (YAZ-5160).
   // YAZ-5087: `notecardsPwa` writes the service worker (`dist/sw.js`) with this build's shell list.
   plugins: [drawingChunkTrim(), phoneImportGuard(), react(), notecardsPwa()],

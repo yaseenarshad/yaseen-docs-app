@@ -564,6 +564,74 @@ body:has(.app--swiping) {
   border-bottom: 0;
 }
 
+/* ---- Settings: the version, What's new, and the erase apart at the bottom (YAZ-5446) ---- */
+
+.settings__version {
+  text-align: right;
+}
+
+.whats-new__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.whats-new__chevron {
+  display: inline-block;
+  padding: 0 4px;
+  color: var(--fg-muted);
+  font-size: 20px;
+  transition: transform 0.15s;
+}
+
+.whats-new__toggle[aria-expanded='true'] .whats-new__chevron {
+  transform: rotate(90deg);
+}
+
+/* Open, the list scrolls inside its own short box: the screen does not grow. No scroll bar, as the reader (YAZ-5436). */
+.whats-new {
+  max-height: 40vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.whats-new::-webkit-scrollbar {
+  display: none;
+}
+
+.whats-new__head {
+  margin: 10px 0 4px;
+  font-size: 15px;
+}
+
+.whats-new__day {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.whats-new__items {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+
+.whats-new__line {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings__erase {
+  margin-top: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .whats-new__chevron {
+    transition: none;
+  }
+}
+
 /* ---- The first download ---- */
 
 .progress {

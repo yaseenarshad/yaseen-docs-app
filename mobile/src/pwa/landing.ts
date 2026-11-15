@@ -1,5 +1,5 @@
 import { landingCodeFrom, landingCopy, type LandingKind } from './friendLink'
-import { HOME_SCREEN, safariLine } from './homeScreen'
+import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from './homeScreen'
 
 /**
  * The landing page of a shared link (`/friend#…`, `/group#…`, `/join#…`; round 10, item 7; YAZ-5087, YAZ-5290). A link
@@ -42,8 +42,17 @@ byId('title').textContent = words.title
 byId('lead').textContent = words.lead
 byId('label').textContent = words.label
 for (const el of document.querySelectorAll('.paste-name')) el.textContent = words.paste
-// The Home Screen steps: the app's own words (`homeScreen.ts`, one source).
-byId('add-steps').textContent = `${safariLine()} ${HOME_SCREEN.olderSafari}`
+// The Home Screen steps: the app's own words (`homeScreen.ts`, one source). YAZ-5443: the ☰ has a spoken name.
+byId('add-steps').replaceChildren(
+  ...splitThreeLines(`${safariLine()} ${HOME_SCREEN.olderSafari}`).flatMap((part, i) => {
+    if (i === 0) return [part]
+    const glyph = document.createElement('span')
+    glyph.setAttribute('role', 'img')
+    glyph.setAttribute('aria-label', THREE_LINES.name)
+    glyph.textContent = THREE_LINES.glyph
+    return [glyph, part]
+  }),
+)
 
 if (landing.code === null) {
   byId('no-code-text').textContent = words.missing

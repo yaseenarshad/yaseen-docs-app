@@ -3,16 +3,21 @@ import { useApp } from '../app/AppState'
 import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
+import { BUILD, versionWords } from '../settings/buildInfo'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
 import { Frame, Problem } from './Frame'
 import { InstallHint } from './InstallHint'
+import { lazyScreen } from './LazyScreen'
+
+/** YAZ-5446: the list of What's new, its own chunk: it loads when the person first opens it, never in the first load. */
+const WhatsNewList = lazyScreen(() => import('../settings/WhatsNewList'), { waiting: <p className="muted" aria-busy="true">Loading…</p> })
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19): the vaults (switch, add, replace the token, reset the
- * local copy, remove), the Friends part ("Friends use @login", "Vaults that count", "Name"; no sharing switch), and
- * "Sign out and erase this phone".
+ * local copy, remove), the Friends part ("Friends use @login", "Vaults that count", "Name"; no sharing switch), the
+ * version and What's new (YAZ-5446), and last, apart, "Sign out and erase this phone" (it always asks first).
  */
 export function Settings() {
   const app = useApp()
@@ -54,29 +59,68 @@ export function Settings() {
 
       <FriendsPart />
 
-      <h2 className="section">This phone</h2>
-      {erasing !== null ? (
-        <Confirm
-          question={eraseQuestion({ ...erasing, unit: app.unit })}
-          yes="Erase this phone"
-          busy={busy}
-          onYes={() => void run(app.eraseAll)}
-          onNo={closeErase}
-          extra={
-            // YAZ-5343, the safe way: the Friends tab runs a waiting remove when it reads (with a signal).
-            erasing.removes > 0 && (
-              <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'tab', tab: 'friends' })}>
-                Finish it in Friends
-              </button>
-            )
-          }
-        />
-      ) : (
-        <button type="button" className="btn btn--wide btn--danger" onClick={() => void askErase()}>
-          Sign out and erase this phone
-        </button>
-      )}
+      <AboutPart />
+
+      {/* YAZ-5446: never by accident: at the very bottom, apart from the other rows, in red, and it asks first (Cancel has the focus). */}
+      <div className="settings__erase">
+        <h2 className="section">This phone</h2>
+        {erasing !== null ? (
+          <Confirm
+            question={eraseQuestion({ ...erasing, unit: app.unit })}
+            yes="Erase this phone"
+            busy={busy}
+            onYes={() => void run(app.eraseAll)}
+            onNo={closeErase}
+            extra={
+              // YAZ-5343, the safe way: the Friends tab runs a waiting remove when it reads (with a signal).
+              erasing.removes > 0 && (
+                <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'tab', tab: 'friends' })}>
+                  Finish it in Friends
+                </button>
+              )
+            }
+          />
+        ) : (
+          <button type="button" className="btn btn--wide btn--danger" onClick={() => void askErase()}>
+            Sign out and erase this phone
+          </button>
+        )}
+      </div>
     </Frame>
+  )
+}
+
+/**
+ * YAZ-5446: the version (the number, the build's date and time in the phone's own time, the commit) and What's new,
+ * closed at first. Open, its list scrolls inside its own short box, so the screen does not grow.
+ */
+function AboutPart() {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <h2 className="section">About</h2>
+      <ul className="rows">
+        <li className="row">
+          <span className="row__main">Version</span>
+          <span className="row__side settings__version">{versionWords(BUILD)}</span>
+        </li>
+        <li>
+          <div className="row">
+            <button type="button" className="row__button whats-new__toggle" aria-expanded={open} aria-controls="whats-new" onClick={() => setOpen(!open)}>
+              What's new
+              <span className="whats-new__chevron" aria-hidden="true">
+                ›
+              </span>
+            </button>
+          </div>
+          {open && (
+            <div id="whats-new" className="sheet whats-new" tabIndex={0} role="region" aria-label="What's new">
+              <WhatsNewList />
+            </div>
+          )}
+        </li>
+      </ul>
+    </>
   )
 }
 
