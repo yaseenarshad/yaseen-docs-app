@@ -47,7 +47,7 @@ const LINES: string[] = []
 for (const mark of ['archive', 'next', 'fix'] as Mark[])
   for (const sent of ['unsent', 'lost-reply', 'sent'] as Sent[])
     for (const when of ['at once', 'after the next answer'] as const)
-      describe(`check4 ${mark} / ${sent} / Undo ${when}`, () => {
+      describe(`${mark} / ${sent} / Undo ${when}`, () => {
         it('the card line on GitHub ends byte for byte as before the undone action; counts agree', async () => {
           h = await setup(sent)
           const before = await h.remoteLines()
@@ -89,7 +89,7 @@ for (const mark of ['archive', 'next', 'fix'] as Mark[])
         })
       })
 
-describe('check4 race: Undo of a mark while its save still runs', () => {
+describe('race: Undo of a mark while its save still runs', () => {
   for (const mark of ['next', 'fix'] as Mark[])
     it(`${mark}: a tap on Undo right after the mark (the write takes 300 ms) still ends with the line as before`, async () => {
       h = await setup('unsent')
@@ -116,7 +116,7 @@ describe('check4 race: Undo of a mark while its save still runs', () => {
     })
 })
 
-describe('check4 archive undo when the Mac changed the card meanwhile', () => {
+describe('archive undo when the Mac changed the card meanwhile', () => {
   for (const sent of ['unsent', 'sent'] as const)
     it(`${sent}: the undo lands on the Mac's new text`, async () => {
       h = await setup('unsent')

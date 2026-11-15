@@ -67,7 +67,7 @@ const until = async (ok: () => boolean) => {
   for (const end = Date.now() + 3000; !ok() && Date.now() < end; ) await h.settle()
 }
 
-describe('checker round 2: the kept Review tab', () => {
+describe('the kept Review tab', () => {
   it('K1: off the screen the Review box is out of the document; nothing of it can take focus', async () => {
     await app()
     const reviewEl = h.host.querySelector('.review')!

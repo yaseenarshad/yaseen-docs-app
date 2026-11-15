@@ -1,4 +1,6 @@
-// CHECKER (YAZ-4946 round 1): the sweep on the bytes the editor saves after a card is pasted ABOVE itself.
+// The ID sweep on two cards with one ID on a page (from the checker of YAZ-4946):
+// - the bytes the editor saves after a card is pasted ABOVE itself;
+// - the SAME text but DIFFERENT histories (a git "keep both", an agent's stale copy).
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -49,4 +51,19 @@ it('an agent`s copy with one ID on the page: the same text loses the copy`s hist
     ['WIKI-9', 2],
     ['WIKI-11', 2],
   ])
+})
+
+it('same text, different reviews: no review leaves the file', async () => {
+  const p = path.join(root, 'deck.md')
+  // Mac A answered on Nov 1, Mac B on Nov 1 and Nov 7; a merge kept both blocks. Or: an agent wrote a stale copy above.
+  const a = '<!-- card: WIKI-9, 2026-11-01T09:00Z good -->'
+  const b = '<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-07T09:00Z good -->'
+  await writeFile(p, `---\nid: WIKI-1\n---\n\`\`\`card\nQ\n---\nA\n\`\`\`\n${a}\n\n\`\`\`card\nQ\n---\nA\n\`\`\`\n${b}\n`)
+  const records = new Map([[p, await scanFile(root, p)]])
+  await sweepIds(root, records, [...records.values()], (q) => records.get(q)?.id)
+  const after = await readFile(p, 'utf8')
+  const all = pageCards(after).flatMap((c) => cardReviewsOf(c.line).map((r) => r.at))
+  expect(pageCards(after).map((c) => cardIdOf(c.line))).toEqual(['WIKI-9', 'WIKI-10'])
+  // The Nov 7 review exists only on the lower card. It must still be in the file.
+  expect(all).toContain('2026-11-07T09:00Z')
 })

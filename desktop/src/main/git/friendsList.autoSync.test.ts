@@ -56,7 +56,7 @@ const remoteFiles = async (bin: string, remote: BareRemote) => (await git(bin, r
 const copies = (root: string) => (existsSync(path.join(root, '.yaseendocs')) ? readdirSync(path.join(root, '.yaseendocs')).filter((n) => n !== 'friends.json') : [])
 const noConflictCopy = (files: string[]) => files.filter((f) => /conflict/i.test(f))
 
-describe('check6: AutoSync (Docs) and the friends list', { timeout: REAL_GIT_TIMEOUT_MS * 2 }, () => {
+describe('AutoSync (Docs) and the friends list', { timeout: REAL_GIT_TIMEOUT_MS * 2 }, () => {
   it('A: a hand edit of the whole file (reformatted) on the Mac + the phone writes: GitHub`s bytes, no copy, the page syncs', async () => {
     const { bin, mac, remote, phoneWrites } = await setup()
     await mac.write(LIST_PATH, JSON.stringify(JSON.parse(list(12, 1)), null, 4))

@@ -48,7 +48,7 @@ function spoken(el: Element): string {
   return out.join('').replace(/\s+/g, ' ').trim()
 }
 
-describe('checker round 2: the 400 ms guard (YAZ-5226)', () => {
+describe('the 400 ms guard (YAZ-5226)', () => {
   it('G1: Undo within the guard brings the answered card back; after 1 s the card and the buttons still work', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(3)) })
     await raw(h, 'Remembered') // DC-1 answered, DC-2 shows; the guard runs
@@ -132,7 +132,7 @@ describe('checker round 2: the 400 ms guard (YAZ-5226)', () => {
   })
 })
 
-describe('checker round 2: the stuck guard, ways out', () => {
+describe('the stuck guard, ways out', () => {
   it('G6: after the fast Undo, Up next and a filter change leave the card free (no stuck guard)', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(3)) })
     await raw(h, 'Remembered')
@@ -152,7 +152,7 @@ describe('checker round 2: the stuck guard, ways out', () => {
   })
 })
 
-describe('checker round 2: VoiceOver (YAZ-5229)', () => {
+describe('VoiceOver (YAZ-5229)', () => {
   it('V1: three hidden words: the order of reading; nothing hidden is exposed before it shows', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Name three: {{alpha}}, {{beta}} and {{gamma}}.', `VO-3, ${OLD}`)) })
     const box = h.host.querySelector('.review__card')!

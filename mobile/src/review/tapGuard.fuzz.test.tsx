@@ -164,7 +164,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('checker round 3: the tap guard, 2,000 random orders (fake clock)', () => {
+describe('the tap guard, 2,000 random orders (fake clock)', () => {
   it('F1: the events the screen can give: never stuck, every accepted tap answers, no tap answers an unseen card', async () => {
     const keyRef = { k: 0 }
     const stuck: string[] = []

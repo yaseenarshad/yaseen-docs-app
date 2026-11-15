@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { GithubError, githubClient } from '../github/client'
+import { GithubError, githubClient } from './client'
 
 // Checker round 2 of YAZ-5073, on the fix of YAZ-5184: a slow but live UPLOAD (a commit of a big page on a slow
 // signal). A real fetch posts 4 MiB to a local server that reads the body slowly but steadily (64 KiB each 40 ms,
@@ -28,7 +28,7 @@ beforeAll(async () => {
 })
 afterAll(() => new Promise<void>((r) => server.close(() => r())))
 
-describe('checker round 2 (YAZ-5184 attack): a slow but live upload', () => {
+describe('a slow but live upload (YAZ-5184)', () => {
   it('3B-G: an upload that keeps sending bytes is not cut by the silence limit (scaled: 300 ms limit, a 4 MiB body)', async () => {
     const client = githubClient('t0ken', { fetch: (url, init) => globalThis.fetch(url.replace('https://api.github.com', `http://127.0.0.1:${port}`), init), timeoutMs: 300 })
     const started = Date.now()

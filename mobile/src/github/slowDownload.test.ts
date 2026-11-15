@@ -1,6 +1,6 @@
 import { createServer, type Server } from 'node:http'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { GithubError, githubClient } from '../github/client'
+import { GithubError, githubClient } from './client'
 
 // Checker probe for YAZ-5173 (round 2): the time limit is on the WHOLE request, not on silence. A real fetch against a
 // local server that sends a body slowly but steadily (a big file on a bad signal). The time limit is scaled down
@@ -27,7 +27,7 @@ beforeAll(async () => {
 })
 afterAll(() => new Promise<void>((r) => server.close(() => r())))
 
-describe('checker YAZ-5072 round 2: a slow but live download', () => {
+describe('a slow but live download (YAZ-5173)', () => {
   it('3B-F: a download that keeps getting bytes is not cut by the time limit (scaled: 300 ms limit, 1 s body)', async () => {
     const client = githubClient('t0ken', { fetch: (url, init) => globalThis.fetch(url.replace('https://api.github.com', `http://127.0.0.1:${port}`), init), timeoutMs: 300 })
     const started = Date.now()

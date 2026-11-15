@@ -85,7 +85,7 @@ function slowAdd(x: S, ms: number) {
   return () => void ((x.t.answers as { add: unknown }).add = add)
 }
 
-describe('checker round 3: the guard, cell by cell, on the screen', () => {
+describe('the tap guard, cell by cell, on the screen', () => {
   it('C1 answering: a tap on the card and on each answer button is dropped while the save runs; then ready', async () => {
     s = await screen({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...cards(3)) })
     slowAdd(s, 300)

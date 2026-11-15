@@ -9,7 +9,7 @@ import { lostRows as dotLostRows, waitingCount } from '../status/dot'
 import { lostRows as tabLostRows } from './ReviewView'
 import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
-// Checker probes for YAZ-5078 (4B). Each `4B-x` test names a bug; the `probe:` tests check the facts their names state.
+// Checker probes for YAZ-5078 (4B). Each `4B-x` test names a bug; the other tests check the facts their names state.
 
 let h: ReviewHarness | undefined
 let app: Harness | undefined
@@ -29,7 +29,7 @@ const OLD = '2026-10-04T09:00Z good'
 const dueCards = (n: number, words = 1) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n${Array.from({ length: words }, (_, w) => `{{w${i + 1}.${w + 1}}}`).join(' ')}`, `DC-${i + 1}, ${OLD}`))
 const ids = (hh: ReviewHarness) => hh.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 
-describe('4B checker: the screen', () => {
+describe('the Review screen: Open page and Back, double taps, Undo, lost answers, filters, links', () => {
   it('4B-A: Open page, then Back, comes back to the SAME card in the same state (place, shown words, Undo)', async () => {
     const t = await answersSetup({ files: { '.yaseendocs/review.json': '{}', 'p.md': page('Deck', 'A long page.', ...dueCards(4, 3)) } })
     await saveVaultList(t.store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 0 }], open: VAULT })
@@ -101,7 +101,7 @@ describe('4B checker: the screen', () => {
     expect(ids(h)).toHaveLength(1)
   })
 
-  it('probe: Undo two times in a row: the line goes after one Undo (as the mockup)', async () => {
+  it('Undo two times in a row: the line goes after one Undo (as the mockup)', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(3)) })
     await h.click('Remembered')
     await h.click('Forgot')
@@ -110,7 +110,7 @@ describe('4B checker: the screen', () => {
     expect(ids(h)).toEqual(['DC-1'])
   })
 
-  it('probe: Undo after the app went to the background (the send ran): the waiting count goes 0 → 1, by group', async () => {
+  it('Undo after the app went to the background (the send ran): the waiting count goes 0 → 1, by group', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('M?\n---\n{{m}}', `MK-1, next, ${OLD}`), ...dueCards(2)) })
     await h.click('Remembered')
     const w1 = waitingCount(h.answers.waiting())
@@ -142,7 +142,7 @@ describe('4B checker: the screen', () => {
     expect(tab).toBe(dot)
   })
 
-  it('probe: the lost line words vs the dot sheet words for one action of each kind', async () => {
+  it('the lost line words vs the dot sheet words for one action of each kind', async () => {
     const { lostAction } = await import('./words')
     const { sanitizeReviewSettings } = await import('@shared/reviews')
     const s4 = sanitizeReviewSettings({ buttons: 4 })
@@ -158,7 +158,7 @@ describe('4B checker: the screen', () => {
     }
   })
 
-  it('probe: a filter with no cards, and a filter change while a card is half shown', async () => {
+  it('a filter with no cards, and a filter change while a card is half shown', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(2, 3)) })
     await h.tap()
     await h.click(/Choose what to review/)
@@ -173,7 +173,7 @@ describe('4B checker: the screen', () => {
     expect(h.host.querySelectorAll('.card__blank')).toHaveLength(3)
   })
 
-  it('probe: Add more never adds an answered card again; with 0 left there is no button', async () => {
+  it('Add more never adds an answered card again; with 0 left there is no button', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 1}', 'p.md': page('P', ...Array.from({ length: 3 }, (_, i) => cardBlock(`N${i}?\n---\n{{n}}`, `NN-${i + 1}`))) })
     const seen: string[] = []
     for (let i = 0; i < 12; i++) {
@@ -194,13 +194,13 @@ describe('4B checker: the screen', () => {
     expect(h.text()).toContain('Inbox complete')
   })
 
-  it('probe: the empty vault, and the last card', async () => {
+  it('the empty vault, and the last card', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', 'No cards.') })
     expect(h.host.querySelector('.review__card')).toBeNull()
     expect(h.text()).toContain('Nothing else is due today.')
   })
 
-  it('probe: a tap on a link inside the card does not show the next hidden word; a tap on a pill opens it', async () => {
+  it('a tap on a link inside the card does not show the next hidden word; a tap on a pill opens it', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('See [web](https://example.com) and [[Other]]?\n---\n{{one}} {{two}}', `LK-1, ${OLD}`)), 'Other.md': page('Other', 'x') })
     const before = h.cardText()
     const a = h.host.querySelector<HTMLElement>('.review__card a[href]')
