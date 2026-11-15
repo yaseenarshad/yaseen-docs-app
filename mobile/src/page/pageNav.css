@@ -106,10 +106,8 @@
 }
 
 /* Dark: the accent on its soft fill is under 4.5:1; the text takes the page's colour. */
-@media (prefers-color-scheme: dark) {
-  .page-id__pill {
-    color: var(--fg);
-  }
+:where([data-scheme='dark']) .page-id__pill {
+  color: var(--fg);
 }
 
 /* YAZ-5475: the kind glyph before a title, very small; the Mac's glyph (`styles.css`) scaled down. */

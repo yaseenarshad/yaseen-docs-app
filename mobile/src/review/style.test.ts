@@ -52,10 +52,10 @@ describe('the Review tab styles', () => {
     const phone = readFileSync(new URL('../styles.css', import.meta.url), 'utf8')
     const light = tokens(blockAfter(css, ':root {'))['--review-warn-text']
     const phoneTokens = tokens(blockAfter(phone, ':root {'))
-    const phoneDark = tokens(blockAfter(phone, '@media (prefers-color-scheme: dark)'))
+    const phoneDark = tokens(blockAfter(phone, ":root:where([data-scheme='dark'])"))
     expect(ratio(light, phoneTokens['--bg'])).toBeGreaterThanOrEqual(4.5)
     expect(ratio(light, phoneTokens['--bg-side'])).toBeGreaterThanOrEqual(4.5)
-    expect(tokens(blockAfter(css, '@media (prefers-color-scheme: dark)'))['--review-warn-text']).toBe('var(--warn)')
+    expect(tokens(blockAfter(css, ":root:where([data-scheme='dark'])"))['--review-warn-text']).toBe('var(--warn)')
     expect(ratio(phoneDark['--warn'], phoneDark['--bg'])).toBeGreaterThanOrEqual(4.5)
     expect(css).toMatch(/\.review__lost-title \{[^}]*color: var\(--review-warn-text\);/)
   })
@@ -69,7 +69,7 @@ describe('the Review tab styles', () => {
 
   it("the card styles' tokens have the Mac's values, light and dark", () => {
     const light = tokens(blockAfter(css, ':root {'))
-    const dark = tokens(blockAfter(css, '@media (prefers-color-scheme: dark)'))
+    const dark = tokens(blockAfter(css, ":root:where([data-scheme='dark'])"))
     const macLight = tokens(blockAfter(mac, ':root {'))
     const macDark = tokens(blockAfter(mac, "[data-theme='dark'] {"))
     for (const name of ['--bg-hover', '--next-hidden', '--mark-bg']) expect([name, light[name]]).toEqual([name, macLight[name]])

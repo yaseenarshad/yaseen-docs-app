@@ -1,3 +1,4 @@
+import { startAppearance } from '../settings/appearance'
 import { landingCodeFrom, landingCopy, type LandingKind } from './friendLink'
 import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from './homeScreen'
 
@@ -31,6 +32,9 @@ const WORDS: Record<LandingKind, { title: string; lead: string; label: string; m
     paste: "Paste a friend's link",
   },
 }
+
+// YAZ-5565: the app's stylesheet hangs dark on `data-scheme`: this page takes the same choice.
+startAppearance()
 
 const landing = landingCodeFrom(location.pathname, location.hash)
 const words = WORDS[landing.kind]

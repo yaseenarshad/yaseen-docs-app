@@ -23,19 +23,17 @@
   --table-fill-solid-grey: rgb(150, 150, 150);
   --table-fill-solid-brown: rgb(170, 120, 70);
 }
-@media (prefers-color-scheme: dark) {
-  .reader {
-    --table-text-red: #ff7b72;
-    --table-text-orange: #f0a35e;
-    --table-text-yellow: #e3c04a;
-    --table-text-green: #6fd47f;
-    --table-text-teal: #4fd1c5;
-    --table-text-blue: #79b8ff;
-    --table-text-purple: #c39bff;
-    --table-text-pink: #ff8fc0;
-    --table-text-grey: #a0a0a0;
-    --table-text-brown: #c99a6e;
-  }
+:where([data-scheme='dark']) .reader {
+  --table-text-red: #ff7b72;
+  --table-text-orange: #f0a35e;
+  --table-text-yellow: #e3c04a;
+  --table-text-green: #6fd47f;
+  --table-text-teal: #4fd1c5;
+  --table-text-blue: #79b8ff;
+  --table-text-purple: #c39bff;
+  --table-text-pink: #ff8fc0;
+  --table-text-grey: #a0a0a0;
+  --table-text-brown: #c99a6e;
 }
 
 /* A page link with the format's ends (`{id}`, `{folder}`, `{mark}` …): the `<a>` holds the Mac's three pieces, the head,

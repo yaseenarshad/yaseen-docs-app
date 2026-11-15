@@ -8,6 +8,7 @@ import { fakeGithub } from '../github/testing'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { isReaderFixture, mountReaderFixture } from './readerFixtures'
 import { InstallGate } from '../screens/InstallGate'
+import { setAppearance } from '../settings/appearance'
 
 /**
  * The screen fixtures: each screen of 4A with made-up data, for the screenshots (`#fixture=settings`). Only a
@@ -138,6 +139,11 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     case 'token-ended':
       sync.set({ status: 'attention', problem: 'UNAUTHORIZED' })
       break
+    case 'settings-dark':
+    case 'settings-light':
+      // YAZ-5565: Settings › Appearance chosen against the iPhone's own setting.
+      setAppearance(name === 'settings-dark' ? 'dark' : 'light')
+    // falls through
     case 'settings':
     case 'erase':
       press('Settings')

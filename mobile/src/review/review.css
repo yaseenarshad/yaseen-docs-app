@@ -9,12 +9,10 @@
   --mark-bg: rgba(255, 213, 0, 0.4);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --review-warn-text: var(--warn);
-    --bg-hover: #333336;
-    --next-hidden: #5ab4ea;
-  }
+:root:where([data-scheme='dark']) {
+  --review-warn-text: var(--warn);
+  --bg-hover: #333336;
+  --next-hidden: #5ab4ea;
 }
 
 /* `.review`, `.review--waiting`, `.review--off`, `.review-slot` and `.review-host` are in `screens/reviewSlot.css`: the
@@ -30,12 +28,10 @@
   --review-hide-on: #e7e8ff;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --review-ok-bg: #1d3527;
-    --review-bad-bg: #3a2224;
-    --review-hide-on: #34365c;
-  }
+:root:where([data-scheme='dark']) {
+  --review-ok-bg: #1d3527;
+  --review-bad-bg: #3a2224;
+  --review-hide-on: #34365c;
 }
 
 .review--mochi {

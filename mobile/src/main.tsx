@@ -1,3 +1,4 @@
+import { startAppearance } from './settings/appearance'
 import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { onlyLocalMedia } from '@client/editor/card/cardSafety'
@@ -12,6 +13,9 @@ import { browserFacts } from './pwa/homeScreen'
 import { asInstalled, gateOf } from './pwa/installGate'
 import { InstallGate } from './screens/InstallGate'
 import './styles.css'
+
+// YAZ-5565: light or dark as Settings › Appearance says, on the page before anything draws (no flash).
+startAppearance()
 
 // YAZ-5209: every card the phone draws (the reader, Review) loads nothing from another host (`localOnly.ts`).
 onlyLocalMedia()

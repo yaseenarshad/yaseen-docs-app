@@ -60,13 +60,11 @@
   font-size: var(--text-size, 16px);
   line-height: var(--page-line);
 }
-@media (prefers-color-scheme: dark) {
-  .reader__body {
-    --page-code-fg: #ff6666;
-    --page-code-bg: #303030;
-    --page-quote-bar: #3a3a3a;
-    --page-rule: color-mix(in srgb, #757575 30%, transparent);
-  }
+:where([data-scheme='dark']) .reader__body {
+  --page-code-fg: #ff6666;
+  --page-code-bg: #303030;
+  --page-quote-bar: #3a3a3a;
+  --page-rule: color-mix(in srgb, #757575 30%, transparent);
 }
 
 /* The blocks: no margins of their own but the Mac's; a paragraph's room is its padding (Crepe's), so it never
@@ -366,10 +364,8 @@
   background: #fff3a3;
   color: inherit;
 }
-@media (prefers-color-scheme: dark) {
-  .reader__body mark {
-    background: #6b5d1c;
-  }
+:where([data-scheme='dark']) .reader__body mark {
+  background: #6b5d1c;
 }
 
 /* Tables (YAZ-5471): `tables.css`, with `tableLayout.ts`. Here only the room around the box (YAZ-5458): a code
@@ -413,10 +409,8 @@
 .reader {
   --card-title-band: #ededf0;
 }
-@media (prefers-color-scheme: dark) {
-  .reader {
-    --card-title-band: #2d2d30;
-  }
+:where([data-scheme='dark']) .reader {
+  --card-title-band: #2d2d30;
 }
 .reader .card .card__head {
   min-height: 32px;

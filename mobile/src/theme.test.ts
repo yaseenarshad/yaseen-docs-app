@@ -15,7 +15,10 @@ const lightBlock = (css: string) => /:root \{([\s\S]*?)\n\}/.exec(css)?.[1] ?? '
 describe('the phone theme', () => {
   it("the Mac's font; dark mode follows the iPhone's setting (round 10, item 6)", () => {
     expect(token(phone, '--font')).toBe(token(mac, '--font'))
-    expect(phone).toMatch(/@media \(prefers-color-scheme: dark\) \{\s*:root \{[\s\S]*?color-scheme: dark;/)
+    // YAZ-5565: or as Settings › Appearance says: the dark tokens hang on `data-scheme` (`settings/appearance.ts`).
+    expect(phone).toMatch(/:root:where\(\[data-scheme='dark'\]\) \{[^}]*color-scheme: dark;/)
+    // No dark rule is left on the media query: it would ignore a choice of Light or Dark.
+    expect(phone).not.toContain('prefers-color-scheme')
   })
 
   it('home-screen basics: 16 px fields (no zoom on focus), 44 pt taps, the safe areas', () => {

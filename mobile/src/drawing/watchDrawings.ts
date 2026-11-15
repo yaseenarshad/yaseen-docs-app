@@ -5,6 +5,7 @@ import { firstTimeWords, isPlainDiagram, onMacWords } from './drawingBox'
 import type { DiagramDrawn, DiagramInput, DiagramFigure } from './diagram/drawDiagram'
 import type { DrawInput, Drawn } from './engine/drawPicture'
 import { pinchZoom } from './pinchZoom'
+import { schemeWatch } from '../settings/appearance'
 
 /**
  * THE DRAWINGS OF AN OPEN PAGE (YAZ-5440). Each `drawingBox` of the page gets its picture when it comes near the screen:
@@ -12,7 +13,7 @@ import { pinchZoom } from './pinchZoom'
  *  2. the file's bytes: the phone's store first, then GitHub through the media layer (`read`), as a picture's bytes;
  *  3. the picture is drawn (the Mac's own code) and shown as an `<img>` of an SVG `blob:` URL, which fits the page's
  *     width; a tap opens it full screen, with pinch zoom.
- * Light and dark follow the iPhone: a change draws the shown pictures again.
+ * Light and dark follow Settings › Appearance (System: the iPhone): a change draws the shown pictures again.
  *
  * NOTHING IS SAVED (Yaseen: "the pictures never get saved, so that way they just clean up and the phone app continues
  * to stay light"). The picture lives in memory only, as one `blob:` URL per box, revoked when the box leaves the page,
@@ -91,7 +92,8 @@ function picture(url: string, alt: string, width: number, height: number): HTMLI
   return img
 }
 
-const defaultDark = () => (typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : undefined)
+// YAZ-5565: the app's theme (Settings › Appearance; System follows the iPhone), not the iPhone's alone.
+const defaultDark = () => schemeWatch
 
 export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatch {
   let stopped = false

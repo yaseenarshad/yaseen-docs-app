@@ -1237,6 +1237,44 @@ if (process.env.LAYOUT_GATE !== 'no') {
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
+// YAZ-5565: Settings › Appearance, light and dark, at 375 px. System (the default) follows the iPhone; Dark and Light,
+// chosen, win over it: the page's background, the bar colour (`theme-color`), the radio checked. The choice is saved
+// in this profile's localStorage: each forced case removes it after.
+if (process.env.LAYOUT_APPEARANCE !== 'no') {
+  const LOOK = `(() => {
+    const group = document.querySelector('[role=radiogroup][aria-label=Theme]')
+    group?.scrollIntoView({ block: 'center' })
+    const r = (el) => el.getBoundingClientRect()
+    const rows = group ? [...group.querySelectorAll('label')] : []
+    return {
+      rows: rows.map((l) => l.textContent),
+      checked: rows.find((l) => l.querySelector('input').checked)?.textContent ?? null,
+      taps: rows.every((l) => r(l).height >= 44 && r(l).right <= innerWidth + 0.5),
+      bg: getComputedStyle(document.body).backgroundColor,
+      scheme: document.documentElement.dataset.scheme,
+      bars: [...document.querySelectorAll('meta[name=theme-color]')].map((m) => m.content),
+      wide: document.scrollingElement.scrollWidth > innerWidth + 1,
+    }
+  })()`
+  const BG = { light: 'rgb(255, 255, 255)', dark: 'rgb(30, 30, 30)' }
+  const BAR = { light: '#ffffff', dark: '#1e1e1e' }
+  for (const system of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: system }] }, page)
+    for (const [name, look, chosen] of [['settings', system, 'System'], [`settings-${system === 'light' ? 'dark' : 'light'}`, system === 'light' ? 'dark' : 'light', system === 'light' ? 'Dark' : 'Light']] as const) {
+      const file = await open(name, 375, 667)
+      await wait(150)
+      const m = await evaluate(LOOK)
+      const shot = file.replace('.png', `-system-${system}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      await evaluate(`localStorage.removeItem('notecard.appearance')`)
+      const bars = chosen === 'System' ? [BAR.light, BAR.dark] : [BAR[look], BAR[look]]
+      const ok = m.rows.join() === 'System,Light,Dark' && m.checked === chosen && m.taps && m.bg === BG[look] && m.scheme === look && m.bars.join() === bars.join() && !m.wide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}, the iPhone ${system}, ${chosen} checked: rows ${m.rows.join(' / ')}; checked ${m.checked}; taps ${m.taps ? '44+' : 'SMALL'}; page ${m.scheme} ${m.bg}; bars ${m.bars.join(' ')}${m.wide ? '; SCROLLS SIDEWAYS' : ''}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
 chrome.kill()
 server.close()
 console.log(failed === 0 ? `\nAll layout checks pass. Pictures: ${out}` : `\n${failed} layout checks FAILED. Pictures: ${out}`)

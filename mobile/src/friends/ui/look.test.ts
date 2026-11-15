@@ -28,7 +28,7 @@ const contrast = (a: string, b: string) => {
   return (hi + 0.05) / (lo + 0.05)
 }
 const light = { ...tokens(block(app, ':root {')), ...tokens(block(css, ':root {')) }
-const dark = { ...light, ...tokens(block(app, '@media (prefers-color-scheme: dark)')), ...tokens(block(css, '@media (prefers-color-scheme: dark)')) }
+const dark = { ...light, ...tokens(block(app, ":root:where([data-scheme='dark'])")), ...tokens(block(css, ":root:where([data-scheme='dark'])")) }
 const resolve = (theme: Record<string, string>, value: string): string => (value.startsWith('var(') ? resolve(theme, theme[value.slice(4, -1)]) : value)
 /** The colour a rule gives its text. */
 const colourOf = (selector: string) => /color:\s*(var\([^)]+\)|#[0-9a-f]{6})/i.exec(block(css, `${selector} {`))![1]
