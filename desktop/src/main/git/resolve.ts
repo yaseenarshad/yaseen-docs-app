@@ -3,9 +3,10 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
-import { mergePageComments, pageRest } from '@shared/commentMerge'
+import { mergePageComments, pageRest, type PageMerge } from '@shared/commentMerge'
 import { uniteCardLines } from '@shared/cardMerge'
 import { mergeConfigFile } from '@shared/configMerge'
+import { mergeLinesApart } from '@shared/lineMerge'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { titleOf } from '@shared/pageName'
 import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
@@ -34,8 +35,8 @@ import { FRIENDS_LIST } from './friendsListRule'
  *  - the vault's `shares.json`, `favorites.json` (and `favorites-workspace.json`, YAZ-4450) and `icons.json` (YAZ-3440 D8) merge per entry;
  *  - a board one side deleted and the other edited keeps the edit;
  *  - a PAGE (YAZ-4615 D4, D9 — `shared/commentMerge.ts`): its comments merge by id, and a clashing
- *    number goes to the local comment; when both sides changed the REST of the page (the same lines,
- *    or git would have merged them), the remote's stays at the path with every comment merged into
+ *    number goes to the local comment; when both sides changed the SAME lines of the REST of the page (edits on
+ *    different lines merge, next to each other too: git's merge, then `shared/lineMerge.ts`, YAZ-5515), the remote's stays at the path with every comment merged into
  *    it, and ours goes beside it as `<name> (conflict, YYYY-MM-DD).md`, with no comments — so one
  *    page never stops the whole vault's sync again. (This reverses YAZ-3028 D12's "a page never gets
  *    a conflicted copy". A page still never gets a `<<<<<<<` marker.) A `.folder.md` is a page here.
@@ -270,13 +271,25 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
     // YAZ-4615 D4, D9: comments by id; the rest merged line by line, kept both ways only when the
     // same lines changed on both sides.
     const b = base?.toString('utf8') ?? null
-    // YAZ-5089 (decision 5 on YAZ-5055): a card answered or marked on both sides is no clash. Each side takes the union
-    // of the card's reviews and the three-way result of its marks first (`shared/cardMerge.ts`); a card file too.
-    const [t, m] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
-    let merged = mergePageComments(b, t, m)
-    if (merged?.copy !== undefined && b !== null) {
-      const lined = await lineMerge(bin, root, pageRest(b), pageRest(t), pageRest(m))
-      if (lined !== null) merged = mergePageComments(b, t, m, () => lined)
+    let merged: PageMerge | null
+    try {
+      // YAZ-5089 (decision 5 on YAZ-5055): a card answered or marked on both sides is no clash. Each side takes the union
+      // of the card's reviews and the three-way result of its marks first (`shared/cardMerge.ts`); a card file too.
+      const [t, m] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
+      merged = mergePageComments(b, t, m)
+      if (merged?.copy !== undefined && b !== null) {
+        const [restB, restT, restM] = [pageRest(b), pageRest(t), pageRest(m)]
+        // YAZ-5515 X2: git calls edits on NEIGHBOURING lines a conflict, so a phone tick, answer or comment next to a
+        // line the Mac changed made a copy. After git's merge, edits on different lines merge (`mergeLinesApart`);
+        // only the same line changed two ways is kept both ways.
+        const lined = (await lineMerge(bin, root, restB, restT, restM)) ?? mergeLinesApart(restB, restT, restM)
+        if (lined !== null) merged = mergePageComments(b, t, m, () => lined)
+      }
+    } catch (err) {
+      // YAZ-5512 X1: a throw here stopped the pass, and every pass after it on the same page, so the vault never
+      // pushed again. Whatever this page's merge cannot do keeps both whole pages (D9): nothing lost, sync goes on.
+      console.warn(`[git-sync] ${rel}: the page merge failed (${err instanceof Error ? err.message : String(err)}); both versions kept`)
+      merged = null
     }
     // Comments that are not ours to read (a value of the user's own, a block that does not parse):
     // the whole page is kept both ways, as a board is (D9 — one page never stops the vault's sync).

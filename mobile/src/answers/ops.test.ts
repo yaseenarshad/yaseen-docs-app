@@ -200,3 +200,12 @@ describe('YAZ-5409: `next` with a place', () => {
     expect(applyOps(before, [{ kind: 'next', id: 'NC-2', on: true, at: 3 }]).content).toBe(before)
   })
 })
+
+describe('YAZ-5512 S1: an emptied properties block (`---\n---`, the Mac leaves it when the last property goes)', () => {
+  it('a card below a later `---` line (a card back) is still found and answered', () => {
+    const before = '---\n---\n# A\n\n```card\nQ\n---\nA\n```\n<!-- card: NC-1 -->\n'
+    const out = applyOps(before, [{ kind: 'review', id: 'NC-1', review: R1 }])
+    expect(out.lost).toEqual([])
+    expect(out.content).toBe(before.replace('NC-1 -->', 'NC-1, 2026-11-14T06:01Z good 9s -->'))
+  })
+})

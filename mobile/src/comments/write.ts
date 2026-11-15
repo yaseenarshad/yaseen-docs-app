@@ -70,7 +70,14 @@ export function applyComment(content: string, comment: NewComment): ApplyResult 
   return spliced === null ? { kind: 'refused', why: 'layout' } : { kind: 'added', content: spliced }
 }
 
-const OPEN_FENCE_RE = /^---[ \t]*\r?\n/
+/** The first fence line; a byte order mark before it is the block's (YAZ-5512 C1, as `splitFrontmatter` reads it). */
+const OPEN_FENCE_RE = /^\uFEFF?---[ \t]*\r?\n/
+
+/** The body as the page reads without a block: a BOM is no body text (it goes in front of a new block, YAZ-5512 C1). */
+const bodyOf = (text: string): string => {
+  const { frontmatter, body } = splitFrontmatter(text)
+  return frontmatter === '' ? body.replace(/^\uFEFF/, '') : body
+}
 
 /** Where the `comments` entry sits in a block's interior: [start, end) from its key to its value's end; null: no such key. */
 function commentsEntry(interior: string): { start: number; end: number } | null | 'unsure' {
@@ -105,11 +112,11 @@ const eolOf = (text: string): string => (text.includes('\r\n') ? '\r\n' : '\n')
 export function spliceComments(before: string, mac: string): string | null {
   const b = splitFrontmatter(before)
   const m = splitFrontmatter(mac)
-  if (m.body !== b.body || m.frontmatter === '') return null
+  if (m.body !== bodyOf(before) || m.frontmatter === '') return null
   let out: string
   if (b.frontmatter === '') {
-    // A new block, as the Mac writes it, in the page's own line ends.
-    out = eolOf(b.body) === '\r\n' ? `${m.frontmatter.replace(/\r?\n/g, '\r\n')}${b.body}` : mac
+    // A new block, as the Mac writes it (after a BOM), in the page's own line ends.
+    out = eolOf(b.body) === '\r\n' ? `${m.frontmatter.replace(/\r?\n/g, '\r\n')}${m.body}` : mac
   } else {
     const macBlock = blockOf(m.frontmatter)
     const macAt = commentsEntry(macBlock.interior)
@@ -133,7 +140,7 @@ export function spliceComments(before: string, mac: string): string | null {
 
 /** The check: `out` reads back with the Mac's comment list, and with the page's own body and other properties. */
 function sameButComments(before: string, out: string, mac: string): boolean {
-  if (splitFrontmatter(out).body !== splitFrontmatter(before).body) return false
+  if (bodyOf(out) !== bodyOf(before)) return false
   if (commentsShape(out) !== 'list') return false
   if (JSON.stringify(rawComments(out)) !== JSON.stringify(rawComments(mac))) return false
   const rest = (text: string) => {

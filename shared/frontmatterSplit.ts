@@ -8,7 +8,8 @@
  * A frontmatter block is: file starts with `---\n` (or `---\r\n`), followed by
  * any lines (possibly none — `---\n---\n` is the empty block a delete of the
  * last key leaves behind, GRO-2216), terminated by a line that is exactly
- * `---` (or `...`).
+ * `---` (or `...`). A byte order mark before the first fence belongs to the block (YAZ-5512 C1): the block is read,
+ * a writer keeps the BOM first, and the body is the same as on a page without one.
  */
 export interface SplitMarkdown {
   /** The raw frontmatter block including both `---` fences and trailing newline; '' if none. */
@@ -17,7 +18,12 @@ export interface SplitMarkdown {
   body: string
 }
 
-const FM_RE = /^(---\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$))/
+/**
+ * The EMPTY block is tried FIRST (YAZ-5512 S1). With the "some lines" form first, `---\n---\n` followed later by any
+ * `---` line (a thematic break, a card's back) was read as one block all the way to that later line, so every card
+ * above it vanished, and a comment was refused or (in the Mac's merge) threw.
+ */
+const FM_RE = /^(\uFEFF?---\r?\n(?:(?:---|\.\.\.)[ \t]*(?:\r?\n|$)|[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)))/
 
 export function splitFrontmatter(markdown: string): SplitMarkdown {
   const m = FM_RE.exec(markdown)

@@ -431,3 +431,14 @@ describe('YAZ-4615: resolve, ownership, hand-written entries, the hint', () => {
     expect(withCommentsHint(idPage)).toBe(idPage)
   })
 })
+
+describe('YAZ-5512 C1: a page that starts with a BOM', () => {
+  it('the Mac comment goes into the page own block, the BOM first, and it reads back', () => {
+    const page = '\uFEFF---\ntitle: Plan\n---\n# Plan\n'
+    const out = addComment(page, 'Hi', { id: 'a1b2c3d4', at: '2026-11-14T06:00:00Z', by: 'sam' })
+    expect(out.startsWith('\uFEFF---\ntitle: Plan\ncomments:\n')).toBe(true)
+    expect(out.match(/^\uFEFF?---$/gm)).toHaveLength(2)
+    expect(readComments(out).map((c) => c.id)).toEqual(['a1b2c3d4'])
+    expect(addComment(out, 'Again', { id: 'b1b2c3d4', at: '2026-11-14T06:01:00Z' }).match(/^ {2}- id:/gm)).toHaveLength(2)
+  })
+})

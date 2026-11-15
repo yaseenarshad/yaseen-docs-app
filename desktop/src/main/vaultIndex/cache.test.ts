@@ -307,6 +307,18 @@ describe('index cache: a bad file never throws, only degrades', () => {
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
   })
 
+  it('YAZ-5512 S1: a snapshot of version 19 read an empty block followed later by a `---` line as one block (its cards gone) → version-mismatch, so the page is read again', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(20)
+    await writeFile(file, JSON.stringify({ version: 19, root: '/vault', records: [record('/vault/a.md')] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
+  it('YAZ-5512 C1: a snapshot of version 20 read a page that starts with a BOM as having no properties → version-mismatch, so the page is read again', async () => {
+    expect(CACHE_VERSION).toBeGreaterThanOrEqual(21)
+    await writeFile(file, JSON.stringify({ version: 20, root: '/vault', records: [record('/vault/a.md')] }))
+    expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'version-mismatch' })
+  })
+
   it("another root's payload at this filename → miss (not this vault's cache)", async () => {
     await writeFile(file, JSON.stringify({ version: CACHE_VERSION, root: '/elsewhere', records: [] }))
     expect(await loadIndexCache('/vault')).toEqual({ records: null, status: 'miss' })
@@ -358,7 +370,7 @@ describe('index cache: CACHE_VERSION pin (GRO-2230)', () => {
   ].join('\n')
 
   const FINGERPRINT = {
-    cacheVersion: 19,
+    cacheVersion: 21,
     maxFileBytes: 10 * 1024 * 1024,
     /** Sorted union of the keys a valid record and a frontmatter-error record carry. */
     recordKeys: ['aliases', 'basename', 'cards', 'ctime', 'embeds', 'ext', 'folder', 'frontmatterError', 'id', 'kind', 'links', 'mtime', 'name', 'path', 'properties', 'size', 'tags', 'title'],

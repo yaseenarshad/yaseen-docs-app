@@ -155,3 +155,32 @@ describe('numbering, refusals and the second try', () => {
     expect(applyComment(once, C('a1b2c3d4'))).toEqual({ kind: 'already' })
   })
 })
+
+describe('YAZ-5512 S1: an emptied properties block and a later `---` line', () => {
+  it('the comment goes into the empty block; the body (and its `---` line) stays byte for byte', () => {
+    const before = '---\n---\n# A\n\nIntro\n\n---\n\n```card\nQ\n```\n<!-- card: NC-1 -->\n'
+    const out = added(before, C('a1b2c3d4'))
+    expect(out.endsWith('---\n# A\n\nIntro\n\n---\n\n```card\nQ\n```\n<!-- card: NC-1 -->\n')).toBe(true)
+    expect(readComments(out).map((c) => c.id)).toEqual(['a1b2c3d4'])
+  })
+})
+
+describe('YAZ-5512 C1: a comment on a page with a BOM goes into its own properties block', () => {
+  it('a block behind the BOM: only the `comments` entry is added, the BOM stays first', () => {
+    const page = '\uFEFF---\ntitle: Plan\n---\n# Plan\n'
+    const out = added(page, C('a1b2c3d4', 'Hi'))
+    expect(onlyInserted(page, out)).toMatch(/^comments:\n {2}- id: a1b2c3d4\n/)
+    expect(out.startsWith('\uFEFF---\ntitle: Plan\n')).toBe(true)
+    expect(out.match(/^\uFEFF?---$/gm)).toHaveLength(2)
+    expect(applyComment(out, C('a1b2c3d4', 'Hi'))).toEqual({ kind: 'already' })
+  })
+
+  it('no block (LF and CRLF): the new block goes AFTER the BOM, the body stays byte for byte', () => {
+    for (const body of ['# Plan\n\nText\n', '# Plan\r\n\r\nText\r\n']) {
+      const out = added(`\uFEFF${body}`, C('a1b2c3d4', 'Hi'))
+      expect(out.startsWith('\uFEFF---')).toBe(true)
+      expect(out.endsWith(`---${body.includes('\r') ? '\r\n' : '\n'}${body}`)).toBe(true)
+      expect(readComments(out).map((c) => c.id)).toEqual(['a1b2c3d4'])
+    }
+  })
+})
