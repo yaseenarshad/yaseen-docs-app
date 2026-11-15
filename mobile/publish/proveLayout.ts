@@ -71,6 +71,9 @@ import { freePort } from './freePort'
  *    375 px: in an Explore panel no foot under the body (the body is the box's last part, to its bottom), the section in
  *    the page's scroll (not sticky: it moves when the body scrolls), collapsed with its count, a 44 px tap inside the
  *    screen; a tap opens it in place, its rows inside the screen; the same section on the full page, open, then closed.
+ *  - a folder's table as the vault's folder-pages.json says (`#fixture=folder-table`, `folder-table-look`, YAZ-5549), light
+ *    and dark, at 375 px (in the folder views' part): the row height (Short: the Name cell keeps 44 px; Tall: 68 px),
+ *    the `#` numbers, a subfolder's "N inside".
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
@@ -542,13 +545,26 @@ const FOLDER_CHECK = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const table = document.querySelector('.folder-table table')
   const board = document.querySelector('.folder-board')
-  const narrow = table ? [...table.rows[0].cells].filter((c) => r(c).width < 44).map((c) => c.textContent) : []
+  // YAZ-5549: the \`#\` column of row numbers is narrow by design (the Mac's gutter); every other column is a readable width.
+  const narrow = table ? [...table.rows[0].cells].filter((c) => !c.classList.contains('folder-table__num') && r(c).width < 44).map((c) => c.textContent) : []
+  const numbered = table ? table.querySelector('.folder-table__num') !== null : false
+  // YAZ-5549: the row height (the vault's), each body row's height, the Name cells' least height (YAZ-5532: 44), the numbers, the counts.
+  const look = table ? {
+    rowHeight: Number(table.dataset.rowHeight),
+    rows: [...table.tBodies[0].rows].filter((tr) => !tr.classList.contains('folder-table__group')).map((tr) => Math.round(r(tr).height)),
+    nameMin: Math.min(...[...table.querySelectorAll('td[data-name]')].map((td) => Math.round(r(td).height))),
+    numbers: [...table.querySelectorAll('tbody td.folder-table__num')].map((td) => td.textContent).filter((t) => t !== ''),
+    numbersShown: [...table.querySelectorAll('tbody td.folder-table__num')].filter((td) => td.textContent !== '').every((td) => r(td).width > 0 && r(td).right <= innerWidth),
+    inside: [...table.querySelectorAll('.folder-inside')].map((el) => el.textContent),
+  } : null
   return {
     menu: !!document.querySelector('.hold-menu [role=menu]'),
     page: !!document.querySelector('.folder-page'),
     tabs: document.querySelectorAll('.folder-tabs__tab').length,
     table: !!table,
-    pinned: table ? table.getAttribute('data-pin-rows') === '1' && table.getAttribute('data-pin-cols') === '1' : null,
+    pinned: table ? table.getAttribute('data-pin-rows') === '1' && table.getAttribute('data-pin-cols') === (numbered ? '2' : '1') : null,
+    numbered,
+    look,
     inBox: table ? !!table.closest('.page-table-box') : null,
     narrow,
     board: board ? { columns: board.children.length, scrolls: board.scrollWidth > board.clientWidth + 1 } : null,
@@ -568,7 +584,10 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
   const want: Record<string, (m: any) => boolean> = {
     'folder-hold': (m) => m.menu,
     'folder-page': (m) => m.page && m.tabs === 5 && m.table && m.pinned && m.inBox,
-    'folder-table': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0,
+    // YAZ-5549: no file: Short rows (28 px), numbers on; the Name cell keeps its 44 px, so each row is 44 px.
+    'folder-table': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0 && m.numbered && m.look.rowHeight === 28 && m.look.nameMin >= 44 && m.look.rows.every((h: number) => h >= 44 && h <= 60) && m.look.numbers.join() === '1,2,3,4,5' && m.look.numbersShown && m.look.inside.length === 0,
+    // YAZ-5549: the vault says Tall (68 px) and "Pages inside count": each row 68 px, the subfolder's "1 inside".
+    'folder-table-look': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0 && m.numbered && m.look.rowHeight === 68 && m.look.nameMin >= 68 && m.look.rows.every((h: number) => h >= 68) && m.look.numbers.join() === '1,2,3,4,5' && m.look.numbersShown && m.look.inside.join() === '1 inside',
     'folder-grouped': (m) => m.table && m.pinned && m.narrow.length === 0,
     'folder-board': (m) => m.board !== null && m.board.columns === 3 && m.board.scrolls && m.cards === 5,
     'folder-cards': (m) => m.cards === 5,
@@ -1171,7 +1190,7 @@ if (process.env.LAYOUT_BAND !== 'no') {
           await touch('touchEnd', x, y)
           await wait(500)
         }
-        const other = await evaluate(`(() => { const row = document.querySelector('.folder-table tbody tr[data-row]:nth-child(2)'); const r = row.cells[1].getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), text: row.cells[0].textContent.trim() } })()`)
+        const other = await evaluate(`(() => { const row = document.querySelector('.folder-table tbody tr[data-row]:nth-child(2)'); const r = row.querySelector('td:not([data-name]):not(.folder-table__num)').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), text: row.cells[0].textContent.trim() } })()`)
         await tap(other.x, other.y)
         const afterOther = await evaluate(`({ table: !!document.querySelector('.folder-table table'), band: [...document.querySelectorAll('.folder-table tr[data-band]')].map((r) => r.cells[0].textContent.trim()) })`)
         const nameAt = await evaluate(`(() => { const td = document.querySelector('.folder-table tbody tr[data-row]:nth-child(3) td[data-name]'); const r = td.getBoundingClientRect(); return { x: Math.round(r.left + 20), y: Math.round(r.top + r.height / 2) } })()`)

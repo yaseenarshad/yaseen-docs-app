@@ -150,6 +150,8 @@ const FIXTURES = [
   'folder-cards',
   'folder-calendar',
   'folder-sheet',
+  // YAZ-5549: the table as the vault's folder-pages.json says: Tall rows, the # numbers, a subfolder's "1 inside".
+  'folder-table-look',
   // YAZ-5532: a finger's band on a table row (the frozen cells too), in a page, full screen, and a folder's table.
   'page-table-band',
   'page-table-band-full',

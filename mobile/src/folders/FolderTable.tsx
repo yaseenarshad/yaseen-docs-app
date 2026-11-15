@@ -29,6 +29,13 @@ import { rowTarget, type ViewRun } from './folderModel'
  * the finger and stays on the last row after the lift. A tap on the row's Name opens it (its cell at least 44 px tall);
  * a tap on another cell only moves the band; a long press on a cell's text selects in that cell.
  *
+ * YAZ-5549: the Mac's table look from the vault's folder page defaults (`.yaseendocs/folder-pages.json`, filled into the
+ * view by `withDefaults`; a view's own key first): the row height (Short 28, Medium 44, Tall 68 px, the Mac's
+ * `ROW_HEIGHTS`, each body cell's least height), the `#` column of row numbers (1 up, again from 1 under each group,
+ * the Mac's gutter; none when the view says no numbers: the Mac's slim strip is its drag handle, and the phone does
+ * not drag), and a subfolder row's "N inside" (`ViewRun.inside`). The Name cell stays at least 44 px (YAZ-5532: a
+ * finger's tap): a taller row height wins; Short keeps the Name cell, so its row, at 44 px.
+ *
  * The table is drawn into its host by hand, as the reader draws a page's table: the phone's table layout
  * (`layoutTables`) wraps and measures it, which React must not see.
  */
@@ -68,17 +75,33 @@ const widthOf = (sizes: Record<string, number> | undefined, key: string): string
 /** A column the view clips (`columnWrap: false`); the rest wrap between words, as the phone's tables do. */
 const clips = (wrap: Record<string, boolean> | undefined, key: string): boolean => Object.entries(wrap ?? {}).some(([k, v]) => v === false && canonicalKey(k) === canonicalKey(key))
 
+/** The Mac's row heights (px, `TableView.tsx`'s `ROW_HEIGHTS`): a view's `rowHeight`, Short when it names none. */
+export const ROW_HEIGHTS: Readonly<Record<string, number>> = { short: 28, medium: 44, tall: 68 }
+
 /** A table of the view's rows: its header, its groups and rows, its summaries. `drawn`: each row by its `data-row`. */
 export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[] } {
-  const { view, def, keys, ctx, groups, result } = run
+  const { view, def, keys, ctx, groups, result, inside } = run
   const name = keys.find((k) => canonicalKey(k) === 'file.name')
   // The Name column first, as the Mac's table holds it at the left (its own `order` otherwise).
   const columns = name === undefined ? keys : [name, ...keys.filter((k) => k !== name)]
+  // YAZ-5549: the Mac's `#` column, first, unless the view says no row numbers.
+  const numbered = view.rowNumbers !== false
+  const gutter = numbered ? 1 : 0
   const table = document.createElement('table')
   table.className = 'folder-table__table'
   table.setAttribute('data-freeze-rows', '1')
-  table.setAttribute('data-freeze-cols', String(Math.max(1, Math.min(columns.length, Number(view.frozenColumns) || 1))))
-  table.setAttribute('data-widths', columns.map((k) => widthOf(view.columnSize, k)).join(' '))
+  table.setAttribute('data-freeze-cols', String(gutter + Math.max(1, Math.min(columns.length, Number(view.frozenColumns) || 1))))
+  table.setAttribute('data-widths', [...(numbered ? ['auto'] : []), ...columns.map((k) => widthOf(view.columnSize, k))].join(' '))
+  const rowHeight = ROW_HEIGHTS[view.rowHeight ?? ''] ?? ROW_HEIGHTS.short!
+  table.dataset.rowHeight = String(rowHeight)
+  table.style.setProperty('--folder-row-h', `${rowHeight}px`)
+  /** The `#` cell of a line: its number, or none (a header, a group, the foot). */
+  const numberCell = (tag: 'th' | 'td', text = '') => {
+    const el = document.createElement(tag)
+    el.className = 'folder-table__num'
+    el.textContent = text
+    return el
+  }
   const cellOf = (el: HTMLTableCellElement, key: string) => {
     const align = columnAlignOf(view, key)
     if (align !== null) el.setAttribute('align', align)
@@ -88,6 +111,7 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
     return el
   }
   const head = table.createTHead().insertRow()
+  if (numbered) head.append(numberCell('th', '#'))
   for (const key of columns) {
     const th = cellOf(document.createElement('th'), key)
     th.textContent = propertyLabel(def, key)
@@ -95,6 +119,8 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
   }
   const body = table.createTBody()
   const drawn: Row[] = []
+  /** The Mac's line number: from 1, again from 1 under each group header. */
+  let n = 0
   const addRow = (row: Row) => {
     const tr = body.insertRow()
     tr.dataset.row = String(drawn.length)
@@ -102,11 +128,15 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
     const folder = isFolderRow(row.record)
     if (folder) tr.dataset.folder = ''
     if (row.crossed === true) tr.dataset.crossed = ''
+    if (numbered) tr.append(numberCell('td', String(++n)))
     for (const key of columns) {
       const td = cellOf(document.createElement('td'), key)
       const text = folder && canonicalKey(key) === 'file.name' ? row.record.title : cellText(row, key, ctx)
       td.textContent = text
-      if (canonicalKey(key) === 'file.name') td.dataset.name = ''
+      if (canonicalKey(key) === 'file.name') {
+        td.dataset.name = ''
+        if (folder && inside !== null) td.append(insideCount(inside(row)))
+      }
       tr.append(td)
     }
   }
@@ -117,6 +147,8 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
       const tr = body.insertRow()
       tr.className = 'folder-table__group'
       tr.dataset.level = String(level)
+      if (numbered) tr.append(numberCell('td'))
+      n = 0
       const th = document.createElement('th')
       th.scope = 'rowgroup'
       const label = document.createElement('span')
@@ -137,6 +169,7 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
   const summaries = Object.keys(result.summaries)
   if (summaries.length > 0) {
     const foot = table.createTFoot().insertRow()
+    if (numbered) foot.append(numberCell('td'))
     for (const key of columns) {
       const td = cellOf(document.createElement('td'), key)
       const v = result.summaries[key]
@@ -145,4 +178,12 @@ export function drawTable(run: ViewRun): { table: HTMLTableElement; drawn: Row[]
     }
   }
   return { table, drawn }
+}
+
+/** A subfolder row's "N inside" (the Mac's `view-folder-row__inside`), after its title. */
+export function insideCount(n: number): HTMLElement {
+  const span = document.createElement('span')
+  span.className = 'folder-inside'
+  span.textContent = `${n} inside`
+  return span
 }

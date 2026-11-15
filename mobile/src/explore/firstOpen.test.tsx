@@ -184,12 +184,12 @@ describe('YAZ-5472 Q4: inside that page, links and rows open Explore panels', ()
     expect(sheetStack()).toEqual([])
     // A page's row (FolderTable).
     const pageRow = [...h.host.querySelectorAll<HTMLElement>('.folder-table tbody tr:not([data-folder])')].find((tr) => /Garden shed/.test(tr.textContent ?? ''))!
-    await tap(pageRow.querySelector('td'))
+    await tap(pageRow.querySelector<HTMLElement>('td[data-name]'))
     await waitFor(h, () => sheetStack().length === 1)
     expect(sheetStack()[0].route).toEqual({ kind: 'page', path: 'Projects/Garden shed.md' })
     await act(async () => closeAll())
     // The subfolder's row: its folder page, in a panel.
-    await tap(h.host.querySelector<HTMLElement>('.folder-table tr[data-folder] td'))
+    await tap(h.host.querySelector<HTMLElement>('.folder-table tr[data-folder] td[data-name]'))
     await waitFor(h, () => sheetStack().length === 1)
     expect(sheetStack()[0].route).toEqual({ kind: 'folder', path: 'Projects/Trips' })
     await act(async () => closeAll())
@@ -225,7 +225,7 @@ describe('YAZ-5472 Q4: with "open" (no link-click file), everything opens full s
     await holdOpen(h, 'Projects')
     await waitFor(h, () => h!.host.querySelector('.folder-table tbody tr') !== null)
     expect(sheetStack()).toEqual([])
-    await tap(h.host.querySelector<HTMLElement>('.folder-table tbody tr td'))
+    await tap(h.host.querySelector<HTMLElement>('.folder-table tbody tr td[data-name]'))
     await waitFor(h, () => h!.host.querySelector('.folder-page') === null && h!.host.querySelector('.reader__body') !== null)
     expect(sheetStack()).toEqual([])
   })
