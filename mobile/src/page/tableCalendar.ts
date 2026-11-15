@@ -3,7 +3,7 @@ import { calendarLook, type CalendarLook } from './calendarLook'
 import { gridColumns } from './tableLayout'
 
 /**
- * CALENDAR TABLES ON THE PHONE (YAZ-5493), as the Mac draws them (`client/src/editor/table/tableCalendar.ts`, YAZ-4162):
+ * CALENDAR TABLES ON THE PHONE, as the Mac draws them (`client/src/editor/table/tableCalendar.ts`):
  * a table whose comment says `calendar 15m | 30m | 60m` (`tableFile.ts` puts it on the table as `data-calendar`) is a
  * day of time slots. Column A holds the times (the Mac's `readTime`); the header row is never a slot.
  *
@@ -15,7 +15,7 @@ import { gridColumns } from './tableLayout'
  * column A by `transform` only (never a layout property), or the tint. Each body row before it gets `table-past-row`
  * (grey text, the light shade), except a row the file keeps out (`nodim`, `data-nodim`). With no now row: before the
  * first slot no row is past, after the last every row is. The look is the Mac's defaults (`calendarLook.ts`).
- * With Shade the next time slot on (YAZ-5541, the vault's), the body row right after the now row gets `table-next-row`
+ * With Shade the next time slot on (the vault's), the body row right after the now row gets `table-next-row`
  * (before the first slot, the first slot; none after the last), tinted as the now tint in `--table-next-colour`.
  *
  * THE CLOCK (`watchCalendars`, from `useTables`): one `setTimeout` to the next whole minute, only while the page has a
@@ -23,7 +23,7 @@ import { gridColumns } from './tableLayout'
  * is read from the layout on a tick: the times are read from the text once per table, and a tick writes classes and
  * one custom property. The full-screen view (`tableView.ts`, a copy of the table) is marked with the page's tables.
  *
- * GO TO NOW (the Mac's "Now" chip, YAZ-4164 D12): a small pill with a red dot that sticks to the bottom of the screen
+ * GO TO NOW (the Mac's "Now" chip): a small pill with a red dot that sticks to the bottom of the screen
  * while the table is in view and its now row is not; its arrow points at the row. A tap scrolls the row to the middle
  * (the Mac's `goToNow` on a read-only page). A table with `nonow`, or the Now button setting off, has none. One
  * `IntersectionObserver` says when it shows: no position is read on a scroll.

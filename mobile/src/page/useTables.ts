@@ -5,15 +5,15 @@ import { tableCalendarLook, type PhoneTableLook } from './tableLook'
 import { bandLookOf, DEFAULT_BAND, watchBand, type BandLook } from './rowBand'
 
 /**
- * The tables of an open page or card (YAZ-5471), for as long as it shows:
+ * The tables of an open page or card, for as long as it shows:
  *  - a table wider than its box is marked `data-wide` (its ⤢ shows), measured when it comes, when the screen changes
  *    size (the phone turns) and when its box does;
  *  - its frame says which side has more to see (`data-more-left`, `data-more-right`): the soft shadows;
  *  - a tap on ⤢ opens the table full screen (`tableView.ts`, a chunk of its own, loaded on the first tap);
  *  - a table that comes later (an embedded card, filled after the page) gets its widths and frame (`layoutTables`);
- *  - its frozen rows and columns are measured (YAZ-5480, `measureFreeze`) with it, never on a scroll;
- *  - a calendar table shows now (YAZ-5493, `tableCalendar.ts`): its now line, its past rows dimmed, each minute;
- *  - a finger on a row bands it (YAZ-5532, `rowBand.ts`), in the vault's band look; the full-screen copy too.
+ *  - its frozen rows and columns are measured (`measureFreeze`) with it, never on a scroll;
+ *  - a calendar table shows now (`tableCalendar.ts`): its now line, its past rows dimmed, each minute;
+ *  - a finger on a row bands it (`rowBand.ts`), in the vault's band look; the full-screen copy too.
  * The full-screen view closes with the page.
  */
 export interface TableWatch {
@@ -43,7 +43,7 @@ export const PIN_COLS_MAX = 0.6
 const scrollDriven = (): boolean => typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('animation-timeline: view()')
 
 /**
- * Measures a table's frozen parts (YAZ-5480), when it comes and when it or the screen changes size, never on a scroll:
+ * Measures a table's frozen parts, when it comes and when it or the screen changes size, never on a scroll:
  * each frozen column's offset (`--freeze-x-<n>`, a merged header cell gives each column it spans its own left), the
  * run of the frozen rows (`--pin-run`: the table's height less theirs), and whether they may stay (`PIN_ROWS_MAX`,
  * `PIN_COLS_MAX`). `screen` is the height of the page's scroll box.
@@ -204,7 +204,7 @@ export function useTables(host: RefObject<HTMLElement | null>, look: PhoneTableL
   useEffect(() => {
     const el = host.current
     if (el === null) return
-    // YAZ-5487: the vault's calendar look (`table-look.json`), else the Mac's defaults.
+    // The vault's calendar look (`table-look.json`), else the Mac's defaults.
     const watch = watchTables(el, undefined, { look: tableCalendarLook(look) }, bandLookOf(look))
     return () => watch.stop()
   }, [host, look])

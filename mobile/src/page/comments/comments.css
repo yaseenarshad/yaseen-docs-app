@@ -1,5 +1,5 @@
-/* YAZ-5461: a page's comments on the phone, read only, after the Mac's comment block (`client/src/comments/comments.css`),
-   and (YAZ-5478) the inline box at their end. On the app's tokens (`styles.css`). */
+/* A page's comments on the phone, read only, after the Mac's comment block (`client/src/comments/comments.css`),
+   and the inline box at their end. On the app's tokens (`styles.css`). */
 
 .page-comments {
   clear: both;
@@ -83,7 +83,7 @@
   margin-top: 4px;
 }
 
-/* YAZ-5478: the new comment, inline at the end of the comments (no floating button). Quiet at rest: one line on the
+/* The new comment, inline at the end of the comments (no floating button). Quiet at rest: one line on the
    page's own background; it grows when it takes the focus, the comments still in view above. */
 .page-comments__new {
   margin-top: 14px;
@@ -146,7 +146,7 @@
   opacity: 0.5;
 }
 
-/* YAZ-5478: the comment count near the title: a speech bubble and the open count, quiet, in the column (no float
+/* The comment count near the title: a speech bubble and the open count, quiet, in the column (no float
    over the page). A tap glides to the comments. 44 px tall for the tap; it looks small. */
 .comments-count {
   float: right;
@@ -170,7 +170,7 @@
   flex: none;
 }
 
-/* YAZ-5511: the card view hides its title (`reader__title--same`: the card's band says it), so the count floats beside
+/* The card view hides its title (`reader__title--same`: the card's band says it), so the count floats beside
    nothing, and the card box (`position: relative`, card.css) starts at the same height and paints over the float. In the
    card view the count takes a row of its own above the card, at the right: seen, and a tap's own. */
 .card-view > .comments-count {

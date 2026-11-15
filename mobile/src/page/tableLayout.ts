@@ -1,7 +1,7 @@
 import './tables.css'
 
 /**
- * TABLES THAT READ CLEANLY ON THE PHONE (YAZ-5471). Yaseen: tables looked "horrendous", "the columns are really junky".
+ * TABLES THAT READ CLEANLY ON THE PHONE. Yaseen: tables looked "horrendous", "the columns are really junky".
  * The cause: a cell took the reader's `overflow-wrap: anywhere`, so the browser could squeeze every column to one
  * letter, and did, to fit the screen. Now each column gets a width from what it holds, before the page is laid out:
  *
@@ -17,7 +17,7 @@ import './tables.css'
  *    top while the page scrolls down through the table (`markFrozen`, `tables.css`).
  *
  * A table wider than the screen scrolls in its own box, with a soft shadow at the side with more, and a ⤢ button (top
- * right, YAZ-5479) that opens it full screen (`useTables`, `tableView`). The widths are counted from the text, not measured: no layout runs
+ * right) that opens it full screen (`useTables`, `tableView`). The widths are counted from the text, not measured: no layout runs
  * here, so a long page still draws in quick slices. A table whose columns the Mac sized (`data-sized`) keeps them.
  */
 
@@ -94,7 +94,7 @@ export interface Column {
   max: number
   /** GROW: its narrowest, em. */
   min: number
-  /** GROW: its share of the screen against the other long columns (YAZ-5482: the Mac's width); else its widest. */
+  /** GROW: its share of the screen against the other long columns (the Mac's width); else its widest. */
   weight?: number
 }
 
@@ -102,7 +102,7 @@ const round = (n: number) => Math.round(n * 10) / 10
 
 /** The columns of a table, from its cells (pure: no layout). */
 export function columnsOf(table: HTMLTableElement): Column[] {
-  // Each column's cells by the grid (YAZ-5482: a merged cell sits in its left column); one that spans columns sizes none.
+  // Each column's cells by the grid (a merged cell sits in its left column); one that spans columns sizes none.
   const grid = gridColumns(table)
   const byColumn: HTMLTableCellElement[][] = []
   for (const [cell, c] of grid) if (cell.colSpan <= 1) (byColumn[c] ??= []).push(cell)
@@ -139,7 +139,7 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     }
     const natural = Math.max(body, head) + PAD
     const num = filled > 0 && numbers >= filled * NUM_SHARE
-    // YAZ-5482: the Mac's width for the column, in em on a phone (`macWidths`), or null (`auto`).
+    // The Mac's width for the column, in em on a phone (`macWidths`), or null (`auto`).
     const mac = widths[c] ?? null
     if (natural <= FIT_MAX) {
       // A short column stays as wide as its text, whatever the Mac's width: on a phone its room goes to the long ones
@@ -155,7 +155,7 @@ export function columnsOf(table: HTMLTableElement): Column[] {
       cols.push({ kind: 'grow', num: false, max: round(max), min: round(Math.min(max, min0)) })
       continue
     }
-    // YAZ-5482: a longer column the Mac sized shares the screen in the Mac's proportions (its weight), and the Mac's
+    // A longer column the Mac sized shares the screen in the Mac's proportions (its weight), and the Mac's
     // width is a floor up to GROW_MIN_LONG (a phone has no room for more); never under the column's own min, so its
     // words stay whole, and never past its widest (a comfortable line).
     const min = Math.min(max, Math.max(min0, Math.min(mac, GROW_MIN_LONG)))
@@ -176,7 +176,7 @@ export const MAC_WIDTH_SCALE = 0.7
 const TABLE_PX = 14
 
 /**
- * The Mac's column widths (YAZ-5482: the table comment's `widths`, as `tableFile.ts` puts them on the table,
+ * The Mac's column widths (the table comment's `widths`, as `tableFile.ts` puts them on the table,
  * `data-widths="140 240 auto"`), in em of the phone's table font, scaled by `MAC_WIDTH_SCALE`; `null` for `auto`.
  * Translated, not copied (`columnsOf`): a short column keeps its text's width; a longer one takes the Mac's width as
  * its share of the screen and as a floor up to `GROW_MIN_LONG`; no column is ever under its words (readable).
@@ -188,9 +188,9 @@ export function macWidths(table: HTMLTableElement): Array<number | null> {
 }
 
 /**
- * The columns that stay at the left while the table scrolls sideways (YAZ-5480): the file's frozen columns
+ * The columns that stay at the left while the table scrolls sideways: the file's frozen columns
  * (`data-freeze-cols`, `tableFile.ts`) when it freezes any; else the phone's own rule, the first column of a table of
- * three columns or more (YAZ-5471). The Mac freezes no column by default.
+ * three columns or more. The Mac freezes no column by default.
  */
 export function frozenColumns(table: HTMLTableElement, count: number): number {
   const own = Number(table.getAttribute('data-freeze-cols') ?? 0)
@@ -198,7 +198,7 @@ export function frozenColumns(table: HTMLTableElement, count: number): number {
 }
 
 /**
- * The rows that stay at the top while the page scrolls down through the table (YAZ-5480): the file's
+ * The rows that stay at the top while the page scrolls down through the table: the file's
  * (`data-freeze-rows`, the Mac's rule in `tableFile.ts`: its own `freeze N rows`, else the header row unless the table
  * says `nostickyheader`); a table with no comment, the header row: the Mac's Sticky header row is on by default.
  */
@@ -228,7 +228,7 @@ export function gridColumns(table: HTMLTableElement): Map<HTMLTableCellElement, 
 }
 
 /**
- * Marks the frozen rows and columns of a table (YAZ-5480), once: the table's `data-pin-rows` and `data-pin-cols`, each
+ * Marks the frozen rows and columns of a table, once: the table's `data-pin-rows` and `data-pin-cols`, each
  * cell of a frozen row `data-pin-row` (the last row's `data-pin-row-end`), each cell of a frozen column `data-pin-col`
  * with its `left` (`--pin-left`, the column's offset that `useTables` measures, `--freeze-x-<n>`), the last column's
  * `data-pin-col-end`. `tables.css` makes them stay; nothing runs on a scroll.
@@ -288,7 +288,7 @@ export function layoutTable(table: HTMLTableElement): void {
   for (const [cell, c] of gridColumns(table)) {
     const col = cols[c]
     if (col === undefined) continue
-    // YAZ-5482: a clipped cell holds its text in one line, cut with "…" at its column's widest. Sweep3 N-6 (YAZ-5524):
+    // A clipped cell holds its text in one line, cut with "…" at its column's widest. Sweep3 N-6:
     // only a text truly longer than that: a FIT column is as wide as its text (nothing to cut), and a header that fits
     // its column stays whole (a bold header is wider than the count, and was cut to "Co…" with half the screen free).
     const span = cols.slice(c, c + Math.max(1, cell.colSpan))
@@ -310,7 +310,7 @@ function clipCell(cell: HTMLTableCellElement, max: number): void {
   cell.append(box)
 }
 
-/** The ⤢ button at the top right of a table, above its frame (YAZ-5479; shown when the table is wider than the screen: `data-wide`, `useTables`). */
+/** The ⤢ button at the top right of a table, above its frame (shown when the table is wider than the screen: `data-wide`, `useTables`). */
 function openButton(): HTMLElement {
   const bar = document.createElement('div')
   bar.className = 'page-table__bar'
@@ -332,7 +332,7 @@ function frame(scroll: HTMLElement): void {
   edge.className = 'page-table-frame'
   scroll.replaceWith(box)
   edge.append(scroll)
-  // YAZ-5479: ⤢ sits at the top right, ABOVE the frame: never over the sticky first column or the header text.
+  // ⤢ sits at the top right, ABOVE the frame: never over the sticky first column or the header text.
   box.append(openButton(), edge)
 }
 

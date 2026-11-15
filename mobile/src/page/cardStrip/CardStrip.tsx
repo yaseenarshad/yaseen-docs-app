@@ -15,17 +15,16 @@ import '../properties/properties.css'
 import './cardStrip.css'
 
 /**
- * THE CARD'S STRIP ON THE PHONE (YAZ-5508): the Mac's strip under a card (`client/src/review/cardParts.tsx`,
+ * THE CARD'S STRIP ON THE PHONE: the Mac's strip under a card (`client/src/review/cardParts.tsx`,
  * `CardStrip`; its look `cardScreens.css`, whose classes this wears), made for a phone. A slim band tucked under the
  * card; its bar holds the card's parts as toggles, in the Mac's order and words:
  *  - "✓ 4 Reviews" (the count is in the words), "Properties 3", "Linked mentions 2", and on a card file "Embedded in 1".
- *    A part with 0 is dimmed, and still opens (YAZ-5380).
+ *    A part with 0 is dimmed, and still opens.
  *  - CLOSED by default. A tap opens that part's drawer; a tap on the open one, or on another part, closes it (one open
- *    at a time, YAZ-5349). The drawer slides open by its height; with Reduce Motion it opens at once.
- *  - Reviews: the phone's review table (Reviewed on, Answer, Next due), its last, muted line the Mac's (YAZ-5381,
- *    YAZ-5528): when the card is due on the left ("Due in 144 days (Apr 8, 2027)", a new card "Due today"), "100% chance
+ *    at a time). The drawer slides open by its height; with Reduce Motion it opens at once.
+ *  - Reviews: the phone's review table (Reviewed on, Answer, Next due), its last, muted line the Mac's (*    YAZ-5528): when the card is due on the left ("Due in 144 days (Apr 8, 2027)", a new card "Due today"), "100% chance
  *    you remember it" on the right (none for a new card). Properties: the card's own properties in the
- *    page properties panel's rows (YAZ-5459). Linked mentions / Embedded in: the Mac's list, one page a row, its name and
+ *    page properties panel's rows. Linked mentions / Embedded in: the Mac's list, one page a row, its name and
  *    its folder (`cardBacklinks`, `cardEmbedders`: the same lists "Linked mentions" reads, off the phone's index); a tap opens it.
  *
  * Where it shows, as on the Mac: the card view (a card file: all four parts; a card in a page: no "Embedded in", as the

@@ -18,7 +18,7 @@ import '../media/mediaLine.css'
 import './reader.css'
 
 /**
- * THE VAULT'S LOOK-UPS FOR A PAGE OR A CARD ON THE PHONE (YAZ-5079): the Mac's own rules, over the phone's index.
+ * THE VAULT'S LOOK-UPS FOR A PAGE OR A CARD ON THE PHONE: the Mac's own rules, over the phone's index.
  *  - A `[[link]]` resolves with the Mac's resolver (`makeResolver`, `shared/linkResolver.ts`) in the Mac's resolve source
  *    (`createWikilinkResolveSource`, `linkResolve.ts`): a page's ID, path, title, file name, alias; a card's ID
  *    (`linkCard`); and it shows the Mac's text (`linksAsShown`: a title for an ID, the words after `|`).
@@ -30,7 +30,7 @@ import './reader.css'
  */
 
 /** The resolve source of one snapshot of the vault's data, kept while the data stays (one per `version`). */
-// The reader draws cards with local media only (YAZ-5209), also when it is the first to draw one (`main.tsx` sets it too).
+// The reader draws cards with local media only, also when it is the first to draw one (`main.tsx` sets it too).
 onlyLocalMedia()
 
 const sources = new WeakMap<VaultData, MutableWikilinkResolveSource>()
@@ -89,7 +89,7 @@ export function drawCard(data: VaultData, holder: string, text: string): HTMLEle
 }
 
 /**
- * What a card's head says for a card with no title (YAZ-5308: the Mac's `UNTITLED_CARD`, `cardTitle.ts`). A link, a
+ * What a card's head says for a card with no title (the Mac's `UNTITLED_CARD`, `cardTitle.ts`). A link, a
  * search row, an embed's "Embedded from" and a VoiceOver label say the card's ID instead.
  */
 export const UNTITLED_CARD = 'Untitled card'
@@ -113,12 +113,12 @@ export function pageLook(data: VaultData, holder: string): PageLook {
       const card = inner.includes('|') ? null : linkCard(inner, source)
       if (card !== null) return { label: cardLinkTitle(card), open: { kind: 'card', path: card.path, id: card.id } }
       const label = linksAsShown(`[[${inner}]]`, source)
-      // YAZ-5455: a `#heading` goes with the page (`[[Page#Goals]]`); alone (`[[#Goals]]`) it is this page's heading.
+      // A `#heading` goes with the page (`[[Page#Goals]]`); alone (`[[#Goals]]`) it is this page's heading.
       const heading = linkSplit(inner, source).hash.replace(/^#/, '')
       const page = linkPageName(inner, source)
       if (page === '' && heading !== '') return { label, open: { kind: 'heading', heading } }
       const path = linkPath(inner, source, undefined)
-      // The vault's pill format (YAZ-5455): the ends the Mac's page draws, with no file icon (the phone has none).
+      // The vault's pill format: the ends the Mac's page draws, with no file icon (the phone has none).
       const ends = (resolved: string | null) =>
         source.pills === NO_LINK_PILLS ? undefined : pillParts(source.pills, { info: resolved !== null && pillsNeedInfo(source.pills) ? pathInfo(data.records, data.folders).get(resolved) : undefined, otherVault: null }, source.vault, false)
       if (path !== null) return { label, open: { kind: 'page', path, ...(heading !== '' && { heading }) }, ends: ends(path) }
@@ -133,7 +133,7 @@ export function pageLook(data: VaultData, holder: string): PageLook {
       const card = linkCard(inner, source)
       if (card !== null) return { kind: 'card', id: card.id }
       const file = assetsOf(data)(page.split('|')[0].trim(), folderOf(holder))
-      // YAZ-5440: a drawing names its file, which the reader draws; a `.drawio.svg` is a picture already.
+      // A drawing names its file, which the reader draws; a `.drawio.svg` is a picture already.
       if (isBoardRef(inner)) return { kind: 'drawing', name: page.slice(page.lastIndexOf('/') + 1), path: file }
       if (file !== null && isDiagramPicture(file)) return { kind: 'picture', path: file, alt: page.slice(page.lastIndexOf('/') + 1) }
       if (file !== null && isAudioRef(file)) return { kind: 'sound', path: file }

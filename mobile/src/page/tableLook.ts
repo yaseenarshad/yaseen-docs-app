@@ -3,7 +3,7 @@ import { TABLE_LOOK_DEFAULTS, type TableLookSettings } from '@shared/tableLook'
 import { calendarLook, type CalendarLook } from './calendarLook'
 
 /**
- * THE VAULT'S TABLE LOOK ON THE PHONE (YAZ-5487): the Mac's 21 table settings live in the vault's
+ * THE VAULT'S TABLE LOOK ON THE PHONE: the Mac's 21 table settings live in the vault's
  * `.yaseendocs/table-look.json` (`shared/tableLook.ts`); the phone reads it with the page's other vault files
  * (`vaultLook.ts`, in the page's chunk: the first load does not grow) and feeds the small functions its tables already
  * read their defaults through:
@@ -12,7 +12,7 @@ import { calendarLook, type CalendarLook } from './calendarLook'
  *  - Text in cells: a table with no Wrap or Clip of its own, and a column with none, take the vault's;
  *  - Header row: each part a table does not set itself (`data-header-*`, `tables.css`), when the vault's differs from
  *    the Mac's default (so a vault with the default look draws as before);
- *  - the calendar look (`calendarLook()`): Mark the current time, Shade the next time slot and its colour (YAZ-5541),
+ *  - the calendar look (`calendarLook()`): Mark the current time, Shade the next time slot and its colour,
  *    Dim past rows, Shade darkness, Calendar day. The Now
  *    button is a habit of each Mac, so the phone keeps the Mac's default.
  * No file, or a file that is not JSON: null, the Mac's defaults, as before. The phone never writes the file.

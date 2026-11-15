@@ -2,7 +2,7 @@ import { FLASH_FRAMES, FLASH_MS, reducedMotion } from '@client/editor/toc/tocMot
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS } from '@client/editor/toc/tocChannel'
 
 /**
- * A DRAWN PAGE'S HEADINGS (YAZ-5455, YAZ-5456): the rows of the headings list, the heading a link names, and the landing.
+ * A DRAWN PAGE'S HEADINGS: the rows of the headings list, the heading a link names, and the landing.
  *
  * The rows follow the Mac's table of contents (`tocPlugin.ts`, `tocChannel.ts`): every H1 to H5 of the page
  * (`DEEPEST_TOC_LEVEL`; H6 is never a row), in page order, at its level; an empty heading is "Untitled heading". A card's
@@ -71,7 +71,7 @@ export function landingTop(scroller: HTMLElement, element: HTMLElement | Range, 
   return Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + top - scroller.getBoundingClientRect().top - offset))
 }
 
-/** Lands on `element` in its `.screen` (the only scroller, YAZ-5436), then the Mac's one flash (none with Reduce Motion). */
+/** Lands on `element` in its `.screen` (the only scroller), then the Mac's one flash (none with Reduce Motion). */
 export function landOn(element: HTMLElement, scroller: HTMLElement | null = element.closest<HTMLElement>('.screen')): void {
   if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
   if (typeof element.animate === 'function' && !reducedMotion()) element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })

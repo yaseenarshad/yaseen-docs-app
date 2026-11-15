@@ -30,7 +30,7 @@ import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers
 import { usePageCardMenu } from '../cardMenu/pageCardMenu'
 
 /**
- * A PAGE, READ ONLY (YAZ-5079, 4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
+ * A PAGE, READ ONLY (4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
  * with no editor (`renderPage`), its cards and embedded cards in place, its pictures and sounds from 3D's media when they near the screen. No keyboard
  * opens here: there is nothing to edit in stage one.
  *
@@ -40,7 +40,7 @@ import { usePageCardMenu } from '../cardMenu/pageCardMenu'
  *    then the page stays as it is, with them, and says it was deleted, so they can be copied.
  *  - R6 the page was renamed: it stays open, under the new path.
  */
-/** YAZ-5211: where each page was read last (phone memory only), so Back shows a page at its place. */
+/** Where each page was read last (phone memory only), so Back shows a page at its place. */
 const readingPlace = new Map<string, number>()
 
 export default function PageView({ path: opened, at, heading }: { path: string; at?: string; heading?: string }) {
@@ -54,36 +54,36 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const [notice, setNotice] = useState<string | null>(null)
   /** The page's first block is a heading with its title: the reader's own title is not drawn a second time. */
   const [sameTitle, setSameTitle] = useState(false)
-  /** YAZ-5529: then the box right after that heading, where the page's properties open (each draw puts a new one). */
+  /** Then the box right after that heading, where the page's properties open (each draw puts a new one). */
   const [propsSlot, setPropsSlot] = useState<HTMLElement | null>(null)
   const host = useRef<HTMLDivElement>(null)
   const media = useVaultMedia()
   // Pictures and sounds come as they near the screen; a new piece or an embedded card is watched too.
   useMediaWatch(host, media)
-  // YAZ-5440: its drawings, drawn on the phone when they near the screen; nothing is saved.
+  // Its drawings, drawn on the phone when they near the screen; nothing is saved.
   useDrawings(host, media)
-  // YAZ-5455: the vault's own look (link pills, heading sizes) and its "Clicking a link", for the link door.
+  // The vault's own look (link pills, heading sizes) and its "Clicking a link", for the link door.
   const look = useVaultLook(store, data)
-  // YAZ-5471: its wide tables: the shadows at their sides, and ⤢ to open one full screen; YAZ-5487: the calendar look
+  // Its wide tables: the shadows at their sides, and ⤢ to open one full screen; YAZ-5487: the calendar look
   // from the vault's table-look.json.
   useTables(host, look?.table ?? null)
   const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: look?.click }
   const doorRef = useRef(door)
   doorRef.current = door
-  // YAZ-5494: a tap on a task's box ticks it in the file, on the comments' safe path.
-  // YAZ-5521: a tick that settled (also with no write: the Mac's state won) reads the stored file again.
+  // A tap on a task's box ticks it in the file, on the comments' safe path.
+  // A tick that settled (also with no write: the Mac's state won) reads the stored file again.
   const ticks = useTaskTicks(host, path, text, useCommentsPort(), setNotice, () => setReads((n) => n + 1))
   const ticksRef = useRef(ticks)
   ticksRef.current = ticks
-  // YAZ-5504: each card's ⋯ (the card actions); the page reads its cards as the phone shows them (with waiting actions).
+  // Each card's ⋯ (the card actions); the page reads its cards as the phone shows them (with waiting actions).
   const answers = useAnswers()
   useAnswersChanged(answers, path, () => setReads((n) => n + 1))
   const cardMenu = usePageCardMenu(host, { path, answers, upNext: data?.review.enabled === true })
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
-  // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
+  // "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
   const tools = usePageTools(host, { title, path })
-  // YAZ-5529: the Mac's properties chip at the right of the title; the rows open under it, in the page.
+  // The Mac's properties chip at the right of the title; the rows open under it, in the page.
   const props = usePageProperties({ path, record, data, door, slot: sameTitle ? propsSlot : null })
 
   // R3, R5, R6 from the sync's diff of the open vault.
@@ -95,7 +95,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         if (event.type !== 'changed' || event.vault !== vault) return
         const diff = event.diff
         // N8 (sweep1): the page is gone, but its comment box holds words: it stays as it is drawn, with them.
-        // Sweep3 N-2 (YAZ-5524): until the Mac brings it back: then it reads the file again (the text effect resumes).
+        // Sweep3 N-2: until the Mac brings it back: then it reads the file again (the text effect resumes).
         if (deletedWithDraft.current) {
           if (diff === undefined || diff === null || diff.added.includes(path) || diff.changed.includes(path)) setReads((n) => n + 1)
           return
@@ -120,7 +120,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     [sync, vault, path, title, app],
   )
 
-  // The text, from storage, with the answer list's waiting actions (YAZ-5504: a card's change shows at once).
+  // The text, from storage, with the answer list's waiting actions (a card's change shows at once).
   useEffect(() => {
     let live = true
     void shownText(store, vault, path, answers).then((content) => {
@@ -135,7 +135,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         setNotice((n) => (n === words ? null : n))
       }
       setText(content)
-      // YAZ-5521 (sweep2 S-D): the same text as the page on the screen draws nothing again; its boxes still show the
+      // The same text as the page on the screen draws nothing again; its boxes still show the
       // file (a settled tick's box kept the tap's state).
       if (typeof content === 'string' && drawn.current?.text === content) ticksRef.current.paint()
     })
@@ -146,7 +146,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
 
   // Draw it, in slices; again when the text or the vault's index changes, at the same reading place (R3).
   const drawn = useRef<{ text: string; version: number; look: object } | null>(null)
-  // YAZ-5508: the strips under the page's cards (each its own React root), unmounted when the page draws again or closes.
+  // The strips under the page's cards (each its own React root), unmounted when the page draws again or closes.
   const strips = useRef<(() => void) | null>(null)
   useEffect(() => () => strips.current?.(), [])
   const everDrawn = useRef(false)
@@ -163,7 +163,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     everDrawn.current = true
     drawn.current = { text, version: data.version, look }
     void (async () => {
-      // YAZ-5436: a REDRAW (the sync changed the page or the vault) is drawn off the screen, its cards in place, then
+      // A REDRAW (the sync changed the page or the vault) is drawn off the screen, its cards in place, then
       // swapped in at once. Before, the page shrank to its first slice under the finger, the scroll place jumped, and
       // the embedded cards came again one by one: the page "hung" while the person scrolled.
       const into = first ? el : document.createElement('div')
@@ -179,7 +179,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       // S2 (sweep1): the reader's own title hides NOW when the page's H1 says it (`--same` takes it out of the flow, and
       // the page moves up by its height). A landing measured before React drew that put the heading under the top bar.
       const same = head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase()
-      // YAZ-5529: the properties open under the title: here, under the page's own heading.
+      // The properties open under the title: here, under the page's own heading.
       let slot: HTMLElement | null = null
       if (same && head !== null) {
         slot = document.createElement('div')
@@ -191,9 +191,9 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         setPropsSlot(slot)
       })
       if (scroller !== null && !first) scroller.scrollTop = top
-      // YAZ-5211: back on a page read before, at its reading place (a card asked for by `at` comes first).
+      // Back on a page read before, at its reading place (a card asked for by `at` comes first).
       if (scroller !== null && first && at === undefined && heading === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
-      // YAZ-5455: a link that named a heading (`[[Page#Goals]]`) lands on it; one the page lacks opens it at its top.
+      // A link that named a heading (`[[Page#Goals]]`) lands on it; one the page lacks opens it at its top.
       const target = !first ? null : heading !== undefined ? headingTarget(el, heading) : at !== undefined ? el.querySelector<HTMLElement>(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`) : null
       if (first && heading !== undefined) {
         if (target !== null) landOn(target)
@@ -208,7 +208,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         if (heading !== undefined) scroller.scrollTop = landingTop(scroller, target)
         else target.scrollIntoView?.({ block: 'start' })
       }
-      // YAZ-5508: under each card and card embed, the Mac's strip (Reviews, Properties), closed; Review off: none.
+      // Under each card and card embed, the Mac's strip (Reviews, Properties), closed; Review off: none.
       strips.current?.()
       strips.current = null
       if (data.review.enabled && el.querySelector('.card.page-card, .card.card-embed') !== null) {
@@ -223,7 +223,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     }
   }, [text, data, look, path, at, heading, store, app.go, app.vault, title])
 
-  // YAZ-5211: the reading place of this page, kept as the person scrolls.
+  // The reading place of this page, kept as the person scrolls.
   useEffect(() => {
     const scroller = host.current?.closest('.screen')
     if (scroller == null) return
@@ -235,7 +235,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
     const tap = tapOf(event.target, data)
-    // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
+    // Any other link: the web opens Safari, the app's window stays.
     if (tap === null) return void guardLink(event)
     event.preventDefault()
     // A link to this same page (`[[This page#Goals]]`) lands here: it opens no second copy of the page.
@@ -245,7 +245,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       if (target !== null) landOn(target)
       else host.current?.closest('.screen')?.scrollTo?.({ top: 0 })
     } else if (tap.kind === 'go') openLink(door, tap.target)
-    // YAZ-5455: a heading of this page lands there; a missing page's link does nothing.
+    // A heading of this page lands there; a missing page's link does nothing.
     else if (tap.kind === 'heading') {
       const target = host.current === null ? null : headingTarget(host.current, tap.heading)
       if (target !== null) landOn(target)
@@ -269,9 +269,9 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
     >
       <article className="reader" aria-label={title} style={look?.style}>
-        {/* YAZ-5529: the properties chip, at the right of the title (before the count, so it is the rightmost). */}
+        {/* The properties chip, at the right of the title (before the count, so it is the rightmost). */}
         {props.toggle}
-        {/* YAZ-5478: the comment count, at the top right of the column; a tap goes to the comments at the end. */}
+        {/* The comment count, at the top right of the column; a tap goes to the comments at the end. */}
         {typeof text === 'string' && <PageCommentsCount text={text} />}
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
         {props.rows}
@@ -283,7 +283,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {gone && <p className="muted">{record === undefined ? app.unit('This page is not on the phone.') : app.unit('This page is too large to show on the phone. Open it on the Mac.')}</p>}
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
-        {/* YAZ-5461: the page's comments, and its Comment button (`comments/`). */}
+        {/* The page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}
         {cardMenu}

@@ -1,4 +1,4 @@
-/* The reader (4C, YAZ-5079): a page and a card, read only, on the Mac's tokens (`styles.css`). The card's own look is the
+/* The reader (4C): a page and a card, read only, on the Mac's tokens (`styles.css`). The card's own look is the
    Mac's `card.css` (imported with `renderCard`); the link pills are the Mac's `wikilink.css`. The look is tuned with Yaseen
    in the demo round (7-); this is the clean first build. */
 :root {
@@ -25,16 +25,16 @@
 .reader__body {
   overflow-wrap: anywhere;
 }
-/* YAZ-5448: nothing in the reader (the card view's lines too: its page, its facts) makes the screen wider. */
+/* Nothing in the reader (the card view's lines too: its page, its facts) makes the screen wider. */
 .reader {
   overflow-wrap: anywhere;
 }
 
-/* THE READING LOOK (YAZ-5458): the Mac's page on a small screen. Each value is the Mac's DEFAULT, under the Mac's own
+/* THE READING LOOK: the Mac's page on a small screen. Each value is the Mac's DEFAULT, under the Mac's own
    variable name, so that one setting moves the same thing on both:
     - `--edit-line-height` (1.5) and `--edit-block-gap` (4px): Settings › Editor › Line spacing and Space between
       blocks (`app.css`). A paragraph is `gap` above and below (Crepe's padding), so two paragraphs are 2 × gap apart;
-      a heading has 3 × gap above and 1 × gap below (YAZ-3794), so it sits nearer the text it starts.
+      a heading has 3 × gap above and 1 × gap below, so it sits nearer the text it starts.
     - `--page-bullet-indent` (2.15em) and `--page-bullet-gap` (10px): Settings › Editor › Outline (`bullets.css`).
     - `--guide-line-darkness` (15%): the guide line under a parent's dot (`guideLines.css`).
     - `--text-size` (16px) and `--hN-size` … : the vault's text formatting (`text-formatting.json`, `headingStyles.ts`).
@@ -279,7 +279,7 @@
   color: var(--fg);
 }
 
-/* Inline code: the Mac's (Crepe's) red on grey, 87.5%; it wraps (YAZ-5448) with its box on each line. */
+/* Inline code: the Mac's (Crepe's) red on grey, 87.5%; it wraps with its box on each line. */
 .reader__body code {
   padding: 0.05em 0.25em;
   border-radius: 4px;
@@ -298,7 +298,7 @@
   background: var(--bg-side);
   line-height: 1.5;
 }
-/* YAZ-5448: a code block wraps its long lines, as the Mac's page does (YAZ-2270): no side scroll. `pre-wrap` keeps the
+/* A code block wraps its long lines, as the Mac's page does: no side scroll. `pre-wrap` keeps the
    indents and the line breaks; a long word (a URL, a hash) breaks anywhere. The page, a card in it, and the card view;
    Review has its own (`review.css`). Inline code too: a long one breaks, where a table cell keeps its words whole. */
 :is(.reader__body, .card-view__card) pre {
@@ -372,7 +372,7 @@
   }
 }
 
-/* Tables (YAZ-5471): `tables.css`, with `tableLayout.ts`. Here only the room around the box (YAZ-5458): a code
+/* Tables: `tables.css`, with `tableLayout.ts`. Here only the room around the box: a code
    block's. */
 .reader__body > .page-table-box {
   margin: calc(var(--page-gap) * 2) 0;
@@ -390,7 +390,7 @@
   width: 100%;
 }
 
-/* The media line (`.page-media`) is in `media/mediaLine.css`: Review's card draws it too (YAZ-5363). */
+/* The media line (`.page-media`) is in `media/mediaLine.css`: Review's card draws it too. */
 
 .reader__body a.wikilink {
   text-decoration: none;
@@ -406,10 +406,10 @@
   background: var(--bg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
 }
-/* A card's head and title band (YAZ-5437), as the Mac's read card (`card.css`: `.card__head`, `.card-band`): the ID first,
+/* A card's head and title band, as the Mac's read card (`card.css`: `.card__head`, `.card-band`): the ID first,
    small and grey, then its marks; the title bold in the shaded band under it. The band's colour is the Mac's
    `--card-title-band` (`app.css`), one step darker than the head. Card title size is the vault's (card-look.json,
-   YAZ-5484: `--card-title-size`, read by `card.css`), Default with no file. */
+   `--card-title-size`, read by `card.css`), Default with no file. */
 .reader {
   --card-title-band: #ededf0;
 }
@@ -471,7 +471,7 @@
   color: var(--fg-muted);
   font-weight: 400;
   font-size: 0.8em;
-  /* One word ("· NC-48"): never broken over two lines (YAZ-5299). The title before it wraps. */
+  /* One word ("· NC-48"): never broken over two lines. The title before it wraps. */
   white-space: nowrap;
 }
 .card-view__in {
@@ -513,7 +513,7 @@
 }
 
 
-/* Footnotes (YAZ-5212): the mark, and the note where it is written, as the Mac's page shows them. */
+/* Footnotes: the mark, and the note where it is written, as the Mac's page shows them. */
 .page-fnref a {
   text-decoration: none;
   font-size: 0.8em;
@@ -529,7 +529,7 @@
   font-size: 0.8em;
   vertical-align: super;
 }
-/* A cell note's mark; the note stays hidden under its table, as on the Mac (YAZ-3818). */
+/* A cell note's mark; the note stays hidden under its table, as on the Mac. */
 .page-cellnote {
   color: var(--fg-muted);
 }
@@ -538,13 +538,13 @@
   font-style: italic;
 }
 
-/* YAZ-5484: the vault's Card width (card-look.json, `readCardLook`, `media/ui/cardDraw.ts`) only as a max on the phone: a narrow screen fills its
+/* The vault's Card width (card-look.json, `readCardLook`, `media/ui/cardDraw.ts`) only as a max on the phone: a narrow screen fills its
    width, a wide one stops at the card's line. No file, or Same as pages: no max. */
 .reader .card {
   max-width: calc(var(--card-text-width, 100vw) + 34px);
 }
 
-/* YAZ-5494: a box with its line (`data-task`) is a check box a tap ticks (`taskTicks.ts`): its tap area is 44 px around
+/* A box with its line (`data-task`) is a check box a tap ticks (`taskTicks.ts`): its tap area is 44 px around
    it (an empty `::before`; the box's look does not change; tasks one line apart share the gap between them), and no
    grey flash on a tap. */
 .page-task[data-task] {

@@ -1,7 +1,7 @@
 import { Marked, type Token, type TokenizerExtension, type Tokens } from 'marked'
 
 /**
- * THE READER'S MARKDOWN PARSER (YAZ-5513): the one `marked` (GitHub flavour, a single line break is a line break) with
+ * THE READER'S MARKDOWN PARSER: the one `marked` (GitHub flavour, a single line break is a line break) with
  * the page's own block and inline tokenizers. The page renderer draws with it (`pageRender.ts` adds its renderers to
  * THIS instance), and the phone's tick finds its task with it (`pageTasks`, `comments/taskWrite.ts`). So the box a
  * person taps and the line a tick writes are found by the same parse, never by a second reading of the text: a line in

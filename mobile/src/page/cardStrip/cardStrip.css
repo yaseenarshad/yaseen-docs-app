@@ -1,5 +1,5 @@
 /*
- * The card's strip on the phone (YAZ-5508): the Mac's strip (`client/src/review/cardScreens.css`, `.card-reviews--strip`:
+ * The card's strip on the phone: the Mac's strip (`client/src/review/cardScreens.css`, `.card-reviews--strip`:
  * its fill a step darker than the page, its hairline edge, tucked under the card) made for a phone: each toggle a
  * 44px tap, the bar wrapping on a narrow screen, and the drawer sliding open by its height. Light and dark from the
  * app's tokens, as the Mac's.
@@ -21,7 +21,7 @@
 .phone-strip .card-reviews__toggle .backlinks__title {
   font-weight: 500;
 }
-/* The phone's contrast rule (4.5:1, YAZ-5179): the Mac's muted words and its 0.6 dim read too faint on the strip's fill.
+/* The phone's contrast rule (4.5:1): the Mac's muted words and its 0.6 dim read too faint on the strip's fill.
    Here a part reads near the text colour, and a part with 0 a step quieter (still 4.5:1), with no dim. */
 .card-reviews.phone-strip .card-reviews__toggle {
   color: color-mix(in srgb, var(--fg) 75%, var(--fg-muted));
@@ -66,7 +66,7 @@
 .phone-strip .card-view__table :is(th, td) {
   white-space: nowrap;
 }
-/* The Reviews drawer's last line (YAZ-5528, the Mac's): it wraps within the table, the chance on the right. */
+/* The Reviews drawer's last line (the Mac's): it wraps within the table, the chance on the right. */
 .phone-strip .card-view__table .card-reviews__next td {
   padding-top: 8px;
   border-bottom: 0;
@@ -76,7 +76,7 @@
   margin: 4px 8px 12px;
   font-size: 14px;
 }
-/* The card's properties in the page panel's rows (YAZ-5459), inside the strip. */
+/* The card's properties in the page panel's rows, inside the strip. */
 .phone-strip .phone-strip__props {
   padding: 0 6px 4px;
   overflow: visible;

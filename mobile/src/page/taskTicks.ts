@@ -4,8 +4,8 @@ import type { WaitingComment } from '../comments/outbox'
 import { TASK_REFUSED_WORDS, taskLines, type TaskTick } from '../comments/taskWrite'
 
 /**
- * TICK A TASK FROM THE PHONE (YAZ-5494): a tap on a task's check box in a page ticks it, or unticks it. Only that
- * changes in the file: one byte (`comments/taskWrite.ts`). The write takes the comments' safe path (YAZ-5461): the
+ * TICK A TASK FROM THE PHONE: a tap on a task's check box in a page ticks it, or unticks it. Only that
+ * changes in the file: one byte (`comments/taskWrite.ts`). The write takes the comments' safe path: the
  * comment list (IndexedDB, kept with no signal), the send (the fresh page, the same task found again, one commit with
  * compare-and-swap, again on the newest page after a race), and the status dot counts it. Nothing asks "Allow edits?".
  *
@@ -16,7 +16,7 @@ import { TASK_REFUSED_WORDS, taskLines, type TaskTick } from '../comments/taskWr
  *
  * WHERE: a box the page renderer drew with its line (`data-task`, its core, and `data-task-line`, its line in the
  * body; `pageRender.ts`): a task of the page's own text, in a list, a nested list or a quote, as the reader's parser
- * reads it (`pageMarked.ts`, YAZ-5513). The tap finds the task on THAT line of the stored page with the same parser,
+ * reads it (`pageMarked.ts`). The tap finds the task on THAT line of the stored page with the same parser,
  * so the line it writes is the box's own, never a line of code or HTML that reads the same. A card's box (a card block in the page, an embedded card, Review) is the Mac's
  * card look, a glyph that the Mac does not tick either: it has no `data-task`, so it is never a control. The tap area
  * is 44 px around the box (`reader.css`); the box's look does not change.
@@ -35,7 +35,7 @@ function boxOf(host: HTMLElement, text: string, tick: Pick<TaskTick, 'core' | 'n
 }
 
 /**
- * YAZ-5513: the tick of a tapped box, from the stored page `text`: the box names its line (`data-task-line`) and its
+ * The tick of a tapped box, from the stored page `text`: the box names its line (`data-task-line`) and its
  * core, both from the reader's parse; the task on that line of `text`, found by the same parse, is the one, and its
  * place among the tasks that read the same is how the send finds it again on the fresh page. Null when `text` has no
  * such task on that line (the page was drawn from other text): nothing is written.
@@ -66,7 +66,7 @@ function controls(host: HTMLElement): void {
 export interface TaskTicks {
   /**
    * After a draw, or a read of the stored file that found the same text: the boxes become controls, each shows what
-   * the text says (YAZ-5521), and the ticks still waiting show their state over it.
+   * the text says, and the ticks still waiting show their state over it.
    */
   paint(): void
 }
@@ -82,7 +82,7 @@ export function useTaskTicks(
   port: CommentsPort | null,
   say: (words: string) => void,
   /**
-   * YAZ-5521 (sweep2 S-D): a tick of this page left the list with no refusal (written, or found done already after a
+   * A tick of this page left the list with no refusal (written, or found done already after a
    * lost reply, W3): the page reads its stored file again and paints (`paint`) or draws from it. A tick settled with no
    * write (the Mac unticked after it) changes no byte, so no sync event redraws the page: its box kept the tap's state.
    */
@@ -96,7 +96,7 @@ export function useTaskTicks(
     const { port: p, path: at, text: t } = latest.current
     if (el === null) return
     controls(el)
-    // Each box as the text says (YAZ-5521: a tick that settled leaves no tap state behind), then the waiting ticks.
+    // Each box as the text says (a tick that settled leaves no tap state behind), then the waiting ticks.
     if (typeof t === 'string') {
       const lines = new Map(taskLines(t).map((l) => [`${l.line}\u0000${l.core}`, l.checked]))
       for (const box of el.querySelectorAll<HTMLElement>(BOX)) {
@@ -111,7 +111,7 @@ export function useTaskTicks(
   }
 
   // A refused tick: the short line, the box back to the page's own state, and the tick leaves the list.
-  // YAZ-5521: a tick that leaves the list unrefused (settled): the page reads its stored file again.
+  // A tick that leaves the list unrefused (settled): the page reads its stored file again.
   useEffect(() => {
     if (port === null) return
     let ticked = new Set<string>()

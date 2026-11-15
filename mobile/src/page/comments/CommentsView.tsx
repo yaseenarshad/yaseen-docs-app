@@ -6,7 +6,7 @@ import { REFUSED_WORDS } from '../../comments/write'
 import { keepDraft } from './unsentDrafts'
 import './comments.css'
 
-/** The pre-fills beside the box (YAZ-5478: a tap fills the box; Comment sends). Yaseen: "just that one for right now". */
+/** The pre-fills beside the box (a tap fills the box; Comment sends). Yaseen: "just that one for right now". */
 export const QUICK_REPLIES = ['Approved'] as const
 
 const NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
@@ -14,7 +14,7 @@ const NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
   gone: 'This page is no longer in the vault (it was moved or deleted), so your comment was not added.',
   copies: 'This page has a copy with the same ID, so the phone could not tell where your comment goes. It was not added.',
   'too-large': 'This page is too large for the phone to change, so your comment was not added. Comment on the Mac.',
-  // A check box tick's refusal (YAZ-5494); ticks are not shown here (`taskTicks.ts` says it).
+  // A check box tick's refusal; ticks are not shown here (`taskTicks.ts` says it).
   changed: 'This page changed, so your comment was not added.',
 }
 
@@ -31,7 +31,7 @@ export interface CommentsViewProps {
   nameOf: (handle: string | undefined) => string
   /** Bumped when the comment list changes (the port's `subscribe`). */
   version: number
-  /** YAZ-5477: what the file is called in the words of a refusal: "page" (the default), or "card file". */
+  /** What the file is called in the words of a refusal: "page" (the default), or "card file". */
   noun?: string
 }
 
@@ -53,7 +53,7 @@ export function withWords(draft: string, words: string, at: number): { text: str
 }
 
 /**
- * Sweep3 N-1 (YAZ-5524): puts `withWords`'s result in the box as the browser's own edit (`insertText` at the selection):
+ * Sweep3 N-1: puts `withWords`'s result in the box as the browser's own edit (`insertText` at the selection):
  * one step on the box's Undo stack, the caret after it. False when the browser cannot (the caller sets the value).
  */
 function nativeFill(el: HTMLTextAreaElement, draft: string, next: { text: string; caret: number }, at: number): boolean {
@@ -75,7 +75,7 @@ function nativeFill(el: HTMLTextAreaElement, draft: string, next: { text: string
   return true
 }
 
-/** The words of a refusal, with the file called by its noun (YAZ-5477: "This card file is no longer in the vault"). */
+/** The words of a refusal, with the file called by its noun ("This card file is no longer in the vault"). */
 const named = (words: string, noun: string): string => (noun === 'page' ? words : words.replace(/\bpage\b/g, noun))
 
 const when = (at: string): string => {
@@ -92,12 +92,12 @@ export const openCount = (comments: readonly PageComment[]): number =>
     .reduce((n, t) => n + 1 + t.replies.filter((r) => r.resolved === undefined).length, 0)
 
 /**
- * YAZ-5461: a page's comments on the phone, read only, as the Mac's comment block shows them (`client/src/comments/
+ * A page's comments on the phone, read only, as the Mac's comment block shows them (`client/src/comments/
  * CommentsSection.tsx`): each thread in time order with its number (`#3`), who, when and the words; its replies one
  * level in (`#3.1`); a resolved thread folded into "N resolved" at the bottom (the Mac's default place), a resolved
  * reply dimmed. Reply, Edit and Resolve stay on the Mac for now.
  *
- * YAZ-5478: the one write is INLINE, at the end of the comments (the end of the page or card file), always there: a
+ * The one write is INLINE, at the end of the comments (the end of the page or card file), always there: a
  * quiet one-line field, "Add a comment…", that grows when it takes the focus, so the comments stay in view above it
  * while the person types. "Approved" beside it is a PRE-FILL: a tap puts the word in the box (at the cursor, after
  * words already typed: S10) and focuses it; Comment
@@ -119,7 +119,7 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
   const refused = shape === 'foreign' || shape === 'invalid' ? named(REFUSED_WORDS[shape], noun) : null
   void version
   const held = new Set(comments.map((c) => c.id))
-  // A check box tick (YAZ-5494) waits in the same list, but it is no comment.
+  // A check box tick waits in the same list, but it is no comment.
   const pending = (port?.waiting(path) ?? []).filter((c) => !held.has(c.id) && c.task === undefined)
 
   const onFocus = () => {
@@ -140,11 +140,11 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
     const el = box.current
     const at = el !== null && document.activeElement === el ? el.selectionEnd : draft.length
     const next = withWords(draft, words, at)
-    // Sweep2 S-A (YAZ-5521): the box says the words already (a second tap): a no-op. The selection and the focus stay
+    // Sweep2 S-A: the box says the words already (a second tap): a no-op. The selection and the focus stay
     // exactly; no caret is kept for later (no draw follows to use it, so the next typed letter put the caret back).
     if (next.text === draft) return
     setProblem(null)
-    // Sweep3 N-1 (YAZ-5524): a NATIVE edit, so the system Undo (⌘Z, shake) takes the fill back as one step; its input
+    // Sweep3 N-1: a NATIVE edit, so the system Undo (⌘Z, shake) takes the fill back as one step; its input
     // event sets the draft. A value set by React has no Undo step, and the Undo then duplicated the draft.
     if (el !== null && nativeFill(el, draft, next, at)) return
     setDraft(next.text)
@@ -237,7 +237,7 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
 }
 
 /**
- * YAZ-5478: the small comment count near the title (a speech bubble and the number of open comments). A tap glides to
+ * The small comment count near the title (a speech bubble and the number of open comments). A tap glides to
  * the comments at the end of the page (at once with Reduce Motion). None while the file has no comment: the box at
  * the end is there anyway, and none when every comment is resolved. It sits in the column, never floats.
  */

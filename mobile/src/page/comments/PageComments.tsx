@@ -8,11 +8,11 @@ import { commentSigner, readPeople } from '../../comments/signer'
 import { CommentsCount, CommentsView } from './CommentsView'
 
 /**
- * YAZ-5461: the comments of the open PAGE, at the end of the page view. The page view mounts it once (`PageView.tsx`)
+ * The comments of the open PAGE, at the end of the page view. The page view mounts it once (`PageView.tsx`)
  * with the page's stored text; everything else is here: the port to the comment list (the answer list's `comments`,
  * `ShellSync.review()`), the people file's names and the signer.
  *
- * YAZ-5477 (the Mac's YAZ-5466): a CARD FILE's comments too, the same block and the same writer, under the card in its
+ * A CARD FILE's comments too, the same block and the same writer, under the card in its
  * own view (`CardView.tsx`, `noun="card file"`). They are the file's `comments`, in its front matter beside
  * `kind: card`; the writer (`comments/write.ts`) changes no other byte, so the card block and its line stay. Cards
  * inside pages get none (those are the page's), and Review has no comment box.
@@ -54,13 +54,13 @@ export function PageComments({ path, text, noun = 'page' }: { path: string; text
   return <CommentsView path={path} comments={comments} shape={shape} port={port} signer={signer} nameOf={nameOf} version={version} noun={noun} />
 }
 
-/** YAZ-5478: the small count near the title of a page or card file; a tap goes to its comments. */
+/** The small count near the title of a page or card file; a tap goes to its comments. */
 export function PageCommentsCount({ text }: { text: string }) {
   const comments = useMemo(() => readComments(text), [text])
   return <CommentsCount comments={comments} />
 }
 
-/** The open vault's comment list, once the engine has loaded (`review()` gives the one answer list). The check box ticks use it too (YAZ-5494). */
+/** The open vault's comment list, once the engine has loaded (`review()` gives the one answer list). The check box ticks use it too. */
 export function useCommentsPort(): CommentsPort | null {
   const { sync } = useApp().services
   const [port, setPort] = useState<CommentsPort | null>(null)

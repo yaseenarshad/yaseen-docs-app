@@ -1,7 +1,7 @@
 import './menuTitle.css'
 
 /**
- * THE FULL TITLE IN A ⋯ MENU (YAZ-5498), as a tooltip on the Mac: when the top bar (or an Explore sheet's head) cuts the
+ * THE FULL TITLE IN A ⋯ MENU, as a tooltip on the Mac: when the top bar (or an Explore sheet's head) cuts the
  * open file's title with "…", its ⋯ menu shows at its top the whole title and, under it, small and grey, its folder.
  * When the title fits, the menu shows neither. Measured once, when the menu opens.
  */

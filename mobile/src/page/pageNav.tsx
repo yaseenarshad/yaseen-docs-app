@@ -9,14 +9,14 @@ import { buildTree, fileKind, levelOf, type TreeFolder } from '../search/vaultTr
 import './pageNav.css'
 
 /**
- * THE PAGE ARROWS AND THE PAGE ID CHIP (YAZ-5449, YAZ-5450; option A of the approved mockup). In the reader's chunk:
+ * THE PAGE ARROWS AND THE PAGE ID CHIP (option A of the approved mockup). In the reader's chunk:
  * the first load does not carry them.
  *
- * ONE FOLDER (YAZ-5468): the arrows count and step through the open page's own folder only (its direct folder, not
+ * ONE FOLDER: the arrows count and step through the open page's own folder only (its direct folder, not
  * the folders under it): "2 / 5" is the second of the 5 pages in this folder, and each side is dim at the folder's ends.
  * The card view keeps the same rule: the cards of the files in the open card's folder.
  *
- * ORDER: the Mac sidebar's tree order, which the phone's Search tree already draws (YAZ-5438, `vaultTree.ts`): each
+ * ORDER: the Mac sidebar's tree order, which the phone's Search tree already draws (`vaultTree.ts`): each
  * level folders first, then files, by the name the row shows. The walk is depth-first, every folder open:
  *  - the page view steps through PAGES only (a card file is not a page);
  *  - the card view steps through every CARD with an ID: the cards of each file (page or card file) in page order, the
@@ -29,7 +29,7 @@ import './pageNav.css'
 export interface Stop {
   route: Route
   label: string
-  /** YAZ-5475: the kind of file the stop opens (a small glyph before its title). */
+  /** The kind of file the stop opens (a small glyph before its title). */
   kind: FileKind
 }
 
@@ -65,7 +65,7 @@ const routePath = (route: Route): string => (route.kind === 'page' || route.kind
 
 const byFolder = new WeakMap<readonly Stop[], Map<string, Stop[]>>()
 
-/** YAZ-5468: the stops of `stops` in the folder `folder` (its direct files only), in the same order; built once per list. */
+/** The stops of `stops` in the folder `folder` (its direct files only), in the same order; built once per list. */
 export function folderStops(stops: readonly Stop[], folder: string): readonly Stop[] {
   let map = byFolder.get(stops)
   if (map === undefined) {
@@ -93,7 +93,7 @@ export function neighbours(stops: readonly Stop[], at: Route): { before: Stop | 
 
 /** Opens `route` IN PLACE of the open page or card: Back still goes to where the reading started. */
 export function stepTo(go: AppModel['go'], route: Route): void {
-  // One step (YAZ-5499): a Back here would step the browser's history, which is not done at once.
+  // One step: a Back here would step the browser's history, which is not done at once.
   go({ type: 'swap', route })
 }
 
@@ -110,7 +110,7 @@ export function PageArrows({ data, at, go, noun }: { data: VaultData | null; at:
       aria-label={stop === null ? (after ? `Last ${noun}` : `First ${noun}`) : `${after ? 'Next' : 'Previous'}: ${KIND_WORD[stop.kind]}, ${stop.label}`}
       onClick={() => stop !== null && stepTo(go, stop.route)}
     >
-      {/* YAZ-5475: a very small kind glyph before the title ("‹ ▤ Trip plan", "▣ Café notes ›"). */}
+      {/* A very small kind glyph before the title ("‹ ▤ Trip plan", "▣ Café notes ›"). */}
       {after ? '' : '‹ '}
       {stop !== null && <KindIcon kind={stop.kind} className="page-arrows__kind" hidden />}
       {after ? `${stop?.label ?? `Last ${noun}`} ›` : (stop?.label ?? `First ${noun}`)}
@@ -134,7 +134,7 @@ export function pageIdOf(data: VaultData | null, record: IndexRecord | undefined
 }
 
 /**
- * The ID chip in the top bar (YAZ-5450). One tap copies the page's path in the vault (`Spanish/Words/la biblioteca.md`),
+ * The ID chip in the top bar. One tap copies the page's path in the vault (`Spanish/Words/la biblioteca.md`),
  * to paste to an agent (`useCopyPath`: the app's toast, or the path to copy by hand).
  */
 export function PageIdChip({ id, path, copy }: { id: string; path: string; copy?: (text: string) => Promise<void> }) {

@@ -9,7 +9,7 @@ import type { LinkDoor } from './openLink'
 import './properties/pageProperties.css'
 
 /**
- * A PAGE'S PROPERTIES, AS THE MAC SHOWS THEM (YAZ-5529, after YAZ-5459's edge tab): the Mac's properties chip at the
+ * A PAGE'S PROPERTIES, AS THE MAC SHOWS THEM (after YAZ-5459's edge tab): the Mac's properties chip at the
  * right of the page's title, on the title's line (`FrontmatterPanel.tsx` in the page header, `app.css` `.page-header`):
  * its chevron (down when open, turned a quarter to point right when closed), its properties glyph and the count. A tap
  * drops the rows open INLINE, under the title, in the page (they scroll with it); a tap again closes them. Closed when a

@@ -1,7 +1,7 @@
 import type { TableDimPast, TableNowMark } from '@shared/types'
 
 /**
- * THE LOOK OF A CALENDAR TABLE ON THE PHONE (YAZ-5493). On the Mac these are app settings (Settings › Editor › Calendar
+ * THE LOOK OF A CALENDAR TABLE ON THE PHONE. On the Mac these are app settings (Settings › Editor › Calendar
  * tables; `shared/types.ts`): Mark the current time (`tableNowMark`), Now button (`tableNowButton`), Dim past rows
  * (`tableDimPast`), Shade darkness (`tableShadeDarkness`) and Calendar day (`tableDayStart`, `tableDayEnd`). The phone
  * has no settings for them: it uses the Mac's DEFAULTS, read here and only here (`tableCalendar.ts` asks this function).
