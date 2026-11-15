@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRoot } from 'react-dom/client'
@@ -130,7 +130,7 @@ const FIXTURES = [
   'sign-in-iphone',
 ]
 
-const results: { name: string; ok: boolean; elements: number; findings: Finding[]; unresolved: string[]; unstyled: string[] }[] = []
+const results: { name: string; ok: boolean; elements: number; outside: number; findings: Finding[]; unresolved: string[]; unstyled: string[] }[] = []
 
 /** The classes that some stylesheet of the phone styles: the class of each selector's last part. */
 const ALL_SHEETS = phoneStylesheets().map(read)
@@ -146,6 +146,7 @@ const waitFor = async (test: () => boolean, ms: number) => {
 }
 
 async function screen(name: string) {
+  const before = new Set(document.body.children)
   const host = document.createElement('div')
   host.id = 'root'
   document.body.append(host)
@@ -165,18 +166,24 @@ async function screen(name: string) {
   const findings: Finding[] = []
   const unresolved = new Set<string>()
   let elements = 0
+  let outside = 0
+  // YAZ-5523: everything drawn on the page, not only the app root: sheets, menus and the full-screen table are
+  // portals into `document.body`.
   for (const theme of ['light', 'dark'] as Theme[]) {
-    const out = audit(host, sheets, { theme })
+    const out = audit(document.body, sheets, { theme })
     elements += out.elements
+    outside += out.elements - audit(host, sheets, { theme }).elements
     findings.push(...out.findings)
     for (const u of out.unresolved) unresolved.add(`${theme} ${u}`)
   }
   // YAZ-5363: a class that a phone stylesheet styles, drawn on a screen that does not load that stylesheet.
   const own = classesOf(sheets)
-  const unstyled = [...new Set([...host.querySelectorAll('[class]')].flatMap((el) => [...el.classList]))].filter((c) => STYLED_ANYWHERE.has(c) && !own.has(c))
-  results.push({ name, ok: ok && document.body.dataset.fixtureError === undefined, elements, findings, unresolved: [...unresolved], unstyled })
+  const unstyled = [...new Set([...document.body.querySelectorAll('[class]')].flatMap((el) => [...el.classList]))].filter((c) => STYLED_ANYWHERE.has(c) && !own.has(c))
+  results.push({ name, ok: ok && document.body.dataset.fixtureError === undefined, elements, outside, findings, unresolved: [...unresolved], unstyled })
   root.unmount()
   host.remove()
+  // A portal the screen left behind is not drawn on the next screen.
+  for (const el of [...document.body.children]) if (!before.has(el)) el.remove()
 }
 
 /** The landing page of shared links (`friend.html`, `group.html`, `join.html`): its own HTML and its own stylesheets. Each part shows. */
@@ -198,7 +205,7 @@ async function landing() {
     findings.push(...out.findings)
     unresolved.push(...out.unresolved.map((u) => `${theme} ${u}`))
   }
-  results.push({ name: 'landing', ok: true, elements, findings, unresolved, unstyled: [] })
+  results.push({ name: 'landing', ok: true, elements, outside: 0, findings, unresolved, unstyled: [] })
   host.remove()
 }
 
@@ -224,6 +231,23 @@ describe('the contrast of every screen the phone draws (YAZ-5179, YAZ-5338 … Y
     expect(loadedBy.get('page')!.map((f) => relative(REPO, f))).toContain('client/src/editor/wikilink/wikilink.css')
     expect(loadedBy.get('review-shown')!.map((f) => relative(REPO, f))).not.toContain('mobile/src/page/reader.css')
     expect(loadedBy.get('settings')!.map((f) => relative(REPO, f))).not.toContain('mobile/src/pwa/landing.css')
+  })
+
+  it('the contrast test audits everything drawn on the page, sheets included', () => {
+    // YAZ-5523: the sheets are portals into document.body, outside the app root. Each sheet fixture has audited items there.
+    const sheetScreens = ['folder-sheet', 'explore-stack', 'explore-one', 'folder-hold', 'page-table-full']
+    expect(sheetScreens.filter((n) => !(results.find((r) => r.name === n)!.outside > 0))).toEqual([])
+  })
+
+  it('every .css file under mobile/src (outside dev/) is in phoneStylesheets()', () => {
+    // YAZ-5523: a stylesheet nobody imports is in no screen's list, so no check would read it.
+    const src = resolve(REPO, 'mobile/src')
+    const onDisk = readdirSync(src, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.css') && !f.startsWith('dev/'))
+      .map((f) => relative(REPO, resolve(src, f)))
+    const listed = new Set(phoneStylesheets().map((f) => relative(REPO, f)))
+    expect(onDisk.length).toBeGreaterThan(20)
+    expect(onDisk.filter((f) => !listed.has(f)).sort()).toEqual([])
   })
 
   it('YAZ-5359: the engine read every colour value of every screen (none unresolved)', () => {
