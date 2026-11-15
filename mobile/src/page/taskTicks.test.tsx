@@ -162,7 +162,7 @@ describe('a tap ticks (YAZ-5494)', () => {
 
   it('the 44 px tap area is around the box, and the box keeps its size', async () => {
     const css = readFileSync(fileURLToPath(import.meta.url).replace(/taskTicks\.test\.tsx$/, 'reader.css'), 'utf8')
-    const rule = css.slice(css.indexOf('/* YAZ-5494'))
+    const rule = css.slice(css.indexOf('/* A box with its line (`data-task`)'))
     expect(rule).toMatch(/width: 44px;\s*height: 44px;/)
     // The rules of the box itself (not its empty `::before`) change none of its size.
     const own = [...rule.matchAll(/([^{}]+)\{([^}]*)\}/g)].filter(([, sel]) => !sel!.includes('::before'))
