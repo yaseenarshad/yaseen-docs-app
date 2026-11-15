@@ -8,6 +8,7 @@ import { closeAll } from '../explore/sheets'
 import { mount, newPhone, type Harness } from '../screens/testing'
 import { MAC_CALENDAR_LOOK } from './calendarLook'
 import { applyTableFile } from './tableFile'
+import { setCalendarClock } from './tableCalendar'
 import { applyTableLook, stickyHeaderOf, tableCalendarLook } from './tableLook'
 
 /**
@@ -29,6 +30,10 @@ describe('YAZ-5487: the phone reads table-look.json (tableLook.ts)', () => {
     expect(tableCalendarLook(null)).toEqual(MAC_CALENDAR_LOOK)
     expect(tableCalendarLook(TABLE_LOOK_DEFAULTS)).toEqual(MAC_CALENDAR_LOOK)
     expect([stickyHeaderOf(VAULT), stickyHeaderOf(null)]).toEqual([false, true])
+    // YAZ-5541: Shade the next time slot and its colour, as CSS; the default red is the CSS's own.
+    expect(tableCalendarLook(tableLookSettings({ look: { nextShade: true, nextColour: 'teal' } }))).toMatchObject({ nextShade: true, nextColour: 'var(--table-text-teal)' })
+    expect(tableCalendarLook(tableLookSettings({ look: { nextShade: true, nextColour: '#22aa55' } }))).toMatchObject({ nextShade: true, nextColour: '#22aa55' })
+    expect(tableCalendarLook(tableLookSettings({ look: { nextShade: true } }))).toMatchObject({ nextShade: true, nextColour: null })
   })
 
   it('a table with no comment: the vault\'s header row parts (only those off the default), no frozen header row, Clip', () => {
@@ -95,6 +100,27 @@ describe('YAZ-5487: a page on the phone reads its vault\'s table-look.json', () 
     const t = await open({ '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { stickyHeader: false, textInCells: 'clip', headerRow: { color: 'teal' } } }) })
     expect([t.getAttribute('data-header-color'), t.getAttribute('data-pin-rows')]).toEqual(['teal', '0'])
     expect(t.querySelectorAll('[data-clip]').length).toBeGreaterThan(0)
+  })
+
+  it('YAZ-5541: Shade the next time slot from the file: the row after the now row, in the vault\'s colour; off, or no file, none', async () => {
+    setCalendarClock(() => new Date(2026, 10, 2, 9, 40))
+    try {
+      const day = { 'Table page.md': '# Table page\n\n| Time | Plan |\n|---|---|\n| 9:00 am | Run |\n| 9:30 am | Swim |\n| 10:00 am | Rest |\n| 10:30 am | Read |\n\n<!-- table: calendar 30m -->\n' }
+      const nowOf = (t: HTMLTableElement) => [...t.rows].findIndex((r) => r.classList.contains('table-now-row'))
+      const nextOf = (t: HTMLTableElement) => [...t.rows].flatMap((r, i) => (r.classList.contains('table-next-row') ? [i] : []))
+      const on = await open({ ...day, '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { nowMark: 'tint', nextShade: true, nextColour: 'blue', later: 1 } }) })
+      await waitFor(h!, () => nowOf(on) > 0)
+      expect([nowOf(on), nextOf(on)]).toEqual([2, [3]])
+      expect(on.getAttribute('data-now-mark')).toBe('tint')
+      expect(on.style.getPropertyValue('--table-next-colour')).toBe('var(--table-text-blue)')
+      act(() => closeAll())
+      h!.unmount()
+      const off = await open(day)
+      await waitFor(h!, () => nowOf(off) > 0)
+      expect(nextOf(off)).toEqual([])
+    } finally {
+      setCalendarClock(null)
+    }
   })
 
   it('no file: the Mac\'s defaults, as before', async () => {

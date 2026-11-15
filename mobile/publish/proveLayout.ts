@@ -20,7 +20,7 @@ import { freePort } from './freePort'
  *  - the calendar table (`#fixture=page-calendar`, `page-calendar-chip`, `page-calendar-full`, YAZ-5493), light and dark at
  *    375 px, the clock frozen at 9:40 am: the now line a third down the 9:30 row, red, across the row; the rows before
  *    it dimmed, the kept to-do row not; scrolled past the row, the Now pill at the bottom of the screen pointing up;
- *    full screen, the copy marked too.
+ *    full screen, the copy marked too. YAZ-5541 (`page-calendar-next`): the next slot tinted as the now row.
  *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
  *    area, a done task struck through.
  *  - numbered tasks (`#fixture=page-tasks-numbered`, YAZ-5510, the Mac's rule), light and dark, at 375 px: for 1. to 11.,
@@ -372,6 +372,31 @@ if (process.env.LAYOUT_PAGES !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `now row ${m.now}, the line ${m.lineAt} down it (${m.line}), dot ${m.dot}; past rows ${m.past.join(',')} (${m.pastInk}, shade ${m.shade}), the kept row ${m.keptInk}; Now pill ${m.chip ? `${m.chip.top}-${m.chip.bottom} above the tab bar at ${m.chip.tab}, arrow ${m.chip.dir}` : 'hidden'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5541: Shade the next time slot (`#fixture=page-calendar-next`: the vault's table-look.json, the now tint with its
+// line and the next slot on, the default red), light and dark at 375 px: the row after the now row is tinted exactly as
+// the now row (the same paint), the row after it and the past rows are not.
+const NEXT_CHECK = `(() => {
+  const table = document.querySelector('.reader__body table[data-calendar]')
+  if (!table) return { none: true }
+  const rows = [...table.rows]
+  const paint = (i) => getComputedStyle(rows[i].cells[1]).backgroundImage
+  const now = rows.findIndex((row) => row.classList.contains('table-now-row'))
+  const next = rows.flatMap((row, i) => (row.classList.contains('table-next-row') ? [i] : []))
+  return { now, next, nowPaint: paint(now), nextPaint: next.length ? paint(next[0]) : '', laterPaint: paint(now + 2), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('page-calendar-next', 375, 667)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const m = await evaluate(NEXT_CHECK)
+    const ok = !m.none && m.now === 7 && m.next.join() === '8' && m.nowPaint.includes('gradient') && m.nextPaint === m.nowPaint && !m.laterPaint.includes('color') && !m.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-calendar-next at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `now row ${m.now}, next row ${m.next.join(',') || 'none'}; next paint ${m.nextPaint === m.nowPaint ? 'the now tint\'s' : `DIFFERS (${m.nextPaint} vs ${m.nowPaint})`}; the row after ${m.laterPaint}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

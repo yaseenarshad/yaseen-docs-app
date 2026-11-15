@@ -11,6 +11,9 @@
  * gets `table-now-row` and `--table-now`, how far down the slot now is (0–1); `table.css` draws the line, the tint or
  * both, by `data-table-now` on the app root (D6). Each body row before it gets `table-past-row` (D14: grey text, by
  * `data-table-dim-past`). With no now row: before the first slot no row is past, after the last every row is.
+ * THE NEXT SLOT (YAZ-5541): the body row right after the now row (after its folded run; a run there gives it to its bar)
+ * gets `table-next-row`; `table.css` tints it only with Shade the next time slot on (`--table-next-shade`, the vault's).
+ * Before the first slot it is the first slot (the next to come); after the last, and with the now row the last, none.
  * A FOLDED RUN (YAZ-4165, `tableFold.ts`) that holds the now row gives the marks to its bar: the bar is the now row,
  * `--table-now` the place of now in the whole run, and it is not past; "Go to now" opens the run first.
  * Node decorations from the attributes and the text only, as `tableFreeze.ts`: typing only maps the set (a time
@@ -156,6 +159,10 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
   const nowRow = nowRun?.from ?? place.row
   const fraction = nowRun === undefined ? place.fraction : (place.row! - nowRun.from + place.fraction) / (nowRun.to - nowRun.from + 1)
   const pastEnd = runOf(runs, place.pastEnd)?.from ?? place.pastEnd
+  // The next slot (YAZ-5541): the body row right after the now row (after its folded run, which is one row on the screen),
+  // a folded run's bar if it starts one; before the first slot, the first slot (the next one to come); none after the last.
+  const after = place.row === null ? place.pastEnd : (nowRun?.to ?? place.row) + 1
+  const nextRow = after < table.childCount ? (runOf(runs, after)?.from ?? after) : -1
   const out: Decoration[] = []
   if (chip && table.attrs.nowButton !== false) out.push(Decoration.widget(pos + table.nodeSize, nowChip, { calendar: true, nowChip: true, key: 'table-now-chip', side: -1, stopEvent: () => true, ignoreSelection: true }))
   table.forEach((row, offset, r) => {
@@ -166,6 +173,7 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
       const now = String(Math.round(fraction * 1000) / 1000)
       out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-now-row', style: `--table-now: ${now}` }, { calendar: true, nowRow: true }))
     }
+    if (r === nextRow) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-next-row' }, { calendar: true }))
   })
   return out
 }

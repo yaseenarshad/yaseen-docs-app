@@ -2360,6 +2360,14 @@ export interface SettingsState {
   tablePosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
+  /**
+   * Settings › Editor › Calendar tables › Shade the next time slot (YAZ-5541): a calendar table's body row right after the
+   * now row gets a light tint, at the now tint's strength, in `tableNextColour`. Off by default. The vault's
+   * table-look.json (`look.nextShade`), as the now mark.
+   */
+  tableNextShade: boolean
+  /** Its colour (YAZ-5541): the band colour's choices (`isBandColour`: the accent, a table colour, `#rrggbb`). A table colour is its TEXT colour, so `red`, the default, is the now mark's red. */
+  tableNextColour: string
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
   /** Settings › Tables › Cell notes › Add button (YAZ-4790): the "+" on the corner of a table cell that adds a cell note. Off by default (YAZ-4790 demo). A table's own `notebutton` / `nonotebutton` turns its button on or off alone. `data-cell-note-button` on `.app`. */
@@ -3084,6 +3092,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableTextInCells: 'wrap',
   tablePosition: 'left',
   tableNowMark: 'line',
+  tableNextShade: false,
+  tableNextColour: 'red',
   tableNowButton: true,
   tableCellNoteButton: false,
   tableNewStyle: 'plain',

@@ -121,6 +121,8 @@ describe('settingCandidates', () => {
       'tableCellNotePinned',
       'tableAllNotesOpensAt',
       'tableNowMark',
+      'tableNextShade',
+      'tableNextColour',
       'tableNowButton',
       'tableDimPast',
       'tableShadeDarkness',

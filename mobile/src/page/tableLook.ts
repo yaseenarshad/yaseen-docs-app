@@ -1,3 +1,4 @@
+import { nextColour } from '@client/editor/table/tableLook'
 import { TABLE_LOOK_DEFAULTS, type TableLookSettings } from '@shared/tableLook'
 import { calendarLook, type CalendarLook } from './calendarLook'
 
@@ -11,7 +12,8 @@ import { calendarLook, type CalendarLook } from './calendarLook'
  *  - Text in cells: a table with no Wrap or Clip of its own, and a column with none, take the vault's;
  *  - Header row: each part a table does not set itself (`data-header-*`, `tables.css`), when the vault's differs from
  *    the Mac's default (so a vault with the default look draws as before);
- *  - the calendar look (`calendarLook()`): Mark the current time, Dim past rows, Shade darkness, Calendar day. The Now
+ *  - the calendar look (`calendarLook()`): Mark the current time, Shade the next time slot and its colour (YAZ-5541),
+ *    Dim past rows, Shade darkness, Calendar day. The Now
  *    button is a habit of each Mac, so the phone keeps the Mac's default.
  * No file, or a file that is not JSON: null, the Mac's defaults, as before. The phone never writes the file.
  */
@@ -19,7 +21,18 @@ export type PhoneTableLook = TableLookSettings
 
 /** The calendar look of a vault's tables (`calendarLook` checks each value again). */
 export const tableCalendarLook = (look: PhoneTableLook | null | undefined): CalendarLook =>
-  look == null ? calendarLook() : calendarLook({ nowMark: look.tableNowMark, dimPast: look.tableDimPast, shadeDarkness: look.tableShadeDarkness, dayStart: look.tableDayStart, dayEnd: look.tableDayEnd })
+  look == null
+    ? calendarLook()
+    : calendarLook({
+        nowMark: look.tableNowMark,
+        dimPast: look.tableDimPast,
+        shadeDarkness: look.tableShadeDarkness,
+        dayStart: look.tableDayStart,
+        dayEnd: look.tableDayEnd,
+        nextShade: look.tableNextShade,
+        // The default (red) is the CSS's own fallback, the now mark's red.
+        nextColour: look.tableNextColour === TABLE_LOOK_DEFAULTS.tableNextColour ? null : nextColour(look.tableNextColour),
+      })
 
 /** The Sticky header row default of a vault's tables (the Mac's: on). */
 export const stickyHeaderOf = (look: PhoneTableLook | null | undefined): boolean => look?.tableStickyHeader ?? TABLE_LOOK_DEFAULTS.tableStickyHeader

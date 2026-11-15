@@ -20,6 +20,10 @@ export interface CalendarLook {
   /** Minutes from midnight, on the half hour. */
   dayStart: number
   dayEnd: number
+  /** YAZ-5541, Shade the next time slot: the row after the now row gets `table-next-row`, a tint at the now tint's strength. */
+  nextShade: boolean
+  /** Its colour as CSS (`nextColour` of the vault's `tableNextColour`), or null for the now mark's red. */
+  nextColour: string | null
 }
 
 /** The Mac's defaults (`DEFAULT_SETTINGS` in `shared/types.ts`; `calendarLook.test.ts` holds them equal). */
@@ -30,6 +34,8 @@ export const MAC_CALENDAR_LOOK: Readonly<CalendarLook> = Object.freeze({
   shadeDarkness: 6,
   dayStart: 5 * 60,
   dayEnd: 22 * 60,
+  nextShade: false,
+  nextColour: null,
 })
 
 /** The Mac's bounds of Shade darkness (`TABLE_SHADE_MIN`, `TABLE_SHADE_MAX`). */
@@ -55,5 +61,7 @@ export function calendarLook(from: Partial<Record<keyof CalendarLook, unknown>> 
     dimPast: DIM_PASTS.includes(from.dimPast) ? (from.dimPast as TableDimPast) : d.dimPast,
     shadeDarkness: typeof shade === 'number' && Number.isFinite(shade) ? Math.min(SHADE_MAX, Math.max(SHADE_MIN, Math.round(shade))) : d.shadeDarkness,
     ...day,
+    nextShade: typeof from.nextShade === 'boolean' ? from.nextShade : d.nextShade,
+    nextColour: typeof from.nextColour === 'string' && from.nextColour !== '' ? from.nextColour : d.nextColour,
   }
 }

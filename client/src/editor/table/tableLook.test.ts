@@ -33,7 +33,7 @@ afterEach(() => {
 describe('table-look.json (shared/tableLook.ts)', () => {
   it('the defaults and ranges are the app\'s (DEFAULT_SETTINGS, types.ts), written out for the phone', () => {
     expect(TABLE_LOOK_DEFAULTS).toEqual(Object.fromEntries(TABLE_LOOK_SETTINGS.map((k) => [k, DEFAULT_SETTINGS[k]])))
-    expect(TABLE_LOOK_SETTINGS).toHaveLength(21)
+    expect(TABLE_LOOK_SETTINGS).toHaveLength(23)
     const ok = (look: object) => Object.keys(sanitizeTableLook({ look }).look ?? {}).length === 1
     expect([ok({ bandStrength: TABLE_BAND_STRENGTH_MIN }), ok({ bandStrength: TABLE_BAND_STRENGTH_MAX }), ok({ bandStrength: TABLE_BAND_STRENGTH_MAX + 1 })]).toEqual([true, true, false])
     expect([ok({ width: BLOCK_WIDTH_MIN }), ok({ width: BLOCK_WIDTH_MAX }), ok({ width: BLOCK_WIDTH_MIN - 1 })]).toEqual([true, true, false])
@@ -70,6 +70,33 @@ describe('table-look.json (shared/tableLook.ts)', () => {
     expect(tableLookSettings({ newTables: { dayStart: 1200, dayEnd: 600 } })).toMatchObject({ tableDayStart: DEFAULT_SETTINGS.tableDayStart, tableDayEnd: DEFAULT_SETTINGS.tableDayEnd })
     // A value an older main process did not send, or a wrong one, is the default.
     expect(appTableLook({ ...DEFAULT_SETTINGS, tableRowBand: 'loud' as never, tableHeaderRow: undefined as never })).toEqual(TABLE_LOOK_DEFAULTS)
+  })
+})
+
+describe('the next time slot in table-look.json (YAZ-5541)', () => {
+  it('Off and red by default; only what differs is written, as `nextShade` and `nextColour`; read back, the same settings', () => {
+    expect([DEFAULT_SETTINGS.tableNextShade, DEFAULT_SETTINGS.tableNextColour]).toEqual([false, 'red'])
+    expect(tableLookOf({ ...DEFAULT_SETTINGS, tableNextShade: true })).toEqual({ look: { nextShade: true } })
+    const both = { ...DEFAULT_SETTINGS, tableNowMark: 'tint' as const, tableNextShade: true, tableNextColour: '#22aa55' }
+    const look = tableLookOf(both)
+    expect(look).toEqual({ look: { nowMark: 'tint', nextShade: true, nextColour: '#22aa55' } })
+    expect(tableLookFile(look)).toEqual({ version: 1, look: { nowMark: 'tint', nextShade: true, nextColour: '#22aa55' } })
+    expect(tableLookSettings(look)).toEqual(appTableLook(both))
+    expect(tableLookSettings(look)).toMatchObject({ tableNextShade: true, tableNextColour: '#22aa55' })
+    expect(tableLookSettings({})).toMatchObject({ tableNextShade: false, tableNextColour: 'red' })
+  })
+
+  it('sanitised as the band colour: the accent, a table colour or #rrggbb; a boolean; each wrong key dropped alone, an unknown one not read', () => {
+    for (const colour of ['accent', 'red', 'teal', 'grey', 'brown', '#A1b2C3']) expect(sanitizeTableLook({ look: { nextColour: colour } })).toEqual({ look: { nextColour: colour } })
+    expect(sanitizeTableLook({ version: 1, look: { nextShade: 'yes', nextColour: 'crimson', nowMark: 'both', nextBlink: true } })).toEqual({ look: { nowMark: 'both' } })
+    expect(sanitizeTableLook({ look: { nextShade: false, nextColour: '#123' } })).toEqual({ look: { nextShade: false } })
+    expect(appTableLook({ ...DEFAULT_SETTINGS, tableNextShade: 1 as never, tableNextColour: 'nope' })).toEqual(TABLE_LOOK_DEFAULTS)
+  })
+
+  it('the variables: `--table-next-shade` on or off, `--table-next-colour` a table colour\'s TEXT colour (red is the now mark\'s red)', () => {
+    expect(tableLookVars(TABLE_LOOK_DEFAULTS)).toMatchObject({ '--table-next-shade': 'off', '--table-next-colour': 'var(--table-text-red)' })
+    expect(tableLookVars({ ...TABLE_LOOK_DEFAULTS, tableNextShade: true, tableNextColour: 'accent' }, true)).toMatchObject({ '--table-next-shade': 'on', '--table-next-colour': 'var(--accent)' })
+    expect(tableLookVars({ ...TABLE_LOOK_DEFAULTS, tableNextColour: '#22aa55' })['--table-next-colour']).toBe('#22aa55')
   })
 })
 
