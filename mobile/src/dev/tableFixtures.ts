@@ -77,3 +77,56 @@ export const TABLE_PAGE = [
   EIGHT_SPARSE,
   'The end of the tables.',
 ].join('\n\n')
+
+/**
+ * YAZ-5480: a tall table whose file freezes its first two rows and its first column, as the Mac writes it: the table
+ * comment after the table, a blank line between. 7 columns, 46 rows of made-up readings: taller than a phone, also full screen.
+ */
+export const FROZEN = [
+  '| Station | Region | Mon | Tue | Wed | Thu | Notes |',
+  '| --- | --- | --: | --: | --: | --: | --- |',
+  '| (units) | | mm | mm | mm | mm | |',
+  ...Array.from({ length: 44 }, (_, i) => {
+    const name = ['North Ridge', 'Lake Shore', 'Old Mill', 'Pine Hollow', 'Stone Bridge', 'Harbor Point', 'Willow Bend', 'Cedar Flats', 'Fox Hill', 'Mossy Glen', 'Iron Gate'][i % 11]
+    const n = (k: number) => ((i * 7 + k * 13) % 41) + 2
+    return `| ${name} ${Math.floor(i / 11) + 1} | ${['East', 'West', 'Coast', 'Hills'][i % 4]} | ${n(1)} | ${n(2)} | ${n(3)} | ${n(4)} | ${i % 3 === 0 ? 'Gauge cleaned in the morning; reading taken after the shower passed.' : i % 3 === 1 ? 'Dry.' : ''} |`
+  }),
+].join('\n')
+
+/** The comment the Mac writes after `FROZEN`. */
+export const FROZEN_COMMENT = '<!-- table: freeze 2 rows 1 col -->'
+
+/** A page with the frozen table, a line before and text after it, so the page scrolls past its end. */
+export const FROZEN_PAGE = ['# Frozen table', 'Rain gauges, two header rows and the station column frozen on the Mac:', FROZEN, FROZEN_COMMENT, 'After the table.', ...Array.from({ length: 12 }, (_, i) => `Line ${i + 1} after the table, so the page goes on.`)].join('\n\n')
+
+/**
+ * YAZ-5482: a table whose comment sets every part of the look the phone shows: the Mac's column widths, cell fills (a
+ * name and a custom colour), text colours (a name and a custom dark ink, which the phone makes readable in dark mode),
+ * a cell's own alignment, the table's and a cell's vertical alignment, two merged cells (the file keeps the full grid:
+ * the covered cells are empty), its own border, a plain header row, stripes and compact rows. Made-up data.
+ */
+export const LOOK = [
+  '| Area | Owner | Budget | Spent | Status |',
+  '| --- | --- | --: | --: | --- |',
+  '| Garden | Sam | 1,200 | 950 | On track, the beds are dug and the seeds are in |',
+  '|  | Ana | 300 | 410 | Over: the fence posts cost more than we thought |',
+  '| Kitchen | Lee | 4,800 | 2,100 | Waiting for the counter top |',
+  '| Shed | Pat |  | 120 | Paint only |',
+  '| Total | 6,300 |  | 3,580 | |',
+].join('\n')
+
+/** The comment the Mac would write after `LOOK` (its parts in the Mac's fixed order). */
+export const LOOK_COMMENT = '<!-- table: widths 160 110 90 90 240, fill A1:E1 blue B3 #ff8800 E3 green E4 red, color D4 red E5 #1a1a40 B6 purple, align A6 center B6 right, valign middle E2 top, merge A2:A3 B6:C6, border 2px 40%, header plain, stripes, height compact -->'
+
+/** A table with a coloured header row of its own (red, strong, regular weight, white text, centred) and its cells clipped, but one column wrapping. */
+export const LOOK_CLIP = [
+  '| Book | Shelf | Notes |',
+  '| --- | --- | --- |',
+  '| The long walk home through the hills and the quiet valleys beyond them | B2 | A slow start, then very hard to put down for the last hundred pages. |',
+  '| Rivers and roads | C1 | Maps in the back. |',
+  '| Small kitchen, big meals | A4 | The bread chapter is the reason to own it. |',
+].join('\n')
+export const LOOK_CLIP_COMMENT = '<!-- table: header red strong regular text-white align-center, nowrap, text 3:wrap -->'
+
+/** A page with both, a line before each. */
+export const LOOK_PAGE = ['# Table look', 'The house projects, as the Mac shows them:', LOOK, LOOK_COMMENT, 'Books, clipped on the Mac:', LOOK_CLIP, LOOK_CLIP_COMMENT, 'The end of the tables.'].join('\n\n')

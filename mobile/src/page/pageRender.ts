@@ -3,9 +3,10 @@ import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/loc
 import { parseAlt } from '@client/editor/image/imageSrc'
 import { headSpan, tailSpan, type PillEnd } from '@client/editor/wikilink/linkPillLook'
 import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
-import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
+import { Marked, Renderer, type Token, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
 import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
+import { applyTableFile, readTableComment } from './tableFile'
 import { layoutTables } from './tableLayout'
 
 /**
@@ -204,9 +205,41 @@ interface Parse {
 let parse: Parse = { cards: [] }
 
 const markdown = new Marked({ gfm: true, breaks: true })
+/** A table token with the body of the table comment after it (`table: …`; YAZ-5480, `tableFile.ts`). */
+type FiledTable = Tokens.Table & { fileComment?: string }
+
+/**
+ * Each table followed by its table comment (`<!-- table: … -->`, the Mac's: the comment is the NEXT block, as the Mac's
+ * `joinNextComment` reads it) gets the comment's text, in every container (lists, quotes). The comment itself shows
+ * nothing (`html` below).
+ */
+function joinTableComments(tokens: Token[]): void {
+  tokens.forEach((token, at) => {
+    if (token.type === 'table') {
+      const next = tokens[at + 1]
+      // Its body only: the cleaner drops an attribute that holds `-->` (DOMPurify's guard), so the mark holds `table: …`.
+      if (next?.type === 'html' && readTableComment(next.raw) !== null) (token as FiledTable).fileComment = next.raw.trim().replace(/^<!--\s*/, '').replace(/\s*-->$/, '')
+      return
+    }
+    if (token.type === 'list') for (const item of (token as Tokens.List).items) joinTableComments(item.tokens)
+    else if ('tokens' in token && Array.isArray(token.tokens)) joinTableComments(token.tokens)
+  })
+}
+
 markdown.use({
   extensions: [blockMath, footnoteDef, wikilinks, footnoteRef, highlight],
+  hooks: {
+    processAllTokens(tokens) {
+      joinTableComments(tokens)
+      return tokens
+    },
+  },
   renderer: {
+    table(token) {
+      const html = Renderer.prototype.table.call(this, token)
+      const comment = (token as FiledTable).fileComment
+      return comment === undefined ? html : html.replace(/^<table>/, `<table ${localMark('table-file')}="${escapeHtml(comment)}">`)
+    },
     checkbox: ({ checked }) => `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"></span> `,
     code(token) {
       if (token.lang?.trim() !== 'card') return false
@@ -462,12 +495,19 @@ export function renderPiece(text: string, look: PageLook): DocumentFragment {
   drawEmbeds(root, look)
   drawCards(root, look, cards)
   drawCallouts(root)
+  // YAZ-5480: a table's own settings from the file (its frozen rows and columns), read with the Mac's parser.
+  for (const table of root.querySelectorAll<HTMLTableElement>('table[data-table-file]')) {
+    applyTableFile(table, table.getAttribute('data-table-file') ?? '')
+    table.removeAttribute('data-table-file')
+  }
   // YAZ-5471: each table, the page's and its cards', in its box with its column widths (`tableLayout.ts`).
   layoutTables(root)
   return root
 }
 
 const FENCE = /^ {0,3}(`{3,}|~{3,})/
+/** The next block is a table comment: blank lines, then `<!-- table:`. */
+const TABLE_COMMENT_NEXT = /^\s*<!--\s*table:/
 
 /**
  * Where the piece that starts at `from` ends: after the first blank line at or past `from + size`, outside a code fence.
@@ -485,7 +525,8 @@ export function cutAt(text: string, from: number, size: number): number {
       if (fence === null) fence = m[1][0]
       else if (m[1][0] === fence) fence = null
     }
-    if (fence === null && line.trim() === '' && end - from >= size) return end
+    // YAZ-5480: never between a table and its comment (the blank line the Mac writes between them).
+    if (fence === null && line.trim() === '' && end - from >= size && !TABLE_COMMENT_NEXT.test(text.slice(end, end + 200))) return end
     at = end
   }
   return text.length

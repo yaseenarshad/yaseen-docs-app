@@ -9,7 +9,13 @@ import { join } from 'node:path'
  *  - the erase ask (and the other asks of Settings): when it opens, its first sentence (the loss) and every button are
  *    between the top bar and the tab bar; the question starts at its top; Cancel has the focus;
  *  - the trick-tag page (`#fixture=page-tricks`): its last block draws;
- *  - the tables (`#fixture=page-tables`, `page-table-full`, YAZ-5471): words whole, the wide one scrolls in its box.
+ *  - the tables (`#fixture=page-tables`, `page-table-full`, YAZ-5471): words whole, the wide one scrolls in its box;
+ *  - the frozen table (`#fixture=page-table-frozen`, `page-table-frozen-full`, YAZ-5480): while the page scrolls down
+ *    and the table sideways, its two frozen rows stay at the top and its frozen column at the left; at the table's end
+ *    the rows stop inside it; full screen too;
+ *  - the table look (`#fixture=page-table-look`, YAZ-5482), light and dark: the merged cells span their rows and
+ *    columns, the fills and text colours paint (a custom dark ink made readable in dark mode), a clipped cell is one
+ *    line, no column is too narrow to read, the page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go).
  */
@@ -28,7 +34,7 @@ const SIZES = [
   [375, 667],
   [390, 844],
 ] as const
-const ASKS = ['c4erase-3-friends-removes3', 'c4erase-1-friends-removes1', 'c4erase-3-friends', 'c4erase-0-friends', 'c4erase-0']
+const ASKS = process.env.LAYOUT_ONLY === 'tables' ? [] : ['c4erase-3-friends-removes3', 'c4erase-1-friends-removes1', 'c4erase-3-friends', 'c4erase-0-friends', 'c4erase-0']
 
 process.env.NOTECARDS_SERVE = 'no'
 const { serveDist } = await import('./serve')
@@ -165,6 +171,93 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-full at ${w}x${h}: ${m.none ? 'NO VIEW' : `covers ${m.cover}, ${m.rows} rows, scale ${m.scale}, table ${m.table?.join('x')} px`}  ${file}`)
   }
+}
+// YAZ-5480: the file freezes 2 rows and 1 column (`src/dev/tableFixtures.ts`: FROZEN). Scrolled down into the table and
+// sideways, the frozen rows sit at the top of the page's scroll box and the frozen column at the frame's left; scrolled to
+// the table's end, the rows stop inside the table. Then full screen, scrolled both ways.
+const FROZEN_CHECK = `(async () => {
+  const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))))
+  const r = (el) => el.getBoundingClientRect()
+  const screen = document.querySelector('.screen'), frame = document.querySelector('.reader__body .page-table-frame')
+  const table = frame.querySelector('table'), scroll = frame.querySelector('.page-table')
+  const top = () => r(screen).top
+  screen.scrollTop += r(frame).top - top() + 300
+  scroll.scrollLeft = 160
+  await frames()
+  const head = table.rows[0].cells[0], head2 = table.rows[0].cells[3], units = table.rows[1].cells[0], body = table.rows[8].cells[0], body2 = table.rows[8].cells[3]
+  const mid = { headTop: r(head).top - top(), unitsTop: r(units).top - r(head).bottom, cornerLeft: r(head).left - r(frame).left, bodyLeft: r(body).left - r(frame).left, head2Shift: Math.round(r(head2).left - r(body2).left), bodyAbove: r(table.rows[3]).top < top() }
+  screen.scrollTop += r(table).bottom - top() - 20
+  await frames()
+  const end = { unitsBottom: r(units).bottom - r(table).bottom }
+  screen.scrollTop += r(frame).top - top() + 300
+  await frames()
+  return { mid, end, run: table.style.getPropertyValue('--pin-run'), rows: table.dataset.pinRows, cols: table.dataset.pinCols, timeline: CSS.supports('animation-timeline: view()') }
+})()`
+const FROZEN_FULL = `(async () => {
+  const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 60))))
+  const r = (el) => el.getBoundingClientRect()
+  const v = document.querySelector('.table-view'); if (!v) return { none: true }
+  const pane = v.querySelector('.table-view__pane'), table = v.querySelector('table')
+  pane.scrollTop = 400; pane.scrollLeft = 200
+  await frames()
+  const head = table.rows[0].cells[0], units = table.rows[1].cells[2], body = table.rows[12].cells[0]
+  return { headTop: Math.round(r(head).top - r(pane).top), headLeft: Math.round(r(head).left - r(pane).left), unitsTop: Math.round(r(units).top - r(pane).top), bodyLeft: Math.round(r(body).left - r(pane).left), scale: v.dataset.scale, scrolled: [pane.scrollTop, pane.scrollLeft], ranges: ['--tv-y-from', '--tv-y-to', '--tv-y-run'].map((n) => v.querySelector('.table-view__content').style.getPropertyValue(n)).join(' ') }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const [w, h] of [[375, 667], [320, 568]] as const) {
+    const file = await open('page-table-frozen', w, h)
+    const m = await evaluate(FROZEN_CHECK)
+    writeFileSync(file.replace('.png', '-scrolled.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const near = (a: number, b: number) => Math.abs(a - b) <= 2
+    const ok = m.rows === '2' && m.cols === '1' && near(m.mid.headTop, 1) && near(m.mid.unitsTop, 0) && near(m.mid.cornerLeft, 1) && near(m.mid.bodyLeft, 1) && m.mid.head2Shift === 0 && m.mid.bodyAbove && m.end.unitsBottom <= 1
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-frozen at ${w}x${h}: ${m.timeline ? 'scroll-driven' : 'script'}; frozen ${m.rows} rows ${m.cols} col; scrolled down and sideways: header ${m.mid.headTop}px from the top, row 2 under it (${m.mid.unitsTop}), corner ${m.mid.cornerLeft}px and column ${m.mid.bodyLeft}px from the left, header with its column (${m.mid.head2Shift}); at the end the rows stop ${-m.end.unitsBottom}px inside  ${file}`)
+  }
+  {
+    const file = await open('page-table-frozen-full', 375, 667)
+    const m = await evaluate(FROZEN_FULL)
+    writeFileSync(file.replace('.png', '-scrolled.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = !m.none && m.scrolled[0] >= 300 && m.scrolled[1] >= 20 && m.headTop >= -1 && m.headTop <= 2 && m.headLeft >= -1 && m.headLeft <= 2 && m.bodyLeft >= -1 && m.bodyLeft <= 2 && m.unitsTop > 0
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-frozen-full at 375x667: scale ${m.scale}; scrolled ${m.scrolled?.join(',')}, header ${m.headTop}px from the top and ${m.headLeft}px from the left, column ${m.bodyLeft}px from the left (rows ${m.ranges})  ${file}`)
+  }
+}
+// YAZ-5482: the file's look on the phone, in light and dark (`src/dev/tableFixtures.ts`: LOOK, LOOK_CLIP).
+const LOOK_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const [look, clip] = [...document.querySelectorAll('.reader__body table')]
+  const row = (i) => look.rows[i]
+  const garden = row(1).cells[0], kitchen = row(3).cells[0], total = row(5).cells[1]
+  const heads = [...look.rows[0].cells]
+  const ink = getComputedStyle(row(4).cells[4]).color
+  const fills = [row(2).cells[0], row(2).cells[3], row(3).cells[4], heads[0]].map((c) => getComputedStyle(c).backgroundImage.includes('rgb'))
+  const box = clip.rows[1].querySelector('.page-table__clip')
+  const narrow = [...document.querySelectorAll('.reader__body table')].flatMap((t) => [...t.rows[0].cells].map((c) => Math.round(r(c).width))).filter((w) => w < 44)
+  return {
+    rowspan: Math.round(r(garden).height) === Math.round(r(row(2)).bottom - r(row(1)).top),
+    colspan: Math.abs(r(total).width - (r(heads[1]).width + r(heads[2]).width)) <= 1,
+    kitchenBelow: r(kitchen).top >= r(garden).bottom - 1,
+    fills, ink, clipCut: !!box && box.scrollWidth > box.clientWidth, clipOneLine: !!box && r(box).height < 30,
+    narrow, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+    clipInfo: box && [box.scrollWidth, box.clientWidth, box.style.maxWidth, Math.round(r(box).height), box.textContent.slice(0, 20)],
+  }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('page-table-look', 375, 667)
+    const m = await evaluate(LOOK_CHECK)
+    const dark = scheme === 'dark'
+    const ok = m.rowspan && m.colspan && m.kitchenBelow && m.fills.every(Boolean) && m.ink === (dark ? 'rgb(141, 141, 160)' : 'rgb(26, 26, 64)') && m.clipCut && m.clipOneLine && m.narrow.length === 0 && !m.pageWide
+    if (!ok) failed++
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    await evaluate(`document.querySelectorAll('.reader__body table')[1].scrollIntoView({ block: 'center' })`)
+    await wait(200)
+    writeFileSync(shot.replace('.png', '-clip.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-look at 375x667, ${scheme}: merged ${m.rowspan ? 'rows' : 'ROWS NOT'} and ${m.colspan ? 'columns' : 'COLUMNS NOT'}; fills ${m.fills.map((f: boolean) => (f ? 'Y' : 'n')).join('')}; custom ink ${m.ink}; clip ${m.clipCut && m.clipOneLine ? 'one line, cut' : 'NOT CUT ' + JSON.stringify(m.clipInfo)}; narrow columns ${m.narrow.length === 0 ? 'none' : m.narrow.join(',')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()
 server.close()
