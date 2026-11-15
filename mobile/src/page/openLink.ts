@@ -12,7 +12,7 @@ import { openFile } from '../explore/openFile'
  * (`.yaseendocs/link-click.json`, the Mac's YAZ-4936) says how. `explore`: the file opens in a sheet over where you are;
  * `open` (the Mac's default, and with no file): it opens over the open one, full screen (one Back step).
  */
-export type LinkTarget = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'drawing'; path: string }
+export type LinkTarget = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'drawing'; path: string } | { kind: 'folder'; path: string }
 
 export interface LinkDoor {
   go: (action: NavAction) => void
@@ -29,6 +29,8 @@ export interface LinkDoor {
 export function linkRoute(target: LinkTarget): Route {
   if (target.kind === 'card') return { kind: 'card', path: target.path, id: target.id }
   if (target.kind === 'drawing') return { kind: 'drawing', path: target.path }
+  // YAZ-5550: a folder's page (in a panel when the vault says explore, as a page's link).
+  if (target.kind === 'folder') return { kind: 'folder', path: target.path }
   return { kind: 'page', path: target.path, ...(target.heading !== undefined && target.heading !== '' && { heading: target.heading }) }
 }
 

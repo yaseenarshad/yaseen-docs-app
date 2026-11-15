@@ -158,7 +158,7 @@ describe('hold a folder (YAZ-5460)', () => {
     await act(async () => item('Open folder page')!.click())
     await waitFor(h, () => h!.host.querySelector('.folder-page .folder-table tbody tr') !== null)
     expect(sheetStack()).toEqual([])
-    await act(async () => h!.host.querySelector<HTMLElement>('.folder-table tbody tr td')!.click())
+    await act(async () => h!.host.querySelector<HTMLElement>('.folder-table tbody tr td[data-name]')!.click())
     await waitFor(h, () => sheetStack().length === 1 && document.querySelector('.explore-sheet') !== null)
     expect(sheetStack()[0].route.kind).toBe('page')
     // Back from the sheet, then from the folder page: Search.

@@ -37,6 +37,8 @@ function Card({ row, run, keys }: { row: Row; run: ViewRun; keys: readonly strin
       <span className="folder-card__title">
         {isFolderRow(row.record) && <span className="file-icon" data-kind="folder" aria-hidden />}
         {row.record.title}
+        {/* YAZ-5549: a subfolder's "N inside", as the Mac's row title in every view. */}
+        {isFolderRow(row.record) && run.inside !== null && <span className="folder-inside">{run.inside(row)} inside</span>}
       </span>
       {fields.map((f) => (
         <span key={f.key} className="folder-card__field">

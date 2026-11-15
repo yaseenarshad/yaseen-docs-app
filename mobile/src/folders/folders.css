@@ -168,12 +168,35 @@
 .folder-table .page-table-box[data-wide] {
   margin-top: calc(-1 * var(--tap) - 2px);
 }
-/* YAZ-5532: a finger's band marks the row it touches (`tables.css`, `rowBand.ts`): no grey flash of its own. A tap on
-   the Name opens the row: the Name cell (so its row) is at least a finger's tap tall (a table cell's height is its least). */
-.folder-table td[data-name] {
-  height: var(--tap);
+/* YAZ-5549: the vault's row height (the Mac's Short 28, Medium 44, Tall 68 px: `--folder-row-h` on the table), each body
+   cell's least height, as the Mac's. YAZ-5532: a finger's band marks the row it touches (`tables.css`, `rowBand.ts`): no
+   grey flash of its own. A tap on the Name opens the row: the Name cell (so its row) is at least a finger's tap tall (a
+   table cell's height is its least); a taller row height wins. */
+.folder-table tbody tr:not(.folder-table__group) > td {
+  height: var(--folder-row-h, 28px);
+}
+.folder-table tbody tr:not(.folder-table__group) > td[data-name] {
+  height: max(var(--tap), var(--folder-row-h, 28px));
   cursor: pointer;
   font-weight: 500;
+}
+/* YAZ-5549: the Mac's `#` column: each row's number, small and grey, at the right of its narrow column. */
+.folder-table .folder-table__num {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* YAZ-5549: a subfolder row's "N inside" (the Mac's `view-folder-row__inside`), after its title, in a table or a card. */
+.folder-inside {
+  margin-left: 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .folder-table tr[data-folder] td[data-name]::before {
   content: '';

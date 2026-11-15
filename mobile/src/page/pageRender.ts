@@ -10,7 +10,7 @@ import { cardMoreButton } from '../cardMenu/moreButton'
 import { applyTableFile, readTableComment } from './tableFile'
 import { applyTableLook, type PhoneTableLook } from './tableLook'
 import { layoutTables } from './tableLayout'
-import { markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } from './pageMarked'
+import { BLOCK_MATH, markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } from './pageMarked'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (YAZ-5079, 4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -48,9 +48,10 @@ import { markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } 
 
 /**
  * What a `[[link]]` or a Markdown link opens (YAZ-5455): a page (at a heading, when the link names one), a card, a file
- * of the vault, or a heading of this same page (`[[#Heading]]`, `[x](#heading)`).
+ * of the vault, a heading of this same page (`[[#Heading]]`, `[x](#heading)`), or a folder's page (YAZ-5550: a link
+ * that names a folder and no page, `folderLink.ts`).
  */
-export type LinkOpen = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string }
+export type LinkOpen = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'folder'; path: string }
 
 export interface LinkShow {
   /** The text the link shows (the Mac's `linksAsShown`: a title for an ID, the words after `|`). */
@@ -494,8 +495,9 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})/
 const TABLE_COMMENT_NEXT = /^\s*<!--\s*table:/
 
 /**
- * Where the piece that starts at `from` ends: after the first blank line at or past `from + size`, outside a code fence.
- * The whole rest when there is none.
+ * Where the piece that starts at `from` ends: after the first blank line at or past `from + size`, outside a code fence
+ * and outside a math block (YAZ-5547: a piece that starts inside one would read its `- [ ]` lines as tasks). The whole
+ * rest when there is none.
  */
 export function cutAt(text: string, from: number, size: number): number {
   let fence: string | null = null
@@ -504,6 +506,11 @@ export function cutAt(text: string, from: number, size: number): number {
     const nl = text.indexOf('\n', at)
     const end = nl === -1 ? text.length : nl + 1
     const line = text.slice(at, nl === -1 ? text.length : nl)
+    const math = fence === null && /^ {0,3}\$\$/.test(line) ? BLOCK_MATH.exec(text.slice(at)) : null
+    if (math !== null) {
+      at += math[0].length
+      continue
+    }
     const m = FENCE.exec(line)
     if (m !== null) {
       if (fence === null) fence = m[1][0]

@@ -63,6 +63,8 @@ import { freePort } from './freePort'
  *    screen, above the page arrows and the tab bar; its first row on top.
  *  - a card file's own ⋯ (`#fixture=card-menu`, YAZ-5527), light and dark, at 375 px: at the right of the card's head, a
  *    44 px tap; its menu inside the screen; the top bar's ⋯ holds Find in card and no card action.
+ *  - a page card's ⋯ in an Explore panel (`#fixture=sheet-card-menu`, YAZ-5548), light and dark, at 375 px: at the right
+ *    of the card's head, a 44 px tap; its menu (Archive card armed) inside the panel, its first row on top.
  *  - the Type filter of Search (`#fixture=search-types`, `search-types-menu`, `search-types-favorites`, YAZ-5534), light and
  *    dark, at 375 px: the bar one line, the pill naming the pick; each menu row a 44 px tap; each row of the types in the
  *    tree under its open parent folders; the page never scrolls sideways.
@@ -73,6 +75,9 @@ import { freePort } from './freePort'
  *    screen; a tap opens it in place, its rows inside the screen; the same section on the full page, open, then closed.
  *  - the Today tab (`#fixture=today-open`, YAZ-5522 N6), light and dark, at 375 px: today's page open, "Today" marked
  *    (`aria-current="page"`) in the selected tab's colour and weight; on the tab bar alone (`today`) it is not.
+ *  - a folder's table as the vault's folder-pages.json says (`#fixture=folder-table`, `folder-table-look`, YAZ-5549), light
+ *    and dark, at 375 px (in the folder views' part): the row height (Short: the Name cell keeps 44 px; Tall: 68 px),
+ *    the `#` numbers, a subfolder's "N inside".
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
@@ -550,13 +555,26 @@ const FOLDER_CHECK = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const table = document.querySelector('.folder-table table')
   const board = document.querySelector('.folder-board')
-  const narrow = table ? [...table.rows[0].cells].filter((c) => r(c).width < 44).map((c) => c.textContent) : []
+  // YAZ-5549: the \`#\` column of row numbers is narrow by design (the Mac's gutter); every other column is a readable width.
+  const narrow = table ? [...table.rows[0].cells].filter((c) => !c.classList.contains('folder-table__num') && r(c).width < 44).map((c) => c.textContent) : []
+  const numbered = table ? table.querySelector('.folder-table__num') !== null : false
+  // YAZ-5549: the row height (the vault's), each body row's height, the Name cells' least height (YAZ-5532: 44), the numbers, the counts.
+  const look = table ? {
+    rowHeight: Number(table.dataset.rowHeight),
+    rows: [...table.tBodies[0].rows].filter((tr) => !tr.classList.contains('folder-table__group')).map((tr) => Math.round(r(tr).height)),
+    nameMin: Math.min(...[...table.querySelectorAll('td[data-name]')].map((td) => Math.round(r(td).height))),
+    numbers: [...table.querySelectorAll('tbody td.folder-table__num')].map((td) => td.textContent).filter((t) => t !== ''),
+    numbersShown: [...table.querySelectorAll('tbody td.folder-table__num')].filter((td) => td.textContent !== '').every((td) => r(td).width > 0 && r(td).right <= innerWidth),
+    inside: [...table.querySelectorAll('.folder-inside')].map((el) => el.textContent),
+  } : null
   return {
     menu: !!document.querySelector('.hold-menu [role=menu]'),
     page: !!document.querySelector('.folder-page'),
     tabs: document.querySelectorAll('.folder-tabs__tab').length,
     table: !!table,
-    pinned: table ? table.getAttribute('data-pin-rows') === '1' && table.getAttribute('data-pin-cols') === '1' : null,
+    pinned: table ? table.getAttribute('data-pin-rows') === '1' && table.getAttribute('data-pin-cols') === (numbered ? '2' : '1') : null,
+    numbered,
+    look,
     inBox: table ? !!table.closest('.page-table-box') : null,
     narrow,
     board: board ? { columns: board.children.length, scrolls: board.scrollWidth > board.clientWidth + 1 } : null,
@@ -576,7 +594,10 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
   const want: Record<string, (m: any) => boolean> = {
     'folder-hold': (m) => m.menu,
     'folder-page': (m) => m.page && m.tabs === 5 && m.table && m.pinned && m.inBox,
-    'folder-table': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0,
+    // YAZ-5549: no file: Short rows (28 px), numbers on; the Name cell keeps its 44 px, so each row is 44 px.
+    'folder-table': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0 && m.numbered && m.look.rowHeight === 28 && m.look.nameMin >= 44 && m.look.rows.every((h: number) => h >= 44 && h <= 60) && m.look.numbers.join() === '1,2,3,4,5' && m.look.numbersShown && m.look.inside.length === 0,
+    // YAZ-5549: the vault says Tall (68 px) and "Pages inside count": each row 68 px, the subfolder's "1 inside".
+    'folder-table-look': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0 && m.numbered && m.look.rowHeight === 68 && m.look.nameMin >= 68 && m.look.rows.every((h: number) => h >= 68) && m.look.numbers.join() === '1,2,3,4,5' && m.look.numbersShown && m.look.inside.join() === '1 inside',
     'folder-grouped': (m) => m.table && m.pinned && m.narrow.length === 0,
     'folder-board': (m) => m.board !== null && m.board.columns === 3 && m.board.scrolls && m.cards === 5,
     'folder-cards': (m) => m.cards === 5,
@@ -946,6 +967,40 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  card-menu ${scheme} at 375x667: the card ⋯ ${more.last ? 'last in the head' : 'NOT LAST IN THE HEAD'}, ${more.inCard ? 'in the card' : 'OUTSIDE THE CARD'}, ${more.rightGap}px from its right, ${more.tap ? '44px tap' : 'TAP TOO SMALL'}, ${more.hit ? 'its centre the ⋯' : 'COVERED'}; menu ${m.top}-${m.bottom}, the screen ${m.screenTop}-${m.screenBottom}, first row ${m.hit ? 'on top' : 'COVERED'}; top bar ⋯ ${JSON.stringify(bar.rows)}, ${bar.actions} card actions  ${shot}`)
   }
+  // YAZ-5548: a page card's ⋯ in an Explore panel (`#fixture=sheet-card-menu`), light and dark, at 375 px: at the right of
+  // its head (inside the card, a 44 px tap, its centre the ⋯ itself); its menu open (Archive card armed) inside the panel's
+  // scroller, its first row on top.
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('sheet-card-menu', 375, 667)
+    const m = await evaluate(`(() => {
+      const b = document.querySelector('.explore-sheet .page-card .card__head .card__more')
+      const menu = document.querySelector('.explore-sheet .card-menu')
+      if (!b || !menu) return { error: b ? 'no menu' : 'no card ⋯' }
+      const card = b.closest('.page-card').getBoundingClientRect()
+      const r = b.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      const s = document.querySelector('.explore-sheet__body').getBoundingClientRect()
+      const box = menu.getBoundingClientRect()
+      const row = menu.querySelector('[role=menuitem]').getBoundingClientRect()
+      const first = document.elementFromPoint(row.left + 20, row.top + row.height / 2)
+      return {
+        last: b.closest('.card__head').lastElementChild === b.parentElement,
+        inCard: r.left >= card.left - 0.5 && r.right <= card.right + 0.5 && r.top >= card.top - 8,
+        tap: r.width >= 44 && r.height >= 44,
+        hit: hit === b || hit?.closest('.card-menu') === menu,
+        armed: menu.querySelector('[data-action="off"]')?.textContent.trim(),
+        rows: [...menu.querySelectorAll('[role=menuitem]')].map((x) => x.dataset.action),
+        top: Math.round(box.top), bottom: Math.round(box.bottom), sheetTop: Math.round(s.top), sheetBottom: Math.round(s.bottom),
+        first: first !== null && first.closest('.card-menu') === menu,
+      }
+    })()`)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.error === undefined && m.last && m.inCard && m.tap && m.hit && m.armed === 'Tap again to archive' && m.top >= m.sheetTop - 0.5 && m.bottom <= m.sheetBottom + 0.5 && m.first
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  sheet-card-menu ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
+  }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 // YAZ-5529: a page's properties, light and dark, at 375 px. The Mac's chip at the right of the title (the reader's, or the
@@ -1212,7 +1267,7 @@ if (process.env.LAYOUT_BAND !== 'no') {
           await touch('touchEnd', x, y)
           await wait(500)
         }
-        const other = await evaluate(`(() => { const row = document.querySelector('.folder-table tbody tr[data-row]:nth-child(2)'); const r = row.cells[1].getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), text: row.cells[0].textContent.trim() } })()`)
+        const other = await evaluate(`(() => { const row = document.querySelector('.folder-table tbody tr[data-row]:nth-child(2)'); const r = row.querySelector('td:not([data-name]):not(.folder-table__num)').getBoundingClientRect(); return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), text: row.cells[0].textContent.trim() } })()`)
         await tap(other.x, other.y)
         const afterOther = await evaluate(`({ table: !!document.querySelector('.folder-table table'), band: [...document.querySelectorAll('.folder-table tr[data-band]')].map((r) => r.cells[0].textContent.trim()) })`)
         const nameAt = await evaluate(`(() => { const td = document.querySelector('.folder-table tbody tr[data-row]:nth-child(3) td[data-name]'); const r = td.getBoundingClientRect(); return { x: Math.round(r.left + 20), y: Math.round(r.top + r.height / 2) } })()`)

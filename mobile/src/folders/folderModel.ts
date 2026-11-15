@@ -4,7 +4,7 @@ import { exactLinkTarget } from '@shared/linkRewrite'
 import { spellings } from '@shared/propertyKeys'
 import { DEFAULT_FOLDER_PAGES, FOLDER_SETTINGS_FILE, type FolderPagesSettings, type IndexRecord } from '@shared/types'
 import { columnReservedKeys } from '@client/links/reservedKeys'
-import { directlyIn, folderRows, isFolderRow, rowPage, subfolderRows } from '@client/links/folderRows'
+import { directlyIn, folderRows, isFolderRow, rowPage, rowsByFolder, subfolderRows } from '@client/links/folderRows'
 import { boardOptionGroups } from '@client/views/boardOptionGroups'
 import { cardRowOfRecord, cardRowRecords, cardRowsOf } from '@client/views/cardRows'
 import { cardColumnsOf, cardLensOn } from '@client/views/cardView'
@@ -210,6 +210,19 @@ export interface ViewRun {
   cards: boolean
   /** The records the view ran over (a calendar finds its date columns in them). */
   input: IndexRecord[]
+  /**
+   * YAZ-5549: a subfolder row's "N inside" (the view's "Pages inside count", Settings filled in: the vault's
+   * folder-pages.json, else the Mac's default, off): how many pages its folder's page shows, as the Mac's `ViewsPane`
+   * counts them. Null when the view shows no count.
+   */
+  inside: ((row: Row) => number) | null
+}
+
+/** A subfolder row's own folder as the index names it (the Mac's `folderOfRow`, `GroupHeader.tsx`). */
+const folderOfRow = ({ path, folder }: IndexRecord): string => {
+  const dir = path.slice(0, path.lastIndexOf('/'))
+  const name = dir.slice(dir.lastIndexOf('/') + 1)
+  return folder === '' ? name : `${folder}/${name}`
 }
 
 /** Runs the view at `index` as the Mac's `ViewsPane` does. `now`: the run's clock (a test's fixed day). */
@@ -242,7 +255,8 @@ export function runFolderView(model: FolderModel, index: number, vaultName: stri
   const groups = boardOptionGroups(result.groups, view, (key) => columnTyping(key, shown, null, settings), optionParent)
   const keys = propertyKeys(def, view, shown, pageColumnKeys(settings))
   const ctx: CellTextContext = { resolve, decls: settings.columns, pageFolder: model.dir, folderTitle: (d) => folderTitleOf(data.folders, d) }
-  return { view, def, result, keys, rows: shownRows(result.rows, groups), groups, ctx, settings, cards, input: shown }
+  const inside = view.folderCounts !== false ? (row: Row) => rowsByFolder(data.records, data.folders).get(folderOfRow(row.record))?.length ?? 0 : null
+  return { view, def, result, keys, rows: shownRows(result.rows, groups), groups, ctx, settings, cards, input: shown, inside }
 }
 
 /** Where a row of a view opens: a page; a subfolder's row, its folder's page; a card row, its card. */

@@ -1,4 +1,4 @@
-import { Marked, type Token, type TokenizerExtension, type Tokens } from 'marked'
+import { Marked, Tokenizer, type Token, type TokenizerExtension, type Tokens } from 'marked'
 
 /**
  * THE READER'S MARKDOWN PARSER (YAZ-5513): the one `marked` (GitHub flavour, a single line break is a line break) with
@@ -69,21 +69,52 @@ const footnoteDef: TokenizerExtension = {
   },
 }
 
-/** `$$ … $$` alone: block math, drawn as its source (`pageRender.ts`). */
+/**
+ * `$$ … $$` alone: block math, drawn as its source (`pageRender.ts`). It opens on a line that starts with `$$` (up to
+ * 3 spaces in) and closes at the next `$$` that ends a line. YAZ-5547: what is inside stays math, a `- [ ]` line too:
+ * no box, no task, and no tick ever writes in it (`pageTasks` reads the same parse).
+ */
+export const BLOCK_MATH = /^ {0,3}\$\$([\s\S]+?)\$\$[ \t]*(?:\n+|$)/
 const blockMath: TokenizerExtension = {
   name: 'blockMath',
   level: 'block',
   start(src) {
-    return /^\$\$/m.exec(src)?.index
+    return /^ {0,3}\$\$/m.exec(src)?.index
   },
   tokenizer(src) {
-    const m = /^\$\$([\s\S]+?)\$\$[ \t]*(?:\n+|$)/.exec(src)
+    const m = BLOCK_MATH.exec(src)
     return m === null ? undefined : { type: 'blockMath', raw: m[0], text: m[1].trim() }
   },
 }
 
+/**
+ * YAZ-5547: a math block right under a list item's text (no blank line) ends the list, as it ends a paragraph:
+ * `marked` would read its `$$` as more of the item's text, and the `- [ ]` line inside as the next task. Only a `$$`
+ * less indented than the item's text does so (deeper, it is the item's own block, read inside the item). `raw`: the
+ * list as `marked` read it from `src`; the list's text up to that `$$`, or `null` when there is none.
+ */
+function listBeforeMath(raw: string, src: string): string | null {
+  const head = /^ {0,3}(?:[-*+]|\d{1,9}[.)])( {1,4}|\t|$)/.exec(raw)
+  if (head === null || !raw.includes('$$')) return null
+  const column = head[0].length
+  for (let at = raw.indexOf('\n'); at !== -1 && at + 1 < raw.length; at = raw.indexOf('\n', at + 1)) {
+    const m = /^ {0,3}\$\$/.exec(raw.slice(at + 1, at + 6))
+    if (m !== null && m[0].length - 2 < column && BLOCK_MATH.test(src.slice(at + 1))) return src.slice(0, at + 1)
+  }
+  return null
+}
+
 export const pageMarked = new Marked({ gfm: true, breaks: true })
-pageMarked.use({ extensions: [blockMath, footnoteDef, wikilinks, footnoteRef, highlight] })
+pageMarked.use({
+  extensions: [blockMath, footnoteDef, wikilinks, footnoteRef, highlight],
+  tokenizer: {
+    list(src) {
+      const list = Tokenizer.prototype.list.call(this, src)
+      const cut = list === undefined ? null : listBeforeMath(list.raw, src)
+      return cut === null ? list : Tokenizer.prototype.list.call(this, cut)
+    },
+  },
+})
 
 /**
  * A task as the reader draws it: its line in the text it was parsed from (0-based; a line ends at LF, CRLF or CR, as

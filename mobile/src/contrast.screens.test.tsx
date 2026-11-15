@@ -136,6 +136,8 @@ const FIXTURES = [
   // YAZ-5504: the card's ⋯ in the card view (a row armed: "Tap again to archive") and on a page card.
   'card-menu',
   'page-card-menu',
+  // YAZ-5548: a card's ⋯ in an Explore panel, its menu open.
+  'sheet-card-menu',
   // YAZ-5472: Explore's sheets.
   'explore-one',
   'explore-stack',
@@ -148,6 +150,8 @@ const FIXTURES = [
   'folder-cards',
   'folder-calendar',
   'folder-sheet',
+  // YAZ-5549: the table as the vault's folder-pages.json says: Tall rows, the # numbers, a subfolder's "1 inside".
+  'folder-table-look',
   // YAZ-5532: a finger's band on a table row (the frozen cells too), in a page, full screen, and a folder's table.
   'page-table-band',
   'page-table-band-full',

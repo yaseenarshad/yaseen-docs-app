@@ -10,6 +10,7 @@ import { makeResolver } from '@shared/linkResolver'
 import { vaultPageId } from '@shared/pageId'
 import { isDiagramPicture } from '../drawing/drawingBox'
 import { drawLocalCard } from '../media/ui/cardDraw'
+import { folderLinkOf } from './folderLink'
 import type { VaultData } from '../search/vaultData'
 import type { EmbedShow, LinkShow, PageLook } from './pageRender'
 // The Mac's card look (sides, hidden words, tables in a card), then the phone's reader.
@@ -123,6 +124,9 @@ export function pageLook(data: VaultData, holder: string): PageLook {
       const ends = (resolved: string | null) =>
         source.pills === NO_LINK_PILLS ? undefined : pillParts(source.pills, { info: resolved !== null && pillsNeedInfo(source.pills) ? pathInfo(data.records, data.folders).get(resolved) : undefined, otherVault: null }, source.vault, false)
       if (path !== null) return { label, open: { kind: 'page', path, ...(heading !== '' && { heading }) }, ends: ends(path) }
+      // YAZ-5550: no page holds the name, but a folder does (the Mac's rule, `folderLink.ts`): its folder's page.
+      const folder = page === '' ? null : folderLinkOf(data)(page)
+      if (folder !== null) return { label, open: { kind: 'folder', path: folder }, ends: ends(null) }
       // A link to a file of the vault that is no page (a PDF, a picture): by the asset rule.
       const file = page === '' ? null : assetsOf(data)(page, folderOf(holder))
       if (file !== null) return { label, open: fileKind(file) === 'markdown' ? { kind: 'page', path: file, ...(heading !== '' && { heading }) } : { kind: 'file', path: file } }
