@@ -118,11 +118,13 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     let numbers = 0
     let clip = false
     for (const cell of byColumn[c] ?? []) {
-      if (cell.hasAttribute('data-clip')) clip = true
+      const clipped = cell.hasAttribute('data-clip')
+      if (clipped) clip = true
       const em = cellEm(cell)
       if (cell.tagName === 'TH') {
-        // A header may wrap between its words: only its longest word counts toward a FIT column.
-        head = Math.max(head, em.word)
+        // A header may wrap between its words: only its longest word counts toward a FIT column. Sweep3 N-6: a clipped
+        // header is one line: all of it counts.
+        head = Math.max(head, clipped ? em.all : em.word)
         word = Math.max(word, em.word)
         continue
       }
@@ -286,8 +288,13 @@ export function layoutTable(table: HTMLTableElement): void {
   for (const [cell, c] of gridColumns(table)) {
     const col = cols[c]
     if (col === undefined) continue
-    // YAZ-5482: a clipped cell holds its text in one line, cut with "…" at its column's widest.
-    if (cell.hasAttribute('data-clip')) clipCell(cell, cols.slice(c, c + Math.max(1, cell.colSpan)).reduce((n, k) => n + k.max, 0) - PAD)
+    // YAZ-5482: a clipped cell holds its text in one line, cut with "…" at its column's widest. Sweep3 N-6 (YAZ-5524):
+    // only a text truly longer than that: a FIT column is as wide as its text (nothing to cut), and a header that fits
+    // its column stays whole (a bold header is wider than the count, and was cut to "Co…" with half the screen free).
+    const span = cols.slice(c, c + Math.max(1, cell.colSpan))
+    const widest = span.reduce((n, k) => n + k.max, 0) - PAD
+    const tooLong = span.some((k) => k.kind === 'grow') && (cell.tagName !== 'TH' || cellEm(cell).all > widest)
+    if (cell.hasAttribute('data-clip') && tooLong) clipCell(cell, widest)
     if (cell.colSpan > 1) continue
     if (col.kind === 'fit') cell.setAttribute('data-fit', '')
     if (col.num && cell.getAttribute('align') === null) cell.setAttribute('data-num', '')
