@@ -32,6 +32,8 @@ export interface AnswersState {
   lastSentAt: number | null
   /** YAZ-5461: comments written on the phone that GitHub does not hold yet (`comments/bridge.ts`): the dot counts them. */
   comments?: number
+  /** YAZ-5494: of `comments`, the check box ticks (the dot names them). */
+  ticks?: number
 }
 
 export type AnswersEvent =

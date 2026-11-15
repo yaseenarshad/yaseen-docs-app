@@ -40,9 +40,9 @@ export function withComments(answers: Answers, options: AnswersOptions, load: ()
   const portListeners = new Set<() => void>()
 
   const merged = (inner: AnswersState): AnswersState => {
-    if (comments === null || comments.vault !== inner.vault) return { ...inner, comments: 0 }
+    if (comments === null || comments.vault !== inner.vault) return { ...inner, comments: 0, ticks: 0 }
     const personal = inner.problem ?? (comments.problem !== null && ['UNAUTHORIZED', 'READ_ONLY', 'NOT_FOUND', 'NO_ACCESS'].includes(comments.problem) ? (comments.problem as AnswersState['problem']) : null)
-    return { ...inner, comments: comments.waiting, sending: inner.sending || comments.sending, problem: personal }
+    return { ...inner, comments: comments.waiting, ticks: comments.ticks, sending: inner.sending || comments.sending, problem: personal }
   }
   const emit = (event: AnswersEvent) => {
     for (const l of [...listeners]) l(event)

@@ -6,6 +6,7 @@ import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '
 import { Marked, Renderer, type Token, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
 import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
+import { taskCore } from '../comments/taskWrite'
 import { applyTableFile, readTableComment } from './tableFile'
 import { layoutTables } from './tableLayout'
 
@@ -22,8 +23,8 @@ import { layoutTables } from './tableLayout'
  * with `textContent` and `setAttribute`, never with HTML.
  *
  * What the page shows, as on the Mac:
- *  - Headings, paragraphs, bold, italic, strike, code, `==highlight==`, `<u>`, lists, task boxes (a mark, not a
- *    control: no ticking in stage one), tables (in a box that scrolls sideways, with column widths
+ *  - Headings, paragraphs, bold, italic, strike, code, `==highlight==`, `<u>`, lists, task boxes (each with its line,
+ *    `data-task`: a tap in a page ticks it, YAZ-5494, `taskTicks.ts`), tables (in a box that scrolls sideways, with column widths
  *    from their text: `tableLayout.ts`), code blocks, quotes, rules.
  *  - A callout (`> [!tip] Title`): a box with its title. The Mac's page shows it as a quote; the phone draws it as
  *    Obsidian and GitHub do (the brief lists callouts; recorded on YAZ-5079).
@@ -205,6 +206,8 @@ interface Parse {
 let parse: Parse = { cards: [] }
 
 const markdown = new Marked({ gfm: true, breaks: true })
+/** The task item being drawn, for its box (`listitem`, `checkbox`). */
+let taskRaw: string | null = null
 /** A table token with the body of the table comment after it (`table: …`; YAZ-5480, `tableFile.ts`). */
 type FiledTable = Tokens.Table & { fileComment?: string }
 
@@ -240,7 +243,18 @@ markdown.use({
       const comment = (token as FiledTable).fileComment
       return comment === undefined ? html : html.replace(/^<table>/, `<table ${localMark('table-file')}="${escapeHtml(comment)}">`)
     },
-    checkbox: ({ checked }) => `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"></span> `,
+    // YAZ-5494: a task's box carries its line (`data-task`, the core of its first line: `taskWrite.ts`), so a tap finds
+    // the same task in the file. `listitem` hands the item's line to its box: marked draws the box first.
+    listitem(item) {
+      taskRaw = item.task ? item.raw : null
+      return Renderer.prototype.listitem.call(this, item)
+    },
+    checkbox: ({ checked }) => {
+      const core = taskRaw === null ? null : taskCore(taskRaw.split('\n')[0]!)
+      taskRaw = null
+      const task = core === null ? '' : ` ${localMark('task')}="${escapeHtml(core)}"`
+      return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${task}></span> `
+    },
     code(token) {
       if (token.lang?.trim() !== 'card') return false
       parse.cards.push({ text: token.text, id: null, title: '', lined: false })

@@ -528,3 +528,25 @@
 .reader__body pre.page-math {
   font-style: italic;
 }
+
+/* YAZ-5494: a box with its line (`data-task`) is a check box a tap ticks (`taskTicks.ts`): its tap area is 44 px around
+   it (an empty `::before`; the box's look does not change; tasks one line apart share the gap between them), and no
+   grey flash on a tap. */
+.page-task[data-task] {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.reader__body li > .page-task[data-task]:first-child::before,
+.reader__body li > p:first-child > .page-task[data-task]:first-child::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+.page-task[data-task]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

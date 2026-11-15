@@ -20,6 +20,8 @@ import { join } from 'node:path'
  *    375 px, the clock frozen at 9:40 am: the now line a third down the 9:30 row, red, across the row; the rows before
  *    it dimmed, the kept to-do row not; scrolled past the row, the Now pill at the bottom of the screen pointing up;
  *    full screen, the copy marked too.
+ *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
+ *    area, a done task struck through.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
@@ -312,6 +314,32 @@ if (process.env.LAYOUT_PAGES !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `now row ${m.now}, the line ${m.lineAt} down it (${m.line}), dot ${m.dot}; past rows ${m.past.join(',')} (${m.pastInk}, shade ${m.shade}), the kept row ${m.keptInk}; Now pill ${m.chip ? `${m.chip.top}-${m.chip.bottom} above the tab bar at ${m.chip.tab}, arrow ${m.chip.dir}` : 'hidden'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5494: the task page, light and dark, at 375 px: each box of the page is a check box, a tap 18 px off its middle
+// still lands on it (its 44 px area), the box itself is the reader's size, a done task is struck through.
+const TASKS_CHECK = `(() => {
+  const boxes = [...document.querySelectorAll('.reader__body .page-task')]
+  const own = boxes.filter((b) => b.dataset.task)
+  // Sideways 18 px off the middle (44 px wide); up and down 9 px at least (tasks one line apart share the gap: 44 px where a task is alone).
+  const at = (b, dx, dy) => { const r = b.getBoundingClientRect(); const y = r.top + r.height / 2 + dy; return y < 60 || y > innerHeight - 60 || document.elementFromPoint(r.left + r.width / 2 + dx, y) === b }
+  const hits = own.map((b) => [[18, 0], [-18, 0], [0, 9], [0, -9]].every(([dx, dy]) => at(b, dx, dy)))
+  const misses = own.flatMap((b, i) => (hits[i] ? [] : [b.dataset.task + ' ' + [[18, 0], [-18, 0], [0, 9], [0, -9]].map(([dx, dy]) => (at(b, dx, dy) ? 'y' : 'n')).join('')]))
+  const done = own.find((b) => b.dataset.checked === 'true' && !b.closest('li').querySelector('ul, ol'))
+  const li = done && done.closest('li')
+  return { all: boxes.length, own: own.length, checkboxes: own.every((b) => b.getAttribute('role') === 'checkbox'), hits: hits.filter(Boolean).length, misses, size: own[0] ? Math.round(own[0].getBoundingClientRect().width) : 0, struck: li ? getComputedStyle(li).textDecorationLine : '', pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('page-tasks', 375, 667)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const m = await evaluate(TASKS_CHECK)
+    const ok = m.own === 11 && m.checkboxes && m.hits === m.own && m.size > 0 && m.size < 30 && m.struck.includes('line-through') && !m.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks at 375x667, ${scheme}: ${m.own} of ${m.all} boxes are the page's check boxes; ${m.hits} answer a tap 18 px to each side and 9 px up and down${m.misses.length ? ' (MISSED ' + m.misses.join(' | ') + ')' : ''}; a box is ${m.size}px; a done task ${m.struck}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
