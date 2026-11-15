@@ -1,0 +1,300 @@
+/* A Super table's tabs, panels and view (YAZ-4869 S2–S5, `SuperTable.tsx`); the lazy chunk's own. The place of the bar
+   and the hidden table are `table.css`'s (eager, small). The view looks like a note table: the same borders, header row
+   look (the table's own `data-table-header-*` on `.super-view`, else Settings › Tables' on `.app`; YAZ-4834 P21), fills
+   and text colours (`table.css` tokens), with the folder pages' group headers (`views.css`). */
+
+/* The bar is the folder page's view bar (`views.css`: `view-toolbar`, `view-tabs`, `view-tab`, `view-toolbar__btn`), so
+   the two look the same (the YAZ-4869 demo: "almost be 1:1", then "its all just a bit cramped"). Inside the note,
+   Crepe's `.milkdown * { padding: 0; margin: 0 }` and `.milkdown button` (no background) tie with or beat the folder
+   page's bare classes, and the note's line height (1.5) stretches the rows. So the folder bar's own values are
+   restated here under `.milkdown .table-super-bar`, measured on a folder page (YAZ-4869 round 2): the bar 32 px high
+   with 6 px under the tabs, a tab 23 px (4 px 8 px), "+" 2 px 8 px 4 px, a tool button 24 px (5 px 6 px). */
+.milkdown .table-super-bar {
+  padding-bottom: 6px;
+  line-height: normal;
+}
+
+.milkdown .table-super-bar .view-tab__btn {
+  padding: 4px 8px;
+}
+
+.milkdown .table-super-bar .view-tab__add {
+  padding: 2px 8px 4px;
+}
+
+.milkdown .table-super-bar .view-toolbar__actions {
+  margin-left: auto;
+}
+
+.milkdown .table-super-bar .view-toolbar__btn {
+  padding: 5px 6px;
+}
+
+.milkdown .table-super-bar .view-toolbar__btn--on {
+  background: var(--bg-side);
+}
+
+.milkdown .table-super-bar .view-toolbar__badge {
+  padding: 0 3px;
+}
+
+.table-super-bar__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The zoom pill at the bar's right end, after Sort / Group / Filter. */
+.table-super-bar .document-zoom {
+  margin-left: 6px;
+}
+
+.milkdown .table-super-bar .table-super-bar__rename {
+  width: 120px;
+  height: 23px;
+  margin: 0 2px 2px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.table-super-bar__panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+}
+
+.super-menu {
+  min-width: 280px;
+  max-width: 520px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* The Sort, Group and Filter panels (YAZ-4896): one width, and each rule row a grid, as the folder pages' Sort menu.
+   The pickers' boxes are `display: contents`, so their buttons are the grid's cells and their open lists take a
+   full-width second line. "×" has the last column, so it stays in the panel. */
+.super-menu--rules {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+}
+
+.super-menu .view-rule__main {
+  display: grid;
+  align-items: start;
+  gap: 8px;
+}
+
+.super-menu--sort .view-rule__main { grid-template-columns: 18px minmax(0, 1fr) 118px 20px; }
+.super-menu--group .view-rule__main { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) 44px 20px; }
+.super-menu--filter .view-rule__main { grid-template-columns: 18px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 20px; }
+
+.super-menu .column-picker {
+  display: contents;
+}
+
+.super-menu .view-rule__main > :is(.view-rule__nav, .view-rule__remove, .super-menu__value),
+.super-menu .view-rule__main .column-picker__trigger,
+.super-menu .view-rule__main :is(.direction-picker__trigger, .group-style__trigger) {
+  grid-row: 1;
+}
+
+.super-menu .view-rule__nav,
+.super-menu .view-rule__remove {
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+}
+
+.super-menu .view-rule__remove {
+  grid-column: -2;
+}
+
+.super-menu .column-picker__panel {
+  grid-row: 2;
+  grid-column: 1 / -1;
+}
+
+.super-menu__segments {
+  display: flex;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.super-menu__segments .view-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.super-menu__value {
+  min-width: 0;
+  height: 30px;
+  box-sizing: border-box;
+}
+
+/* The view: in the page's flow, no sideways scroll, so the column header and the group headers stick natively. */
+.table-super-view {
+  margin: 4px 0 12px;
+}
+
+.table-super-view__tip,
+.table-super-view__empty {
+  margin: 4px 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+/* "Show in Table" (YAZ-4866): a link-style button. */
+.table-super-view__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.table-super-view__link:hover {
+  text-decoration: underline;
+}
+
+.super-view {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.super-view :is(th, td) {
+  padding: 4px 10px;
+  border: 0 solid color-mix(in srgb, var(--crepe-color-outline) var(--table-border-darkness, 20%), transparent);
+  border-width: 0 1px 1px 0;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  background-color: var(--table-cell-tint, transparent);
+}
+
+.super-view :is(th, td):first-child {
+  border-left-width: 1px;
+}
+
+/* The column header: the note table's header row formula (`table.css` `th`), its tint as a layer over the opaque page
+   colour so the sticky header hides the rows under it. */
+.super-view thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border-top-width: 1px;
+  --table-cell-tint: color-mix(in srgb, var(--table-header-hue, var(--crepe-color-on-background)) calc(var(--table-header-strength, 6) * var(--table-header-scale, 1) * 1%), transparent);
+  background-color: var(--bg);
+  background-image: linear-gradient(var(--table-cell-tint), var(--table-cell-tint));
+  font-weight: var(--table-header-weight, 600);
+  color: var(--table-header-ink, color-mix(in srgb, var(--fg-muted) calc(var(--table-header-mute, 0) * 100%), currentColor));
+  text-align: var(--table-header-align, left);
+}
+
+/* S3: the group headers stick under the column header, one row height a level, as on folder pages. */
+.super-view .super-view__group > td {
+  position: sticky;
+  top: calc(var(--super-head-h, 31px) + var(--super-depth, 0) * var(--super-group-h, 31px));
+  z-index: 2;
+  padding: 2px 8px;
+  background: var(--bg);
+}
+
+.super-view .super-view__group > td:not(.super-view__gutter) {
+  padding-left: calc(8px + var(--super-depth, 0) * 12px);
+}
+
+.super-view .super-view__group .view-group {
+  min-height: 26px;
+}
+
+/* The group lines (YAZ-4798's look): one per open group, in a gutter column, on hover by default. */
+.super-view__gutter {
+  position: relative;
+  width: var(--super-gutter, 0);
+  padding: 0 !important;
+}
+
+.super-view__gutter > i {
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  width: 1px;
+  background: color-mix(in srgb, var(--fg-muted) 40%, transparent);
+  visibility: hidden;
+}
+
+.super-view[data-group-lines='always'] .super-view__gutter > i,
+.super-view[data-group-lines='hover']:hover .super-view__gutter > i {
+  visibility: visible;
+}
+
+.super-view[data-thread] .super-view__gutter > i[data-on-path] {
+  width: 2px;
+  background: var(--accent);
+}
+
+.super-view__row[draggable='true'] {
+  cursor: grab;
+}
+
+.super-view__row[data-found] > td {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* A cell note's corner, as in the table. */
+.super-view td[data-note] {
+  background-image: linear-gradient(225deg, color-mix(in srgb, var(--fg-muted) 35%, transparent) 4.24px, transparent 4.24px);
+}
+
+/* A windowed view (above 500 lines): one line a row, so the spacer rows count true. */
+.super-view[data-windowed] tbody td {
+  height: 33px;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.super-view__edit {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+}
+
+.super-view__summary td {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.super-view__summary-kind {
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  opacity: 0;
+}
+
+.super-view__summary:hover .super-view__summary-kind,
+.super-view__summary-kind:focus,
+.super-view__summary-kind:has(+ .super-view__summary-value) {
+  opacity: 1;
+}
+
+.super-view__summary-value {
+  margin-left: 4px;
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* Fills and text colours: the table's own rules (`table.css`) take `.super-view` cells too (YAZ-4834 P17). */

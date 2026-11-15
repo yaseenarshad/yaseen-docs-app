@@ -1,9 +1,10 @@
 /**
- * Settings › Editor › Calendar tables › Time format and Calendar day (YAZ-4163, YAZ-4159 D15, D19), as the editor reads them: App writes it on each
+ * Settings › Tables › Calendar tables › Time format and Calendar day (YAZ-4163, YAZ-4159 D15, D19), as the editor reads them: App writes it on each
  * change, and "/Calendar table", "Time slots" and "Current time" read it at the click. A tiny module, as
  * `code/languageHelpers.ts` is, so no editor rebuilds for a change.
  */
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT, isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
+import { DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, type HeaderRow, type TableTextInCells } from '@shared/types'
 
 let current = DEFAULT_TIME_FORMAT
 
@@ -17,7 +18,7 @@ export const timeFormatSetting = (): string => current
 let day: { start: number; end: number } = DEFAULT_CALENDAR_DAY
 
 /**
- * Settings › Editor › Calendar tables › Calendar day (YAZ-4163 demo), App's door: "/Calendar table", "Time slots" on a
+ * Settings › Tables › Calendar tables › Calendar day (YAZ-4163 demo), App's door: "/Calendar table", "Time slots" on a
  * table with no times, and "Fill the calendar day" read it at the click. A day whose end is not after its start, or a
  * time off the half hour, is the default day.
  */
@@ -26,3 +27,90 @@ export function setCalendarDaySetting(start: number, end: number): void {
 }
 
 export const calendarDaySetting = (): { start: number; end: number } => day
+
+let headerRow: HeaderRow = DEFAULT_HEADER_ROW
+
+/**
+ * Settings › Tables › All tables › Header row (YAZ-4774), App's door: a note table's "Header row ›" and a folder table's
+ * View tab read it when they open, to show what a table follows. The page itself reads it from `.app` (`table.css`).
+ */
+export function setHeaderRowSetting(value: HeaderRow): void {
+  headerRow = value
+}
+
+export const headerRowSetting = (): HeaderRow => headerRow
+
+let subheaderRow: HeaderRow = DEFAULT_SUBHEADER_ROW
+let stickySubheaders = true
+
+/**
+ * Settings › Tables › All tables › Subheader row and Sticky subheaders (YAZ-4899), App's door: a table's "Subheader
+ * row ›" panel and its "Sticky" switch read them when they open; a change of the sticky default tells each sticky view at once.
+ */
+export function setSubheaderRowSetting(value: HeaderRow): void {
+  subheaderRow = value
+}
+
+export const subheaderRowSetting = (): HeaderRow => subheaderRow
+
+/** The sticky views to tell when the Settings default changes, so a table that follows it pins or stops at once. */
+const stickyListeners = new Set<() => void>()
+
+export function setStickySubheadersSetting(on: boolean): void {
+  if (stickySubheaders === on) return
+  stickySubheaders = on
+  for (const listener of stickyListeners) listener()
+}
+
+/** Calls `listener` on each change of the Settings default; returns the unsubscribe. */
+export function onStickySubheadersSetting(listener: () => void): () => void {
+  stickyListeners.add(listener)
+  return () => stickyListeners.delete(listener)
+}
+
+export const stickySubheadersSetting = (): boolean => stickySubheaders
+
+let stickyHeader = true
+const stickyHeaderListeners = new Set<() => void>()
+
+/**
+ * Settings › Tables › All tables › Sticky header row (YAZ-4899 round 2), App's door: the header row frozen unless a
+ * table says otherwise (`tableFreeze.ts`); a change tells the frozen-row plugin of each editor, which draws again.
+ */
+export function setStickyHeaderSetting(on: boolean): void {
+  if (stickyHeader === on) return
+  stickyHeader = on
+  for (const listener of stickyHeaderListeners) listener()
+}
+
+/** Calls `listener` on each change of the Settings default; returns the unsubscribe. */
+export function onStickyHeaderSetting(listener: () => void): () => void {
+  stickyHeaderListeners.add(listener)
+  return () => stickyHeaderListeners.delete(listener)
+}
+
+export const stickyHeaderSetting = (): boolean => stickyHeader
+
+let textInCells: TableTextInCells = 'wrap'
+
+/**
+ * Settings › Tables › All tables › Text in cells (YAZ-4900), App's door: a table's "Text in cells" reads it as its
+ * Default. The page itself reads it from `.app` (`data-table-text`, `table.css`).
+ */
+export function setTextInCellsSetting(value: TableTextInCells): void {
+  textInCells = value === 'clip' ? 'clip' : 'wrap'
+}
+
+export const textInCellsSetting = (): TableTextInCells => textInCells
+
+let noteButton = false
+
+/**
+ * Settings › Tables › Cell notes › Add button (YAZ-4790 demo: off by default), App's door: the cell note "+" shows on a
+ * table that follows it, and a table's "Cell note button" reads it as its Default.
+ */
+export function setCellNoteButtonSetting(on: boolean): void {
+  noteButton = on
+}
+
+export const cellNoteButtonSetting = (): boolean => noteButton

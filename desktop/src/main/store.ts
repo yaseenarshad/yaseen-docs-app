@@ -9,6 +9,8 @@ import {
   CODE_OUTLINE_SORTS,
   CODE_SYMBOL_KINDS,
   COMMENTS_ORDERS,
+  COMMENTS_RESOLVED_PLACES,
+  isCommentProfile,
   CONTENT_WIDTHS,
   DEFAULT_SETTINGS,
   DEFAULT_SIDEBAR_LENS,
@@ -16,6 +18,11 @@ import {
   DEFAULT_TOOLBAR,
   HEADING_KEYS,
   HOVER_PLACES,
+  DEFAULT_FOLDER_PAGES,
+  FOLDER_PAGE_CHOICES,
+  type FolderPagesSettings,
+  calLine,
+  readColorStrength,
   MAX_COLLAPSED_GROUP_KEYS,
   MAX_FAVORITES_ORDER,
   MAX_FOLD_KEYS_PER_FILE,
@@ -31,6 +38,7 @@ import {
   type NewBoardPictures,
   type NewTabPlace,
   OUTSIDE_CHANGE_GLOWS,
+  FIND_FOLDS,
   ALL_NOTES_OPENS_AT,
   TABLE_NOW_MARKS,
   TABLE_DIM_PASTS,
@@ -53,12 +61,17 @@ import {
   TABLE_BAND_STRENGTH_MIN,
   TABLE_BAND_STRENGTH_STEP,
   isBandColour,
+  isBlockWidth,
   type TableBandRows,
   DAILY_NOTE_OPENS,
   type DailyNoteOpens,
   type TableDimPast,
   type TableNowMark,
   type TableRowBand,
+  TABLE_NEW_STYLES,
+  type TableNewStyle,
+  TABLE_TEXT_IN_CELLS,
+  type TableTextInCells,
   RIGHT_PANEL_DEFAULT_W,
   RIGHT_PANEL_MAX_W,
   RIGHT_PANEL_MIN_W,
@@ -108,11 +121,14 @@ import {
   mergeFavoritesOrder,
   normalizeRoots,
   rootOfPath,
+  placeVaults,
   stripSlash,
   type AppState,
   type CodeOutlineSort,
   type CodeSymbolKind,
   type CommentsOrder,
+  type CommentsResolvedPlace,
+  type CommentProfile,
   type ContentWidth,
   type FolderPatch,
   type FolderState,
@@ -125,6 +141,7 @@ import {
   type TabSleepAfter,
   type OpenStat,
   type OutsideChangeGlow,
+  type FindFolds,
   type AllNotesOpensAt,
   type RecentRoots,
   type RightPanelIdentity,
@@ -162,6 +179,10 @@ import {
   type WindowBounds,
   type WindowEntry,
   DIAGRAM_DARK_COLORS,
+  EMBED_REST_SECONDS,
+  NEW_BOARD_FOLDERS,
+  type EmbedRestSeconds,
+  type NewBoardFolder,
   NOTICE_LENGTHS,
   MEDIA_HOVER_ZOOM_SIZES,
   TAB_SLEEP_AFTER,
@@ -179,6 +200,11 @@ import {
   type TabCanvasState,
   type TabRef,
   normalizeFilesZoom,
+  DEFAULT_HEADER_ROW,
+  DEFAULT_SUBHEADER_ROW,
+  HEADER_ROW_PARTS,
+  headerRowOwn,
+  type HeaderRow,
 } from '@shared/types'
 import { isCanvasPrefs, sanitizeCanvasPrefs } from '@shared/canvasPrefs'
 import { isValidPicturesFolder } from '@shared/drawingAssets'
@@ -371,9 +397,9 @@ const sanitizeCanvasPanel = (raw: unknown): CanvasPanelState => {
 export const isHeadingStyles = (v: unknown): v is HeadingStyles =>
   isRecord(v) && Object.entries(v).every(([key, style]) => (HEADING_KEYS as readonly string[]).includes(key) && isHeadingStyle(style))
 
-/** One tab's sort (YAZ-3227 D1): Files has no manual order. */
+/** One tab's sort (YAZ-3227 D1): Files has no manual order. `kinds` (YAZ-4614 D66) is a boolean or absent; anything else fails the sort. */
 const isTabSort = (v: unknown, manual: boolean, best = false): v is TabSort =>
-  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best'))
+  isRecord(v) && typeof v.reverse === 'boolean' && (v.by === 'name' || v.by === 'updated' || (manual && v.by === 'manual') || (best && v.by === 'best')) && (v.kinds === undefined || typeof v.kinds === 'boolean')
 const isSidebarSort = (v: unknown): v is SidebarSort => isRecord(v) && isTabSort(v.files, false) && isTabSort(v.focus, true) && isTabSort(v.favorites, true)
 
 /** A list of known names, each once (YAZ-3273 D8). */
@@ -448,11 +474,70 @@ const isSidebarIconColors = (v: unknown): v is SidebarIconColors => isRecord(v) 
 /** The icon colours on load: each entry that does not read (an unknown kind, a colour that is no `#rrggbb`) is dropped, so that kind has its built-in colour. */
 export const sanitizeSidebarIconColors = (raw: unknown): SidebarIconColors => (isSidebarIconColors(raw) ? raw : isRecord(raw) && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(isIconColour)) : {})
 
-/** The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from before a place existed shows it. */
+/**
+ * The places' hover switches on load (YAZ-3403): each valid one is kept, a missing or broken one reads on — a file from
+ * before a place existed shows it. One exception (YAZ-4601 demo 13D): a missing `folderLinks` reads as the stored
+ * `folderViews`, the one folder-page switch it was split from, so a user's Off covers both.
+ */
 export function sanitizeHoverPreviewIn(raw: unknown): Record<HoverPlace, boolean> {
   const src = isRecord(raw) ? raw : {}
-  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : true])) as Record<HoverPlace, boolean>
+  const fallback = (place: HoverPlace): boolean => (place === 'folderLinks' && typeof src.folderViews === 'boolean' ? src.folderViews : true)
+  return Object.fromEntries(HOVER_PLACES.map((place) => [place, typeof src[place] === 'boolean' ? src[place] : fallback(place)])) as Record<HoverPlace, boolean>
 }
+
+/** Settings › Folder pages (YAZ-4585): each part's guard. A choice row is one of its `FOLDER_PAGE_CHOICES`; the two "as …" switches may be null. */
+const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
+const oneOf = (choices: readonly unknown[]) => (v: unknown): boolean => choices.includes(v)
+const FOLDER_PAGES_PART_OK: { [K in keyof FolderPagesSettings]: (v: unknown) => boolean } = {
+  weekStartsOn: oneOf(FOLDER_PAGE_CHOICES.weekStartsOn),
+  rowBand: (v) => v === null || isBool(v),
+  keepWindowPinned: (v) => v === null || isBool(v),
+  rowHeight: oneOf(FOLDER_PAGE_CHOICES.rowHeight),
+  rowNumbers: isBool,
+  columnTypeIcons: isBool,
+  folderIcons: isBool,
+  folderCounts: isBool,
+  textInCells: oneOf(FOLDER_PAGE_CHOICES.textInCells),
+  groupIndent: oneOf(FOLDER_PAGE_CHOICES.groupIndent),
+  // YAZ-4798: a file from before them reads On, On hover and plain lines (`sanitizeFolderPages`).
+  stickyGroups: isBool,
+  groupLines: oneOf(FOLDER_PAGE_CHOICES.groupLines),
+  groupLineStyle: oneOf(FOLDER_PAGE_CHOICES.groupLineStyle),
+  showEmptyGroups: isBool,
+  showEmptyColumns: isBool,
+  subfolders: oneOf(FOLDER_PAGE_CHOICES.subfolders),
+  foldersFirst: isBool,
+  calendarScale: oneOf(FOLDER_PAGE_CHOICES.calendarScale),
+  cardTitles: oneOf(FOLDER_PAGE_CHOICES.cardTitles),
+  hideWeekends: isBool,
+  // YAZ-4878: a width 1–12 and a colour the app reads; a file from before them reads 1 px, Gray.
+  weekLine: (v) => calLine(v) === v,
+  dayLine: (v) => calLine(v) === v,
+  weekLineColor: (v) => readColorStrength(v) !== null,
+  dayLineColor: (v) => readColorStrength(v) !== null,
+  showFolderPageFiles: isBool,
+  askBeforeDelete: isBool,
+  confirmChanges: isBool,
+  showNewButtons: isBool,
+  showOtherFiles: isBool,
+  inheritColumns: isBool,
+  columnMarks: oneOf(FOLDER_PAGE_CHOICES.columnMarks),
+}
+const FOLDER_PAGES_PARTS = Object.keys(FOLDER_PAGES_PART_OK) as (keyof FolderPagesSettings)[]
+const isFolderPages = (v: unknown): v is FolderPagesSettings => isRecord(v) && FOLDER_PAGES_PARTS.every((part) => FOLDER_PAGES_PART_OK[part](v[part]))
+/** The Folder pages settings on load: each valid part is kept, a missing or broken one is its default (a file from before a part existed). */
+export function sanitizeFolderPages(raw: unknown): FolderPagesSettings {
+  const src = isRecord(raw) ? raw : {}
+  const out = Object.fromEntries(FOLDER_PAGES_PARTS.map((part) => [part, FOLDER_PAGES_PART_OK[part](src[part]) ? src[part] : DEFAULT_FOLDER_PAGES[part]])) as unknown as FolderPagesSettings
+  // One "Show empty groups" fed the Board and the Table before the split (YAZ-4608 C2): a file without the Board's part starts it from the one it has.
+  if (!isBool(src.showEmptyColumns) && isBool(src.showEmptyGroups)) out.showEmptyColumns = src.showEmptyGroups
+  return out
+}
+
+/** Settings › Tables › Header row (YAZ-4774) on load: each valid part is kept, a missing or broken one is its default. */
+export const sanitizeHeaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_HEADER_ROW, ...headerRowOwn(raw) })
+/** Settings › Tables › Subheader row (YAZ-4899): the default's parts under what reads. */
+export const sanitizeSubheaderRow = (raw: unknown): HeaderRow => ({ ...DEFAULT_SUBHEADER_ROW, ...headerRowOwn(raw) })
 
 /**
  * One key change (YAZ-3397 D2): a known command id, and null for "No key" or a key the recorder would take
@@ -584,6 +669,9 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   hoverPreview: (v): v is boolean => typeof v === 'boolean',
   hoverPreviewIn: isHoverPreviewIn,
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
+  commentsResolved: (v): v is CommentsResolvedPlace => typeof v === 'string' && (COMMENTS_RESOLVED_PLACES as readonly string[]).includes(v),
+  commentsHint: (v): v is boolean => typeof v === 'boolean',
+  profile: (v): v is CommentProfile | null => v === null || isCommentProfile(v),
   sidebarSort: isSidebarSort,
   searchSort: (v): v is TabSort => isTabSort(v, false, true),
   rowDates: (v): v is RowDates => isRecord(v) && SORT_MENU_TABS.every((tab) => typeof v[tab] === 'boolean'),
@@ -600,15 +688,26 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tocOnByDefault: (v): v is boolean => typeof v === 'boolean',
   tableOfContentsWidth: (v): v is number => isFiniteNumber(v) && v >= TOC_MIN_W && v <= TOC_MAX_W,
   tocLines: (v): v is TocLines => typeof v === 'string' && (TOC_LINES as readonly string[]).includes(v),
+  findFolds: (v): v is FindFolds => typeof v === 'string' && (FIND_FOLDS as readonly string[]).includes(v),
   outsideChangeGlow: (v): v is OutsideChangeGlow => typeof v === 'string' && (OUTSIDE_CHANGE_GLOWS as readonly string[]).includes(v),
   outsideListPinned: (v): v is boolean => typeof v === 'boolean',
+  // YAZ-4783: "Text column" (`null`) or whole px in range; anything else falls back to Text column, the look before.
+  codeBlockWidth: (v): v is number | null => v === null || isBlockWidth(v),
+  tableWidth: (v): v is number | null => v === null || isBlockWidth(v),
   tableRowBand: (v): v is TableRowBand => typeof v === 'string' && (TABLE_ROW_BANDS as readonly string[]).includes(v),
   tableBandColour: isBandColour,
   tableBandStrength: (v): v is number => isFiniteNumber(v) && v >= TABLE_BAND_STRENGTH_MIN && v <= TABLE_BAND_STRENGTH_MAX && v % TABLE_BAND_STRENGTH_STEP === 0,
   tableBandRows: (v): v is TableBandRows => typeof v === 'string' && (TABLE_BAND_ROWS as readonly string[]).includes(v),
   tableBandBold: (v): v is boolean => typeof v === 'boolean',
+  tableHeaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableSubheaderRow: (v): v is HeaderRow => isRecord(v) && Object.keys(headerRowOwn(v)).length + (v.text === null ? 1 : 0) === HEADER_ROW_PARTS.length,
+  tableStickySubheaders: (v): v is boolean => typeof v === 'boolean',
+  tableStickyHeader: (v): v is boolean => typeof v === 'boolean',
+  tableTextInCells: (v): v is TableTextInCells => typeof v === 'string' && (TABLE_TEXT_IN_CELLS as readonly string[]).includes(v),
   tableNowMark: (v): v is TableNowMark => typeof v === 'string' && (TABLE_NOW_MARKS as readonly string[]).includes(v),
   tableNowButton: (v): v is boolean => typeof v === 'boolean',
+  tableCellNoteButton: (v): v is boolean => typeof v === 'boolean',
+  tableNewStyle: (v): v is TableNewStyle => typeof v === 'string' && (TABLE_NEW_STYLES as readonly string[]).includes(v),
   tableDimPast: (v): v is TableDimPast => typeof v === 'string' && (TABLE_DIM_PASTS as readonly string[]).includes(v),
   tableShadeDarkness: (v): v is number => isFiniteNumber(v) && v >= TABLE_SHADE_MIN && v <= TABLE_SHADE_MAX && v % TABLE_SHADE_STEP === 0,
   noteBulletIndent: (v): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= NOTE_BULLET_INDENT_MIN && v <= NOTE_BULLET_INDENT_MAX,
@@ -618,6 +717,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   tableCellNoteTemplate: (v): v is string => typeof v === 'string' && v.length <= CELL_NOTE_TEMPLATE_MAX,
   tableCellNotePinned: (v): v is boolean => typeof v === 'boolean',
   typingArrows: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStyleNotes: (v): v is boolean => typeof v === 'boolean',
+  enterKeepsStyleBoxes: (v): v is boolean => typeof v === 'boolean',
   tableAllNotesOpensAt: (v): v is AllNotesOpensAt => typeof v === 'string' && (ALL_NOTES_OPENS_AT as readonly string[]).includes(v),
   newNoteTitleTemplate: (v): v is string => typeof v === 'string' && v.length <= NEW_NOTE_TITLE_MAX && !v.includes('/'),
   tableDayStart: isCalendarDayTime,
@@ -637,6 +738,8 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   // The canvas prefs (YAZ-3028, Draw's 🔒 YAZ-1775 D9): strict here, the IPC boundary's check; `sanitizeSettings` repairs them field by field.
   canvas: isCanvasPrefs,
   diagramDarkColors: (v): v is DiagramDarkColors => typeof v === 'string' && (DIAGRAM_DARK_COLORS as readonly string[]).includes(v),
+  embedRestSeconds: (v): v is EmbedRestSeconds => typeof v === 'number' && (EMBED_REST_SECONDS as readonly number[]).includes(v),
+  newBoardFolder: (v): v is NewBoardFolder => typeof v === 'string' && (NEW_BOARD_FOLDERS as readonly string[]).includes(v),
   // YAZ-3038 (Draw's 🔒 YAZ-1775 D5): an absolute path the user picked, or null for `<userData>/library`. Never
   // `''` — an empty string would resolve to the process cwd, which is not a place for a user's library.
   libraryFolder: (v): v is string | null => v === null || (typeof v === 'string' && isAbsolute(v)),
@@ -675,6 +778,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   dailyNoteOpens: (v): v is DailyNoteOpens => typeof v === 'string' && (DAILY_NOTE_OPENS as readonly string[]).includes(v),
   tabSleepAfter: (v): v is TabSleepAfter => typeof v === 'string' && (TAB_SLEEP_AFTER as readonly string[]).includes(v),
   memoryReload: (v): v is boolean => typeof v === 'boolean',
+  folderPages: isFolderPages,
 }
 const SETTINGS_KEYS = Object.keys(SETTINGS_FIELD_OK) as Array<keyof SettingsState>
 
@@ -697,6 +801,9 @@ export function sanitizeSettings(raw: unknown): SettingsState {
   out.selectionToolbar = sanitizeToolbarPrefs(src.selectionToolbar)
   out.highlightCustomColors = sanitizeHighlightCustomColors(src.highlightCustomColors)
   out.hoverPreviewIn = sanitizeHoverPreviewIn(src.hoverPreviewIn)
+  out.folderPages = sanitizeFolderPages(src.folderPages)
+  out.tableHeaderRow = sanitizeHeaderRow(src.tableHeaderRow)
+  out.tableSubheaderRow = sanitizeSubheaderRow(src.tableSubheaderRow)
   out.hotkeys = sanitizeHotkeys(src.hotkeys)
   out.hotkeysAside = sanitizeHotkeyAside(src.hotkeysAside)
   out.sidebarIconColors = sanitizeSidebarIconColors(src.sidebarIconColors)
@@ -937,6 +1044,8 @@ function sanitizeFolder(raw: unknown): FolderState | null {
     tocSwitches: sanitizeSwitches(raw.tocSwitches),
     name: cleanVaultName(raw.name),
     key: cleanVaultKey(raw.key),
+    // "A folder of <vault>" (YAZ-4922 D3): kept only as an absolute path; whether it holds the bucket is `sanitizeFolders`'.
+    ...(typeof raw.in === 'string' && isAbsolute(raw.in) && { in: stripSlash(raw.in) }),
   }
 }
 
@@ -952,6 +1061,8 @@ function sanitizeFolders(raw: unknown): Record<string, FolderState> {
       if (taken.has(clean.key)) clean.key = null
       else taken.add(clean.key)
     }
+    // A folder of a vault must sit inside that vault (YAZ-4922 D3): any other `in` is dropped.
+    if (clean.in != null && !root.startsWith(`${clean.in}/`)) delete clean.in
     out[root] = clean
   }
   return out
@@ -1285,6 +1396,8 @@ export function createStore(filePath: string): Store {
         ...(patch.lastFile !== undefined ? { lastFile: patch.lastFile } : {}),
         ...(patch.name !== undefined ? { name: cleanVaultName(patch.name) } : {}),
         ...(key !== undefined ? { key } : {}),
+        // "A folder of <vault>" (YAZ-4922 D3): an absolute folder strictly inside the vault, else nothing; null ends it.
+        ...(patch.in !== undefined ? { in: typeof patch.in === 'string' && isAbsolute(patch.in) && root.startsWith(`${stripSlash(patch.in)}/`) ? stripSlash(patch.in) : null } : {}),
       }
       // One vault per number (YAZ-2555 D2): the same commit takes it from the vault that had it.
       commit({ ...state, folders: { ...(key == null ? state.folders : freeVaultKey(state.folders, key)), [root]: next } })
@@ -1343,7 +1456,8 @@ export function createStore(filePath: string): Store {
       const normalized = withTabStrip({ ...entry, roots: normalizeRoots(entry.roots ?? [], entry.root), tabs, rightPanel: normalizeRightPanel(entry.rightPanel, tabs) }, entry.tabStrip)
       const windows = state.windows.some((w) => w.id === entry.id) ? state.windows.map((w) => (w.id === entry.id ? normalized : w)) : [...state.windows, normalized]
       // The use goes in the commit of the window (YAZ-2663 R2): one write, one broadcast. Its vault is the one of the window that holds the page.
-      const vault = opened === null ? null : rootOfPath(normalized.roots, opened)
+      // A folder of a vault (YAZ-4922 D3) counts the use for its vault: its Recents are the vault's, under the folder.
+      const vault = opened === null ? null : rootOfPath(placeVaults(state.folders, normalized.roots), opened)
       const folders = opened === null || vault === null ? state.folders : { ...state.folders, [vault]: { ...folderOf(vault), opens: addOpen(folderOf(vault).opens, opened, now) } }
       // The board's places of tabs this window no longer has go in the same commit (D28): a stale card would take a cell.
       commit({ ...state, windows, folders, tabCanvas: pruneCanvas(state.tabCanvas, normalized) })
@@ -1464,6 +1578,8 @@ export function createStore(filePath: string): Store {
           remap(root),
           {
             ...folder,
+            // A folder of a vault (YAZ-4922 D3) follows its vault's folder, as its own path follows its own.
+            ...(folder.in != null && { in: remap(folder.in) }),
             expanded: folder.expanded.map(remapFold),
             lastFile: folder.lastFile === null ? null : remap(folder.lastFile),
             folds: remapKeys(folder.folds, remap),

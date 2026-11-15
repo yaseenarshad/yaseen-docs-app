@@ -4,6 +4,7 @@ import { rootOfPath, type DiagramDarkColors, type ScreenPoint, type TabRef } fro
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import { dropIndex, slotAt, slotUnder } from '../lib/dragSlot'
 import { edgeScroller } from '../lib/edgeScroll'
+import { PART_MS, drawnPlaces as drawnAt, gapOf, glide, motionOff, partGap, partShift, partTransform, roomOf as roomAlong, useEndSlides } from '../lib/liveGap'
 import { pageLabel, useFolderPaths, type PathTitles } from '../lib/pageLabel'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
 import { AsleepIcon, GridIcon, PlusIcon, SidebarPanelIcon } from '../views/view/icons'
@@ -152,16 +153,12 @@ const NONE_ASLEEP: ReadonlySet<string> = new Set()
 
 /** How long a tab slides open or shut, in ms (YAZ-2656 D12). The row hands it to the stylesheet as `--tab-slide-ms`, so the slide and the ghost's timer take the same time. */
 const SLIDE_MS = 150
-/** How long the tabs take to slide aside for the live gap of a drag, in ms (YAZ-3808 6A; tuned in the demo). The row hands it to the stylesheet as `--tab-part-ms`. */
-const PART_MS = 150
+/** The live gap's slide (`PART_MS`, shared since YAZ-4606): the row hands it to the stylesheet as `--tab-part-ms`. */
 const SLIDE = { '--tab-slide-ms': `${SLIDE_MS}ms`, '--tab-part-ms': `${PART_MS}ms` } as CSSProperties
 /** The room the tabs open for a tab from elsewhere, in px (YAZ-3808 6A): about one tab, whose width is not known until it lands. */
 const ARRIVAL_ROOM = 124
 /** How long the gap waits for a tab of another window that was let go here, in ms (YAZ-3808 6A1): a take refused, or one that asks first, never lands. */
 const LANDING_MS = 1500
-/** How long a tab glides to its new place after a reorder, in ms (YAZ-3808 D6; tuned in the demo). */
-const GLIDE_MS = 200
-
 /** A tab that closed, for as long as it slides shut: its label, and the id of the tab it stood before (null: the end). */
 interface Ghost {
   key: number
@@ -179,16 +176,16 @@ interface DragState {
   lifted: boolean
 }
 
-/** The room a tab of the strip takes: its width and the strip's gap between tabs, in px (YAZ-3808 6A). */
-const columnGapOf = (strip: HTMLElement | null): number => (strip === null ? 0 : parseFloat(getComputedStyle(strip).columnGap) || 0)
+/** The room a tab of the strip takes: its width and the strip's gap between tabs, in px (YAZ-3808 6A; `lib/liveGap`, YAZ-4606). */
+const columnGapOf = (strip: HTMLElement | null): number => gapOf(strip, 'x')
 
-const roomOf = (tab: HTMLElement, strip: HTMLElement | null): number => tab.offsetWidth + columnGapOf(strip)
+const roomOf = (tab: HTMLElement, strip: HTMLElement | null): number => roomAlong(tab, strip, 'x')
 
 /** A tab's slide in the live gap (6A), and the width a close holds for it (6A5). */
 const tabStyle = (shift: number, width: number | undefined): CSSProperties | undefined =>
   shift === 0 && width === undefined
     ? undefined
-    : { ...(shift === 0 ? {} : { transform: `translateX(${shift}px)` }), ...(width === undefined ? {} : { minWidth: width, maxWidth: width }) }
+    : { ...(shift === 0 ? {} : { transform: partTransform(shift, 'x') }), ...(width === undefined ? {} : { minWidth: width, maxWidth: width }) }
 
 /**
  * A tab's width as the tab on show (YAZ-3808 6A4): as wide as its whole name, in its least and most width. The tab is
@@ -491,12 +488,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   const order = useRef<readonly string[]>([])
   const glideFrom = useRef<Map<string, number> | null>(null)
   const ids = tabs.map((t) => t.id)
-  const drawnPlaces = (): Map<string, number> => {
-    const strip = stripRef.current
-    const origin = strip === null ? 0 : strip.getBoundingClientRect().left + strip.clientLeft - strip.scrollLeft
-    const drawn = [...(strip?.querySelectorAll<HTMLElement>('[data-tab]:not(.tabbar__tab--dragging)') ?? [])]
-    return new Map(drawn.map((el) => [el.dataset.tab!, el.getBoundingClientRect().left - origin]))
-  }
+  const drawnPlaces = (): Map<string, number> =>
+    drawnAt(stripRef.current, stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]:not(.tabbar__tab--dragging)') ?? [], (el) => el.dataset.tab!)
   // A tab that lands in the live gap (6A1) does not glide; the tabs after it glide the rest of the way, from the room
   // the gap held to the room the tab takes.
   if (arrived || (ids.length === order.current.length && ids.some((id, i) => id !== order.current[i]) && ids.every((id) => order.current.includes(id)))) {
@@ -541,12 +534,8 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
     order.current = tabs.map((t) => t.id)
     const from = glideFrom.current
     glideFrom.current = null
-    if (from === null || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches !== false) return
-    for (const el of stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []) {
-      const dx = (from.get(el.dataset.tab!) ?? el.offsetLeft) - el.offsetLeft
-      // Under a pixel is rounding, not a move.
-      if (Math.abs(dx) >= 1) el.animate?.([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: GLIDE_MS, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' })
-    }
+    if (from === null || motionOff()) return
+    glide(stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [], (el) => el.dataset.tab!, from)
   }, [tabs, held])
   const ghostsBefore = (id: string | null) =>
     ghosts
@@ -691,16 +680,12 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // A tab board card over the strip (YAZ-3808 D1) opens the same gap.
   const over = drag?.over ?? externalOver ?? boardOver ?? waiting?.at ?? null
   const from = drag?.from ?? (boardOver === null || boardOwn === null ? -1 : tabs.findIndex((t) => t.id === boardOwn))
-  const gap = over === null || (from !== -1 && (over === from || over === from + 1)) ? null : over
+  const gap = partGap(over, from)
   // THE LIVE GAP (YAZ-3808 6A): the grabbed tab's room moves to the slot. The tabs between the two slide toward the
   // grab point by one room; a tab from elsewhere has no room in the strip, so the tabs after the slot slide into room
   // opened at the strip's end.
   const room = drag?.room ?? (from !== -1 ? boardRoom.current : externalOver !== null ? (externalRoom.current?.room ?? ARRIVAL_ROOM) : (waiting?.room ?? ARRIVAL_ROOM))
-  const shiftOf = (i: number): number => {
-    if (gap === null) return 0
-    if (from === -1) return i >= gap ? room : 0
-    return from < i && i < gap ? -room : gap <= i && i < from ? room : 0
-  }
+  const shiftOf = (i: number): number => partShift(i, from, gap, room)
   const parting = drag !== null || externalOver !== null || boardOver !== null || waiting !== null
   // A tab let go here from elsewhere opens as the tab on show (YAZ-3637 D4), and the tab on show now goes back to its own
   // width. In a full strip that width is less, so the tabs after it moved under the drop (6A4). It goes back while the
@@ -719,15 +704,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
   // The drag's slides end with it (YAZ-3808 6G): a slide still running when the drag ends — the tab on show grabbed,
   // most often — kept the tab drawn one room off its new place, and it slid back (a jump, in the demo). The glide
   // starts each tab from where it was drawn, so the new place shows at once and moves nothing more.
-  const wasParting = useRef(false)
-  useLayoutEffect(() => {
-    if (wasParting.current && !parting) {
-      for (const el of stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? []) {
-        for (const slide of el.getAnimations?.() ?? []) if ('transitionProperty' in slide) slide.cancel()
-      }
-    }
-    wasParting.current = parting
-  }, [parting])
+  useEndSlides(parting, () => stripRef.current?.querySelectorAll<HTMLElement>('[data-tab]') ?? [])
   // A tab board card's tab, where it will land (6D): the board clips the card at its own edge, right under the strip,
   // so the gap would be empty. Its place is read from the layout, as the slot is, and only while a card is held here.
   const landingAt = (): { left: number; width: number } | null => {
@@ -963,7 +940,7 @@ export function TabBar({ roots, windowId, tabs, active, preview = null, blank = 
         {ghostsBefore(null)}
         {/* The blank tab (YAZ-2655 D10): no file, so no drag, no menu and no tooltip. Its ✕ and a middle click close it alone. */}
         {blank && (
-          <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: `translateX(${shiftOf(tabs.length)}px)` }} {...blankSlot}>
+          <div ref={activeRef} className="tabbar__tab tabbar__tab--active tabbar__tab--in" style={shiftOf(tabs.length) === 0 ? undefined : { transform: partTransform(shiftOf(tabs.length), 'x') }} {...blankSlot}>
             <button
               type="button"
               role="tab"

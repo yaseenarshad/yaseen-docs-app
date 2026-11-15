@@ -21,6 +21,8 @@
  *  - an ID of this vault that no note has (YAZ-3905 S10) shows "Missing note · YAS-466" in place of
  *    the id, a widget as the title is; an ID of another vault of the window (S23) shows its vault after
  *    it, "INL-4 (In-harness-lab)", a widget too. Both stay dimmed (`wikilink--unresolved`),
+ *  - the vault's link pills look (YAZ-4924, `source.pills`) adds a head and a tail piece, widgets, to every pill
+ *    (`pillEnds`): the text before and after, the vault's name, the ID, the folder. Look only: the file keeps `[[Name]]`,
  *  - a match whose display would be EMPTY (`[[Note|]]`, `[[|]]`, `[[#]]`) stays raw — no
  *    decorations at all, so nothing ever collapses to a zero-width invisible run (FN12,
  *    GRO-2197),
@@ -48,11 +50,16 @@ import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, PluginKey, type EditorState, type Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
+import { isBoardTarget } from '@shared/embedOptions'
+import { splitLink, type LinkParts } from '@shared/linkParts'
 import { WIKILINK_RE } from '@shared/linkRewrite'
 import { isNoteId, isNumberId, vaultNoteId } from '@shared/noteId'
 import { boardBaseName, fileKind } from '@shared/fileKind'
+import { NO_LINK_PILLS, type LinkPills } from '@shared/linkPills'
 import { basename, type IndexRecord } from '@shared/types'
 import { fileLabel, pageLabel, pathTitles, type PathTitles } from '../../lib/pageLabel'
+import { boardEmbedName, boardEmbedTarget, isIdTarget } from '../drawing/boardEmbedText'
+import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
 
@@ -98,7 +105,15 @@ export interface WikilinkResolveSource {
    * it does not use IDs. `vaultNoteId` reads a link target with them: other `LETTERS-NUMBER` text is a name (R6).
    */
   readonly letters: readonly string[]
-  /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped. */
+  /**
+   * The vault's link pills look (YAZ-4924, `.yaseendocs/link-pills.json`): what text a pill gains at its ends
+   * (`linkPillLook.ts` `pillParts`). `NO_LINK_PILLS` until the vault's file is read, and for a vault that changed nothing.
+   * The look's colours and shape are CSS variables on the vault's layers, not read here.
+   */
+  readonly pills: LinkPills
+  /** What the app calls the vault (the sidebar's name), for a look that names it on every pill; null while unknown. */
+  readonly vault: string | null
+  /** Wakes subscribed editors (decoration recompute) whenever `resolve` is swapped, or the look changes. */
   subscribe(listener: () => void): () => void
 }
 
@@ -110,6 +125,8 @@ export interface MutableWikilinkResolveSource extends WikilinkResolveSource {
    * `null` forgets the vault (a change of root): no index has landed for the new one yet.
    */
   update(resolve: ResolveLink | null, records?: readonly IndexRecord[], folders?: readonly IndexRecord[], ids?: boolean, letters?: readonly string[]): void
+  /** The vault's look and name (YAZ-4924), and every subscriber is woken: each editor draws its pills again. Nothing happens when both are as they were. */
+  setLook(pills: LinkPills, vault: string | null): void
 }
 
 const NO_RECORDS: readonly IndexRecord[] = []
@@ -121,8 +138,22 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
   let settings: readonly IndexRecord[] = NO_RECORDS
   let usesIds = false
   let idLetters = NO_LETTERS
+  let look: LinkPills = NO_LINK_PILLS
+  let vaultName: string | null = null
   const listeners = new Set<() => void>()
   return {
+    get pills() {
+      return look
+    },
+    get vault() {
+      return vaultName
+    },
+    setLook(pills, vault) {
+      if (pills === look && vault === vaultName) return
+      look = pills
+      vaultName = vault
+      listeners.forEach((l) => l())
+    },
     get resolve() {
       return current
     },
@@ -159,12 +190,23 @@ export function createWikilinkResolveSource(): MutableWikilinkResolveSource {
 export { WIKILINK_RE }
 
 /**
- * The page-name half of a raw `[[inner]]` text: `|alias` and `#heading` / `#^block` stripped,
- * trimmed. '' for the same-file `[[#h]]` form. The ONE strip shared by the decorations below,
- * click navigation and create-on-click (`wikilinkClick.ts` / `createFromLink.ts`, Links C).
+ * The parts of a raw `[[inner]]` with the vault's notes known (`source`, YAZ-4935 round 2): words that only LOOK like
+ * an ID (`[[Covid notes|COVID-19]]`) leave the left side the page when it resolves; the right side is the page only
+ * when the left does not. No `source`, or no index yet: the shape decides (`splitLink`).
  */
-export function linkPageName(inner: string): string {
-  return inner.split('|')[0].split('#')[0].trim()
+export function linkSplit(inner: string, source?: { resolve: ResolveLink | null }): LinkParts {
+  const resolve = source?.resolve ?? null
+  return splitLink(inner, resolve === null ? undefined : (page) => resolve(page) !== null)
+}
+
+/**
+ * The page-name half of a raw `[[inner]]` text: the `|words` (on either side, `splitLink`, YAZ-4935)
+ * and `#heading` / `#^block` stripped, trimmed. '' for the same-file `[[#h]]` form. The ONE strip
+ * shared by the decorations below, click navigation and create-on-click (`wikilinkClick.ts` /
+ * `createFromLink.ts`, Links C). With `source`, the left side wins when it resolves (`linkSplit`).
+ */
+export function linkPageName(inner: string, source?: { resolve: ResolveLink | null }): string {
+  return linkSplit(inner, source).page
 }
 
 /**
@@ -210,7 +252,7 @@ export const nameAndId = (title: string, id: string): string => `${title} (${id}
  */
 export function missingId(inner: string, source: WikilinkResolveSource): string | undefined {
   if (!source.ids || source.resolve === null) return undefined
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   const id = vaultNoteId(page, source.letters)
   return id !== undefined && source.resolve(page) === null ? id : undefined
 }
@@ -221,7 +263,7 @@ export function missingId(inner: string, source: WikilinkResolveSource): string 
  * the rest: this vault's letters win (then it is this vault's ID), a found link, and before the index loads.
  */
 export function otherVaultId(inner: string, source: WikilinkResolveSource, vaultsOf: VaultsOfLetters | undefined): { id: string; vault: string | null } | null {
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   if (vaultsOf === undefined || source.resolve === null || !isNumberId(page) || vaultNoteId(page, source.letters) !== undefined || source.resolve(page) !== null) return null
   const names = vaultsOf(page.slice(0, page.indexOf('-')).toUpperCase())
   return names.length === 0 ? null : { id: page, vault: names.length === 1 ? names[0]! : null }
@@ -239,8 +281,9 @@ function pageTrim(page: string): [lead: number, trail: number] {
 }
 
 /**
- * The DISPLAY text the collapsed decorations show for a raw `[[inner]]` match: the alias after
- * the first `|` when piped, else the non-empty `#`-split parts joined with the ` > ` separator
+ * The DISPLAY text the collapsed decorations show for a raw `[[inner]]` match: the words on the
+ * other side of the `|` when piped (`splitLink`, YAZ-4935: `[[WIKI-1|words]]` and `[[words|WIKI-1]]`
+ * both show "words"), else the non-empty `#`-split parts joined with the ` > ` separator
  * the CSS draws between segments — the page part replaced by `titleOf`'s answer when it has one
  * (an id link's title, `idLinkTitle`), else, when `named` says the page is found, by its name
  * (`pageTrim`, YAZ-3778 D2, D3; a dead link keeps its text, S12). '' means NOTHING would be
@@ -248,9 +291,9 @@ function pageTrim(page: string): [lead: number, trail: number] {
  * `decorate`). Exported for the backlinks snippets (FN9, GRO-2197), which must read exactly as
  * the editor renders: one mapping, never a second regex.
  */
-export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined, named?: (page: string) => boolean): string {
-  const pipe = inner.indexOf('|')
-  if (pipe >= 0) return inner.slice(pipe + 1)
+export function linkDisplayText(inner: string, titleOf?: (target: string) => string | undefined, named?: (page: string) => boolean, source?: { resolve: ResolveLink | null }): string {
+  const { words } = linkSplit(inner, source)
+  if (words !== null) return words
   const parts = inner.split('#')
   const page = parts[0]
   const [lead, trail] = named?.(page.trim()) === true ? pageTrim(page) : [0, 0]
@@ -260,7 +303,8 @@ export function linkDisplayText(inner: string, titleOf?: (target: string) => str
 
 /**
  * `text` with each `[[link]]` as the note shows it (YAZ-3744 D6): a crumb, a tab's label, a TOC row, a plain-text
- * copy. Embeds and links with nothing to show stay as written. `withId` adds an ID link's ID after its title
+ * copy. A board embed (`![[x.drawio|640x360 …]]`, YAZ-4827 item 16) is its name, as its window's name pill shows it; other
+ * embeds and links with nothing to show stay as written. `withId` adds an ID link's ID after its title
  * (YAZ-3744 S8): "AR v2 plan (YAS-466)", for a copy that leaves the app.
  */
 export function linksAsShown(text: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource, withId = false): string {
@@ -271,8 +315,17 @@ export function linksAsShown(text: string, source: WikilinkResolveSource, viewOn
     const id = withId ? linkNoteId(target, source) : undefined
     return title === undefined || id === undefined ? title : nameAndId(title, id)
   }
-  return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) =>
-    bang === '!' ? raw : linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly)) || raw)
+  // An id embed (YAZ-4920) is a board when the id resolves to one; it copies as the board's name.
+  const isBoard = (target: string) => {
+    const path = linkPath(target, source, viewOnly)
+    return path !== null && isBoardTarget(path)
+  }
+  return text.replace(WIKILINK_RE, (raw, bang: string, inner: string) => {
+    if (bang !== '!') return linkDisplayText(inner, titleOf, () => linkIsResolved(inner, source, viewOnly), source) || raw
+    if (boardEmbedTarget(inner, isBoard) === null) return raw
+    const page = splitLink(inner).page
+    return boardEmbedName(isIdTarget(page) ? linkPath(inner, source, viewOnly) ?? inner : inner)
+  })
 }
 
 /** Its decorations are read by `pillSelection.ts`: a selected link's pieces. */
@@ -319,7 +372,7 @@ function titleSpan(cls: string, title: string, icon?: Record<string, string>): H
 /** The file or folder a `[[link]]` opens, or null: unresolved, a heading of a view-only file, or no index yet. The link menu's place rows (YAZ-3740). */
 export function linkPath(inner: string, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined): string | null {
   const view = viewOnly === undefined ? null : viewOnlyLinkTarget(inner)
-  return view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner)) ?? null
+  return view !== null ? (view.hasSubtarget ? null : viewOnly?.resolve?.(view.page) ?? null) : source.resolve?.(linkPageName(inner, source)) ?? null
 }
 
 /** The icon of the page a resolved link opens (D13), or undefined: no look, unresolved, or no index yet. */
@@ -340,20 +393,26 @@ export function linkIsResolved(inner: string, source: WikilinkResolveSource, vie
     if (viewTarget.hasSubtarget) return false
     return viewSource.resolve === null || viewSource.resolve(viewTarget.page) !== null
   }
-  const target = linkPageName(inner)
+  const target = linkPageName(inner, source)
   return source.resolve === null || target === '' || source.resolve(target) !== null
 }
 
 /**
- * The DOM of a vault's name at a link's end, " (In-harness-lab)", with `cls` and `link-pill__vault`: a pill into another
- * vault (D22, YAZ-3738 D4, `markdownLink.ts`) and an ID of another vault (YAZ-3905 S23). A piece of the pill, never text.
+ * The pieces a pill gains at its ends under the vault's look (YAZ-4924, `pillParts`): its head and its tail, widgets
+ * with the pill's classes, never text. The head stands where the pill's first shown piece starts and the tail where
+ * its last shown piece ends (`side: -1` both; an ID link's lone title stands at the link's end, so both stand there
+ * too, the head pushed before the title and the tail after it): each is the next sibling of a piece of the pill, so
+ * the sibling rules of `wikilink.css` join it to the box, with no hidden syntax span between. Pieces of the pill: a
+ * click on one is a click on the pill (`linkPosAtDOM` reads a widget as the position before it, inside the link), and
+ * the caret at the link's end shows after the whole pill (YAZ-3738 D4). Today's look gives only the vault's name of
+ * an ID of another vault (YAZ-3905 S23), at the tail, as `vaultSpan` drew it.
  */
-export function vaultSpan(cls: string, vault: string): HTMLElement {
-  const span = document.createElement('span')
-  span.className = `${cls} link-pill__vault`
-  span.spellcheck = false
-  span.textContent = ` (${vault})`
-  return span
+function pillEnds(inner: string, resolved: boolean, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource | undefined, otherVault: string | null, icon: boolean): ReturnType<typeof pillParts> {
+  const { pills } = source
+  if (pills === NO_LINK_PILLS && otherVault === null) return { head: null, tail: null }
+  const path = resolved && pillsNeedInfo(pills) ? linkPath(inner, source, viewOnly) : null
+  const meta: PillMeta = { info: path === null ? undefined : pathInfo(source.records, source.folders).get(path), otherVault }
+  return pillParts(pills, meta, source.vault, icon)
 }
 
 /** Decorations for one collapsed match: `[[inner]]` starting at `start`. */
@@ -363,35 +422,59 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
   // and only exact caret placement can recover — raw-and-editable, the revealed state, is the
   // consistent answer (FN12, GRO-2197).
   const titleOf = (target: string) => idLinkTitle(target, source.resolve, pathTitles(source.records, source.folders))
-  if (linkDisplayText(inner, titleOf) === '') return
+  if (linkDisplayText(inner, titleOf, undefined, source) === '') return
   const resolved = linkIsResolved(inner, source, viewOnly)
   const cls = resolved ? WIKILINK_CLASS : `${WIKILINK_CLASS} ${WIKILINK_UNRESOLVED_CLASS}`
-  const icon = resolved ? linkIcon(inner, source, viewOnly, look) : undefined
+  // The icon where the vault's format puts it (YAZ-4924): on the name's own span (`{icon}{name}`, today's), as a
+  // piece of the head or the tail, or nowhere (no `{icon}`: no lookup paid).
+  const iconPlace = pillIconPlace(source.pills)
+  const found = resolved && iconPlace !== 'none' ? linkIcon(inner, source, viewOnly, look) : undefined
+  const icon = iconPlace === 'name' ? found : undefined
+  const innerStart = start + 2
+  const end = innerStart + inner.length + 2
+  const { pipe, pageFirst } = linkSplit(inner, source)
+  const parts = inner.split('#')
+  // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
+  const missing = resolved ? undefined : missingId(inner, source)
+  const title = pipe >= 0 ? undefined : titleOf(parts[0].trim()) ?? (missing === undefined ? undefined : `Missing note · ${missing}`)
+  // An ID of another vault says which vault (S23), after the ID.
+  const other = pipe >= 0 || resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
+  // The pieces the vault's look adds at the pill's ends (YAZ-4924): the head goes before the first shown piece, the tail after the last.
+  const ends = pillEnds(inner, resolved, source, viewOnly, other === null ? null : (other.vault ?? 'another vault'), found !== undefined)
+  let lastShown = -1
+  /** The first shown piece starts at `pos`: the head stands there, before it. */
+  const first = (pos: number) => {
+    if (lastShown >= 0) return
+    const { head } = ends
+    // The key holds the pill's classes: a pill whose note goes missing (or comes back) draws its end again in the new class.
+    if (head !== null) out.push(Decoration.widget(pos, () => headSpan(cls, head, found?.attrs), { side: -1, key: `${cls}|${headKey(head)}` }))
+    lastShown = pos
+  }
   /**
    * The first shown text: its own span carries the file's icon on its `::before`, so icon and text are one box
    * (YAZ-3648) and the text stays real text, which find highlights and the caret walks (YAZ-3657).
    */
   const shown = (from: number, to: number) => {
+    first(from)
     // No spellcheck underline on a link's name (YAZ-3778 S13): it is a page's name, not a word to check.
     out.push(Decoration.inline(from, to, icon === undefined ? { class: cls, spellcheck: 'false' } : { ...icon.attrs, class: `${cls} ${icon.attrs.class}`, spellcheck: 'false' }))
+    lastShown = to
   }
-  const innerStart = start + 2
-  const end = innerStart + inner.length + 2
   hide(out, start, innerStart) // [[
-  const pipe = inner.indexOf('|')
   if (pipe >= 0) {
-    hide(out, innerStart, innerStart + pipe + 1) // target(#heading)?| — the alias is the display
-    shown(innerStart + pipe + 1, end - 2) // never empty: guarded above
+    // The words are the display, on either side of the `|` (YAZ-4935); the page side and the `|` hide. Never empty: guarded above.
+    const at = innerStart + pipe
+    if (pageFirst) {
+      hide(out, innerStart, at + 1) // target(#heading)?|
+      shown(at + 1, end - 2)
+    } else {
+      shown(innerStart, at)
+      hide(out, at, end - 2) // |target(#heading)?
+    }
   } else {
     // target, then ` > `-separated sub segments for each `#heading` / `#^block` part
     let at = innerStart
     let segments = 0
-    const parts = inner.split('#')
-    // A missing note shows that it is missing, with its ID (YAZ-3905 S10): in the title's place, as a title is drawn.
-    const missing = resolved ? undefined : missingId(inner, source)
-    const title = titleOf(parts[0].trim()) ?? (missing === undefined ? undefined : `Missing note · ${missing}`)
-    // An ID of another vault says which vault (S23), after the ID.
-    const other = resolved || missing !== undefined ? null : otherVaultId(inner, source, vaultsOf)
     for (let i = 0; i < parts.length; i++) {
       if (i > 0) {
         hide(out, at, at + 1) // the #
@@ -406,7 +489,9 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
         // or ↓ onto its right half, reads as the link's end, an edge, and never as a point inside the link. With a
         // heading after it (`[[id#h]]`) it stands where the id was, so it reads before the heading.
         const lone = parts.length === 1
+        first(lone ? end : at)
         out.push(Decoration.widget(lone ? end : at, () => titleSpan(cls, title, icon?.attrs), { key: `${title}|${icon?.key ?? ''}`, title, side: lone ? -1 : 0 }))
+        lastShown = lone ? end : at
         segments++
       } else if (part.length > 0) {
         if (i === 0) {
@@ -418,18 +503,23 @@ function decorate(out: Decoration[], start: number, inner: string, source: Wikil
           // A drawing's or a diagram's extension is the pill's last piece, shown only with File icons Off, as the sidebar's
           // `name-ending` (app.css; YAZ-3924). ⌘F reads it as hidden text (`syntax`), as it is with the icons on.
           const name = part.slice(lead)
-          if (trail > 0 && boardBaseName(name) !== name)
+          if (trail > 0 && boardBaseName(name) !== name) {
             out.push(Decoration.inline(at + part.length - trail, at + part.length, { class: `${cls} name-ending`, spellcheck: 'false' }, { syntax: true }))
-          else hide(out, at + part.length - trail, at + part.length)
-          if (other !== null) out.push(Decoration.widget(at + part.length, () => vaultSpan(cls, other.vault ?? 'another vault'), { side: -1, key: `vault:${other.vault ?? ''}` }))
+            lastShown = at + part.length
+          } else hide(out, at + part.length - trail, at + part.length)
         } else if (segments === 0) shown(at, at + part.length)
-        else out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
+        else {
+          out.push(Decoration.inline(at, at + part.length, { class: `${cls} ${WIKILINK_SUB_CLASS}`, spellcheck: 'false' }))
+          lastShown = at + part.length
+        }
         segments++
       }
       at += part.length
     }
   }
   hide(out, end - 2, end) // ]]
+  const { tail } = ends
+  if (tail !== null && lastShown >= 0) out.push(Decoration.widget(lastShown, () => tailSpan(cls, tail, found?.attrs), { side: -1, key: `${cls}|${tailKey(tail)}` }))
 }
 
 /** True when the selection touches [from, to] with inclusive boundaries — the reveal rule. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ViewParseError, parseViews, serializeViews, updateViews } from './viewSchema'
+import { MAX_GROUP_INDENT_LEVELS, MAX_GROUP_LEVELS, ViewParseError, folderDepthOf, folderLayoutOf, groupDepthOf, groupLineStyleOf, groupLinesOf, headerRowOfView, parseViews, serializeViews, shownGroupLevels, updateViews } from './viewSchema'
 
 /** Yasin's real file, verbatim (trailing newline included). */
 const YASIN_BASE = `views:
@@ -167,6 +167,14 @@ describe('parseViews def', () => {
     expect(def.views[0].groupBy).toEqual([{ property: 'departments', direction: 'ASC' }, { property: 'process' }])
   })
 
+  it('the shown group levels are those with a property, the first five (YAZ-4531; five since YAZ-3746 13AF)', () => {
+    expect(MAX_GROUP_LEVELS).toBe(5)
+    const levels = [{ property: 'a' }, { direction: 'ASC' }, { property: 'b' }, { property: 'c' }, { property: 'd' }, { property: 'e' }, { property: 'f' }] as never
+    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: levels }).map((l) => l.property)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect(shownGroupLevels({ type: 'table', name: 'T', groupBy: { property: 'a' } })).toEqual([{ property: 'a' }])
+    expect(shownGroupLevels({ type: 'table', name: 'T' })).toEqual([])
+  })
+
   it('keeps unknown keys at the top level and inside views', () => {
     const { def } = parseViews(KITCHEN_SINK)
     expect(def.foo).toBe(1)
@@ -221,6 +229,34 @@ describe('updateViews', () => {
     expect(out).toContain('# Top-level comment that must survive')
   })
 
+  it('`by: value` on a sort and a group level survives a round trip; a YAML without `by` reads as before (YAZ-3940)', () => {
+    const text = `views:
+  - type: table
+    name: T
+    sort:
+      - property: status
+        direction: ASC
+        by: value
+    groupBy:
+      property: status
+      direction: DESC
+      by: value
+  - type: table
+    name: Plain
+    sort:
+      - property: status
+        direction: DESC
+`
+    const parsed = parseViews(text)
+    expect(parsed.def.views[0].sort).toEqual([{ property: 'status', direction: 'ASC', by: 'value' }])
+    expect(parsed.def.views[0].groupBy).toEqual({ property: 'status', direction: 'DESC', by: 'value' })
+    expect(parsed.def.views[1].sort).toEqual([{ property: 'status', direction: 'DESC' }])
+    expect(serializeViews(updateViews(parsed, (def) => { def.views[1].name = 'Plain 2' }))).toBe(text.replace('name: Plain', 'name: Plain 2'))
+    // Back to option order: the menu writes the spec without `by`, and its line goes.
+    const back = updateViews(parseViews(text), (def) => { def.views[0].sort = [{ property: 'status', direction: 'ASC' }] })
+    expect(lineDiff(text, serializeViews(back))).toEqual({ removed: ['        by: value'], added: [] })
+  })
+
   it('an array that changed length is replaced as a whole', () => {
     const after = updateViews(parseViews(YASIN_BASE), (def) => {
       def.views[0].order = ['file.name', 'tags']
@@ -262,5 +298,77 @@ describe('parse errors', () => {
 
   it('a non-map root → ViewParseError', () => {
     expect(() => parseViews('- a\n- b\n')).toThrow(ViewParseError)
+  })
+})
+
+describe("a view's header row (YAZ-4794)", () => {
+  it('keeps a text colour and an align, and drops a value that is no choice, part by part', () => {
+    const [view] = parseViews('views:\n  - type: table\n    name: T\n    headerRow:\n      color: green\n      text: blue\n      align: center\n').def.views
+    expect(headerRowOfView(view)).toEqual({ color: 'green', text: 'blue', align: 'center' })
+    const [bad] = parseViews('views:\n  - type: table\n    name: T\n    headerRow:\n      text: gray\n      align: middle\n      weight: regular\n').def.views
+    expect(headerRowOfView(bad)).toEqual({ weight: 'regular' })
+  })
+})
+
+describe('a grouped table\'s sticky group headers and group lines (YAZ-4798)', () => {
+  it('the three keys round-trip in .folder.md, and a write that removes one leaves the rest of the file as it was', () => {
+    const text = 'views:\n  - type: table\n    name: T\n    stickyGroups: false\n    groupLines: always\n    groupLineStyle: thread\n'
+    const parsed = parseViews(text)
+    expect(serializeViews(parsed)).toBe(text)
+    expect(parsed.def.views[0]).toMatchObject({ stickyGroups: false, groupLines: 'always', groupLineStyle: 'thread' })
+    const back = updateViews(parsed, (def) => {
+      delete def.views[0].groupLines
+    })
+    expect(serializeViews(back)).toBe(text.replace('    groupLines: always\n', ''))
+  })
+
+  it('the readers: a value the app does not know reads as no lines and plain lines', () => {
+    const view = (extra: Record<string, unknown>) => ({ type: 'table', name: 'T', ...extra })
+    expect(groupLinesOf(view({ groupLines: 'hover' }))).toBe('hover')
+    expect(groupLinesOf(view({ groupLines: 'always' }))).toBe('always')
+    expect(groupLinesOf(view({ groupLines: 'sometimes' }))).toBe('off')
+    expect(groupLinesOf(view({}))).toBe('off')
+    expect(groupLineStyleOf(view({ groupLineStyle: 'thread' }))).toBe('thread')
+    expect(groupLineStyleOf(view({ groupLineStyle: 'dotted' }))).toBe('plain')
+  })
+})
+
+describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
+  it('the two keys round-trip in .folder.md beside the level, and a write that removes them leaves the rest as it was', () => {
+    const text = 'views:\n  - type: table\n    name: T\n    groupBy:\n      property: file.folder\n      depth: all\n      layout: path\n'
+    const parsed = parseViews(text)
+    expect(serializeViews(parsed)).toBe(text)
+    expect(shownGroupLevels(parsed.def.views[0])).toEqual([{ property: 'file.folder', depth: 'all', layout: 'path' }])
+    const back = updateViews(parsed, (def) => {
+      const level = def.views[0].groupBy as { depth?: unknown; layout?: unknown }
+      delete level.depth
+      delete level.layout
+    })
+    expect(serializeViews(back)).toBe('views:\n  - type: table\n    name: T\n    groupBy:\n      property: file.folder\n')
+  })
+
+  it('the readers: Top folder (1) and Nested unless the level says 2, 3, all or path; a value the app does not know reads as the default', () => {
+    const level = (extra: Record<string, unknown>) => ({ property: 'file.folder', ...extra })
+    expect(folderDepthOf(level({}))).toBe(1)
+    expect(folderDepthOf(level({ depth: 2 }))).toBe(2)
+    expect(folderDepthOf(level({ depth: 3 }))).toBe(3)
+    expect(folderDepthOf(level({ depth: 'all' }))).toBe('all')
+    expect(folderDepthOf(level({ depth: 7 }))).toBe(1)
+    expect(folderDepthOf(level({ depth: '2' }))).toBe(1)
+    expect(folderLayoutOf(level({}))).toBe('nested')
+    expect(folderLayoutOf(level({ layout: 'path' }))).toBe('path')
+    expect(folderLayoutOf(level({ layout: 'tree' }))).toBe('nested')
+  })
+
+  it('groupDepthOf: the levels a view can nest, a nested Folder level counting its depth, All as the indent cap; Full path is one level', () => {
+    const view = (groupBy: unknown) => ({ type: 'table', name: 'T', groupBy } as Parameters<typeof groupDepthOf>[0])
+    expect(groupDepthOf(view(undefined))).toBe(0)
+    expect(groupDepthOf(view({ property: 'file.folder' }))).toBe(1)
+    expect(groupDepthOf(view({ property: 'file.folder', depth: 3 }))).toBe(3)
+    expect(groupDepthOf(view([{ property: 'file.folder', depth: 2 }, { property: 'status' }]))).toBe(3)
+    expect(groupDepthOf(view({ property: 'file.folder', depth: 'all' }))).toBe(MAX_GROUP_INDENT_LEVELS)
+    expect(groupDepthOf(view({ property: 'file.folder', depth: 'all', layout: 'path' }))).toBe(1)
+    expect(groupDepthOf(view([{ property: 'status' }, { property: 'file.folder', depth: 3, layout: 'path' }]))).toBe(2)
+    expect(MAX_GROUP_INDENT_LEVELS).toBe(4)
   })
 })

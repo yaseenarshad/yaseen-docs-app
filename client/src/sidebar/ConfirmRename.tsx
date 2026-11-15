@@ -2,19 +2,20 @@
  * The rename confirm (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes): a rename
  * triggers a chain — the file on disk, then links across the vault — so a NAME change asks first,
  * with the honest count from `countLinkReferences`. A move never asks THIS (a confirm on every
- * drag would be hostile, and bare links keep resolving); one that would clear a folder's values
- * asks through `ConfirmMove` (D21). The sheet itself lands with YAZ-888; the
+ * drag would be hostile, and bare links keep resolving), and a move clears no value (YAZ-4713 C9).
+ * The sheet itself lands with YAZ-888; the
  * LOCKED copy lives here first, `deleteConfirmMessage`'s idiom, so the component stays trivial.
  */
 import { useCallback, useRef } from 'react'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { basename } from '../lib/paths'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 
 /** The LOCKED copy (⚡ YAZ-888): both spellings, the honest count, and no promise about nothing. A title edit counts no id link (none is rewritten), so its zero says only that. */
-export function renameConfirmMessage(oldName: string, newName: string, count: number, titleEdit: boolean): string {
-  const none = titleEdit ? 'No links need updating.' : 'No other notes link to it.'
-  const links = count === 0 ? none : `Links in ${count} ${count === 1 ? 'note' : 'notes'} will be updated.`
+export function renameConfirmMessage(oldName: string, newName: string, count: number, titleEdit: boolean, unit: UnitText = SAME_WORD): string {
+  const none = titleEdit ? 'No links need updating.' : unit('No other notes link to it.')
+  const links = count === 0 ? none : unit(`Links in ${count} ${count === 1 ? 'note' : 'notes'} will be updated.`)
   return `Rename '${oldName}' to '${newName}'? ${links}`
 }
 
@@ -37,6 +38,8 @@ type ConfirmRenameProps = {
   oldPath: string
   /** A folder is named whole: `Notes.md` may be one (YAZ-2290). */
   kind: 'file' | 'dir'
+  /** The file's vault's word for a note (YAZ-4938). */
+  unit?: UnitText
   /** The honest N: `countLinkReferences` over the window's own index snapshot. */
   count: number
   /** The window's titles (YAZ-2420 🔒 D14): what the copy names, it names by title. */
@@ -63,13 +66,13 @@ type ConfirmRenameProps = {
  * only ever hears keys from inside itself, which is where focus is. A HELD Enter arrives there
  * too: `ConfirmSheet` takes no repeat of a key for an answer.
  */
-export function ConfirmRename({ oldPath, kind, count, titles, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
+export function ConfirmRename({ oldPath, kind, count, titles, unit, onConfirm, onCancel, ...to }: ConfirmRenameProps) {
   const dontAskRef = useRef<HTMLInputElement>(null)
   const confirm = useCallback(() => onConfirm(dontAskRef.current?.checked === true), [onConfirm])
   return (
     <ConfirmSheet
       labelId="confirm-rename-text"
-      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count, to.title !== undefined)}
+      text={renameConfirmMessage(pageLabel(oldPath, kind === 'dir', titles), to.title ?? pageLabel(to.newPath, kind === 'dir', titles), count, to.title !== undefined, unit)}
       confirmLabel="Rename"
       keys="sheet"
       focusConfirm

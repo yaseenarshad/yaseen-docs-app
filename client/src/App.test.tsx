@@ -68,7 +68,7 @@ interface SidebarStubProps {
   /** A drop of two or more rows (YAZ-3250 D1): the door for a list of moves. */
   onMoveEntries: (moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]) => Promise<void>
   /** A move the Sidebar made itself (YAZ-3255 D10): a Paste of a Cut, a Finder move-in. App records it and says it with Undo. */
-  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[]; cleared: { path: string; values: Record<string, unknown> }[] }, text: string, skipped: boolean) => void
+  onMoved: (gesture: { moves: { oldPath: string; newPath: string; kind: 'file' | 'dir' }[] }, text: string, skipped: boolean) => void
   /** A title edit (YAZ-2420 D16) arrives at that same door. */
   onRetitle: (path: string, title: string, kind: 'file' | 'dir') => Promise<void>
   onDeleteEntries: (paths: string[]) => Promise<void>
@@ -203,6 +203,7 @@ vi.mock('./sidebar/Sidebar', () => ({
 }))
 
 import { App, preloadTabBoard, replayNotice } from './App'
+import { dropAllNoteWindows, keepNoteWindow, noteWindowKey, noteWindowMemory, openNoteWindow } from './views/view/NoteWindow'
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -217,6 +218,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
   const menuOpenRoot = new Set<(path: string) => void>()
   const menuOpenFolder = new Set<() => void>()
   const menuSearch = new Set<() => void>()
+  const menuExplore = new Set<() => void>()
   const menuSwitchVault = new Set<() => void>()
   const menuSettings = new Set<() => void>()
   const menuToggleSidebar = new Set<() => void>()
@@ -395,6 +397,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
         return () => menuOpenRoot.delete(l)
       }),
       onSearch: menuSub(menuSearch),
+      onExplore: menuSub(menuExplore),
       onSwitchVault: menuSub(menuSwitchVault),
       onSettings: menuSub(menuSettings),
       onToggleSidebar: menuSub(menuToggleSidebar),
@@ -571,6 +574,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     emitOpenRoot: (path: string) => menuOpenRoot.forEach((l) => l(path)),
     emitOpenFolder: () => menuOpenFolder.forEach((l) => l()),
     emitSearch: () => menuSearch.forEach((l) => l()),
+    emitExplore: () => menuExplore.forEach((l) => l()),
     emitSwitchVault: () => menuSwitchVault.forEach((l) => l()),
     emitSettings: () => menuSettings.forEach((l) => l()),
     emitToggleSidebar: () => menuToggleSidebar.forEach((l) => l()),
@@ -929,7 +933,7 @@ describe('App Settings › Notifications (YAZ-3303)', () => {
     return mount(state, { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
   }
   const toast = (el: HTMLElement) => el.querySelector('.link-notice')
-  const gesture = { moves: [{ oldPath: '/v/a.md', newPath: '/v/sub/a.md', kind: 'file' as const }], cleared: [] }
+  const gesture = { moves: [{ oldPath: '/v/a.md', newPath: '/v/sub/a.md', kind: 'file' as const }] }
 
   it('D2: a typed toast whose switch is Off never shows, and the toast on screen stays; an untyped toast and an error show (S14, S15, S20, S22)', async () => {
     const { el } = await open({ noticeClipboard: false, noticeLists: false })
@@ -1287,6 +1291,25 @@ describe('App rename push (Links E1, GRO-2194)', () => {
     expect(el.querySelector('.right-panel__header')?.getAttribute('title')).toBe('/v/Notes/b.md')
     expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(wrote(['/v/main.md'], '/v/main.md', { open: true, width: 440, items: ['/v/Notes/b.md'], expanded: '/v/Notes/b.md' }))
     carry.mockRestore()
+  })
+
+  it('a folder table\'s note window follows a rename of its note or of a folder above it, and closes on a delete (YAZ-4544)', async () => {
+    const { emitFileRenamed, emitFileDeleted } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/x.md', tabs: ['/v/x.md'] })
+    const key = noteWindowKey('t1', '/v/F', 'Table')
+    keepNoteWindow(key, noteWindowMemory('/v/F/a.md'))
+    await act(async () => emitFileRenamed('/v/F/a.md', '/v/F/b.md', 'file'))
+    expect(openNoteWindow(key)?.path).toBe('/v/F/b.md')
+    await act(async () => emitFileRenamed('/v/F', '/v/G', 'dir'))
+    // A folder rename moves the window to the folder's new key, so the renamed page still shows it (YAZ-4635 P5).
+    const moved = noteWindowKey('t1', '/v/G', 'Table')
+    expect(openNoteWindow(key)).toBeUndefined()
+    expect(openNoteWindow(moved)?.path).toBe('/v/G/b.md')
+    await act(async () => emitFileDeleted('/v/G/b.md'))
+    expect(openNoteWindow(moved)).toBeUndefined()
+    keepNoteWindow(key, noteWindowMemory('/v/H/c.md'))
+    await act(async () => emitFileDeleted('/v/H', 'dir'))
+    expect(openNoteWindow(key)).toBeUndefined()
+    dropAllNoteWindows()
   })
 })
 
@@ -2569,6 +2592,47 @@ describe('App "What\'s new" sheet (YAZ-2976 D4, D5, D8)', () => {
   })
 })
 
+describe('App ⌘⇧F explore (YAZ-2571)', () => {
+  /** The stack is its own chunk, and a layer leaves after its 100 ms motion: wait for the DOM to say so, 3 s at most. */
+  const until = async (done: () => boolean) => {
+    for (let i = 0; i < 300 && !done(); i++) await act(async () => await new Promise((r) => setTimeout(r, 10)))
+    expect(done()).toBe(true)
+  }
+  const esc = () => act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  it('File › Explore Vault… mounts the stack (its own chunk) with the caret in its search; ⌘⇧F again adds a search; Esc closes one layer, then the stack', async () => {
+    const { el, emitExplore } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    expect(el.querySelector('.explore')).toBeNull()
+    act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    const stack = el.querySelector<HTMLElement>('.explore') as HTMLElement
+    expect(stack.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(stack.querySelector('.explore__input'))
+    expect(stack.querySelectorAll('.explore__layer')).toHaveLength(1)
+    act(() => emitExplore())
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    expect(document.activeElement).toBe(el.querySelectorAll('.explore__input')[1])
+    esc()
+    await until(() => el.querySelectorAll('.explore__layer').length === 1)
+    expect(document.activeElement).toBe(el.querySelector('.explore__input'))
+    esc()
+    expect(el.querySelector('.explore')).toBeNull()
+  })
+
+  it('⌘K with the stack open closes the whole stack first, then runs its sidebar search (Yaseen: "⌘K keeps its sidebar search"); the keyboard is not given back', async () => {
+    const { el, emitExplore, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] })
+    act(() => emitExplore())
+    await until(() => el.querySelector('.explore') !== null)
+    act(() => emitExplore())
+    expect(el.querySelectorAll('.explore__layer')).toHaveLength(2)
+    act(() => emitSearch())
+    expect(el.querySelector('.explore')).toBeNull()
+    expect(captured.sidebar?.lens).toBe('search')
+    expect(captured.sidebar?.pendingSearchFocus).toBe(true)
+    // Not back in the note: the sidebar's search bar is asked for the caret instead.
+    expect(document.activeElement?.closest('.milkdown')).toBeNull()
+  })
+})
+
 describe('App ⌘K search (D4, YAZ-804)', () => {
   it('from a collapsed sidebar it un-collapses through the global setting and mounts the sidebar with the focus flag already true', async () => {
     const { bridge, el, emitSearch } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [], sidebarCollapsed: true })
@@ -3704,7 +3768,7 @@ describe('App external-rename banner (Links E1c, GRO-2242)', () => {
  * The ONE rename door (⚡ YAZ-888, amending decision E / GRO-2096 for NAME changes): every
  * gesture — the sidebar's inline rename, its drag-move, the page title — arrives at App as
  * (oldPath, newPath), and the rule is asked here and nowhere else. A changed NAME confirms
- * first with the honest count; a MOVE asks only when it would clear a folder's values (D21).
+ * first with the honest count; a MOVE asks nothing, and clears no value (YAZ-4713 C9).
  */
 describe('App rename door (⚡ YAZ-888)', () => {
   const record = (path: string, over: Partial<IndexRecord> = {}): IndexRecord => {
@@ -3832,8 +3896,8 @@ describe('App rename door (⚡ YAZ-888)', () => {
     expect(el.querySelector('.link-notice__action')?.textContent).toBe('Undo') // YAZ-3255 D11
   })
 
-  /** The app asks before a move that clears values (D21): the door's other question, of a MOVE. */
-  describe('a move that clears a folder’s values (D21)', () => {
+  /** A move never deletes values (YAZ-4713 C9): no sheet asks before one, and no note is written for it. */
+  describe('a move never deletes values (YAZ-4713 C9)', () => {
     const HIRING = '3y7505rsr6fd'
     const TEAM = 'mzf9cjhn02vm'
     const ARCHIVE = 'a1b2c3d4e5f6'
@@ -3852,41 +3916,17 @@ describe('App rename door (⚡ YAZ-888)', () => {
     const mountTeam = (files: Record<string, { content: string; mtime: number }> = moved()) => mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue(snapshot()))
     const drag = (oldPath: string, newPath: string) => act(async () => await captured.sidebar?.onRenameFile(oldPath, newPath, 'file'))
 
-    it('a note is moved in the app (a drag in the tree) to a place where a folder that shows it now will not show it, and the note holds values for that folder: a sheet asks first', async () => {
-      const { bridge, el } = await mountTeam()
-      const fetched = bridge.index.mock.calls.length
-      await drag(NOOR, '/v/Team/Archive/Noor.md')
-      expect(sheetText(el)).toBe("Move 'Noor' to 'Archive'? Its values for Hiring will be cleared.") // Team, above both places, still shows it
-      expect([...el.querySelectorAll('.confirm__btn')].map((b) => b.textContent)).toEqual(['Cancel', 'Move'])
-      expect(document.activeElement).toBe(sheetBtn(el, 'Cancel'))
-      expect(sheetBtn(el, 'Move')?.classList.contains('confirm__btn--danger')).toBe(true)
-      expect(bridge.file.rename).not.toHaveBeenCalled() // nothing moves before the answer
-      expect(bridge.index.mock.calls).toHaveLength(fetched) // the window's own snapshot answered
-    })
-
-    it('Cancel: nothing moves, nothing is written', async () => {
+    it('a note moved to a place where a folder that showed it no longer does: no sheet, the move runs at once, and every value stays — Hiring’s block too (D20 and D21 are gone)', async () => {
       const files = moved()
       const { bridge, el } = await mountTeam(files)
       await drag(NOOR, '/v/Team/Archive/Noor.md')
-      await act(async () => sheetBtn(el, 'Cancel')?.click())
-      expect(el.querySelector('.confirm')).toBeNull()
-      expect(bridge.file.rename).not.toHaveBeenCalled()
-      expect(bridge.writeFile).not.toHaveBeenCalled()
-      expect(files['/v/Team/Archive/Noor.md'].content).toBe(held)
-    })
-
-    it('Move: the move runs as it does today, and the values are cleared in that move; a folder that showed the note before and still does keeps its block (D20)', async () => {
-      const files = moved()
-      const { bridge, el } = await mountTeam(files)
-      await drag(NOOR, '/v/Team/Archive/Noor.md')
-      expect(bridge.file.rename).not.toHaveBeenCalled()
-      await act(async () => sheetBtn(el, 'Move')?.click())
       expect(el.querySelector('.confirm')).toBeNull()
       expect(bridge.file.rename).toHaveBeenCalledExactlyOnceWith({ oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md' })
-      expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+      expect(files['/v/Team/Archive/Noor.md'].content).toBe(held)
+      expect(bridge.writeFile).not.toHaveBeenCalled()
     })
 
-    it('a move that clears nothing — the same folders show the note before and after; or the note holds no values for the folders it leaves; or its only such block is for a folder the app cannot find: no sheet, the move runs at once, exactly as today', async () => {
+    it('any other move — under the same folders, of a note with no values, of one whose block names no folder: no sheet, and no note is read or written', async () => {
       const files = moved()
       const { bridge, el } = await mountTeam(files)
       bridge.readFile.mockClear()
@@ -3939,21 +3979,6 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(files[NOOR].content).toBe(held)
     })
 
-    it('a move to the vault’s top level: the destination is named by the vault’s name, and the folders nearest to the note first', async () => {
-      const { el } = await mountTeam()
-      await drag(NOOR, '/v/Noor.md')
-      expect(sheetText(el)).toBe("Move 'Noor' to 'v'? Its values for Hiring and Team will be cleared.")
-    })
-
-    it('the index is behind: the sheet is advice from the window’s snapshot — a note it shows no values for moves unasked, and what the move clears is still decided on a fresh index (D20)', async () => {
-      const files = moved()
-      const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => b.bridge.index.mockResolvedValue(snapshot({})))
-      bridge.index.mockResolvedValue(snapshot()) // the index has moved on; the window has not heard
-      await drag(NOOR, '/v/Team/Archive/Noor.md')
-      expect(el.querySelector('.confirm')).toBeNull()
-      expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
-    })
-
     /** One door for a list of moves (YAZ-3250 D1): one D21 sheet for the whole list, then each move as one drag runs. */
     describe('a list of moves (YAZ-3250 D1)', () => {
       const PLAIN = '/v/Team/Hiring/Plain.md'
@@ -3975,7 +4000,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(el.querySelector('.link-notice')?.getAttribute('data-icon')).toBe('paste')
       })
 
-      it('a list that clears values asks ONCE for the whole list; Cancel moves nothing (S10); Move runs every move and clears the values in its move (D20)', async () => {
+      it('a list whose notes leave folders: no sheet, every move runs, and every value stays (C9)', async () => {
         const files = moved()
         const { bridge, el } = await mountTeam(files)
         const list = [
@@ -3983,18 +4008,9 @@ describe('App rename door (⚡ YAZ-888)', () => {
           { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' as const },
         ]
         await moveAll(list)
-        expect(el.querySelectorAll('.confirm')).toHaveLength(1)
-        expect(sheetText(el)).toBe("Move 2 items to 'Archive'? 1 note will lose its values for Hiring.")
-        await act(async () => sheetBtn(el, 'Cancel')?.click())
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.rename).not.toHaveBeenCalled()
-        expect(bridge.writeFile).not.toHaveBeenCalled()
-
-        await moveAll(list)
-        await act(async () => sheetBtn(el, 'Move')?.click())
         expect(el.querySelector('.confirm')).toBeNull()
         expect(bridge.file.rename.mock.calls.map(([req]) => req)).toEqual(list.map(({ oldPath, newPath }) => ({ oldPath, newPath })))
-        expect(files['/v/Team/Archive/Noor.md'].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(files['/v/Team/Archive/Noor.md'].content).toBe(held)
         expect(notice(el)).toBe('Moved 2 files (Noor.md, Plain.md)')
       })
 
@@ -4039,14 +4055,6 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(bridge.tree.mock.calls.length - reads).toBe(1)
       })
 
-      it('a pending list is dropped when the window’s vaults change', async () => {
-        const { bridge, el, emitFileRenamed } = await mountTeam()
-        await moveAll([{ oldPath: NOOR, newPath: '/v/Team/Archive/Noor.md', kind: 'file' }, { oldPath: PLAIN, newPath: '/v/Team/Archive/Plain.md', kind: 'file' }])
-        expect(el.querySelector('.confirm')).not.toBeNull()
-        await act(async () => emitFileRenamed('/v', '/w', 'dir'))
-        expect(el.querySelector('.confirm')).toBeNull()
-        expect(bridge.file.rename).not.toHaveBeenCalled()
-      })
     })
 
     /** Undo and redo a move (YAZ-3255 D10, D11; S33 to S42): App's per-window list, through the same door. */
@@ -4078,31 +4086,30 @@ describe('App rename door (⚡ YAZ-888)', () => {
           return { oldPath, newPath, kind: 'file' }
         })
 
-      it('a drag, then ⌘Z: it moves back, the cleared values come back, and the toast says "Moved back 1 file (Noor.md)" with Redo; ⌘⇧Z moves it again with no sheet and clears them again (S33, S37, D11)', async () => {
+      it('a drag, then ⌘Z: it moves back with every value, and the toast says "Moved back 1 file (Noor.md)" with Redo; ⌘⇧Z moves it again (S33, S37, D11; YAZ-4713 C9)', async () => {
         const files: Disk = { [NOOR]: { content: held, mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
         await drag(NOOR, ARCHIVED)
-        await act(async () => sheetBtn(el, 'Move')?.click())
         await settle()
-        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(files[ARCHIVED].content).toBe(held)
         expect(toast(el)).toEqual({ text: 'Moved 1 file (Noor.md)', action: 'Undo' })
 
         const undo = await press()
         expect(undo.defaultPrevented).toBe(true)
         expect(renames(bridge)).toEqual([[NOOR, ARCHIVED], [ARCHIVED, NOOR]])
-        expect(files[NOOR].content).toBe(held) // the Hiring block is back, and only it
+        expect(files[NOOR].content).toBe(held) // nothing was cleared, so nothing comes back
         expect(toast(el)).toEqual({ text: 'Moved back 1 file (Noor.md)', action: 'Redo' })
         expect(el.querySelector('.link-notice')?.getAttribute('data-icon')).toBe('paste')
 
         const redo = await press(true)
         expect(redo.defaultPrevented).toBe(true)
-        expect(el.querySelector('.confirm')).toBeNull() // no D21 sheet on redo
+        expect(el.querySelector('.confirm')).toBeNull()
         expect(renames(bridge)).toEqual([[NOOR, ARCHIVED], [ARCHIVED, NOOR], [NOOR, ARCHIVED]])
-        expect(files[ARCHIVED].content).toBe(`---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`)
+        expect(files[ARCHIVED].content).toBe(held)
         expect(toast(el)).toEqual({ text: 'Moved 1 file (Noor.md)', action: 'Undo' })
 
-        // The redone gesture is on the undo list again, with what it cleared this time: the toast's Undo puts it back.
+        // The redone gesture is on the undo list again: the toast's Undo moves it back.
         await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
         await settle()
         expect(files[NOOR].content).toBe(held)
@@ -4157,11 +4164,11 @@ describe('App rename door (⚡ YAZ-888)', () => {
         expect(bridge.file.rename).toHaveBeenCalledTimes(calls)
       })
 
-      it('a Paste of a Cut is in the list: its Undo moves it back and puts back what it cleared (S39)', async () => {
-        const files: Disk = { [ARCHIVED]: { content: `---\nin:\n  ${TEAM}:\n    Rank: 2\n---\nBody\n`, mtime: 1 } }
+      it('a Paste of a Cut is in the list: its Undo moves it back, every value with it (S39)', async () => {
+        const files: Disk = { [ARCHIVED]: { content: held, mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }], cleared: [{ path: NOOR, values: { [HIRING]: { Status: 'Interview' } } }] }, 'Pasted 1 file (Noor.md)', false))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: NOOR, newPath: ARCHIVED, kind: 'file' }] }, 'Pasted 1 file (Noor.md)', false))
         expect(toast(el)).toEqual({ text: 'Pasted 1 file (Noor.md)', action: 'Undo' })
         await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
         await settle()
@@ -4176,7 +4183,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PLAN]: { content: 'Body\n', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }], cleared: [] }, 'Moved 1 file (Plan.md) from Finder', false))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PLAN, kind: 'file' }] }, 'Moved 1 file (Plan.md) from Finder', false))
         expect(toast(el)).toEqual({ text: 'Moved 1 file (Plan.md) from Finder', action: 'Undo' })
         await press()
         expect(renames(bridge)).toEqual([[PLAN, DOWNLOADS]])
@@ -4195,7 +4202,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         const files: Disk = { [PDF]: { content: '%PDF', mtime: 1 } }
         const { bridge, el } = await mountTeam(files)
         realDisk(bridge, files)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }], cleared: [] }, 'Moved 1 file (Scan.pdf) from Finder', false))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: DOWNLOADS, newPath: PDF, kind: 'file' }] }, 'Moved 1 file (Scan.pdf) from Finder', false))
         await press()
         expect(renames(bridge)).toEqual([[PDF, DOWNLOADS]])
         expect(toast(el)).toEqual({ text: 'Moved back 1 file (Scan.pdf)', action: 'Redo' })
@@ -4245,7 +4252,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
         bridge.file.rename.mockRejectedValue({ code: 'IO_ERROR', message: 'the disk is busy', path: LOST })
         await press()
         expect(bridge.app.sound).toHaveBeenCalledTimes(3)
-        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }], cleared: [] }, 'Moved 1 item from Finder', false))
+        act(() => captured.sidebar?.onMoved({ moves: [{ oldPath: '/Users/yasin/Downloads/Plan.md', newPath: '/v/Team/Plan.md', kind: 'file' }] }, 'Moved 1 item from Finder', false))
         expect(bridge.app.sound.mock.calls).toEqual([['land'], ['land'], ['land'], ['land']])
       })
 
@@ -4272,21 +4279,6 @@ describe('App rename door (⚡ YAZ-888)', () => {
       })
     })
 
-    it('"Ask before renaming" off: a move that would clear values still asks (YAZ-2420 3C1)', async () => {
-      const { bridge, el } = await mount(askOff(), identity(), moved(), (b) => b.bridge.index.mockResolvedValue(snapshot()))
-      await drag(NOOR, '/v/Team/Archive/Noor.md')
-      expect(sheetText(el)).toBe("Move 'Noor' to 'Archive'? Its values for Hiring will be cleared.")
-      expect(bridge.file.rename).not.toHaveBeenCalled()
-    })
-
-    it('a pending move is dropped when the window root changes (the vault folder moved)', async () => {
-      const { bridge, el, emitFileRenamed } = await mountTeam()
-      await drag(NOOR, '/v/Team/Archive/Noor.md')
-      expect(el.querySelector('.confirm')).not.toBeNull()
-      await act(async () => emitFileRenamed('/v', '/w', 'dir'))
-      expect(el.querySelector('.confirm')).toBeNull()
-      expect(bridge.file.rename).not.toHaveBeenCalled()
-    })
   })
 
   /** A title edit is the same door (YAZ-2420 D16): the same sheet, the same pipeline, another bridge call. */
@@ -4407,6 +4399,50 @@ describe('App rename door (⚡ YAZ-888)', () => {
         b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
         trashing(b.bridge)
       })
+
+    it('YAZ-4939: a read-only vault asks before a Delete and a Rename; Cancel does nothing; "Allow for 10 minutes" opens the vault’s file actions that long, then it asks again', async () => {
+      // "Ask before renaming" off: the rename sheet would otherwise stand between the vault's sheet and the rename.
+      const { bridge, el } = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, confirmRename: false } }, identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        trashing(b.bridge)
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const sheet = () => el.querySelector('#confirm-read-only-vault-text')
+      const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+      // Delete asks; Cancel deletes nothing.
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
+      await act(async () => {})
+      expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow its file actions — rename, move, delete, new and paste — for 10 minutes?')
+      expect(bridge.file.delete).not.toHaveBeenCalled()
+      await act(async () => button('Cancel')?.click())
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete).not.toHaveBeenCalled()
+      // Rename asks too; "Allow for 10 minutes" lets it run.
+      act(() => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      expect(bridge.file.rename).not.toHaveBeenCalled()
+      await act(async () => button('Allow for 10 minutes')?.click())
+      await act(async () => {})
+      expect(sheet()).toBeNull()
+      expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
+      // Within the 10 minutes a Delete does not ask.
+      const now = Date.now()
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 9 * 60_000)
+      await act(async () => await captured.sidebar?.onDeleteEntries(['/v/A.md']))
+      expect(sheet()).toBeNull()
+      expect(bridge.file.delete.mock.calls.map(([req]) => req)).toEqual([{ path: '/v/A.md' }])
+      // After them it asks again.
+      clock.mockReturnValue(now + 10 * 60_000 + 1)
+      act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
+      await act(async () => {})
+      expect(sheet()).not.toBeNull()
+      await act(async () => button('Cancel')?.click())
+      expect(bridge.file.delete.mock.calls.length).toBe(1)
+      clock.mockRestore()
+    })
 
     it('S66 (YAZ-3272, as D23 of YAZ-3293 words it): one row deleted says "Deleted 1 file (Todo.md)" with Undo, by its kind and its name on disk', async () => {
       const { el } = await mountVault()
@@ -4874,15 +4910,15 @@ describe('App rename door (⚡ YAZ-888)', () => {
     await act(async () => release())
   })
 
-  it('a FOLDER rename counts the name links to the folder itself — a note\u2019s and another folder\u2019s Outline line — and confirming rewrites both (YAZ-2290 D10)', async () => {
-    const TEAM = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n---\n'
+  it('a FOLDER rename counts the name links to the folder itself — a note\u2019s and another folder\u2019s Page — and confirming rewrites both (YAZ-2290 D10, YAZ-4584 D40)', async () => {
+    const TEAM = '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n---\n- [[Projects]]\n'
     const files = { '/v/A.md': { content: 'See [[Projects]].\n', mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 } }
-    const outline = { views: [{ type: 'outline', name: 'Outline', outline: '- [[Projects]]' }] }
+    const page = { views: [{ type: 'page', name: 'Page' }] }
     const { bridge, el } = await mount(defaultAppState(), identity(), files, (b) => {
       b.bridge.index.mockResolvedValue({
         root: '/v',
         records: [record('/v/A.md', { links: ['Projects'] }), record('/v/Projects/Plan.md')],
-        folders: [record('/v/Team/.folder.md', { properties: { folder_settings: outline } })],
+        folders: [record('/v/Team/.folder.md', { properties: { folder_settings: page }, links: ['Projects'] })],
         generatedAt: 1,
         ids: true,
       })
@@ -5699,10 +5735,12 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       watch: ['/v', '/v'],
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
-      // The vault's review settings and its text formatting (YAZ-3066), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'text-formatting.json'], ['/v', 'review.json'], ['/v', 'text-formatting.json']],
+      // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a note (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json']],
       coldDiff: [['/v']],
-      subscriptions: [2, 2, 6],
+      // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a note (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
+      // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
+      subscriptions: [2, 2, 16],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -5816,7 +5854,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(4) // review.json and text-formatting.json (YAZ-3066)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(14) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066) and link-pills.json (YAZ-4924)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
@@ -5987,11 +6025,12 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
           return [...el.querySelectorAll('.settings-section__note, .settings-group__hint')].map((n) => n.textContent).filter((text) => text?.startsWith('Vault: ')).map((text) => [title, text])
         })
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    // Files & Links names it twice: its "This vault" group and its "Link pills" group (YAZ-4924).
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Review', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Review', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {

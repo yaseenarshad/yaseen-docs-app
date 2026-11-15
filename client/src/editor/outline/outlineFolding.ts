@@ -21,13 +21,19 @@
  * image with `data-outline-folded-image` so imageView.css shrinks it to a one-line chip; a click on
  * that chip is the chevron's toggle. Same plugin state, same meta-only transactions, same keys —
  * the image node view knows nothing about folding (decorations first, rule 5 / rule 30).
+ * Board embed bullets (YAZ-4830 D13): a list_item holding a `![[x.drawio]]` in its own text blocks is foldable the
+ * same way (`findOwnEmbeds`). The embed's window shows the fold and reads it through `embedFolds` (the note's text is
+ * under decorations, so there is no node to stamp). A board image node is an image: its node view reads the spec of
+ * the image's node decoration (`foldableImage`, `folded`).
  */
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet } from '@milkdown/kit/prose/view'
 import type { Mapping } from '@milkdown/kit/prose/transform'
 import { $prose } from '@milkdown/kit/utils'
-import { findFoldedChildren, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
+import { findFoldedChildren, findOwnEmbeds, findOwnImages, innermostItemPos, itemLabelText, LIST_NODE_NAMES } from './listNodes'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
+import { hasIdEmbed, type BoardCheck } from '../drawing/boardEmbedText'
 import { IMAGE_FOLD_CLASS } from '../image/imageView'
 import { outlineFoldKeyFromStem, outlineFoldKeyStem, outlineFoldLabel } from './outlineFoldKeys'
 import { collapsedKey, nodeRangesLand, widgetLands } from './foldCarry'
@@ -48,6 +54,8 @@ interface OutlineEntry {
    * (YAZ-1709).
    */
   imageRanges: readonly { from: number; to: number }[]
+  /** Document ranges of every board embed in the item's own text blocks (YAZ-4830). */
+  embedRanges: readonly { from: number; to: number }[]
 }
 
 /** The most recent fold action while it is still the latest action (GRO-2075 panic-undo). */
@@ -112,6 +120,8 @@ interface FoldSetMeta {
    * and carries no view-action stamp, so ⌘Z panic-undo (fold and zoom alike) is untouched by it.
    */
   silent?: boolean
+  /** Items opened in the same step, so one ⌘Z restores both: a level fold opens the bullets above it (YAZ-4786). */
+  opened?: readonly number[]
 }
 
 /** Every fold transaction: the plugin meta plus the shared view-action stamp (zoom.ts watches for it). */
@@ -135,6 +145,35 @@ export const collapsedItemsHiding = (state: EditorState, pos: number): number[] 
         foldingState.collapsedItemPositions.has(itemPos) && foldedRanges.some((range) => pos >= range.from && pos < range.to),
     )
     .map(({ itemPos }) => itemPos)
+}
+
+/** What a board embed's window shows (YAZ-4830): its item's position and whether it is folded. */
+export interface EmbedFold {
+  itemPos: number
+  folded: boolean
+}
+
+const NO_EMBED_FOLDS: ReadonlyMap<number, EmbedFold> = new Map()
+const embedFoldCache = new WeakMap<OutlineFoldingState, ReadonlyMap<number, EmbedFold>>()
+
+/**
+ * The fold of each board embed on a foldable bullet, by the embed's start (YAZ-4830). Empty with folding off. One map
+ * per plugin state: a caret move keeps the state, so it costs nothing; an edit builds it once from the entries.
+ */
+export const embedFolds = (state: EditorState): ReadonlyMap<number, EmbedFold> => {
+  const foldingState = pluginKey.getState(state)
+  if (!foldingState || !isFoldingOn(state)) return NO_EMBED_FOLDS
+  const cached = embedFoldCache.get(foldingState)
+  if (cached !== undefined) return cached
+  const map = new Map<number, EmbedFold>()
+  for (const { itemPos, embedRanges } of foldingState.entries) {
+    const folded = foldingState.collapsedItemPositions.has(itemPos)
+    for (const { from } of embedRanges) map.set(from, { itemPos, folded })
+  }
+  // No embed on a bullet (A9): the one empty map, so a key in such a note never looks new to the embed host.
+  const out = map.size === 0 ? NO_EMBED_FOLDS : map
+  embedFoldCache.set(foldingState, out)
+  return out
 }
 
 /** Add this plugin's half of a document-wide fold-all transaction without dispatching it. */
@@ -227,6 +266,36 @@ export const setOutlineFoldSet =
     return true
   }
 
+/** How deep the list_item at `itemPos` sits: 1 for a top-level bullet, 2 for its children, and so on. */
+const itemLevel = (doc: ProseNode, itemPos: number): number => {
+  const $pos = doc.resolve(itemPos)
+  let level = 1
+  for (let depth = $pos.depth; depth > 0; depth--) if ($pos.node(depth).type.name === 'list_item') level++
+  return level
+}
+
+/**
+ * Collapse this level / Expand this level (YAZ-4786), from a bullet's menu: the level is the bullet's depth, across the
+ * whole note. Collapse folds every foldable bullet at that level and opens every one above it, so they all show.
+ * Expand opens every foldable bullet at that level and above; deeper bullets keep their folds. One user fold: one ⌘Z.
+ * With no dispatch, says whether the bullet's level has a foldable bullet at all.
+ */
+export const setOutlineFoldLevel =
+  (itemPos: number, collapsed: boolean): Command =>
+  (state, dispatch) => {
+    const foldingState = pluginKey.getState(state)
+    if (!foldingState || state.doc.nodeAt(itemPos)?.type.name !== 'list_item') return false
+    const level = itemLevel(state.doc, itemPos)
+    const levels = foldingState.entries.map(({ itemPos: pos }) => ({ pos, level: itemLevel(state.doc, pos) }))
+    if (!levels.some((entry) => entry.level === level)) return false
+    if (dispatch === undefined) return true
+    if (foldingBlocked(state, dispatch)) return true
+    const at = levels.filter((entry) => entry.level === level).map((entry) => entry.pos)
+    const above = levels.filter((entry) => entry.level < level).map((entry) => entry.pos)
+    dispatch(foldTransaction(state, collapsed ? { set: at, collapsed: true, opened: above } : { set: [...above, ...at], collapsed: false }))
+    return true
+  }
+
 /** Collapse every foldable item (GRO-2027 `Mod-Shift-u`); metadata-only, the doc is untouched. */
 export const foldAllOutline: Command = foldAllCommand('fold-all')
 /** Expand every foldable item (GRO-2027 `Mod-Shift-i`). */
@@ -311,6 +380,7 @@ interface BlockEntry {
   itemPos: number
   foldedRanges: readonly { from: number; to: number }[]
   imageRanges: readonly { from: number; to: number }[]
+  embedRanges: readonly { from: number; to: number }[]
 }
 
 /**
@@ -322,28 +392,34 @@ interface BlockEntry {
  */
 const blockEntries = new WeakMap<ProseNode, readonly BlockEntry[]>()
 
-const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
+/**
+ * `isBoard` is the host's word on an id embed (`boardCheckOf`, YAZ-4920). A block with an id-shaped embed is not cached:
+ * what the embed is can change when the resolver does, with the block unchanged.
+ */
+const entriesOfBlock = (block: ProseNode, isBoard: BoardCheck | undefined): readonly BlockEntry[] => {
   const cached = blockEntries.get(block)
   if (cached !== undefined) return cached
+  const keep = !hasIdEmbed(block.textContent)
   const entries: BlockEntry[] = []
   if (block.type.name === 'table') {
     block.forEach((row, offset) => {
       const base = offset + 1
       const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
-      for (const entry of entriesOfBlock(row)) {
-        entries.push({ ...entry, itemPos: base + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift) })
+      for (const entry of entriesOfBlock(row, isBoard)) {
+        entries.push({ ...entry, itemPos: base + entry.itemPos, foldedRanges: entry.foldedRanges.map(shift), imageRanges: entry.imageRanges.map(shift), embedRanges: entry.embedRanges.map(shift) })
       }
     })
-    blockEntries.set(block, entries)
+    if (keep) blockEntries.set(block, entries)
     return entries
   }
   block.descendants((node, itemPos) => {
     if (node.type.name !== 'list_item') return true
     const foldedChildren = findFoldedChildren(node)
     const images = findOwnImages(node)
-    if (foldedChildren.length === 0 && images.length === 0) return true
+    const embeds = findOwnEmbeds(node, isBoard)
+    if (foldedChildren.length === 0 && images.length === 0 && embeds.length === 0) return true
 
-    const label = itemLabelText(node)
+    const label = itemLabelText(node, isBoard)
     entries.push({
       keyLabel: outlineFoldLabel(label),
       keyStem: outlineFoldKeyStem(label),
@@ -357,20 +433,21 @@ const entriesOfBlock = (block: ProseNode): readonly BlockEntry[] => {
         const from = itemPos + 1 + offset
         return { from, to: from + node.nodeSize }
       }),
+      embedRanges: embeds.map(({ from, to }) => ({ from: itemPos + 1 + from, to: itemPos + 1 + to })),
     })
     return true
   })
-  blockEntries.set(block, entries)
+  if (keep) blockEntries.set(block, entries)
   return entries
 }
 
-const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
+const getOutlineEntries = (doc: ProseNode, isBoard: BoardCheck | undefined): OutlineEntry[] => {
   const entries: OutlineEntry[] = []
   const labelOccurrences = new Map<string, number>()
   doc.forEach((block, offset) => {
     const base = offset + 1
     const shift = ({ from, to }: { from: number; to: number }) => ({ from: base + from, to: base + to })
-    for (const entry of entriesOfBlock(block)) {
+    for (const entry of entriesOfBlock(block, isBoard)) {
       const occurrence = labelOccurrences.get(entry.keyLabel) ?? 0
       labelOccurrences.set(entry.keyLabel, occurrence + 1)
       entries.push({
@@ -379,6 +456,7 @@ const getOutlineEntries = (doc: ProseNode): OutlineEntry[] => {
         label: entry.label,
         foldedRanges: entry.foldedRanges.map(shift),
         imageRanges: entry.imageRanges.map(shift),
+        embedRanges: entry.embedRanges.map(shift),
       })
     }
   })
@@ -422,7 +500,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
         key: pluginKey,
         state: {
           init: (_config, state) => {
-            const entries = getOutlineEntries(state.doc)
+            const entries = getOutlineEntries(state.doc, boardCheckOf(state))
             const seed = seedCollapsedKeys()
             return {
               entries,
@@ -436,7 +514,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
             // A caret move changes no entry, fold or ⌘Z eligibility: keep the SAME state object (YAZ-2131 4C).
             if (!transaction.docChanged && transaction.getMeta(pluginKey) === undefined && transaction.getMeta(VIEW_ACTION_META) === undefined)
               return previousState
-            const entries = transaction.docChanged ? getOutlineEntries(newState.doc) : previousState.entries
+            const entries = transaction.docChanged ? getOutlineEntries(newState.doc, boardCheckOf(newState)) : previousState.entries
             const foldablePositions = new Set(entries.map(({ itemPos }) => itemPos))
             const collapsedItemPositions = new Set<number>()
             previousState.collapsedItemPositions.forEach((position) => {
@@ -500,6 +578,7 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 if (meta.collapsed && foldablePositions.has(pos)) collapsedItemPositions.add(pos)
                 else if (!meta.collapsed) collapsedItemPositions.delete(pos)
               }
+              for (const pos of meta.opened ?? []) collapsedItemPositions.delete(pos)
               // A silent set is not a user fold action: ⌘Z keeps whatever it was already pointing at.
               if (meta.silent !== true) lastToggle = { kind: 'set', previousCollapsed }
             } else if (transaction.docChanged && isFoldingOn(newState)) carryDecorations(previousState, entries, collapsedItemPositions, transaction.mapping, newState.doc)
@@ -596,7 +675,8 @@ export const createOutlineFolding = ({ seedCollapsedKeys = () => new Set(), onCo
                 const attrs = collapsed
                   ? { [OUTLINE_FOLDABLE_IMAGE_ATTR]: 'true', [OUTLINE_FOLDED_IMAGE_ATTR]: 'true' }
                   : { [OUTLINE_FOLDABLE_IMAGE_ATTR]: 'true' }
-                decorations.push(Decoration.node(from, to, attrs))
+                // The spec says it to a board image node's window (YAZ-4830), which has no attribute to watch.
+                decorations.push(Decoration.node(from, to, attrs, { foldableImage: true, folded: collapsed }))
               })
               if (collapsed) {
                 entry.foldedRanges.forEach(({ from, to }) => {

@@ -5,7 +5,8 @@
  *  - what it shows: `linkDisplayText` with the ID link's title (YAZ-2293) and the found page's name (YAZ-3778 D2, D3);
  *    a missing page is dim, and a missing ID of this vault says "Missing note · YAS-466" (YAZ-3905 S10),
  *  - a click: the open gestures of Settings › Hotkeys › "Links in notes and drawings" (`linkClickAction`, the #230 keys). A plain
- *    click is the board's (it selects the box); a read-only board keeps "a click opens", as a read-only note does,
+ *    click is the board's (it selects the box); a read-only board keeps "a click opens", as a read-only note does, and
+ *    follows the vault's "Clicking a link" (Explore, YAZ-4939) as a note does,
  *  - opening: the editor's one follower (`wikilinkFollower`), which also makes a missing page,
  *  - hover: the page the pill opens, for the host's card (`useCardPreview`),
  *  - right-click: the host opens the one link menu (`linkMenuOf`), with Edit link and Remove link (D15),
@@ -29,6 +30,7 @@ import { isFolderPath, pathTitles } from '../lib/pageLabel'
 import type { AnchorRect } from '../sidebar/previewPlacement'
 import type { VaultLinks } from '../links/vaultLinks'
 import type { IconsHere } from '../sidebar/FileIcon'
+import { setDiagramLinkLooks, type WireLook } from '../diagrams/diagramLooks'
 import { drawingLinkIcon, setDrawingLinkIcons, type PillIcon } from './drawingLinkIcons'
 import type { PickerEditor } from './drawingLinkPicker'
 
@@ -59,7 +61,7 @@ export interface DrawingLinkHit {
 export function drawingLinkLook(inner: string, source: WikilinkResolveSource, viewOnly?: ViewOnlyLinkSource): DrawingLink | null {
   const titles = pathTitles(source.records, source.folders)
   const resolved = linkIsResolved(inner, source, viewOnly)
-  const label = linkDisplayText(inner, (target) => idLinkTitle(target, source.resolve, titles), () => resolved)
+  const label = linkDisplayText(inner, (target) => idLinkTitle(target, source.resolve, titles), () => resolved, source)
   if (label === '') return null
   if (!resolved) {
     // A gone note of this vault says so, with its ID, where its title stood (S10).
@@ -178,6 +180,16 @@ function lookOf(inner: string): DrawingLink | null {
   return icon === undefined ? look : { ...look!, icon }
 }
 
+/** A pill's look for draw.io's side (YAZ-4748): the icon as its data URL; null, no icon; absent, not drawn yet. */
+export function wireLook(look: DrawingLink | null): WireLook | null {
+  if (look === null) return null
+  const { label, missing, icon } = look
+  return { label, ...(missing ? { missing } : {}), ...(icon === undefined ? {} : { icon: icon === null ? null : icon.url }) }
+}
+
+// A diagram's previews and Export Image draw its pills with the window's links (YAZ-4748 D9).
+setDiagramLinkLooks((inner) => wireLook(windowLinkLook(inner)))
+
 /** The pills draw again with what the window says now (a theme change: the icons' other look). */
 export function redrawWindowLinks(): void {
   windowChanged()
@@ -219,6 +231,8 @@ export interface DrawingLinkDeps {
   pasteLink?: (text: string) => string | null
   /** Files dropped on the board as their links, or null (`drawingDropLinks`). */
   dropLinks?: (files: readonly File[]) => string[] | null
+  /** The same by the files' paths: a diagram's frame drops pages it has no paths for (YAZ-4748 D4). */
+  dropPaths?: (paths: readonly string[]) => string[] | null
 }
 
 /** The engine's `hostLinks` for one board. `deps` is read at each event, so the host can keep it in a ref. */
@@ -238,7 +252,14 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
     },
     onPointerDown: (hit: DrawingLinkHit, event: PointerEvent) => {
       const now = deps()
-      const where = linkClickAction({ editable: !now.readOnly() }, event, now.nav.hotkeys?.())
+      // A plain click on an editable board is the board's (it selects the box). On a read-only board it follows the
+      // vault's "Clicking a link" (YAZ-4939): a note pill opens in Explore while the vault says so, as in a note.
+      const explore = (): boolean => {
+        if (!now.readOnly() || now.nav.exploreClick?.() !== true) return false
+        const vault = linkVault(hit.inner) ?? { source: now.source, viewOnly: now.viewOnly }
+        return fileKind(linkPath(hit.inner, vault.source, vault.viewOnly) ?? '') === 'markdown'
+      }
+      const where = linkClickAction({ editable: !now.readOnly() }, event, now.nav.hotkeys?.(), explore)
       if (where === null) return false
       now.follow(hit.inner, where)
       return true
@@ -249,6 +270,7 @@ export function drawingHostLinks(deps: () => DrawingLinkDeps) {
     },
     pasteLink: (text: string) => deps().pasteLink?.(text) ?? null,
     dropLinks: (files: readonly File[]) => deps().dropLinks?.(files) ?? null,
+    dropPaths: (paths: readonly string[]) => deps().dropPaths?.(paths) ?? null,
     onEditorChange: (editor: PickerEditor | null) => deps().picker?.change(editor),
     onEditorKeyDown: (event: KeyboardEvent) => deps().picker?.keyDown(event) ?? false,
   }

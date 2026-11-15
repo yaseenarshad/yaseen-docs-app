@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { TextSelection } from '@milkdown/kit/prose/state'
+import { Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { docToBox, PANEL_HIGHLIGHT_HEX } from './textBoxDoc'
 import { helpers, mountBox, typeText, unmountAll } from './textBoxTestKit'
 // After the kit, which loads the editor first: this module alone would start an import cycle
@@ -185,8 +185,9 @@ describe('⌘A shows the pop-up toolbar (YAZ-4440)', () => {
     const { view } = await mountBox('pick these\nwords', undefined, { anchor: 2, head: 2 }, [], clientRectAt)
     view.focus()
     selectAll(view)
-    expect(view.state.selection.from).toBe(0)
-    expect(view.state.selection.to).toBe(view.state.doc.content.size)
+    // ⌘A selects the letters, first to last (YAZ-3746 13AA), not ProseMirror's select-all from outside the first line
+    expect(view.state.selection.from).toBe(Selection.atStart(view.state.doc).from)
+    expect(view.state.selection.to).toBe(Selection.atEnd(view.state.doc).to)
     await settle()
     const toolbar = document.querySelector<HTMLElement>('.excalidraw-text-box-popups .milkdown-toolbar')!
     expect(toolbar.dataset.show).toBe('true')

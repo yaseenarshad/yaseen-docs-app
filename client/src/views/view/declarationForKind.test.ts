@@ -23,6 +23,12 @@ describe('declarationForKind', () => {
     expect(declarationForKind({ kind: 'text', required: true }, 'number')).toEqual({ kind: 'number', required: true })
   })
 
+  it('writes no undefined field (YAZ-4637 M1): a Link with no target has no `target` key at all, so its stamp matches the disk\'s', () => {
+    const decl = declarationForKind({ kind: 'link', target: undefined }, 'link')
+    expect(Object.keys(decl)).toEqual(['kind'])
+    expect(Object.keys(declarationForKind({ kind: 'text', required: undefined, description: undefined }, 'number'))).toEqual(['kind'])
+  })
+
   it('never mutates its input', () => {
     const decl = { kind: 'link' as const, target: '[[People]]' }
     declarationForKind(decl, 'text')

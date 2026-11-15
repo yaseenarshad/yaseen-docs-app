@@ -4,7 +4,7 @@
  * Lives under client/src so vitest collects it; the module itself is in shared/.
  */
 import { describe, expect, it } from 'vitest'
-import { buildFrontmatter, FrontmatterWriteError, parseFrontmatter, replaceFrontmatter, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
+import { buildFrontmatter, FrontmatterWriteError, parseFrontmatter, replaceFrontmatter, setFrontmatterIn, setFrontmatterProperty, splitFrontmatter } from '@shared/frontmatter'
 
 const NOTE = `---
 # how this note is filed
@@ -66,7 +66,17 @@ author: Cal Newport
     expect(setFrontmatterProperty(NOTE, 'rating', 4)).toContain('rating: 4\n')
     expect(setFrontmatterProperty(NOTE, 'rating', '4')).toContain('rating: "4"\n')
     expect(setFrontmatterProperty(NOTE, 'rating', true)).toContain('rating: true\n')
-    expect(setFrontmatterProperty(NOTE, 'rating', null)).toContain('rating: null\n')
+    // A null is Obsidian's empty property, `key:` with no value (YAZ-4551), as `buildFrontmatter` writes it.
+    expect(setFrontmatterProperty(NOTE, 'rating', null)).toContain('rating:\n')
+    expect(setFrontmatterProperty(NOTE, 'rating', 'null')).toContain('rating: "null"\n')
+  })
+
+  it('a null is written as `key:` everywhere: a new key, a replaced value, a new nested map, and a note with no block (YAZ-4551)', () => {
+    expect(splitFrontmatter(setFrontmatterProperty(NOTE, 'due', null)).frontmatter).toMatch(/\ndue:\n---\n$/)
+    expect(setFrontmatterProperty(NOTE, 'rating', null)).not.toContain('null')
+    expect(setFrontmatterIn('---\na: 1\n---\n', ['in', 'f1', 'Due Date'], null)).toBe('---\na: 1\nin:\n  f1:\n    Due Date:\n---\n')
+    expect(setFrontmatterProperty('Body\n', 'due', null)).toBe('---\ndue:\n---\nBody\n')
+    expect(parseFrontmatter(splitFrontmatter(setFrontmatterProperty(NOTE, 'due', null)).frontmatter).properties.due).toBeNull()
   })
 
   it('deletes a key', () => {

@@ -246,11 +246,16 @@ async function saveDefaultLetters(root: string): Promise<VaultIds | undefined> {
   return now
 }
 
-/** The highest number among `notes`' IDs that are IDs of the vault with `letters` (R5); 0 when none is. An old ID has no number (S20). */
+/**
+ * The highest number among `notes`' IDs that are IDs of the vault with `letters` (R5); 0 when none is. An old ID has
+ * no number (S20), and nor does a kept one (YAZ-4922 D2): its numbers are apart from the current letters'.
+ */
 export function highestNumber(notes: Iterable<{ id?: string }>, letters: readonly string[]): number {
   let top = 0
+  const current = `${letters[0]}-`
   for (const { id } of notes) {
-    const number = id === undefined ? undefined : noteIdNumber(vaultNoteId(id, letters))
+    const own = id === undefined ? undefined : vaultNoteId(id, letters)
+    const number = own?.startsWith(current) === true ? noteIdNumber(own) : undefined
     if (number !== undefined && number > top) top = number
   }
   return top
@@ -271,6 +276,40 @@ let highest: Highest = scanned
 /** Who answers "what is the highest number in this vault?": the app's live index does, from memory (`live.ts`), so no file is read for a new number. */
 export function highestFrom(ask: Highest): void {
   highest = ask
+}
+
+/** The highest number among the notes of an index this process already holds; undefined where it holds none. Never builds one. */
+type Seen = (root: string, letters: readonly string[]) => number | undefined
+let seen: Seen = () => undefined
+
+/** Who answers for an index that is open (`live.ts`): the floor of a vault inside it (`outerFloor`) reads it from memory. */
+export function seenFrom(ask: Seen): void {
+  seen = ask
+}
+
+/** The highest `last` among the count files of the vault at `root` (R14): its counter, on every Mac that synced it. 0 for none. */
+async function counterOf(root: string): Promise<number> {
+  const dir = countDir(root)
+  const names = (await readdir(dir).catch(() => [])).filter((name) => name.endsWith('.json')).sort().slice(0, COUNT_FILES_MAX)
+  const lasts = await Promise.all(names.map((name) => readFile(path.join(dir, name), 'utf8').then((raw) => parseCount(raw)?.last ?? 0, () => 0)))
+  return Math.max(0, ...lasts)
+}
+
+/**
+ * THE FLOOR OF A VAULT INSIDE A VAULT (YAZ-4922 🔒 D1, gap 3). Where the vault at `root` sits inside another ID vault
+ * (`idVault` of the folder above it) and an ID it gives would read as an ID of that one too — the same letters —
+ * its next number is above that vault's counter (its count files, R14) and above the highest number the notes of
+ * that vault hold, when this process holds its index. So two notes of the two vaults never share a number. 0 where
+ * there is no such vault. No vault is walked or indexed for it.
+ */
+async function outerFloor(root: string, letters: readonly string[]): Promise<number> {
+  const above = path.dirname(root)
+  if (above === root) return 0
+  const outer = await idVault(above)
+  if (outer === null) return 0
+  const theirs = (await vaultIds(outer)).letters
+  if (vaultNoteId(numberId(letters[0], 1), theirs) === undefined) return 0
+  return Math.max(await counterOf(outer), seen(outer, letters) ?? 0)
 }
 
 // ---------- the count files ----------
@@ -323,10 +362,11 @@ async function take(root: string, door: Door, count: number, floor: number | und
   const dir = countDir(root)
   const own = `${await macId(root)}.json`
   const file = path.join(dir, own)
+  const outer = await outerFloor(root, ids.letters)
   for (let attempt = 0; ; attempt++) {
     await refresh(door, dir, own)
     const mine = door.files.get(own)
-    const top = floor ?? (await highest(root, ids.letters))
+    const top = Math.max(floor ?? (await highest(root, ids.letters)), outer)
     const first = 1 + Math.max(top, ...[...door.files.values()].map((held) => held.count?.last ?? 0))
     const last = first + count - 1
     if (!isNumber(last)) throw new Error('this vault has no number left to give')

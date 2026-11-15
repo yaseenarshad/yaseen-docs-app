@@ -22,17 +22,24 @@ import { requireRequest } from './validate'
  * door (YAZ-2677 R32). One that changes on disk as it is given is refused with nothing written. A FOLDER's title is in its `.folder.md`, created here
  * when it is missing; its name carries no id, so a title with no letter or digit, or one whose
  * name a neighbour holds, is refused before anything is written (🔒 D25). Properties that will
- * not parse refuse the edit (🔒 D24). The window's own vault root is refused as `fs:rename`
- * refuses it.
+ * not parse refuse the edit (🔒 D24). The window's own vault root takes its title in its own
+ * `.folder.md` and is never renamed (YAZ-4921; `fs:rename` refuses it).
  */
 export async function retitle(root: string, req: unknown): Promise<RenameFileResponse> {
   const { path: raw, title: typed } = requireRequest(req)
   const p = requireAbsPath(raw, 'path')
   const title = typeof typed === 'string' ? typed.trim() : ''
   if (title === '') throw new BridgeFailure('BAD_REQUEST', 'a title cannot be empty', { path: p })
-  if (p === root) throw new BridgeFailure('BAD_REQUEST', 'the vault root itself cannot be renamed', { path: p })
   const src = await fsCall(p, () => stat(p))
   let name: string
+  if (p === root) {
+    // The vault root's own page (YAZ-4921): its title goes into `<root>/.folder.md`, and the folder is never renamed —
+    // `fs:rename` refuses the root, and so did this door before the root had a page.
+    if (!src.isDirectory()) throw new BridgeFailure('BAD_REQUEST', 'the vault root is not a folder', { path: p })
+    const file = folderSettingsPath(p)
+    await writeTitle(file, await readPage(file), title)
+    return { oldPath: p, newPath: p, kind: 'dir' }
+  }
   if (src.isDirectory()) {
     name = kebabTitle(title)
     if (name === '') throw new BridgeFailure('BAD_REQUEST', 'a folder name needs a letter or a digit', { path: p })

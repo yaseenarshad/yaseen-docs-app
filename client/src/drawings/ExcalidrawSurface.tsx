@@ -203,6 +203,8 @@ export interface DrawingSurfaceProps {
   onExportPdf?: (svg: string, size: { width: number; height: number }) => void | Promise<void>
   /** The board's own "Fold arrows" (YAZ-4277 D5), from its `yaseendraw` block; absent: the app's setting. */
   foldArrows?: FoldArrowMode
+  /** The board's own "Hover outline" (YAZ-4469 demo), from its `yaseendraw` block; absent: the app's setting. */
+  hoverOutline?: boolean
 }
 
 /**
@@ -289,6 +291,7 @@ export function ExcalidrawSurface({
   links,
   onExportPdf,
   foldArrows: boardFoldArrows,
+  hoverOutline: boardHoverOutline,
 }: DrawingSurfaceProps) {
   const [engine, setEngine] = useState<ExcalidrawModule | null>(null)
   // YAZ-4277 D1: one text box editor for the surface's life, on the loaded engine's box rules (the prop-stability rule);
@@ -902,6 +905,8 @@ export function ExcalidrawSurface({
         newElementStyle={canvasPrefs.newElementStyle}
         fillSetsTextColor={canvasPrefs.fillSetsTextColor}
         newShapesMatchZoom={canvasPrefs.newShapesMatchZoom}
+        // YAZ-4469 demo: the board's own "Hover outline" over the app's
+        hoverOutline={boardHoverOutline ?? canvasPrefs.hoverOutline}
         defaultItemStyle={defaultItemStyle}
         hostContextMenuItems={hostContextMenuItems}
         onExportPdf={exportPdf}

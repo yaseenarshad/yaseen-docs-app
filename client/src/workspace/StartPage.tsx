@@ -8,6 +8,7 @@
  *     YAZ-4450): the same list as the tab, the workspace list in a workspace, and no read of its own;
  *   - what is on the disk, and whether it is a file or a folder, off the window's one tree feed.
  */
+import { useVaultUnit, type UnitText } from '../vault/unitWord'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { rootOfPath, stripSlash, type DiagramDarkColors, type ListScope, type OpenStat, type TreeNode } from '@shared/types'
 import { api } from '../api'
@@ -36,7 +37,7 @@ const START_ROWS = 8
 /** The columns in their order, each with the one grey line it shows when it has no rows (S19). */
 const COLUMNS = [
   // "Recently closed" stands first (YAZ-3487 D13), and "Recent" reads "Recently viewed" beside it (D12): each says what it holds.
-  { col: 'closed', label: 'Recently closed', empty: 'Notes you close show here.' },
+  { col: 'closed', label: 'Recently closed', empty: (unit: UnitText) => unit('Notes you close show here.') },
   { col: 'recent', label: 'Recently viewed', empty: 'Pages you open show here.' },
   { col: 'favorites', label: 'Favorites', empty: 'No favorites yet. Right-click a file or folder → Add to favorites.' },
 ] as const
@@ -130,6 +131,8 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
   // asks for ONE tree of each vault when it shows — the same request the sidebar makes, where both
   // mount in one commit (YAZ-2191) — and no row asks anything.
   const trees = useLatestTrees(roots)
+  // The first vault's word for a note (YAZ-4938): the page is the window's, and its lines name the unit once.
+  const unit = useVaultUnit(roots[0] ?? null)
   useEffect(() => {
     for (const vault of roots) fetchTree(vault).catch(() => undefined) // a vault whose folder is gone is App's to drop
   }, [roots])
@@ -381,7 +384,7 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
             <h2 className="start__heading">{label}</h2>
             {columns[col].rows.length === 0 ? (
               // The workspace list names itself when empty (YAZ-4450 D3), as the Favorites tab does.
-              columns[col].read && <p className="start__empty">{col === 'favorites' && favorites.scope === 'workspace' ? empty.replace('No favorites yet.', 'No favorites in this workspace yet.') : empty}</p>
+              columns[col].read && <p className="start__empty">{col === 'favorites' && favorites.scope === 'workspace' ? empty.replace('No favorites yet.', 'No favorites in this workspace yet.') : typeof empty === 'function' ? empty(unit) : empty}</p>
             ) : (
               <ul className="start__rows">
                 {columns[col].rows.map((row, at, rows) => {

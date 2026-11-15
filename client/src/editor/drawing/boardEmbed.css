@@ -1,0 +1,29 @@
+/*
+ * Board embeds in the note (YAZ-4827) — classes applied by boardEmbed.ts. The window inside the box is 1B's
+ * (`embed/boardWindow.ts`) and draws itself; this file only hides the embed's text and places the box.
+ *
+ * Every rule is scoped under `.milkdown` on purpose: Crepe's reset carries `.milkdown * { margin: 0; padding: 0 }` at
+ * the same specificity as a bare class, and loads after this file.
+ */
+
+/* The raw `![[CloudFront.drawio|640x360 …]]` while its window stands in for it. */
+.milkdown .drawing-embed__syntax {
+  display: none;
+}
+
+/* The window's box: a line of its own in the column. Before the window is there it keeps the stored height (item 12). */
+.milkdown .board-embed {
+  display: block;
+  margin: 0.4em 0;
+  max-width: 100%;
+  min-height: var(--board-embed-height, 0);
+}
+
+/* The window's chunk would not load: one quiet line, in the box's place. */
+.milkdown .board-embed--broken {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--fg-muted);
+  font-size: 0.85em;
+  padding: 0.05em 0.4em;
+}

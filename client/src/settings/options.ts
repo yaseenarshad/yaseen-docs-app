@@ -4,7 +4,8 @@
  * in shared/types.ts, which owns validation; App owns what each value DOES (CSS vars, theme
  * resolution, the folder for a new note). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type ContentWidth, type DiagramDarkColors, type GithubSyncStatus, type GuideLinesShow, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type TableBandRows, type TableDimPast, type TableNowMark, type TableRowBand, type DailyNoteOpens, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TabSleepAfter, type VaultOpensOn, type TableOfContents, type Theme, type TocLines } from '@shared/types'
+import type { UnitText } from '../vault/unitWord'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyNoteOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewNoteLocation, type NoticeLength, type OutsideChangeGlow, type SectionLines, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
 
 export interface Option<T> {
   label: string
@@ -31,10 +32,31 @@ export const DIAGRAM_DARK_COLORS_OPTIONS: readonly Option<DiagramDarkColors>[] =
   { label: 'Keep original colours', value: 'keep' },
 ]
 
+/** YAZ-4820 D9: how long a board embed waits with no use before it rests (Settings › Drawings and diagrams). */
+export const EMBED_REST_OPTIONS: readonly Option<EmbedRestSeconds>[] = [
+  { label: '10 s', value: 10 },
+  { label: '30 s', value: 30 },
+  { label: '1 min', value: 60 },
+  { label: '5 min', value: 300 },
+  { label: 'Never', value: 0 },
+]
+
+/** YAZ-4820 item 3: where "/drawing" and "/diagram" put a new board made from a note. */
+export const newBoardFolderOptions = (unit: UnitText): readonly Option<NewBoardFolder>[] => [
+  { label: unit("The note's folder"), value: 'note' },
+  { label: 'assets/drawings', value: 'assets' },
+]
+
 /** Comment stream order (YAZ-1515): a reading preference, global — the block's own toggle drives the same field. */
 export const COMMENTS_ORDER_OPTIONS: readonly Option<CommentsOrder>[] = [
   { label: 'Oldest first', value: 'oldest' },
   { label: 'Newest first', value: 'newest' },
+]
+
+/** YAZ-4615 D5: where a resolved thread sits. */
+export const COMMENTS_RESOLVED_OPTIONS: readonly Option<CommentsResolvedPlace>[] = [
+  { label: 'At the bottom', value: 'bottom' },
+  { label: 'In place', value: 'inPlace' },
 ]
 
 /**
@@ -55,9 +77,9 @@ export const STARTUP_WINDOWS_OPTIONS: readonly Option<StartupWindows>[] = [
 ]
 
 /** Settings › General › When a vault opens › Open on (YAZ-3487 D15): every vault open reads it. */
-export const VAULT_OPENS_ON_OPTIONS: readonly Option<VaultOpensOn>[] = [
+export const vaultOpensOnOptions = (unit: UnitText): readonly Option<VaultOpensOn>[] => [
   { label: 'A blank tab', value: 'blank' },
-  { label: 'Its last note', value: 'last' },
+  { label: unit('Its last note'), value: 'last' },
 ]
 
 /** Settings › Memory › Sleep unseen tabs after (YAZ-3737 D10): 30 min is the default. */
@@ -120,6 +142,20 @@ export const SECTION_LINES_OPTIONS: readonly Option<SectionLines>[] = [
 ]
 
 /** Outside changes (YAZ-3704 D5): how long changed words glow; the change list in the open note reads it. */
+/** Settings › Editor › Find › Folded bullets (YAZ-4787), in the find bar's order. */
+export const FIND_FOLDS_OPTIONS: readonly Option<FindFolds>[] = [
+  { label: 'Open the one you are on', value: 'current' },
+  { label: 'Open every match', value: 'all' },
+  { label: 'Keep folded', value: 'keep' },
+]
+
+/** Settings › Editor › Code blocks › Width and Tables › All tables › Width (YAZ-4783 layer 3): the text column, or a px typed beside. */
+export type BlockWidthMode = 'column' | 'px'
+export const BLOCK_WIDTH_OPTIONS: readonly Option<BlockWidthMode>[] = [
+  { label: 'Text column', value: 'column' },
+  { label: 'Pixels', value: 'px' },
+]
+
 export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] = [
   // The YAZ-4272 demo: timed first, shortest first; 10 seconds was too quick to read.
   { label: '1 minute', value: '60s' },
@@ -128,7 +164,7 @@ export const OUTSIDE_CHANGE_GLOW_OPTIONS: readonly Option<OutsideChangeGlow>[] =
   { label: 'Off', value: 'off' },
 ]
 
-/** Settings › Editor › Cell notes › All notes opens at (YAZ-4276 A1). */
+/** Settings › Tables › Cell notes › All notes opens at (YAZ-4276 A1). */
 export const ALL_NOTES_OPENS_AT_OPTIONS: readonly Option<AllNotesOpensAt>[] = [
   { label: 'The cell I came from', value: 'cell' },
   { label: 'Now', value: 'now' },
@@ -145,6 +181,18 @@ export const TABLE_ROW_BAND_OPTIONS: readonly Option<TableRowBand>[] = [
   { label: 'Off', value: 'off' },
   { label: 'Calendar tables', value: 'calendar' },
   { label: 'All tables', value: 'all' },
+]
+
+/** Settings › Tables › All tables › New tables start as (YAZ-4869 item 22). */
+export const TABLE_NEW_STYLE_OPTIONS: readonly Option<TableNewStyle>[] = [
+  { label: 'Plain table', value: 'plain' },
+  { label: 'Super table', value: 'super' },
+]
+
+/** Settings › Tables › All tables › Text in cells (YAZ-4900); table.css reads it as `data-table-text` on `.app`. */
+export const TABLE_TEXT_IN_CELLS_OPTIONS: readonly Option<TableTextInCells>[] = [
+  { label: 'Wrap', value: 'wrap' },
+  { label: 'Clip', value: 'clip' },
 ]
 
 /** Tables (the YAZ-3818 demo): the rows the band marks; table.css reads it as `data-table-band-rows` on `.app`. */
@@ -199,7 +247,9 @@ export const SIDEBAR_ARROW_MOTION_OPTIONS: readonly Option<SidebarArrowMotion>[]
 export const SIDEBAR_ICON_SWATCHES: Record<SidebarIconKind, string> = { note: '#3d8fb8', text: '#3a7fc2', pdf: '#d64545', image: '#1d9e75', drawing: '#c08410', diagram: '#e0682c' }
 
 /** The name of each kind on its colour row (YAZ-3440 D4). */
-export const SIDEBAR_ICON_KIND_LABELS: Record<SidebarIconKind, string> = { note: 'Note', text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
+const SIDEBAR_ICON_KIND_LABELS: Record<Exclude<SidebarIconKind, 'note'>, string> = { text: 'Text file', pdf: 'PDF', image: 'Image', drawing: 'Drawing', diagram: 'Diagram' }
+/** A note's row is named by the vault's word (YAZ-4938). */
+export const sidebarIconKindLabel = (kind: SidebarIconKind, unit: UnitText): string => (kind === 'note' ? unit('Note') : SIDEBAR_ICON_KIND_LABELS[kind])
 
 /** The sidebar's icon set (YAZ-3440 D4): Material Icon Theme's, the default, or the app's own line glyphs. */
 export const SIDEBAR_ICON_SET_OPTIONS: readonly Option<SidebarIconSet>[] = [

@@ -11,9 +11,15 @@ import { findDirNode, treeHasFile } from './treeState'
  * say: a folder may be named `Notes.md`. False until the first tree answers.
  */
 export function isFolderPath(root: string | null, path: string): boolean {
-  const tree = root === null ? null : latestTree(root)
+  if (root === null) return false
+  // The vault root is a folder with no row of its own (YAZ-4921): its page is a tab, as any folder's.
+  if (isVaultRoot(root, path)) return true
+  const tree = latestTree(root)
   return tree !== null && findDirNode(tree.tree, path) !== null
 }
+
+/** `path` is the vault `root` itself (YAZ-4921), a trailing slash on the root aside. */
+export const isVaultRoot = (root: string, path: string): boolean => path === root.replace(/\/+$/, '')
 
 /** Every note's and folder's title by its absolute path, a folder's by its directory's (YAZ-2420 🔒 D14). */
 export type PathTitles = ReadonlyMap<string, string>
@@ -146,7 +152,10 @@ export function useFolderPaths(roots: readonly string[]): (path: string) => bool
  * nothing is said until a tree asked for NOW answers — the stale-tab probe's rule (`useVaultTree.ts`).
  */
 export function useTreeKind(root: string, path: string): 'dir' | 'file' | 'none' | null {
+  // The vault root itself (YAZ-4921): a folder the tree never lists, so no tree is waited for.
+  const isRoot = isVaultRoot(root, path)
   const held = useSyncExternalStore(useTreeLanded(root), () => {
+    if (isRoot) return 'dir'
     const tree = latestTree(root)
     if (tree === null) return null
     return findDirNode(tree.tree, path) !== null ? 'dir' : treeHasFile(tree.tree, path) ? 'file' : 'none'

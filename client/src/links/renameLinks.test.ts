@@ -4,7 +4,7 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import type { TreeNode } from '@shared/types'
 import { buildViewOnlyCatalog } from './viewOnlyCatalog'
 import { maskCode, rewriteBodyLinks, rewriteInner, rewriteNoteLinks } from '@shared/linkRewrite'
-import { countLinkReferences, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
+import { countLinkReferences, linkedBasenames, renamedTarget, renameNotice, updateLinksAfterRename } from './renameLinks'
 
 const resolvesB = (t: string) => t.replace(/\.(md|markdown)$/i, '').replace(/^.*\//, '').toLowerCase() === 'b'
 const toC = (t: string) => renamedTarget(t, { newName: 'C.md', newRel: 'Sub/C.md' })
@@ -28,6 +28,26 @@ describe('rewriteInner / renamedTarget (form + suffix + alias preservation)', ()
     expect(rewriteInner(' B ', resolvesB, toC)).toBe('C')
     expect(rewriteInner('Other', resolvesB, toC)).toBeNull()
     expect(rewriteInner('#same-file', resolvesB, toC)).toBeNull()
+  })
+
+  it('YAZ-4935: a link written words-first keeps its order; the page is the one side that is an ID', () => {
+    const resolvesId = (t: string) => t === 'WIKI-116'
+    const toNext = (t: string) => (t === 'WIKI-116' ? 'WIKI-200' : t)
+    expect(rewriteInner('WIKI-116|staging', resolvesId, toNext)).toBe('WIKI-200|staging')
+    expect(rewriteInner('staging|WIKI-116', resolvesId, toNext)).toBe('staging|WIKI-200')
+    expect(rewriteInner('staging|WIKI-116#Intro', resolvesId, toNext)).toBe('staging|WIKI-200#Intro')
+    expect(rewriteInner('|WIKI-116', resolvesId, toNext)).toBe('|WIKI-200')
+    expect(rewriteInner('staging| WIKI-116 ', resolvesId, toNext)).toBe('staging|WIKI-200')
+    expect(rewriteInner('WIKI-116|WIKI-117', resolvesId, toNext)).toBe('WIKI-200|WIKI-117') // two IDs: the left is the page
+    expect(rewriteInner('Postgres|database', resolvesB, toC)).toBeNull() // two words: the left is the page, "Postgres"
+    expect(rewriteBodyLinks('See [[staging|WIKI-116]] and ![[EMB-40|640x360]]', resolvesId, toNext)).toBe('See [[staging|WIKI-200]] and ![[EMB-40|640x360]]')
+  })
+
+  it('YAZ-4935 round 2: words that only look like an ID — the left side is the renamed note, so the left side is rewritten', () => {
+    const resolvesCovid = (t: string) => t === 'Covid notes'
+    const toNext = (t: string) => (t === 'Covid notes' ? 'Covid 2020' : t)
+    expect(rewriteInner('Covid notes|COVID-19', resolvesCovid, toNext)).toBe('Covid 2020|COVID-19')
+    expect(rewriteBodyLinks('See [[Covid notes|COVID-19]].', resolvesCovid, toNext)).toBe('See [[Covid 2020|COVID-19]].')
   })
 
   it('a match whose target text would not change is left untouched — byte-identical, padding included (E1b pin)', () => {
@@ -140,6 +160,11 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
     expect(out).toContain('folder: roles')
   })
 
+  it('rewrites a Linked mentions column\u2019s `from.folder` (YAZ-4739), and leaves its `from.column`, a field name, alone', () => {
+    const content = '---\nfolder_settings:\n  columns:\n    used_by:\n      kind: mentions\n      from:\n        column: B\n        folder: "[[B]]"\n---\n'
+    expect(rewriteNoteLinks(content, resolvesB, toC)).toBe('---\nfolder_settings:\n  columns:\n    used_by:\n      kind: mentions\n      from:\n        column: B\n        folder: "[[C]]"\n---\n')
+  })
+
   it('the spelling rules are the top level\u2019s, not a second set: alias, heading and pathed forms all follow', () => {
     const content =
       '---\nfolder_settings:\n  columns:\n    a:\n      kind: link\n      target: "[[Sub/B|Bee]]"\n  views:\n    - type: outline\n      order:\n        - "[[ B #H]]"\n---\n\nbody\n'
@@ -159,24 +184,34 @@ describe('rewriteNoteLinks inside folder_settings (YAZ-864)', () => {
     expect(out).toContain('body [[C]]\n') // the body still rewrote, so the file WAS written
   })
 
+  it('rewrites a view’s `fills[].note`, leaving the fill’s column and colour and the other fills alone (YAZ-4536)', () => {
+    const content =
+      '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n      fills:\n        - note: "[[B]]"\n          column: note.status\n          fill: red\n        - note: "[[A]]"\n          fill: "#00ff00"\n        - 7\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { views: { fills: unknown[] }[] }).views
+    expect(views[0].fills).toEqual([{ note: '[[C]]', column: 'note.status', fill: 'red' }, { note: '[[A]]', fill: '#00ff00' }, 7])
+  })
+
+  it('rewrites an `other_files` entry, leaving the other entries alone (YAZ-4597 D44)', () => {
+    const content = '---\nfolder_settings:\n  views:\n    - type: table\n      name: Table\n  other_files:\n    - "[[A]]"\n    - "[[B]]"\n    - 7\n---\n\nbody\n'
+    const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
+    const settings = parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { other_files: unknown[] }
+    expect(settings.other_files).toEqual(['[[A]]', '[[C]]', 7])
+  })
+
   it('a page with settings but no reference to the renamed file is null — never written, byte-for-byte safe', () => {
     const content =
       '---\nstatus: idea\nfolder_settings:\n  columns:\n    owner:\n      kind: link\n      target: "[[A]]"\n  views:\n    - type: outline\n      order: ["[[A]]"]\n---\n\n# Not about B\n'
     expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
   })
 
-  it('rewrites a wikilink LINE inside a view’s outline; prose lines, markers and indentation survive (YAZ-900)', () => {
+  it('an old Outline string is no link place (YAZ-4584 D40): a `.folder.md` body — its Page — is rewritten as a note\'s body is', () => {
     const content =
-      '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[A]]\n            * [[B]]\n        - see [[B]] inline\n        - [[B]] and [[B]]\n---\n\nbody\n'
+      '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n      outline: |-\n        - [[B]]\n---\n- [[A]]\n    * [[B]]\n- see [[B]] inline\n'
     const out = rewriteNoteLinks(content, resolvesB, toC) ?? ''
     const views = (parseFrontmatter(splitFrontmatter(out).frontmatter).properties.folder_settings as { views: { outline: string }[] }).views
-    expect(views[0].outline).toBe('- [[A]]\n    * [[C]]\n- see [[B]] inline\n- [[B]] and [[B]]')
-  })
-
-  it('an outline that only MENTIONS the renamed page mid-line is null — never written', () => {
-    const content =
-      '---\nfolder_settings:\n  views:\n    - type: outline\n      outline: "- see [[B]] inline"\n      outline_note: "[[B]] in an unknown key"\n---\n\nbody\n'
-    expect(rewriteNoteLinks(content, resolvesB, toC)).toBeNull()
+    expect(views[0].outline).toBe('- [[B]]')
+    expect(splitFrontmatter(out).body).toBe('- [[A]]\n    * [[C]]\n- see [[C]] inline\n')
   })
 
   it('a non-string outline rides along untouched — the raw value is never normalised', () => {
@@ -262,6 +297,27 @@ describe('updateLinksAfterRename', () => {
     expect(bridge.writeFile).toHaveBeenCalledTimes(2)
     // A link rewrite is quiet (YAZ-3235 D1): the save log does not list the notes it touched.
     expect(bridge.writeFile.mock.calls.every(([req]) => (req as { quiet?: boolean }).quiet === true)).toBe(true)
+  })
+
+  it("a folder's Page links the renamed note: its `.folder.md` body is rewritten, its settings kept (YAZ-4584 D40)", async () => {
+    const page = '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n---\nSee [[B]] here.\n'
+    const files = { '/v/Team/.folder.md': { content: page, mtime: 10 } }
+    installBridge(files)
+    const records = [rec('/v/B.md')]
+    const folders = [{ ...rec('/v/Team/.folder.md', { links: ['B'] }), folder: 'Team' }]
+    expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records, folders })).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/Team/.folder.md'].content).toBe(page.replace('[[B]]', '[[C]]'))
+  })
+
+  it('YAZ-4954: the index keeps both sides of `[[Covid notes|COVID-19]]`; renaming "Covid notes" finds and rewrites the link', async () => {
+    const files = { '/v/A.md': { content: 'See [[Covid notes|COVID-19]].\n', mtime: 10 } }
+    installBridge(files)
+    const records = [rec('/v/A.md', { links: ['Covid notes|COVID-19'] }), rec('/v/Covid notes.md'), rec('/v/COVID-19.md')]
+    expect([...linkedBasenames(records)].sort()).toEqual(['covid notes', 'covid-19'])
+    const move = { ids: true, root, oldPath: '/v/Covid notes.md', newPath: '/v/Covid 2020.md', records }
+    expect(await countLinkReferences(move)).toBe(1)
+    expect(await updateLinksAfterRename(move)).toEqual({ updated: 1, skipped: 0 })
+    expect(files['/v/A.md'].content).toBe('See [[Covid 2020|COVID-19]].\n')
   })
 
   it('a CONFLICT re-reads once and retries; a second conflict skips the file', async () => {
@@ -368,16 +424,15 @@ describe('updateLinksAfterRename reaches notes referenced ONLY inside folder_set
     expect(bridge.readFile).not.toHaveBeenCalledWith('/v/Other/.folder.md')
   })
 
-  it('a page referenced ONLY by an outline LINE is counted and rewritten too (YAZ-900)', async () => {
-    const OUT = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[B]]\n        - prose about [[A]]\n---\n'
+  it('a page referenced ONLY by a folder\'s Page body is counted and rewritten too (YAZ-4584 D40)', async () => {
+    const OUT = '---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n---\n- [[B]]\n- prose about [[B]]\n'
     const files = { '/v/Out/.folder.md': { content: OUT, mtime: 1 } }
     installBridge(files)
     const records = [rec('/v/B.md')]
-    const folders = [settings('Out', OUT)]
+    const folders = [{ ...settings('Out', OUT), links: ['B', 'B'] }]
     expect(countLinkReferences({ ids: true, root, oldPath, records, folders })).toBe(1)
     expect(await updateLinksAfterRename({ ids: true, root, oldPath, newPath, records, folders })).toEqual({ updated: 1, skipped: 0 })
-    expect(files['/v/Out/.folder.md'].content).toContain('- [[C]]')
-    expect(files['/v/Out/.folder.md'].content).toContain('- prose about [[A]]')
+    expect(files['/v/Out/.folder.md'].content).toBe('---\nfolder_settings:\n  views:\n    - type: page\n      name: Page\n---\n- [[C]]\n- prose about [[C]]\n')
   })
 
   it('a FOLDER rename leaves a bare settings leaf byte-identical, exactly like a bare body link (LOCKED)', async () => {
@@ -435,12 +490,12 @@ describe('updateLinksAfterRename with kind: dir (folder rename, E1b)', () => {
 describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', () => {
   const root = '/v'
   const FOLDER_ID = 'f7n2w8rt4xyz'
-  /** Another folder's settings: its Outline names Projects on a line of its own, and a column targets it. */
-  const TEAM = '---\nfolder_settings:\n  columns:\n    project:\n      kind: link\n      target: "[[Projects]]"\n  views:\n    - type: outline\n      name: Outline\n      outline: |-\n        - [[Projects]]\n        - prose about [[Projects]]\n---\n'
+  /** Another folder: its Page (the body, YAZ-4584 D40) names Projects, and a column targets it. */
+  const TEAM = '---\nfolder_settings:\n  columns:\n    project:\n      kind: link\n      target: "[[Projects]]"\n  views:\n    - type: page\n      name: Page\n---\n- [[Projects]]\n- prose about [[Projects]]\n'
   const settingsOf = (raw: string) => parseFrontmatter(splitFrontmatter(raw).frontmatter).properties.folder_settings
-  const team = () => rec('/v/Team/.folder.md', { properties: { folder_settings: settingsOf(TEAM) } })
+  const team = () => rec('/v/Team/.folder.md', { properties: { folder_settings: settingsOf(TEAM) }, links: ['Projects', 'Projects'] })
 
-  it('a rename rewrites bare `[[Projects]]` to the new name — in a note and in another folder\u2019s Outline — and the count is those two files', async () => {
+  it('a rename rewrites bare `[[Projects]]` to the new name — in a note and in another folder\u2019s Page — and the count is those two files', async () => {
     const A = `See [[Projects]], [[projects|the work]] and [[Projects#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`
     const files = { '/v/A.md': { content: A, mtime: 1 }, '/v/Team/.folder.md': { content: TEAM, mtime: 1 }, '/v/N.md': { content: 'nothing\n', mtime: 1 } }
     const bridge = installBridge(files)
@@ -451,7 +506,7 @@ describe('updateLinksAfterRename: links to the FOLDER itself (YAZ-2290 D10)', ()
     // A bare link to a folder INSIDE the renamed one keeps resolving (LOCKED E1b); an id link names no place.
     expect(files['/v/A.md'].content).toBe(`See [[Work]], [[Work|the work]] and [[Work#Scope]]; not [[Sub]], [[${FOLDER_ID}]] or \`[[Projects]]\`.\n`)
     expect(files['/v/Team/.folder.md'].content).toContain('- [[Work]]')
-    expect(files['/v/Team/.folder.md'].content).toContain('- prose about [[Projects]]') // prose is not a link line
+    expect(files['/v/Team/.folder.md'].content).toContain('- prose about [[Work]]') // a Page body is a note's: prose links follow too
     expect(files['/v/Team/.folder.md'].content).toContain('target: "[[Work]]"')
     expect(bridge.readFile).not.toHaveBeenCalledWith('/v/N.md')
   })

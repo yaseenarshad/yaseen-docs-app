@@ -35,16 +35,27 @@ export function slotUnder(strip: HTMLElement | null, x: number, y: number): numb
   return slotAt(strip, Math.max(x, r.left + 1))
 }
 
+/** The way a list runs (YAZ-4606): a strip of tabs or columns runs along x, a menu's list along y. */
+export type Axis = 'x' | 'y'
+
+/** Where an item's layout place starts on the axis, in client px: the container's own start, less its scroll. */
+export function layoutOrigin(strip: HTMLElement, axis: Axis = 'x'): number {
+  const r = strip.getBoundingClientRect()
+  return axis === 'x' ? r.left + strip.clientLeft - strip.scrollLeft : r.top + strip.clientTop - strip.scrollTop
+}
+
 /**
  * The slot at a client x of a strip (0…tabs), by each tab's midpoint WHERE THE LAYOUT PUTS IT (YAZ-3808 6A). The live
  * gap draws the tabs aside with `transform`, which `offsetLeft` does not see: the slot under a pointer stays put while
- * the tabs part around it, so the gap cannot flicker. The strip is its tabs' offset parent.
+ * the tabs part around it, so the gap cannot flicker. The strip is its tabs' offset parent. A vertical list reads y
+ * (`offsetTop`), and a folder page's list names its own items (YAZ-4606).
  */
-export function slotAt(strip: HTMLElement, x: number): number {
-  const origin = strip.getBoundingClientRect().left + strip.clientLeft - strip.scrollLeft
-  const tabs = strip.querySelectorAll<HTMLElement>('[data-tab]')
+export function slotAt(strip: HTMLElement, x: number, axis: Axis = 'x', selector = '[data-tab]'): number {
+  const origin = layoutOrigin(strip, axis)
+  const tabs = strip.querySelectorAll<HTMLElement>(selector)
   for (let i = 0; i < tabs.length; i++) {
-    if (x < origin + tabs[i].offsetLeft + tabs[i].offsetWidth / 2) return i
+    const at = axis === 'x' ? tabs[i].offsetLeft + tabs[i].offsetWidth / 2 : tabs[i].offsetTop + tabs[i].offsetHeight / 2
+    if (x < origin + at) return i
   }
   return tabs.length
 }

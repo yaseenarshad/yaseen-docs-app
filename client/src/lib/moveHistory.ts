@@ -8,21 +8,20 @@
  * the oldest goes (S41). `undo` and `redo` TAKE the newest entry off their list; the caller runs it,
  * then hands back what actually ran: `undone` puts that on the redo list, `redone` puts it back on
  * the undo list and leaves the redo list as it is. So an undo where one item moved again (S36)
- * redoes only what moved back, and a redo keeps the values it cleared this time. Mixed steps go back
+ * redoes only what moved back, and a redo records what moved this time. Mixed steps go back
  * newest first, one per ⌘Z (S65).
  */
-import type { ClearedValues, Move } from '../links/shortcuts'
+import type { Move } from '../links/shortcuts'
 
 /** The undo list's length (D10, D17): the last 20 steps. */
 export const MOVE_HISTORY_LIMIT = 20
 
 /**
- * What one move gesture did (YAZ-3250 D1): the moves main made, in order, and the folder values D20
- * cleared on the way. One drag of one row or of many is one gesture; the undo list records one of these for each.
+ * What one move gesture did (YAZ-3250 D1): the moves main made, in order. A move clears no value (YAZ-4713 C9). One
+ * drag of one row or of many is one gesture; the undo list records one of these for each.
  */
 export interface MovedGesture {
   moves: Move[]
-  cleared: ClearedValues[]
 }
 
 /**

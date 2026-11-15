@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { createMoveHistory, invertMoves, type MovedGesture } from './moveHistory'
 
 /** A gesture of one move, named by its note. */
-const gesture = (name: string): MovedGesture => ({ moves: [{ oldPath: `/v/${name}.md`, newPath: `/v/B/${name}.md`, kind: 'file' }], cleared: [] })
+const gesture = (name: string): MovedGesture => ({ moves: [{ oldPath: `/v/${name}.md`, newPath: `/v/B/${name}.md`, kind: 'file' }] })
 const name = (entry: MovedGesture | undefined): string | undefined => entry?.moves[0].oldPath.slice(3, -3)
 
 describe('createMoveHistory (YAZ-3255 D10)', () => {
@@ -19,7 +19,7 @@ describe('createMoveHistory (YAZ-3255 D10)', () => {
     expect(name(b)).toBe('b')
     history.undone(b!)
     expect(history.redo()).toBe(b) // S37
-    history.redone(gesture('b2')) // the gesture again, with what it cleared this time
+    history.redone(gesture('b2')) // the gesture again, as it ran this time
     expect(history.redo()).toBeUndefined()
     expect(name(history.undo())).toBe('b2')
     expect(name(history.undo())).toBe('a')

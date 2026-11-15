@@ -92,6 +92,28 @@ describe('extractLinks / extractEmbeds', () => {
     expect(extractLinks({}, '[[A|alias]] [[B#Heading]] [[C#^blk]] [[ D ]]')).toEqual(['A', 'B', 'C', 'D'])
   })
 
+  it('YAZ-4935: the page is the one side that is an ID, in either order — so Linked mentions find both', () => {
+    // Words first keeps both sides (YAZ-4954): the resolver picks the right side when the left side is no page.
+    expect(extractLinks({}, '[[WIKI-116|staging]] and [[staging|WIKI-116]]')).toEqual(['WIKI-116', 'staging|WIKI-116'])
+    expect(extractLinks({}, '[[staging|WIKI-116#Intro]] [[WIKI-116#Intro|staging]]')).toEqual(['staging|WIKI-116', 'WIKI-116'])
+    expect(extractLinks({}, '[[the plan|k3m9x2pq7abc]]')).toEqual(['the plan|k3m9x2pq7abc'])
+    expect(extractLinks({}, '[[|WIKI-116]]')).toEqual(['WIKI-116'])
+    expect(extractLinks({}, '[[Postgres|database]] [[WIKI-116|WIKI-117]]')).toEqual(['Postgres', 'WIKI-116'])
+    expect(extractLinks({ related: '[[staging|WIKI-116]]' }, '')).toEqual(['staging|WIKI-116'])
+    expect(extractEmbeds('![[EMB-40|640x360 view=120,-40,0.8]]')).toEqual(['EMB-40'])
+  })
+
+  it('YAZ-4954: words that LOOK like an ID keep both sides, in the body, the frontmatter and embeds; the other order keeps one', () => {
+    expect(extractLinks({}, '[[Covid notes|COVID-19]] and [[COVID-19|Covid notes]]')).toEqual(['Covid notes|COVID-19', 'COVID-19'])
+    expect(extractLinks({ related: '[[Covid notes|COVID-19]]', list: ['[[Covid notes#Intro|COVID-19]]'] }, '')).toEqual(['Covid notes|COVID-19'])
+    expect(extractEmbeds('![[Covid notes|COVID-19]]')).toEqual(['Covid notes|COVID-19'])
+  })
+
+  it('YAZ-4954 part 2: an embed of a file keeps the file when its words look like an ID', () => {
+    expect(extractEmbeds('![[photo.png|FIG-1]] ![[FIG-2|chart.pdf]] ![[x.drawio|700x394 locked]]')).toEqual(['photo.png', 'chart.pdf', 'x.drawio'])
+    expect(extractLinks({ cover: '[[photo.png|FIG-1]]' }, '[[photo.png|FIG-1]] [[FIG-1|photo.png]]')).toEqual(['photo.png'])
+  })
+
   it('embeds are not links and vice versa', () => {
     const body = '![[img.png]] [[Note]] ![[Other#sec|x]]'
     expect(extractLinks({}, body)).toEqual(['Note'])

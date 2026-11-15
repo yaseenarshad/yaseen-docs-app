@@ -47,7 +47,8 @@
 
 .comments__header[aria-expanded='false'] .comments__chevron,
 .comments__fold[aria-expanded='false'] .comments__chevron,
-.comments__replies-toggle[aria-expanded='false'] .comments__chevron {
+.comments__replies-toggle[aria-expanded='false'] .comments__chevron,
+.comments__resolved-toggle[aria-expanded='false'] .comments__chevron {
   transform: rotate(-90deg);
 }
 
@@ -525,4 +526,178 @@
   margin: 8px 0 0;
   font-size: 12px;
   color: var(--danger);
+}
+
+/* ── YAZ-4615 ───────────────────────────────────────────────────────────────────────────────── */
+
+/* D6: a writer's circle — a picture, or initials in the writer's colour. */
+.comments-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: 50%;
+  object-fit: cover;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+.comments-avatar--me {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.comments-avatar--person {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.comments-avatar--agent {
+  color: var(--agent);
+  background: var(--agent-soft);
+}
+
+.comments-avatar--empty {
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px dashed var(--border);
+}
+
+/* The picture, the name, then the number: one group in the avatar's seat, on the header's first line. */
+.comments__writer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  line-height: 20px;
+}
+
+.comments__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.comments__num {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+/* D5: "· N resolved" beside the header — a quiet link to the group. */
+.comments__resolved-link {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+.comments__resolved-link:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.comments__resolved-by {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--fg-muted);
+}
+
+/* A resolved comment reads as done: its text steps back. */
+.comments__item--resolved .comments__summary,
+.comments__item--resolved .comments__body,
+.comments__item--resolved .comments__name {
+  color: var(--fg-muted);
+}
+
+/* In place (Settings › Comments › Resolved): the thread stays where it is, dimmed. */
+.comments__thread--resolved {
+  opacity: 0.7;
+}
+
+/* The fold of a thread's resolved replies, and the Resolved group's own fold. */
+.comments__resolved-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 14px 6px 22px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-align: left;
+}
+
+.comments__resolved-toggle:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.comments__resolved {
+  margin-top: 12px;
+}
+
+.comments__resolved-toggle--group {
+  padding-left: 0;
+  font-size: 13px;
+  background: none;
+}
+
+.comments__resolved-toggle--group:hover {
+  background: none;
+}
+
+.comments__list--resolved {
+  margin-top: 8px;
+}
+
+/* D5: the row that holds a resolved comment's place for five seconds. */
+.comments__undo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--fg-muted);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.comments__undo-btn {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.comments__undo-btn:hover {
+  text-decoration: underline;
+}
+
+/* D7: who you comment as, at the left of the bottom composer's footer. */
+.comments__me {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 40%;
+  padding: 2px 6px 2px 2px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  border-radius: 12px;
+}
+
+.comments__me span:last-child {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.comments__me:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.comments__me + .comments__hint {
+  margin-left: 0;
 }

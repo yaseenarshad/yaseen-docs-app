@@ -101,12 +101,17 @@ describe('useHoverPreview', () => {
 })
 
 describe('a board or a note row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', () => {
-  it('C1, C31: a note row waits the same 400 ms and shows; a PDF or an image row starts no dwell at all', () => {
+  it('C1, C31: a note row waits the same 400 ms and shows; a PDF or an image row too (YAZ-3746 13R, overturning YAZ-3075 D6); a video row starts no dwell at all', () => {
     render()
-    for (const path of ['/v/paper.pdf', '/v/photo.png', '/v/clip.mp4']) {
+    act(() => hook.hoverFile({ path: '/v/clip.mp4' }))
+    wait(HOVER_PREVIEW_DWELL_MS)
+    expect(state()).toEqual({ path: null, shown: false })
+    for (const path of ['/v/paper.pdf', '/v/photo.png']) {
       act(() => hook.hoverFile({ path }))
-      wait(HOVER_PREVIEW_DWELL_MS)
-      expect(state()).toEqual({ path: null, shown: false })
+      wait(HOVER_PREVIEW_DWELL_MS - 1)
+      expect(state()).toEqual({ path, shown: false })
+      wait(1)
+      expect(state()).toEqual({ path, shown: true })
     }
     act(() => hook.hoverFile({ path: '/v/Note.md' }))
     wait(HOVER_PREVIEW_DWELL_MS - 1)

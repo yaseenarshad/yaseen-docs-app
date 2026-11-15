@@ -13,10 +13,17 @@ import {
   type Radians,
 } from "@excalidraw/math";
 
+import { getFreeTextInteractionCoords } from "@excalidraw/element";
+
+import { getSelectionHoverBox } from "../renderer/interactiveScene";
+
+import type { RenderableElementsMap } from "../scene/types";
+
 import { Excalidraw } from "../index";
 import { getNormalizedZoom } from "../scene";
 
 import { API } from "./helpers/api";
+import { testTextEditor } from "./helpers/textEditor";
 import { Keyboard, Pointer, UI } from "./helpers/ui";
 import {
   assertSelectedElements,
@@ -351,7 +358,9 @@ describe("transparent closed-shape selection", () => {
     assertSelectedElements([]);
   });
 
-  it("preserves topmost ordering and group-deep Ctrl selection", () => {
+  // YAZ-4469 D1: a drawn fill behind a transparent box wins in the overlap; the
+  // box's own border keeps topmost ordering and group-deep Ctrl selection.
+  it("picks a drawn fill behind a transparent box, and the box from its border", () => {
     const underlying = API.createElement({
       type: "rectangle",
       x: 20,
@@ -380,10 +389,15 @@ describe("transparent closed-shape selection", () => {
     API.setElements([underlying, top, groupMate]);
 
     mouse.clickAt(80, 65);
+    assertSelectedElements([underlying]);
+
+    mouse.clickAt(1, 1);
+    mouse.clickAt(80, 20);
     assertSelectedElements([top, groupMate]);
 
+    mouse.clickAt(1, 1);
     Keyboard.withModifierKeys({ ctrl: true }, () => {
-      mouse.clickAt(80, 65);
+      mouse.clickAt(80, 20);
     });
     assertSelectedElements([top]);
   });
@@ -477,4 +491,404 @@ describe("transparent closed-shape selection", () => {
       assertSelectedElements([rectangle.id]);
     },
   );
+});
+
+// YAZ-4469: what is drawn under the pointer wins over a transparent box's empty
+// inside (D1); among empty insides only, the smallest box wins (D2).
+describe("drawn elements beat transparent interiors", () => {
+  beforeEach(async () => {
+    localStorage.clear();
+    reseed(7);
+    Pointer.resetAll();
+    await render(<Excalidraw />);
+  });
+
+  const boxOver = (
+    extra: Partial<Parameters<typeof API.createElement>[0]> = {},
+  ) => {
+    const text = API.createElement({
+      type: "text",
+      id: "text-behind",
+      x: 100,
+      y: 50,
+      width: 80,
+      height: 25,
+      text: "Lead Magnet",
+    });
+    const box = API.createElement({
+      type: "rectangle",
+      id: "box-in-front",
+      x: 20,
+      y: 20,
+      width: 200,
+      height: 120,
+      backgroundColor: "transparent",
+      strokeColor: "#1b1b1f",
+      ...extra,
+    });
+    API.setElements([text, box]);
+    // The text's own hit area hugs its measured glyphs: aim at its middle.
+    const [, , , , cx, cy] = getFreeTextInteractionCoords(
+      API.getElement(text) as typeof text & { type: "text" },
+    )!;
+    return { text, box, cx, cy };
+  };
+
+  it.each([0.5, 1, 3])(
+    "selects the text behind a transparent box at %s× zoom",
+    (zoomValue) => {
+      const { text, cx, cy } = boxOver();
+      API.setAppState({ zoom: { value: getNormalizedZoom(zoomValue) } });
+      const at = sceneCoordsToViewportCoords(
+        { sceneX: cx, sceneY: cy },
+        window.h.state,
+      );
+
+      mouse.clickAt(at.x, at.y);
+
+      assertSelectedElements([text.id]);
+    },
+  );
+
+  it("selects the box from its empty inside and from its border", () => {
+    const { box } = boxOver();
+
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+
+    mouse.clickAt(5, 5);
+    mouse.clickAt(20, 80);
+    assertSelectedElements([box.id]);
+  });
+
+  it("uses the text for the hover cursor and the right-click", () => {
+    const { text, cx, cy } = boxOver();
+
+    mouse.moveTo(cx, cy);
+    expect(GlobalTestState.interactiveCanvas.style.cursor).toBe(
+      CURSOR_TYPE.MOVE,
+    );
+
+    mouse.rightClickAt(cx, cy);
+    expect(UI.queryContextMenu()).not.toBeNull();
+    assertSelectedElements([text.id]);
+  });
+
+  it("edits the text behind a transparent box on a double-click", () => {
+    const { text, box, cx, cy } = boxOver();
+
+    // A real double-click: the first click selects, then the dblclick.
+    mouse.clickAt(cx, cy);
+    mouse.doubleClickAt(cx, cy);
+
+    expect(window.h.state.editingTextElement?.id).toBe(text.id);
+    expect(API.getElement(box).boundElements ?? []).toEqual([]);
+  });
+
+  it("drags a selected box from its text, and a click selects the text", () => {
+    const { text, box, cx, cy } = boxOver();
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+
+    mouse.downAt(cx, cy);
+    mouse.moveTo(cx + 30, cy + 30);
+    mouse.up();
+    expect(API.getElement(box).x).toBe(50);
+    assertSelectedElements([box.id]);
+
+    mouse.clickAt(cx, cy);
+    assertSelectedElements([text.id]);
+  });
+
+  it("outlines what a click would pick, and renders again only when it changes", () => {
+    const { text, box, cx, cy } = boxOver();
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+      triggerRender: () => void;
+    };
+    const renders = vi.spyOn(app, "triggerRender");
+
+    mouse.moveTo(cx, cy);
+    expect(app.getSelectionHover()).toBe(text.id);
+    for (let step = 0; step < 20; step++) {
+      mouse.moveTo(cx + (step % 2), cy);
+    }
+    mouse.moveTo(180, 110);
+    expect(app.getSelectionHover()).toBe(box.id);
+    expect(renders).toHaveBeenCalledTimes(2);
+
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+    UI.clickTool("rectangle");
+    mouse.moveTo(cx, cy);
+    expect(app.getSelectionHover()).toBeNull();
+  });
+
+  it("a label does not make the rest of a transparent box count as drawn (A1)", () => {
+    const { text, box, cx, cy } = boxOver({
+      boundElements: [{ id: "box-label", type: "text" }],
+    });
+    const label = API.createElement({
+      type: "text",
+      id: "box-label",
+      x: 70,
+      y: 110,
+      width: 40,
+      height: 25,
+      text: "Box",
+      containerId: box.id,
+    });
+    API.setElements([text, API.getElement(box), label]);
+
+    mouse.clickAt(cx, cy);
+    assertSelectedElements([text.id]);
+
+    mouse.clickAt(5, 5);
+    mouse.clickAt(90, 122);
+    assertSelectedElements([box.id]);
+  });
+
+  it("an unlocked box above a locked filled panel takes a click in its empty inside (A2)", () => {
+    const panel = API.createElement({
+      type: "rectangle",
+      id: "panel",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+      backgroundColor: "#a5d8ff",
+      locked: true,
+    });
+    const box = API.createElement({
+      type: "rectangle",
+      id: "box",
+      x: 60,
+      y: 60,
+      width: 200,
+      height: 120,
+      backgroundColor: "transparent",
+    });
+    API.setElements([panel, box]);
+
+    mouse.clickAt(160, 120);
+    assertSelectedElements([box.id]);
+
+    mouse.clickAt(500, 500);
+    mouse.clickAt(350, 250);
+    assertSelectedElements([]);
+  });
+
+  // YAZ-4499 (4A1): the click picks as the hover does, on the list with the
+  // locked elements, so it never looks through a locked panel
+  it("a shape hidden under a locked filled panel is not picked through the panel", () => {
+    const hidden = API.createElement({
+      type: "rectangle",
+      id: "hidden",
+      x: 100,
+      y: 80,
+      width: 120,
+      height: 80,
+      backgroundColor: "#ffc9c9",
+      fillStyle: "solid",
+    });
+    const panel = API.createElement({
+      type: "rectangle",
+      id: "panel",
+      x: 0,
+      y: 0,
+      width: 400,
+      height: 300,
+      backgroundColor: "#a5d8ff",
+      fillStyle: "solid",
+      locked: true,
+    });
+    const box = API.createElement({
+      type: "rectangle",
+      id: "box",
+      x: 60,
+      y: 60,
+      width: 200,
+      height: 120,
+      backgroundColor: "transparent",
+    });
+    API.setElements([hidden, panel, box]);
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+    };
+
+    mouse.moveTo(160, 120);
+    expect(app.getSelectionHover()).toBe(box.id);
+    mouse.clickAt(160, 120);
+    assertSelectedElements([box.id]);
+  });
+
+  it("text at opacity 0 draws nothing: the box takes the click (A9)", () => {
+    const { text, box, cx, cy } = boxOver();
+    API.setElements([
+      { ...API.getElement(text), opacity: 0 },
+      API.getElement(box),
+    ]);
+
+    mouse.clickAt(cx, cy);
+
+    assertSelectedElements([box.id]);
+  });
+
+  it("the outline shows what a click selects, also over a selected box (A3)", () => {
+    const { text, box, cx, cy } = boxOver();
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+    };
+
+    mouse.moveTo(cx, cy);
+
+    expect(app.getSelectionHover()).toBe(text.id);
+  });
+
+  it("YAZ-4469 4B: with hoverOutline off, a hover stores nothing and draws nothing", async () => {
+    unmountComponent();
+    await render(<Excalidraw hoverOutline={false} />);
+    const { box, cx, cy } = boxOver();
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+      triggerRender: () => void;
+    };
+    const renders = vi.spyOn(app, "triggerRender");
+
+    mouse.moveTo(cx, cy);
+    mouse.moveTo(180, 110);
+
+    expect(app.getSelectionHover()).toBeNull();
+    expect(renders).not.toHaveBeenCalled();
+    // The click rule does not change.
+    mouse.clickAt(180, 110);
+    assertSelectedElements([box.id]);
+  });
+
+  it("YAZ-4469 4B: hoverOutline on to off while an outline shows clears it with one render", () => {
+    const { text, cx, cy } = boxOver();
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+      triggerRender: () => void;
+    };
+    mouse.moveTo(cx, cy);
+    expect(app.getSelectionHover()).toBe(text.id);
+    const renders = vi.spyOn(app, "triggerRender");
+
+    GlobalTestState.renderResult.rerender(
+      <Excalidraw hoverOutline={false} textEditor={testTextEditor} />,
+    );
+
+    expect(app.getSelectionHover()).toBeNull();
+    expect(renders).toHaveBeenCalledTimes(1);
+    // And a hover after it stores nothing.
+    mouse.moveTo(180, 110);
+    expect(app.getSelectionHover()).toBeNull();
+    expect(renders).toHaveBeenCalledTimes(1);
+  });
+
+  it("no outline and no render in view mode (A5)", () => {
+    const { cx, cy } = boxOver();
+    API.setAppState({ viewModeEnabled: true });
+    const app = window.h.app as unknown as {
+      getSelectionHover: () => string | null;
+      triggerRender: () => void;
+    };
+    const renders = vi.spyOn(app, "triggerRender");
+
+    mouse.moveTo(cx, cy);
+    mouse.moveTo(180, 110);
+
+    expect(app.getSelectionHover()).toBeNull();
+    expect(renders).not.toHaveBeenCalled();
+  });
+
+  it("the renderer outlines the element, its group, or nothing (A4, A7, A11)", () => {
+    const { text, box } = boxOver();
+    const map =
+      window.h.app.scene.getNonDeletedElementsMap() as unknown as RenderableElementsMap;
+    const state = window.h.state;
+    const hover = (id: string) => ({
+      id,
+      scrollX: state.scrollX,
+      scrollY: state.scrollY,
+      zoom: state.zoom.value,
+    });
+
+    expect(getSelectionHoverBox(hover(box.id), map, state)).toMatchObject({
+      x1: 20,
+      y1: 20,
+      x2: 220,
+      y2: 140,
+    });
+    expect(
+      getSelectionHoverBox(
+        { ...hover(box.id), scrollX: state.scrollX + 10 },
+        map,
+        state,
+      ),
+    ).toBeNull();
+    expect(
+      getSelectionHoverBox(hover(box.id), map, {
+        ...state,
+        selectedElementIds: { [box.id]: true },
+      }),
+    ).toBeNull();
+
+    API.updateElement(API.getElement(text), { groupIds: ["g"] });
+    API.updateElement(API.getElement(box), { groupIds: ["g"] });
+    const grouped =
+      window.h.app.scene.getNonDeletedElementsMap() as unknown as RenderableElementsMap;
+    expect(getSelectionHoverBox(hover(text.id), grouped, state)).toMatchObject({
+      x1: 20,
+      y1: 20,
+      x2: 220,
+      y2: 140,
+    });
+    expect(
+      getSelectionHoverBox(hover(text.id), grouped, {
+        ...state,
+        editingGroupId: "g",
+      }),
+    ).not.toMatchObject({ x1: 20, y1: 20, x2: 220, y2: 140 });
+  });
+
+  it("selects text inside a locked transparent box", () => {
+    const { text, cx, cy } = boxOver({ locked: true });
+
+    mouse.clickAt(cx, cy);
+
+    assertSelectedElements([text.id]);
+  });
+
+  it("selects the smallest box when only empty insides are under the pointer", () => {
+    const inner = API.createElement({
+      type: "rectangle",
+      id: "inner",
+      x: 40,
+      y: 40,
+      width: 60,
+      height: 50,
+      backgroundColor: "transparent",
+    });
+    const outer = API.createElement({
+      type: "rectangle",
+      id: "outer",
+      x: 20,
+      y: 20,
+      width: 200,
+      height: 120,
+      backgroundColor: "transparent",
+    });
+    API.setElements([inner, outer]);
+
+    mouse.clickAt(70, 65);
+    assertSelectedElements([inner.id]);
+
+    mouse.clickAt(5, 5);
+    mouse.clickAt(180, 110);
+    assertSelectedElements([outer.id]);
+  });
 });

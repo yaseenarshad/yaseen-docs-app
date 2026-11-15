@@ -12,6 +12,8 @@
  *    A null slice means "this editor has no image host" — paste falls through to text handling.
  */
 import { createSlice, type Ctx } from '@milkdown/kit/ctx'
+import type { OpenHow } from '../embed/types'
+import type { LinkMenu } from '../linkMenu'
 
 /** One image as the lightbox shows it: the RESOLVED src and the alt's text half. */
 export interface GalleryImage {
@@ -31,6 +33,22 @@ export interface ImageOptions {
   onOpenImage?: (gallery: { images: GalleryImage[]; index: number }) => void
   /** A paste/drop that could not be written: the passive in-window notice, never a dialog. */
   onNotice?: (message: string) => void
+  /** A board src (`![name|640x360](../Other/x.drawio)`) mounts a board window (YAZ-4828). Absent → it is an image. */
+  boards?: ImageBoards
+}
+
+/** How the image node finds and opens a board in any vault of the window (YAZ-4828), as the Markdown link pill does. */
+export interface ImageBoards {
+  /** The board's vault root and absolute path, and that vault's name when it is not the note's; null outside the window's vaults. */
+  place: (src: string) => { root: string; path: string; vault: string | null } | null
+  /** The pill icon's attributes (`fileIconDecoration`). */
+  icon?: (path: string) => Record<string, string>
+  /** A double-click or the name pill (D12): opens the board as its link does. */
+  open?: (path: string, how: OpenHow) => void
+  /** The board link's own menu rows (Open, the place rows), with no edit or remove. Absent → only the embed's rows. */
+  linkMenu?: (path: string) => LinkMenu
+  /** "Edit in a popup" for a drawing (D12, A11): the drawing modal at the board's own vault root and path. Absent → no row. */
+  onEditInPopup?: (root: string, path: string) => void
 }
 
 /** Per-editor image options for plugins that have no constructor of their own (see the module doc). */

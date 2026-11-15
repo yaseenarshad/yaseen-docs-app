@@ -22,24 +22,34 @@
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
 import { useEffect, useState, type ReactNode } from 'react'
+import { HeaderStyleControl } from '../views/view/StylePanel'
+import { plainHeaderRow } from '../views/view/TableLookSettings'
 import { isIdLetters } from '@shared/noteId'
 import { scheduleInWords } from '@shared/schedule'
 import { keyFor, toDisplay, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, NOTE_BULLET_GAP_MAX, NOTE_BULLET_GAP_MIN, NOTE_BULLET_INDENT_MAX, NOTE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_NOTE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
 import type { SharingState } from '../share/useSharing'
 import type { ReviewSettingsState } from '../review/useReviewSettings'
+import type { LinkClickState } from '../explore/linkClick'
+import type { ShowIdsState } from '../search/showIds'
+import { useUnit, type UnitWordState } from '../vault/unitWord'
+import { unit } from './unitLabel'
+import type { ReadOnlyVaultState } from '../vault/readOnlyVault'
 import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
+import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
 import { Segmented, Stepper } from './controls'
+import { UnitWordControl } from './UnitWordControl'
+import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
-import { IdLettersControl, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
-import { idsAskMessage, idsLettersAsk } from './idsAskMessage'
+import { IdLettersControl, KeepIdsSheet, OldIdsControl, TypedConfirmSheet, said, useRun } from './IdLettersControl'
+import { idsAskMessage, idsLettersAsk, keepIdsAskMessage } from './idsAskMessage'
 import { AllowedPictureFoldersControl } from './AllowedPictureFoldersControl'
 import { NewBoardPicturesControl } from './NewBoardPicturesControl'
 import { NewNoteLocationControl } from './NewNoteLocationControl'
@@ -51,17 +61,19 @@ import { CalendarDayControl } from './CalendarDayControl'
 import { TimeFormatControl } from './TimeFormatControl'
 import { DEFAULT_NEW_NOTE_TITLE, renderTitleTemplate } from '../sidebar/createEntry'
 import { capital, fillSwatch } from '../editor/table/colours'
-import { TABLE_COLORS } from '../editor/table/tableComment'
+import { TABLE_COLORS, type TableColor } from '../editor/table/tableComment'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
 import { MEMORY_SECTION } from './memorySection'
 import { NOTIFICATIONS_SECTION } from './notificationsSection'
 import { ReviewNumberControl, type ReviewNumberField } from './ReviewNumberControl'
+import { LinkPillsControl } from './LinkPillsControl'
+import type { LinkPillsState } from './useLinkPills'
 import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, DIAGRAM_DARK_COLORS_OPTIONS, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, SIDEBAR_ICON_KIND_LABELS, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, VAULT_OPENS_ON_OPTIONS, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, DAILY_NOTE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_ICON_SWATCHES, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -134,6 +146,36 @@ function PxSetting({ name, value, fallback, min, max, step, onSet }: { name: str
   )
 }
 
+/**
+ * "Width" of every code block or every table (YAZ-4783 layer 3): Text column (`null`, the look before) or Pixels, with the
+ * px typed beside it, kept on ⏎ or blur and clamped to `BLOCK_WIDTH_MIN`–`BLOCK_WIDTH_MAX`. Pixels starts at `start`.
+ */
+function BlockWidthSetting({ name, value, start, onSet }: { name: string; value: number | null; start: number; onSet: (next: number | null) => void }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value))
+  useEffect(() => setDraft(value === null ? '' : String(value)), [value])
+  const keep = () => {
+    const n = Number.parseInt(draft, 10)
+    const next = Number.isFinite(n) ? Math.min(BLOCK_WIDTH_MAX, Math.max(BLOCK_WIDTH_MIN, n)) : value
+    setDraft(next === null ? '' : String(next))
+    if (next !== value) onSet(next)
+  }
+  return (
+    <>
+      <Segmented options={BLOCK_WIDTH_OPTIONS} value={value === null ? 'column' : 'px'} onChange={(mode) => onSet(mode === 'column' ? null : (value ?? start))} ariaLabel={name} />
+      {value !== null && (
+        <span className="settings__percent">
+          <input className="settings__input settings__input--number" aria-label={`${name} in px`} inputMode="numeric" value={draft} spellCheck={false}
+            onChange={(event) => setDraft(event.target.value.replace(/[^0-9]/g, ''))} onBlur={keep}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') keep()
+            }} />
+          px
+        </span>
+      )}
+    </>
+  )
+}
+
 /** "Band colour" (the YAZ-3818 demo): the accent, the cell toolbar's ten Fill colours (their swatches), and Custom…. */
 function BandColourControl({ value, onChange }: { value: string; onChange: (next: string) => void }) {
   const swatch = (colour: string) => <span className="settings__band-swatch" style={{ background: colour }} aria-hidden />
@@ -151,6 +193,70 @@ function BandColourControl({ value, onChange }: { value: string; onChange: (next
         {value.startsWith('#') ? swatch(value) : 'Custom…'}
         <input type="color" aria-label="Custom band colour" value={value.startsWith('#') ? value : '#3b82f6'} onChange={(event) => onChange(event.target.value)} />
       </label>
+    </span>
+  )
+}
+
+/**
+ * "Header row" (YAZ-4774): every table's header row, in a note and on a folder page. Color is a table fill colour's
+ * swatch (Gray, the text colour, first), then Strength and Text. Text colour not set is each table's own; Reset brings it
+ * and the rest back.
+ * YAZ-4794: a live preview of a sample header row tops the controls (a note table's look: no Text colour is Full),
+ * each column lined up its own way, so Align's Follow column shows; then Fill colour, Strength, Weight, Text colour
+ * (Muted, Full and the eight colours) and Align (Follow column, Left, Center, Right).
+ */
+const HEADER_ROW_PREVIEW: readonly (readonly [string, string, 'left' | 'center' | 'right'])[] = [
+  ['Name', 'Baklava', 'left'],
+  ['Cuisine', 'Turkish', 'left'],
+  ['Sweetness', 'High', 'center'],
+  ['Cook time', '45 min', 'right'],
+]
+
+/**
+ * `defaults` is the row's own default (YAZ-4899: the subheader row's is stronger); Reset brings it back. YAZ-4864 round 3:
+ * the preview, then ONE "Style [Aa ▾]" control (`StylePanel.tsx`, the table's "Header row ›" panel) in place of the five
+ * rows of buttons. Text colour null (each table's own) presses nothing in the Text tab.
+ */
+function HeaderRowControl({ value, onChange, defaults = DEFAULT_HEADER_ROW }: { value: HeaderRow; onChange: (next: HeaderRow) => void; defaults?: HeaderRow }) {
+  const plain = plainHeaderRow({ ...value, text: value.text ?? 'full' })
+  return (
+    <span className="settings__header-row">
+      <table className="header-row-preview" aria-label="Header row preview" {...headerRowAttrs(value)}>
+        <thead>
+          <tr>
+            {HEADER_ROW_PREVIEW.map(([head, , align]) => (
+              <th key={head} style={{ textAlign: align }}>
+                {head}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            {HEADER_ROW_PREVIEW.map(([head, cell, align]) => (
+              <td key={head} style={{ textAlign: align }}>
+                {cell}
+              </td>
+            ))}
+          </tr>
+        </tbody>
+      </table>
+      <span>Style</span>
+      <span className="settings__header-row-text">
+        <HeaderStyleControl
+          label="Header row style"
+          shown={value}
+          plainLabel="Plain, like any row"
+          plainOn={plain}
+          onPlain={() => onChange(plain ? { ...value, strength: defaults.strength, weight: defaults.weight, text: defaults.text } : { ...value, strength: 'off', weight: 'regular', text: 'full' })}
+          onPick={(part, next) => onChange({ ...value, [part]: next })}
+        />
+        {HEADER_ROW_PARTS.some((part) => value[part] !== defaults[part]) && (
+          <button type="button" className="settings__header-row-reset" onClick={() => onChange(defaults)}>
+            Reset
+          </button>
+        )}
+      </span>
     </span>
   )
 }
@@ -210,6 +316,16 @@ export interface SettingsCtx {
   sync?: { status: GithubSyncStatus | null; setEnabled: (enabled: boolean) => void }
   /** This vault's review settings (YAZ-2322); absent with no vault open. */
   review?: ReviewSettingsState
+  /** This vault's "Clicking a link" (YAZ-4936); absent with no vault open. */
+  linkClick?: LinkClickState
+  /** This vault's "Show IDs in search" (YAZ-4940); absent with no vault open. Shown only in a vault with IDs. */
+  showIds?: ShowIdsState
+  /** This vault's link pills look (YAZ-4924, Settings › Link pills); absent with no vault open. */
+  linkPills?: LinkPillsState
+  /** What this vault calls a note (YAZ-4938); absent with no vault open, and the labels then say "note". */
+  unitWord?: UnitWordState
+  /** This vault's Read only (YAZ-4939); absent with no vault open. */
+  readOnlyVault?: ReadOnlyVaultState
   /**
    * This vault's IDs (YAZ-2523 🔒 V4); absent until a vault's index has loaded. `enabled` is its
    * answer, and no answer reads as no. `held`: a note holds an ID. `ask`: what a yes would write,
@@ -264,7 +380,8 @@ export interface SettingsCtx {
 
 export interface SettingDef {
   id: string
-  label: string
+  /** A label written as a function reads live state: the vault's word for a note (YAZ-4938). */
+  label: string | ((ctx: SettingsCtx) => string)
   /** Shown under the label; a hint written as a function reads live state (the sync repo facts). */
   hint?: string | ((ctx: SettingsCtx) => string)
   keywords?: readonly string[]
@@ -282,11 +399,12 @@ export interface SettingDef {
   render: (ctx: SettingsCtx) => ReactNode
 }
 
-export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'code' | 'files' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
+export type SettingsSectionId = 'general' | 'appearance' | 'sidebar' | 'notifications' | 'editor' | 'tables' | 'code' | 'files' | 'folderPages' | 'review' | 'sync' | 'hotkeys' | 'canvas' | 'images' | 'memory' | 'storage' | 'sharing'
 
 /** Rows that belong together under one sub-heading; no title = plain rows straight under the section. */
 export interface SettingsGroup {
-  title?: string
+  /** A title written as a function reads the vault's word for a note (YAZ-4938). */
+  title?: string | ((ctx: SettingsCtx) => string)
   hint?: string
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
   vault?: true
@@ -331,15 +449,16 @@ function builtInIconColour(kind: SidebarIconKind): string {
 
 /** One kind's icon colour (YAZ-3440 D4): the picker of the thread colour's row, and Default, which drops the kind's colour. */
 function iconColourRow(kind: SidebarIconKind): SettingDef {
-  const name = SIDEBAR_ICON_KIND_LABELS[kind]
+  const name = (ctx: SettingsCtx) => sidebarIconKindLabel(kind, (text) => unit(ctx, text))
   return {
     id: `sidebarIconColors.${kind}`,
-    label: `${name} colour`,
+    label: (ctx) => `${name(ctx)} colour`,
     ...(kind === 'note' ? { hint: 'Used with All colour: Colour keeps notes grey.' } : {}),
     keywords: ['sidebar', 'tree', 'icon', 'color', 'colour', kind === 'note' ? 'markdown' : kind],
     // The Line set's alone: Material's icons keep their own colours.
     available: ({ settings }) => settings.sidebarIconSet === 'line' && (settings.sidebarFileIcons === 'quiet' || settings.sidebarFileIcons === 'color'),
-    render: ({ settings, onChange }) => {
+    render: (ctx) => {
+      const { settings, onChange } = ctx
       const own = settings.sidebarIconColors[kind]
       const drop = (): SettingsState['sidebarIconColors'] => Object.fromEntries(Object.entries(settings.sidebarIconColors).filter(([k]) => k !== kind))
       return (
@@ -347,7 +466,7 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
           <input
             type="color"
             className="settings__color"
-            aria-label={`${name} icon colour in the sidebar`}
+            aria-label={`${name(ctx)} icon colour in the sidebar`}
             value={own ?? builtInIconColour(kind)}
             onChange={(e) => onChange({ ...settings, sidebarIconColors: { ...settings.sidebarIconColors, [kind]: e.target.value } })}
           />
@@ -385,8 +504,9 @@ const NOTHING_TO_WRITE = { notes: 0, folders: 0, foreign: 0 }
  * "Give IDs" and Enter do nothing until then. The box is the one typed-confirm piece (`TypedConfirmSheet`).
  */
 function GiveIdsSheet({ ask, vault, letters, onConfirm, onCancel }: { ask: NonNullable<IndexResponse['ask']>; vault?: string; letters: string | undefined; onConfirm: (letters: string) => void; onCancel: () => void }) {
+  const unit = useUnit()
   const valid = (typed: string): boolean => (letters === undefined ? isIdLetters(typed) : typed.toUpperCase() === letters)
-  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
+  return <TypedConfirmSheet labelId="confirm-ids-on-text" text={idsAskMessage(ask, vault, unit)} ask={idsLettersAsk(letters)} confirmLabel="Give IDs" valid={valid} onConfirm={onConfirm} onCancel={onCancel} />
 }
 
 /**
@@ -418,6 +538,7 @@ function DuplicatesControl({ check }: { check: () => Promise<string> }) {
  * whose notes hold IDs asks first (🔒 V13). Each sheet's keys stay inside it, so the dialog under it does not close.
  */
 function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vault?: string }) {
+  const unit = useUnit()
   const [asking, setAsking] = useState<'off' | 'on' | null>(null)
   return (
     <>
@@ -430,7 +551,7 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           else if (ids.held) setAsking('off')
           else ids.set(false)
         }}
-        ariaLabel="Give this vault's notes IDs"
+        ariaLabel={unit("Give this vault's notes IDs")}
       />
       {asking === 'off' && (
         <ConfirmSheet
@@ -445,7 +566,18 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
           onCancel={() => setAsking(null)}
         />
       )}
-      {asking === 'on' && (
+      {asking === 'on' && ids.ask?.groups?.[0] !== undefined && (
+        <KeepIdsSheet
+          text={keepIdsAskMessage(ids.ask, vault, unit)}
+          main={ids.ask.groups[0].letters}
+          onConfirm={(letters) => {
+            setAsking(null)
+            ids.set(true, letters)
+          }}
+          onCancel={() => setAsking(null)}
+        />
+      )}
+      {asking === 'on' && ids.ask?.groups?.[0] === undefined && (
         <GiveIdsSheet
           ask={ids.ask ?? NOTHING_TO_WRITE}
           vault={vault}
@@ -461,6 +593,9 @@ function IdsControl({ ids, vault }: { ids: NonNullable<SettingsCtx['ids']>; vaul
   )
 }
 
+/** Settings › Link pills (YAZ-4924): one row, its words those of every choice it holds. */
+const LINK_PILL_WORDS = ['link', 'links', 'pill', 'pills', 'wikilink', 'look', 'style', 'vault', 'preview', 'reset', 'format', 'token', 'icon', 'id', 'folder', 'path', 'colour', 'color', 'fill', 'tint', 'strength', 'bold', 'italic', 'underline', 'size', 'muted', 'shape', 'square', 'rounded', 'box', 'brackets', 'parentheses', 'arrow', 'text', 'before', 'after']
+
 const HOVER_WORDS = ['hover', 'preview', 'note', 'markdown', 'drawing', 'diagram', 'board', 'excalidraw', 'draw.io', 'mouse']
 
 /** Settings › Files & Links › Preview on hover (YAZ-3403): one row per place, under the master switch. */
@@ -470,17 +605,17 @@ const menuKey = (id: HotkeyId, settings: SettingsState): string | null => {
   return key === null ? null : toDisplay(key)
 }
 
-const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string; hint?: string; keywords: string[] }[] = [
+const HOVER_PLACE_ROWS: readonly { place: HoverPlace; label: string | ((ctx: SettingsCtx) => string); hint?: string; keywords: string[] }[] = [
   { place: 'sidebar', label: 'Sidebar', hint: 'Files, Focus, Favorites and Recents.', keywords: ['sidebar', 'files', 'tree', 'focus', 'favorites', 'recents'] },
   { place: 'search', label: 'Search results', keywords: ['search', 'results', 'find'] },
   { place: 'newTab', label: 'New tab page', keywords: ['new tab', 'start', 'page', 'recent'] },
   { place: 'tabBoard', label: 'Tab board', hint: 'Mission Control: each open tab as a card.', keywords: ['tab board', 'mission control', 'cards', 'overview'] },
   { place: 'tabs', label: 'Tabs', hint: "A tab you're not on.", keywords: ['tabs', 'tab strip', 'tab bar'] },
   { place: 'backlinks', label: 'Linked mentions', hint: 'The list under a note.', keywords: ['backlinks', 'linked mentions', 'references'] },
-  { place: 'folderViews', label: 'Folder views', hint: 'Table, board, cards and list.', keywords: ['folder', 'views', 'table', 'board', 'cards', 'list', 'kanban'] },
-  { place: 'links', label: 'Links in notes', hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
-  // YAZ-3943 demo round 2: a board's link pills have their own row.
-  { place: 'drawings', label: 'Links in drawings', hint: 'Link pills on a board.', keywords: ['links', 'pills', 'drawing', 'board', 'excalidraw'] },
+  // Folder views' row lives in Settings › Folder pages since YAZ-4585 (D34), on the same key.
+  { place: 'links', label: (ctx) => unit(ctx, 'Links in notes'), hint: '[[Links]] in the text.', keywords: ['links', 'wikilinks', 'editor', 'text'] },
+  // YAZ-3943 demo round 2: a board's link pills have their own row; YAZ-4748 D7: a diagram's too.
+  { place: 'drawings', label: 'Links in drawings and diagrams', hint: 'Link pills on a board or a draw.io diagram.', keywords: ['links', 'pills', 'drawing', 'board', 'excalidraw', 'diagram', 'drawio'] },
 ]
 
 export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
@@ -490,6 +625,20 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'general',
     title: 'General',
     groups: [
+      {
+        // YAZ-4615 D7: who you are on a comment. Your first comment in a vault puts this card in its people file (D1).
+        title: 'You',
+        items: [
+          {
+            id: 'profile',
+            label: 'Profile',
+            hint: 'Your comments show this name and picture. They go into each vault you comment in, and to its GitHub repo.',
+            keywords: ['name', 'picture', 'photo', 'avatar', 'handle', 'profile', 'comments', 'you'],
+            wide: true,
+            render: ({ settings, onChange }) => <ProfileControl settings={settings} onChange={onChange} />,
+          },
+        ],
+      },
       {
         title: 'Settings folder',
         items: [
@@ -528,8 +677,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'Open on',
             hint: 'A link to a note still opens that note.',
             keywords: ['vault', 'open', 'blank', 'last note', 'new tab', 'start'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={VAULT_OPENS_ON_OPTIONS} value={settings.vaultOpensOn} onChange={(vaultOpensOn) => onChange({ ...settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
+            render: (ctx) => (
+              <Segmented options={vaultOpensOnOptions((text) => unit(ctx, text))} value={ctx.settings.vaultOpensOn} onChange={(vaultOpensOn) => ctx.onChange({ ...ctx.settings, vaultOpensOn })} ariaLabel="What a vault opens on" />
             ),
           },
         ],
@@ -609,19 +758,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={COMMENTS_ORDER_OPTIONS} value={settings.commentsOrder} onChange={(commentsOrder) => onChange({ ...settings, commentsOrder })} ariaLabel="Comments order" />
             ),
           },
-        ],
-      },
-      {
-        // YAZ-3037 (Draw's 🔒 YAZ-1802 D16): the default for every diagram; a file that sets its own `adaptiveColors` keeps it.
-        title: 'draw.io diagrams',
-        items: [
           {
-            id: 'diagramDarkColors',
-            label: 'In dark mode',
-            hint: 'Adapt re-colours diagrams so they stay readable in dark mode. A diagram that asks to keep its own colours always does.',
-            keywords: ['drawio', 'draw.io', 'diagram', 'dark', 'colors', 'colours', 'adaptive'],
+            // YAZ-4615 D5: where a resolved thread goes.
+            id: 'commentsResolved',
+            label: 'Resolved',
+            hint: 'At the bottom: a folded group under the open comments. In place: in time order, dimmed.',
+            keywords: ['resolved comments', 'resolve', 'done'],
             render: ({ settings, onChange }) => (
-              <Segmented options={DIAGRAM_DARK_COLORS_OPTIONS} value={settings.diagramDarkColors} onChange={(diagramDarkColors) => onChange({ ...settings, diagramDarkColors })} ariaLabel="draw.io diagrams in dark mode" />
+              <Segmented options={COMMENTS_RESOLVED_OPTIONS} value={settings.commentsResolved} onChange={(commentsResolved) => onChange({ ...settings, commentsResolved })} ariaLabel="Resolved comments" />
+            ),
+          },
+          {
+            // YAZ-4615 D10: one line at the top of each new note, so an agent knows where comments go.
+            id: 'commentsHint',
+            label: (ctx) => unit(ctx, 'Add the comment hint to new notes'),
+            hint: 'Each new note gets one hidden line that tells an agent how to add a comment.',
+            keywords: ['comment hint', 'agent', 'ai', 'new note', 'yaml'],
+            render: (ctx) => (
+              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.commentsHint} onChange={(commentsHint) => ctx.onChange({ ...ctx.settings, commentsHint })} ariaLabel={unit(ctx, 'Add the comment hint to new notes')} />
             ),
           },
         ],
@@ -859,7 +1013,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // The YAZ-3818 demo: the note's bullets, as the cells' have their own (Settings › Editor › Tables).
+            // The YAZ-3818 demo: the note's bullets, as the cells' have their own (Settings › Tables › All tables).
             id: 'noteBulletIndent',
             label: 'Bullet indent',
             hint: 'How far each child level steps in.',
@@ -985,6 +1139,25 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ON_OFF_OPTIONS} value={settings.typingArrows ?? true} onChange={(typingArrows) => onChange({ ...settings, typingArrows })} ariaLabel="Arrows while typing" />
             ),
           },
+          // YAZ-3746 13AB: Enter at the end of a styled line, and the new line types in that style; notes off, boxes on.
+          {
+            id: 'enterKeepsStyleNotes',
+            label: (ctx) => unit(ctx, 'Enter keeps the text style in notes'),
+            hint: 'Press Enter at the end of a bold, italic, underlined or coloured line, and the new line types in the same style. Off: the new line starts plain.',
+            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'notes'],
+            render: (ctx) => (
+              <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.enterKeepsStyleNotes ?? false} onChange={(enterKeepsStyleNotes) => ctx.onChange({ ...ctx.settings, enterKeepsStyleNotes })} ariaLabel={unit(ctx, 'Enter keeps the text style in notes')} />
+            ),
+          },
+          {
+            id: 'enterKeepsStyleBoxes',
+            label: 'Enter keeps the text style in drawing text boxes',
+            hint: 'The same, in a text box on a drawing. On: a new line in a bold box stays bold, however the bold was set.',
+            keywords: ['enter', 'return', 'new line', 'next line', 'keep', 'style', 'format', 'formatting', 'bold', 'italic', 'underline', 'color', 'colour', 'highlight', 'drawing', 'text box', 'box', 'excalidraw', 'board'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.enterKeepsStyleBoxes ?? true} onChange={(enterKeepsStyleBoxes) => onChange({ ...settings, enterKeepsStyleBoxes })} ariaLabel="Enter keeps the text style in drawing text boxes" />
+            ),
+          },
         ],
       },
       {
@@ -1022,6 +1195,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-4787: what ⌘F does with folds. The find bar's fold button sets it for one note.
+        title: 'Find',
+        hint: 'What ⌘F does with folded bullets and headings. The find bar’s fold button changes it for one note.',
+        items: [
+          {
+            id: 'findFolds',
+            label: 'Folded bullets',
+            hint: 'Keep folded finds only the text that shows.',
+            keywords: ['find', 'search', 'cmd f', 'fold', 'collapse', 'expand', 'bullets'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={FIND_FOLDS_OPTIONS} value={settings.findFolds} onChange={(findFolds) => onChange({ ...settings, findFolds })} ariaLabel="Folded bullets" />
+            ),
+          },
+        ],
+      },
+      {
         // YAZ-3704 D5: the glow on text an outside save changed in an open note. The words say "outside": the app
         // cannot tell an AI's save from a sync pull or another app.
         title: 'Outside changes',
@@ -1048,14 +1237,113 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
-        // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
-        title: 'Tables',
+        // YAZ-4783 layer 3: the width of every code block in a note. A note's cog (Code block width) and a block's own
+        // dragged edge win over it, so a change here moves only the blocks that follow Settings.
+        title: 'Code blocks',
         items: [
+          {
+            id: 'codeBlockWidth',
+            label: 'Width',
+            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, into the margin, never past the editor. A note's own width and a block you dragged keep theirs.",
+            keywords: ['code', 'code block', 'width', 'wide', 'wider', 'narrow', 'px', 'pixels', 'column'],
+            render: ({ settings, onChange }) => (
+              <BlockWidthSetting name="Code block width" value={settings.codeBlockWidth ?? null} start={900} onSet={(codeBlockWidth) => onChange({ ...settings, codeBlockWidth })} />
+            ),
+          },
+        ],
+      },
+    ],
+  },
+  {
+    // YAZ-4775: the note tables' settings, a page of their own after Editor (they had grown to three groups there).
+    // Each setting keeps its key; only where it shows moved. "Editor" stays a keyword, so the search finds them by it.
+    id: 'tables',
+    title: 'Tables',
+    keywords: ['editor', 'table', 'tables', 'cell', 'cells', 'calendar'],
+    groups: [
+      {
+        // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
+        // "All tables" since YAZ-4775: on the Tables page a second "Tables" read as "Tables › Tables".
+        title: 'All tables',
+        items: [
+          {
+            // YAZ-4774: one look for both kinds of table; a note table's "Header row ›" and a folder table's View tab can say otherwise.
+            id: 'tableHeaderRow',
+            label: 'Header row',
+            hint: "The first row of every table, in a note and on a folder page. Text colour not set: full in a note, muted on a folder page. A table's own menu can say otherwise.",
+            keywords: ['header', 'header row', 'shade', 'shaded', 'tint', 'colour', 'color', 'bold', 'muted', 'first row', 'table'],
+            wide: () => true,
+            render: ({ settings, onChange }) => <HeaderRowControl value={settings.tableHeaderRow ?? DEFAULT_SETTINGS.tableHeaderRow} onChange={(tableHeaderRow) => onChange({ ...settings, tableHeaderRow })} />,
+          },
+          {
+            // YAZ-4899: the look of every note table's subheader rows ("Make subheader row"); a table's "Subheader row ›" can say otherwise.
+            id: 'tableSubheaderRow',
+            label: 'Subheader row',
+            hint: "A body row you make a subheader row (right-click it › Make subheader row). Stronger than the header row by default. A table's own menu can say otherwise.",
+            keywords: ['subheader', 'subheader row', 'subheading', 'section', 'shade', 'colour', 'color', 'bold', 'table'],
+            wide: () => true,
+            render: ({ settings, onChange }) => (
+              <HeaderRowControl value={settings.tableSubheaderRow ?? DEFAULT_SETTINGS.tableSubheaderRow} defaults={DEFAULT_SUBHEADER_ROW} onChange={(tableSubheaderRow) => onChange({ ...settings, tableSubheaderRow })} />
+            ),
+          },
+          {
+            // YAZ-4899 round 2: the header row stays at the top of the note while the table scrolls by (the same freeze as
+            // "Freeze up to this row"); a table's own freeze wins.
+            id: 'tableStickyHeader',
+            label: 'Sticky header row',
+            hint: "The header row stays at the top of the note while the table scrolls by. A table's 6-dot menu can turn its own on or off; a table's own Freeze wins.",
+            keywords: ['header', 'sticky', 'stick', 'pinned', 'frozen', 'freeze', 'scroll', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableStickyHeader ?? true} onChange={(tableStickyHeader) => onChange({ ...settings, tableStickyHeader })} ariaLabel="Sticky header row" />
+            ),
+          },
+          {
+            // YAZ-4899: a subheader row stays at the top of the note while its section scrolls by, under any frozen rows.
+            id: 'tableStickySubheaders',
+            label: 'Sticky subheaders',
+            hint: "A subheader row stays at the top of the note while its section scrolls by, under any frozen rows. A table's 6-dot menu can turn its own on or off.",
+            keywords: ['subheader', 'sticky', 'stick', 'pinned', 'scroll', 'section', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableStickySubheaders ?? true} onChange={(tableStickySubheaders) => onChange({ ...settings, tableStickySubheaders })} ariaLabel="Sticky subheaders" />
+            ),
+          },
+          {
+            // YAZ-4783 layer 3: the width of every note table whose columns have no widths of their own, shared evenly.
+            // A note's cog (Table width) wins; a table whose every column was dragged keeps its widths.
+            id: 'tableWidth',
+            label: 'Width',
+            hint: "Text column: as wide as the text. Pixels: that width at 100% zoom, its columns shared evenly, into the margin, never past the editor. A note's own width and columns you dragged keep theirs.",
+            keywords: ['table', 'width', 'wide', 'wider', 'narrow', 'px', 'pixels', 'column', 'columns'],
+            render: ({ settings, onChange }) => (
+              <BlockWidthSetting name="Table width" value={settings.tableWidth ?? null} start={1000} onSet={(tableWidth) => onChange({ ...settings, tableWidth })} />
+            ),
+          },
+          {
+            // YAZ-4900: every note table's cells wrap or clip; a table's 6-dot menu, or a column's right-click, can say otherwise.
+            id: 'tableTextInCells',
+            label: 'Text in cells',
+            hint: "Wrap: the text goes onto more lines. Clip: one line, cut with \"…\"; hover a cut cell to read it all. A table's 6-dot menu › Text in cells, or a column's right-click › Text in this column, can say otherwise.",
+            keywords: ['wrap', 'clip', 'text', 'cells', 'one line', 'ellipsis', 'overflow', 'table', 'tooltip'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_TEXT_IN_CELLS_OPTIONS} value={settings.tableTextInCells ?? 'wrap'} onChange={(tableTextInCells) => onChange({ ...settings, tableTextInCells })} ariaLabel="Text in cells" />
+            ),
+          },
+          {
+            // YAZ-4869 item 22: what the slash menu's "Table" makes. A Super table's 6-dot menu turns it back, and the other way.
+            id: 'tableNewStyle',
+            label: 'New tables start as',
+            hint: 'A Super table shows views of its rows: groups, sorts and filters, as tabs over the table. A table’s 6-dot menu turns it into one, or back.',
+            keywords: ['super', 'super table', 'new table', 'views', 'view', 'group', 'sort', 'filter', 'default', 'table', 'plain'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={TABLE_NEW_STYLE_OPTIONS} value={settings.tableNewStyle ?? 'plain'} onChange={(tableNewStyle) => onChange({ ...settings, tableNewStyle })} ariaLabel="New tables start as" />
+            ),
+          },
           {
             // YAZ-4167 D16: the band follows the caret's row and the mouse's; a look, never in the file.
             id: 'tableRowBand',
             label: 'Row band',
-            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold.',
+            // The hint names the other home of the band (YAZ-4608 C5); Folder pages › Row band on hover names this one.
+            hint: 'A light band across the table row under the caret or the mouse, its first cell in bold. Folder pages › Row band on hover follows it until you set that.',
             keywords: ['row', 'band', 'highlight', 'mouse', 'caret', 'calendar', 'table'],
             render: ({ settings, onChange }) => (
               <Segmented options={TABLE_ROW_BAND_OPTIONS} value={settings.tableRowBand} onChange={(tableRowBand) => onChange({ ...settings, tableRowBand })} ariaLabel="Row band" />
@@ -1128,6 +1416,16 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // Round 3 of the YAZ-3818 demo: what a new cell note starts with. In the app's settings, never in the file.
         title: 'Cell notes',
         items: [
+          {
+            // YAZ-4790: every table's "+", off by default (the YAZ-4790 demo); a table's 6-dot "Cell note button" sets its own.
+            id: 'tableCellNoteButton',
+            label: 'Add button',
+            hint: 'The + on a table cell’s corner that adds a note. Off: right-click a cell › Add cell note. A table can turn its own on or off in its 6-dot menu.',
+            keywords: ['cell note', 'note', 'plus', 'add', 'button', 'table', 'cell', 'hide'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableCellNoteButton} onChange={(tableCellNoteButton) => onChange({ ...settings, tableCellNoteButton })} ariaLabel="Add button" />
+            ),
+          },
           {
             id: 'tableCellNoteTemplate',
             label: 'New cell note starts with',
@@ -1248,11 +1546,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     groups: [
       {
         // YAZ-4246: what ⌘N's New… box makes, at the top of Files & Links: "Default location for new notes" (unchanged) and the title.
-        title: 'New notes',
+        title: (ctx) => unit(ctx, 'New notes'),
         items: [
           {
             id: 'newNoteLocation',
-            label: 'Default location for new notes',
+            label: (ctx) => unit(ctx, 'Default location for new notes'),
             // YAZ-3556 D3: the New… box uses it too, for notes, drawings and diagrams.
             hint: ({ settings }) => {
               const key = menuKey('newItem', settings)
@@ -1412,9 +1710,96 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         title: 'This vault',
         vault: true,
         items: [
+          // YAZ-4938: one row of its own, saved in the vault (`.yaseendocs/unit-word.json`): what this vault calls a note.
+          {
+            id: 'unitWord',
+            label: 'Call a note a …',
+            hint: 'The word for the thing you make and open here: New card, Delete card…, 12 cards. Saved in this vault; another vault keeps its own word. Feature names like Cell note and Daily notes, and the .md files, do not change.',
+            keywords: ['note', 'card', 'doc', 'page', 'word', 'name', 'unit', 'call', 'rename', 'flavour', 'flavor'],
+            wide: (ctx) => ctx.unitWord?.settings.unit === 'own',
+            available: (ctx) => ctx.unitWord !== undefined,
+            render: ({ unitWord }) => unitWord && <UnitWordControl unitWord={unitWord} />,
+          },
+          // YAZ-4940: "Show IDs", three rows in one block, saved in the vault (`.yaseendocs/show-ids.json`), in a vault with IDs only.
+          {
+            id: 'showIds',
+            label: 'Show IDs in search',
+            hint: 'The sidebar search and Explore. Always: every result shows its ID ("WIKI-38 — S3 (AWS)"). Only when it matches: the ID shows on a result the search found by its ID.',
+            keywords: ['id', 'ids', 'search', 'explore', 'show', 'result'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) =>
+              showIds && (
+                <Segmented
+                  options={[
+                    { label: 'Always', value: 'always' as const },
+                    { label: 'Only when the search matches the ID', value: 'match' as const },
+                  ]}
+                  value={showIds.settings.search}
+                  onChange={(search) => showIds.save({ ...showIds.settings, search })}
+                  ariaLabel="Show IDs in search"
+                />
+              ),
+          },
+          {
+            id: 'showIds.title',
+            label: 'Show IDs in the title',
+            hint: (ctx) => unit(ctx, 'The note\'s ID after its title, small and muted ("DNS basics  EMB-46"), in the note and in Explore. A click on it copies the ID. It is drawn, never part of the title, and never written to the note.'),
+            keywords: ['id', 'ids', 'title', 'heading', 'show', 'copy'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) => showIds && <Segmented options={ON_OFF_OPTIONS} value={showIds.settings.title} onChange={(title) => showIds.save({ ...showIds.settings, title })} ariaLabel="Show IDs in the title" />,
+          },
+          {
+            id: 'showIds.files',
+            label: 'Show IDs in the files list',
+            hint: (ctx) => unit(ctx, 'The ID at the right end of each note\'s row in the sidebar\'s Files, Focus and Favorites, small and muted, so the IDs line up and the names stay where they are. Number shows "#12" (the letters are the same on every row; the title and search keep the full ID). A long name is cut before the ID. A folder row shows none.'),
+            keywords: ['id', 'ids', 'files', 'sidebar', 'tree', 'list', 'row', 'show', 'number', 'full'],
+            available: (ctx) => ctx.ids?.enabled === true && ctx.showIds !== undefined,
+            render: ({ showIds }) =>
+              showIds && (
+                <Segmented
+                  options={[
+                    { label: 'Off', value: 'off' as const },
+                    { label: 'Number (#12)', value: 'number' as const },
+                    { label: 'Full ID (EMB-12)', value: 'full' as const },
+                  ]}
+                  value={showIds.settings.files}
+                  onChange={(files) => showIds.save({ ...showIds.settings, files })}
+                  ariaLabel="Show IDs in the files list"
+                />
+              ),
+          },
+          // YAZ-4936: one row of its own, saved in the vault (`.yaseendocs/link-click.json`).
+          {
+            id: 'linkClick',
+            label: 'Clicking a link',
+            hint: 'A plain click on a note pill. With Explore it opens the note as a reading layer, as ⌘⇧F does; ⌘-click and the other keys keep their doors, and a board or a folder pill keeps its click.',
+            keywords: ['link', 'pill', 'click', 'explore', 'open', 'reading'],
+            available: (ctx) => ctx.linkClick !== undefined,
+            render: (ctx) =>
+              ctx.linkClick && (
+                <Segmented
+                  options={[
+                    { label: unit(ctx, 'Opens the note'), value: 'open' as const },
+                    { label: 'Opens it in Explore', value: 'explore' as const },
+                  ]}
+                  value={ctx.linkClick.settings.click}
+                  onChange={(click) => ctx.linkClick?.save({ click })}
+                  ariaLabel="Clicking a link"
+                />
+              ),
+          },
+          // YAZ-4939: one row of its own, saved in the vault (`.yaseendocs/read-only.json`).
+          {
+            id: 'readOnlyVault',
+            label: 'Read only',
+            hint: 'On: every note, drawing, diagram, code file and folder page in this vault opens read only, and nothing is written to your notes for it. The Read only chip offers Allow edits for 1 minute, 10 minutes or until the tab closes. Rename, Move, Delete, New and Paste ask first.',
+            keywords: ['read only', 'readonly', 'lock', 'locked', 'protect', 'allow edits', 'timer', 'vault'],
+            available: (ctx) => ctx.readOnlyVault !== undefined,
+            render: ({ readOnlyVault }) => readOnlyVault && <Segmented options={ON_OFF_OPTIONS} value={readOnlyVault.settings.on} onChange={(on) => readOnlyVault.save({ on })} ariaLabel="Read only for this vault" />,
+          },
           {
             id: 'ids',
-            label: "Give this vault's notes IDs",
+            label: (ctx) => unit(ctx, "Give this vault's notes IDs"),
             hint: 'Saved in this vault and synced with it. On: every note gets an ID and the app names its file. Off: the app leaves every file as it is.',
             available: (ctx) => ctx.ids !== undefined,
             render: ({ ids, vaultName }) => ids && <IdsControl ids={ids} vault={vaultName} />,
@@ -1431,7 +1816,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           {
             id: 'idLetters',
             label: 'ID letters',
-            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches every note, link and file name.',
+            hint: 'The letters in front of each number, like the YAZ in YAZ-12. A change reaches each ID in this vault, its file name and each link to it. A link to a note outside this vault stays as it is.',
             keywords: ['letters', 'prefix', 'ids', 'rename', 'change'],
             wide: true,
             available: (ctx) => ctx.ids?.enabled === true,
@@ -1448,8 +1833,26 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
         ],
       },
+      {
+        // YAZ-4924: how every link pill of this vault looks, saved in the vault. One row: the format, the preview, the toolbars. Every default is today's look.
+        title: 'Link pills',
+        vault: true,
+        items: [
+          {
+            id: 'linkPills',
+            label: 'Link pills',
+            hint: "The default look of every link in this vault. Right-click a link to style that one. Saved in this vault and synced with it. The format says what a pill shows, with {icon} {name} {id} {number} {vault} {folder} {path} {mark} and your own text. Click a part of the sample pill in the preview to style it; click its icon for the box. Every link to a page shows this way in this vault's notes, folder pages and the explore stack. The default look changes no note: it keeps its [[Name]].",
+            keywords: LINK_PILL_WORDS,
+            wide: true,
+            available: (ctx) => ctx.linkPills !== undefined,
+            render: ({ linkPills, textFormatting }) => linkPills && <LinkPillsControl look={linkPills} vault={textFormatting?.vaults.find((v) => v.root === textFormatting.activeRoot)?.name ?? null} />,
+          },
+        ],
+      },
     ],
   },
+  // YAZ-4585 (D34): the folder pages' own settings and the defaults their views read, after Files & Links.
+  FOLDER_PAGES_SECTION,
   {
     id: 'review',
     title: 'Review',
@@ -1471,11 +1874,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           { ...reviewNumber('maxDays', 'Longest wait', 'days'), hint: ({ review }) => (review === undefined ? '' : scheduleInWords(review.settings)) },
           {
             id: 'reviewByDefault',
-            label: 'New notes are in review',
+            label: (ctx) => unit(ctx, 'New notes are in review'),
             keywords: REVIEW_KEYWORDS,
             available: upkeepOn,
-            render: ({ review }) =>
-              review && <Segmented options={ON_OFF_OPTIONS} value={review.settings.reviewByDefault} onChange={(reviewByDefault) => review.save({ ...review.settings, reviewByDefault })} ariaLabel="New notes are in review" />,
+            render: (ctx) =>
+              ctx.review && <Segmented options={ON_OFF_OPTIONS} value={ctx.review.settings.reviewByDefault} onChange={(reviewByDefault) => ctx.review?.save({ ...ctx.review.settings, reviewByDefault })} ariaLabel={unit(ctx, 'New notes are in review')} />,
           },
         ],
       },
@@ -1520,6 +1923,12 @@ export const availableSections = (ctx: SettingsCtx): SettingsSection[] => SETTIN
 
 /** Whether a row exists in this context; the page and a search both leave out one that does not. */
 export const isAvailable = (item: SettingDef, ctx: SettingsCtx): boolean => item.available?.(ctx) ?? true
+
+/** A label resolved against the context: plain text, or the live-state kind. */
+export const resolveLabel = (item: SettingDef, ctx: SettingsCtx): string => (typeof item.label === 'function' ? item.label(ctx) : item.label)
+
+/** A group's title, resolved the same way. */
+export const resolveGroupTitle = (group: SettingsGroup, ctx: SettingsCtx): string | undefined => (typeof group.title === 'function' ? group.title(ctx) : group.title)
 
 /** A hint resolved against the context: plain text, or the live-state kind. */
 export const resolveHint = (item: SettingDef, ctx: SettingsCtx): string | undefined => (typeof item.hint === 'function' ? item.hint(ctx) : item.hint)

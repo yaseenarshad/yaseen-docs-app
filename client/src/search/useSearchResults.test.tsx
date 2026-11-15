@@ -79,9 +79,9 @@ const NO_FILES: readonly string[] = []
 /** No pinned item (YAZ-2662 D4): the ranking of before. */
 const NO_PINNED: ReadonlySet<string> = new Set()
 
-function Harness({ watch, query, dirs = NO_DIRS, files = NO_FILES }: { watch: WatchSource; query: string; dirs?: readonly string[]; files?: readonly string[] }) {
+function Harness({ watch, query, dirs = NO_DIRS, files = NO_FILES, folder }: { watch: WatchSource; query: string; dirs?: readonly string[]; files?: readonly string[]; folder?: string }) {
   // The window's one vault, as the Sidebar hands it: the same list while nothing in it changed.
-  const results = useSearchResults(useMemo(() => [{ root: '/v', watch, dirs, files }], [watch, dirs, files]), query, NO_PINNED)
+  const results = useSearchResults(useMemo(() => [{ root: '/v', watch, dirs, files, ...(folder !== undefined && { folder }) }], [watch, dirs, files, folder]), query, NO_PINNED)
   return <>{results.map((r) => `${r.kind === 'dir' ? '📁' : ''}${r.label}|`)}</>
 }
 
@@ -116,6 +116,19 @@ afterEach(() => {
   container = null
   delete (window as unknown as Record<string, unknown>).yaseenDocs
   vi.restoreAllMocks()
+})
+
+describe('a window that is "a folder of" the vault (YAZ-4922 D3)', () => {
+  it('reads the VAULT\'s index, and finds only the notes and folder pages under the folder', async () => {
+    const bridge = installBridge([rec('Hooks', 'Wiki'), rec('Hooks list'), rec('React hooks', 'Wiki/React'), rec('Hooks elsewhere', 'Wikipedia')], [rec('.folder', 'Wiki/React'), rec('.folder', 'Other')])
+    const watch: WatchSource = { subscribe: () => () => undefined }
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    reactRoot = createRoot(container)
+    await act(async () => reactRoot?.render(<Harness watch={watch} query="hooks" folder="/v/Wiki" />))
+    expect(bridge.index).toHaveBeenCalledWith('/v')
+    expect(labels().sort()).toEqual(['Hooks', 'React hooks'])
+  })
 })
 
 describe('useSearchResults (YAZ-803)', () => {

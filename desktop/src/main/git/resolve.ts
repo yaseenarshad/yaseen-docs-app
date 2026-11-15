@@ -1,8 +1,13 @@
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
-import { isBoard, isDiagram, isDrawing } from '@shared/fileKind'
+import { mergeNoteComments, noteRest } from '@shared/commentMerge'
+import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
+import { titleOf } from '@shared/noteName'
+import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
+import { mergePeopleFile, PEOPLE_FILE } from '@shared/people'
 import { VAULT_CONFIG_DIR, type GithubSyncMerge } from '@shared/types'
 import { FAVORITES_FILE, FAVORITES_WORKSPACE_FILE, mergeFavoritesFile } from '../favorites'
 import { ICONS_FILE, mergeIconsFile } from '@shared/vaultIcons'
@@ -24,13 +29,19 @@ import { git, zList } from './exec'
  *    it as `<name> (conflict, YYYY-MM-DD).drawio`. So does a drawing that will not parse, or two
  *    unrelated new drawings at one path;
  *  - the vault's `shares.json`, `favorites.json` (and `favorites-workspace.json`, YAZ-4450) and `icons.json` (YAZ-3440 D8) merge per entry;
- *  - a board one side deleted and the other edited keeps the edit.
+ *  - a board one side deleted and the other edited keeps the edit;
+ *  - a NOTE (YAZ-4615 D4, D9 — `shared/commentMerge.ts`): its comments merge by id, and a clashing
+ *    number goes to the local comment; when both sides changed the REST of the note (the same lines,
+ *    or git would have merged them), the remote's stays at the path with every comment merged into
+ *    it, and ours goes beside it as `<name> (conflict, YYYY-MM-DD).md`, with no comments — so one
+ *    note never stops the whole vault's sync again. (This reverses YAZ-3028 D12's "a note never gets
+ *    a conflicted copy". A note still never gets a `<<<<<<<` marker.) A `.folder.md` is a note here;
+ *  - the vault's `people.json` (YAZ-4615 D1) merges card by card, the newer card winning.
  *
- * DOCS IS THE FIRST-CLASS APP (YAZ-3028 D12). Everything else — a NOTE above all, any other file,
- * any other `.yaseendocs/` config — is NOT settled here: one such conflict at a stop aborts the
- * whole rebase before anything is written, exactly as Docs did before (`attention/conflict`, "the
- * same lines changed on two machines — nothing was lost, but this needs a human"). A note never
- * gets a conflicted copy and never gets a `<<<<<<<` marker.
+ * Everything else — any other file, any other `.yaseendocs/` config — is NOT settled here: one such
+ * conflict at a stop aborts the whole rebase before anything is written, exactly as Docs did before
+ * (`attention/conflict`, "the same lines changed on two machines — nothing was lost, but this needs
+ * a human").
  *
  * THE LOSSLESS RULE STILL HOLDS. Anything this cannot settle — a git step that fails, a stop that
  * is not a conflict — aborts the rebase exactly as before, and the caller reports `conflict`.
@@ -64,6 +75,7 @@ const FAVORITES_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_FILE}`
 /** The workspace Favorites (YAZ-4450 D1) merge by the same rule. */
 const FAVORITES_WORKSPACE_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_WORKSPACE_FILE}`
 const ICONS_PATH = `${VAULT_CONFIG_DIR}/${ICONS_FILE}`
+const PEOPLE_PATH = `${VAULT_CONFIG_DIR}/${PEOPLE_FILE}`
 
 /**
  * The file's new contents with every entry of `entries` present, or null when it already has them
@@ -158,8 +170,8 @@ export async function resolveRebase(bin: string, root: string, span: RebaseSpan)
     for (;;) {
       const conflicted = [...new Set(zList(await git(bin, root, ['ls-files', '-z', '--unmerged'])).map((line) => line.slice(line.indexOf('\t') + 1)))]
       if (conflicted.length === 0) return null // stopped for something that is not a conflict
-      // YAZ-3028 D4/D12: a note (or any file sync does not merge) stops the pass as it always did —
-      // checked BEFORE anything is written, so the abort has nothing of ours to undo.
+      // YAZ-3028 D12: a file sync does not merge stops the pass as it always did — checked BEFORE
+      // anything is written, so the abort has nothing of ours to undo. (A note settles: YAZ-4615 D4, D9.)
       if (!conflicted.every(settles)) return null
       for (const rel of conflicted) {
         const settled = await settle(bin, root, rel, copies, () => authorOf(bin, root, span, rel))
@@ -209,13 +221,34 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   const stages = await stagesOf(bin, root, rel)
   if (stages === null) return null
   const { base, theirs, mine } = stages
-  // A board deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
-  // (`settles` already let only boards and the two list files through; a list file is never deleted by the app.)
+  // A board or note deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
+  // (`settles` already let only boards, notes and the list files through; a list file is never deleted by the app.)
   if (theirs === null || mine === null) {
     const kept = theirs ?? mine
     if (kept === null) return null
     await atomicWrite(abs(root, rel), kept)
     return { staged: [rel], report: null }
+  }
+  if (isMarkdown(rel)) {
+    // YAZ-4615 D4, D9: comments by id; the rest merged line by line, kept both ways only when the
+    // same lines changed on both sides.
+    const [b, t, m] = [base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8')]
+    let merged = mergeNoteComments(b, t, m)
+    if (merged?.copy !== undefined && b !== null) {
+      const lined = await lineMerge(bin, root, noteRest(b), noteRest(t), noteRest(m))
+      if (lined !== null) merged = mergeNoteComments(b, t, m, () => lined)
+    }
+    // Comments that are not ours to read (a value of the user's own, a block that does not parse):
+    // the whole note is kept both ways, as a board is (D9 — one note never stops the vault's sync).
+    if (merged === null) return keepBoth(root, rel, theirs, mine, copies, author)
+    await atomicWrite(abs(root, rel), merged.text)
+    const renumbered = merged.renumbered.length === 0 ? {} : { renumbered: merged.renumbered }
+    const note = { kind: 'note' as const, title: noteTitle(rel, merged.text), ...renumbered }
+    if (merged.copy === undefined) return { staged: [rel], report: { path: rel, author: await author(), clashes: 0, ...note } }
+    const copy = copies.get(rel) ?? freeCopyName(root, rel)
+    copies.set(rel, copy)
+    await atomicWrite(abs(root, copy), merged.copy)
+    return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...note } }
   }
   const merged = mergeText(rel, base?.toString('utf8') ?? null, theirs.toString('utf8'), mine.toString('utf8'))
   if (merged !== null) {
@@ -224,16 +257,46 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   }
   // A list file that will not parse has no second copy to keep: it is the vault's config, not a board.
   if (!isBoard(rel)) return null
-  // D3: keep both. The remote's at the path (it is already everywhere else); ours beside it.
+  return keepBoth(root, rel, theirs, mine, copies, author)
+}
+
+/** Git's own three-way line merge of three texts; null when the same lines changed, or git fails. */
+async function lineMerge(bin: string, root: string, base: string, theirs: string, mine: string): Promise<string | null> {
+  let dir: string | null = null
+  try {
+    dir = await mkdtemp(path.join(tmpdir(), 'yaseendocs-merge-'))
+    const [b, t, m] = ['base', 'theirs', 'mine'].map((name) => path.join(dir as string, name))
+    await Promise.all([writeFile(b, base), writeFile(t, theirs), writeFile(m, mine)])
+    const res = await git(bin, root, ['merge-file', '-p', '--quiet', t, b, m])
+    return res.code === 0 ? res.stdout : null
+  } catch {
+    // No temp folder, or git's answer too large: keep both versions (D9) rather than stop the pass.
+    return null
+  } finally {
+    if (dir !== null) await rm(dir, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+/** D3: keep both. The remote's at the path (it is already everywhere else); ours beside it. */
+async function keepBoth(root: string, rel: string, theirs: Buffer, mine: Buffer, copies: Map<string, string>, author: () => Promise<string>): Promise<Settled> {
   const copy = copies.get(rel) ?? freeCopyName(root, rel)
   copies.set(rel, copy)
   await atomicWrite(abs(root, rel), theirs)
   await atomicWrite(abs(root, copy), mine)
-  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy } }
+  return { staged: [rel, copy], report: { path: rel, author: await author(), clashes: 0, copy, ...(isMarkdown(rel) ? { kind: 'note' as const, title: noteTitle(rel, theirs.toString('utf8')) } : {}) } }
 }
 
-/** Whether sync may settle a conflict on `rel` at all (YAZ-3028 D4): a board, or one of the per-entry list files. Never a note. */
-const settles = (rel: string): boolean => isBoard(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH
+/** A note as the notice names it: its `title`, else its file name, and a folder page its folder's name. */
+function noteTitle(rel: string, text: string): string {
+  const name = path.posix.basename(rel)
+  const dir = path.posix.basename(path.posix.dirname(rel))
+  const fallback = name === '.folder.md' && dir !== '.' ? dir : path.posix.basename(name, path.posix.extname(name)).replace(/^\.+/, '')
+  return titleOf(parseFrontmatter(splitFrontmatter(text).frontmatter).properties, fallback)
+}
+
+/** Whether sync may settle a conflict on `rel` at all: a board, a note (YAZ-4615 D4, D9), or one of the per-entry list files. */
+const settles = (rel: string): boolean =>
+  isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH
 
 /**
  * The merge a file knows how to do, or null for keep-both. `clashes: null` marks a merge nobody
@@ -246,6 +309,7 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
   if (rel === SHARES_PATH) return quiet(mergeSharesFile(base, theirs, mine))
   if (rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH) return quiet(mergeFavoritesFile(base, theirs, mine))
   if (rel === ICONS_PATH) return quiet(mergeIconsFile(base, theirs, mine))
+  if (rel === PEOPLE_PATH) return quiet(mergePeopleFile(base, theirs, mine))
   return null
 }
 
@@ -253,7 +317,8 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
 function freeCopyName(root: string, rel: string): string {
   const dir = path.posix.dirname(rel)
   const ext = path.posix.extname(rel)
-  const stem = path.posix.basename(rel, ext)
+  // A hidden settings file (`.folder.md`, `.template.md`) gets a copy the sidebar shows: `folder (conflict, …).md`.
+  const stem = path.posix.basename(rel, ext).replace(/^\.+/, '')
   const now = new Date()
   const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   for (let n = 1; ; n += 1) {

@@ -71,6 +71,7 @@ const FIELD_OK: { [K in keyof CanvasPrefs]: (v: unknown) => v is CanvasPrefs[K] 
   newElementStyle: (v): v is NewElementStyleMode => typeof v === 'string' && (NEW_ELEMENT_STYLE_MODES as readonly string[]).includes(v),
   fillSetsTextColor: isBool,
   newShapesMatchZoom: isBool,
+  hoverOutline: isBool,
 }
 
 /** Strict: every field present and valid — the IPC boundary's check. */
@@ -167,6 +168,8 @@ export function prefsToAppState(prefs: CanvasPrefs, keys: ReadonlyArray<keyof Ca
         break // the engine's `fillSetsTextColor` prop, never appState (YAZ-4277 demo)
       case 'newShapesMatchZoom':
         break // the engine's `newShapesMatchZoom` prop, never appState (YAZ-4277 demo)
+      case 'hoverOutline':
+        break // the engine's `hoverOutline` prop, never appState (YAZ-4469 demo)
       case 'defaultFontFamily':
         out.currentItemFontFamily = prefs.defaultFontFamily
         break
@@ -229,6 +232,7 @@ export function appStateToPrefs(appState: EngineAppStateSlice, fallback: CanvasP
     newElementStyle: fallback.newElementStyle,
     fillSetsTextColor: fallback.fillSetsTextColor,
     newShapesMatchZoom: fallback.newShapesMatchZoom,
+    hoverOutline: fallback.hoverOutline,
   }
 }
 

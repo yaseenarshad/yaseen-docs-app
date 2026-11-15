@@ -9,6 +9,7 @@
  * wrapping), ⏎ picks it, Esc or a click away closes. An empty query lists the first `SEARCH_CAP`.
  */
 import { useMemo, useState, type KeyboardEvent } from 'react'
+import { useUnit } from '../vault/unitWord'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import { folderRows } from '../links/shortcuts'
@@ -28,6 +29,7 @@ interface ShortcutPickerProps {
 }
 
 export function ShortcutPicker({ folder, source, onPick, onClose }: ShortcutPickerProps) {
+  const unit = useUnit()
   const { records, folders } = useIndexFeed(source)
   const [query, setQuery] = useState('')
   const candidates = useMemo(() => {
@@ -47,15 +49,15 @@ export function ShortcutPicker({ folder, source, onPick, onClose }: ShortcutPick
 
   return (
     <div className="confirm-overlay" onMouseDown={onClose}>
-      <div className="confirm shortcut-picker" role="dialog" aria-modal="true" aria-label="Add note shortcut" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="confirm shortcut-picker" role="dialog" aria-modal="true" aria-label={unit('Add note shortcut')} onMouseDown={(e) => e.stopPropagation()}>
         <div className="sidebar__search">
           <SearchIcon />
           <input
             className="sidebar__search-input"
             type="text"
             autoFocus
-            placeholder="Add note shortcut"
-            aria-label="Find a note"
+            placeholder={unit('Add note shortcut')}
+            aria-label={unit('Find a note')}
             spellCheck={false} // names, not prose (YAZ-3748 B2)
             value={query}
             onChange={(e) => {

@@ -159,6 +159,12 @@ export interface ExcalidrawElementWithCanvas {
   theme: AppState["theme"];
   scale: number;
   zoomValue: AppState["zoom"]["value"];
+  /**
+   * YAZ-4902: the `window.devicePixelRatio` the bitmap was made at. The App
+   * size (a page zoom) changes it; a bitmap drawn back at another ratio comes
+   * out scaled by old / new, so the letters ran past the box and its highlight.
+   */
+  pixelRatio: number;
   canvasOffsetX: number;
   canvasOffsetY: number;
   imageCrop: ExcalidrawImageElement["crop"] | null;
@@ -287,6 +293,7 @@ const generateElementCanvas = (
     theme: appState.theme,
     scale,
     zoomValue: zoom.value,
+    pixelRatio: window.devicePixelRatio,
     canvasOffsetX,
     canvasOffsetY,
     containingFrameOpacity:
@@ -890,6 +897,8 @@ const generateElementWithCanvas = (
   const changed =
     !prevElementWithCanvas ||
     shouldRegenerateBecauseZoom ||
+    // YAZ-4902: the App size changed since the bitmap was made
+    prevElementWithCanvas.pixelRatio !== window.devicePixelRatio ||
     (prevElementWithCanvas.iconPreview ?? null) !== iconPreview ||
     prevElementWithCanvas.theme !== appState.theme ||
     prevElementWithCanvas.imageCrop !== imageCrop ||

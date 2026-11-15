@@ -31,38 +31,15 @@ import { isHighlightHex } from '@shared/types'
 import { rgbOf, solidHex } from '../../lib/colour'
 import { visibleRangeHasMark, visibleRanges } from '../lineSelection'
 import { wrapHtmlPairs, type HtmlPairSpec } from './htmlPairs'
+import { HIGHLIGHT_COLORS, HIGHLIGHT_HEX, type CustomHighlight, type HighlightColor } from './highlightColours'
 
-/** The named colours that are toolbar buttons after yellow (YAZ-4348 demo round 2: pink went into the ▾ panel). */
-export const QUICK_HIGHLIGHTS = ['green', 'blue'] as const
-/** The named colours only the toolbar's ▾ panel has (YAZ-4348 demo round 2). */
-export const MORE_HIGHLIGHTS = ['pink', 'orange', 'purple', 'red', 'gray'] as const
-/** Every named colour, each `<mark class="highlight-<name>">`; yellow is `null` (the default, and the only one with Markdown syntax). */
-export const HIGHLIGHT_COLORS = [...QUICK_HIGHLIGHTS, ...MORE_HIGHLIGHTS] as const
-export type HighlightName = (typeof HIGHLIGHT_COLORS)[number]
-/** A custom colour: lowercase `#rrggbb` (YAZ-4348 demo round 2). */
-export type CustomHighlight = `#${string}`
-export type HighlightColor = HighlightName | CustomHighlight | null
+export { QUICK_HIGHLIGHTS, MORE_HIGHLIGHTS, HIGHLIGHT_COLORS, HIGHLIGHT_HEX, type HighlightName, type CustomHighlight, type HighlightColor } from './highlightColours'
 
 /** A custom colour as the mark keeps it: exactly lowercase `#rrggbb` (the setting's own test, `@shared/types`). */
 export const isCustomHighlight: (value: unknown) => value is CustomHighlight = isHighlightHex
 
 /** How strong a custom colour's wash is: the named colours' 0.35–0.4, so text on it stays readable in both themes. */
 export const CUSTOM_WASH = 0.4
-
-/**
- * Each colour's solid hue, the `rgb` of its app.css wash token: what the panel's Hex code field shows for it, and
- * where its Shades start (YAZ-4348 demo round 2). A shade or a typed hex is a custom colour.
- */
-export const HIGHLIGHT_HEX: Record<HighlightName | 'yellow', CustomHighlight> = {
-  yellow: '#ffd500',
-  green: '#50c878',
-  blue: '#50a0ff',
-  pink: '#ff78b4',
-  orange: '#ff9632',
-  purple: '#a06eff',
-  red: '#ff5a50',
-  gray: '#969696',
-}
 
 /** A custom colour's see-through wash, `rgba(r, g, b, 0.4)`. */
 export function customWash(hex: CustomHighlight): string {

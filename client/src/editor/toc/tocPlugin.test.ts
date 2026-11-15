@@ -43,7 +43,15 @@ import { isOutlineItemCollapsed, setOutlineFoldSet } from '../outline/outlineFol
 import { getZoomedItemPos } from '../outline/zoom'
 import { createTocChannel, type TocChannel } from './tocChannel'
 import { createWikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
+import type { BoardWindowHandle } from '../embed/types'
 import { SCAN_DELAY_MS, scanAllHeadings, scanBullets, scanHeadings, scanNote, scanZoom } from './tocPlugin'
+
+// A board embed's window (YAZ-4920's test below): a handle that does nothing, so the host mounts without the real chunk.
+vi.mock('../embed/types', async (original) => ({
+  ...(await original<typeof import('../embed/types')>()),
+  loadBoardWindow: () => Promise.resolve({ mountBoardWindow: (): BoardWindowHandle => ({ update() {}, setSelected() {}, handleKey: () => false, setFolded() {}, setFoldable() {}, flush() {}, fit() {}, destroy() {} }) as unknown as BoardWindowHandle }),
+}))
 
 const mounted: Array<{ crepe: Crepe; root: HTMLElement }> = []
 
@@ -1296,5 +1304,26 @@ describe('a row names its links as the note shows them (YAZ-3744 D6)', () => {
     wikilinks.update((target) => (target === ID ? '/v/AR v3 plan.md' : target === 'Named' ? '/v/Named.md' : null))
     vi.advanceTimersByTime(SCAN_DELAY_MS * 2)
     expect(channel.getState().rows.map((row) => row.text)).toEqual(['Ask about AR v3 plan', 'See Named', 'Third'])
+  })
+})
+
+describe('YAZ-4920: a bullet that is an id embed of a board', () => {
+  const isBoard = (target: string) => target === 'EMB-40'
+
+  it('the scan reads it as the board\'s embed without its options (with the check), as text with them (without)', async () => {
+    const { view } = await mountToc('* ![[EMB-40|640x360 view=1,2,0.5]]\n* Beta\n')
+    expect(texts(scanBullets(view.state.doc, isBoard))).toEqual(['1 ![[EMB-40]]', '1 Beta'])
+    expect(texts(scanBullets(view.state.doc))).toEqual(['1 ![[EMB-40|640x360 view=1,2,0.5]]', '1 Beta'])
+    expect(texts(scanNote(view.state.doc, 'bullets', isBoard).rows)).toEqual(['1 ![[EMB-40]]', '1 Beta'])
+  })
+
+  it('with the host and a resolver that says EMB-40 is a board, the published row is the board\'s name', async () => {
+    const wikilinks = createWikilinkResolveSource()
+    wikilinks.update((t) => (t === 'EMB-40' ? '/v/Boards/Slides with frames.excalidraw' : null), [], [], true, ['EMB'])
+    let publish: ReturnType<typeof vi.spyOn> | null = null
+    const { view } = await mountToc('* ![[EMB-40|640x360]]\n* Beta\n', { wikilinks, boardEmbeds: { root: '/v' } }, (channel) => void (publish = vi.spyOn(channel, 'publish')))
+    expect(boardCheckOf(view.state)?.('EMB-40')).toBe(true)
+    const rows = publish!.mock.calls.at(-1)![0] as readonly { text: string }[]
+    expect(rows.map(({ text }) => text)).toEqual(['Slides with frames', 'Beta'])
   })
 })

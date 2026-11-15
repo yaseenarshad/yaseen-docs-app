@@ -35,3 +35,11 @@ describe('bestScores (YAZ-3511 D12)', () => {
     expect(Object.fromEntries(scores)).toEqual({ '/v/Docs/n.md': 1, '/v/Docs': 1, '/v/m.md': 2, '/v/Big': 2 })
   })
 })
+
+describe('Best match for `#3` (YAZ-2571 round 5)', () => {
+  it('the exact number scores 0, a longer number that starts with it 1', () => {
+    const results = [{ ...row('/v/a.md', 'Thirty', 'EMB-30'), label: 'EMB-30 — Thirty' }, { ...row('/v/b.md', 'Three', 'EMB-3'), label: 'EMB-3 — Three' }]
+    const scores = bestScores(results, '#3', [file('/v/a.md'), file('/v/b.md')], new Set())
+    expect(Object.fromEntries(scores)).toEqual({ '/v/a.md': 1, '/v/b.md': 0 })
+  })
+})

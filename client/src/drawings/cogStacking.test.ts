@@ -4,9 +4,10 @@ import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 /**
- * YAZ-4071 7J: the page cog's menu and the engine's text toolbar (`.contextual-properties-toolbar`) are in one
- * stacking context (`.layer-ui__wrapper`). The toolbar is `z-index: var(--zIndex-ui-top)` (100); the app's menu
- * rule is 10, so the toolbar covered the cog's rows. jsdom does not stack boxes, so this reads both stylesheets.
+ * YAZ-4071 7J: the page cog's menu and its (i) box must open over the engine's text toolbar
+ * (`.contextual-properties-toolbar`, `z-index: var(--zIndex-ui-top)`, 100). Since YAZ-4748 (the YAZ-4776 fix from
+ * YAZ-3746) both render on `document.body`, out of the engine's stacking context, as fixed boxes at the app's top
+ * layer. jsdom does not stack boxes, so this reads both stylesheets.
  */
 const engineCss = readFileSync(join(dirname(createRequire(import.meta.url).resolve('@excalidraw/excalidraw')), 'index.css'), 'utf8')
 const drawingCss = readFileSync(join(__dirname, 'drawingEditor.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
@@ -15,19 +16,23 @@ const engineVar = (name: string) => Number(new RegExp(`${name}:\\s*(\\d+)`).exec
 /** A z-index value with the engine's variables put in (`calc(var(--x) + 1)` included). */
 const resolve = (value: string) =>
   Function(`return ${value.replace(/var\((--[\w-]+)(?:,[^)]*)?\)/g, (_, name: string) => String(engineVar(name))).replace(/calc/g, '')}`)() as number
+const appCss = readFileSync(join(__dirname, '..', 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 
-describe('YAZ-4071 7J: the page cog menu and its panel on a drawing open over the engine toolbars', () => {
-  it('its z-index is above the text toolbar and below the main menu', () => {
+describe('YAZ-4071 7J: the page cog menu and its (i) box on a drawing open over the engine toolbars', () => {
+  it('each is a fixed box on the page, with a z-index above the text toolbar', () => {
     const toolbar = /\.contextual-properties-toolbar\s*\{[^}]*?z-index:\s*([^;}]+)/.exec(engineCss)?.[1]
     expect(toolbar).toBeDefined()
-    // the menu, and its "i" panel left of it (over the toolbar too)
-    for (const part of ['page-settings__menu', 'page-settings__tip']) {
-      const rule = new RegExp(`\\.editor--drawing \\.excalidraw \\.drawing-editor__chips \\.${part}[^{]*\\{[^}]*?z-index:\\s*([^;}]+)`)
-      const value = rule.exec(drawingCss)?.[1]
-      expect(value, part).toBeDefined()
-      expect(resolve(value!), part).toBeGreaterThan(resolve(toolbar!))
-      expect(resolve(value!), part).toBeLessThan(engineVar('--zIndex-ui-main-menu'))
+    for (const selector of ['\\.page-settings__menu\\.page-settings__menu--placed', '\\.page-settings__tip\\.page-settings__tip--hint']) {
+      const body = new RegExp(`${selector}\\s*\\{([^}]*)\\}`).exec(appCss)?.[1]
+      expect(body, selector).toBeDefined()
+      expect(body, selector).toMatch(/position:\s*fixed/)
+      const z = Number(/z-index:\s*(\d+)/.exec(body!)?.[1])
+      expect(z, selector).toBeGreaterThan(resolve(toolbar!))
     }
+  })
+
+  it('drawingEditor.css no longer sets a z-index on them: inside the engine it would not apply', () => {
+    expect(drawingCss).not.toMatch(/page-settings__(menu|tip)/)
   })
 })
 

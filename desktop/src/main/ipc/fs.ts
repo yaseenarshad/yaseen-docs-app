@@ -1,6 +1,6 @@
 import { stat } from 'node:fs/promises'
 import path from 'node:path'
-import { nativeImage, screen, type IpcMainInvokeEvent } from 'electron'
+import { nativeImage, net, screen, type IpcMainInvokeEvent } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import { BETWEEN_VAULTS, CLIP_CHANGED, rootOfPath, type FileWriteRequest, type FileWriteResponse, type ImportResponse, type RenameFileResponse } from '@shared/types'
 import { dropLanded, rememberDragOut } from '../dragLanding'
@@ -10,6 +10,7 @@ import * as icons from '../icons'
 import { fileClip, type FileClip } from '../fileClip'
 import * as focus from '../focus'
 import { readAsset, writeAsset } from '../fs/assets'
+import { downloadImage } from '../fs/downloadImage'
 import { copyEntry, importCopy, isCrossDevice, pasteEntries, type PasteOps } from '../fs/copy'
 import { createDir, createFile } from '../fs/create'
 import { readFile, writeFile } from '../fs/file'
@@ -34,6 +35,7 @@ import type { Store } from '../store'
 import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow, giveOldIdsNumbers, idsState, indexMoved, indexWrote, onBoardIds, onIdFixes, saveIdsAnswer } from '../vaultIndex'
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
+import { idsHome } from '../vaultIndex/scan'
 import { dailyNote } from '../notes/daily'
 import type { WindowManager } from '../windows'
 import { broadcastAll, loggedSave, rootsOf, senderRoots } from './broadcast'
@@ -79,10 +81,12 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   const doorFor = async (e: IpcMainInvokeEvent, req: unknown, key = 'path'): Promise<IdDoor | null> => {
     const p = typeof req === 'string' ? req : (req as Record<string, unknown> | null)?.[key]
     const root = typeof p === 'string' ? rootOfPath(rootsOfSender(e), p) : null
-    return root === null ? null : doorOf(root)
+    // A vault inside the window's vault gives the IDs of its own notes (YAZ-4922 🔒 D1): the nearest folder that answered.
+    return root === null ? null : doorOf(await idsHome(root, p as string))
   }
   handleWithEvent(CONTRACT.createDir, async (e, req) => createDir(req, await doorFor(e, req)))
-  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await doorFor(e, req)))
+  // YAZ-4615 D10: a note the app makes carries the comment hint while Settings › Comments says so.
+  handleWithEvent(CONTRACT.createFile, async (e, req) => createFile(req, await doorFor(e, req), { hint: store.get().settings.commentsHint }))
   // The door, for the front end (YAZ-2677 R17): the next ID of the vault that holds `path`, saved
   // before it is answered (R18). The caller needs it BEFORE its note exists — the note's file name
   // holds it, and so does a link the `[[` picker writes — and hands it back in `createFile`'s `id`.
@@ -107,6 +111,8 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // `.excalidraw` is not a vault file, so nothing points at it; a pasted image is a NEW file
   // the tree learns of from the watcher, like any add made outside the app.
   handle(CONTRACT.writeAsset, writeAsset)
+  // An Image cell's "Paste a link" (YAZ-4802): bytes only, nothing written; the renderer saves them through writeAsset.
+  handle(CONTRACT.downloadImage, (req: unknown) => downloadImage(req, (url, init) => net.fetch(url, init)))
   // Reveal in Finder (GRO-2274): read-only, so no store repair and no broadcast — but still
   // enveloped like every other handler so a stale row's NOT_FOUND reaches the renderer as a
   // passive notice instead of vanishing (showItemInFolder is silent on a missing path).
@@ -176,10 +182,14 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   // The switch in Settings (🔒 D2): the answer is saved here, in main, where one save waits for the
   // one before it. A yes is the user asking on THIS Mac, so the numbers come now (R32, S64) — not
   // awaited: a vault of many notes must not hold the switch. A Mac that sees the yes arrive waits (S65).
+  // A yes that keeps the notes' IDs (YAZ-4922 🔒 D2) and moves the biggest group to other letters moves its numbers,
+  // links and file names first, as "Change letters" does (`turnIdsOn`'s steps): the sweep then gives only notes with no ID.
   handleWithEvent(CONTRACT.ids.set, async (e, root: unknown, enabled: unknown, letters: unknown) => {
     const vault = ownVault(e, root)
-    await saveIdsAnswer(vault, enabled, letters)
-    if (enabled === true) void giveIdsNow(vault)
+    const moved = await saveIdsAnswer(vault, enabled, letters)
+    if (enabled !== true) return
+    const move = moved ? thenTell(vault, changeLetters(vault, letters, followed)).catch(() => undefined) : Promise.resolve()
+    void move.then(() => giveIdsNow(vault))
   })
   // "Check for duplicates" (🔒 D7, S55 to S57): one line for the row in Settings.
   handleWithEvent(CONTRACT.ids.check, async (e, root: unknown) => checkDuplicates(ownVault(e, root)))
@@ -364,6 +374,14 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
       clearOsFiles(clip.paths)
     }
     return res
+  })
+  // "Duplicate note" (YAZ-4592 S26): the copy a Paste of a Copy makes into the entry's own folder (`copyEntry`,
+  // "Duplicate for free"), with neither clipboard read or written. The path must be in a vault of the CALLING window.
+  // A copy: no store repair and no push, as the paste's copy.
+  handleWithEvent(CONTRACT.file.duplicate, async (e, req: unknown) => {
+    const src = requireAbsPath(requireRequest(req).path, 'path')
+    if (rootOfPath(rootsOfSender(e), src) === null) throw new BridgeFailure('BAD_REQUEST', 'no vault of this window holds that file', { path: src })
+    return copyEntry(src, path.dirname(src), await doorFor(e, req))
   })
   /**
    * A drop from Finder (YAZ-3253 D3, D9A): `pasteEntries` with an explicit list — the app clipboard

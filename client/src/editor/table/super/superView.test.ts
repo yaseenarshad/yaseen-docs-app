@@ -1,0 +1,322 @@
+/**
+ * YAZ-4869 S2–S5 on the real editor (jsdom): a Super table's view draws from the folder-page engine over the table's
+ * rows, hides the table, groups and sorts without a change to the file; an edit in a view is one undo step; a header
+ * rename renames the column in the views; a drag to another group writes the row's group cell; ⌘F's match shows its
+ * row; a copy keeps the view's order; and a key in another block runs no engine (item 20).
+ */
+import { afterEach, describe, expect, it } from 'vitest'
+import { undo } from '@milkdown/kit/prose/history'
+import { TextSelection } from '@milkdown/kit/prose/state'
+import type { EditorView } from '@milkdown/kit/prose/view'
+import { editorViewCtx } from '@milkdown/kit/core'
+import { createCrepe, getMarkdownForSave } from '../../createCrepe'
+import { createFindChannel } from '../../find/findChannel'
+import { mountNote, unmountAll } from '../tableTestKit'
+import { loadSuperTable, SUPER_TYPING_MS } from '../tableZoomPill'
+import { superRuns } from './superData'
+import { activeViewAt, setActiveTab, SUPER_HIDDEN_CLASS } from './superTables'
+import tableCss from '../table.css?inline'
+
+afterEach(unmountAll)
+
+const TABLE = [
+  '| Piece | Layer | Size |',
+  '| - | - | - |',
+  '| Roof | Top | 3 |',
+  '| Wall | Middle | 12 |',
+  '| Door | Middle | 2 |',
+  '| Base | Ground | 1,200 |',
+  '| Hat | Top |  |',
+].join('\n')
+const NOTE = `Intro line\n\n${TABLE}\n\n<!-- table: super, view "By layer" group Layer sort Piece, view Sizes sort Size desc summary Size sum -->\n`
+
+const tablePos = (view: EditorView): number => {
+  let pos = -1
+  view.state.doc.descendants((node, p) => {
+    if (pos === -1 && node.type.name === 'table') pos = p
+    return pos === -1
+  })
+  return pos
+}
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** A note with its table's view `name` showing; `saved` is the note as the app saves it, before any change. */
+async function showView(markdown: string, name: string) {
+  const m = await mountNote(markdown)
+  const saved = getMarkdownForSave(m.crepe)
+  await loadSuperTable()
+  setActiveTab(m.view, tablePos(m.view), name)
+  await wait(0)
+  return { ...m, saved }
+}
+
+const viewRoot = (view: EditorView) => view.dom.querySelector<HTMLElement>('.table-super-view')!
+/** Each line of the view: `# <group> <count>` or the row's cells joined by `|`. */
+const linesOf = (view: EditorView) =>
+  [...viewRoot(view).querySelectorAll<HTMLElement>('tbody tr')].map((tr) =>
+    tr.classList.contains('super-view__group') ? `# ${tr.querySelector('.view-group__value')?.textContent} ${tr.querySelector('.view-group__count')?.textContent}` : [...tr.querySelectorAll('td:not(.super-view__gutter)')].map((td) => td.textContent).join('|'),
+  )
+
+describe('YAZ-4873 S2: a view of the table', () => {
+  it('hides the table and draws the view: groups in first-appearance order, rows sorted, the file unchanged', async () => {
+    const { view, crepe, saved } = await showView(NOTE, 'By layer')
+    expect(view.dom.querySelector('.milkdown-table-block')!.classList.contains(SUPER_HIDDEN_CLASS)).toBe(true)
+    expect([...view.dom.querySelectorAll('.table-super-bar__tab')].map((t) => `${t.textContent}${t.getAttribute('aria-selected') === 'true' ? '*' : ''}`)).toEqual(['Table', 'By layer*', 'Sizes', '+'])
+    // The YAZ-4869 demo: the folder page's bar (its classes, the accent line under the active tab, the icon buttons with
+    // a count badge), the zoom pill at its right end, the view under it.
+    const bar = view.dom.querySelector<HTMLElement>('.table-zoom-anchor > .table-super-bar.view-toolbar')!
+    expect([...bar.querySelectorAll('.view-tabs > .view-tab')].map((t) => `${t.querySelector('.view-tab__btn svg') === null ? '' : 'icon '}${t.textContent}${t.classList.contains('view-tab--active') ? '*' : ''}`)).toEqual(['icon Table', 'icon By layer*', 'icon Sizes'])
+    expect(bar.querySelector('.view-tabs-wrap > .view-tab__add[aria-label="Add a view"]')).not.toBeNull()
+    expect([...bar.querySelectorAll('.view-toolbar__actions .view-toolbar__btn')].map((b) => `${b.getAttribute('aria-label')}${b.classList.contains('view-toolbar__btn--on') ? `:${b.querySelector('.view-toolbar__badge')?.textContent}` : ''}`)).toEqual(['Sort:1', 'Group:1', 'Filter'])
+    expect(bar.querySelector('.view-toolbar__actions > .document-zoom[aria-label="Table zoom"]')).not.toBeNull()
+    expect(bar.nextElementSibling?.classList.contains('table-super-view')).toBe(true)
+    expect(linesOf(view)).toEqual(['# Top 2', 'Hat|Top|', 'Roof|Top|3', '# Middle 2', 'Door|Middle|2', 'Wall|Middle|12', '# Ground 1', 'Base|Ground|1,200'])
+    expect(saved).toContain('<!-- table: super, view "By layer" group Layer sort Piece, view Sizes sort Size desc summary Size sum -->')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+    setActiveTab(view, tablePos(view), null)
+    await wait(0)
+    expect(view.dom.querySelector('.milkdown-table-block')!.classList.contains(SUPER_HIDDEN_CLASS)).toBe(false)
+    expect(view.dom.querySelector('.table-super-view')).toBeNull()
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('item 14: numbers sort as numbers (1,200 above 12) and sum; an empty cell sorts last', async () => {
+    const { view } = await showView(NOTE, 'Sizes')
+    expect(linesOf(view).map((l) => l.split('|')[0])).toEqual(['Base', 'Wall', 'Roof', 'Door', 'Hat'])
+    expect(viewRoot(view).querySelector('.super-view__summary-value')!.textContent).toBe('1217')
+  })
+
+  it('item 21: a copy of rows in a view keeps the view’s order, as a Markdown table and an HTML table', async () => {
+    const { view } = await showView(NOTE, 'Sizes')
+    const selection = window.getSelection()!
+    selection.selectAllChildren(viewRoot(view).querySelector('tbody')!)
+    const data = new Map<string, string>()
+    const event = new Event('copy', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(event, 'clipboardData', { value: { setData: (type: string, text: string) => data.set(type, text) } })
+    viewRoot(view).querySelector('td')!.dispatchEvent(event)
+    expect(data.get('text/plain')).toBe(['| Piece | Layer | Size |', '| --- | --- | --- |', '| Base | Ground | 1,200 |', '| Wall | Middle | 12 |', '| Roof | Top | 3 |', '| Door | Middle | 2 |', '| Hat | Top |  |'].join('\n'))
+    expect(data.get('text/html')).toContain('<tr><td>Base</td><td>Ground</td><td>1,200</td></tr><tr><td>Wall</td>')
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('item 20: a key in another block runs no engine; keys in the table run it once per debounce', async () => {
+    const big = ['| Name | Group | ' + Array.from({ length: 8 }, (_, c) => `C${c}`).join(' | ') + ' |', `|${' - |'.repeat(10)}`, ...Array.from({ length: 500 }, (_, r) => `| n${r} | g${r % 7} | ${Array.from({ length: 8 }, (_, c) => `${r * c}`).join(' | ')} |`)].join('\n')
+    const { view } = await showView(`Intro line\n\n${big}\n\n<!-- table: super, view All group Group sort C1 desc -->\n`, 'All')
+    expect(viewRoot(view).querySelectorAll('tbody tr.super-view__row').length).toBeLessThan(120)
+    const runs = superRuns.count
+    const type = (pos: number) => view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, pos)).insertText('x'))
+    for (let i = 0; i < 20; i++) type(2)
+    await wait(SUPER_TYPING_MS + 50)
+    expect(superRuns.count).toBe(runs)
+    const inTable = tablePos(view) + 4
+    for (let i = 0; i < 20; i++) type(inTable)
+    expect(superRuns.count).toBe(runs)
+    await wait(SUPER_TYPING_MS + 50)
+    expect(superRuns.count).toBe(runs + 1)
+  })
+})
+
+describe('YAZ-4876 S5: edit in a view, header rename, find', () => {
+  it('item 5: a double-click edits a cell; Enter writes it in the table, one undo step', async () => {
+    const { view, crepe, saved } = await showView(NOTE, 'By layer')
+    const roof = [...viewRoot(view).querySelectorAll('td')].find((td) => td.textContent === 'Roof')!
+    roof.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(0)
+    const box = viewRoot(view).querySelector<HTMLInputElement>('.super-view__edit')!
+    box.value = 'Roof tiles'
+    box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await wait(0)
+    expect(getMarkdownForSave(crepe)).toMatch(/\| Roof tiles \| Top +\| 3 +\|/)
+    expect(linesOf(view)).toContain('Roof tiles|Top|3')
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('item 15: a key in a header cell renames the column in the views, in the same undo step', async () => {
+    const { view, crepe } = await mountNote(NOTE)
+    const saved = getMarkdownForSave(crepe)
+    // The end of "Layer" in the header row.
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at === -1 && node.isText && node.text === 'Layer') at = pos + 5
+      return at === -1
+    })
+    view.dispatch(view.state.tr.insertText('s', at))
+    expect(getMarkdownForSave(crepe)).toContain('<!-- table: super, view "By layer" group Layers sort Piece, view Sizes sort Size desc summary Size sum -->')
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('item 9: a row dropped on another group gets that group’s value, one undo step', async () => {
+    const { view, crepe, saved } = await showView(NOTE, 'By layer')
+    const rows = () => [...viewRoot(view).querySelectorAll<HTMLElement>('tbody tr')]
+    const door = rows().find((tr) => tr.textContent?.startsWith('Door'))!
+    const ground = rows().find((tr) => tr.querySelector('.view-group__value')?.textContent === 'Ground')!
+    door.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    ground.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+    await wait(0)
+    expect(getMarkdownForSave(crepe)).toMatch(/\| Door +\| Ground +\| 2 +\|/)
+    expect(linesOf(view)).toContain('# Ground 2')
+    undo(view.state, view.dispatch)
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('item 25: ⌘F’s current match in a table that shows a view marks its row there, and opens its collapsed group', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const channel = createFindChannel()
+    const crepe = createCrepe({ root, defaultValue: NOTE, tableZoomPill: true, find: channel })
+    await crepe.create()
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    await loadSuperTable()
+    setActiveTab(view, tablePos(view), 'By layer')
+    await wait(0)
+    expect(activeViewAt(view.state, tablePos(view))).toBe('By layer')
+    // Collapse "Ground"; the match is in its row.
+    ;[...view.dom.querySelectorAll<HTMLButtonElement>('.view-group__toggle')].find((b) => b.getAttribute('aria-label') === 'Toggle group Ground')!.click()
+    await wait(0)
+    expect(linesOf(view)).not.toContain('Base|Ground|1,200')
+    channel.open()
+    channel.setQuery('Base')
+    await wait(0)
+    expect(viewRoot(view).querySelector('tr[data-found]')?.textContent).toBe('BaseGround1,200')
+    await crepe.destroy()
+    root.remove()
+  })
+
+  it('item 15: a key in a body row runs no rename: the views stay the same object', async () => {
+    const { view } = await mountNote(NOTE)
+    const views = view.state.doc.nodeAt(tablePos(view))!.attrs.views
+    let at = -1
+    view.state.doc.descendants((node, pos) => {
+      if (at === -1 && node.isText && node.text === 'Roof') at = pos + 4
+      return at === -1
+    })
+    view.dispatch(view.state.tr.insertText('s', at))
+    expect(view.state.doc.nodeAt(tablePos(view))!.attrs.views).toBe(views)
+  })
+
+  it('item 5: a merged cell or a cell note is edited in "Table": a tip says so, and nothing changes', async () => {
+    const { view, crepe, saved } = await showView(`${TABLE}\n\n<!-- table: merge A3:B3, super, view All -->\n`, 'All')
+    const merged = [...viewRoot(view).querySelectorAll('td')].find((td) => td.getAttribute('colspan') === '2')!
+    merged.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(0)
+    expect(viewRoot(view).querySelector('.super-view__edit')).toBeNull()
+    expect(viewRoot(view).querySelector('.table-super-view__tip')!.textContent).toBe('Edit styled text, merged cells, cell notes and cell lists in Table.')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('item 5: a cell with styled text (part bold) is edited in "Table": the view never drops its bold', async () => {
+    const styled = TABLE.replace('| Wall | Middle | 12 |', '| **Big** wall | Middle | 12 |')
+    const { view, crepe, saved } = await showView(`${styled}\n\n<!-- table: super, view All -->\n`, 'All')
+    const cell = [...viewRoot(view).querySelectorAll('td')].find((td) => td.textContent === 'Big wall')!
+    cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(0)
+    expect(viewRoot(view).querySelector('.super-view__edit')).toBeNull()
+    expect(viewRoot(view).querySelector('.table-super-view__tip')!.textContent).toBe('Edit styled text, merged cells, cell notes and cell lists in Table.')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+    expect(saved).toContain('**Big** wall')
+  })
+})
+
+describe('YAZ-4897: a read-only note shows a Super table’s tabs, and its views read only', () => {
+  // table.css's `display: none` rules, read as text, against the real anchor (jsdom paints nothing).
+  const hideRules = [...tableCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, , body]) => /display:\s*none/.test(body!))
+    .flatMap(([, sel]) => sel!.split(/,(?![^(]*\))/).map((s) => s.trim()))
+  const hidden = (el: Element) =>
+    hideRules.some((selector) => {
+      try {
+        return el.matches(selector)
+      } catch {
+        return false // a `:has()` jsdom cannot read: the folded-table rules, not these
+      }
+    })
+  const tabNames = (view: EditorView) => [...view.dom.querySelectorAll('.table-super-bar__tab')].map((t) => t.textContent)
+  const tab = (view: EditorView, name: string) => [...view.dom.querySelectorAll<HTMLButtonElement>('.table-super-bar__tab')].find((t) => t.textContent === name)!
+
+  it('the tabs show and switch; the pill, "+", Sort / Group / Filter, the summaries, edits and drags are off; the note is unchanged', async () => {
+    const { view, crepe } = await mountNote(NOTE)
+    const saved = getMarkdownForSave(crepe)
+    await loadSuperTable()
+    await wait(0)
+    crepe.setReadonly(true)
+    await wait(0)
+    const anchor = view.dom.querySelector<HTMLElement>('.table-zoom-anchor')!
+    expect(view.editable).toBe(false)
+    expect(hidden(anchor)).toBe(false)
+    expect(hidden(anchor.querySelector('.document-zoom')!)).toBe(true)
+    expect(tabNames(view)).toEqual(['Table', 'By layer', 'Sizes'])
+
+    tab(view, 'By layer').click()
+    await wait(0)
+    expect(activeViewAt(view.state, tablePos(view))).toBe('By layer')
+    expect(linesOf(view)[0]).toBe('# Top 2')
+    expect(hidden(anchor)).toBe(false)
+    expect(view.dom.querySelector('.table-super-bar__tools')).toBeNull()
+    expect(viewRoot(view).querySelector('.super-view__summary-kind')).toBeNull()
+    expect(viewRoot(view).querySelector('tr[draggable="true"]')).toBeNull()
+    const roof = [...viewRoot(view).querySelectorAll('td')].find((td) => td.textContent === 'Roof')!
+    roof.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await wait(0)
+    expect(viewRoot(view).querySelector('.super-view__edit')).toBeNull()
+
+    // "Table", then back to the view: the tabs never go.
+    tab(view, 'Table').click()
+    await wait(0)
+    expect(view.dom.querySelector('.table-super-view')).toBeNull()
+    expect(hidden(anchor)).toBe(false)
+    tab(view, 'Sizes').click()
+    await wait(0)
+    expect(activeViewAt(view.state, tablePos(view))).toBe('Sizes')
+    expect(getMarkdownForSave(crepe)).toBe(saved)
+  })
+
+  it('a plain table keeps no anchor in a read-only note', async () => {
+    const { view, crepe } = await mountNote(TABLE)
+    crepe.setReadonly(true)
+    await wait(0)
+    expect(hidden(view.dom.querySelector('.table-zoom-anchor')!)).toBe(true)
+  })
+})
+
+describe('YAZ-4866 nits: a find in a hidden row, a view that names a missing column', () => {
+  it('⌘F’s match in a row the view filters out: a note says so, and "Show in Table" shows the table', async () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const channel = createFindChannel()
+    const crepe = createCrepe({ root, defaultValue: `${TABLE}\n\n<!-- table: super, view Top filter Layer is Top -->\n`, tableZoomPill: true, find: channel })
+    await crepe.create()
+    const view = crepe.editor.ctx.get(editorViewCtx)
+    await loadSuperTable()
+    setActiveTab(view, tablePos(view), 'Top')
+    await wait(0)
+    const note = () => viewRoot(view)?.querySelector('.table-super-view__find')
+    expect(view.dom.querySelector('.table-super-view__find')).toBeNull()
+    channel.open()
+    channel.setQuery('Base')
+    await wait(0)
+    expect(note()?.textContent).toBe('The match is in a row this view hides. Show in Table')
+    // A match the view shows: no note.
+    channel.setQuery('Roof')
+    await wait(0)
+    expect(note()).toBeNull()
+    channel.setQuery('Base')
+    await wait(0)
+    note()!.querySelector('button')!.click()
+    await wait(0)
+    expect(activeViewAt(view.state, tablePos(view))).toBeNull()
+    expect(view.dom.querySelector('.table-super-view')).toBeNull()
+    await crepe.destroy()
+    root.remove()
+  })
+
+  it('a group, sort or filter on a column the table does not have: a note names it', async () => {
+    const { view } = await showView(`${TABLE}\n\n<!-- table: super, view Old group Owner sort Size filter Due isNotEmpty -->\n`, 'Old')
+    expect([...viewRoot(view).querySelectorAll('.table-super-view__missing')].map((p) => p.textContent)).toEqual(['Column "Owner" is not in this table.', 'Column "Due" is not in this table.'])
+    setActiveTab(view, tablePos(view), null)
+    await wait(0)
+    const ok = await showView(NOTE, 'By layer')
+    expect(viewRoot(ok.view).querySelector('.table-super-view__missing')).toBeNull()
+  })
+})

@@ -18,7 +18,9 @@ import { mount, pressKey, typeText, unmountAll } from '../marks/markTestKit'
 import { noteMenuSections } from '../noteMenu'
 import { canZoomInto, getZoomedItemPos, zoomKeyAt, ZOOM_CRUMB_CLASS, ZOOM_HIDDEN_CLASS } from '../outline/zoom'
 import { cellNoteButtonPlacements } from './cellNoteButton'
+import { setCellNoteButtonSetting } from './timeFormatSetting'
 import { CELL_NOTE_CELL_OPEN_CLASS, CELL_NOTE_OPEN_CLASS, canOpenCellNote, openCellNote, setCellNotePinnedAtStart, setCellNoteTemplate } from './cellNoteCard'
+import { cellHoverCardRuns } from './cellHoverCard'
 import { cellNotePreviewLines } from './cellNotePreview'
 import { isCellNoteHidden, openCellNoteLabel } from './cellNotes'
 import { cellPos } from './tableTestKit'
@@ -510,6 +512,9 @@ describe('the mark (D8)', () => {
 describe('the "Add cell note" button (D8, 5A-7)', () => {
   const buttons = () => [...document.querySelectorAll<HTMLButtonElement>('.cell-note-button')]
   const shownButton = () => buttons().find((button) => button.dataset.show === 'true') ?? null
+  // Settings › Tables › Cell notes › Add button is off by default (YAZ-4790 demo): these tests turn it on.
+  beforeEach(() => setCellNoteButtonSetting(true))
+  afterEach(() => setCellNoteButtonSetting(false))
   const hover = (view: EditorView, row: number, col: number) => (view.nodeDOM(cellPos(view, row, col)) as HTMLElement).dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
   /** Each cell a box: 100 × 30 px at (col, row); the editor's box at (10, 20). */
   const boxes = (view: EditorView) => {
@@ -586,6 +591,26 @@ describe('the "Add cell note" button (D8, 5A-7)', () => {
     expect(shownButton()).toBe(button)
   })
 
+  it('YAZ-4790: Settings › Add button off shows none; a table\'s own `notebutton` shows it; `nonotebutton` hides it while Settings is on', async () => {
+    const TABLE = '| a | b |\n| - | - |\n| c | d |\n'
+    setCellNoteButtonSetting(false)
+    let { view } = await mount(TABLE, zoomOpts())
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()).toBeNull()
+    await unmountAll()
+    ;({ view } = await mount(`${TABLE}\n<!-- table: notebutton -->\n`, zoomOpts()))
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()?.getAttribute('aria-label')).toBe('Add cell note')
+    await unmountAll()
+    setCellNoteButtonSetting(true)
+    ;({ view } = await mount(`${TABLE}\n<!-- table: nonotebutton -->\n`, zoomOpts()))
+    boxes(view)
+    hover(view, 1, 0)
+    expect(shownButton()).toBeNull()
+  })
+
   it('a typed key in the cell places nothing; a read-only note shows no button', async () => {
     const { crepe, view } = await mount(NOTES, zoomOpts())
     boxes(view)
@@ -648,6 +673,128 @@ describe('the preview (D14)', () => {
     inCell(view, 'mousemove', 1, 1, 150, 45)
     vi.advanceTimersByTime(400)
     expect(document.querySelector('.cell-note-preview')).toBeNull()
+  })
+})
+
+describe('the full-text card of a cut cell (YAZ-4901)', () => {
+  /** A clipped table: "Flights" has a note, "Museum" a line then bullets, "free" is plain. jsdom cuts nothing by itself. */
+  const CLIPPED = ['| Day | Plan |', '| - | - |', '| Monday | Flights[^cell-1] |', '| Tuesday | Museum<ul><li>Park</li><li>Zoo</li></ul> |', '| Friday | free |', '', '<!-- table: nowrap -->', '', '[^cell-1]: Book the window seat.', '', '    * bullet a', '    * bullet b', ''].join('\n')
+  /** The cell's first line wider inside than out (cut), or not. */
+  const cut = (view: EditorView, row: number, col: number, on = true) => {
+    const line = (view.nodeDOM(cellPos(view, row, col)) as HTMLElement).querySelector('p')!
+    Object.defineProperty(line, 'scrollWidth', { value: on ? 300 : 100, configurable: true })
+    Object.defineProperty(line, 'clientWidth', { value: 100, configurable: true })
+  }
+  const card = () => document.querySelector<HTMLElement>('.cell-note-preview')
+  const textLines = (box: HTMLElement) => [...box.querySelectorAll('.cell-note-preview__text-line')].map((el) => el.textContent)
+  const open = async () => {
+    vi.useFakeTimers()
+    document.elementsFromPoint = () => []
+    const { view } = await mount(CLIPPED, zoomOpts())
+    return view
+  }
+
+  it('a cut cell with no note: its lines (a bullet as "• ") after 250 ms, under the cell at its left edge, as wide as its text up to 240; no title; a cell that is not cut shows nothing', async () => {
+    const view = await open()
+    cut(view, 2, 1)
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    vi.advanceTimersByTime(249)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(1)
+    const box = card()!
+    expect(textLines(box)).toEqual(['Museum', '• Park', '• Zoo'])
+    expect(box.querySelector('.cell-note-preview__header')).toBeNull()
+    expect(view.dom.hasAttribute('title')).toBe(false)
+    // `inCell` gives the cell a 100×30 box at (100, 30): under it, at its left; as wide as its text (YAZ-4903), up to
+    // the cell's 100 clamped to 240.
+    expect([box.style.left, box.style.top, box.style.width, box.style.maxWidth]).toEqual(['100px', '64px', 'max-content', '240px'])
+    // "free" is not cut: nothing, at any wait.
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(400)
+    expect(card()).toBeNull()
+  })
+
+  it('a cut cell WITH a note: ONE card after 250 ms, the full text then the note part; a note cell that is not cut keeps the note box (400 ms, beside the corner)', async () => {
+    const view = await open()
+    cut(view, 1, 1)
+    inCell(view, 'mousemove', 1, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(document.querySelectorAll('.cell-note-preview')).toHaveLength(1)
+    const box = card()!
+    expect(textLines(box)).toEqual(['Flights'])
+    expect(box.querySelector('.cell-note-preview__header')!.textContent).toBe('Note: Plan · Monday')
+    expect(box.querySelector('.cell-note-preview__hint')!.textContent).toBe('Click the corner to open')
+    expect([...box.querySelectorAll('.cell-note-preview__line')].map((el) => el.textContent)).toEqual(['Book the window seat.', '• bullet a', '• bullet b'])
+    expect(box.style.top).toBe('64px')
+    // Off every cell for the warm run, then the same cell wide again: the note box as before, to the right of the corner.
+    inCell(view, 'mouseout', 3, 1, 0, 0)
+    vi.advanceTimersByTime(500)
+    cut(view, 1, 1, false)
+    inCell(view, 'mousemove', 1, 1, 150, 45)
+    vi.advanceTimersByTime(399)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(1)
+    const note = card()!
+    expect(note.querySelector('.cell-note-preview__text')).toBeNull()
+    expect(note.querySelector('.cell-note-preview__header')!.textContent).toBe('Note: Plan · Monday')
+    expect([note.style.left, note.style.top]).toEqual(['204px', '30px'])
+  })
+
+  it('warm: after one card, the next cut cell\'s card shows at once; off every cell for 500 ms it waits again; a key closes the card and ends the run', async () => {
+    const view = await open()
+    cut(view, 2, 1)
+    cut(view, 3, 1)
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(textLines(card()!)).toEqual(['Museum', '• Park', '• Zoo'])
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    expect(textLines(card()!)).toEqual(['free'])
+    // Off the table (the paragraph after it) and back within 500 ms: still at once.
+    view.dom.querySelector('p:last-of-type')!.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(499)
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    expect(textLines(card()!)).toEqual(['Museum', '• Park', '• Zoo'])
+    // Off for 500 ms: the dwell again.
+    inCell(view, 'mouseout', 2, 1, 0, 0)
+    vi.advanceTimersByTime(500)
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(250)
+    expect(textLines(card()!)).toEqual(['free'])
+    // A key: the card goes, and the next cell waits its 250 ms.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
+    expect(card()).toBeNull()
+    inCell(view, 'mousemove', 2, 1, 150, 45)
+    expect(card()).toBeNull()
+    vi.advanceTimersByTime(250)
+    expect(card()).not.toBeNull()
+  })
+
+  it('no card while the caret is in that cell; a key or a caret move builds nothing', async () => {
+    const view = await open()
+    cut(view, 3, 1)
+    view.dom.focus()
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 3, 1) + 2)))
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(card()).toBeNull()
+    const builds = cellHoverCardRuns.builds
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }))
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, cellPos(view, 2, 1) + 2)))
+    vi.advanceTimersByTime(250)
+    expect(cellHoverCardRuns.builds).toBe(builds)
+    expect(card()).toBeNull()
+  })
+
+  it('a read-only note shows the card too', async () => {
+    const view = await open()
+    cut(view, 3, 1)
+    view.setProps({ editable: () => false })
+    inCell(view, 'mousemove', 3, 1, 150, 45)
+    vi.advanceTimersByTime(250)
+    expect(textLines(card()!)).toEqual(['free'])
   })
 })
 

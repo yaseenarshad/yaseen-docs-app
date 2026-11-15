@@ -23,7 +23,9 @@ import {
   editComment,
   newCommentId,
   nowIso,
+  ownedBy,
   readComments,
+  setResolved,
   threadsOf,
   type PageComment,
 } from '@shared/comments'
@@ -37,7 +39,9 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { NOTE_ID_KEY, vaultNoteId } from '@shared/noteId'
 import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { dueAt, isInReview, reviewQueue } from '@shared/schedule'
-import { VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type SettingsState } from '@shared/types'
+import { AGENT_HANDLE, VAULT_CONFIG_DIR, defaultAppState, isFolderSettingsPath, listVaults, type AppState, type IndexRecord, type SettingsState } from '@shared/types'
+import { makeResolver } from '@shared/linkResolver'
+import { mentionsOf } from '@shared/mentions'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { readFile, writeFile } from '../main/fs/file'
 import { dailyNote } from '../main/notes/daily'
@@ -48,7 +52,7 @@ import { STATE_FILE, userDataDir } from '../main/userData'
 import { giveId, nextId, readPage } from '../main/vaultIndex/idSweep'
 import { idVault, macId, vaultIds } from '../main/vaultIndex/mint'
 import { scanAll } from '../main/vaultIndex/reconcile'
-import { scanFile, walk } from '../main/vaultIndex/scan'
+import { fileTitle, scanFile, walk } from '../main/vaultIndex/scan'
 
 export interface Io {
   /** The whole of stdin, for `--body -`. */
@@ -61,18 +65,20 @@ export interface Io {
 
 export const USAGE = `usage:
   yaseendocs comment  <page.md> --body <text | -> [--title <one line>] [--reply-to <comment>] [--by <name>]
-  yaseendocs comments <page.md> [--json]
-  yaseendocs edit     <page.md> <comment> --body <text | -> [--title <one line>]
-  yaseendocs delete   <page.md> <comment>
+  yaseendocs comments <page.md | folder> [--open] [--json]
+  yaseendocs edit     <page.md> <comment> --body <text | -> [--title <one line>] [--by <name>]
+  yaseendocs delete   <page.md> <comment> [--by <name>]
+  yaseendocs resolve  <page.md> <comment> [--reopen] [--by <name>]
   yaseendocs id       <page.md>
   yaseendocs links    <page.md> [--json]
+  yaseendocs mentions <page.md> [--json]
   yaseendocs due      <page.md | folder> [--json]
   yaseendocs vaults   [--json]
   yaseendocs daily    <vault> [--date today | tomorrow | yesterday | YYYY-MM-DD] [--find] [--open] [--json]
   yaseendocs new      <folder> --title <title> [--body <text | ->] [--json]
   yaseendocs --help`
 
-export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, when it is next due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
+export const HELP = `yaseendocs — a Yaseen Docs page's comments, its id and the ids it points at, the pages that link to it, when it is next due for review, the app's list of vaults, and a new note or the day's daily note, from the shell.
 
 ${USAGE}
 
@@ -82,9 +88,18 @@ the text from stdin, so a long or multi-line comment needs no shell quoting. \`c
 every thread (\`--json\` for the raw shape). Name a comment by its number as the app shows it —
 #3, or #3.1 for a reply — or by its id; a reply to #3 shows as #3.1.
 
-Who wrote it: \`comment\` records \`by: agent\` unless --by says otherwise; a person's comment,
-left in the app, has no \`by\`. \`edit\` and \`delete\` work only on comments that carry a \`by\` —
-a person's comment is edited or deleted in the app. Deleting a comment deletes its replies.
+Who wrote it: \`comment\` records \`by: agent\` unless --by says otherwise. Give each agent its own
+name (\`--by claude\`), so one agent's comments are not another's. A person who set a profile in
+the app's Settings signs with their handle (\`by: yaseen\`); a comment with no \`by\` is a person's
+from before. \`edit\` and \`delete\` change only a comment whose \`by\` is the caller's own --by
+(\`agent\` when none is given) — anyone else's is edited or deleted in the app. Deleting a comment
+deletes its replies.
+
+\`resolve\` marks a comment resolved (\`resolved:\` and \`resolved_by:\` in its entry); \`--reopen\`
+opens it again. Any writer may resolve any comment: resolve the comment you acted on. A resolved
+parent takes its whole thread out of the open list in the app. \`comments --open\` lists only open
+comments; given a folder, \`comments\` lists the comments of every note under it, each note by
+its title and path (\`--json\` for the raw shape).
 
 A vault gives its notes IDs only when "Give this vault's notes IDs" is on in the app's Settings
 (\`.yaseendocs/ids.json\`). In a vault that does not, a page's name is its file name, and \`id\`
@@ -101,9 +116,18 @@ folders it is also in — with the title and path of the page or folder that id 
 \`(missing)\` (\`--json\` for the raw shape). To find a page from an id, search the vault's file
 names for it; a file the app did not name is found by its \`id: <id>\` line.
 
-A folder's values for a page (its columns) are in the page's frontmatter under \`in:\`, in the block
-named by the folder's id, and a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists
-those folders after the links, each by id and the title and path of the folder it names now.
+A page's value for a column is a top-level field of its frontmatter (\`domain: Billing\`), one value per
+key, and every folder page that shows the page reads that same field. A column defined in
+\`<folder>/.folder.md\` shows on that folder's page and on every folder page below it. Only a column
+set to "Separate value for <folder>" keeps that folder's own value under \`in:\`, in the block named
+by the folder's id; a folder's id is the \`id\` in \`<folder>/.folder.md\`. \`links\` lists the
+folders of those blocks after the links, each by id and the title and path of the folder it names now.
+
+\`mentions\` lists every note and folder that links to a page: the page's Linked mentions in the app, in
+a vault with IDs or without. A line is the title and the path of the note, or of the folder with a
+\`/\` after it; a link in a folder's page or settings counts for that folder. \`--json\` gives
+\`title\`, \`path\` (from the vault's folder) and \`kind\` (\`note\` or \`folder\`). A link counts as
+the app counts it: by id, path, title, file name or alias, in the body or the properties.
 
 \`due\` prints the day a page is next up for review. The app works that date out from the page's
 \`reviews:\` log, when the page last changed and the vault's settings, and never writes it into the
@@ -153,7 +177,7 @@ Make a note with its first text:
 /** Every flag the contract names; anything else is refused, because `--help` IS the contract (🔒 D1) and a typo must not be absorbed. */
 const FLAGS = new Set(['--body', '--title', '--reply-to', '--by', '--date'])
 /** Flags that take no value. */
-const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open'])
+const SWITCHES = new Set(['--json', '--help', '-h', '--find', '--open', '--reopen'])
 
 class Usage extends Error {}
 
@@ -218,21 +242,54 @@ export function find(comments: readonly PageComment[], ref: string): PageComment
 
 /** One line per comment: label, stamp, writer, then the title or first line. Replies indented under their parent. */
 function listing(comments: readonly PageComment[]): string {
-  const line = (c: PageComment, indent: string) => `${indent}${label(comments, c)}  ${c.id}  ${c.at}  ${c.by === undefined ? '' : `(${c.by})  `}${firstLine(c)}`
+  const line = (c: PageComment, indent: string) =>
+    `${indent}${label(comments, c)}  ${c.id}  ${c.at}  ${c.by === undefined ? '' : `(${c.by})  `}${c.resolved === undefined ? '' : '[resolved]  '}${firstLine(c)}`
   return threadsOf(comments)
     .flatMap(({ comment, replies }) => [line(comment, ''), ...replies.map((r) => line(r, '  '))])
     .join('\n')
 }
 
-/** A comment the caller may edit or delete: `ref` names one (id or number) and it carries a `by` (🔒 D4). Returns the parse it did, so callers label without parsing again. */
-function agentOwned(content: string, ref: string, page: string): { comments: PageComment[]; target: PageComment } {
+/** The caller's name: its --by, else `agent` — what `comment` writes and what `edit` / `delete` may change. */
+const callerOf = (flags: Map<string, string | true>): string => str(flags, '--by')?.trim() || AGENT_HANDLE
+
+/** The comment `ref` names (id or number), or the refusal. Returns the parse it did, so callers label without parsing again. */
+function named(content: string, ref: string, page: string): { comments: PageComment[]; target: PageComment } {
   const comments = readComments(content)
   const target = find(comments, ref)
   if (target === undefined) throw new Error(`no comment ${ref} on ${page}`)
-  if (target.by === undefined || target.by.trim() === '') {
-    throw new Error(`${label(comments, target)} was left by a person — edit or delete it in the app`)
-  }
   return { comments, target }
+}
+
+/** A comment the caller may edit or delete: it carries the caller's own `by` (YAZ-4615 D2, `ownedBy`). */
+function callerOwned(content: string, ref: string, page: string, by: string): { comments: PageComment[]; target: PageComment } {
+  const found = named(content, ref, page)
+  const { comments, target } = found
+  if (!ownedBy(target, by)) {
+    const writer = target.by?.trim() ? `by ${target.by.trim()}` : 'by a person'
+    throw new Error(`${label(comments, target)} was left ${writer} — only its writer can edit or delete it (--by)`)
+  }
+  return found
+}
+
+/** Open comments only (YAZ-4615 D3): a resolved one goes, and so does every reply of a resolved parent. */
+function openOnly(comments: readonly PageComment[]): PageComment[] {
+  const resolved = new Set(comments.filter((c) => c.resolved !== undefined).map((c) => c.id))
+  return comments.filter((c) => !resolved.has(c.id) && !(c.reply_to !== undefined && resolved.has(c.reply_to)))
+}
+
+/** `comments <folder>` (YAZ-4615 item 6): every note under it that has comments, by title and path. */
+async function folderComments(target: string, flags: Map<string, string | true>, io: Io): Promise<void> {
+  const files: string[] = []
+  await walk(target, files)
+  const records = [...(await scanAll(target, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1))
+  const pages: { title: string; path: string; comments: PageComment[] }[] = []
+  for (const r of records) {
+    const all = readComments((await readPage(r.path)).content)
+    const comments = flags.has('--open') ? openOnly(all) : all
+    if (comments.length > 0) pages.push({ title: r.title, path: r.path, comments })
+  }
+  if (flags.has('--json')) io.stdout(`${JSON.stringify(pages.map((p) => ({ title: p.title, path: p.path, threads: threadsOf(p.comments) })), null, 2)}\n`)
+  else io.stdout(pages.length === 0 ? `no ${flags.has('--open') ? 'open ' : ''}comments under ${target}\n` : pages.map((p) => `${p.title}  ${p.path}\n${listing(p.comments).replace(/^/gm, '  ')}\n`).join(''))
 }
 
 /** The vault a folder is in: the nearest folder at or above it that holds `.yaseendocs/`; null when there is none. */
@@ -335,6 +392,45 @@ export function dayOf(text: string | undefined, now = new Date()): Date {
   return day
 }
 
+const byPath = (a: IndexRecord, b: IndexRecord): number => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
+
+/**
+ * A scanned record as the app's index hands it out (`vaultIndex/live.ts` `getIndex`): in a vault with IDs, its id as an
+ * ID of that vault (the letters it had before read as the current ones), or none; in a vault without, no id, and the
+ * title its file name gives (YAZ-2523 V12: `title:` is a field like any other there).
+ */
+function asIndexed(r: IndexRecord, letters: readonly string[] | undefined): IndexRecord {
+  const { id: held, ...rest } = r
+  if (letters === undefined) return { ...rest, title: fileTitle(r) }
+  const id = vaultNoteId(held, letters)
+  return id === undefined ? rest : { ...rest, id }
+}
+
+/**
+ * `mentions` (YAZ-4740 L6): every note and folder that links to `page` — its Linked mentions in the app. The same walk
+ * and scan as `links`; resolved by the app's own rule (`@shared/linkResolver`) and gathered by the app's own map
+ * (`@shared/mentions`), so the command and the app list the same pages.
+ */
+async function mentions(page: string, json: boolean, io: Io): Promise<void> {
+  const idRoot = await idVault(dirname(page))
+  const root = idRoot ?? (await vaultRoot(dirname(page)))
+  if (root === null) throw new Error(`${page} is in no vault (no ${VAULT_CONFIG_DIR} folder above it)`)
+  const letters = idRoot === null ? undefined : (await vaultIds(root)).letters
+  const files: string[] = []
+  await walk(root, files)
+  const scanned = [...(await scanAll(root, files)).values()].sort(byPath).map((r) => asIndexed(r, letters))
+  const records = scanned.filter((r) => !isFolderSettingsPath(r.path))
+  const folders = scanned.filter((r) => isFolderSettingsPath(r.path))
+  if (!records.some((r) => r.path === page)) throw new Error(`${page} is not a page of ${root}`)
+  const resolveNote = makeResolver(records.map((record) => ({ record })), root, { folders, letters })
+  const found = mentionsOf(records, folders, (target) => resolveNote(target)?.record.path ?? null).get(page) ?? []
+  const rows = found.map((r) =>
+    isFolderSettingsPath(r.path) ? { title: r.title, path: r.folder, kind: 'folder' as const } : { title: r.title, path: r.folder === '' ? r.name : `${r.folder}/${r.name}`, kind: 'note' as const },
+  )
+  if (json) io.stdout(`${JSON.stringify(rows, null, 2)}\n`)
+  else io.stdout(rows.length === 0 ? `nothing links to ${page}\n` : rows.map((r) => `${r.title}  ${r.kind === 'folder' ? `${r.path}/` : r.path}\n`).join(''))
+}
+
 /** `made <path>` or `found <path>`, each other note of the title on stderr (D8); `--json` the whole answer. */
 function report(io: Io, flags: Map<string, string | true>, note: FoundNote): void {
   for (const other of note.others) io.stderr(`warning: also ${other}\n`)
@@ -379,7 +475,7 @@ async function newCommand(target: string | undefined, flags: Map<string, string 
   const title = str(flags, '--title')?.trim()
   if (title === undefined || title === '') throw new Usage('new needs --title')
   const body = flags.has('--body') ? await bodyOf(flags, io) : undefined
-  const note = await newNote(resolve(target), title, body)
+  const note = await newNote(resolve(target), title, body, (await settingsNow()).commentsHint)
   if (!note.created && body !== undefined) io.stderr(`warning: --body was not written: ${note.path} was already there\n`)
   report(io, flags, note)
 }
@@ -393,12 +489,20 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
   if (verb === 'vaults') return vaults(flags.has('--json'), io)
   if (verb === 'daily') return daily(args[0], flags, io)
   if (verb === 'new') return newCommand(args[0], flags, io)
+  if (verb === 'mentions') {
+    onlyFlags('mentions', flags, ['--json'])
+    if (args[0] === undefined) throw new Usage('mentions needs a page')
+    const page = resolve(args[0])
+    requireMarkdownFile(page)
+    return mentions(page, flags.has('--json'), io)
+  }
   if (verb === 'due') {
     if (args[0] === undefined) throw new Usage('due needs a page or a folder')
     return due(resolve(args[0]), flags.has('--json'), io)
   }
   const page = args[0] === undefined ? undefined : resolve(args[0])
   if (page === undefined) throw new Usage(`${verb} needs a page`)
+  if (verb === 'comments' && (await stat(page).catch(() => null))?.isDirectory()) return folderComments(page, flags, io)
   requireMarkdownFile(page) // a page is Markdown; every verb refuses anything else before any I/O
 
   switch (verb) {
@@ -410,7 +514,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
         // The model keeps an unknown `reply_to` as given (the UI never passes one); the command REFUSES it, so a typo cannot orphan a reply.
         const parent = replyRef === undefined ? undefined : find(readComments(fresh), replyRef)
         if (replyRef !== undefined && parent === undefined) throw new Error(`no comment ${replyRef} on ${page}`)
-        return addComment(fresh, body, { id, at: nowIso(), replyTo: parent?.id, title: str(flags, '--title'), by: str(flags, '--by')?.trim() || 'agent' })
+        return addComment(fresh, body, { id, at: nowIso(), replyTo: parent?.id, title: str(flags, '--title'), by: callerOf(flags) })
       }, isFolderSettingsPath(page))
       const comments = readComments(content)
       const added = comments.find((c) => c.id === id)
@@ -418,7 +522,8 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       return
     }
     case 'comments': {
-      const comments = readComments((await readPage(page)).content)
+      const all = readComments((await readPage(page)).content)
+      const comments = flags.has('--open') ? openOnly(all) : all
       io.stdout(flags.has('--json') ? `${JSON.stringify(threadsOf(comments), null, 2)}\n` : comments.length === 0 ? `no comments on ${page}\n` : `${listing(comments)}\n`)
       return
     }
@@ -428,7 +533,7 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       const body = await bodyOf(flags, io)
       let name = ref
       await transformOnDisk(page, (fresh) => {
-        const { comments, target } = agentOwned(fresh, ref, page)
+        const { comments, target } = callerOwned(fresh, ref, page, callerOf(flags))
         name = label(comments, target)
         return editComment(fresh, target.id, body, nowIso(), str(flags, '--title') ?? target.title ?? '')
       })
@@ -440,10 +545,23 @@ async function run(argv: readonly string[], io: Io): Promise<void> {
       if (ref === undefined) throw new Usage('delete needs a comment (#3, #3.1, or its id)')
       let receipt = ref
       await transformOnDisk(page, (fresh) => {
-        const { comments, target } = agentOwned(fresh, ref, page)
+        const { comments, target } = callerOwned(fresh, ref, page, callerOf(flags))
         const replies = comments.filter((c) => c.reply_to === target.id).length
         receipt = `${label(comments, target)} deleted${replies === 0 ? '' : ` (and ${replies} ${replies === 1 ? 'reply' : 'replies'})`}`
         return deleteComment(fresh, target.id)
+      })
+      io.stdout(`${receipt}\n`)
+      return
+    }
+    case 'resolve': {
+      const ref = args[1]
+      if (ref === undefined) throw new Usage('resolve needs a comment (#3, #3.1, or its id)')
+      const reopen = flags.has('--reopen')
+      let receipt = ref
+      await transformOnDisk(page, (fresh) => {
+        const { comments, target } = named(fresh, ref, page)
+        receipt = `${label(comments, target)} ${reopen ? 'reopened' : 'resolved'}`
+        return setResolved(fresh, target.id, reopen ? null : nowIso(), callerOf(flags))
       })
       io.stdout(`${receipt}\n`)
       return

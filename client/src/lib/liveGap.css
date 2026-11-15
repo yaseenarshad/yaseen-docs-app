@@ -1,0 +1,20 @@
+/* THE LIVE GAP of a folder page's list (YAZ-4606 D58), as the tab bar's (tabs.css, YAZ-3808 6A): the grabbed item
+   leaves the list, and the others slide aside while the drag parts them. The time and the easing are `lib/liveGap`'s
+   PART_MS and EASING. The list is its items' offset parent, so the slot reads their places from the layout. */
+[data-live-list] {
+  position: relative;
+}
+
+[data-live-parting] [data-live-item] {
+  transition: transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+[data-live-lifted] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-live-parting] [data-live-item] {
+    transition: none;
+  }
+}

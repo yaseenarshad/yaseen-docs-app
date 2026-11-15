@@ -549,6 +549,25 @@ describe('VaultSwitcher: the right-click menu (YAZ-1798)', () => {
     expect(panel(el)).toBeNull()
   })
 
+  it('YAZ-4921: with the Sidebar\'s door the trigger\'s menu LEADS with "Open folder page", which hands it the vault root; a row of the panel for a vault of this window has it too, and the panel closes; another vault\'s row has none', () => {
+    const onOpenFolderPage = vi.fn()
+    const { el } = render({ onOpenFolderPage })
+    rightClick(trigger(el))
+    expect(menuLabels()[0]).toBe('Open folder page')
+    pick('Open folder page')
+    expect(onOpenFolderPage).toHaveBeenCalledExactlyOnceWith(ROOT)
+    expect(vaultMenu()).toBeNull()
+    openPanel(el)
+    rightClick(rows(el)[0])
+    expect(menuLabels()[0]).toBe('Open folder page')
+    pick('Open folder page')
+    expect(onOpenFolderPage).toHaveBeenLastCalledWith(ROOT)
+    expect(panel(el)).toBeNull()
+    openPanel(el)
+    rightClick(otherRow(el))
+    expect(menuLabels()).not.toContain('Open folder page')
+  })
+
   it('the current vault\'s own row gets the same six; another row gets all ten, "Open by itself" first (YAZ-2858 D2) — and the highlight never moves', () => {
     const { el } = render()
     openPanel(el)

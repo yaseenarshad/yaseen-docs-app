@@ -4,10 +4,10 @@
  * the file is written and the HTML is ignored, so a screenshot never lands as a dead
  * `<img src="blob:…">`).
  *
- * The write goes through `api.writeAsset`, the same door `createDrawing` uses, into the images'
- * home under the vault (`IMAGES_DIR`, made on the way by writeAsset's own `mkdir -p`). The
- * constant lives HERE rather than beside `DRAWINGS_DIR` because each asset kind's directory sits
- * next to the one writer that uses it — `drawings/createDrawing.ts` owns drawings, this owns images.
+ * The write goes through `api.writeAsset` into the images' home under the vault (`IMAGES_DIR`, made
+ * on the way by writeAsset's own `mkdir -p`). The constant lives HERE rather than beside
+ * `DRAWINGS_DIR` because each asset kind's directory sits next to the one writer that uses it —
+ * `drawings/createDrawing.ts` owns drawings (through `fs:create-board`), this owns images.
  *
  * NEVER OVERWRITE (locked, same as drawings): every write is `create: true`; `ALREADY_EXISTS`
  * retries `-2`, `-3`, … (bounded by `MAX_ATTEMPTS`) and every OTHER failure — too large, an
@@ -92,6 +92,25 @@ export async function writeImage(root: string, noteBase: string, bytes: Uint8Arr
       return path
     } catch (err) {
       // Only a name clash is retryable — everything else is the caller's notice.
+      if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
+    }
+  }
+  throw new Error(`${MAX_ATTEMPTS} names in ${IMAGES_DIR} are already taken`)
+}
+
+/**
+ * `writeImage` for a picture that has a name of its own (YAZ-4802, an Image cell's chosen file or downloaded link):
+ * `assets/images/<stem>.<ext>`, then `<stem>-2`, `<stem>-3`, … — never over a file. Resolves the root-relative path.
+ */
+export async function writeImageNamed(root: string, stem: string, bytes: Uint8Array, ext: string): Promise<string> {
+  // A wikilink can not hold `[ ] | # ^`, and a space-free name keeps the link plain (as `imageName`).
+  const base = stem.trim().replace(/\s+/g, '-').replace(/[[\]|#^\\/:*?"<>]+/g, '') || 'image'
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const path = `${IMAGES_DIR}/${base}${attempt === 0 ? '' : `-${attempt + 1}`}.${ext}`
+    try {
+      await api.writeAsset({ root, path, content: bytes, create: true })
+      return path
+    } catch (err) {
       if (!(err instanceof BridgeRequestError && err.code === 'ALREADY_EXISTS')) throw err
     }
   }

@@ -48,7 +48,7 @@ import type { Ctx } from '@milkdown/kit/ctx'
 import { $prose } from '@milkdown/kit/utils'
 import { NOTE_PAGE, claimPage, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
 import { noteKeys, noteOverrides } from './noteKeys'
-import { tellReadOnlyEdit } from './readOnlyEdit'
+import { VIEW_ONLY_CHANGE, tellReadOnlyEdit } from './readOnlyEdit'
 
 const yes = (): boolean => true
 
@@ -138,11 +138,14 @@ function followCaret(view: EditorView, caret: { anchor: number; head: number } |
   view.dispatch(view.state.tr.setSelection(TextSelection.between(view.state.doc.resolve(caret.anchor), view.state.doc.resolve(caret.head))).setMeta('addToHistory', false))
 }
 
-/** A transaction that changes the document is dropped: a locked note moves its caret, folds and zooms, never edits. */
+/**
+ * A transaction that changes the document is dropped: a locked note moves its caret, folds and zooms, never edits. A
+ * table section's collapse is the one change it lets through (YAZ-4939, `VIEW_ONLY_CHANGE`): how you look, not what is there.
+ */
 const viewOnly =
   (dispatch: (tr: Transaction) => void) =>
   (tr: Transaction): void => {
-    if (!tr.docChanged) dispatch(tr)
+    if (!tr.docChanged || tr.getMeta(VIEW_ONLY_CHANGE) === true) dispatch(tr)
   }
 
 /** This note is the one the reader is in: visible, and the focus on `<body>` or inside its own section. */

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api'
 import { BridgeRequestError } from '../api'
 import { EMPTY_SCENE_JSON } from './createDrawing'
-import { isDrawingTarget, loadDrawingScene, openDrawing, openViewport, parseScene, parseSceneText } from './drawingScene'
+import { openDrawing, openViewport, parseScene, parseSceneText } from './drawingScene'
 
 vi.mock('../api', async (original) => ({
   ...(await original<typeof import('../api')>()),
@@ -29,16 +29,6 @@ const asset = (text: string) => ({
 beforeEach(() => {
   readAsset.mockReset()
   drawingLoad.mockReset()
-})
-
-describe('isDrawingTarget', () => {
-  it('accepts only `.excalidraw` embeds, in any case and at any depth', () => {
-    expect(isDrawingTarget('Sketch.excalidraw')).toBe(true)
-    expect(isDrawingTarget('assets/drawings/Sketch.EXCALIDRAW')).toBe(true)
-    expect(isDrawingTarget('img.png')).toBe(false)
-    expect(isDrawingTarget('note')).toBe(false)
-    expect(isDrawingTarget('excalidraw')).toBe(false)
-  })
 })
 
 describe('parseScene', () => {
@@ -67,16 +57,16 @@ describe('parseScene', () => {
   })
 })
 
-describe('loadDrawingScene', () => {
+describe('openDrawing: the raw target and a missing file', () => {
   it('hands the target to readAsset RAW — resolution is the asset pipe`s rule, not ours', async () => {
     readAsset.mockResolvedValue(asset(EMPTY_SCENE_JSON))
-    await expect(loadDrawingScene('/v', 'Sketch.excalidraw')).resolves.toEqual({ elements: [], appState: {}, files: {} })
+    await openDrawing('/v', 'Sketch.excalidraw')
     expect(readAsset).toHaveBeenCalledWith('/v', 'Sketch.excalidraw')
   })
 
-  it('a missing sidecar rejects — the preview turns that into its broken state', async () => {
+  it('a missing sidecar rejects — the popup shows its error line', async () => {
     readAsset.mockRejectedValue(new BridgeRequestError('NOT_FOUND', 'no such asset'))
-    await expect(loadDrawingScene('/v', 'Gone.excalidraw')).rejects.toThrow('no such asset')
+    await expect(openDrawing('/v', 'Gone.excalidraw')).rejects.toThrow('no such asset')
   })
 })
 
@@ -113,7 +103,7 @@ describe('a lean scene gets its pictures from the store (YAZ-3028)', () => {
   it('fills each missing id from `drawing:load` at the RESOLVED path; an id found nowhere, or a deleted element, stays out', async () => {
     readAsset.mockResolvedValue(asset(JSON.stringify({ elements: [image('a'), image('gone'), image('old', { isDeleted: true })], files: {} })))
     drawingLoad.mockResolvedValue(stored({ a: png }))
-    const scene = await loadDrawingScene('/v', 'x.excalidraw')
+    const { scene } = await openDrawing('/v', 'x.excalidraw')
     expect(drawingLoad).toHaveBeenCalledWith({ root: '/v', path: '/v/assets/drawings/x.excalidraw' })
     expect(Object.keys(scene.files ?? {})).toEqual(['a'])
     expect(scene.files?.a).toMatchObject({ id: 'a', ...png })
@@ -122,7 +112,7 @@ describe('a lean scene gets its pictures from the store (YAZ-3028)', () => {
   it('a store read that fails keeps the scene as the sidecar said: a picture never costs the drawing', async () => {
     readAsset.mockResolvedValue(asset(JSON.stringify({ elements: [image('a')], files: {} })))
     drawingLoad.mockRejectedValue(new BridgeRequestError('IO_ERROR', 'disk went away'))
-    await expect(loadDrawingScene('/v', 'x.excalidraw')).resolves.toMatchObject({ files: {} })
+    await expect(openDrawing('/v', 'x.excalidraw').then((d) => d.scene)).resolves.toMatchObject({ files: {} })
   })
 
   it('a board over the asset pipe\'s 10 MiB cap loads through `drawing:load` at the path the refusal names (YAZ-3943 D5)', async () => {

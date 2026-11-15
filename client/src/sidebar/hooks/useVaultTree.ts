@@ -12,7 +12,7 @@ import type { WatchSource } from '../../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../../lib/leadingTrailing'
 import { storage } from '../../lib/storage'
 import { fetchTree, latestTree, onTree } from '../../lib/treeFeed'
-import { allDirs, ancestorDirs, copyDirs, favoriteRoots, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
+import { allDirs, ancestorDirs, copyDirs, favoriteRoots, findDirNode, otherFiles, treeHasPath, treeReducer } from '../../lib/treeState'
 import { sameList, type VaultListsHere } from '../../lists/useVaultListsHere'
 import type { SidebarVault } from '../Sidebar'
 import { withMtime } from '../treeSort'
@@ -36,6 +36,21 @@ function walkOf(landed: TreeResponse | undefined): { dirs: string[]; files: stri
   let walk = walks.get(landed)
   if (walk === undefined) walks.set(landed, (walk = { dirs: allDirs(landed.tree), files: otherFiles(landed.tree) }))
   return walk
+}
+
+/**
+ * A vault's tree as a window that is "a folder of" it shows it (YAZ-4922 🔒 D3): the folder's own folders and files,
+ * once per landed tree. With no folder, the tree itself. A folder that is not in the tree (gone, or not walked yet) shows nothing.
+ */
+const cuts = new WeakMap<TreeResponse, { folder: string; cut: TreeResponse }>()
+export function folderTree(landed: TreeResponse, folder: string | undefined): TreeResponse {
+  if (folder === undefined) return landed
+  const held = cuts.get(landed)
+  if (held !== undefined && held.folder === folder) return held.cut
+  const node = findDirNode(landed.tree, folder)
+  const cut = { ...landed, tree: node?.type === 'dir' ? node.children : [] }
+  cuts.set(landed, { folder, cut })
+  return cut
 }
 
 /** Is `path` hidden inside `vault`: a "." name on its way below the vault? The tree never lists one (YAZ-3607 D6). */
@@ -66,6 +81,8 @@ export function useVaultTree(
   const roots = useSameList(vaults.map((vault) => vault.root))
   const watches = useSameList(vaults.map((vault) => vault.watch))
   const names = useSameList(vaults.map((vault) => vault.name))
+  // A folder of a vault (YAZ-4922 D3): where this window shows one, the vault's tree is cut to it for what the panel draws.
+  const folders = useSameList(vaults.map((vault) => vault.folder))
   const root = roots[0]
   // What the callbacks below ask at call time, so each keeps its identity under the memoised Tree (YAZ-2194).
   const live = useRef({ roots, closedVaults, onSetVaultOpen, onRootMissing, liveTimes })
@@ -99,14 +116,16 @@ export function useVaultTree(
   // What the Files tab draws (YAZ-2602 D3). One vault → its tree. Two or more → one
   // folder row per vault, in the window's order, named as the app names the vault, its tree below it;
   // a vault whose tree has not landed has no row yet. Null until there is a tree to draw.
+  // A folder of a vault (YAZ-4922 D3) draws its folder's tree; in a workspace its vault row holds that tree.
+  const shown = useMemo<ReadonlyMap<string, TreeResponse>>(() => (folders.every((folder) => folder === undefined) ? trees : new Map([...trees].map(([vault, landed]) => [vault, folderTree(landed, folders[roots.indexOf(vault)])]))), [trees, roots, folders])
   const forest = useMemo<TreeNode[] | null>(() => {
-    if (roots.length === 1) return trees.get(roots[0])?.tree ?? null
+    if (roots.length === 1) return shown.get(roots[0])?.tree ?? null
     const rows = roots.flatMap((vault, i): TreeNode[] => {
-      const landed = trees.get(vault)
+      const landed = shown.get(vault)
       return landed === undefined ? [] : [{ type: 'dir', name: names[i], path: stripSlash(vault), children: landed.tree }]
     })
     return rows.length === 0 ? null : rows
-  }, [trees, roots, names])
+  }, [shown, roots, names])
   /** The vault rows' paths, each with what the app calls its vault; empty with one vault, which has no row (S11). */
   const vaultRows = useMemo<ReadonlyMap<string, string>>(() => new Map(roots.length === 1 ? [] : roots.map((vault, i) => [stripSlash(vault), names[i]])), [roots, names])
   const vaultRowsRef = useRef(vaultRows)
@@ -125,12 +144,12 @@ export function useVaultTree(
   // expand-all set (⚡ YAZ-862) and, since YAZ-1491, the search's folder rows (🔒 D1) — one
   // memo, no second feed. The REAL folders only: a vault row is not one, and "Collapse all" closes
   // it through App's list (YAZ-2631 D6).
-  const dirsByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).dirs), [trees, roots])
+  const dirsByVault = useMemo(() => roots.map((vault) => walkOf(shown.get(vault)).dirs), [shown, roots])
   const dirs = useMemo(() => (dirsByVault.length === 1 ? dirsByVault[0] : dirsByVault.flat()), [dirsByVault])
   /** One vault's own folders: what a rule about that vault alone resolves over. */
   const dirsOf = useCallback((vault: string): string[] => dirsByVault[roots.indexOf(vault)] ?? [], [dirsByVault, roots])
   // The files that are not notes, for the search (YAZ-2620 🔒 D3): the index holds notes only. Vault by vault, as `dirsByVault`.
-  const filesByVault = useMemo(() => roots.map((vault) => walkOf(trees.get(vault)).files), [trees, roots])
+  const filesByVault = useMemo(() => roots.map((vault) => walkOf(shown.get(vault)).files), [shown, roots])
   // The Focus tab's rows (YAZ-2619 D2), off the live trees, in the order of `focusList` (App's, YAZ-3264 D1),
   // never the tree's. An item this Mac has no file for draws no row and STAYS in the list (YAZ-2702 S13).
   const { focusList, favoritesByRoot, favoritePaths, clearFocus, toggleFavorite, reorderFocus, saveFavoriteOrder, toggleFocus: toggleListFocus } = lists
@@ -354,5 +373,5 @@ export function useVaultTree(
     [rootOf],
   )
 
-  return { roots, watches, rootOf, trees, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
+  return { roots, watches, rootOf, trees, shown, forest, loaded, vaultRows, errors, refresh, expanded, dispatch, openTo, expandedSet, toggleDir, focusList, reorderFocus, focusNodes, focusDirs, toggleFocus, clearFocus, favoritesByRoot, favoritePaths, saveFavoriteOrder, toggleFavorite, dirs, dirsByVault, dirsOf, filesByVault, favoriteNodes, favoriteDirs }
 }

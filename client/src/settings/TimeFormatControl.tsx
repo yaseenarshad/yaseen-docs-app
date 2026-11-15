@@ -1,5 +1,5 @@
 /**
- * Settings › Editor › Calendar tables › Time format (YAZ-4163, YAZ-4159 D15), modelled on the daily note's name style
+ * Settings › Tables › Calendar tables › Time format (YAZ-4163, YAZ-4159 D15), modelled on the daily note's name style
  * (`DailyNoteFormatControl.tsx`): the four ready styles, each shown as the time now, and "Custom…". A custom style is
  * draft + commit (Enter or blur): one the app cannot read back keeps the STORED style, marks the input and says why.
  * While "Custom…" is open, a line previews the draft at four times as it is typed (the YAZ-4163 demo).

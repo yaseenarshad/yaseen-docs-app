@@ -1,8 +1,9 @@
 import { createElement, type ReactNode } from 'react'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { keyHint, type HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { FileClipState } from '@shared/types'
 import { countItems, countKinds, type NoticeKind, type NoticeType } from '../lib/notice'
-import { CopyIcon, EyeIcon, HeartIcon } from '../views/view/icons'
+import { CopyIcon, EyeIcon, FolderIcon, HeartIcon } from '../views/view/icons'
 import type { MenuTargets } from './Sidebar'
 
 /**
@@ -89,6 +90,12 @@ export interface MenuParent extends MenuItemBase {
   children: readonly MenuAction[][]
   /** A glyph before the label, as a leaf has: "Add to focus ▸" keeps its eye (YAZ-4460 F4). */
   icon?: ReactNode
+  /**
+   * The flyout drawn by DOM code instead of `children` (then `[]`): the note's table menu shows the six-dot menu's own
+   * tabbed "Subheader row ›" panel (YAZ-4899, `editor/blockHandleMenu.ts` `fillFlyout`), one panel in one place. It
+   * fills `host` (the flyout's box, with the editor menu's classes); `close` closes the whole menu.
+   */
+  panel?: (host: HTMLElement, close: () => void) => void
 }
 
 /** One button of a strip: its icon, its name as the tooltip and the accessible name, lit when `active`. */
@@ -124,7 +131,10 @@ export type MenuSection = MenuItem[]
  * while this menu stands (🔒 D1, YAZ-1674). `hotkeys` is `settings.hotkeys` (YAZ-3397 D2), read at
  * render time too: Copy path's hint is its key as it is now (YAZ-3410).
  */
-export type MenuSectionTargets = MenuTargets & { clip: FileClipState; hotkeys: HotkeyOverrides }
+export type MenuSectionTargets = MenuTargets & { clip: FileClipState; hotkeys: HotkeyOverrides; /** The target vault's word for a note (YAZ-4938); absent reads as "note". */ unit?: UnitText }
+
+/** The vault's word in a label (YAZ-4938): `unit(t, 'New note')`. */
+const unit = (t: MenuSectionTargets, text: string): string => (t.unit ?? SAME_WORD)(text)
 
 export interface MenuHandlers {
   /** "Open folder page" on a folder row (YAZ-2290 D3, YAZ-3377 D2): the folder opens as a kept tab (YAZ-2648 D2). */
@@ -230,7 +240,7 @@ export const errorText = (error: unknown) => (error instanceof Error ? error.mes
 const open: Leaf = (t, h) => {
   const path = t.openPath
   if (path === null) return null
-  return { id: 'open', label: 'Open folder page', onSelect: () => h.onOpen(path) }
+  return { id: 'open', label: 'Open folder page', icon: createElement(FolderIcon, { size: 15 }), onSelect: () => h.onOpen(path) }
 }
 
 /**
@@ -414,7 +424,7 @@ const copyPath: Leaf = (t, h) => {
 // 🔒 E1's own group. With no directory to target —
 // blank space under two or more vaults (YAZ-2602 S10) — there is nothing to create in. ----
 
-const create = (id: string, label: string, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label, onSelect: pick(h) })
+const create = (id: string, label: string, pick: (h: MenuHandlers) => () => void): Leaf => (t, h) => (t.targetDir === null ? null : { id, label: unit(t, label), onSelect: pick(h) })
 
 const newNote = create('new-note', 'New note', (h) => h.onNewNote)
 
@@ -439,7 +449,7 @@ const createParent = (id: string, label: string, sections: readonly (readonly Le
   const children = sections.map((section) => build(section, t, h))
   const first = children.flat()[0]
   if (first === undefined) return null
-  return { id, label, onSelect: first.onSelect, children }
+  return { id, label: unit(t, label), onSelect: first.onSelect, children }
 }
 
 // The order is note, drawing, folder (Yasin, YAZ-3085 D3); the separator in the drawing flyout keeps the two apps apart.
@@ -531,7 +541,7 @@ const toggleFavorite: Item = (t, h) => {
 const addShortcut: Leaf = (t, h) => {
   const dir = t.shortcutDir
   if (dir === null) return null
-  return { id: 'add-shortcut', label: 'Add note shortcut', onSelect: () => h.onAddShortcut(dir) }
+  return { id: 'add-shortcut', label: unit(t, 'Add note shortcut'), onSelect: () => h.onAddShortcut(dir) }
 }
 
 /**
@@ -548,7 +558,7 @@ const openAlone: Leaf = (t, h) => {
 // ---- (5) Open in ▸: the OS verbs, one parent in a group of its own (D7 amended) ----
 
 /**
- * "Open in new window" — FILE rows only (D2, GRO-2168); folders and blank space hide it. Out of the "Open in ▸" flyout
+ * "Open in new window" — a FILE row (D2, GRO-2168), and a FOLDER row since YAZ-4778 (its folder page); blank space hides it. Out of the "Open in ▸" flyout
  * since YAZ-4470: at the top, in the open group, where a file row of Files or Search shows it at once.
  */
 const openInNewWindow: Leaf = (t, h) => {

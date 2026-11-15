@@ -23,6 +23,8 @@ export const MOUSE_TIPS: readonly MouseTip[] = [
   // YAZ-1557: a board card is a cell — click selects, the title opens — and ⌥ is the right-panel key on both views.
   { gesture: 'Click', place: 'Board cards', label: 'Select it — the title opens the note in the current tab' },
   { gesture: '⌥-click', place: 'Tables and boards', label: 'Open a name or a card in the right panel' },
+  // YAZ-4605 D56 / D57: ⇧Enter on a focused cell or card, the folder views' one key with no click.
+  { gesture: '⇧↩', place: 'Tables and boards', label: 'Open the row or the card in the mini window — again on another row switches it' },
   // The multi-select gesture (YAZ-1336 🔒 D2, folders too since YAZ-1578) and what it is FOR
   // (YAZ-1337): the two plural menu items and ⌘⇧C above. Shift toggles one row at a time — it
   // never opens anything and never folds a folder.

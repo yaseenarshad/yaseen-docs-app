@@ -93,8 +93,16 @@ let vault: string
 let app: ElectronApplication
 let win: Page
 
-const rendered = (w: Page) => editorOf(w).locator('.drawing-preview--ready svg')
-const previewOf = (w: Page, target: string) => editorOf(w).locator(`.drawing-preview[data-drawing-target="${target}"]`)
+/** The board windows (YAZ-4820): the picture of each embed, found by its board name (the file name, no extension). */
+const rendered = (w: Page) => editorOf(w).locator('.board-window--ready .board-window__img')
+const previewOf = (w: Page, target: string) => editorOf(w).locator('.board-window', { has: w.locator('.board-window__name', { hasText: new RegExp(`^${target.replace(/\.excalidraw$/, '')}$`) }) })
+/** The SVG text a window's picture shows: its `<img>` reads a blob URL of it (YAZ-4825). */
+const pictureOf = (w: Page, target: string) => previewOf(w, target).locator('.board-window__img').evaluate(async (img: HTMLImageElement) => (await fetch(img.src)).text())
+/** "Edit in a popup" (YAZ-4820 D7) on the window's right-click menu opens the drawing modal. */
+async function openModal(w: Page, target: string): Promise<void> {
+  await previewOf(w, target).click({ button: 'right' })
+  await w.locator('.ctx-menu__item', { hasText: 'Edit in a popup' }).click()
+}
 const modal = (w: Page) => w.locator('.drawing-modal')
 const modalCanvas = (w: Page) => modal(w).locator('.drawing-modal__canvas')
 /** The save label where the Save button was (YAZ-3528 D2). */
@@ -137,11 +145,11 @@ test('step 1 — fork formatting metadata renders as real bold + underline SVG, 
   await expect(rendered(win)).toHaveCount(2)
   // The styled line came out styled: these attributes are what the fork's SVG exporter emits for
   // the runs that `lineBolds` / `lineUnderlines` become (YAZ-3718 D1) — stock 0.18.x cannot produce either.
-  const styledSvg = await previewOf(win, STYLED).locator('svg').innerHTML()
+  const styledSvg = await pictureOf(win, STYLED)
   expect(styledSvg).toContain('font-weight="bold"')
   expect(styledSvg).toContain('text-decoration="underline"')
   // And the plain neighbour stayed plain — styling is per element, not a rendering side effect.
-  const plainSvg = await previewOf(win, PLAIN).locator('svg').innerHTML()
+  const plainSvg = await pictureOf(win, PLAIN)
   expect(plainSvg).not.toContain('font-weight="bold"')
   expect(plainSvg).not.toContain('text-decoration')
   await shoot(win, 'yaseendraw-01-styled-preview')
@@ -153,7 +161,7 @@ test('step 1 — fork formatting metadata renders as real bold + underline SVG, 
 test('step 2 — Cmd+B in the modal round-trips: `"fontWeight": "bold"` lands in the sidecar and the preview goes bold', async () => {
   const beforeNote = await readNote()
 
-  await previewOf(win, PLAIN).click()
+  await openModal(win, PLAIN)
   await expect(modal(win)).toBeVisible()
   await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
   await expect(saveLabel(win)).toHaveText('Saved')
@@ -174,7 +182,7 @@ test('step 2 — Cmd+B in the modal round-trips: `"fontWeight": "bold"` lands in
   await expect(modal(win)).toHaveCount(0)
 
   // The in-page preview re-read the sidecar and now draws bold — the whole point of the swap.
-  await expect.poll(async () => previewOf(win, PLAIN).locator('svg').innerHTML()).toContain('font-weight="bold"')
+  await expect.poll(() => pictureOf(win, PLAIN)).toContain('font-weight="bold"')
   await shoot(win, 'yaseendraw-03-preview-bold')
 
   // The note itself never moved: formatting lives in the sidecar, exactly like every other edit.
@@ -185,7 +193,7 @@ test('step 3 — a stock-authored scene opens clean: nothing to save, disk untou
   // STYLED stands in for "authored elsewhere" here; what matters is opening WITHOUT editing.
   const before = await readSidecar(STYLED)
 
-  await previewOf(win, STYLED).click()
+  await openModal(win, STYLED)
   await expect(modal(win)).toBeVisible()
   await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
   // Opened and untouched is CLEAN — the new engine does not rewrite old scenes on sight.
@@ -198,7 +206,7 @@ test('step 3 — a stock-authored scene opens clean: nothing to save, disk untou
 })
 
 test('step 4 — Enter keeps the line format: the new line is saved bold and underlined too', async () => {
-  await previewOf(win, STYLED).click()
+  await openModal(win, STYLED)
   await expect(modal(win)).toBeVisible()
   await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
 
@@ -228,7 +236,7 @@ test('step 4 — Enter keeps the line format: the new line is saved bold and und
 
 test('step 5 — a double click selects a word, a triple click the line, and a drag keeps its range', async () => {
   const before = await readSidecar(STYLED)
-  await previewOf(win, STYLED).click()
+  await openModal(win, STYLED)
   await expect(modal(win)).toBeVisible()
   // The modal shows before the engine mounts in it: until the canvas is up, the click, select-all
   // and Enter below reach only the overlay and the editor never opens.
@@ -283,7 +291,7 @@ test('step 6 — the text editor left with no edit is not an edit; a typed lette
   const close = () => modal(win).getByRole('button', { name: 'Close drawing' }).click()
   /** Opens the modal, selects the one text element and opens its editor with Enter. */
   const openEditor = async () => {
-    await previewOf(win, STYLED).click()
+    await openModal(win, STYLED)
     await expect(modal(win)).toBeVisible()
     await expect(modalCanvas(win).locator('canvas').first()).toBeVisible()
     const box = await modalCanvas(win).boundingBox()

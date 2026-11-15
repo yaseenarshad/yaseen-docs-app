@@ -43,6 +43,8 @@ export interface MenuHandlers {
   goToVault(path: string, name: string): void
   /** File › Search Vault (⌘K, YAZ-804): the focused window's renderer focuses its sidebar search bar. */
   search(): void
+  /** File › Explore Vault… (⌘⇧F, YAZ-2571): the focused window's renderer opens its explore stack, or adds a search layer to it. */
+  explore(): void
   /** Yaseen Docs › Settings… (⌘,, YAZ-1679): the focused window's renderer opens its settings dialog. */
   settings(): void
   /** File › Close Tab (⌘W, GRO-2232): the focused window's renderer closes its active tab. */
@@ -209,6 +211,8 @@ export function buildMenuTemplate({ recents, keyedVaults, isDev, activeKind, fro
         { id: 'menu.file.search', label: 'Search Vault', ...key('search'), click: () => handlers.search() },
         // ⌘D (YAZ-3556 D1, D9): the place of Settings › Sidebar › Show in sidebar. Drawings, diagrams and code keep their own ⌘D by default (YAZ-3564 K9: a pick per tab).
         { id: 'menu.file.go-to', label: 'Show in Sidebar', ...key('goTo'), click: () => handlers.goTo() },
+        // ⌘⇧F (YAZ-2571): the explore stack, a search panel in the middle of the window. A diagram keeps draw.io's To front on it by default (K9).
+        { id: 'menu.file.explore', label: 'Explore Vault…', ...key('explore'), click: () => handlers.explore() },
         // YAZ-3607 D11: a hidden item keeps no key, so with Daily notes off its key is free for the page.
         { id: 'menu.file.daily-note', label: "Open Today's Daily Note", visible: dailyNotes, ...(dailyNotes ? key('dailyNote') : {}), click: () => handlers.dailyNote() },
         { type: 'separator' },
@@ -511,6 +515,9 @@ export function createMenuHandlers(windows: MenuWindows, host: MenuHost): MenuHa
     },
     search() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSearch.channel)
+    },
+    explore() {
+      host.focusedWebContents()?.send(CONTRACT.menu.onExplore.channel)
     },
     settings() {
       host.focusedWebContents()?.send(CONTRACT.menu.onSettings.channel)

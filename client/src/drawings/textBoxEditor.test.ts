@@ -139,6 +139,19 @@ describe('textBoxEditor: box ↔ editor with no loss (YAZ-4277 1B)', () => {
     expect(view.state.selection.head).toBe(posAt(doc, 2, helpers))
   })
 
+  it('YAZ-4902: a selection to the end of a coloured line is reported to its end', async () => {
+    // the real shape: a 24-letter first line under one colour run, a longer second line
+    const text = '(Harbor Lts Proj - #125)\n(Quiet Field Again - #131)'
+    const runs: TextRuns = [{ start: 0, end: 24, color: '#1971c2' }]
+    const { view, session, onSelectionChange } = await mountBox(text, runs, { anchor: 0, head: 0 })
+    session.setSelection({ anchor: 0, head: 24 })
+    expect(onSelectionChange).toHaveBeenLastCalledWith({ anchor: 0, head: 24 })
+    const { doc } = view.state
+    expect(doc.textBetween(posAt(doc, 0, helpers), posAt(doc, 24, helpers))).toBe('(Harbor Lts Proj - #125)')
+    view.dispatch(view.state.tr.setSelection(TextSelection.create(doc, posAt(doc, 0, helpers), posAt(doc, 24, helpers))))
+    expect(onSelectionChange).toHaveBeenLastCalledWith({ anchor: 0, head: 24 })
+  })
+
   it('maps offsets and positions both ways; an offset in a bullet prefix goes to its letters', async () => {
     const { view } = await mountBox('ab\n\n• cd\n    ○ e')
     const { doc } = view.state

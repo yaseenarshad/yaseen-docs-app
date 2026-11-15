@@ -8,7 +8,6 @@ import type { EditorView } from '@milkdown/kit/prose/view'
 import type { ClipboardPasteRequest } from '@shared/types'
 import { createCrepe, getMarkdownForSave } from './createCrepe'
 import type { ImageOptions } from './image/imageOptions'
-import { isBulletsOnly, lockToBullets, outlineFeatures } from './outline/bulletsOnly'
 
 // Image bytes on the clipboard reach the vault through `writeAsset` (YAZ-1656); the rest of this file never touches `api`.
 vi.mock('../api', async (importOriginal) => ({
@@ -33,11 +32,10 @@ afterEach(async () => {
   window.yaseenDocs = originalApi
   listeners.clear()
 })
-async function mount(markdown = '', outline = false, nativeCode = false, image?: ImageOptions) {
+async function mount(markdown = '', nativeCode = false, image?: ImageOptions) {
   const root = document.createElement('div')
   document.body.append(root)
-  const crepe = createCrepe({ root, defaultValue: markdown, image, ...(outline ? { features: outlineFeatures } : nativeCode ? { features: { [CrepeFeature.CodeMirror]: false } } : {}) })
-  if (outline) lockToBullets(crepe)
+  const crepe = createCrepe({ root, defaultValue: markdown, image, ...(nativeCode ? { features: { [CrepeFeature.CodeMirror]: false } } : {}) })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.ctx.get(editorViewCtx)
@@ -174,7 +172,7 @@ describe('pasted numbers: a plain run is a real list (YAZ-3727 D6), any other la
     expect(getMarkdownForSave(crepe)).toBe('* parent\n  1. child\n     * bullet\n  2. next\n')
   })
   it('only changes parsed Markdown lists, preserving fenced and indented code', async () => {
-    const { view } = await mount('', false, true)
+    const { view } = await mount('', true)
     pasteText(view, '1) first\n2) second\n\n```text\n1. fenced\n2. code\n```\n\n    1. indented\n    2. code')
     expectNoNumberedLists(view)
     const code: string[] = []
@@ -217,28 +215,6 @@ describe('pasted numbers: a plain run is a real list (YAZ-3727 D6), any other la
     pasteHtml(view, html)
     expectNoNumberedLists(view)
     expect(textOf(view)).toBe(expected)
-  })
-  it.each([
-    ['text', '1. Plan\n2. Build'],
-    ['html', '<ol><li>Plan</li><li>Build</li></ol>'],
-  ])('the folder outline keeps a plain run\'s labels as bullet text (%s)', async (kind, pasted) => {
-    const { view } = await mount('* existing', true)
-    all(view)
-    if (kind === 'text') pasteText(view, pasted)
-    else pasteHtml(view, pasted, '1. Plan\n2. Build')
-    expect(isBulletsOnly(view.state.doc)).toBe(true)
-    expect(textOf(view)).toBe('1. Plan\n2. Build')
-  })
-  // The folder outline cannot hold a numbered list, so a plain run keeps its labels as text there (`holdsNumbers`).
-  it('runs outline paste constraints for mixed fake bullets and numbered text', async () => {
-    const { view } = await mount('* existing', true)
-    all(view)
-    const before = view.state.doc.toJSON()
-    pasteText(view, '• parent\n• sibling\n\n1. first\n2. second')
-    expect(isBulletsOnly(view.state.doc)).toBe(true)
-    expect(textOf(view)).toBe('parent\nsibling\n1. first\n2. second')
-    expect(undo(view.state, view.dispatch)).toBe(true)
-    expect(view.state.doc.toJSON()).toEqual(before)
   })
   it('does not automatically continue literal numbering on Enter', async () => {
     const { view } = await mount()
@@ -372,7 +348,7 @@ describe('explicit paste modes through the native menu subscription', () => {
     expect(textOf(view)).toBe('Before middle after')
   })
   it('keeps every mode literal inside code, including fake bullets on ordinary paste', async () => {
-    const { view } = await mount('```text\nold\n```', false, true)
+    const { view } = await mount('```text\nold\n```', true)
     for (const mode of ['plain', 'markdown'] as const) {
       view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1, 1 + view.state.doc.firstChild!.content.size)))
       view.focus()
@@ -405,15 +381,6 @@ describe('explicit paste modes through the native menu subscription', () => {
     all(view)
     pasteAs('plain', ''); pasteAs('markdown', '')
     expect(textOf(view)).toBe('Keep this')
-  })
-  it('runs existing outline paste constraints for explicit Markdown and literal plain text', async () => {
-    const { view } = await mount('- existing', true)
-    pasteAs('markdown', '# Heading\n\nParagraph')
-    expect(isBulletsOnly(view.state.doc)).toBe(true)
-    expect(textOf(view)).toContain('Heading')
-    pasteAs('plain', '# literal\n\nnext')
-    expect(isBulletsOnly(view.state.doc)).toBe(true)
-    expect(textOf(view)).toContain('# literal\n\nnext')
   })
 })
 
@@ -531,7 +498,7 @@ describe('image bytes on the clipboard (YAZ-1656 / YAZ-1662)', () => {
   })
 
   it('an image file wins over the HTML riding with it: the bytes are written, the markup never lands', async () => {
-    const { view, crepe } = await mount('', false, false, IMAGE)
+    const { view, crepe } = await mount('', false, IMAGE)
     const html = '<p>Finder copy</p>'
     expect(view.pasteHTML(html, withFiles([PNG], { 'text/html': html, 'text/plain': 'Finder copy' }))).toBe(true)
     await vi.waitFor(() => expect(getMarkdownForSave(crepe)).toMatch(new RegExp(`^${IMG}\n$`)))
@@ -540,7 +507,7 @@ describe('image bytes on the clipboard (YAZ-1656 / YAZ-1662)', () => {
   })
 
   it('inside a code block the image is refused: nothing written, the code untouched', async () => {
-    const { view } = await mount('```text\ncode\n```', false, true, IMAGE)
+    const { view } = await mount('```text\ncode\n```', true, IMAGE)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 2)))
     view.pasteHTML('', withFiles([PNG]))
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -550,7 +517,7 @@ describe('image bytes on the clipboard (YAZ-1656 / YAZ-1662)', () => {
   })
 
   it('a dropped image lands at the DROP position, not at the caret', async () => {
-    const { view, crepe } = await mount('before after', false, false, IMAGE)
+    const { view, crepe } = await mount('before after', false, IMAGE)
     view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, 1)))
     // jsdom has no layout: the drop coordinates resolve to "after `before `" by hand.
     view.posAtCoords = () => ({ pos: 8, inside: 0 })
@@ -559,7 +526,7 @@ describe('image bytes on the clipboard (YAZ-1656 / YAZ-1662)', () => {
   })
 
   it('a drop over a code block is refused outright — handled, and nothing written', async () => {
-    const { view } = await mount('```text\ncode\n```', false, true, IMAGE)
+    const { view } = await mount('```text\ncode\n```', true, IMAGE)
     view.posAtCoords = () => ({ pos: 2, inside: 0 })
     expect(drop(view, withFiles([PNG]))).toBe(true)
     await new Promise((resolve) => setTimeout(resolve, 0))

@@ -62,6 +62,13 @@ describe('readAsset resolution', () => {
     expect((await readAsset(root, 'levels.png#section')).path).toBe(path.join(root, 'Content Pillars', 'levels.png'))
   })
 
+  it('YAZ-4954: words that look like an ID never beat the file, in either order', async () => {
+    const levels = path.join(root, 'Content Pillars', 'levels.png')
+    expect((await readAsset(root, 'levels.png|FIG-1')).path).toBe(levels)
+    expect((await readAsset(root, 'levels.png|FIG-1|300')).path).toBe(levels)
+    expect((await readAsset(root, 'FIG-1|levels.png')).path).toBe(levels)
+  })
+
   it('matches the basename case-insensitively', async () => {
     const res = await readAsset(root, 'LEVELS.PNG')
     expect(res.path).toBe(path.join(root, 'Content Pillars', 'levels.png'))

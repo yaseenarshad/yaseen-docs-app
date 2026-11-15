@@ -1129,6 +1129,56 @@ describe('TabOverview', () => {
     void onNotice
   })
 
+  it('YAZ-4922 D3: "Open tabs here…" in a "folder of <vault>" window finds only what is under the folder, as Explore does; another window shown as a folder of a vault reads that vault, cut to its folder', async () => {
+    canvas = { allWindows: true, snap: false, cards: [], frames: [] }
+    // w2 shows /v/Projects as a folder of /v: the state holds its PLACE.
+    others = [other('w2', ['/v/Projects'], [{ path: '/v/Projects/plan.md', active: true }])]
+    const folderIn = vi.spyOn(storage, 'folderIn').mockImplementation((vault) => (vault === '/v' ? '/v/Projects' : null))
+    const getFolders = vi.spyOn(storage, 'getFolders').mockReturnValue({ '/v/Projects': { in: '/v' } } as never)
+    try {
+      const moveTo = vi.fn().mockResolvedValue(undefined)
+      ;(api.window as unknown as Record<string, unknown>).moveTo = moveTo
+      const rec = (path: string, title: string) => ({ path, name: `${title}.md`, basename: title, title, folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1, aliases: [], links: [], tags: [] })
+      const index = vi.fn(async (root: string) => ({ root, records: root === '/v' ? [rec('/v/quiet.md', 'Quiet'), rec('/v/Projects/quarterly.md', 'Quarterly')] : [], folders: [], generatedAt: 1, ids: false }))
+      ;(api as unknown as Record<string, unknown>).index = index
+      const drawing = (path: string) => ({ type: 'file', name: path.split('/').pop(), path, size: 1, mtime: 1, kind: 'excalidraw' })
+      vi.mocked(api.tree).mockImplementation(async (root: string) => ({ root, tree: root === '/v' ? [drawing('/v/quilt.excalidraw'), { type: 'dir', name: 'Projects', path: '/v/Projects', children: [drawing('/v/Projects/quote.excalidraw')] }] : [], generatedAt: 1 }) as never)
+      const onOpenTabHere = vi.fn()
+      const { el } = await mount({ roots: ['/v'], vaultNames: ['Notes'], tabs: ['/v/Projects/plan.md'], active: '/v/Projects/plan.md', preview: null, onOpenTabHere })
+      const search = async (win: string) => {
+        act(() => void frame(el, win).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true })))
+        act(() => menuItem(el, 'Open tabs here…')?.click())
+        const panel = el.querySelector('.taboverview__search')!
+        const input = panel.querySelector<HTMLInputElement>('input')!
+        await act(async () => {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'qu')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+        await settled()
+        await settled()
+        return { panel, input }
+      }
+      // THIS window: only the note and the drawing under /v/Projects.
+      const mine = await search('me')
+      expect(texts(mine.panel, '.search-results__label').join(' | ')).toMatch(/Quarterly/)
+      expect(texts(mine.panel, '.search-results__label').join(' | ')).toMatch(/quote/)
+      expect(texts(mine.panel, '.search-results__label').join(' | ')).not.toMatch(/Quiet|quilt/)
+      act(() => [...mine.panel.querySelectorAll<HTMLElement>('[role="option"]')].find((row) => row.textContent?.includes('Quarterly'))!.click())
+      expect(onOpenTabHere).toHaveBeenCalledExactlyOnceWith('/v/Projects/quarterly.md')
+      act(() => void mine.input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })))
+      // ANOTHER window shown as a folder of /v: the vault's index is read, cut to the folder; the place is never read as a vault.
+      const theirs = await search('w2')
+      expect(texts(theirs.panel, '.search-results__label').join(' | ')).toMatch(/Quarterly/)
+      expect(texts(theirs.panel, '.search-results__label').join(' | ')).not.toMatch(/Quiet|quilt/)
+      expect(index.mock.calls.map(([root]) => root)).not.toContain('/v/Projects')
+      act(() => [...theirs.panel.querySelectorAll<HTMLElement>('[role="option"]')].find((row) => row.textContent?.includes('Quarterly'))!.click())
+      expect(moveTo).toHaveBeenCalledExactlyOnceWith('w2', '/v/Projects/quarterly.md', { background: true })
+    } finally {
+      folderIn.mockRestore()
+      getFolders.mockRestore()
+    }
+  })
+
   it('YAZ-3343 S48, D22: an EMPTY frame\'s vault chip lists the recent vaults, and a pick asks main to switch that window', async () => {
     canvas = { allWindows: true, snap: false, cards: [], frames: [] }
     others = [other('w3', ['/v'], [])]

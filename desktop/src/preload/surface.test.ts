@@ -13,7 +13,7 @@ vi.mock('electron', () => ({
   contextBridge: { exposeInMainWorld: (name: string, value: unknown) => void (exposed[name] = value) },
   ipcRenderer: { invoke: vi.fn(), on: vi.fn(), send: vi.fn(), removeListener: vi.fn() },
   webUtils: { getPathForFile: (file: unknown) => `path of ${String(file)}` },
-  // `spell.suggestions` (YAZ-3653) asks the renderer's own spellchecker: no IPC.
+  // `spell.suggestions` asks main's macOS checker on macOS (YAZ-4464), else the renderer's own (YAZ-3653): no IPC there.
   webFrame: { isWordMisspelled: (word: string) => word === 'a0', getWordSuggestions: () => ['a1'] },
 }))
 vi.spyOn(crypto, 'randomUUID').mockReturnValue('0-0-0-0-0')

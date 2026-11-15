@@ -23,7 +23,9 @@ import { api } from '../api'
 import type { WatchSource } from '../hooks/useWatch'
 import { leadingTrailing, WATCH_BURST_QUIET_MS } from '../lib/leadingTrailing'
 import { atOrBelow } from '../lib/treeState'
+import { placeOnly } from '../vault/placeScope'
 import { fileCandidates, folderCandidates, searchCandidates, searchRows, type SearchCandidate } from './searchCandidates'
+import type { IdsInSearch } from './showIds'
 
 /** One vault the search covers: its folder, its watcher, and its folders and its files that are no notes (the Sidebar's own `allDirs` and `otherFiles`). */
 export interface SearchVault {
@@ -31,26 +33,42 @@ export interface SearchVault {
   watch: WatchSource
   dirs: readonly string[]
   files: readonly string[]
+  /** This vault's "Show IDs in search" (YAZ-4940), read at each draw of a result list; absent → Always. */
+  idsInSearch?: () => IdsInSearch
+  /** This vault's "Show IDs in the title" (YAZ-4940), read where the explore stack's note head draws; absent → On. */
+  idsInTitle?: () => boolean
+  /** "A folder of" the vault (YAZ-4922 🔒 D3): the vault's index is read, and only the notes under this folder are found (`placeOnly`). */
+  folder?: string
 }
 
 type Snapshot = Readonly<{ records: readonly IndexRecord[]; folders: readonly IndexRecord[]; letters?: readonly string[] }>
 const NO_SNAPSHOT: Snapshot = { records: [], folders: [] }
 
-/** One vault's rows as they were last built, with what each part was built from. */
-type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; all: SearchCandidate[] }
+/** A snapshot cut to a folder of its vault (YAZ-4922 D3), once per snapshot and folder: the rows built from it are kept while both stay. */
+const cuts = new WeakMap<Snapshot, { folder: string; cut: Snapshot }>()
+function scoped(snapshot: Snapshot, folder: string | undefined): Snapshot {
+  if (folder === undefined) return snapshot
+  const held = cuts.get(snapshot)
+  if (held !== undefined && held.folder === folder) return held.cut
+  const cut = { ...snapshot, records: placeOnly(folder, snapshot.records), folders: placeOnly(folder, snapshot.folders) }
+  cuts.set(snapshot, { folder, cut })
+  return cut
+}
 
-/** `keep` is the Search tab's filters (YAZ-3511 D16): the rows it fails never reach the ranking, so the cap cuts only rows that pass. The caller keeps it while the filters stay. */
-export function useSearchResults(vaults: readonly SearchVault[], query: string, pinned: ReadonlySet<string>, keep?: (row: SearchCandidate) => boolean): SearchCandidate[] {
+/** One vault's rows as they were last built, with what each part was built from. */
+type Rows = Snapshot & { dirs: readonly string[]; files: readonly string[]; folderRows: SearchCandidate[]; noteRows: SearchCandidate[]; fileRows: SearchCandidate[]; extra?: (records: readonly IndexRecord[]) => SearchCandidate[]; extraRows: SearchCandidate[]; all: SearchCandidate[] }
+const NO_ROWS: SearchCandidate[] = []
+
+/**
+ * The rows the search ranks, over every vault (split out of `useSearchResults`, which ranks them, by YAZ-2571 for the
+ * explore stack): each vault's feed and its rows, rebuilt only for what changed. `activated` latches the feeds on:
+ * false until the first search, then true for the component's life. `extra` (the explore search's text rows) adds a
+ * vault's rows AFTER its other-file rows, built from its records as the note rows are; the caller keeps the function
+ * while it stands.
+ */
+export function useSearchCandidates(vaults: readonly SearchVault[], activated: boolean, extra?: (records: readonly IndexRecord[]) => SearchCandidate[]): SearchCandidate[] {
   // Each vault's index snapshot, by its root, once it has landed.
   const [snapshots, setSnapshots] = useState<ReadonlyMap<string, Snapshot>>(() => new Map())
-  // Latched by the first non-empty query and never unlatched: after that the snapshots stay warm
-  // and watch-fresh for the rest of this component's life, so clearing the bar and typing again
-  // costs nothing. Until then there is no fetch and no subscription at all.
-  const [activated, setActivated] = useState(false)
-  useEffect(() => {
-    if (query.trim() !== '') setActivated(true)
-  }, [query])
-
   // PER VAULT, for as long as the vault is in the window: its index read and its watcher refresh.
   // `vaults` is a new list whenever a tree changed its `dirs`, so a feed is kept while its vault
   // and watcher stand: a vault that stays is not read again when another joins, leaves or changes.
@@ -115,22 +133,36 @@ export function useSearchResults(vaults: readonly SearchVault[], query: string, 
   // `files` — so a snapshot or a tree of one vault rebuilds no row of another. One vault → its own
   // list: folders, notes, other files (a tie in a rank reads in that order, YAZ-2620 S19).
   const built = useRef(new Map<string, Rows>())
-  const candidates = useMemo(() => {
+  return useMemo(() => {
     const next = new Map<string, Rows>()
-    for (const { root, dirs, files } of vaults) {
+    for (const { root, dirs, files, folder } of vaults) {
       // `letters` arrive with the snapshot they belong to (YAZ-2677 D9, S77), so the rows built from it carry them.
-      const { records, folders, letters } = snapshots.get(root) ?? NO_SNAPSHOT
+      const { records, folders, letters } = scoped(snapshots.get(root) ?? NO_SNAPSHOT, folder)
       const last = built.current.get(root)
       const folderRows = last !== undefined && last.dirs === dirs && last.folders === folders ? last.folderRows : folderCandidates(root, dirs, folders, letters)
       const noteRows = last !== undefined && last.records === records ? last.noteRows : searchCandidates(records, letters)
       const fileRows = last !== undefined && last.files === files ? last.fileRows : fileCandidates(root, files)
-      const same = last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows && last.fileRows === fileRows
-      next.set(root, { dirs, files, records, folders, folderRows, noteRows, fileRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows] })
+      // The extra rows (YAZ-2571) follow the records, as the note rows do, and the function: a new one builds anew.
+      const extraRows = extra === undefined ? NO_ROWS : last !== undefined && last.records === records && last.extra === extra ? last.extraRows : extra(records)
+      const same = last !== undefined && last.folderRows === folderRows && last.noteRows === noteRows && last.fileRows === fileRows && last.extraRows === extraRows
+      next.set(root, { dirs, files, records, folders, folderRows, noteRows, fileRows, extra, extraRows, all: same ? last.all : [...folderRows, ...noteRows, ...fileRows, ...extraRows] })
     }
     built.current = next
     const lists = [...next.values()].map((rows) => rows.all)
     return lists.length === 1 ? lists[0] : lists.flat()
-  }, [vaults, snapshots])
+  }, [vaults, snapshots, extra])
+}
+
+/** `keep` is the Search tab's filters (YAZ-3511 D16): the rows it fails never reach the ranking, so the cap cuts only rows that pass. The caller keeps it while the filters stay. */
+export function useSearchResults(vaults: readonly SearchVault[], query: string, pinned: ReadonlySet<string>, keep?: (row: SearchCandidate) => boolean): SearchCandidate[] {
+  // Latched by the first non-empty query and never unlatched: after that the snapshots stay warm
+  // and watch-fresh for the rest of this component's life, so clearing the bar and typing again
+  // costs nothing. Until then there is no fetch and no subscription at all.
+  const [activated, setActivated] = useState(false)
+  useEffect(() => {
+    if (query.trim() !== '') setActivated(true)
+  }, [query])
+  const candidates = useSearchCandidates(vaults, activated)
   // The rows that rank first (YAZ-2662 D4): the path of each row that is a pinned item or is inside
   // one. Built when the rows or a list changes, so a keystroke pays one look in it for each match (R1).
   const first = useMemo(() => (pinned.size === 0 ? pinned : new Set(candidates.flatMap((c) => (atOrBelow(pinned, c.path) ? [c.path] : [])))), [candidates, pinned])

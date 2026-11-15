@@ -45,13 +45,15 @@
  * turns it off for this file only, saved for the file in the app state (`tocSwitches`, `usePageSwitch`): a code file
  * has no frontmatter, so it cannot hold the switch as a note does (`toc`, YAZ-4094 G4).
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { DEFAULT_SETTINGS, TOC_DEFAULT_W, type CodeOutlineSort, type CodeSymbolKind, type PageView, type TableOfContents as TableOfContentsMode, type ZoomStep } from '@shared/types'
 import { HOTKEY_COMMANDS, appKeyId, keyFor, sameKey, type HotkeyId, type HotkeyOverrides, type KeyPress } from '@shared/hotkeyBindings'
 import { keyRow, stepsAside, type HotkeyAside } from '@shared/keys'
 import { api, BridgeRequestError } from '../api'
 import { DocumentShell } from '../documents/DocumentShell'
 import { DocumentChips, useDocumentHost, type DocumentHostProps } from '../documents/useDocumentHost'
+import { useTimedUnlock } from '../editor/useTimedUnlock'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { stepZoomByKey } from '../editor/DocumentZoom'
 import type { FoldNext } from '../editor/FoldAllButton'
 import { usePageSwitch } from '../editor/usePageSwitch'
@@ -211,10 +213,16 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
   const closedText = useRef<string | null>(null)
   /** True while a reload puts disk truth in: those changes are not edits. */
   const applyingDisk = useRef(false)
-  /** "Allow edits" on this tab's chip (YAZ-3449 S2): this tab only, until it closes. */
-  const [unlocked, setUnlocked] = useState(false)
+  /** The vault's Read only (YAZ-4939): this tab opens locked as the setting locks it. */
+  const vaultLocked = useContext(VaultReadOnly).on
+  /** The flush of the host below, for the unlock's end: the host is made after `locked` is needed, so a ref. */
+  const flushRef = useRef<() => void>(() => undefined)
+  /** A time choice on this tab's chip (YAZ-3449 S2, YAZ-4939): this tab only, for that long; at zero the tab saves, then locks. */
+  const unlock = useTimedUnlock(() => flushRef.current())
   const [askingUnlock, setAskingUnlock] = useState(false)
-  const locked = codeReadOnly && !unlocked
+  /** This tab is under Read only: the setting or the vault. The chip shows while it is. */
+  const lockedBase = codeReadOnly || vaultLocked
+  const locked = lockedBase && unlock.until === null
   /** This tab's wrap: the setting, or ⌥Z's flip of it until the setting changes (S4). */
   const wrap = useRef(codeWrap)
   /** The text size, per tab (YAZ-3451): a copy starts at its source's (S5); never stored. */
@@ -309,6 +317,7 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     focus: () => editorRef.current?.focus(),
   })
   const { start, autosave, retired } = doc
+  flushRef.current = doc.flush
 
   // One editor and one model for the host's life; both disposed with it (no leak per tab).
   useEffect(() => {
@@ -422,12 +431,15 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
     // Mount once: `loaded` and `path` are fixed for this host (the shell keys it by path), and a theme change is the effect below.
   }, [])
 
-  // Settings › Code, live in every tab (S1, S4, S5). A setting going on again locks a tab that was unlocked (S1).
+  // Settings › Code, live in every tab (S1, S4, S5). A setting going on again locks a tab that was unlocked (S1); so does the vault's (YAZ-4939).
+  const { lock } = unlock
   useEffect(() => {
-    if (codeReadOnly) setUnlocked(false)
-  }, [codeReadOnly])
+    if (codeReadOnly || vaultLocked) lock()
+  }, [codeReadOnly, vaultLocked, lock])
   useEffect(() => {
-    if (!locked) setAskingUnlock(false)
+    if (!lockedBase) setAskingUnlock(false)
+  }, [lockedBase])
+  useEffect(() => {
     editorRef.current?.updateOptions({ readOnly: locked })
   }, [locked])
   useEffect(() => {
@@ -502,15 +514,17 @@ function CodeHost({ root, path, loaded, watch, sync, onSyncNow, onNotice, codeRe
             tableOfContents={{ on: tocOn, onToggle: toggleToc }}
             zoom={zoom}
             onZoom={setZoom}
-            locked={locked}
+            locked={lockedBase}
             asking={askingUnlock}
             onAsk={() => setAskingUnlock(true)}
-            onAllow={() => {
+            onAllow={(choice) => {
               setAskingUnlock(false)
-              setUnlocked(true)
+              unlock.allow(choice)
               editorRef.current?.focus()
             }}
             onCancel={() => setAskingUnlock(false)}
+            editingUntil={unlock.until}
+            onLock={unlock.lock}
             fold={{
               read: readFold,
               subscribe: subscribeFolds,

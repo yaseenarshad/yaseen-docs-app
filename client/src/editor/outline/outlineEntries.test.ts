@@ -14,7 +14,7 @@ import { canJoin, canSplit } from '@milkdown/kit/prose/transform'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { createCrepe } from '../createCrepe'
 import { random } from '../testRandom'
-import { findFoldedChildren, findOwnImages, itemLabelText } from './listNodes'
+import { findFoldedChildren, findOwnEmbeds, findOwnImages, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { HEADING_TOGGLE_CLASS } from './headingFolding'
 import { OUTLINE_TOGGLE_CLASS } from './outlineFolding'
@@ -75,7 +75,8 @@ function fullScan(doc: ProseNode) {
     if (node.type.name !== 'list_item') return true
     const foldedChildren = findFoldedChildren(node) // lists and tables (YAZ-3696 D11)
     const images = findOwnImages(node)
-    if (foldedChildren.length === 0 && images.length === 0) return true
+    const embeds = findOwnEmbeds(node) // board embeds (YAZ-4830)
+    if (foldedChildren.length === 0 && images.length === 0 && embeds.length === 0) return true
     const label = itemLabelText(node)
     const keyLabel = outlineFoldLabel(label)
     const occurrence = labelOccurrences.get(keyLabel) ?? 0
@@ -86,6 +87,7 @@ function fullScan(doc: ProseNode) {
       label,
       foldedRanges: foldedChildren.map(({ list, offset }) => ({ from: itemPos + 1 + offset, to: itemPos + 1 + offset + list.nodeSize })),
       imageRanges: images.map(({ node: image, offset }) => ({ from: itemPos + 1 + offset, to: itemPos + 1 + offset + image.nodeSize })),
+      embedRanges: embeds.map(({ from, to }) => ({ from: itemPos + 1 + from, to: itemPos + 1 + to })),
     })
     return true
   })

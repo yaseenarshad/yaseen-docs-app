@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
+import { useUnit, type UnitText } from '../vault/unitWord'
 import type { EntryKind } from './createEntry'
 
 /**
  * Placeholder per entry kind; what is typed is its title, and the name on disk is built from it (YAZ-2420 🔒 D6, D20).
  * A board's box names its kind (YAZ-3028 D9); what is typed there is the file name.
  */
-const PLACEHOLDER: Record<EntryKind, string> = { file: 'New note', dir: 'New folder', drawing: 'New drawing', diagram: 'New diagram' }
+const placeholderOf = (kind: EntryKind, unit: UnitText): string => ({ file: unit('New note'), dir: 'New folder', drawing: 'New drawing', diagram: 'New diagram' })[kind]
 
 interface CreateInlineProps {
   kind: EntryKind
@@ -23,6 +24,7 @@ interface CreateInlineProps {
 
 /** VS Code-style inline name input rendered inside the tree (GRO-2022 D2). */
 export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: CreateInlineProps) {
+  const unit = useUnit()
   const [error, setError] = useState<string | null>(null)
   const submitting = useRef(false)
 
@@ -48,7 +50,7 @@ export function CreateInline({ kind, indent, onSubmit, onCancel, seed = '' }: Cr
         defaultValue={seed}
         onFocus={(e) => e.currentTarget.setSelectionRange(seed.length, seed.length)}
         className={`create-inline__input${error !== null ? ' create-inline__input--error' : ''}`}
-        placeholder={PLACEHOLDER[kind]}
+        placeholder={placeholderOf(kind, unit)}
         spellCheck={false}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void submit(e.currentTarget.value)

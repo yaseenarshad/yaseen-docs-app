@@ -58,6 +58,21 @@ describe('the [[ picker', () => {
     expect(replace).toHaveBeenCalledWith(0, 6, '[[YAS-1]]')
   })
 
+  it('YAZ-4748: says when it opens and when it closes, once each — a diagram\'s frame sends its keys up only while it is open', () => {
+    const parent = document.createElement('div')
+    document.body.appendChild(parent)
+    const shown = vi.fn()
+    const picker = createDrawingLinkPicker(() => parent, () => rows, undefined, undefined, shown)
+    const editor = (text: string): PickerEditor => ({ text, caret: text.length, typed: true, caretRect: () => ({ left: 0, top: 0, right: 0, bottom: 0 }), replace: vi.fn(), replaceLink: vi.fn(() => true) })
+    picker.change(editor('[[Gr'))
+    picker.change(editor('[[Gro'))
+    expect(shown.mock.calls).toEqual([[true]])
+    picker.keyDown(key('Escape'))
+    expect(shown.mock.calls).toEqual([[true], [false]])
+    picker.close()
+    expect(shown).toHaveBeenCalledTimes(2)
+  })
+
   it('stays shut on a caret move, and leaves keys alone while shut', () => {
     const { picker, editor, items } = setup()
     picker.change(editor('see [[Gro', false))

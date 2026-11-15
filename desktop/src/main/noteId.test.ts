@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, defaultIdLetters, holdsId, idLettersOf, idsAnswer, isIdLetters, isNoteId, isNumberId, isVaultNumberId, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
+import { IDS_FILE, NOTE_ID_KEY, canonicalNoteId, defaultIdLetters, hasLetters, holdsId, idLettersOf, idsAnswer, isIdLetters, isNoteId, isNumberId, isVaultNumberId, lettersKept, lettersOwn, noteIdNumber, numberId, vaultNoteId } from '@shared/noteId'
 
 describe('note ids (YAZ-2293 D2, YAZ-2677 D3)', () => {
   it('the frontmatter key is `id`', () => {
@@ -136,6 +136,26 @@ describe("a vault's answer to IDs, and its letters (YAZ-2523 V1, YAZ-2677 R9, R1
 
   it('nothing, 1 letter, 6 letters, a digit, a space, a hyphen and a letter outside A to Z are not (S6)', () => {
     for (const value of ['', 'Y', 'ABCDEF', 'YA1', '12', 'YA Z', ' YAZ', 'YAZ ', 'YAZ\n', 'YA-Z', 'YÄZ', 12, null, undefined]) expect(isIdLetters(value)).toBe(false)
+  })
+})
+
+describe('kept letters (YAZ-4922 D2): a group of IDs the vault keeps as it is', () => {
+  const letters = idLettersOf({ enabled: true, letters: 'YAS', was: ['OLD'], kept: ['tech', 'YAS', 'OLD', 'bad!'] }, 'vault').letters
+
+  it('`kept` comes last, marked; letters the vault has now or had before are not kept too, and bad entries are dropped', () => {
+    expect(letters).toEqual(['YAS', 'OLD', '=TECH'])
+    expect(lettersOwn(letters)).toEqual(['YAS', 'OLD'])
+    expect(lettersKept(letters)).toEqual(['TECH'])
+    expect(hasLetters(letters, 'TECH')).toBe(true)
+    expect(hasLetters(letters, 'ABC')).toBe(false)
+  })
+
+  it('a kept ID reads as itself, never with the current letters: TECH-796 and YAS-796 are two IDs', () => {
+    expect(vaultNoteId('tech-796', letters)).toBe('TECH-796')
+    expect(vaultNoteId('YAS-796', letters)).toBe('YAS-796')
+    expect(vaultNoteId('OLD-796', letters)).toBe('YAS-796')
+    expect(vaultNoteId('ABC-796', letters)).toBeUndefined()
+    expect(vaultNoteId('=TECH-796', letters)).toBeUndefined()
   })
 })
 

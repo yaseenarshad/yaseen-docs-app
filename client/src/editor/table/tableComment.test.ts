@@ -27,11 +27,14 @@ describe('each part', () => {
     ['fill B3 green', { fill: new Map([['B3', 'green']]) }],
     ['color B2 red', { color: new Map([['B2', 'red']]) }],
     ['border 2px 40%', { border: { px: 2, darkness: 40 } }],
-    ['header plain', { header: 'plain' }],
+    ['header plain', { header: { strength: 'off' } }],
     ['stripes', { stripes: true }],
     ['height compact', { height: 'compact' }],
     ['height tall', { height: 'tall' }],
     ['nowrap', { nowrap: true }],
+    // YAZ-4900: a table that wraps while Settings say Clip; a column's own Wrap or Clip, 1-based.
+    ['wrap', { wrap: true }],
+    ['text 2:clip 4:wrap', { text: new Map([[1, 'clip'], [3, 'wrap']]) }],
     ['freeze 2 rows 1 col', { freeze: { rows: 2, cols: 1 } }],
     ['freeze 1 row', { freeze: { rows: 1, cols: 0 } }],
     ['freeze 3 cols', { freeze: { rows: 0, cols: 3 } }],
@@ -129,6 +132,18 @@ describe('the fixed order', () => {
   it('reads the parts in any order, and writes them in the fixed order', () => {
     expect(formatTableComment(parseTableComment('<!-- table: nowrap, stripes, widths 100 -->')!)).toBe('<!-- table: widths 100, stripes, nowrap -->')
   })
+
+  // YAZ-4900: `text` goes after `nowrap` / `wrap` and before `freeze`; its columns are written in order, once each.
+  it('`text` goes after the table\'s own Wrap / Clip and before `freeze`; columns in order', () => {
+    expect(formatTableComment(parseTableComment('<!-- table: freeze 1 row, text 3:wrap 1:clip, nowrap -->')!)).toBe('<!-- table: nowrap, text 1:clip 3:wrap, freeze 1 row -->')
+    expect(formatTableComment(parseTableComment('<!-- table: text 2:clip, wrap -->')!)).toBe('<!-- table: wrap, text 2:clip -->')
+  })
+
+  it('a `text` word this build cannot read (a third value, column 0, a repeat) keeps the whole part as its text (YAZ-4176)', () => {
+    for (const bad of ['text 2:fit', 'text 0:clip', 'text 2:clip 2:wrap', 'text clip', 'text']) {
+      expect(parseTableComment(`<!-- table: stripes, ${bad} -->`)).toEqual(style({ stripes: true, unknown: [{ after: 'stripes', text: bad }] }))
+    }
+  })
 })
 
 describe('tolerant reading', () => {
@@ -217,5 +232,42 @@ describe('a known part with a value this build cannot read (YAZ-4176)', () => {
 
   it('a comment with only such parts is still not ours: the editor keeps it as its text', () => {
     expect(parseTableComment('<!-- table: calendar 45m, zoom 500% -->')).toBeNull()
+  })
+})
+
+describe('the header row part, text colour and align (YAZ-4794)', () => {
+  it.each<[string, Partial<TableStyle>]>([
+    ['header text-blue', { header: { text: 'blue' } }],
+    ['header align-center', { header: { align: 'center' } }],
+    ['header align-follow', { header: { align: 'follow' } }],
+    ['header green strong regular text-pink align-right', { header: { color: 'green', strength: 'strong', weight: 'regular', text: 'pink', align: 'right' } }],
+    ['header red muted align-left', { header: { color: 'red', text: 'muted', align: 'left' } }],
+  ])('`%s` reads and writes back the same', (part, parts) => {
+    const comment = `<!-- table: ${part} -->`
+    expect(parseTableComment(comment)).toEqual(style(parts))
+    expect(formatTableComment(style(parts))).toBe(comment)
+  })
+
+  it('every older comment reads as before: a bare colour is the fill, muted / full the text, plain is Off, shaded nothing', () => {
+    expect(parseTableComment('<!-- table: header blue -->')).toEqual(style({ header: { color: 'blue' } }))
+    expect(parseTableComment('<!-- table: header red strong regular muted -->')).toEqual(style({ header: { color: 'red', strength: 'strong', weight: 'regular', text: 'muted' } }))
+    expect(parseTableComment('<!-- table: header full -->')).toEqual(style({ header: { text: 'full' } }))
+    expect(parseTableComment('<!-- table: header plain -->')).toEqual(style({ header: { strength: 'off' } }))
+    expect(parseTableComment('<!-- table: header shaded, stripes -->')).toEqual(style({ stripes: true }))
+  })
+
+  it('words in any order; text-muted / text-full read as muted / full and write their bare word', () => {
+    expect(parseTableComment('<!-- table: header align-right text-teal blue -->')).toEqual(style({ header: { color: 'blue', text: 'teal', align: 'right' } }))
+    const parsed = parseTableComment('<!-- table: header text-muted -->')!
+    expect(parsed.header).toEqual({ text: 'muted' })
+    expect(formatTableComment(parsed)).toBe('<!-- table: header muted -->')
+  })
+
+  it('a word it cannot read keeps the whole part as its text: a bare align word, an unknown colour, two text colours', () => {
+    for (const part of ['header left', 'header text-gray', 'header align-middle', 'header blue text-red text-blue']) {
+      const parsed = parseTableComment(`<!-- table: stripes, ${part} -->`)!
+      expect(parsed.header).toBeUndefined()
+      expect(formatTableComment(parsed)).toBe(`<!-- table: stripes, ${part} -->`)
+    }
   })
 })

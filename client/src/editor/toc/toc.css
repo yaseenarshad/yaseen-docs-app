@@ -65,11 +65,15 @@
   animation: toc-fade 240ms ease;
 }
 
-.editor:has(> .toc[data-names]) > .editor-host {
+/* The scroller's room for the names: the section's `data-toc-names` (tocFrame.tsx) says they show. A note's outline
+   is the section's child; a folder page's Page tab (YAZ-4584 D38) puts it deep in the folder page's scroller, so the
+   whole page — title, view tabs and toolbar, the Page, Other files, Comments — gets the room too (YAZ-4849). No
+   `:has()` over the text you type in (YAZ-3329). */
+.editor[data-toc-names] > .editor-host {
   padding-right: var(--toc-width);
 }
 
-.editor:has(> .toc[data-names]) > .find-bar-dock--note {
+.editor[data-toc-names] > .find-bar-dock--note {
   right: var(--toc-width);
 }
 

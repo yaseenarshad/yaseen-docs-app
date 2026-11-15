@@ -25,7 +25,8 @@
  * Hover (YAZ-3403): resting on an entry's title or one of its lines shows the LINKING note in the sidebar's hover
  * panel, right of the note's text column and level with the row (left of it when the window has no room there).
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { splitFrontmatter } from '@shared/frontmatter'
 import { isFolderSettingsPath, type DiagramDarkColors, type IndexRecord } from '@shared/types'
 import { api } from '../api'
 import { requestCellNote } from '../editor/table/cellNoteRequest'
@@ -34,7 +35,7 @@ import type { ResolveLink, WikilinkResolveSource } from '../editor/wikilink/wiki
 import { pageLabel, pathTitles, type PathTitles } from '../lib/pageLabel'
 import { dirname } from '../lib/paths'
 import { CardPreviewHost, useCardPreview, type PreviewScope } from '../tabs/cardPreview'
-import { backlinksFor, folderMentionSnippets, mentionSnippets, type MentionSnippet } from './backlinks'
+import { backlinksFor, mentionSnippets, type MentionSnippet } from './backlinks'
 import { newWindowClick } from '../lib/newWindowClick'
 import './backlinks.css'
 
@@ -105,7 +106,7 @@ export function BacklinksSection({ path, source, openCurrent, openBackground, ho
 /**
  * One referencing note: its title, then its mention lines — read from disk on mount (= on expand).
  * A referencing FOLDER (`record` is its settings file's) reads as the folder's title, opens the
- * folder's page, and shows the lines of its outlines — off the index, with no read.
+ * folder's page, and shows the lines of its Page — the `.folder.md` body, never its settings (YAZ-4584 D40).
  */
 function BacklinkEntry({
   record,
@@ -137,12 +138,11 @@ function BacklinkEntry({
   const page = folder ? dirname(record.path) : record.path
 
   useEffect(() => {
-    if (folder) return
     let cancelled = false
     setSnippets(null)
     void api.readFile(record.path).then(
       (file) => {
-        if (!cancelled) setSnippets(mentionSnippets(file.content, target, resolveRef.current ?? (() => null), titlesRef.current))
+        if (!cancelled) setSnippets(mentionSnippets(folder ? splitFrontmatter(file.content).body : file.content, target, resolveRef.current ?? (() => null), titlesRef.current))
       },
       () => {
         if (!cancelled) setSnippets([]) // unreadable (gone, too large, …): the entry stands alone
@@ -152,7 +152,6 @@ function BacklinkEntry({
       cancelled = true
     }
   }, [folder, record.path, record.mtime, target])
-  const lines = useMemo(() => (folder ? folderMentionSnippets(record, target, resolve ?? (() => null), titles) : snippets), [folder, record, target, resolve, titles, snippets])
 
   const open = (event: React.MouseEvent): void => {
     // ⇧⌘-click opens the note in a new window (YAZ-4444 D32); a folder's page has none.
@@ -166,10 +165,10 @@ function BacklinkEntry({
       <button type="button" className="backlinks__note" title={page} onClick={open} {...hoverOf(`${page}\n-1`, page)}>
         {record.title}
       </button>
-      {lines === null ? (
+      {snippets === null ? (
         <div className="backlinks__skeleton" aria-hidden />
       ) : (
-        lines.map((snippet, i) => (
+        snippets.map((snippet, i) => (
           <button key={i} type="button" className="backlinks__snippet" title={page} onClick={(event) => {
             // A line in a cell note (YAZ-3818): the note opens with that cell note's card.
             if (snippet.cellNote !== undefined && !event.metaKey) requestCellNote(page, snippet.cellNote)

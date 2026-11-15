@@ -23,8 +23,12 @@ import { createWikilinkResolveSource, type WikilinkResolveSource } from './wikil
 import { createViewOnlyLinkSource, type ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import * as frontmatter from '@shared/frontmatter'
 import { announceTwinSave } from '../lib/twinEditors'
+import { NoteWindow, dropNoteWindowsAt, noteWindowLink, noteWindowMemory, renameNoteWindows } from '../views/view/NoteWindow'
+import type { Row } from '../views/engine'
 import { readPageView } from '../lib/pageView'
+import { writeProperty } from '../views/writeProperty'
 import type { NoticeKind } from '../lib/notice'
+import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 
 /**
  * Render counters for the note's heavy sections (YAZ-2196): each is the REAL component, called
@@ -140,7 +144,7 @@ import { storage } from '../lib/storage'
 import { fetchTree } from '../lib/treeFeed'
 import { setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { createCrepe, editorViewOf, focusEditor, getCaretOf, getPlainText, getZoomKeyOf, moveCaretIntoZoom, placeCaret, setMarkdown, zoomPageTo, type CreateCrepeOptions } from './createCrepe'
-import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity } from '../lib/renameContinuity'
+import { _resetRenameContinuity, carryEditorAcrossRename, registerRenameContinuity, retireDeletedPath } from '../lib/renameContinuity'
 import { applyExternalMarkdown } from './external/applyExternalMarkdown'
 import { mergeExternalMarkdown } from './external/mergeExternal'
 import type { BlockLines } from './lineNumbers/blockLines'
@@ -148,6 +152,15 @@ import { requestBlockLines, showLineNumbers, type ShownLines } from './lineNumbe
 import { showSectionIndent } from './outline/sectionIndent'
 import { showFolding } from './outline/foldingSwitch'
 import { outlineFoldKeyStem } from './outline/outlineFoldKeys'
+
+/**
+ * The cog's open menu (YAZ-4776): a portal on the page, under its cog, so a test finds it by the open cog's
+ * `aria-controls`, not inside the cog's pane. `null` while it is closed.
+ */
+function menuIn(scope: ParentNode): HTMLElement | null {
+  const id = scope.querySelector('.page-settings > button[aria-expanded="true"]')?.getAttribute('aria-controls')
+  return id == null ? null : document.getElementById(id)
+}
 
 interface FakeCrepe {
   md: string
@@ -192,7 +205,7 @@ const watch: WatchSource = {
 const noop = (): void => undefined
 
 /** Mounts <Editor> and settles useFile's load + the fake crepe.create() so autosave is attached. */
-async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean } = {}): Promise<HTMLElement> {
+async function mount(content: string, mtime = 1, extra: { path?: string; wikilinks?: WikilinkResolveSource; reviewSettings?: ReviewSettings; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; onOpenFileBackground?: (path: string) => void; newNoteFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; onNotice?: (message: string, icon?: NoticeKind) => void; tableOfContents?: TableOfContents; tocOnByDefault?: boolean; guideLinesOnByDefault?: boolean; foldingOnByDefault?: boolean; bulletThreadingOnByDefault?: boolean; onChangeTableOfContents?: (mode: TableOfContents) => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; behind?: boolean; vaultReadOnly?: boolean; onFileAction?: (root: string) => Promise<boolean> } = {}): Promise<HTMLElement> {
   const path = extra.path ?? PATH
   const file: FileResponse = { path, content, mtime, size: content.length }
   readFile.mockResolvedValueOnce(file)
@@ -201,7 +214,7 @@ async function mount(content: string, mtime = 1, extra: { path?: string; wikilin
   if (extra.behind === true) container.className = 'tabstack__layer tabstack__layer--hidden'
   document.body.appendChild(container)
   root = createRoot(container)
-  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} />))
+  act(() => root?.render(<Editor root="/vault" path={path} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={extra.wikilinks ?? createWikilinkResolveSource()} reviewSettings={extra.reviewSettings} viewOnlyLinks={extra.viewOnlyLinks} onRetitle={extra.onRetitle ?? noop} onOpenFileBackground={extra.onOpenFileBackground} newNoteFolderFor={extra.newNoteFolderFor} onUserEdit={extra.onUserEdit} onNotice={extra.onNotice} tableOfContents={extra.tableOfContents} tocOnByDefault={extra.tocOnByDefault} guideLinesOnByDefault={extra.guideLinesOnByDefault} foldingOnByDefault={extra.foldingOnByDefault} bulletThreadingOnByDefault={extra.bulletThreadingOnByDefault} onChangeTableOfContents={extra.onChangeTableOfContents} tableOfContentsWidth={extra.tableOfContentsWidth} onChangeTableOfContentsWidth={extra.onChangeTableOfContentsWidth} startView={extra.startView} vaultReadOnly={extra.vaultReadOnly} onFileAction={extra.onFileAction} />))
   await settle()
   await settle()
   return container
@@ -549,7 +562,8 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     vi.mocked(storage.setTocSwitch).mockRestore()
   })
 
-  const choices = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__choices button')]
+  // "TOC made from" by its name: the cog has other pill groups now, "Code block width" and "Table width" (YAZ-4783 layer 2).
+  const choices = (el: HTMLElement) => [...(menuIn(el)?.querySelectorAll<HTMLButtonElement>('[aria-label="TOC made from"] button') ?? [])]
   const pressed = (el: HTMLElement) => choices(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)
 
   it('seeds from the app state: the saved source is in the channel when createCrepe gets it, before any scan, and pressed in the cog', async () => {
@@ -600,14 +614,14 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
     saved = 'headings'
     const off = await mount(BODY, 1, { tableOfContents: 'auto', tocOnByDefault: false })
     clickCog(off)
-    expect(off.querySelector('.page-settings__menu')).not.toBeNull()
-    expect(off.querySelector('.page-settings__choices')).toBeNull()
+    expect(menuIn(off)).not.toBeNull()
+    expect(menuIn(off)?.querySelector('[aria-label="TOC made from"]') ?? null).toBeNull()
     act(() => root?.unmount())
     container?.remove()
     const el = await mount(BODY, 1, { tableOfContents: 'pinned' })
     clickCog(el)
     expect(pressed(el)).toEqual(['Auto:false', 'Headings:true', 'Bullets:false'])
-    const row = [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')].find((button) => button.textContent?.includes('Table of contents'))
+    const row = [...(menuIn(el)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])].find((button) => button.textContent?.includes('Table of contents'))
     if (row === undefined) throw new Error('no "Table of contents" row')
     // The row writes the note (YAZ-4094 G4): its echo lands as `disk`, and the control follows it.
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 2, size: body.content.length }))
@@ -617,7 +631,7 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     await settle()
-    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    expect(menuIn(el)?.querySelector('[aria-label="TOC made from"]') ?? null).toBeNull()
     // Back on: the choice is still the saved one — hiding the control changed nothing.
     diskHas('---\ntoc: false\n---\n' + BODY, 2)
     await act(async () => {
@@ -637,7 +651,7 @@ describe('CrepeHost table of contents source (YAZ-2700 D14)', () => {
  * YAZ-4094 G4 (`toc: true | false` in its frontmatter), as "Section indent" is.
  */
 describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-2700 D12, YAZ-2950)', () => {
-  const rows = (el: HTMLElement) => [...el.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button')]
+  const rows = (el: HTMLElement) => [...(menuIn(el)?.querySelectorAll<HTMLButtonElement>(':scope > button') ?? [])]
   const row = (el: HTMLElement, name: string): HTMLButtonElement => {
     const found = rows(el).find((button) => button.textContent?.startsWith(name))
     if (found === undefined) throw new Error(`no "${name}" row`)
@@ -866,11 +880,11 @@ describe('CrepeHost page switches: Heading levels and Table of contents (YAZ-270
     expect(pressCmdJ().defaultPrevented).toBe(false)
     clickCog(el)
     expect(rows(el).map((button) => `${button.textContent}:${button.getAttribute('aria-pressed')}`)).toEqual(['Read only:false', 'Line numbers:false', 'Section indent:false', 'Guide lines✓:true', 'Folding✓:true', 'Bullet threading:false', 'Heading levels:false', 'Table of contents:false'])
-    expect(el.querySelector('.page-settings__choices')).toBeNull()
+    expect(menuIn(el)?.querySelector('[aria-label="TOC made from"]') ?? null).toBeNull()
     diskHas(BODY, 1)
     await clickRow(el, 'Table of contents')
     expect(row(el, 'Table of contents').getAttribute('aria-pressed')).toBe('true')
-    expect(el.querySelector('.page-settings__choices')).not.toBeNull()
+    expect(menuIn(el)?.querySelector('[aria-label="TOC made from"]') ?? null).not.toBeNull()
     expect(el.querySelectorAll('.toc__line')).toHaveLength(2)
     expect(pressCmdJ().defaultPrevented).toBe(true)
     expect(written()).toEqual([TOC_ON + BODY])
@@ -1434,6 +1448,125 @@ describe('copies of one file hear a save at once (YAZ-2940 D4, S23)', () => {
 })
 
 /**
+ * Open a row in a window (YAZ-4547 D14): the card holds a real `Editor` on the note, the tab itself in a pop-up, so the
+ * twin rule covers a note that is also open in a tab, and the card shows the note's Properties panel.
+ */
+describe('the note window holds a real editor (YAZ-4547)', () => {
+  const NEXT = '# Hello\n\nfrom the card\n'
+
+  async function mountWithCard() {
+    const file: FileResponse = { path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length }
+    readFile.mockResolvedValueOnce(file)
+    readFile.mockResolvedValueOnce(file)
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    act(() =>
+      root?.render(
+        <>
+          <div className="tab-copy">
+            <Editor {...props} />
+          </div>
+          <section className="editor">
+            <NoteWindow renderEditor={(path) => <Editor {...props} path={path} />} link={noteWindowLink()} titleOf={() => 'note'} memory={noteWindowMemory(PATH)} onOpenInTab={noop} onClose={noop} />
+          </section>
+        </>,
+      ),
+    )
+    await settle()
+    await settle()
+    return container
+  }
+
+  /** The card alone on PATH, with ‹ › over PATH then OTHER. */
+  const OTHER = '/vault/other.md'
+  async function mountCardAlone(onClose = noop) {
+    readFile.mockResolvedValueOnce({ path: PATH, content: FM + BODY, mtime: 1, size: (FM + BODY).length })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const props = { root: '/vault', path: PATH, watch, onOpenFile: openFile, commentsOrder: 'oldest' as const, onChangeCommentsOrder: noop, wikilinks: createWikilinkResolveSource(), onRetitle: noop }
+    const link = noteWindowLink()
+    link.rows = [PATH, OTHER].map((path) => ({ record: { path } }) as Row)
+    act(() =>
+      root?.render(
+        <section className="editor">
+          <NoteWindow renderEditor={(path) => <Editor {...props} path={path} />} link={link} titleOf={() => 'note'} memory={noteWindowMemory(PATH)} onOpenInTab={noop} onClose={onClose} />
+        </section>,
+      ),
+    )
+    await settle()
+    await settle()
+  }
+
+  it('a step with unsaved typing saves the note before the next note mounts (5E Speed)', async () => {
+    await mountCardAlone()
+    type('# Hello\n\ntyped in the card\n')
+    expect(writeFile).not.toHaveBeenCalled()
+    readFile.mockResolvedValueOnce({ path: OTHER, content: BODY, mtime: 1, size: BODY.length })
+    act(() => container!.querySelector<HTMLButtonElement>('[aria-label="Next row"]')!.click())
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => [body.path, body.content])).toEqual([[PATH, `${FM}# Hello\n\ntyped in the card\n`]])
+    expect(readFile.mock.calls.at(-1)?.[0]).toBe(OTHER)
+  })
+
+  it('a rename of its note moves the card\'s editor to the new path: unsaved typing and new typing save there (YAZ-4544)', async () => {
+    const NEW = '/vault/renamed.md'
+    await mountCardAlone()
+    type('# Hello\n\nbefore the rename\n')
+    readFile.mockResolvedValueOnce({ path: NEW, content: FM + BODY, mtime: 2, size: (FM + BODY).length })
+    // App's `file:renamed`, in its order: retire the editors at the old path, then the card follows.
+    act(() => {
+      carryEditorAcrossRename(PATH, NEW)
+      renameNoteWindows(PATH, NEW)
+    })
+    await settle()
+    await settle()
+    type('# Hello\n\nafter the rename\n')
+    await pastDebounce()
+    expect(writeFile.mock.calls.map(([body]) => body.path)).toEqual([NEW])
+    expect(writeFile.mock.calls[0]?.[0].content).toBe(`${FM}# Hello\n\nafter the rename\n`)
+  })
+
+  it('a delete of its note closes the card, and writes nothing (YAZ-4544)', async () => {
+    const onClose = vi.fn()
+    await mountCardAlone(onClose)
+    type('# Hello\n\nunsaved\n')
+    act(() => {
+      retireDeletedPath(PATH)
+      dropNoteWindowsAt(PATH)
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+    await pastDebounce()
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('the card shows the note\'s Properties panel', async () => {
+    const el = await mountWithCard()
+    expect(el.querySelector('.note-window .frontmatter-panel')).not.toBeNull()
+    expect(el.querySelector('.tab-copy .frontmatter-panel')).not.toBeNull()
+  })
+
+  it('a save in the card reaches the tab\'s copy of the note at once (twin rule)', async () => {
+    await mountWithCard()
+    const [tab, card] = createCrepeMock.mock.results.map((r) => r.value as FakeCrepe)
+    expect(createCrepeMock).toHaveBeenCalledTimes(2)
+    act(() => {
+      card.md = NEXT
+      card.onMarkdownUpdated?.(NEXT)
+    })
+    diskHas(FM + NEXT, 99) // the tab copy's read of the change
+    diskHas(FM + NEXT, 99) // its reload() re-reads
+    await pastDebounce()
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(applyExternalMock).toHaveBeenCalledExactlyOnceWith(tab, NEXT, true)
+    expect(tab.md).toBe(NEXT)
+    expect(container?.querySelector('.conflict-bar')).toBeNull()
+  })
+})
+
+/**
  * The other half of the decision table above (YAZ-1356): absorbing a frontmatter-only write keeps
  * the EDITOR still, but the properties panel must still SHOW the new keys. `useFile` never
  * refetches and a fresh `file` would remount Crepe, so the host keeps its own disk bytes and hands
@@ -1638,7 +1771,7 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/upwork-2026`)], generatedAt: 1 }))
     readFile.mockResolvedValue({ path: '/titled/upwork-2026/.folder.md', content: '---\ntitle: Upwork 2026\n---\n', mtime: 1, size: 27 })
     const source = createWikilinkResolveSource()
-    act(() => source.update(() => null, [], [{ path: '/titled/upwork-2026/.folder.md', folder: 'upwork-2026', title: 'Upwork 2026', mtime: 1, properties: {} } as IndexRecord]))
+    act(() => source.update(() => null, [], [{ path: '/titled/upwork-2026/.folder.md', folder: 'upwork-2026', title: 'Upwork 2026', mtime: 1, properties: {}, links: [], embeds: [] } as unknown as IndexRecord]))
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -1653,6 +1786,15 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     const el = await open(`/folders-${name}`, `/folders-${name}/${name}`)
     expect(el.querySelector('.folder-view')).not.toBeNull()
     expect(el.querySelector('.page-title__text')?.textContent).toBe(name)
+    expect(readFile).not.toHaveBeenCalled()
+    expect(createCrepeMock).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-4921: the vault ROOT itself renders the folder view, titled as the vault\'s folder, with no tree waited for and nothing read as a file', async () => {
+    tree.mockImplementation(() => new Promise(() => undefined)) // a tree that never answers: the root is no row of it
+    const el = await open('/wiki', '/wiki')
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('wiki')
     expect(readFile).not.toHaveBeenCalled()
     expect(createCrepeMock).not.toHaveBeenCalled()
   })
@@ -1703,12 +1845,12 @@ describe('Editor folder dispatch (YAZ-2290 D3)', () => {
     expect(readFile).not.toHaveBeenCalled()
   })
 
-  it('The vault’s top level has no page: the root path, as a tab, is never opened as a folder page — whatever its folders — and nothing is read', async () => {
+  it('YAZ-4921 (replacing "the vault’s top level has no page"): the root path, as a tab, is the vault\'s own folder page — whatever its folders — and nothing is read as a file', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [dir(`${r}/Projects`, [file(`${r}/Projects/a.md`)]), file(`${r}/b.md`)], generatedAt: 1 }))
     const el = await open('/toplevel', '/toplevel')
-    expect(el.querySelector('.folder-view')).toBeNull()
-    expect(el.querySelector('.page-title__text')).toBeNull()
-    expect(el.querySelector('.editor-msg--error')?.textContent).toBe('Unsupported file type.') // what the pane says instead: the root is no folder of its own tree
+    expect(el.querySelector('.folder-view')).not.toBeNull()
+    expect(el.querySelector('.page-title__text')?.textContent).toBe('toplevel')
+    expect(el.querySelector('.editor-msg--error')).toBeNull()
     expect(readFile).not.toHaveBeenCalled()
     expect(createCrepeMock).not.toHaveBeenCalled()
   })
@@ -1986,7 +2128,7 @@ describe('a save repaints only the chips (YAZ-2196 P6)', () => {
 const clickCog = (host: ParentNode): void => act(() => host.querySelector<HTMLButtonElement>('.page-settings__trigger')!.click())
 
 /** A switch of the cog's menu by its name ("Read only" stands first, YAZ-3076). */
-const menuSwitch = (host: ParentNode, name: string): HTMLButtonElement => [...host.querySelectorAll<HTMLButtonElement>('.page-settings__menu > button[aria-pressed]')].find((button) => button.textContent?.startsWith(name))!
+const menuSwitch = (host: ParentNode, name: string): HTMLButtonElement => [...(menuIn(host)?.querySelectorAll<HTMLButtonElement>(':scope > button[aria-pressed]') ?? [])].find((button) => button.textContent?.startsWith(name))!
 
 /** "Line numbers", through the real cog: opens the menu, clicks the switch, closes the menu. */
 function switchLineNumbers(host: ParentNode): void {
@@ -2062,13 +2204,15 @@ describe('the page settings cog (YAZ-2643)', () => {
     expect(el.querySelector('.page-settings')).toBeNull()
   })
 
-  it('a folder page has no cog (S11)', async () => {
+  // Changed by YAZ-3746 D35 (it was S11's "a folder page has no cog"): a folder page has the note page's toolbar, its own cog first.
+  it('a folder page has the toolbar: cog, zoom pill, sync chip, save chip, before its scroller (YAZ-3746 D35)', async () => {
     tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'dir', name: 'Projects', path: `${r}/Projects`, children: [] }], generatedAt: 1 }))
     const source = createWikilinkResolveSource()
     act(() => source.update(() => null, [], [])) // the first index snapshot: an empty vault, no folder settings
-    const el = await open('/cog-folders/Projects', { root: '/cog-folders', wikilinks: source })
+    const el = await open('/cog-folders/Projects', { root: '/cog-folders', wikilinks: source, sync: { root: '/cog-folders', state: 'synced' }, onSyncNow: noop })
     expect(el.querySelector('.folder-view')).not.toBeNull()
-    expect(el.querySelector('.page-settings')).toBeNull()
+    expect([...el.querySelector('section.editor')!.children].map((c) => c.className)).toEqual(['status-chips', 'editor-host'])
+    expect([...el.querySelector('.status-chips')!.children].map((chip) => chip.className.split(' ')[0])).toEqual(['page-settings', 'document-zoom', 'sync-indicator', 'save-indicator'])
   })
 
   it('the switch sets `data-line-numbers` on the scroller and clears it again; the Crepe is never recreated (S6)', async () => {
@@ -2108,7 +2252,7 @@ describe('the page settings cog (YAZ-2643)', () => {
   it('counts THIS editor’s body when the menu opens: the title, the properties and the comments are not in it (S16)', async () => {
     const el = await mount(`${FM}one two\n`)
     clickCog(el)
-    const menu = el.querySelector('.page-settings__menu')!
+    const menu = menuIn(el)!
     expect(menu.textContent).toContain('2 words')
     expect(menu.textContent).toContain('8 characters')
   })
@@ -2576,7 +2720,7 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     expect(el.querySelector('.conflict-bar')).toBeNull()
   })
 
-  it('S45, S47, S48: the chip asks; the cog’s row while on opens the same box; "Allow edits" removes the key and the chip', async () => {
+  it('S45, S47, S48: the chip asks; the cog’s row while on opens the same box; "Turn Read only off" removes the key and the chip', async () => {
     writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
     const el = await mount(LOCKED_FM + BODY)
     expect(chipButton(el)?.textContent).toBe('Read only')
@@ -2587,12 +2731,12 @@ describe('the cog’s "Read only" row, the chip and the "Allow edits?" box on a 
     // The cog's row while on: the menu closes, the box opens under the chip.
     clickCog(el)
     act(() => menuSwitch(el, 'Read only').click())
-    expect(el.querySelector('.page-settings__menu')).toBeNull()
+    expect(menuIn(el)).toBeNull()
     expect(askBox(el)).not.toBeNull()
     expect(writeFile).not.toHaveBeenCalled()
     diskHas(LOCKED_FM + BODY, 1)
     await act(async () => {
-      boxButton(el, 'Allow edits').click()
+      boxButton(el, 'Turn Read only off').click()
       await vi.advanceTimersByTimeAsync(0)
     })
     await settle()
@@ -2716,5 +2860,330 @@ describe('the tab learns the level the page really shows (YAZ-3676 F3)', () => {
     } finally {
       vi.mocked(moveCaretIntoZoom).mockReset()
     }
+  })
+})
+
+/**
+ * The folder's Page tab (YAZ-4584 D38): the Outline view renamed, now the note editor on the folder's `.folder.md` —
+ * the body alone, the frontmatter split off. The folder page writes its settings into the SAME file, so the two
+ * writers must never lose each other's bytes. A tiny disk with mtime guards stands under the real `writeProperty`.
+ */
+describe('the folder Page tab (YAZ-4584 D38)', () => {
+  const VAULT = '/pg'
+  const DIR = `${VAULT}/Projects`
+  const PAGE = `${DIR}/.folder.md`
+  const SETTINGS = '---\nfolder_settings:\n  views:\n    - type: outline\n      name: Page\n    - type: table\n      name: Table\n---\n'
+  let disk: { content: string; mtime: number }
+  let source: ReturnType<typeof createWikilinkResolveSource>
+
+  /** The index's word on the settings file, as the bridge feeds it. */
+  const feedIndex = (): void => {
+    const properties = frontmatter.parseFrontmatter(frontmatter.splitFrontmatter(disk.content).frontmatter).properties
+    act(() => source.update(() => null, [], [{ path: PAGE, name: '.folder.md', basename: '.folder', title: 'Projects', folder: 'Projects', ext: 'md', size: disk.content.length, ctime: 1, mtime: disk.mtime, properties, aliases: [], tags: [], links: [], embeds: [] } as IndexRecord]))
+  }
+
+  async function openFolder(content: string): Promise<HTMLElement> {
+    disk = { content, mtime: 10 }
+    tree.mockImplementation(async (r) => ({ root: r, tree: [{ type: 'dir', name: 'Projects', path: DIR, children: [] }], generatedAt: 1 }))
+    readFile.mockImplementation(async (path) => {
+      if (path !== PAGE) throw new BridgeRequestError('NOT_FOUND', 'path does not exist')
+      return { path, content: disk.content, mtime: disk.mtime, size: disk.content.length }
+    })
+    // The main process's guard: a write against an older mtime is a CONFLICT that names the disk's.
+    writeFile.mockImplementation(async ({ path, content: next, expectedMtime }) => {
+      if (expectedMtime !== disk.mtime) throw new BridgeRequestError('CONFLICT', 'file changed on disk since last read', disk.mtime)
+      disk = { content: next, mtime: disk.mtime + 1 }
+      return { path, mtime: disk.mtime, size: next.length }
+    })
+    source = createWikilinkResolveSource()
+    feedIndex()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<Editor root={VAULT} path={DIR} watch={watch} onOpenFile={openFile} onRetitle={noop} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={source} />))
+    for (let i = 0; i < 4; i++) await settle()
+    return container
+  }
+
+  /** The folder page writes a key of its own `.folder.md` (its cog, a view edit): the real door, `transformFile`. */
+  async function settingsWrite(): Promise<void> {
+    await act(async () => void (await writeProperty(PAGE, 'show_page_file', true)))
+  }
+
+  it('a stored Outline opens as the Page tab: the note editor holds the BODY of `.folder.md`; the folder page keeps the one title and properties panel', async () => {
+    const el = await openFolder(`${SETTINGS}# Intro\n`)
+    expect([...el.querySelectorAll('[role="tab"]')].map((t) => t.textContent)).toEqual(['Page', 'Table'])
+    expect(createCrepeMock).toHaveBeenCalledTimes(1)
+    expect(crepe().md).toBe('# Intro\n')
+    expect(el.querySelector('.view-page .folder-page-doc .editor-mount')).not.toBeNull()
+    expect(el.querySelectorAll('.page-title')).toHaveLength(1)
+    expect(el.querySelectorAll('.editor-host')).toHaveLength(1) // the folder page's scroller; the Page has none of its own
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('edits and saves the body: the save keeps the settings frontmatter byte for byte', async () => {
+    await openFolder(`${SETTINGS}# Intro\n`)
+    type('# Intro\n\ntyped\n')
+    await pastDebounce()
+    expect(disk.content).toBe(`${SETTINGS}# Intro\n\ntyped\n`)
+  })
+
+  it('a settings write while typing keeps BOTH: the watcher brings the new frontmatter, the save brings the typing', async () => {
+    await openFolder(`${SETTINGS}# Intro\n`)
+    type('# Intro\n\ntyped before the setting\n')
+    await settingsWrite()
+    expect(disk.content).toContain('show_page_file: true')
+    expect(disk.content).toContain('# Intro\n') // the settings write kept the body that was on disk
+    await emit({ type: 'change', path: PAGE, mtime: disk.mtime })
+    await pastDebounce()
+    expect(el().querySelector('.conflict-bar')).toBeNull()
+    expect(disk.content).toContain('show_page_file: true')
+    expect(disk.content).toContain('folder_settings:')
+    expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n\ntyped before the setting\n')
+  })
+
+  it('a settings write that lands before the watcher speaks: the refused save adopts the new frontmatter and keeps the typing', async () => {
+    await openFolder(`${SETTINGS}# Intro\n`)
+    type('# Intro\n\nraced\n')
+    await settingsWrite()
+    await pastDebounce()
+    await settle()
+    expect(el().querySelector('.conflict-bar')).toBeNull()
+    expect(disk.content).toContain('show_page_file: true')
+    expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n\nraced\n')
+  })
+
+  // YAZ-3746 13BM PS1, PS2: the folder ⚙ holds the folder page's own settings only; the Page tab's text switches moved to
+  // the Page's own settings button on its view toolbar (the other views' sliders), and still write into `.folder.md`.
+  it("the note's page switches show in the Page tab's own settings button, not in the folder page's cog, and write into `.folder.md` with the body kept (D35, 13BM)", async () => {
+    const el = await openFolder(`${SETTINGS}# Intro\n`)
+    expect(el.querySelectorAll('.page-settings')).toHaveLength(2) // the folder page's cog, and the Page's own button
+    click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
+    const folderMenu = menuIn(el.querySelector('.status-chips')!)!
+    expect(folderMenu.textContent).toContain('Projects (folder page)')
+    expect(folderMenu.textContent).toContain('Page file in the sidebar')
+    expect(folderMenu.textContent).not.toContain('Section indent')
+    expect(folderMenu.textContent).not.toContain('Line numbers')
+    expect(folderMenu.textContent).not.toContain('words')
+    click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
+    const pageButton = el.querySelector<HTMLElement>('.view-toolbar__actions .page-settings > button[aria-label="Page settings"]')!
+    click(pageButton)
+    const menu = menuIn(el.querySelector('.view-toolbar__actions')!)!
+    expect(menu.textContent).toContain('Section indent')
+    expect(menu.textContent).not.toContain('Page file in the sidebar')
+    expect(menu.textContent).toContain('2 words') // the Page body's count (the fake editor's text is its markdown)
+    click([...menu.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent?.replace('✓', '').trim() === 'Section indent')!)
+    await settle()
+    expect(disk.content).toContain('section-indent: true')
+    expect(frontmatter.splitFrontmatter(disk.content).body).toBe('# Intro\n')
+  })
+
+  it("the Page's fold-all button stands in the folder page's toolbar, left of the cog, and runs on the Page; it goes as another view shows (10D)", async () => {
+    const view = { state: { doc: 'the state' }, dispatch: vi.fn(), dom: document.createElement('div') }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+    try {
+      const el = await openFolder(`${SETTINGS}# Intro\n`)
+      expect([...el.querySelector('.status-chips')!.children].map((c) => c.className.split(' ')[0])).toEqual(['fold-all__trigger', 'page-settings', 'document-zoom', 'save-indicator'])
+      expect(el.querySelectorAll('.fold-all__trigger')).toHaveLength(1)
+      foldAll.next = 'collapse'
+      await act(async () => el.querySelector<HTMLElement>('.status-chips > .fold-all__trigger')!.click())
+      expect(setAllDocumentFolds).toHaveBeenLastCalledWith(true)
+      expect(foldAll.command).toHaveBeenLastCalledWith(view.state, view.dispatch)
+      click([...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Table')!)
+      await settle()
+      expect(el.querySelector('.fold-all__trigger')).toBeNull()
+    } finally {
+      vi.mocked(editorViewOf).mockImplementation(emptyView as never)
+    }
+  })
+
+  it('a read-only folder page makes the Page read only (D36), and the toolbar takes the Page back off as another view shows', async () => {
+    const el = await openFolder(`---\nreadonly: true\n${SETTINGS.slice(4)}# Intro\n`)
+    expect((crepe() as FakeCrepe & { readonly: boolean }).readonly).toBe(true)
+    click([...el.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent === 'Table')!)
+    await settle()
+    click(el.querySelector<HTMLElement>('.status-chips .page-settings__trigger')!)
+    expect(menuIn(el)!.textContent).not.toContain('Section indent')
+  })
+
+  const el = (): HTMLElement => container!
+  const click = (target: HTMLElement): void => act(() => target.click())
+})
+
+/**
+ * Read only for the whole vault, with a timed "Allow edits" (YAZ-4939): `vaultReadOnly` reaches the note through the
+ * `Editor` wrapper's context. The note's own switch is never written for it.
+ */
+describe('Read only for the whole vault, with a timed "Allow edits" (YAZ-4939)', () => {
+  const LOCKED_FM = '---\nstatus: draft\nreadonly: true\n---\n'
+  const chipButton = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.read-only-chip__button')
+  const lockNow = (el: HTMLElement) => el.querySelector<HTMLButtonElement>('.read-only-chip__lock')
+  const askBox = (el: HTMLElement) => el.querySelector<HTMLElement>('.read-only-chip__ask')
+  const boxLabels = (el: HTMLElement) => [...(askBox(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].map((b) => b.textContent)
+  const boxButton = (el: HTMLElement, name: string) => [...(askBox(el)?.querySelectorAll<HTMLButtonElement>('button') ?? [])].find((b) => b.textContent === name)!
+  const readonlyOf = () => (crepe() as FakeCrepe & { readonly: boolean }).readonly
+  const allow = async (el: HTMLElement, name: string) => {
+    act(() => chipButton(el)!.click())
+    await act(async () => {
+      boxButton(el, name).click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+  }
+
+  it('the vault On: a note with no switch of its own opens read only, with the chip and the cog’s row On; the box offers the three times and Cancel, no "Turn Read only off"; nothing is written', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    expect(lockNow(el)).toBeNull()
+    act(() => chipButton(el)!.click())
+    expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+    act(() => boxButton(el, 'Cancel').click())
+    clickCog(el)
+    expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('the vault Off: the note is editable, no chip', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: false })
+    expect(readonlyOf()).toBe(false)
+    expect(chipButton(el)).toBeNull()
+  })
+
+  it('"Allow edits for 1 minute": the page edits and the chip reads "Editing · 1:00" with "Lock now"; at zero the page saves what was typed, then locks again, and the note is never written for the switch', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, 'Allow edits for 1 minute')
+    expect(readonlyOf()).toBe(false)
+    expect(chipButton(el)?.textContent).toBe('Editing · 1:00')
+    expect(chipButton(el)?.classList.contains('read-only-chip__button--editing')).toBe(true)
+    expect(lockNow(el)?.textContent).toBe('Lock now')
+    // The last keys land 100 ms before zero: the autosave's 500 ms is not up, so the write at zero is the unlock's own save.
+    await act(async () => void (await vi.advanceTimersByTimeAsync(60_000 - 100)))
+    expect(readonlyOf()).toBe(false)
+    type('# Hello\n\ntyped while allowed\n')
+    expect(writeFile).not.toHaveBeenCalled()
+    await act(async () => void (await vi.advanceTimersByTimeAsync(100)))
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\ntyped while allowed\n`])
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    expect(lockNow(el)).toBeNull()
+  })
+
+  it('"Lock now" saves what was typed and locks at once', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, '10 minutes')
+    expect(chipButton(el)?.textContent).toBe('Editing · 10:00')
+    type('# Hello\n\nquick\n')
+    await act(async () => {
+      lockNow(el)!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual([`${FM}# Hello\n\nquick\n`])
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+  })
+
+  it('"Until I close this tab" unlocks with no clock; the cog’s row still reads On, and a click on it then is "Lock now"', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, 'Until I close this tab')
+    expect(readonlyOf()).toBe(false)
+    expect(chipButton(el)?.textContent).toBe('Editing · until close')
+    clickCog(el)
+    expect(menuSwitch(el, 'Read only').getAttribute('aria-pressed')).toBe('true')
+    await act(async () => {
+      menuSwitch(el, 'Read only').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(readonlyOf()).toBe(true)
+    expect(chipButton(el)?.textContent).toBe('Read only')
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('precedence: the vault On wins — a note with its own switch on has no "Turn Read only off"; with the vault Off it has, and the times too', async () => {
+    const el = await mount(LOCKED_FM + BODY, 1, { vaultReadOnly: true })
+    expect(readonlyOf()).toBe(true)
+    act(() => chipButton(el)!.click())
+    expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+    act(() => boxButton(el, 'Cancel').click())
+    act(() => root?.unmount())
+    const open = await mount(LOCKED_FM + BODY, 1, { vaultReadOnly: false })
+    act(() => chipButton(open)!.click())
+    expect(boxLabels(open)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Turn Read only off', 'Cancel'])
+    // A time choice here too: the note's own switch stays in the file.
+    await act(async () => {
+      boxButton(open, 'Allow edits for 1 minute').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(readonlyOf()).toBe(false)
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('no work per keystroke: while an unlock runs, typing changes the lock not at all (no setReadonly call), and the host arms one timeout for the unlock', async () => {
+    const el = await mount(FM + BODY, 1, { vaultReadOnly: true })
+    await allow(el, '10 minutes')
+    const fake = crepe() as FakeCrepe & { setReadonly: (on: boolean) => void }
+    const spy = vi.spyOn(fake, 'setReadonly')
+    for (let i = 0; i < 20; i++) type(`# Hello\n\nkey ${i}\n`)
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A table section collapsed in a read-only note (YAZ-4939): a view change. The editor tells the host (`VIEW_ONLY_CHANGE`
+ * on its DOM, `tableSubhead.ts`), and the host takes the live text as saved: nothing is written while the note is locked
+ * — not by the autosave, the unmount, the window's close nor a cog key — and an unlocked page's next save writes it.
+ */
+describe('a table collapse in a read-only note is a view change (YAZ-4939)', () => {
+  const LOCKED_FM = '---\nstatus: draft\nreadonly: true\n---\n'
+  const TABLE = '| A |\n| - |\n| s |\n| r |\n\n<!-- table: subhead 3 -->\n'
+  const FOLDED = '| A |\n| - |\n| s |\n| r |\n\n<!-- table: fold 4, subhead 3 -->\n'
+  let view: { state: null; dispatch: () => void; dom: HTMLElement }
+  beforeEach(() => {
+    view = { state: null, dispatch: () => undefined, dom: document.createElement('div') }
+    vi.mocked(editorViewOf).mockReturnValue(view as never)
+  })
+  afterEach(() => vi.mocked(editorViewOf).mockImplementation(emptyView as never))
+  /** The editor collapsed a section in a view that is not editable: the doc holds the fold, and the host is told. */
+  const collapse = () =>
+    act(() => {
+      crepe().md = FOLDED
+      view.dom.dispatchEvent(new Event(VIEW_ONLY_CHANGE))
+    })
+
+  it('a note’s own Read only: the collapse is never written — not by the autosave, the window’s close or the unmount', async () => {
+    const el = await mount(LOCKED_FM + TABLE)
+    collapse()
+    await pastDebounce()
+    expect(el.querySelector('.save-indicator--saved')).not.toBeNull()
+    await act(async () => void (await Promise.all(flushListeners.map((l) => l()))))
+    act(() => root?.unmount())
+    root = null
+    expect(writeFile).not.toHaveBeenCalled()
+  })
+
+  it('the vault’s Read only: a cog key after a collapse writes the key over the disk’s body; after "Allow edits" the next save writes the collapse with the text', async () => {
+    writeFile.mockImplementation(async (body) => ({ path: body.path, mtime: 20, size: body.content.length }))
+    const el = await mount(FM + TABLE, 1, { vaultReadOnly: true })
+    collapse()
+    clickCog(el)
+    diskHas(FM + TABLE, 1)
+    await act(async () => {
+      menuSwitch(el, 'Guide lines').click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await settle()
+    expect(writeFile.mock.calls.map(([body]) => body.content)).toEqual(['---\nstatus: draft\nguide-lines: false\n---\n' + TABLE])
+    clickCog(el)
+    act(() => el.querySelector<HTMLButtonElement>('.read-only-chip__button')!.click())
+    await act(async () => {
+      [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === '10 minutes')!.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    type(FOLDED.replace('| r |', '| x |'))
+    await pastDebounce()
+    expect(writeFile.mock.calls.at(-1)![0].content).toBe('---\nstatus: draft\nguide-lines: false\n---\n' + FOLDED.replace('| r |', '| x |'))
   })
 })

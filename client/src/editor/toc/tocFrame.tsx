@@ -78,7 +78,9 @@ export function useTocBox(shows: boolean, scrollerOf: () => HTMLElement | null, 
  * and the find bar's place all read. It is there only while the names show. A drag writes the
  * same variable itself (`beginTocResize`), so after its release this finds the width already there
  * and the column does not jump. Names that go away under a drag — the editor closes, the window
- * narrows, the note zooms — end it.
+ * narrows, the note zooms — end it. The section also wears `data-toc-names` while the names show: a
+ * folder page's Page tab puts its outline deep in the page's scroller, and toc.css gives that scroller
+ * its room by this attribute, with no `:has()` over the text (YAZ-4849; typing, bug YAZ-3329).
  */
 export function useTocWidthVar(names: boolean, shownWidth: number, sectionOf: () => HTMLElement | null, anchor: unknown, endResize: MutableRefObject<(() => void) | null>): void {
   useLayoutEffect(() => {
@@ -86,9 +88,11 @@ export function useTocWidthVar(names: boolean, shownWidth: number, sectionOf: ()
     const section = sectionOf()
     if (section === null) return
     section.style.setProperty('--toc-width', `${shownWidth}px`)
+    section.setAttribute('data-toc-names', '')
     return () => {
       endResize.current?.()
       section.style.removeProperty('--toc-width')
+      section.removeAttribute('data-toc-names')
     }
   }, [names, shownWidth, anchor]) // eslint-disable-line react-hooks/exhaustive-deps -- `sectionOf` reads only what `anchor` names
 }

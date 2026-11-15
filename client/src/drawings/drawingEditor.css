@@ -60,14 +60,6 @@
   font-size: 12px;
 }
 
-/* YAZ-4071 7J: the cog menu, its "i" panel and the engine's text toolbar (`z-index: var(--zIndex-ui-top)`,
-   100) are in one stacking context, and the app's rules are 10: the toolbar covered the cog's rows. They open
-   above the toolbar and stay under the engine's main menu (110). */
-.editor--drawing .excalidraw .drawing-editor__chips .page-settings__menu,
-.editor--drawing .excalidraw .drawing-editor__chips .page-settings__tip {
-  z-index: calc(var(--zIndex-ui-top, 100) + 1);
-}
-
 /* YAZ-4071 7P: the engine's top row is `1fr 2fr 1fr` (`1fr 1fr 1fr` from 1536 px), and an `fr` column never gets
    smaller than its content. In a narrow pane (the sidebar open, a window under about 1,055 px) the row ran past the
    window, and the cog, its menu and the save status went with it. Here the side columns keep their content, and the

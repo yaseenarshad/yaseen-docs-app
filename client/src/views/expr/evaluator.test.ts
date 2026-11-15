@@ -247,12 +247,45 @@ describe('global functions', () => {
     expect(ev('if(price, price.toFixed(2) + " dollars")', scope())).toBe(null)
   })
 
+  it('today(), now() and a date\'s isToday / isThisWeek / isThisMonth read the scope\'s clock (YAZ-4919); the week starts on Sunday, or Monday by the scope', () => {
+    // Wednesday 2026-11-11, 15:30.
+    const s = (weekStartsOn?: 'sunday' | 'monday') => scope({}, { now: new Date(2026, 10, 11, 15, 30).getTime(), weekStartsOn })
+    expect(ev('today()', s())).toEqual(new DateValue(new Date(2026, 10, 11).getTime(), false))
+    expect(ev('now()', s())).toEqual(new DateValue(new Date(2026, 10, 11, 15, 30).getTime(), true))
+    expect(ev('date("2026-11-11 23:59").isToday()', s())).toBe(true)
+    expect(ev('date("2026-11-11").isToday()', s())).toBe(true)
+    expect(ev('date("2026-11-12").isToday()', s())).toBe(false)
+    expect(ev('date("2026-11-10").isToday()', s())).toBe(false)
+    // Sunday 11-08 … Saturday 11-14.
+    expect(ev('date("2026-11-08").isThisWeek()', s())).toBe(true)
+    expect(ev('date("2026-11-14 18:00").isThisWeek()', s())).toBe(true)
+    expect(ev('date("2026-11-07").isThisWeek()', s())).toBe(false)
+    expect(ev('date("2026-11-15").isThisWeek()', s())).toBe(false)
+    // Monday 11-09 … Sunday 11-15.
+    expect(ev('date("2026-11-08").isThisWeek()', s('monday'))).toBe(false)
+    expect(ev('date("2026-11-15").isThisWeek()', s('monday'))).toBe(true)
+    expect(ev('date("2026-11-16").isThisWeek()', s('monday'))).toBe(false)
+    expect(ev('date("2026-11-01").isThisMonth()', s())).toBe(true)
+    expect(ev('date("2026-11-30 23:00").isThisMonth()', s())).toBe(true)
+    expect(ev('date("2026-10-31").isThisMonth()', s())).toBe(false)
+    expect(ev('date("2026-12-01").isThisMonth()', s())).toBe(false)
+    // A week across a month's end; December across the year's end.
+    expect(ev('date("2026-11-30").isThisWeek()', scope({}, { now: new Date(2026, 11, 2).getTime(), weekStartsOn: 'monday' }))).toBe(true)
+    expect(ev('date("2026-12-31 20:00").isThisMonth()', scope({}, { now: new Date(2026, 11, 2).getTime() }))).toBe(true)
+    // A null date is null (out of a filter); not a date is an error, out too.
+    expect(ev('note.missing.isToday()', s())).toBeNull()
+    expect(ev('"2026-11-11".isToday()', s())).toBeInstanceOf(ErrorValue)
+    // No clock in the scope: the real one.
+    expect((ev('today()') as DateValue).ms).toBe(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime())
+  })
+
   it('date, today, now', () => {
     expect(ev('date("2026-08-21")')).toEqual(new DateValue(new Date(2026, 7, 21).getTime(), false))
     expect(ev('date("2026-08-21 10:00")')).toEqual(new DateValue(new Date(2026, 7, 21, 10).getTime(), true))
     expect(ev('date(date("2026-08-21"))')).toEqual(new DateValue(new Date(2026, 7, 21).getTime(), false))
     expect(ev('date(0)')).toEqual(new DateValue(0, true))
     expect(err(ev('date("nope")'))).toMatch(/invalid date/)
+    expect(err(ev('date("2026-02-30")'))).toMatch(/invalid date/) // an impossible day is not March 2 (YAZ-4644 E3)
     const today = ev('today()') as DateValue
     expect(today.hasTime).toBe(false)
     expect(today.ms).toBe(new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime())
@@ -508,6 +541,12 @@ describe('link and regex methods', () => {
 })
 
 describe('file methods', () => {
+  it('a record with no file yet (times 0, the row of a folder with no `.folder.md`) has no Created or Modified, never 1970 (YAZ-3746 2D)', () => {
+    const none = scope({}, { file: new FileValue({ ...record, ctime: 0, mtime: 0 }) })
+    expect(ev('file.ctime', none)).toBeNull()
+    expect(ev('file.mtime', none)).toBeNull()
+  })
+
   it('hasTag is case-insensitive, nested-aware and # tolerant', () => {
     expect(ev('file.hasTag("tag")')).toBe(false)
     expect(ev('file.hasTag("book")')).toBe(true)

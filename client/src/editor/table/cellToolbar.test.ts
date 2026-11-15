@@ -55,6 +55,7 @@ describe('when the toolbar shows', () => {
       'label Text', 'Red text', 'Blue text', 'Green text', 'Text colours', 'divider',
       'Bold', 'Italic', 'Strikethrough', 'divider',
       'Align left', 'Align center', 'Align right', 'divider',
+      'Merge cells', 'divider',
       'Clear cells',
     ])
     for (const b of toolbarOf(view)!.querySelectorAll('button')) expect(b.title).toBe(b.getAttribute('aria-label'))

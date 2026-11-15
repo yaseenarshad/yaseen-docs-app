@@ -53,6 +53,8 @@ import { gestureAction } from '@shared/keys'
 import { rowShortcuts } from '../noteKeys'
 import { openCellNote, canOpenCellNote } from '../table/cellNoteCard'
 import { cellNoteAround } from '../table/cellNotes'
+import { boardCheckOf } from '../drawing/boardEmbedScan'
+import type { BoardCheck } from '../drawing/boardEmbedText'
 import { ancestorItemPositions, cellPosAround, innermostItemPos, isListItem, itemLabelText } from './listNodes'
 import { getOutlineFoldKey, outlineFoldLabel } from './outlineFoldKeys'
 import { VIEW_ACTION_META, type ViewAction } from './viewActions'
@@ -182,16 +184,16 @@ export const getZoomKey = (state: EditorState): string | null => {
   return itemPos === null ? null : zoomKeyAt(state.doc, itemPos)
 }
 
-/** Breadcrumb label: the item's first-block text, truncated. */
-const itemLabel = (item: ProseNode, linkText: (text: string) => string = (text) => text): string => {
-  const text = linkText(itemLabelText(item))
+/** Breadcrumb label: the item's first-block text, truncated; an id embed reads as a board's (`isBoard`, YAZ-4920). */
+const itemLabel = (item: ProseNode, linkText: (text: string) => string = (text) => text, isBoard?: BoardCheck): string => {
+  const text = linkText(itemLabelText(item, isBoard))
   return text.length > LABEL_MAX_CHARS ? `${text.slice(0, LABEL_MAX_CHARS - 1).trimEnd()}…` : text
 }
 
 /** The crumb text of the list_item at `itemPos` (YAZ-3647 E3, E4): what the Back list's menu and the tab's tooltip show. */
 export const zoomLabelAt = (state: EditorState, itemPos: number): string | null => {
   const item = state.doc.nodeAt(itemPos)
-  return isListItem(item) ? itemLabel(item, pluginKey.getState(state)?.linkText) : null
+  return isListItem(item) ? itemLabel(item, pluginKey.getState(state)?.linkText, boardCheckOf(state)) : null
 }
 
 /** The zoomed bullet's crumb text, or null when not zoomed (YAZ-3647 E3). */

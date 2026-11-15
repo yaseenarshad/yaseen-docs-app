@@ -33,6 +33,8 @@ const wikilinkHoverKey = new PluginKey('mdapp-wikilink-hover')
 /** The page a collapsed, resolved link span opens, or null. */
 function linkPathOf(view: EditorView, target: EventTarget | null, source: WikilinkResolveSource, viewOnly: ViewOnlyLinkSource, hover: WikilinkHover): { span: Element; path: string } | null {
   if (!(target instanceof Element)) return null
+  // No pill card over a board embed's window (YAZ-4827 item 23): its name pill is the window's own.
+  if (target.closest('.board-embed') !== null) return null
   const span = target.closest(`.${WIKILINK_CLASS}`)
   if (span === null || span.classList.contains(WIKILINK_UNRESOLVED_CLASS) || !view.dom.contains(span)) return null
   // A Markdown link pill (D19) previews the page its address opens, as a `[[link]]` does (D20).
@@ -43,7 +45,7 @@ function linkPathOf(view: EditorView, target: EventTarget | null, source: Wikili
   }
   const inner = wikilinkInnerAt(view.state.doc, linkPosAtDOM(view, span))
   if (inner === null) return null
-  const page = linkPageName(inner)
+  const page = linkPageName(inner, source)
   if (page === '') return null
   const viewTarget = viewOnlyLinkTarget(inner)
   if (viewTarget !== null) {

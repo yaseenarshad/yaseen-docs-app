@@ -22,10 +22,11 @@ import { ensureBoardMergeRule, resolveRebase } from './resolve'
  *     stays a line anyone can read in the GitHub UI.
  *   - A rebase that CONFLICTS on drawings is settled and finished (YAZ-1897 in Draw, YAZ-3039 here,
  *     `resolve.ts`): a drawing merges shape by shape, a diagram keeps both copies, the vault's two
- *     list files merge per entry, and the pass reports what it merged. A NOTE conflict — and
- *     anything else `resolve.ts` does not settle — is aborted immediately, exactly as before (the
- *     lossless rule, YAZ-1081): git puts the working tree back byte-for-byte and the pass reports
- *     `attention/conflict`. A vault is never left in a half-finished rebase, and no `<<<<<<<`
+ *     list files merge per entry, and the pass reports what it merged. A NOTE merges its comments by
+ *     id and its text line by line; when both sides changed the same lines, both versions are kept
+ *     (YAZ-4615 D4, D9). Anything else `resolve.ts` does not settle is aborted immediately, exactly as
+ *     before (the lossless rule, YAZ-1081): git puts the working tree back byte-for-byte and the pass
+ *     reports `attention/conflict`. A vault is never left in a half-finished rebase, and no `<<<<<<<`
  *     marker ever lands in the user's prose.
  *
  * Every failure is CLASSIFIED rather than thrown (`classifyGitFailure`), because the three kinds

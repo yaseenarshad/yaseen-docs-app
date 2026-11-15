@@ -29,7 +29,7 @@ export interface CardPreviewState {
 }
 
 const NONE: CardPreviewState = { id: null, path: null, shown: false, rect: null, by: null }
-/** A note, a board or a code file (YAZ-3508): `hasHoverPreview`. */
+/** A note, a board, a code file (YAZ-3508), a picture or a PDF (YAZ-3746 13R): `hasHoverPreview`. */
 const previews = hasHoverPreview
 
 /**

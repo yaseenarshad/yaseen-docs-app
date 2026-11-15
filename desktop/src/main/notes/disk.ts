@@ -11,7 +11,7 @@ import { doorOf } from '../vaultIndex/mint'
 const code = (err: unknown): string | undefined => (err instanceof BridgeFailure ? err.code : undefined)
 
 /** The disk of the vault at `root` — the vault whose IDs a note is in (`idVault`), or null for one that does not use IDs — and whether it gives them. */
-export async function noteDisk(root: string | null): Promise<{ disk: NoteDisk; ids: boolean }> {
+export async function noteDisk(root: string | null, hint = false): Promise<{ disk: NoteDisk; ids: boolean }> {
   const door = root === null ? null : await doorOf(root)
   const disk: NoteDisk = {
     read: (path) =>
@@ -22,7 +22,8 @@ export async function noteDisk(root: string | null): Promise<{ disk: NoteDisk; i
           return null
         },
       ),
-    createFile: (req) => createFile(req, door),
+    // YAZ-4615 D10: the comment hint, when Settings › Comments says so.
+    createFile: (req) => createFile(req, door, { hint }),
     createDir: (req) => createDir(req, door),
     mintId: async () => {
       if (door === null) throw new Error('this vault does not use IDs')

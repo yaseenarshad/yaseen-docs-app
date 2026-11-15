@@ -97,20 +97,19 @@ describe('help and usage', () => {
   })
 
   it('the contract names every verb and both rules an agent must know', () => {
-    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs due ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
+    for (const word of ['comment ', 'comments ', 'edit ', 'delete ', 'yaseendocs id ', 'yaseendocs links ', 'yaseendocs mentions ', 'yaseendocs due ', 'yaseendocs vaults ', '[[<id>]]', '(missing)', 'id: <id>', '--body', '--title', '--reply-to', '--by', '--json', 'by: agent', 'never in the body', 'Exit codes']) {
       expect(HELP).toContain(word)
     }
   })
 
-  it('says, in at most three lines, that a folder’s values for a note are under `in:` in the block named by the folder’s id, and that a folder’s id is the `id` in `<folder>/.folder.md`', () => {
+  it('says, in one paragraph, that a value is the page’s own top-level field, that columns flow down, and that `in:` holds only a "Separate value for <folder>" value, in the block named by the folder’s id (YAZ-4713 C1, 7A 14)', () => {
     const lines = HELP.split('\n')
-    const first = lines.findIndex((line) => line.includes('`in:`'))
+    const first = lines.findIndex((line) => line.includes('value for a column is a top-level field'))
     expect(first).toBeGreaterThan(-1)
-    const said = lines.slice(first, first + 3).join(' ')
-    expect(said).toContain("named by the folder's id")
-    expect(said).toContain('`id` in `<folder>/.folder.md`')
-    // Nowhere else: those three lines are the whole of it.
-    expect(lines.filter((line, i) => (i < first || i >= first + 3) && /`in:`|\.folder\.md/.test(line))).toEqual([])
+    const said = lines.slice(first, first + 6).join(' ')
+    for (const words of ['one value per key', 'every folder page below it', 'Only a column set to "Separate value for <folder>"', "named by the folder's id", '`id` in `<folder>/.folder.md`']) expect(said).toContain(words)
+    // Nowhere else: that paragraph is the whole of it.
+    expect(lines.filter((line, i) => (i < first || i >= first + 6) && /`in:`|\.folder\.md/.test(line))).toEqual([])
   })
 
   it('E: says that a page\'s title is its `title:` line, that the app builds the file name from the title and the id, and that a page is found from an id by its file name (YAZ-2420 D14)', () => {
@@ -127,6 +126,8 @@ describe('help and usage', () => {
       [['id', p, '--jsno'], 'unknown flag: --jsno'],
       [['links'], 'links needs a page'],
       [['links', p, '--jsno'], 'unknown flag: --jsno'],
+      [['mentions'], 'mentions needs a page'],
+      [['mentions', p, '--title', 'x'], 'mentions does not take --title'],
       [['comment', p], '--body is required'],
       [['comment', p, '--body'], '--body needs a value'],
       [['comment', p, '--titel', 'Numbers', '--body', 'x'], 'unknown flag: --titel'],
@@ -303,7 +304,7 @@ describe('edit and delete (🔒 D4: only what an agent wrote)', () => {
       ['delete', p, 'aa1'],
     ]) {
       const r = await run(argv)
-      expect(r).toEqual({ code: 1, out: '', err: '#1 was left by a person — edit or delete it in the app\n' })
+      expect(r).toEqual({ code: 1, out: '', err: '#1 was left by a person — only its writer can edit or delete it (--by)\n' })
     }
     expect(await readFile(p, 'utf8')).toBe(PERSON_AND_AGENT)
   })
@@ -536,6 +537,85 @@ describe('links (YAZ-2293)', () => {
     for (const p of [path.join(await vault('no', { 'loose.md': content }, false), 'loose.md'), path.join(await vault('unanswered', { 'loose.md': content }, null), 'loose.md'), await page('loose.md', content)]) {
       expect(await run(['links', p])).toEqual({ code: 1, out: '', err: `${p}'s vault does not use IDs, so there are no ID links to list\n` })
     }
+  })
+})
+
+/**
+ * `mentions` (YAZ-4740 L6): the page's Linked mentions, from the same scan as `links`, resolved and gathered by the
+ * app's own shared code (`@shared/linkResolver`, `@shared/mentions`) — the map the app's section and column read.
+ */
+describe('mentions (YAZ-4740)', () => {
+  /** The app's map over the same files: the index's split of notes and folders, its resolver, its one pass. */
+  const appMap = async (root: string, page: string, letters?: readonly string[]): Promise<string[]> => {
+    const { makeResolver } = await import('@shared/linkResolver')
+    const { mentionsOf } = await import('@shared/mentions')
+    const { scanAll } = await import('../main/vaultIndex/reconcile')
+    const { walk } = await import('../main/vaultIndex/scan')
+    const files: string[] = []
+    await walk(root, files)
+    const all = [...(await scanAll(root, files)).values()].sort((a, b) => (a.path < b.path ? -1 : 1)).map((r) => (letters === undefined ? (({ id: _id, ...rest }) => ({ ...rest, title: rest.name === FOLDER_SETTINGS_FILE ? path.basename(path.dirname(rest.path)) : rest.basename }))(r) : r))
+    const records = all.filter((r) => r.name !== FOLDER_SETTINGS_FILE)
+    const folders = all.filter((r) => r.name === FOLDER_SETTINGS_FILE)
+    const resolve = makeResolver(records.map((record) => ({ record })), root, { folders, letters })
+    return (mentionsOf(records, folders, (t) => resolve(t)?.record.path ?? null).get(page) ?? []).map((r) => r.path)
+  }
+
+  it('a vault with IDs: every note and folder linking to the page — by id, title or alias, body or properties, embeds too — once each, path-sorted', async () => {
+    const root = await vault('ids', {
+      'Schema/total-yaz-1.md': '---\nid: YAZ-1\ntitle: Orders total\naliases: [total]\n---\n',
+      'API/post-orders-yaz-2.md': '---\nid: YAZ-2\ntitle: POST orders\nreads_writes:\n  - "[[YAZ-1]]"\n---\nWrites [[YAZ-1]] and [[Orders total]].\n',
+      'Web/use-orders-yaz-3.md': '---\nid: YAZ-3\ntitle: useOrders\n---\nShows ![[total]].\n',
+      'Web/other-yaz-4.md': '---\nid: YAZ-4\ntitle: Other\n---\nNothing here.\n',
+      [`API/${FOLDER_SETTINGS_FILE}`]: '---\nid: YAZ-5\ntitle: API\n---\nThe routes, around [[YAZ-1]].\n',
+    })
+    const page = path.join(root, 'Schema/total-yaz-1.md')
+    expect(await run(['mentions', page])).toEqual({ code: 0, err: '', out: 'API  API/\nPOST orders  API/post-orders-yaz-2.md\nuseOrders  Web/use-orders-yaz-3.md\n' })
+    const json = JSON.parse((await run(['mentions', page, '--json'])).out) as { title: string; path: string; kind: string }[]
+    expect(json).toEqual([
+      { title: 'API', path: 'API', kind: 'folder' },
+      { title: 'POST orders', path: 'API/post-orders-yaz-2.md', kind: 'note' },
+      { title: 'useOrders', path: 'Web/use-orders-yaz-3.md', kind: 'note' },
+    ])
+    // The app's map over the same vault answers the same pages.
+    expect(json.map((r) => path.join(root, r.kind === 'folder' ? `${r.path}/${FOLDER_SETTINGS_FILE}` : r.path))).toEqual(await appMap(root, page, ['YAZ']))
+    expect(await run(['mentions', path.join(root, 'Web/other-yaz-4.md')])).toEqual({ code: 0, err: '', out: `nothing links to ${path.join(root, 'Web/other-yaz-4.md')}\n` })
+  })
+
+  it('a vault without IDs: a name link resolves as the app resolves it — the shallowest of two notes of one name — and an `id:` is no id', async () => {
+    const root = await vault('plain', {
+      'Total.md': '---\nid: YAZ-1\n---\n',
+      'Deep/Total.md': '',
+      'A.md': 'See [[Total]] and [[YAZ-1]].\n',
+      'Deep/B.md': 'See [[Deep/Total]].\n',
+    }, false)
+    const page = path.join(root, 'Total.md')
+    expect(await run(['mentions', page])).toEqual({ code: 0, err: '', out: 'A  A.md\n' })
+    expect((await run(['mentions', path.join(root, 'Deep/Total.md')])).out).toBe('B  Deep/B.md\n')
+    expect([path.join(root, 'A.md')]).toEqual(await appMap(root, page))
+  })
+
+  it('YAZ-4954: words that only LOOK like an ID — the left side wins when it is a note, in the body and a property; the other order and a vault with only one side', async () => {
+    const root = await vault('covid', {
+      'Covid notes.md': '',
+      'COVID-19.md': '',
+      'A.md': 'See [[Covid notes|COVID-19]].\n',
+      'B.md': 'See [[COVID-19|Covid notes]].\n',
+      'C.md': '---\nrelated: "[[Covid notes|COVID-19]]"\n---\n',
+    }, false)
+    expect((await run(['mentions', path.join(root, 'Covid notes.md')])).out).toBe('A  A.md\nC  C.md\n')
+    expect((await run(['mentions', path.join(root, 'COVID-19.md')])).out).toBe('B  B.md\n')
+    expect(await appMap(root, path.join(root, 'Covid notes.md'))).toEqual([path.join(root, 'A.md'), path.join(root, 'C.md')])
+    // Only the ID side is a note: the right side is the page.
+    const lone = await vault('only-id', { 'COVID-19.md': '', 'A.md': 'See [[Covid notes|COVID-19]].\n' }, false)
+    expect((await run(['mentions', path.join(lone, 'COVID-19.md')])).out).toBe('A  A.md\n')
+    // Only the words side is a note: the left side is the page.
+    const named = await vault('only-name', { 'Covid notes.md': '', 'A.md': 'See [[Covid notes|COVID-19]].\n' }, false)
+    expect((await run(['mentions', path.join(named, 'Covid notes.md')])).out).toBe('A  A.md\n')
+  })
+
+  it('a page in no vault is refused: exit 1', async () => {
+    const lone = await page('lone.md', '# Lone\n')
+    expect(await run(['mentions', lone])).toEqual({ code: 1, out: '', err: `${lone} is in no vault (no ${VAULT_CONFIG_DIR} folder above it)\n` })
   })
 })
 
@@ -795,9 +875,42 @@ describe('the door stays Electron-free (🔒 D1)', () => {
   })
 })
 
+describe('YAZ-4615: signed comments, resolve, open comments under a folder', () => {
+  const SIGNED = `---\ncomments:\n  - id: p1\n    n: 1\n    at: ${at(1)}\n    by: yaseen\n    body: Yaseen's\n  - id: c2\n    n: 2\n    at: ${at(2)}\n    by: claude\n    body: Claude's\n  - id: r3\n    n: 1\n    at: ${at(3)}\n    reply_to: p1\n    by: agent\n    body: A reply\n---\n`
+
+  it('D2: edit and delete change only the caller\'s own comments — a person\'s signed comment is refused, an agent\'s own name works', async () => {
+    const p = await page('s.md', SIGNED)
+    expect(await run(['edit', p, '#1', '--body', 'nope'])).toEqual({ code: 1, out: '', err: '#1 was left by yaseen — only its writer can edit or delete it (--by)\n' })
+    expect(await run(['delete', p, '#2'])).toMatchObject({ code: 1, err: expect.stringContaining('was left by claude') })
+    expect(await readFile(p, 'utf8')).toBe(SIGNED)
+    expect((await run(['edit', p, '#2', '--body', 'Claude, edited', '--by', 'claude'])).out).toBe('#2 edited\n')
+    expect((await run(['delete', p, '#1.1'])).out).toBe('#1.1 deleted\n') // `agent`, the default caller
+  })
+
+  it('D3: resolve marks any writer\'s comment, with the caller as resolver; --reopen opens it again', async () => {
+    const p = await page('r.md', SIGNED)
+    expect((await run(['resolve', p, '#1', '--by', 'claude'])).out).toBe('#1 resolved\n')
+    expect(readComments(await readFile(p, 'utf8'))[0]).toMatchObject({ id: 'p1', resolved_by: 'claude', resolved: expect.stringMatching(/Z$/) })
+    expect((await run(['resolve', p, '#1', '--reopen'])).out).toBe('#1 reopened\n')
+    expect(await readFile(p, 'utf8')).toBe(SIGNED)
+    expect(await run(['resolve', p])).toMatchObject({ code: 2 })
+  })
+
+  it('item 6: comments --open drops a resolved comment and the replies of a resolved parent; a folder lists each note with comments', async () => {
+    const root = await vault('v', { 'a/one.md': SIGNED, 'a/two.md': '---\ntitle: Two\n---\nNo comments\n' })
+    await run(['resolve', path.join(root, 'a/one.md'), '#1'])
+    const open = await run(['comments', path.join(root, 'a/one.md'), '--open', '--json'])
+    expect(JSON.parse(open.out).map((t: { comment: { id: string } }) => t.comment.id)).toEqual(['c2'])
+    const folder = JSON.parse((await run(['comments', path.join(root, 'a'), '--open', '--json'])).out)
+    expect(folder).toEqual([expect.objectContaining({ path: path.join(root, 'a/one.md'), threads: [expect.objectContaining({ comment: expect.objectContaining({ id: 'c2' }) })] })])
+    expect((await run(['comments', path.join(root, 'a')])).out).toContain('[resolved]')
+  })
+})
+
 describe('daily and new (YAZ-4269)', () => {
   const TUE = new Date(2026, 10, 3)
-  const DAILY = { dailyNotes: true, dailyNoteFolder: 'daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: false }
+  // The comment hint (YAZ-4615 D10) is off here, so these keep to the bytes they always pinned; its own test turns it on.
+  const DAILY = { dailyNotes: true, dailyNoteFolder: 'daily', dailyNoteFormat: 'MM_DD- ddd', dailyNoteDayFolder: false, commentsHint: false }
   beforeEach(() => {
     // The app's profile in the temp dir: its state file, this Mac's ID and the locks (S13).
     vi.stubEnv('YASEEN_DOCS_USER_DATA_DIR', dir)
@@ -913,6 +1026,7 @@ describe('daily and new (YAZ-4269)', () => {
   })
 
   it('new makes a note as New note does: the template, the title, an id; --body - takes the template body\'s place, its properties go over the template\'s (D4)', async () => {
+    await settings()
     const root = await vault('v', { 'projects/.template.md': '---\nstatus: todo\nowner: me\n---\n## Template body\n' })
 
     const made = await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--body', '-', '--json'], '---\nstatus: doing\n---\n## Plan\n- Gym\n')
@@ -920,6 +1034,16 @@ describe('daily and new (YAZ-4269)', () => {
     const answer = JSON.parse(made.out) as { path: string; id: string }
     expect(answer).toMatchObject({ title: 'Gym plan', created: true, others: [], path: expect.stringMatching(/\/projects\/gym-plan-yaz-\d+\.md$/) })
     expect(await readFile(answer.path, 'utf8')).toBe(`---\nstatus: doing\nowner: me\ntitle: Gym plan\nid: ${answer.id}\n---\n## Plan\n- Gym\n`)
+  })
+
+  it('YAZ-4615 D10: with the comment hint on (the default), a new note carries it as the first line of its frontmatter — in both kinds of vault', async () => {
+    const ids = await vault('v', { 'projects/.keep.md': '' })
+    await run(['new', path.join(ids, 'projects'), '--title', 'Gym plan'])
+    const made = (await notes(path.join(ids, 'projects'))).find((n) => n.startsWith('gym-plan'))
+    expect(await readFile(path.join(ids, 'projects', made ?? ''), 'utf8')).toMatch(/^---\n# comments: - \{by: <name>, body: <text>\}\n(?:title|id): /)
+    const plain = await vault('plain', { 'projects/.keep.md': '' }, false)
+    await run(['new', path.join(plain, 'projects'), '--title', 'Gym plan', '--body', 'Hello'])
+    expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\n---\nHello')
   })
 
   it('new again with the same title finds the note and makes nothing; --body is then not written, and says so (D7)', async () => {
@@ -936,6 +1060,7 @@ describe('daily and new (YAZ-4269)', () => {
   })
 
   it('new in a vault without IDs: the file is the title, and a properties block that does not parse is refused with nothing made', async () => {
+    await settings()
     const root = await vault('plain', { 'projects/.template.md': '---\nstatus: todo\n---\nBody\n' }, false)
 
     expect(await run(['new', path.join(root, 'projects'), '--title', 'Gym plan', '--json'])).toMatchObject({ code: 0, out: expect.stringContaining('"id": null') })

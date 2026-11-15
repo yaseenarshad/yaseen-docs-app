@@ -18,7 +18,7 @@ import { testFolderHost } from '../testFolderHost'
 import { TEST_RECORDS } from '../testRecords'
 
 /** No store behind this mount: collapse state stays in the pane. */
-vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined } }))
+vi.mock('../../lib/storage', () => ({ storage: { getSettings: () => undefined, getViewGroups: () => [], setViewGroups: () => undefined } }))
 vi.mock('../writeProperty', () => ({ writeProperty: vi.fn(), writeProperties: vi.fn() }))
 import { writeProperty, writeProperties } from '../writeProperty'
 
@@ -171,7 +171,7 @@ function tableSections(el: ParentNode): Record<string, string[]> {
     if (tr.classList.contains('view-table__group')) {
       current = q(tr, '.view-group__value').textContent ?? ''
       out[current] = []
-    } else if (!tr.classList.contains('view-table__spacer')) {
+    } else if (!tr.classList.contains('view-table__spacer') && !tr.classList.contains('view-table__new')) {
       out[current]?.push(q(tr, '.view-table__name').textContent ?? '')
     }
   }
@@ -179,6 +179,8 @@ function tableSections(el: ParentNode): Record<string, string[]> {
 }
 
 /** Grouped table row by its name-cell text. */
+/** A table row's `#` cell: its only drag source (YAZ-4603 D53). */
+const gripOf = (el: ParentNode, name: string): HTMLElement => rowOf(el, name).querySelector<HTMLElement>('td.view-table__gutter')!
 function rowOf(el: ParentNode, name: string): HTMLElement {
   const btn = [...el.querySelectorAll<HTMLElement>('.view-table__name')].find((b) => b.textContent === name)
   const tr = btn?.closest<HTMLElement>('tr')
@@ -299,8 +301,11 @@ describe('board drag between columns', () => {
 describe('grouped table drag between sections', () => {
   it('drop on another section writes the property and moves the row optimistically', () => {
     const { el } = mount(STATUS_TABLE)
-    expect(rowOf(el, 'Agentic Agency').getAttribute('draggable')).toBe('true')
-    fire(rowOf(el, 'Agentic Agency'), 'dragstart')
+    // Only the `#` cell drags (YAZ-4603 D53): the row and its cells are not drag sources, so a drag across cells selects.
+    expect(gripOf(el, 'Agentic Agency').getAttribute('draggable')).toBe('true')
+    expect(rowOf(el, 'Agentic Agency').getAttribute('draggable')).toBeNull()
+    expect(rowOf(el, 'Agentic Agency').querySelectorAll('td[data-cell][draggable]')).toHaveLength(0)
+    fire(gripOf(el, 'Agentic Agency'), 'dragstart')
     // hovering the section (header or one of its rows) highlights it
     fire(headerOf(el, 'drafting'), 'dragover')
     expect(headerOf(el, 'drafting').className).toContain('view-table__group--drop')
@@ -313,7 +318,7 @@ describe('grouped table drag between sections', () => {
 
   it('dropping on a data row of another section targets that row´s section; No value deletes', () => {
     const { el } = mount(STATUS_TABLE)
-    fire(rowOf(el, 'Agentic Agency'), 'dragstart')
+    fire(gripOf(el, 'Agentic Agency'), 'dragstart')
     fire(rowOf(el, 'Attribution'), 'drop') // Attribution sits in No value
     expect(write).toHaveBeenCalledTimes(1)
     expect(write.mock.calls[0]).toEqual([AGENTIC, 'status', undefined])
@@ -323,6 +328,7 @@ describe('grouped table drag between sections', () => {
   it('rows of an ungrouped table are not draggable', () => {
     const { el } = mount(FLAT_TABLE)
     expect(rowOf(el, 'Agentic Agency').getAttribute('draggable')).not.toBe('true')
+    expect(gripOf(el, 'Agentic Agency').getAttribute('draggable')).not.toBe('true')
   })
 })
 
@@ -403,6 +409,32 @@ describe('drag between fanned-out groups (YAZ-671 D3)', () => {
   })
 })
 
+
+describe('a drop into a nested group under a fanned-out level (YAZ-4636 T2)', () => {
+  const TAGS_THEN_STATUS = `views:
+  - type: table
+    name: T
+    order:
+      - file.name
+    groupBy:
+      - property: note.tags
+      - property: note.status
+`
+  it('the parent level swaps the element the row left for the one it entered, as the row\'s own level does; the rest of its list survives', () => {
+    const r = { ...listRec('R', 'todo'), properties: { tags: ['a', 'b'], status: 'todo' } }
+    const s = { ...listRec('S', 'done'), properties: { tags: ['c', 'x'], status: 'done' } }
+    const { el } = mount(TAGS_THEN_STATUS, { records: [r, s] })
+    // R shows under a › todo and b › todo, S under c › done and x › done; the first R is the one under a, the first "done" header the one under c.
+    expect([...el.querySelectorAll('.view-table__name')].map((b) => b.textContent)).toEqual(['R', 'R', 'S', 'S'])
+    fire(gripOf(el, 'R'), 'dragstart')
+    fire(headerOf(el, 'done'), 'drop')
+    expect(write).not.toHaveBeenCalled()
+    expect(writeProperties).toHaveBeenCalledExactlyOnceWith('/vault/R.md', [
+      { key: 'status', value: 'done', prevRaw: 'todo' },
+      { key: 'tags', value: ['b', 'c'], prevRaw: ['a', 'b'] },
+    ])
+  })
+})
 
 it('drops onto an unused Select option by writing its exact declared label', async () => {
   const { el } = mount(STATUS_BOARD.replace('    name: B', '    name: B\n    showEmptyColumns: true'), {

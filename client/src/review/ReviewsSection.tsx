@@ -12,6 +12,7 @@
  * Writes are one `transformFile` each, like a comment's, and a failed one is said inline.
  */
 import { useEffect, useState } from 'react'
+import { useUnit } from '../vault/unitWord'
 import { deleteReview, resetReviews, reviewsOf, type ReviewSettings } from '@shared/reviews'
 import { dayCount, dueAfter, dueAt, isDue, isInReview } from '@shared/schedule'
 import type { FileResponse } from '@shared/types'
@@ -36,6 +37,7 @@ const DAY = 86_400_000
 const day = (at: number | string): string => new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 
 export function ReviewsSection({ file, source, settings }: ReviewsSectionProps) {
+  const unit = useUnit()
   // The backlinks' live-feed idiom: subscribe once, re-read on each poke.
   const [record, setRecord] = useState(() => source?.records.find((r) => r.path === file.path))
   useEffect(() => {
@@ -68,7 +70,7 @@ export function ReviewsSection({ file, source, settings }: ReviewsSectionProps) 
           <path d="m4 6 4 4 4-4" />
         </svg>
         <span className="backlinks__title">Reviews <span className="backlinks__count">({reviews.length})</span></span>
-        <span>{isInReview(record, settings) ? `Next check ${day(due)} · ${isDue(due, Date.now()) ? 'due now' : relativeDate(due)}` : 'Review is off for this note.'}</span>
+        <span>{isInReview(record, settings) ? `Next check ${day(due)} · ${isDue(due, Date.now()) ? 'due now' : relativeDate(due)}` : unit('Review is off for this note.')}</span>
       </button>
       {expanded && (
         <div className="reviews__body">

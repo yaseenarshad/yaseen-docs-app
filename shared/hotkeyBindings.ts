@@ -26,6 +26,7 @@ export type HotkeyId =
   | 'switchVault'
   | 'openFolder'
   | 'search'
+  | 'explore'
   | 'settings'
   | 'toggleSidebar'
   | 'copyPath'
@@ -73,6 +74,8 @@ export const HOTKEY_COMMANDS: readonly HotkeyCommand[] = [
   { id: 'switchVault', label: 'Switch vault', hint: 'Type to filter, ⏎ brings it to the front or opens a new window, ⇧⏎ opens it in this window', key: 'CmdOrCtrl+O', macStandard: true },
   { id: 'openFolder', label: 'Open folder…', key: 'CmdOrCtrl+Shift+O' },
   { id: 'search', label: 'Search the vault', key: 'CmdOrCtrl+K' },
+  // YAZ-2571: the explore stack. ⌘⇧F is also draw.io's To front; the menu takes it on a diagram too (Yaseen: explore has priority), and the K9 switch can hand it back.
+  { id: 'explore', label: 'Explore the vault', hint: 'A search in the middle of the window; ⏎ opens the note over it, Esc goes back one layer', key: 'CmdOrCtrl+Shift+F' },
   { id: 'settings', label: 'Settings', key: 'CmdOrCtrl+,', macStandard: true },
   // A menu key since YAZ-3564 D10 (it was the renderer's ⌘B, which a note kept for Bold): it fires in a note too.
   { id: 'toggleSidebar', label: 'Toggle sidebar', hint: 'In a note, a drawing, a diagram and code too', key: 'CmdOrCtrl+Shift+B' },

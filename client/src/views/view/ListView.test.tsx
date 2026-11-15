@@ -17,6 +17,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { type ViewSet, type ParsedViews, parseViews, serializeViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
+import type { IndexRecord } from '@shared/types'
 import { TEST_RECORDS } from '../testRecords'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
@@ -27,7 +28,7 @@ const HOST = testFolderHost()
 /** In-memory stand-in for the main-owned store: collapse state must go through here, not the file. */
 const { groupStore } = vi.hoisted(() => ({ groupStore: new Map<string, string[]>() }))
 vi.mock('../../lib/storage', () => ({
-  storage: {
+  storage: { getSettings: () => undefined,
     getViewGroups: vi.fn((root: string, key: string) => groupStore.get(`${root}|${key}`) ?? []),
     setViewGroups: vi.fn((root: string, key: string, collapsed: readonly string[]) => {
       if (collapsed.length === 0) groupStore.delete(`${root}|${key}`)
@@ -147,8 +148,10 @@ const inlineOf = (item: HTMLElement): string | null => item.querySelector('.view
 const sections = (el: ParentNode): HTMLElement[] => [...el.querySelectorAll<HTMLElement>('.view-list__group')]
 const headerTexts = (el: ParentNode): string[] => sections(el).map((s) => q(s, '.view-group__value').textContent ?? '')
 const toggleOf = (el: ParentNode, label: string): HTMLElement => byLabel(el, `Toggle group ${label}`)
+/** The Properties popover on its View tab (YAZ-4607 D59), where the List section lives. */
 const openProperties = (el: ParentNode): HTMLElement => {
-  click(byLabel(el, 'Properties'))
+  click(byLabel(el, 'Columns and view'))
+  click(q(el, '.view-popover .view-menu__tab[data-tab="view"]'))
   return q(el, '.view-popover')
 }
 
@@ -223,7 +226,7 @@ describe('an id link (YAZ-2293 D8)', () => {
 
   it('an indented property row and a group header read as the title too', () => {
     const { el } = mount('views:\n  - type: list\n    name: L\n    indentProperties: true\n    order:\n      - file.name\n      - note.related\n    groupBy:\n      property: note.related\n', props)
-    expect(q(vsl(el), '.view-table__chip--link').textContent).toBe('Attribution')
+    expect(q(vsl(el), '.view-link-pill').textContent).toBe('Attribution')
     expect([...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
   })
 })
@@ -348,17 +351,19 @@ describe('list settings in the Properties menu', () => {
   it('Marker style writes markerStyle once per pick; bullet (the default) deletes the key', () => {
     const { el, onChange, def, yaml } = mount(LIST_BASE)
     const pop = openProperties(el)
-    setValue(byLabel(pop, 'Marker style'), 'number')
+    // A segmented choice since the YAZ-3746 demo: Bullet, Number, None.
+    const pickMarker = (text: string) => click([...byLabel(pop, 'Marker style').querySelectorAll('button')].find((b) => b.textContent === text)!)
+    pickMarker('Number')
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(def().views[0].markerStyle).toBe('number')
     expect(yaml()).toContain('markerStyle: number')
     expect(markers(el)[0]).toBe('1.')
 
-    setValue(byLabel(pop, 'Marker style'), 'none')
+    pickMarker('None')
     expect(yaml()).toContain('markerStyle: none')
     expect(el.querySelector('.view-list__marker')).toBeNull()
 
-    setValue(byLabel(pop, 'Marker style'), 'bullet')
+    pickMarker('Bullet')
     expect(onChange).toHaveBeenCalledTimes(3)
     expect(def().views[0].markerStyle).toBeUndefined()
     expect(yaml()).not.toContain('markerStyle')
@@ -379,5 +384,60 @@ describe('list settings in the Properties menu', () => {
     expect(def().views[0].propertySeparator).toBeUndefined()
     expect(yaml()).not.toContain('propertySeparator')
     expect(inlineOf(items(el)[0])).toBe('idea, 2')
+  })
+})
+
+const THREE_LIST = `views:
+  - type: list
+    name: L
+    order:
+      - file.name
+    groupBy:
+      - property: note.dept
+      - property: note.proc
+      - property: note.step
+`
+
+const THREE_RECS = [
+  ['a11', { dept: 'A', proc: 'p1', step: 's1' }],
+  ['a1d', { dept: 'A', proc: 'p1', step: 'p1' }],
+  ['a12', { dept: 'A', proc: 'p1', step: 's2' }],
+  ['b21', { dept: 'B', proc: 'p2', step: 's1' }],
+] as const
+const threeRecords = (): IndexRecord[] =>
+  THREE_RECS.map(([name, properties]) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, properties: { ...properties } }))
+
+describe('three group levels (YAZ-4531)', () => {
+  /** Each section as `label@depth`, depth = how many sections hold it. */
+  const tree = (el: ParentNode): string[] =>
+    sections(el).map((s) => {
+      let depth = 0
+      for (let p = s.parentElement?.closest('.view-list__group'); p; p = p.parentElement?.closest('.view-list__group')) depth++
+      return `${q(s, '.view-group__value').textContent}@${depth}`
+    })
+
+  it('renders every level, each section inside its parent, the direct rows before the inner sections', () => {
+    const { el } = mount(THREE_LIST, { records: threeRecords() })
+    expect(tree(el)).toEqual(['A@0', 'p1@1', 's1@2', 's2@2', 'B@0', 'p2@1', 's1@2'])
+    expect(titles(el)).toEqual(['a1d', 'a11', 'a12', 'b21'])
+    expect(sections(el).map((s) => q(s, '.view-group__count').textContent)).toEqual(['3', '3', '1', '1', '1', '1', '1'])
+  })
+
+  it('a level-2 chevron folds its whole branch under its path key', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(THREE_LIST, { records: threeRecords() })
+    click(toggleOf(el, 'p1'))
+    expect(tree(el)).toEqual(['A@0', 'p1@1', 'B@0', 'p2@1', 's1@2'])
+    expect(titles(el)).toEqual(['b21'])
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::L', ['v:A\u001fv:p1'])
+  })
+})
+
+describe('group indent (YAZ-4532 D10)', () => {
+  it('the list takes the same step as the table: --view-group-indent on .view-list, 28px when absent', () => {
+    const large = mount(GROUPED_BASE.replace('    groupBy:\n', '    groupIndent: large\n    groupBy:\n')).el
+    expect(large.querySelector<HTMLElement>('.view-list')!.style.getPropertyValue('--view-group-indent')).toBe('42px')
+    unmount()
+    expect(mount(GROUPED_BASE).el.querySelector<HTMLElement>('.view-list')!.style.getPropertyValue('--view-group-indent')).toBe('28px')
   })
 })

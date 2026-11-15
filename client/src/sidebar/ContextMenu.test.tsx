@@ -310,6 +310,15 @@ describe('the "Open in ▸" flyout (D7 amended)', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('a flyout that closes with the keyboard in it gives the keyboard back to its row (the app’s one flyout, YAZ-4544 4F)', () => {
+    const el = mount(0, 0, WITH_FLYOUT())
+    key(buttonOf(el, 'Open in'), 'ArrowRight')
+    act(() => buttonOf(el, 'VS Code')!.focus())
+    key(buttonOf(el, 'VS Code'), 'ArrowLeft')
+    expect(flyout(el)).toBeNull()
+    expect(document.activeElement).toBe(buttonOf(el, 'Open in'))
+  })
+
   it('Escape closes the flyout FIRST; a second Escape closes the menu', () => {
     const onClose = vi.fn()
     const el = mount(0, 0, WITH_FLYOUT(), onClose)

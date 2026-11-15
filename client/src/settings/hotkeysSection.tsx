@@ -120,7 +120,7 @@ function useKeyRecorder(active: boolean, inside: RefObject<HTMLElement | null>, 
 // ---------- one changeable row ----------
 
 /** Where a row's key works, as the page names it (YAZ-3564 K7): the group titles and "Blocked: App › …". */
-export const SCOPE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views' }
+export const SCOPE_TITLES: Record<KeyScope, string> = { app: 'App', note: 'Note', drawing: 'Drawing', diagram: 'Diagram', code: 'Code', views: 'Folder views', explore: 'Explore' }
 const owned = (row: KeyRow): string => `${SCOPE_TITLES[row.scope]} › ${row.label}`
 
 /** The App command of an App row, for its Mac-standard default and its hint (YAZ-3397). */
@@ -146,12 +146,40 @@ export function withRowKey(overrides: HotkeyOverrides, row: KeyRow, key: string 
 }
 
 /** What a pressed key would do, shown in the pop-up before anything is written (D6). */
-type Pending = { kind: 'save'; key: string } | { kind: 'move'; key: string; from: KeyRow[] } | { kind: 'remove' } | { kind: 'reset'; from: KeyRow[] }
+/**
+ * `from`: the rows of the SAME place that hold the key and lose it (K8). `blocked` (YAZ-4941): the rows of other places
+ * an App key blocks on it (K3), which keep their key and show "Blocked" on their cards, as under the default ⌘K.
+ */
+type Pending = { kind: 'save'; key: string; blocked: KeyRow[] } | { kind: 'move'; key: string; from: KeyRow[]; blocked: KeyRow[] } | { kind: 'remove' } | { kind: 'reset'; from: KeyRow[] }
 
 type RowMode = { kind: 'idle' } | { kind: 'recording'; refused: string | null } | { kind: 'confirm'; pending: Pending }
 
 /** "⌘W is the Mac standard for Close tab. Most Mac apps use it." — for a Mac-standard key leaving its command (D6). */
 const macStandardLine = (row: KeyRow): string => `${toDisplay(row.keys[0] ?? null)} is the Mac standard for ${row.label}. Most Mac apps use it.`
+
+/**
+ * The lines for the rows an App key blocks on `key` (YAZ-4941), one per PLACE: a place with one row keeps its own line
+ * ("⌘K is Drawing › Add a link now. It stays blocked while ⌘K is an app key."); a place with two or more — the Code
+ * two-step keys that start with ⌘K — is one line with a count and two examples, and its rows come back in `all` for
+ * "Show all". Nothing here strips a key: a blocked row keeps its own and shows "Blocked" on its card (K3).
+ */
+function blockedLines(key: string, blocked: readonly KeyRow[], overrides: HotkeyOverrides): { lines: string[]; all: KeyRow[] } {
+  const shownKey = toDisplay(key)
+  const lines: string[] = []
+  const all: KeyRow[] = []
+  for (const scope of ['note', 'drawing', 'diagram', 'code', 'views', 'explore'] as const) {
+    const rows = blocked.filter((o) => o.scope === scope)
+    if (rows.length === 0) continue
+    if (rows.length === 1) {
+      lines.push(`${shownKey} is ${owned(rows[0])} now. It stays blocked while ${shownKey} is an app key.`)
+      continue
+    }
+    const examples = rows.slice(0, 2).map((o) => (keysOf(o, overrides)[0] ?? '').split(' ').map(toDisplay).join(' '))
+    lines.push(`${shownKey} starts ${rows.length} ${SCOPE_TITLES[scope]} keys (${examples.join(', ')}, …). They stay blocked while ${shownKey} is an app key.`)
+    all.push(...rows)
+  }
+  return { lines, all }
+}
 
 /** Whether `row` would lose its Mac-standard default key (D6). */
 const losesMacStandard = (row: KeyRow, overrides: HotkeyOverrides): boolean => commandOf(row)?.macStandard === true && sameKey(keyNow(row, overrides), row.keys[0] ?? null)
@@ -211,6 +239,11 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
     setMode({ kind: 'idle' })
     keyButton.current?.focus()
   }
+  /** "Show all" of a grouped clash line (YAZ-4941); back to the one line with the next pop-up. */
+  const [showAll, setShowAll] = useState(false)
+  useEffect(() => {
+    if (mode.kind !== 'confirm') setShowAll(false)
+  }, [mode.kind])
 
   useKeyRecorder(
     mode.kind === 'recording',
@@ -222,8 +255,10 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
       const owners = clashesOf(row, heard.key, overrides, aside)
       const refused = refusal(row, heard.key, owners, systemKeysOf(ctx))
       if (refused !== null) return setMode({ kind: 'recording', refused })
-      const movers = owners.filter((o) => o.changeable)
-      setMode({ kind: 'confirm', pending: movers.length === 0 ? { kind: 'save', key: heard.key } : { kind: 'move', key: heard.key, from: movers } })
+      // An App key blocks a place's rows on it (K3); it takes the key from another App row only (YAZ-4941).
+      const movers = owners.filter((o) => o.changeable && (row.scope !== 'app' || o.scope === 'app'))
+      const blocked = row.scope === 'app' ? owners.filter((o) => o.changeable && o.scope !== 'app') : []
+      setMode({ kind: 'confirm', pending: movers.length === 0 ? { kind: 'save', key: heard.key, blocked } : { kind: 'move', key: heard.key, from: movers, blocked } })
     },
     () => setMode({ kind: 'idle' }),
   )
@@ -234,21 +269,23 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
     setMode({ kind: 'confirm', pending: { kind: 'reset', from: holders } })
   }
 
-  /** The pop-up's words (D6): its question, the key the row will have, what else changes, and its button. */
-  const confirmSheet = (pending: Pending): { title: string; to: string | null; lines: string[]; yes: string; apply: () => void; careful: boolean } => {
+  /** The pop-up's words (D6): its question, the key the row will have, what else changes, and its button. `all`: the rows behind a grouped line, for "Show all" (YAZ-4941). */
+  const confirmSheet = (pending: Pending): { title: string; to: string | null; lines: string[]; yes: string; apply: () => void; careful: boolean; all?: KeyRow[] } => {
     switch (pending.kind) {
       case 'save': {
         // The recorder stops on the key the row has now, so a new key always leaves a Mac-standard default.
         const careful = losesMacStandard(row, overrides)
-        return { title: `Change the key for ${row.label}?`, to: pending.key, lines: careful ? [macStandardLine(row)] : [], yes: careful ? 'Change anyway' : 'Save', careful, apply: () => write(withRowKey(overrides, row, pending.key)) }
+        const { lines: blocked, all } = blockedLines(pending.key, pending.blocked, overrides)
+        return { title: `Change the key for ${row.label}?`, to: pending.key, lines: [...blocked, ...(careful ? [macStandardLine(row)] : [])], yes: careful ? 'Change anyway' : 'Save', careful, apply: () => write(withRowKey(overrides, row, pending.key)), all }
       }
       case 'move': {
-        // K8: every row that has the key now loses it. A Mac-standard key can leave: another row's, or this row's own.
+        // K8: every row of this place that has the key now loses it. A Mac-standard key can leave: another row's, or this row's own.
         const standards = [...pending.from, row].filter((r) => losesMacStandard(r, overrides))
-        const lines = [...pending.from.map((o) => `${toDisplay(pending.key)} is ${owned(o)} now. It will lose its key.`), ...standards.map(macStandardLine)]
+        const { lines: blocked, all } = blockedLines(pending.key, pending.blocked, overrides)
+        const lines = [...pending.from.map((o) => `${toDisplay(pending.key)} is ${owned(o)} now. It will lose its key.`), ...blocked, ...standards.map(macStandardLine)]
         const careful = standards.length > 0
         const next = pending.from.reduce((acc, o) => withRowKey(acc, o, null), overrides)
-        return { title: `Change the key for ${row.label}?`, to: pending.key, lines, yes: careful ? 'Move anyway' : 'Move it here', careful, apply: () => write(withRowKey(next, row, pending.key)) }
+        return { title: `Change the key for ${row.label}?`, to: pending.key, lines, yes: careful ? 'Move anyway' : 'Move it here', careful, apply: () => write(withRowKey(next, row, pending.key)), all }
       }
       case 'remove': {
         const careful = losesMacStandard(row, overrides)
@@ -280,6 +317,7 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
     )
   } else if (mode.kind === 'confirm') {
     const sheet = confirmSheet(mode.pending)
+    const all = sheet.all ?? []
     below = (
       // `contained`: Esc and a click away answer the pop-up, never the Settings dialog under it.
       // A Mac-standard key asks harder (D6): the keyboard starts on Cancel, and the button is red.
@@ -302,6 +340,24 @@ function HotkeyRow({ row, ctx }: { row: KeyRow; ctx: SettingsCtx }) {
             {text}
           </p>
         ))}
+        {/* The rows behind a grouped line (YAZ-4941): "Show all" opens them in a list that scrolls; the box keeps its height. */}
+        {all.length > 0 &&
+          (showAll ? (
+            <ul className="hotkeys__clash-list">
+              {all.map((o) => (
+                <li key={o.id}>
+                  <span className="hotkeys__clash-key">{keysOf(o, overrides).map((k) => k.split(' ').map(toDisplay).join(' ')).join(' / ')}</span>
+                  <span className="hotkeys__clash-action" title={owned(o)}>
+                    {owned(o)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <button type="button" className="hotkeys__link" onClick={() => setShowAll(true)}>
+              Show all
+            </button>
+          ))}
       </ConfirmSheet>
     )
   }
@@ -427,7 +483,7 @@ function inFilter(row: KeyRow, ctx: SettingsCtx): boolean {
 }
 
 // "Clicks" (YAZ-3747 demo): only the click and drag cards. "Press keys to search" hears keys only.
-const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views', 'clicks']
+const CHIPS: readonly HotkeyFilter['scope'][] = ['all', 'app', 'note', 'drawing', 'diagram', 'code', 'views', 'explore', 'clicks']
 
 /** The group chips and the two switches at the top of the page (K7). */
 function FilterBar({ filter, onFilter }: { filter: HotkeyFilter; onFilter: (next: HotkeyFilter) => void }) {
@@ -634,7 +690,7 @@ interface KeyCard {
   picks: number
 }
 
-const ORDER: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views']
+const ORDER: readonly KeyScope[] = ['app', 'note', 'drawing', 'diagram', 'code', 'views', 'explore']
 const KIND_ORDER = { shared: 0, app: 1, tab: 2 } as const
 
 /** The tabs where an App command's key can go either way (K9): the rows of each that have it, or begin with it. */
@@ -689,7 +745,7 @@ const keyText = (key: string): string => key.split(' ').map(toDisplay).join(' ')
 /** A card's DOM id, for a link to it. */
 const cardAnchor = (key: string): string => `hotkeys-key-${normal(key).replace(/[^A-Za-z0-9]/g, (c) => `_${c.charCodeAt(0).toString(16)}`)}`
 
-const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views' }
+const PLACE_WORDS: Record<KeyScope, string> = { app: 'every tab', note: 'notes', drawing: 'drawings', diagram: 'diagrams', code: 'code', views: 'folder views', explore: 'the explore stack' }
 
 /** Under a row whose key an App key always takes in its tab: what the key does there, and a link to the card that decides it. */
 function LostLine({ row, blocker, overrides }: { row: KeyRow; blocker: KeyRow; overrides: HotkeyOverrides }) {

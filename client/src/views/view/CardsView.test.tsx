@@ -221,7 +221,7 @@ describe('an id link (YAZ-2293 D8)', () => {
       records,
       folder: testFolderHost({ vaultRecords: records }),
     })
-    expect(q(cardOf(el, 'VSL-v1'), '.view-table__chip--link').textContent).toBe('Attribution')
+    expect(q(cardOf(el, 'VSL-v1'), '.view-link-pill').textContent).toBe('Attribution')
     expect([...el.querySelectorAll('.view-group__value')].map((v) => v.textContent)).toEqual(['Agentic Agency', 'Attribution', 'No value'])
   })
 })
@@ -361,5 +361,51 @@ describe('grouped sections', () => {
     expect(sections(el).map((s) => q(s, '.view-group__count').textContent)).toEqual(['1', '1'])
     expect(sections(el)[1].querySelector('.view-group__summary')?.textContent).toBe('Sum2')
     expect(q(el, '.view-toolbar__count').textContent).toBe('2 / 8 items')
+  })
+})
+
+const THREE_CARDS = `views:
+  - type: cards
+    name: C
+    order:
+      - file.name
+    groupBy:
+      - property: note.dept
+      - property: note.proc
+      - property: note.step
+`
+
+const THREE_RECS = [
+  ['a11', { dept: 'A', proc: 'p1', step: 's1' }],
+  ['a1d', { dept: 'A', proc: 'p1', step: 'p1' }],
+  ['a12', { dept: 'A', proc: 'p1', step: 's2' }],
+  ['b21', { dept: 'B', proc: 'p2', step: 's1' }],
+] as const
+const threeRecords = (): IndexRecord[] =>
+  THREE_RECS.map(([name, properties]) => ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, properties: { ...properties } }))
+
+describe('three group levels (YAZ-4531)', () => {
+  /** Each section as `label@depth`, depth = how many sections hold it. */
+  const tree = (el: ParentNode): string[] =>
+    sections(el).map((s) => {
+      let depth = 0
+      for (let p = s.parentElement?.closest('.view-cards__group'); p; p = p.parentElement?.closest('.view-cards__group')) depth++
+      return `${q(s, '.view-group__value').textContent}@${depth}`
+    })
+
+  it('renders every level, each section inside its parent, the direct rows before the inner sections', () => {
+    const { el } = mount(THREE_CARDS, { records: threeRecords() })
+    expect(tree(el)).toEqual(['A@0', 'p1@1', 's1@2', 's2@2', 'B@0', 'p2@1', 's1@2'])
+    expect(titles(el)).toEqual(['a1d', 'a11', 'a12', 'b21'])
+    expect(sections(el).map((s) => q(s, '.view-group__count').textContent)).toEqual(['3', '3', '1', '1', '1', '1', '1'])
+  })
+
+  it('a level-2 chevron folds its whole branch under its path key', async () => {
+    const { storage } = await import('../../lib/storage')
+    const { el } = mount(THREE_CARDS, { records: threeRecords() })
+    click(toggleOf(el, 'p1'))
+    expect(tree(el)).toEqual(['A@0', 'p1@1', 'B@0', 'p2@1', 's1@2'])
+    expect(titles(el)).toEqual(['b21'])
+    expect(storage.setViewGroups).toHaveBeenLastCalledWith('/vault', '/vault/pillars.md::C', ['v:A\u001fv:p1'])
   })
 })

@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto'
 import { posix } from 'node:path'
 import { fileKind } from '@shared/fileKind'
-import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
+import { DEFAULT_SIDEBAR_LENS, FILES_WINDOW_DEFAULT_H, FILES_WINDOW_DEFAULT_W, FILES_WINDOW_WIDE_W, defaultRightPanelIdentity, normalizeFilesZoom, normalizeRoots, placeVaults, rootOfPath, sameVaults, stripSlash, type FilesAction, type FilesPreviewRequest, type OpenSetResult, type OpenWindowOptions, type PageView, type PopOutCarry, type RecentRoots, type ScreenPoint, type Session, type StartView, type StartupWindows, type TabAction, type TabRef, type TearOffResult, type WindowBounds, type WindowEntry } from '@shared/types'
 import { CONTRACT, SPECIAL } from '@shared/ipc'
 import type { Store } from './store'
 import { appZoomFactor } from './appZoom'
@@ -754,7 +754,7 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
       if (live.size > 0) {
         // A window you close puts its notes in "Recently closed" (YAZ-3487 D10). A quit does not: its tabs come back.
         const entry = entryOf(id)
-        if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(entry.roots, entry.tabs)
+        if (entry !== undefined && !isFilesWindow(entry)) store.addClosed(placeVaults(store.get().folders, entry.roots), entry.tabs)
         store.removeWindow(id)
       } else noteUsed(activeVault(entryOf(id)))
     })
@@ -1212,7 +1212,9 @@ export function createWindowManager(store: Store, host: WindowHost): WindowManag
 
     vaultNotice(root, message) {
       for (const [id, win] of live) {
-        if (!win.isDestroyed() && entryOf(id)?.roots.includes(root) === true) sendLink(win, CONTRACT.link.onNotice.channel, message)
+        // A folder of the vault (YAZ-4922 D3) is told too: its notes are the vault's.
+        const entry = entryOf(id)
+        if (!win.isDestroyed() && entry !== undefined && placeVaults(store.get().folders, entry.roots).includes(root)) sendLink(win, CONTRACT.link.onNotice.channel, message)
       }
     },
 

@@ -33,6 +33,15 @@ export const isNoteId = (value: unknown): value is string => isOldId(value) || i
 /** `letters` and `number` as the app writes an ID (R2). */
 export const numberId = (letters: string, number: number): string => `${letters}-${number}`
 
+/**
+ * An ID's number as it shows alone: the digits after its last "-" ("EMB-12" → "12"), or undefined for an ID with no
+ * such digits (an old ID), which then shows in full. One rule for the files list's "#12" (YAZ-4940) and a link pill's
+ * `{number}` (YAZ-4924).
+ */
+export function idNumber(id: string): string | undefined {
+  return /-(\d+)$/.exec(id)?.[1]
+}
+
 /** `id` as the app writes and indexes it (R2): a number ID with capital letters, an old ID as it is. */
 export function canonicalNoteId(id: string): string {
   const dash = id.indexOf('-')
@@ -57,8 +66,30 @@ export function vaultNoteId(value: unknown, letters: readonly string[]): string 
   if (typeof value !== 'string') return undefined
   const m = NUMBER_ID_RE.exec(value)
   if (m === null) return OLD_ID_RE.test(value) ? value : undefined
-  return letters.includes(m[1].toUpperCase()) ? `${letters[0]}-${m[2]}` : undefined
+  const held = m[1].toUpperCase()
+  if (letters.includes(held)) return `${letters[0]}-${m[2]}`
+  // Kept letters (YAZ-4922 🔒 D2): an ID of the vault AS IT IS — its numbers are its own, apart from the current letters'.
+  return letters.includes(keptLetters(held)) ? `${held}-${m[2]}` : undefined
 }
+
+/**
+ * KEPT LETTERS (YAZ-4922 🔒 D2). "Give IDs" in a folder whose notes hold number IDs with two or more letters keeps
+ * each group that is not the vault's own as it is: `ids.json` lists its letters in `kept`. Unlike `was` (the same
+ * number, read with the current letters, R4), a kept ID is read as itself: `TECH-796` and `YAS-796` are two IDs, so
+ * a kept note never shares an ID with a note of the main group, and never gets a fresh number. In a vault's letters
+ * list a kept entry carries this mark (`=TECH`), so each reader of the list keeps one shape: no other entry starts so.
+ */
+export const KEPT_MARK = '='
+const keptLetters = (letters: string): string => `${KEPT_MARK}${letters}`
+
+/** `letters` without the kept entries: the current letters, then each the vault had before (`was`). */
+export const lettersOwn = (letters: readonly string[]): string[] => letters.filter((entry) => !entry.startsWith(KEPT_MARK))
+
+/** The kept letters in `letters`, without their mark. */
+export const lettersKept = (letters: readonly string[]): string[] => letters.flatMap((entry) => (entry.startsWith(KEPT_MARK) ? [entry.slice(KEPT_MARK.length)] : []))
+
+/** Does the vault with `letters` read an ID with `held` (capitals) as one of its own: its letters now, of before, or kept? */
+export const hasLetters = (letters: readonly string[], held: string): boolean => letters.includes(held) || letters.includes(keptLetters(held))
 
 /** Is `value` an ID the door of this vault could have given: a number ID as written, with the CURRENT letters? */
 export const isVaultNumberId = (value: unknown, letters: readonly string[]): value is string =>
@@ -107,17 +138,22 @@ export function defaultIdLetters(vaultName: string): string {
 export const isIdLetters = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z]{2,5}$/.test(value)
 
 /**
- * The ID letters in a parsed `IDS_FILE` (R9), in capitals: `letters`, then each entry of `was` —
- * the list `vaultNoteId` reads an ID with. `saved` is false when the file holds no valid `letters`
+ * The ID letters in a parsed `IDS_FILE` (R9), in capitals: `letters`, then each entry of `was`, then each of
+ * `kept` with its mark (`KEPT_MARK`) — the list `vaultNoteId` reads an ID with. `saved` is false when the file holds no valid `letters`
  * and the default of the vault's folder name stands in (R11): the door saves it with the first number.
  */
 export function idLettersOf(config: unknown, vaultName: string): { letters: string[]; saved: boolean } {
-  const { letters: held, was } = (config ?? {}) as { letters?: unknown; was?: unknown }
+  const { letters: held, was, kept } = (config ?? {}) as { letters?: unknown; was?: unknown; kept?: unknown }
   const saved = isIdLetters(held)
   const letters = [saved ? held.toUpperCase() : defaultIdLetters(vaultName)]
   for (const entry of Array.isArray(was) ? was : []) {
     const before = isIdLetters(entry) ? entry.toUpperCase() : undefined
     if (before !== undefined && !letters.includes(before)) letters.push(before)
+  }
+  // Then each kept group (YAZ-4922 🔒 D2), marked: letters the vault has now or had before are not kept too.
+  for (const entry of Array.isArray(kept) ? kept : []) {
+    const group = isIdLetters(entry) ? entry.toUpperCase() : undefined
+    if (group !== undefined && !hasLetters(letters, group)) letters.push(keptLetters(group))
   }
   return { letters, saved }
 }

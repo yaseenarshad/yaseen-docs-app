@@ -8,8 +8,9 @@
  * guard is the backstop, never the only lock. Folder-wide actions — a column's rename or delete —
  * do not come here and still reach every note (S55).
  */
-import type { IndexRecord } from '@shared/types'
+import type { IndexRecord, PropertyDecl } from '@shared/types'
 import { isReadOnlyProperties } from '@shared/readOnly'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { reservedKeys } from '../links/reservedKeys'
 import { canonicalKey } from './view/keys'
 import type { PropertyWrite } from './writeProperty'
@@ -24,17 +25,19 @@ const APP_KEYS = reservedKeys(false)
  * The bare note key a view may WRITE for column `key`, or null: a `file.*` / `formula.*` column, or a
  * key the app owns in every vault — `readonly` above all, whose cell would otherwise turn a note read
  * only from a table, and whose board would turn it on or off by a drop (S16, YAZ-3122). Such a column
- * shows its values and offers no editor, no drag and no group "+".
+ * shows its values and offers no editor, no drag and no group "+". So does a Linked mentions column of `columns`
+ * (YAZ-4738 L1): the app works it out, and no note holds it — no paste, fill, clear or drop writes it. A tied one
+ * (YAZ-4781 R2, `pair`) is written: the host turns its value into the linking notes' writes.
  */
-export function writableKey(key: string): string | null {
+export function writableKey(key: string, columns: Readonly<Record<string, PropertyDecl>>): string | null {
   const c = canonicalKey(key)
   if (!c.startsWith('note.')) return null
   const bare = c.slice('note.'.length)
-  return APP_KEYS.has(bare) ? null : bare
+  return APP_KEYS.has(bare) || (Object.hasOwn(columns, bare) && columns[bare].kind === 'mentions' && columns[bare].pair !== true) ? null : bare
 }
 
-/** What a locked cell says when the human tries it, and what a refused write rejects with (S56). */
-export const READ_ONLY_TIP = 'This note is read only'
+/** What a locked cell says when the human tries it, and what a refused write rejects with (S56), in the vault's word for a note (YAZ-4938). */
+export const readOnlyTip = (unit: UnitText = SAME_WORD): string => unit('This note is read only')
 
 /**
  * The paths of the read-only notes among `records`, read off each note's OWN properties: a folder that
@@ -45,7 +48,7 @@ export function readOnlyPaths(records: readonly IndexRecord[]): ReadonlySet<stri
   return new Set(records.filter((r) => isReadOnlyProperties(r.properties)).map((r) => r.path))
 }
 
-/** `write`, refusing a path in `locked` (see the module doc). */
-export function guardReadOnly(locked: ReadonlySet<string>, write: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>): (path: string, writes: readonly PropertyWrite[]) => Promise<unknown> {
-  return (path, writes) => (locked.has(path) ? Promise.reject(new Error(READ_ONLY_TIP)) : write(path, writes))
+/** `write`, refusing a path in `locked` (see the module doc); the refusal says the vault's word (`unit`). */
+export function guardReadOnly(locked: ReadonlySet<string>, write: (path: string, writes: readonly PropertyWrite[]) => Promise<unknown>, unit: UnitText = SAME_WORD): (path: string, writes: readonly PropertyWrite[]) => Promise<unknown> {
+  return (path, writes) => (locked.has(path) ? Promise.reject(new Error(readOnlyTip(unit))) : write(path, writes))
 }

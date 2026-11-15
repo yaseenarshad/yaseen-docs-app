@@ -84,14 +84,23 @@ export function withDrawingReadOnly(scene: Record<string, unknown>, on: boolean,
 
 // ---------- A diagram ----------
 
-/** The attribute in either quote style, with the space before it; `ONE` only with the value "1". */
-const ANY_ATTR = new RegExp(`\\s${DIAGRAM_READ_ONLY_ATTR}\\s*=\\s*(["']).*?\\1`, 'g')
-const ONE_ATTR = new RegExp(`\\s${DIAGRAM_READ_ONLY_ATTR}\\s*=\\s*(["'])1\\1`)
+/**
+ * A diagram's own "Link preview on hover" OFF (YAZ-4748 D10, a board's `"hoverLinks": false`): `yaseendraw-hoverlinks="0"`
+ * on the root `<mxfile>`, by the read-only switch's rules below. No attribute is on.
+ */
+export const DIAGRAM_HOVER_LINKS_ATTR = 'yaseendraw-hoverlinks'
 
-/** Whether the root `<mxfile>` tag carries `yaseendraw-readonly="1"`. A bare `<mxGraphModel>` never does. */
-export function isDiagramReadOnly(xml: string): boolean {
+/** A switch on the root tag: `attr` in either quote style, with the space before it; `one` only with `value`. */
+function flagPatterns(attr: string, value: string): { any: RegExp; one: RegExp } {
+  return { any: new RegExp(`\\s${attr}\\s*=\\s*(["']).*?\\1`, 'g'), one: new RegExp(`\\s${attr}\\s*=\\s*(["'])${value}\\1`) }
+}
+
+const READ_ONLY_FLAG = flagPatterns(DIAGRAM_READ_ONLY_ATTR, '1')
+const HOVER_LINKS_OFF_FLAG = flagPatterns(DIAGRAM_HOVER_LINKS_ATTR, '0')
+
+function hasDiagramFlag(xml: string, flag: { one: RegExp }): boolean {
   const tag = mxfileOpenTag(xml)
-  return tag !== null && ONE_ATTR.test(xml.slice(tag.start, tag.end))
+  return tag !== null && flag.one.test(xml.slice(tag.start, tag.end))
 }
 
 /**
@@ -100,17 +109,29 @@ export function isDiagramReadOnly(xml: string): boolean {
  * exactly those bytes: on then off is the same file (S6). A bare `<mxGraphModel>` is wrapped the
  * way draw.io saves it, then marked (S7). Anything that is not a diagram comes back as it is.
  */
-export function setDiagramReadOnly(xml: string, on: boolean): string {
+function setDiagramFlag(xml: string, attr: string, value: string, flag: { any: RegExp; one: RegExp }, on: boolean): string {
   const tag = mxfileOpenTag(xml)
   if (tag === null) {
     const wrapped = on ? wrapBareModel(xml) : xml
-    return wrapped === xml ? xml : setDiagramReadOnly(wrapped, true)
+    return wrapped === xml ? xml : setDiagramFlag(wrapped, attr, value, flag, true)
   }
   if (tag.end === xml.length) return xml
   const open = xml.slice(tag.start, tag.end)
-  // `search`, not `test`: `ANY_ATTR` is global, and `test` would carry its `lastIndex` into the next call.
-  if (on ? ONE_ATTR.test(open) : open.search(ANY_ATTR) === -1) return xml
-  const cleared = open.replace(ANY_ATTR, '')
-  const marked = !on ? cleared : cleared.endsWith('/') ? `${cleared.slice(0, -1)} ${DIAGRAM_READ_ONLY_ATTR}="1"/` : `${cleared} ${DIAGRAM_READ_ONLY_ATTR}="1"`
+  // `search`, not `test`: `any` is global, and `test` would carry its `lastIndex` into the next call.
+  if (on ? flag.one.test(open) : open.search(flag.any) === -1) return xml
+  const cleared = open.replace(flag.any, '')
+  const marked = !on ? cleared : cleared.endsWith('/') ? `${cleared.slice(0, -1)} ${attr}="${value}"/` : `${cleared} ${attr}="${value}"`
   return `${xml.slice(0, tag.start)}${marked}${xml.slice(tag.end)}`
 }
+
+/** Whether the root `<mxfile>` tag carries `yaseendraw-readonly="1"`. A bare `<mxGraphModel>` never does. */
+export const isDiagramReadOnly = (xml: string): boolean => hasDiagramFlag(xml, READ_ONLY_FLAG)
+
+/** The diagram read only or not (`setDiagramFlag`'s rules). */
+export const setDiagramReadOnly = (xml: string, on: boolean): string => setDiagramFlag(xml, DIAGRAM_READ_ONLY_ATTR, '1', READ_ONLY_FLAG, on)
+
+/** Whether the diagram turned its own "Link preview on hover" off (D10). */
+export const isDiagramHoverLinksOff = (xml: string): boolean => hasDiagramFlag(xml, HOVER_LINKS_OFF_FLAG)
+
+/** The diagram's own "Link preview on hover" off or on again (`setDiagramFlag`'s rules: on removes the attribute). */
+export const setDiagramHoverLinksOff = (xml: string, off: boolean): string => setDiagramFlag(xml, DIAGRAM_HOVER_LINKS_ATTR, '0', HOVER_LINKS_OFF_FLAG, off)

@@ -29,7 +29,8 @@ import type { SystemHotkey } from '@shared/macosHotkeys'
 import { api } from '../api'
 import { SearchIcon } from '../views/view/icons'
 import { KeySearch, NO_FILTER, type HotkeyFilter } from './hotkeysSection'
-import { availableSections, groupsOf, isAvailable, resolveHint, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
+import { SAME_WORD, UnitContext } from '../vault/unitWord'
+import { availableSections, groupsOf, isAvailable, resolveGroupTitle, resolveHint, resolveLabel, resolveWide, type SettingDef, type SettingsCtx, type SettingsGroup, type SettingsSection, type SettingsSectionId } from './registry'
 import { searchSettings, settingCandidates, type SettingHit } from './searchSettings'
 import { SettingRow } from './SettingRow'
 import { SIDEBAR_REVEAL_MS } from '../sidebar/revealRow'
@@ -126,7 +127,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const [reveal, setReveal] = useState<{ index: number; title: string | undefined } | null>(null)
   const showInSettings = (s: SettingsSection, g: SettingsGroup): void => {
     showPage(s.id)
-    setReveal({ index: groupsOf(s, ctx).indexOf(g), title: g.title })
+    setReveal({ index: groupsOf(s, ctx).indexOf(g), title: resolveGroupTitle(g, ctx) })
   }
   useEffect(() => {
     const pane = paneRef.current
@@ -147,7 +148,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   useEffect(() => () => window.clearTimeout(revealTimer.current), [])
 
   const row = (item: SettingDef) => (
-    <SettingRow key={item.id} id={item.id} label={item.label} hint={resolveHint(item, ctx)} wide={resolveWide(item, ctx)} bare={item.bare === true}>
+    <SettingRow key={item.id} id={item.id} label={resolveLabel(item, ctx)} hint={resolveHint(item, ctx)} wide={resolveWide(item, ctx)} bare={item.bare === true}>
       {item.render(ctx)}
     </SettingRow>
   )
@@ -155,8 +156,8 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   const vaultLine = (className: string) => ctx.vaultName !== undefined && <p className={className}>Vault: {ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
   const group = (g: SettingsGroup, items: readonly SettingDef[], key: number | string, titled = true, index?: number) => items.length > 0 && (
-    <div key={key} className="settings-group" {...(g.anchor === undefined ? {} : { id: g.anchor })} data-group-index={index} data-group-title={g.title}>
-      {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{g.title}</h3>}
+    <div key={key} className="settings-group" {...(g.anchor === undefined ? {} : { id: g.anchor })} data-group-index={index} data-group-title={resolveGroupTitle(g, ctx)}>
+      {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{resolveGroupTitle(g, ctx)}</h3>}
       {g.vault === true && vaultLine('settings-group__hint')}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
       <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{items.map(row)}</div>
@@ -193,7 +194,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
           <h2 className="settings-section__title">
             {/* The heading and its arrow show the group on its page ("Show in settings", the YAZ-3818 demo). */}
             <span className="settings-search__goto-text" onClick={() => showInSettings(entry.section, entry.group)}>
-              {entry.group.title === undefined ? entry.section.title : `${entry.section.title} › ${entry.group.title}`}
+              {entry.group.title === undefined ? entry.section.title : `${entry.section.title} › ${resolveGroupTitle(entry.group, ctx)}`}
             </span>
             <button type="button" className="settings-search__goto" title="Show in settings" aria-label="Show in settings" onClick={() => showInSettings(entry.section, entry.group)}>
               <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -206,6 +207,7 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
   }
 
   return (
+    <UnitContext.Provider value={ctx.unitWord?.unit ?? SAME_WORD}>
     <div className="settings-overlay" tabIndex={-1} onMouseDown={onClose} onKeyDown={onKeyDown}>
       <div className="settings-dialog" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(e) => e.stopPropagation()}>
         <nav className="settings-nav" aria-label="Settings sections">
@@ -264,5 +266,6 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
         </div>
       </div>
     </div>
+    </UnitContext.Provider>
   )
 }

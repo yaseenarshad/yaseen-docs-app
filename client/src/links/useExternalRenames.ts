@@ -27,7 +27,7 @@ import { api } from '../api'
 import { detectRenames, diffRecords, preRenameRecords, type RenameHypothesis } from './renameDetector'
 import { countLinkReferences, linkedBasenames, renameNotice, updateLinksAfterRename } from './renameLinks'
 import { basename, stripExt } from '../lib/paths'
-import { basenameKey } from '../views/engine'
+import { basenameKey } from '@shared/linkResolver'
 
 export interface RenameBannerItem {
   oldPath: string

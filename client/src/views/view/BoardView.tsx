@@ -1,21 +1,33 @@
-import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { useUnit } from '../../vault/unitWord'
+import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
-import { type Modifiers, openByGesture, openTarget } from '../../lib/openGesture'
+import { type Modifiers, openByGesture, openByKey, openTarget } from '../../lib/openGesture'
 import { newWindowClick } from '../../lib/newWindowClick'
-import type { FolderSettings } from '../folderSettings'
-import type { ViewSet, ViewDef, Mutate } from '../viewSchema'
-import { type Group, type Row, propertyKeys, propertyLabel } from '../engine'
+import { rowPage } from '../../links/shortcuts'
+import { pageColumnKeys, type FolderSettings } from '../folderSettings'
+import { type ViewSet, type ViewDef, type Mutate, shownGroupLevels } from '../viewSchema'
+import { type Group, type Row, propertyKeys } from '../engine'
 import type { Resolver } from '../expr'
 import { cardWidth } from './cardWidth'
 import { canonicalKey } from './keys'
-import { GroupHeader, cellContent, groupKeyOf, nestedGroupKeyOf, rowTitle } from './GroupHeader'
+import { GroupHeader, rowTitle } from './GroupHeader'
+import { CardLine, CardProp, cardLines, cardStyleAttrs } from './cardLines'
+import { CardStyleFlyout, type CardStyleWrite } from './CardStyleMenu'
 import { useFlip } from './flip'
-import { type GroupDrop, type GroupSpot, type GroupSwap, groupByKey, groupTakesNew, useGroupDrag } from './groupDrag'
+import { type GroupDrop, type GroupSpot, type GroupSwap, TOP_SPOT, childSpot, groupByKey, groupTakesNew, spotKey, useGroupDrag } from './groupDrag'
 import { allPropertyKeys } from './properties'
 import { PageContextMenu } from './PageContextMenu'
+import { type CardNoteDoors, cardMenuItems } from './rowMenuItems'
+import { type NoteWindowLink, currentItemClass, shownRows, useNoteWindowItems } from './NoteWindow'
 import { NO_READ_ONLY } from '../readOnlyRows'
 import { ReadOnlyName } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
+
+/** Board windowing (YAZ-3746 13AX): the cards a list draws first, the cards each step adds, and how far ahead (px) of the screen a list's end starts the next step. */
+const FIRST_CARDS = 40
+const STEP_CARDS = 60
+const REVEAL_MARGIN = 800
 
 export interface BoardViewProps {
   /** The folder's hover panel (YAZ-3403, `viewHover.ts`): `ViewsPane` always passes it; Settings › Preview on hover › Folder views starts or stops the dwell (YAZ-3743). */
@@ -38,16 +50,26 @@ export interface BoardViewProps {
   onOpenFileRight?: (path: string) => void
   /** Open a card's page without replacing the current tab. */
   onOpenFileBackground?: (path: string) => void
+  /** "Open in mini window ⇧↩" (D57) and ⇧Enter (YAZ-4605 D56) in the card's right-click menu (YAZ-4547 D24): ViewsPane's card; absent = no item. */
+  onOpenWindow?: (path: string) => void
+  /** The card's link: the board writes its order (column by column, top to bottom) and marks the card's note (D24). */
+  windowLink?: NoteWindowLink
   /** Passive notice surface for page actions that fail because a card moved or disappeared. */
   onNotice?: (message: string) => void
   /** A drop on another section, including nested level metadata, via ViewsPane's existing optimistic write path. */
   onMoveToGroup: (path: string, value: unknown, swap?: GroupSwap, drop?: GroupDrop) => void
   /** The read-only notes (YAZ-3076 D6): their cells open no editor and their cards do not move. Absent = none. */
   readOnly?: ReadonlySet<string>
+  /** "Card style ›" in a card's right-click (YAZ-4906, YAZ-4834 P5): the note's `color`, `text_color` and `weight`, as the calendar card's. Absent: no item. */
+  onStyle?: (path: string, writes: CardStyleWrite[]) => void
   /** The last failed move, flagged inline on its card. */
   moveError: { path: string; message: string } | null
   /** Create a note seeded at one group level; nested spots let ViewsPane seed the outer too. A `name` is the inline add's typed one. */
   onNewInGroup?: (group: Group, name?: string, at?: GroupSpot) => void
+  /** "Show New buttons" (YAZ-3746 13BL): false drops each column's "+ New card" and its header's "+"; the header menu's New note in this group stays. */
+  newCards?: boolean
+  /** The card menu's note items (YAZ-3746 13BO): Open, the new note beside a card, Duplicate, Delete. Absent: none. */
+  noteDoors?: CardNoteDoors
   /** ViewsPane's whole-vault resolver: a column header and a card value read an id link as its note's title (YAZ-2293 D8). */
   resolve?: Resolver
 }
@@ -79,10 +101,6 @@ export interface BoardViewProps {
  * key starting one unless `join` continues the line being built — so position IS ordering and the
  * title is un-pinned: `file.name` sits at its order position, can be joined onto and can itself join.
  */
-/** The text flags a note row carries (YAZ-1206); the title takes part in the layout only (YAZ-1217). */
-const styleClasses = (style: NonNullable<ViewDef['cardStyle']>[string]) =>
-  `${style.bold === true ? ' view-board__prop--bold' : ''}${style.underline === true ? ' view-board__prop--underline' : ''}`
-
 export function BoardView({
   def,
   view,
@@ -96,23 +114,108 @@ export function BoardView({
   onOpenFile,
   onOpenFileRight,
   onOpenFileBackground,
+  onOpenWindow,
+  windowLink,
   onNotice,
   onMoveToGroup,
   moveError,
   onNewInGroup,
+  newCards = true,
+  noteDoors,
   resolve,
   readOnly = NO_READ_ONLY,
+  onStyle,
   hover,
 }: BoardViewProps) {
-  const levelKeys = [groupByKey(view), groupByKey(view, 1)]
+  const unit = useUnit()
+  const levels = shownGroupLevels(view)
+  const levelKeys = levels.map((_, level) => groupByKey(view, level, settings.columns))
   const dnd = useGroupDrag(levelKeys, onMoveToGroup)
-  const adds = [0, 1].map((level) => groupTakesNew(view, level))
-  /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES. */
-  const flipRoot = useFlip()
+  const adds = levels.map((_, level) => groupTakesNew(view, level, settings.columns))
+  /** One FLIP instance for the whole board (YAZ-944), so a card crossing columns MOVES; a fold never plays (13A). */
+  const flipRoot = useFlip(collapsed.join('\u001e'))
+  // The note window (YAZ-4547 D24): column by column, top to bottom, collapsed sections left out; the board's root
+  // is the FLIP root too, so one stable ref callback sets both.
+  const windowOrder = useMemo(() => shownRows(groups, [], collapsed), [groups, collapsed])
+  const boardRef = useRef<HTMLDivElement | null>(null)
+  const setBoardRoot = useCallback(
+    (el: HTMLDivElement | null) => {
+      boardRef.current = el
+      flipRoot(el)
+    },
+    [flipRoot],
+  )
+  /**
+   * WINDOWING (YAZ-3746 13AX, S17): each card list draws its first `FIRST_CARDS` cards, then `STEP_CARDS` more each time
+   * its end comes within `REVEAL_MARGIN` of the screen — so a board of thousands opens as fast as a small one, and the
+   * cards drawn are the ones near the screen. `reach` is each list's drawn count, by its group's key; a card asked for
+   * (⌘F, the mini window's step) draws its list down to it first (`revealCard`).
+   */
+  const [reach, setReach] = useState<Readonly<Record<string, number>>>({})
+  const drawn = (list: string, total: number) => Math.min(total, Math.max(FIRST_CARDS, reach[list] ?? 0))
+  const grow = useCallback((list: string, to: number) => setReach((r) => ((r[list] ?? FIRST_CARDS) >= to ? r : { ...r, [list]: to })), [])
+  const ends = useRef<IntersectionObserver | null>(null)
+  /** The one observer of the lists' ends, made at the first end's mount: a ref attaches before any effect runs. */
+  const endsObserver = (): IntersectionObserver | null => {
+    if (ends.current === null && typeof IntersectionObserver !== 'undefined')
+      ends.current = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const el = entry.target as HTMLElement
+            if (entry.isIntersecting) grow(el.dataset.list!, Number(el.dataset.next))
+          }
+        },
+        { rootMargin: `${REVEAL_MARGIN}px 0px` },
+      )
+    return ends.current
+  }
+  useEffect(
+    () => () => {
+      ends.current?.disconnect()
+      ends.current = null
+    },
+    [],
+  )
+  /** Where each card sits: its list and its place in it, for `revealCard`; rebuilt by each render's lists. */
+  const places = useRef(new Map<string, { list: string; index: number }>())
+  places.current = new Map()
+  const revealCard = useCallback(
+    (path: string): boolean => {
+      const at = places.current.get(path)
+      if (at === undefined || at.index < Math.max(FIRST_CARDS, reach[at.list] ?? 0)) return false
+      grow(at.list, at.index + STEP_CARDS)
+      return true
+    },
+    [grow, reach],
+  )
+  // ⌘F's jump to a card not drawn yet draws its list down to it; the find bar scrolls to it once it mounts.
+  const find = useContext(ViewFind)
+  useEffect(() => {
+    if (find === null) return
+    find.scrollTo = (path) => void revealCard(path)
+    return () => {
+      if (find.scrollTo !== null) find.scrollTo = null
+    }
+  }, [find, revealCard])
+  // The mini window's step onto a card not drawn yet: draw it, then show it (two frames: the commit, then its layout).
+  useNoteWindowItems(windowLink, windowOrder, boardRef, (current) => {
+    if (current !== null && revealCard(current)) requestAnimationFrame(() => requestAnimationFrame(() => windowLink?.show?.()))
+  })
   /** The one open add row (YAZ-943) and what has been typed into it; null = every column shows its button. */
   const [adding, setAdding] = useState<{ key: string; name: string } | null>(null)
   /** The exact rendered record targeted by the latest whole-card secondary click. */
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  /**
+   * The card menu's groups: the note items, then "Card style ›" (YAZ-4906, YAZ-4834 P5: the card shows the note's style,
+   * so it sets it here too) when the pane writes styles and the note is not read-only. The panel's ✓ marks are the
+   * card's style NOW (the rows, optimistic).
+   */
+  const cardMenu = (path: string) => {
+    const items = cardMenuItems(noteDoors, path, () => setMenu(null), noteDoors?.newBelow === undefined ? undefined : { label: 'New card below', run: () => noteDoors.newBelow!(path) })
+    if (onStyle === undefined || readOnly.has(path)) return items
+    const properties = records.find((r) => r.path === path)?.properties ?? {}
+    return { ...items, extra: [...(items.extra ?? []), <CardStyleFlyout key="style" properties={properties} onPick={(writes) => onStyle(path, writes)} />] }
+  }
   /** Browser click tails after secondary-click and drag gestures must not become page opens. */
   const suppressClick = useRef(false)
   const suppressOnce = () => {
@@ -152,7 +255,7 @@ export function BoardView({
     const fallback = allPropertyKeys(def, view, records).find((k) => !canonicalKey(k).startsWith('file.')) ?? 'file.folder'
     return (
       <div className="view-board__hint">
-        <p>Board views group notes into columns. Pick a property to group by.</p>
+        <p>{unit('Board views group notes into columns. Pick a property to group by.')}</p>
         <button
           type="button"
           className="view-menu__action"
@@ -168,21 +271,11 @@ export function BoardView({
     )
   }
 
-  const keys = propertyKeys(def, view, records, Object.keys(settings.columns))
+  const keys = propertyKeys(def, view, records, pageColumnKeys(settings))
   const nameKey = keys.find((k) => canonicalKey(k) === 'file.name')
-  const styleOf = (key: string) => view.cardStyle?.[canonicalKey(key)] ?? {}
-  /** The card's ROWS (YAZ-1217): each ordered key starts a line, `join` appends it to the one being built — so a join with no line yet is a harmless no-op. */
-  const lines = keys.reduce<string[][]>((acc, key) => {
-    if (styleOf(key).join === true && acc.length > 0) acc[acc.length - 1].push(key)
-    else acc.push([key])
-    return acc
-  }, [])
+  const lines = cardLines(keys, view)
   const width = cardWidth(view.cardSize)
-  /**
-   * One item on a line: the title button, or a label/value row. The dash between joined items is
-   * its OWN element — a pseudo on a flex row would become that row's first flex child and drag
-   * the row's internal 8px gap in after itself (the lopsided "App– Sam" bug).
-   */
+  /** One item on a line (`cardLines.tsx`): the title button, or a label/value row. */
   const cardItem = (key: string, row: Row) => {
     if (key === nameKey)
       return (
@@ -192,19 +285,13 @@ export function BoardView({
           className="view-board__title"
           onClick={(event) => {
             event.stopPropagation()
-            if (!newWindowClick(event, row.record.path)) openCard(row, event)
+            if (!newWindowClick(event, rowPage(row.record.path))) openCard(row, event)
           }}
         >
           {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
         </button>
       )
-    const style = styleOf(key)
-    return (
-      <div key={key} className={`view-board__prop${styleClasses(style)}`}>
-        {style.hideLabel !== true && <span className="view-board__prop-name">{propertyLabel(def, key)}</span>}
-        <span className="view-board__prop-value">{cellContent(row.values[key], resolve)}</span>
-      </div>
-    )
+    return <CardProp def={def} view={view} row={row} field={key} resolve={resolve} />
   }
   /** A failed move's inline chip (5C, GRO-2143), under the card's first line. */
   const moveChip = (row: Row) =>
@@ -230,13 +317,19 @@ export function BoardView({
       },
     }
   }
-  const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => (
+  const cardList = (rows: readonly Row[], group: Group, at: GroupSpot, isOver = false) => {
+    const list = spotKey(group, at)
+    const count = drawn(list, rows.length)
+    rows.forEach((row, index) => places.current.set(row.record.path, { list, index }))
+    return (
     <ul className="view-board__cards">
-      {rows.map((row) => (
+      {rows.slice(0, count).map((row) => (
         <li
           key={row.record.path}
           data-flip-key={row.record.path}
-          className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}`}
+          className={`view-board__card${dnd.drag?.path === row.record.path ? ' view-board__card--drag' : ''}${currentItemClass(windowLink, row.record.path)}`}
+          // The note's `color`, `text_color` and `weight` dress the card here too (YAZ-4906, views.css), the calendar card's attributes.
+          {...cardStyleAttrs(row.record.properties)}
           {...dragSource(row, group, at)}
           {...hover.itemProps(row.record.path)}
           // Every card is a focusable "cell" (YAZ-1557 D2): a plain click SELECTS it, and only the
@@ -245,31 +338,21 @@ export function BoardView({
           aria-label={nameKey === undefined ? row.record.title : undefined}
           // ⇧⌘-click opens the note in a new window (YAZ-4444 D32), asked before ⇧ vetoes the open.
           onClick={(event) => {
-            if (newWindowClick(event, row.record.path)) return
+            if (newWindowClick(event, rowPage(row.record.path))) return
             if (openTarget(event) === 'current') event.currentTarget.focus()
             else openCard(row, event)
           }}
           onKeyDown={(event) => {
             if (event.target !== event.currentTarget || event.key !== 'Enter') return
             event.preventDefault()
-            openCard(row, event)
+            // ⇧Enter opens the card in the mini window (YAZ-4605 D56); the other Enters as a click.
+            if (!suppressClick.current) openByKey(event, row.record.path, { ...openHandlers, onOpenWindow })
           }}
           onContextMenu={(event) => openCardMenu(event, row)}
         >
           {lines.map((line, i) => (
             <Fragment key={line[0]}>
-              <div className="view-board__line">
-                {line.map((key, item) => (
-                  <Fragment key={key}>
-                    {item > 0 && (
-                      <span className="view-board__dash" aria-hidden>
-                        &ndash;
-                      </span>
-                    )}
-                    {cardItem(key, row)}
-                  </Fragment>
-                ))}
-              </div>
+              <CardLine line={line} item={(key) => cardItem(key, row)} />
               {i === 0 && moveChip(row)}
             </Fragment>
           ))}
@@ -277,11 +360,28 @@ export function BoardView({
           {lines.length === 0 && moveChip(row)}
         </li>
       ))}
+      {count < rows.length && (
+        // The list's end (13AX): near the screen, the next cards draw. A new key per step, so a still-visible end is seen again.
+        <li
+          key={`more-${count}`}
+          className="view-board__more"
+          aria-hidden
+          data-list={list}
+          data-next={count + STEP_CARDS}
+          ref={(el) => {
+            if (el === null) return
+            const observer = endsObserver()
+            observer?.observe(el)
+            return () => observer?.unobserve(el)
+          }}
+        />
+      )}
       {isOver && <li className="view-board__placeholder" aria-hidden />}
     </ul>
-  )
+    )
+  }
   const inlineAdd = (group: Group, key: string, at?: GroupSpot) => {
-    if (onNewInGroup === undefined) return null
+    if (onNewInGroup === undefined || !newCards) return null
     return adding?.key === key ? (
       <input
         className="view-board__add-input"
@@ -294,10 +394,9 @@ export function BoardView({
         onKeyDown={(e) => {
           if (e.key === 'Escape') setAdding(null)
           if (e.key !== 'Enter') return
-          const name = adding.name.trim()
-          // An empty Enter is a no-op, not an `Untitled` card: the row is asking for a name.
-          if (name === '') return
-          onNewInGroup(group, name, at)
+          // An empty Enter makes `Untitled`, the same as every other "+" (YAZ-4541 S5): an empty name
+          // lets the host pick it (`Untitled 2`… on a clash), and the add still stays on the board.
+          onNewInGroup(group, adding.name.trim(), at)
           setAdding({ key, name: '' })
         }}
       />
@@ -308,14 +407,66 @@ export function BoardView({
     )
   }
 
+  /**
+   * The nested sections under `parent` (YAZ-745): level 2 and each deeper level inside the one above (up to `MAX_GROUP_LEVELS`, YAZ-4531, YAZ-3746 13AF).
+   * Each section shows the merge rule's direct cards, then its own subgroups.
+   */
+  const subgroups = (parent: Group, parentAt: GroupSpot): ReactNode => {
+    if (parent.children === undefined || parent.children.length === 0) return null
+    const at = childSpot(parent, parentAt)
+    return (
+      <div className="view-board__subgroups">
+        {parent.children.map((child) => {
+          const ck = spotKey(child, at)
+          const childCollapsed = collapsed.includes(ck)
+          const childOver = dnd.over === ck
+          // A section with sections inside takes drops on its header only, as a column does: a drop
+          // bubbles, and the outer section would move the card a second time.
+          const nested = child.children !== undefined
+          const header = (
+            <GroupHeader
+              def={def}
+              view={view}
+              columns={keys}
+              groupKey={child.key}
+              label={child.label}
+              rows={child.rows}
+              collapsed={childCollapsed}
+              onToggle={() => onToggleGroup(ck)}
+              onNew={onNewInGroup === undefined || !adds[at.level] ? undefined : () => onNewInGroup(child, undefined, at)}
+              newButton={newCards}
+              resolve={resolve}
+              level={at.level}
+              gk={ck}
+            />
+          )
+          return (
+            <section key={ck} className={`view-board__subgroup${childOver ? ' view-board__subgroup--drop' : ''}`} {...(nested ? {} : dnd.target(child, at))}>
+              {nested ? (
+                <div className="view-board__subgroup-header" {...dnd.target(child, at)}>
+                  {header}
+                </div>
+              ) : (
+                header
+              )}
+              {!childCollapsed && (child.children === undefined ? cardList(child.rows, child, at, childOver) : (child.direct?.length ?? 0) > 0 && cardList(child.direct ?? [], child, at, childOver))}
+              {!childCollapsed && subgroups(child, at)}
+              {!childCollapsed && child.children === undefined && adds[at.level] && inlineAdd(child, ck, at)}
+            </section>
+          )
+        })}
+      </div>
+    )
+  }
+
   return (
     <>
-      <div className="view-board" ref={flipRoot} onKeyDown={onCardKeyDown} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
+      <div className="view-board" ref={setBoardRoot} onKeyDown={onCardKeyDown} style={{ '--view-board-col-w': `${width}px` } as CSSProperties}>
         {groups.map((g) => {
-          const gk = groupKeyOf(g.key)
+          const outerAt = TOP_SPOT
+          const gk = spotKey(g, outerAt)
           const isCollapsed = collapsed.includes(gk)
           const isOver = dnd.over === gk
-          const outerAt: GroupSpot = { level: 0, outer: g }
           const header = (
             <GroupHeader
               def={def}
@@ -327,7 +478,10 @@ export function BoardView({
               collapsed={isCollapsed}
               onToggle={() => onToggleGroup(gk)}
               onNew={onNewInGroup === undefined || !adds[0] ? undefined : () => onNewInGroup(g)}
+              newButton={newCards}
               resolve={resolve}
+              level={0}
+              gk={gk}
             />
           )
           return (
@@ -350,42 +504,7 @@ export function BoardView({
                   ) : (
                     <>
                       {(g.direct?.length ?? 0) > 0 && cardList(g.direct ?? [], g, outerAt, isOver)}
-                      {g.children.length > 0 && (
-                        <div className="view-board__subgroups">
-                          {g.children.map((child) => {
-                            const ck = nestedGroupKeyOf(g.key, child.key)
-                            const childCollapsed = collapsed.includes(ck)
-                            const childOver = dnd.over === ck
-                            const innerAt: GroupSpot = { level: 1, outer: g }
-                            return (
-                              <section
-                                key={ck}
-                                className={`view-board__subgroup${childOver ? ' view-board__subgroup--drop' : ''}`}
-                                {...dnd.target(child, innerAt)}
-                              >
-                                <GroupHeader
-                                  def={def}
-                                  view={view}
-                                  columns={keys}
-                                  groupKey={child.key}
-                                  label={child.label}
-                                  rows={child.rows}
-                                  collapsed={childCollapsed}
-                                  onToggle={() => onToggleGroup(ck)}
-                                  onNew={
-                                    onNewInGroup === undefined || !adds[1]
-                                      ? undefined
-                                      : () => onNewInGroup(child, undefined, innerAt)
-                                  }
-                                  resolve={resolve}
-                                />
-                                {!childCollapsed && cardList(child.rows, child, innerAt, childOver)}
-                                {!childCollapsed && adds[1] && inlineAdd(child, ck, innerAt)}
-                              </section>
-                            )
-                          })}
-                        </div>
-                      )}
+                      {subgroups(g, outerAt)}
                     </>
                   )}
                 </>
@@ -403,8 +522,10 @@ export function BoardView({
           title={menu.title}
           onOpenRight={onOpenFileRight}
           onOpenBackground={onOpenFileBackground}
+          onOpenWindow={onOpenWindow}
           onNotice={onNotice}
           onClose={() => setMenu(null)}
+          {...cardMenu(menu.path)}
         />
       )}
     </>

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useUnit } from '../vault/unitWord'
 import type { ReviewSession } from './useReview'
 import './reviewBar.css'
 
@@ -86,7 +87,8 @@ export function ReviewAnswers({ onKeep, onSkip }: Pick<ReviewBarProps, 'onKeep' 
  * or the note is open in the side panel — one editor per note, so it is reviewed there.
  */
 export function ReviewMessage({ session, onClose }: Pick<ReviewBarProps, 'session' | 'onClose'>) {
-  if (session.path !== null) return <p className="review-message">This note is open in the side panel.</p>
+  const unit = useUnit()
+  if (session.path !== null) return <p className="review-message">{unit('This note is open in the side panel.')}</p>
   return (
     <div className="review-message">
       <p>{session.label === 'Inbox' ? 'Inbox complete.' : `Nothing due in ${session.label}.`}</p>

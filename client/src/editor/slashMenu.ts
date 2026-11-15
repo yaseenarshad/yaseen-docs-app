@@ -55,6 +55,7 @@ import {
   turnIntoTextCommand,
 } from '@milkdown/kit/preset/commonmark'
 import { createTable } from '@milkdown/kit/preset/gfm'
+import { newTableNode } from './table/super/superTables'
 import type { Node as ProseNode } from '@milkdown/kit/prose/model'
 import { Plugin, type Selection, TextSelection } from '@milkdown/kit/prose/state'
 import { $prose } from '@milkdown/kit/utils'
@@ -196,11 +197,11 @@ function insertTable(ctx: Ctx, table: ProseNode): void {
   view.dispatch(tr.setSelection(TextSelection.near(tr.doc.resolve(at + 1))).scrollIntoView())
 }
 
-/** The "Table" row (D12, YAZ-3805): a 3×3 table; see the header. */
+/** The "Table" row (D12, YAZ-3805): a 3×3 table, plain or Super as Settings › Tables › New tables start as says (YAZ-4869 item 22); see the header. */
 export const tableRow: SlashRow = {
   label: 'Table',
   icon: tableIcon,
-  onRun: (ctx) => insertTable(ctx, createTable(ctx, 3, 3)),
+  onRun: (ctx) => insertTable(ctx, newTableNode(createTable(ctx, 3, 3))),
 }
 
 /** A calendar page, drawn to match the stock 24px items. */

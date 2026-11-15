@@ -136,3 +136,13 @@
 .board-info__ago {
   color: var(--fg-muted);
 }
+
+/* YAZ-3746 13R: a PDF's first page in the hover card, Chromium's plugin in a frame the pointer never reaches (the card is `pointer-events: none`). */
+.media-hover__pdf {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--bg);
+}

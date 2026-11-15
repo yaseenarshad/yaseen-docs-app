@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { openByGesture, openTarget, type Modifiers } from './openGesture'
+import { openByGesture, openByKey, openTarget, type Modifiers } from './openGesture'
 
 const mods = (over: Partial<Modifiers> = {}): Modifiers => ({ metaKey: false, altKey: false, shiftKey: false, ctrlKey: false, ...over })
 
@@ -31,5 +31,20 @@ describe('openByGesture', () => {
 
   it('a missing handler is a no-op, not a throw — the surface simply lacks that pane', () => {
     expect(openByGesture(mods({ altKey: true }), '/v/a.md', {})).toBe('right')
+  })
+})
+
+describe('openByKey (YAZ-4605 D56)', () => {
+  it('⇧Enter opens the mini window; Enter, ⌘Enter and ⌥Enter open as before; ⇧ with another modifier opens nothing', () => {
+    const h = { onOpenFile: vi.fn(), onOpenFileRight: vi.fn(), onOpenFileBackground: vi.fn(), onOpenWindow: vi.fn() }
+    expect(openByKey(mods({ shiftKey: true }), '/v/w.md', h)).toBe('window')
+    expect(openByKey(mods(), '/v/a.md', h)).toBe('current')
+    expect(openByKey(mods({ metaKey: true }), '/v/b.md', h)).toBe('background')
+    expect(openByKey(mods({ altKey: true }), '/v/c.md', h)).toBe('right')
+    expect(openByKey(mods({ shiftKey: true, metaKey: true }), '/v/d.md', h)).toBeNull()
+    expect(h.onOpenWindow).toHaveBeenCalledExactlyOnceWith('/v/w.md')
+    expect(h.onOpenFile).toHaveBeenCalledExactlyOnceWith('/v/a.md')
+    expect(h.onOpenFileBackground).toHaveBeenCalledExactlyOnceWith('/v/b.md')
+    expect(h.onOpenFileRight).toHaveBeenCalledExactlyOnceWith('/v/c.md')
   })
 })

@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 import { pageLabel, type PathTitles } from '../lib/pageLabel'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 
@@ -33,20 +34,20 @@ const verb = (n: number, singular: string) => (n === 1 ? `${singular}s` : singul
  *  - singular and plural both read correctly;
  *  - two or more items (YAZ-3272 D21) are counted, never named: "Delete 3 items? They move to the Trash."
  */
-export function deleteConfirmMessage({ path, kind, children, backlinks, paths }: DeleteTarget, titles: PathTitles): string {
+export function deleteConfirmMessage({ path, kind, children, backlinks, paths }: DeleteTarget, titles: PathTitles, unit: UnitText = SAME_WORD): string {
   const parts: string[] = []
   const many = paths !== undefined && paths.length >= 2
   if (many) {
     parts.push(`Delete ${paths.length} items? They move to the Trash.`)
   } else if (kind === 'dir' && children !== undefined && children.notes + children.folders > 0) {
-    const inside = [children.notes > 0 ? plural(children.notes, 'note') : null, children.folders > 0 ? plural(children.folders, 'folder') : null]
+    const inside = [children.notes > 0 ? unit(plural(children.notes, 'note')) : null, children.folders > 0 ? plural(children.folders, 'folder') : null]
       .filter((p): p is string => p !== null)
       .join(' and ')
     parts.push(`Delete "${pageLabel(path, true, titles)}"? ${inside} ${verb(children.notes + children.folders, 'move')} to the Trash.`)
   } else {
     parts.push(`Delete "${pageLabel(path, kind === 'dir', titles)}"? It moves to the Trash.`)
   }
-  if (backlinks !== undefined && backlinks > 0) parts.push(`${plural(backlinks, 'note')} ${verb(backlinks, 'link')} to ${many ? 'them' : 'this'}.`)
+  if (backlinks !== undefined && backlinks > 0) parts.push(`${unit(plural(backlinks, 'note'))} ${verb(backlinks, 'link')} to ${many ? 'them' : 'this'}.`)
   return parts.join(' ')
 }
 
@@ -54,6 +55,8 @@ interface ConfirmDeleteProps {
   target: DeleteTarget
   /** The window's titles (YAZ-2420 🔒 D14): what the copy names, it names by title. */
   titles: PathTitles
+  /** The row's vault's word for a note (YAZ-4938). */
+  unit?: UnitText
   /** `confirmDelete` is cleared when the user ticks "Don't ask me again" (GRO-2272 `C4-`). */
   onConfirm: (dontAskAgain: boolean) => void
   onCancel: () => void
@@ -68,11 +71,11 @@ interface ConfirmDeleteProps {
  * restore behind it. Hence initial focus lands on **Cancel**, not Delete — a stray Enter
  * arriving from the tree must not destroy anything.
  */
-export function ConfirmDelete({ target, titles, onConfirm, onCancel }: ConfirmDeleteProps) {
+export function ConfirmDelete({ target, titles, unit, onConfirm, onCancel }: ConfirmDeleteProps) {
   const dontAskRef = useRef<HTMLInputElement>(null)
   const confirm = useCallback(() => onConfirm(dontAskRef.current?.checked === true), [onConfirm])
   return (
-    <ConfirmSheet labelId="confirm-delete-text" text={deleteConfirmMessage(target, titles)} confirmLabel="Delete" danger onConfirm={confirm} onCancel={onCancel}>
+    <ConfirmSheet labelId="confirm-delete-text" text={deleteConfirmMessage(target, titles, unit)} confirmLabel="Delete" danger onConfirm={confirm} onCancel={onCancel}>
       <label className="confirm__ask">
         <input ref={dontAskRef} type="checkbox" />
         Don&apos;t ask me again

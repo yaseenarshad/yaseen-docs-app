@@ -15,6 +15,7 @@
 import { footnoteDefinitionSchema } from '@milkdown/kit/preset/gfm'
 import { Fragment, type Node as ProseNode, type ResolvedPos } from '@milkdown/kit/prose/model'
 import { type Command, type EditorState, Plugin, PluginKey, TextSelection, type Transaction } from '@milkdown/kit/prose/state'
+import { TableMap } from '@milkdown/kit/prose/tables'
 import { ReplaceAroundStep, ReplaceStep, type Step } from '@milkdown/kit/prose/transform'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import type { MarkdownNode } from '@milkdown/kit/transformer'
@@ -235,11 +236,13 @@ export function cellNoteNameParts(doc: ProseNode, label: string): { column: stri
   const mark = markPosOf(doc, label)
   const cell = mark === null ? null : cellPosAround(doc.resolve(mark))
   if (cell === null) return { column: '', row: '' }
-  // table > row > cell.
+  // table > row > cell. The column and the row through the table map (YAZ-4792): a merged cell shifts the row's children.
   const $cell = doc.resolve(cell)
   const words = (node: ProseNode | null) => (node === null ? '' : node.textBetween(0, node.content.size, ' '))
-  const header = $cell.index(-1) === 0
-  return { column: words($cell.node(-1).firstChild!.maybeChild($cell.index())), row: header ? '' : words($cell.parent.firstChild) }
+  const table = $cell.node(-1)
+  const map = TableMap.get(table)
+  const { top, left } = map.findCell(cell - $cell.start(-1))
+  return { column: words(table.nodeAt(map.map[left]!)), row: top === 0 ? '' : words(table.nodeAt(map.map[top * map.width]!)) }
 }
 
 /** A cell note's title (D9), for its card and its preview: "Note: <column> · <row>", or "Note" when neither has words. */

@@ -1,7 +1,7 @@
 import { mkdir, stat } from 'node:fs/promises'
 import type { CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse } from '@shared/types'
 import { isMarkdown } from '@shared/fileKind'
-import { FrontmatterWriteError, setFrontmatterProperty } from '@shared/frontmatter'
+import { FrontmatterWriteError, setFrontmatterProperty, withCommentsHint } from '@shared/frontmatter'
 import { NOTE_ID_KEY, isVaultNumberId } from '@shared/noteId'
 import { TITLE_KEY } from '@shared/noteName'
 import type { IdDoor } from '../vaultIndex/mint'
@@ -55,7 +55,11 @@ export async function createDir(req: CreateDirRequest, ids: IdDoor | null): Prom
   return { path: p }
 }
 
-export async function createFile(req: string | CreateFileRequest, ids: IdDoor | null): Promise<CreateFileResponse> {
+/**
+ * YAZ-4615 D10: `hint` puts `COMMENTS_HINT` at the top of the new note's frontmatter — in both kinds
+ * of vault, since the note is the app's own file. The caller reads it from Settings › Comments.
+ */
+export async function createFile(req: string | CreateFileRequest, ids: IdDoor | null, { hint = false }: { hint?: boolean } = {}): Promise<CreateFileResponse> {
   // Crosses IPC from a sandboxed renderer: shape-checked like a request body (writeFile's posture).
   const raw: unknown = req
   const isReq = typeof raw === 'object' && raw !== null
@@ -67,7 +71,8 @@ export async function createFile(req: string | CreateFileRequest, ids: IdDoor | 
   if (given !== undefined && typeof given !== 'string') throw new BridgeFailure('BAD_REQUEST', "'id' must be a note id", { path: p })
   if (ids === null && given !== undefined) throw noIds(p)
   if (ids !== null && given !== undefined && !isVaultNumberId(given, ids.letters)) throw new BridgeFailure('BAD_REQUEST', "'id' must be a number ID of this vault", { path: p })
-  const born = ids === null ? { content: content ?? '', id: undefined } : withNoteId(content ?? '', given ?? (await ids.mint(1))[0])
+  const made = ids === null ? { content: content ?? '', id: undefined } : withNoteId(content ?? '', given ?? (await ids.mint(1))[0])
+  const born = hint ? { ...made, content: withCommentsHint(made.content) } : made
   return fsCall(p, async () => {
     await createDurable(p, born.content)
     const st = await stat(p)

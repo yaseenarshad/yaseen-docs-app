@@ -1,7 +1,7 @@
 import { createNote as birth, folderPath, type NoteDisk, type Seed } from '@shared/noteBirth'
 import type { IndexRecord } from '@shared/types'
 import { api, BridgeRequestError } from '../api'
-import { typedFolders } from './engine'
+import { typedFolders } from '@shared/linkResolver'
 
 export { folderPath }
 

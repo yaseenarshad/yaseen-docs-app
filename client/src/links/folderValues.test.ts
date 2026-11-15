@@ -4,7 +4,7 @@
  * they empty and refuse to write over a value that is not theirs.
  */
 import { describe, expect, it } from 'vitest'
-import { FOLDER_VALUES_KEY, folderBlocks, folderValues, moveFolderValues, setFolderValue, withFolderValues, withoutStaleFolderValues } from '@shared/folderValues'
+import { FOLDER_VALUES_KEY, folderBlocks, folderValues, moveFolderValues, setFolderValue, withFolderValues } from '@shared/folderValues'
 import { FrontmatterWriteError } from '@shared/frontmatter'
 
 const HIRING = '3y7505rsr6fd'
@@ -174,36 +174,5 @@ describe('moveFolderValues: a copied folder’s block of a note, named by the co
   it('run again, it is the same string', () => {
     const moved = moveFolderValues(NOTE, HIRING, COPY)
     expect(moveFolderValues(moved, HIRING, COPY)).toBe(moved)
-  })
-})
-
-describe('withoutStaleFolderValues: a folder’s values leave the note when the note leaves the folder (D20)', () => {
-  const GONE = 'a1b2c3d4e5f6'
-  const properties = { Status: 'top', in: { [HIRING]: { Status: 'Interview' }, [TASKS]: { Status: '2-Todo' }, [GONE]: { Status: 'old' } } }
-  const ids = (...list: string[]): ReadonlySet<string> => new Set(list)
-
-  it('a block is removed only if its folder is known AND is not among the folders showing the note', () => {
-    expect(withoutStaleFolderValues(properties, ids(HIRING), ids(HIRING, TASKS))).toEqual({ Status: 'top', in: { [HIRING]: { Status: 'Interview' }, [GONE]: { Status: 'old' } } })
-  })
-
-  it('a folder that still shows the note keeps its block', () => {
-    expect(withoutStaleFolderValues(properties, ids(HIRING, TASKS), ids(HIRING, TASKS, GONE)).in).toEqual({ [HIRING]: { Status: 'Interview' }, [TASKS]: { Status: '2-Todo' } })
-  })
-
-  it('a block for a folder the app cannot find is kept, always', () => {
-    expect(withoutStaleFolderValues(properties, ids(), ids())).toBe(properties)
-    expect(withoutStaleFolderValues(properties, ids(), ids(HIRING, TASKS)).in).toEqual({ [GONE]: { Status: 'old' } })
-  })
-
-  it('nothing stale is the same object: nothing to write', () => {
-    expect(withoutStaleFolderValues(properties, ids(HIRING, TASKS), ids(HIRING, TASKS))).toBe(properties)
-    const none = { Status: 'top' }
-    expect(withoutStaleFolderValues(none, ids(), ids(HIRING))).toBe(none)
-    const foreign = { in: 'the office' }
-    expect(withoutStaleFolderValues(foreign, ids(), ids(HIRING))).toBe(foreign)
-  })
-
-  it('`in` goes with its last block; the note’s own fields stay', () => {
-    expect(withoutStaleFolderValues({ Status: 'top', in: { [HIRING]: { Status: 'Interview' } } }, ids(), ids(HIRING))).toEqual({ Status: 'top' })
   })
 })

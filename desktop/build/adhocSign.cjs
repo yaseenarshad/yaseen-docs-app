@@ -63,7 +63,12 @@ module.exports = async function afterPack(context) {
   trimChromiumLocales(context.appOutDir, context.electronPlatformName, context.packager.appInfo.productFilename)
   if (context.electronPlatformName !== 'darwin') return
   const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
-  execFileSync('codesign', ['--force', '--deep', '--sign', signIdentity(process.env), app], { stdio: 'inherit' })
+  const identity = signIdentity(process.env)
+  // `--deep` signs only code in the bundle's code folders: the spell checker helper in `Resources/bin` (YAZ-4464)
+  // would keep its linker ad-hoc signature, sealed as a plain file. So it gets the bundle's identity first.
+  const speller = path.join(app, 'Contents', 'Resources', 'bin', 'speller')
+  execFileSync('codesign', ['--force', '--sign', identity, '--identifier', 'com.yasinarshad.yaseendocs.speller', speller], { stdio: 'inherit' })
+  execFileSync('codesign', ['--force', '--deep', '--sign', identity, app], { stdio: 'inherit' })
 }
 module.exports.trimChromiumLocales = trimChromiumLocales
 module.exports.signIdentity = signIdentity

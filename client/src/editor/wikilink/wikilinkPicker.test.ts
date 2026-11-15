@@ -729,6 +729,15 @@ describe('wikilink picker: alias and dismissal', () => {
     expect(popup()?.dataset.show).toBe('false')
   })
 
+  it('YAZ-4935: words first, then | and an ID: the suggestions stay closed too (the picker writes the page first)', async () => {
+    const { crepe } = await mount('X\n', source('Alpha'))
+    caret(crepe, posOf(crepe, 'X', 1))
+    type(crepe, '[[staging|WIKI-1')
+    await tick()
+    expect(rows()).toEqual([])
+    expect(popup()?.dataset.show ?? 'false').toBe('false')
+  })
+
   it('Esc dismisses leaving the typed text; the same [[ stays closed while typing continues', async () => {
     const { crepe } = await mount('X\n', source('Alpha'))
     caret(crepe, posOf(crepe, 'X', 1))

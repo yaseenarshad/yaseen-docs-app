@@ -3,6 +3,7 @@ import { cleanVaultName, defaultRightPanelIdentity, type RightPanelIdentity, typ
 import { storage } from '../lib/storage'
 import { carryEditorAcrossPane, flushRenamedPath } from '../lib/renameContinuity'
 import { hashFilePath } from '../lib/urlHash'
+import { sweepEmbedPicturesSoon } from '../editor/embed/pictureStats'
 
 /**
  * The renderer-owned tab model (Tabs I2, GRO-2234). A window's open files are
@@ -1099,7 +1100,11 @@ export function useWorkspace(root: string | null): UseWorkspace {
   const openBackground = useCallback((path: string, copy = false) => dispatch({ type: 'open-background', path, next: opensNext(), ...(copy ? { copy: true as const } : {}) }), [dispatch])
   const activate = useCallback((id: string) => dispatch({ type: 'activate', id }), [dispatch])
   // `mounted` is renderer-only (rule above): sleep and wake write nothing.
-  const sleep = useCallback((ids: readonly string[]) => dispatch({ type: 'sleep', ids }, { mirror: false }), [dispatch])
+  const sleep = useCallback((ids: readonly string[]) => {
+    dispatch({ type: 'sleep', ids }, { mirror: false })
+    // A sleeping tab drops its embed pictures too (YAZ-4820 item 27, A5).
+    sweepEmbedPicturesSoon()
+  }, [dispatch])
   const wake = useCallback((id: string) => dispatch({ type: 'wake', id }, { mirror: false }), [dispatch])
   /** YAZ-3487 D10: the notes of the tabs that close go to "Recently closed". A tab that MOVES to another window is no close: its caller says so. */
   const noteClosed = useCallback((ids: readonly string[]): void => {

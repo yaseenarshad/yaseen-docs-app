@@ -544,6 +544,7 @@ import type {
   ColorEditPreview,
   RenderInteractiveSceneCallback,
   ScrollBars,
+  SelectionHover,
 } from "../scene/types";
 
 import type { ClipboardData, PastedMixedContent } from "../clipboard";
@@ -889,6 +890,10 @@ class App extends React.Component<AppProps, AppState> {
     elementId: ExcalidrawElement["id"];
     line: number;
   }> | null = null;
+  /** YAZ-4469: the element a click would pick, outlined faintly on hover, and the view it was found in. */
+  private selectionHover: SelectionHover | null = null;
+  /** YAZ-4469: what the current pointer move found; `handleCanvasPointerMove` applies it once. */
+  private selectionHoverNext: NonDeleted<ExcalidrawElement> | null = null;
   /** The scene's fonts are loaded: a pill's box can be measured. */
   private hostLinkFontsReady = false;
   /** YAZ-4101 3D: moves when the text editor's selection shows another style. */
@@ -2604,6 +2609,7 @@ class App extends React.Component<AppProps, AppState> {
 
   private handlePointerLeave = (event: React.PointerEvent) => {
     this.setHostLinkHover(null);
+    this.updateSelectionHover(null);
     this.toggleOverscrollBehavior(event);
   };
 
@@ -2973,6 +2979,7 @@ class App extends React.Component<AppProps, AppState> {
                             }
                             foldArrowHover={this.foldArrowHover}
                             foldArrows={this.getFoldArrowPrefs()}
+                            selectionHover={this.selectionHover}
                             editorInterface={this.editorInterface}
                             interactionEnabled={this.isInteractionEnabled()}
                             navigationEnabled={this.isNavigationEnabled()}
@@ -4574,6 +4581,20 @@ class App extends React.Component<AppProps, AppState> {
     if (prevProps.foldArrows !== this.props.foldArrows) {
       setFoldArrowPrefs(this.getFoldArrowPrefs());
       this.foldArrowHover = null;
+    }
+
+    // YAZ-4469: another tool picks nothing on a click; the renderer skips it too
+    if (prevState.activeTool.type !== this.state.activeTool.type) {
+      this.selectionHover = null;
+    }
+    // YAZ-4469 demo: the host turned the hover outline off while one shows
+    if (
+      prevProps.hoverOutline !== this.props.hoverOutline &&
+      this.props.hoverOutline === false &&
+      this.selectionHover !== null
+    ) {
+      this.selectionHover = null;
+      this.triggerRender();
     }
 
     if (prevProps.hostLinks !== this.props.hostLinks) {
@@ -7629,30 +7650,75 @@ class App extends React.Component<AppProps, AppState> {
           }
         }
       }
-      const elementWithHighestZIndex =
-        allHitElements[allHitElements.length - 1];
-
-      // If we're hitting element with highest z-index only on its bounding box
-      // while also hitting other element figure, the latter should be considered.
-      return hitElementItself({
-        point: pointFrom(x, y),
-        element: elementWithHighestZIndex,
-        // when overlapping, we would like to be more precise
-        // this also avoids the need to update past tests
-        threshold: this.getElementHitThreshold(elementWithHighestZIndex) / 2,
-        elementsMap: this.scene.getNonDeletedElementsMap(),
-        frameNameBound: isFrameLikeElement(elementWithHighestZIndex)
-          ? this.frameNameBoundsCache.get(elementWithHighestZIndex)
-          : null,
-        insideHitPolicy:
-          opts?.insideHitPolicy === "outline" ? undefined : "selection",
-        useFreeTextInteractionBounds:
-          opts && "useFreeTextInteractionBounds" in opts
-            ? opts.useFreeTextInteractionBounds
-            : true,
-      })
-        ? elementWithHighestZIndex
-        : allHitElements[allHitElements.length - 2];
+      const point = pointFrom<GlobalPoint>(x, y);
+      const elementsMap = this.scene.getNonDeletedElementsMap();
+      const hits = (
+        element: NonDeleted<ExcalidrawElement>,
+        insideHitPolicy: "selection" | "drawn",
+      ) =>
+        hitElementItself({
+          point,
+          element,
+          // when overlapping, we would like to be more precise
+          threshold: this.getElementHitThreshold(element) / 2,
+          elementsMap,
+          frameNameBound: isFrameLikeElement(element)
+            ? this.frameNameBoundsCache.get(element)
+            : null,
+          insideHitPolicy,
+          useFreeTextInteractionBounds:
+            opts && "useFreeTextInteractionBounds" in opts
+              ? opts.useFreeTextInteractionBounds
+              : true,
+        });
+      // The smallest unlocked shape whose empty inside holds the point (D2):
+      // a click in a box that sits inside a bigger one picks the inner box.
+      const smallestInside = (elements: NonDeleted<ExcalidrawElement>[]) =>
+        opts?.insideHitPolicy === "outline"
+          ? null
+          : elements
+              .filter(
+                (element) =>
+                  !element.locked &&
+                  element.opacity > 0 &&
+                  hits(element, "selection"),
+              )
+              .reduce<NonDeleted<ExcalidrawElement> | null>(
+                (smallest, element) =>
+                  !smallest ||
+                  element.width * element.height <=
+                    smallest.width * smallest.height
+                    ? element
+                    : smallest,
+                null,
+              );
+      // YAZ-4469 D1: what is drawn under the pointer (a stroke, a fill, a
+      // label, text, a picture) wins over the empty inside of a transparent
+      // shape, at any depth. An invisible element draws nothing, and has no
+      // inside to click either (A9).
+      const drawnIndex = allHitElements.findLastIndex(
+        (element) =>
+          element.opacity > 0 &&
+          (hitElementBoundText(point, element, elementsMap) ||
+            hits(element, "drawn")),
+      );
+      if (drawnIndex >= 0) {
+        const drawn = allHitElements[drawnIndex];
+        // A2: a locked drawn element is a background; an unlocked empty
+        // inside above it still takes the click, as before YAZ-4469
+        return (
+          (drawn.locked &&
+            smallestInside(allHitElements.slice(drawnIndex + 1))) ||
+          drawn
+        );
+      }
+      // Only empty insides are under the point (D2). With none, the top
+      // element wins (A10): only a selected element's frame or the outer
+      // half of a hit band is under the point, or the caller wants outlines.
+      return (
+        smallestInside(allHitElements) ??
+        allHitElements[allHitElements.length - 1]
+      );
     }
     if (allHitElements.length === 1) {
       return allHitElements[0];
@@ -8839,6 +8905,43 @@ class App extends React.Component<AppProps, AppState> {
 
   public getFoldArrowHover = () => this.foldArrowHover;
 
+  /**
+   * YAZ-4469: outlines the element a click would pick. Renders again only when
+   * that element changes, never on a move over the same one. None while a
+   * button is down (a drag, a resize, a marquee), in view mode, or on a
+   * selected element (A5): nothing would draw, so nothing renders. The view
+   * it was found in goes with it: a scroll or zoom under a still pointer
+   * hides it (A4). None when the host turned the outline off (`hoverOutline`).
+   */
+  private updateSelectionHover = (
+    element: NonDeleted<ExcalidrawElement> | null,
+  ) => {
+    const id =
+      element &&
+      this.props.hoverOutline !== false &&
+      this.state.activeTool.type === "selection" &&
+      this.state.cursorButton !== "down" &&
+      !this.state.viewModeEnabled &&
+      !this.state.selectedElementIds[element.id]
+        ? element.id
+        : null;
+    if (id === (this.selectionHover?.id ?? null)) {
+      return;
+    }
+    this.selectionHover =
+      id === null
+        ? null
+        : {
+            id,
+            scrollX: this.state.scrollX,
+            scrollY: this.state.scrollY,
+            zoom: this.state.zoom.value,
+          };
+    this.triggerRender();
+  };
+
+  public getSelectionHover = () => this.selectionHover?.id ?? null;
+
   /** YAZ-4277 D4: the checklist box of the text box under a point, if any. */
   private getTextCheckboxTargetAt = (
     scenePointer: Readonly<{ x: number; y: number }>,
@@ -9331,7 +9434,20 @@ class App extends React.Component<AppProps, AppState> {
     );
   };
 
+  /**
+   * YAZ-4469: each move first clears what a click would pick; the hover path
+   * names it only when a click there selects it, so every early return (a
+   * handle, a tool, a fold arrow, a link icon) leaves no outline.
+   */
   private handleCanvasPointerMove = (
+    event: React.PointerEvent<HTMLCanvasElement>,
+  ) => {
+    this.selectionHoverNext = null;
+    this.handleCanvasPointerMoveInner(event);
+    this.updateSelectionHover(this.selectionHoverNext);
+  };
+
+  private handleCanvasPointerMoveInner = (
     event: React.PointerEvent<HTMLCanvasElement>,
   ) => {
     if (!this.isInteractionEnabled()) {
@@ -9776,13 +9892,22 @@ class App extends React.Component<AppProps, AppState> {
       return;
     }
 
+    // One hit list for two picks (YAZ-4469 A3): the cursor prefers the
+    // selection, the outline shows what a click selects
+    const allHitElements = this.getElementsAtPosition(
+      scenePointerX,
+      scenePointerY,
+      { includeLockedElements: true },
+    );
     const hitElementMightBeLocked = this.getElementAtPosition(
       scenePointerX,
       scenePointerY,
-      {
-        preferSelected: true,
-        includeLockedElements: true,
-      },
+      { allHitElements, preferSelected: true },
+    );
+    const clickTarget = this.getElementAtPosition(
+      scenePointerX,
+      scenePointerY,
+      { allHitElements },
     );
 
     let hitElement: NonDeleted<ExcalidrawElement> | null = null;
@@ -9830,6 +9955,8 @@ class App extends React.Component<AppProps, AppState> {
       if (isLaserTool) {
         return;
       }
+      // YAZ-4469: no fold arrow, checkbox or link icon took the click
+      this.selectionHoverNext = clickTarget?.locked ? null : clickTarget;
       if (
         hitElement &&
         (hitElement.link || isEmbeddableElement(hitElement)) &&
@@ -11317,13 +11444,18 @@ class App extends React.Component<AppProps, AppState> {
         ) {
           pointerDownState.hit.element = null;
         } else {
-          // hitElement may already be set above, so check first
+          // hitElement may already be set above, so check first. YAZ-4469
+          // 4A1: an unlocked pick on the full list stands (the hover shows
+          // it); a pick without the locked elements would look through a
+          // locked panel at a shape it hides
           pointerDownState.hit.element =
             pointerDownState.hit.element ??
-            this.getElementAtPosition(
-              pointerDownState.origin.x,
-              pointerDownState.origin.y,
-            );
+            (hitElementMightBeLocked && !hitElementMightBeLocked.locked
+              ? hitElementMightBeLocked
+              : this.getElementAtPosition(
+                  pointerDownState.origin.x,
+                  pointerDownState.origin.y,
+                ));
         }
 
         this.hitLinkElement = this.getElementLinkAtPosition(

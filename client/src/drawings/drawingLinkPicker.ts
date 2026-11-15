@@ -69,9 +69,10 @@ export async function createLinkedPage(editor: PickerEditor, name: string, links
 
 /**
  * `create`: a Create row's page is made (`createLinkedPage`); absent, no Create row (no vault to make it in). `look`: the
- * rows' file icons, as the note's picker shows them.
+ * rows' file icons, as the note's picker shows them. `onShow`: the picker opened or closed (YAZ-4748: a diagram's frame
+ * sends the picker's keys up only while it is open).
  */
-export function createDrawingLinkPicker(parent: () => HTMLElement | null, candidates: () => readonly LinkCandidate[], create?: (editor: PickerEditor, name: string) => void, look?: LinkLook) {
+export function createDrawingLinkPicker(parent: () => HTMLElement | null, candidates: () => readonly LinkCandidate[], create?: (editor: PickerEditor, name: string) => void, look?: LinkLook, onShow?: (open: boolean) => void) {
   let session: Session | null = null
   /** The `[[` that Esc closed: it stays closed until the caret leaves it. */
   let dismissed: number | null = null
@@ -83,8 +84,10 @@ export function createDrawingLinkPicker(parent: () => HTMLElement | null, candid
   element.style.position = 'fixed'
 
   const close = () => {
+    const open = session !== null
     session = null
     element.remove()
+    if (open) onShow?.(false)
   }
   const pick = (row: PickerRow) => {
     const now = session
@@ -111,7 +114,10 @@ export function createDrawingLinkPicker(parent: () => HTMLElement | null, candid
         return item
       }),
     )
-    if (element.parentElement === null) parent()?.appendChild(element)
+    if (element.parentElement === null) {
+      parent()?.appendChild(element)
+      onShow?.(true)
+    }
     const caret = now.editor.caretRect()
     element.style.left = `${caret.left}px`
     element.style.top = `${caret.bottom + 4}px`

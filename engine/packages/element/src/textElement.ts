@@ -298,6 +298,18 @@ const getTextVisualBounds = (
       top = Math.min(top, baseline - metrics.actualBoundingBoxAscent);
       bottom = Math.max(bottom, baseline + metrics.actualBoundingBoxDescent);
     }
+    // YAZ-3746 13BD: an underline is part of what shows, so the box takes it
+    // (`renderElement` draws it from 0.08 em under the baseline, 1/16 em thick)
+    if (
+      line.text &&
+      (line.underlined ||
+        line.segments?.some((segment) => segment.underlined && !segment.link))
+    ) {
+      bottom = Math.max(
+        bottom,
+        baseline + element.fontSize * 0.08 + element.fontSize / 16,
+      );
+    }
   }
 
   if (

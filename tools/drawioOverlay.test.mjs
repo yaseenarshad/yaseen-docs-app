@@ -17,8 +17,10 @@ const OVERLAY_JS = fileURLToPath(new URL('../desktop/drawio-overlay/js/', import
 const APP_MIN_JS = fileURLToPath(new URL(`../desktop/.cache/drawio/${DRAWIO_TAG}/js/app.min.js`, import.meta.url))
 
 /** The globals PostConfig.js patches, each prototype method standing in for draw.io's original. */
-function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () => '@font-face {}' }), shortcuts = drawioConfig('adapt').keyboardShortcuts } = {}) {
+function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () => '@font-face {}' }), shortcuts = drawioConfig('adapt').keyboardShortcuts, linksLoad = true } = {}) {
   const posted = []
+  /** The scripts PostConfig.js adds to the page (YAZ-4748: the link pills), each loading at once, or failing. */
+  const scripts = []
   const fontCss = []
   const listeners = []
   /** draw.io's own `window.focus`, before PostConfig.js wraps it. */
@@ -115,6 +117,15 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
     console: { error: vi.fn() },
     parent: { postMessage: (data, origin) => posted.push({ ...JSON.parse(data), origin }) },
     addEventListener: (type, listener) => listeners.push({ type, listener }),
+    document: {
+      createElement: () => ({}),
+      head: {
+        appendChild: (el) => {
+          scripts.push(el.src)
+          void Promise.resolve().then(linksLoad ? el.onload : el.onerror)
+        },
+      },
+    },
     focus: windowFocus,
     setTimeout,
   }
@@ -127,7 +138,7 @@ function loadPostConfig({ fetchFonts = async () => ({ ok: true, text: async () =
     for (const l of listeners) if (l.type === 'message') l.listener(evt)
     return evt.stopImmediatePropagation.mock.calls.length > 0
   }
-  return { env, posted, fontCss, message, windowFocus }
+  return { env, posted, fontCss, message, windowFocus, scripts }
 }
 
 function geometry(x, y, width, height, relative = false) {
@@ -254,6 +265,19 @@ describe('PostConfig.js (🔒 YAZ-1802 D12a / D12b), against a stand-in draw.io'
     const broken = loadPostConfig({ fetchFonts: async () => Promise.reject(new Error('offline')) })
     await settle()
     expect(broken.posted).toEqual([{ event: 'yaseenReady', origin: '*' }])
+  })
+
+  it('YAZ-4748: loads the link pills before it says yaseenReady — and still says it when they will not load', async () => {
+    const ok = loadPostConfig()
+    expect(ok.scripts).toEqual(['js/yaseen-links.js'])
+    expect(ok.posted).toEqual([])
+    await settle()
+    expect(ok.posted).toEqual([{ event: 'yaseenReady', origin: '*' }])
+
+    const broken = loadPostConfig({ linksLoad: false })
+    await settle()
+    expect(broken.posted).toEqual([{ event: 'yaseenReady', origin: '*' }])
+    expect(broken.env.console.error).toHaveBeenCalledWith('Yaseen links', 'js/yaseen-links.js')
   })
 
   it('opens every diagram with the shapes panel collapsed, and ⌘-wheel zooms like ctrl-wheel', () => {

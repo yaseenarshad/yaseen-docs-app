@@ -134,6 +134,21 @@ jobs:
       - name: Show the signature
         if: runner.os == 'macOS'
         run: codesign -d -r- "desktop/dist-app/mac-arm64/Yaseen Docs.app"
+      # The spell checker helper (YAZ-4464 S4) ships in the packed app, is signed with the app's certificate, and answers there.
+      - name: Check the packed spell checker helper
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          APP="desktop/dist-app/mac-arm64/Yaseen Docs.app"
+          SPELLER="$APP/Contents/Resources/bin/speller"
+          codesign --verify --deep --strict "$APP"
+          codesign --verify --strict "$SPELLER"
+          SIGNED="$(codesign -dv "$SPELLER" 2>&1)"
+          echo "$SIGNED"
+          grep -qF 'Identifier=com.yasinarshad.yaseendocs.speller' <<< "$SIGNED"
+          ANSWER="$(printf 'relavent\n' | "$SPELLER")"
+          echo "speller: relavent -> $ANSWER"
+          grep -qF '["relevant"' <<< "$ANSWER"
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.validate.outputs.tag }}

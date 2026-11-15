@@ -4,6 +4,7 @@
  */
 import type { NoticeLength, SettingsState } from '@shared/types'
 import { basename } from './paths'
+import { SAME_WORD, type UnitText } from '../vault/unitWord'
 
 /** A plain notice goes after this long at the default Show for, "4 s" (E1, GRO-2171; YAZ-3303 D5). */
 export const LINK_NOTICE_MS = 4000
@@ -131,9 +132,9 @@ export interface DragOutAsk {
 }
 
 /** "Copied 2 files (Todo.md, Plan.md) to Finder? 3 notes link to them." — with no second sentence when no note links (one item: "1 note links to it"). The box asks; it does not claim (S29). */
-export function dragOutText({ paths, kinds, links }: DragOutAsk): string {
+export function dragOutText({ paths, kinds, links }: DragOutAsk, unit: UnitText = SAME_WORD): string {
   const items = namedItems(paths.map((path, i) => onDisk(path, kinds[i])))
   const them = paths.length === 1 ? 'it' : 'them'
-  const notes = links === 1 ? '1 note links' : `${links} notes link`
+  const notes = unit(links === 1 ? '1 note links' : `${links} notes link`)
   return links > 0 ? `Copied ${items} to Finder? ${notes} to ${them}.` : `Copied ${items} to Finder?`
 }

@@ -2,7 +2,8 @@
  * THE HOVER PREVIEW (Draw's YAZ-1800, ported by YAZ-3028 D11): a drawing or diagram row rested on
  * for the dwell opens a picture of the whole board beside the sidebar; a note row opens the top of
  * the note in the same box (YAZ-3075 D1); a code or text row the top of the file with its colours
- * (YAZ-3508, `code/CodeHoverPreview.tsx`). A PDF or image row never does (D6; `hasHoverPreview`). The row is
+ * (YAZ-3508, `code/CodeHoverPreview.tsx`); an image or PDF row the picture or the first page (`MediaHoverPreview.tsx`;
+ * D6 said never, Yaseen overturned it on 2026-11-08, YAZ-3746 13R; `hasHoverPreview`). The row is
  * pending until the dwell ends, then shown; only the row leaving the tree closes it. Every close
  * bumps `hoverRequest`, so an earlier row's dwell never fires late.
  *
@@ -34,7 +35,7 @@ import { createStore, type Store } from '../lib/store'
 import { useAppliedTheme } from '../lib/theme'
 import { findNode } from '../lib/treeState'
 import { boardPreviewKey } from './boardPreviewKey'
-import { hasHoverPreview, isCodeHover } from './hoverPreviewKinds'
+import { hasHoverPreview, isCodeHover, isMediaHover } from './hoverPreviewKinds'
 import type { AnchorRect, PreviewAnchor, PreviewPopup } from './previewPlacement'
 
 const BoardPreview = lazy(() => import('./BoardPreview'))
@@ -54,10 +55,16 @@ let codeHoverModule: typeof import('../code/CodeHoverPreview') | null = null
 export const loadCodeHoverPreview = () => import('../code/CodeHoverPreview').then((module) => (codeHoverModule = module))
 const LazyCodeHoverPreview = lazy(loadCodeHoverPreview)
 
+/** A picture's or a PDF's card (YAZ-3746 13R), its own chunk, the same way: the dwell starts the load. */
+let mediaHoverModule: typeof import('./MediaHoverPreview') | null = null
+export const loadMediaHoverPreview = () => import('./MediaHoverPreview').then((module) => (mediaHoverModule = module))
+const LazyMediaHoverPreview = lazy(loadMediaHoverPreview)
+
 /** The panel's chunk of `path`'s kind starts loading with the dwell. A failed load is the lazy panel's to meet. */
 export function preloadPreview(path: string): void {
   if (isMarkdown(path)) loadNotePreview().catch(() => undefined)
   else if (isCodeHover(path)) loadCodeHoverPreview().catch(() => undefined)
+  else if (isMediaHover(path)) loadMediaHoverPreview().catch(() => undefined)
 }
 
 /** The row the pointer (or focus) rests on — pending until the dwell ends, then shown; `path` null = none. */
@@ -86,7 +93,7 @@ export function useHoverPreview(blocked: boolean, activeFile: string | null) {
       // The same row again (focus after the pointer, or back) keeps its dwell or its panel.
       if (node !== null && hover.getState().path === node.path) return
       closePreview()
-      // A board, a note or a code file previews (YAZ-3075 D6, YAZ-3508); a PDF or an image row has none.
+      // A board, a note, a code file, a picture or a PDF previews (YAZ-3075 D6, YAZ-3508, YAZ-3746 13R); a folder or any other file has none.
       if (node === null || blockedRef.current || !hasHoverPreview(node.path)) return
       const id = hoverRequest.current
       const { path } = node
@@ -249,6 +256,15 @@ export function PreviewPanel({ path, root, name, hint, wikilinks, textVars, know
     return (
       <Suspense fallback={null}>
         <NotePreview root={root} node={node} name={name} hint={hint} wikilinks={wikilinks} textVars={textVars} anchor={anchor} />
+      </Suspense>
+    )
+  }
+  // A picture or a PDF's first page (YAZ-3746 13R): read on open, nothing before.
+  if (isMediaHover(path)) {
+    const MediaHoverPreview = mediaHoverModule?.default ?? LazyMediaHoverPreview
+    return (
+      <Suspense fallback={null}>
+        <MediaHoverPreview root={root} path={path} name={name} hint={hint} anchor={anchor} />
       </Suspense>
     )
   }

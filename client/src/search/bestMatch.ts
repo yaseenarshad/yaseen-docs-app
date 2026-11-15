@@ -7,7 +7,7 @@
 import { holdsId } from '@shared/noteId'
 import type { TreeNode } from '@shared/types'
 import { matchTier, readNeedle, type Needle } from '../links/completion'
-import type { SearchCandidate } from './searchCandidates'
+import { idQuery, type SearchCandidate } from './searchCandidates'
 
 /** No score map: the Search sort is not Best match. */
 export const NO_SCORES: ReadonlyMap<string, number> = new Map()
@@ -25,8 +25,11 @@ export function matchScore(row: Pick<SearchCandidate, 'name' | 'lower' | 'id' | 
 export function bestScores(results: readonly SearchCandidate[], query: string, trees: readonly TreeNode[], open: ReadonlySet<string>): ReadonlyMap<string, number> {
   const needle = readNeedle(query)
   const holds = holdsId(query)
+  // `#3` (YAZ-2571 round 5): a row found by its ID number scores 0 for the exact number, 1 for a longer one.
+  const digits = idQuery(query)
+  const scoreOf = (r: SearchCandidate): number => (digits !== null && r.id !== undefined && r.label.startsWith(`${r.id} — `) ? (r.id.endsWith(`-${digits}`) ? 0 : 1) : matchScore(r, needle, holds))
   const own = new Map<string, number>()
-  for (const r of results) own.set(r.path, Math.min(own.get(r.path) ?? Infinity, matchScore(r, needle, holds)))
+  for (const r of results) own.set(r.path, Math.min(own.get(r.path) ?? Infinity, scoreOf(r)))
   const out = new Map<string, number>()
   const score = (node: TreeNode): number => {
     let best = own.get(node.path) ?? Infinity

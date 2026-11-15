@@ -375,4 +375,19 @@ describe('the engine props of the round 1 switches', () => {
     await mountWith({ ...DEFAULT_CANVAS_PREFS, fillSetsTextColor: false, newShapesMatchZoom: false })
     expect(last()).toMatchObject({ fillSetsTextColor: false, newShapesMatchZoom: false })
   })
+
+  it('YAZ-4469 4B: "Hover outline" is the board value over the app value; no board value follows the app; never appState', async () => {
+    const { DEFAULT_CANVAS_PREFS } = await import('@shared/types')
+    await mountWith(undefined)
+    expect(last().hoverOutline).toBe(true)
+    expect((last().initialData as { appState: Record<string, unknown> }).appState).not.toHaveProperty('hoverOutline')
+    await mountWith({ ...DEFAULT_CANVAS_PREFS, hoverOutline: false })
+    expect(last().hoverOutline).toBe(false)
+    for (const [app, board, expected] of [[true, false, false], [false, true, true], [false, undefined, false], [true, undefined, true]] as const) {
+      await act(async () => {
+        root?.render(<ExcalidrawSurface scene={SCENE} theme="light" canvasPrefs={{ ...DEFAULT_CANVAS_PREFS, hoverOutline: app }} hoverOutline={board} onSnapshot={() => undefined} onFailed={() => undefined} />)
+      })
+      expect(last().hoverOutline, `app ${app}, board ${board}`).toBe(expected)
+    }
+  })
 })

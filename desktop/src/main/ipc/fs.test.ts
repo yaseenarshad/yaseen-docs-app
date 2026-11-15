@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -6,6 +6,7 @@ import { BrowserWindow, ipcMain } from 'electron'
 import type { IndexResponse } from '@shared/types'
 import { CONTRACT, type Envelope } from '@shared/ipc'
 import { dailyNoteName } from '@shared/dailyNote'
+import { withCommentsHint } from '@shared/frontmatter'
 import { loadDrawing } from '../fs/drawing'
 import { makeFixture, removeVault, sleep, vaultFiles } from '../fs/testFixture'
 import { createStore, type Store } from '../store'
@@ -96,7 +97,7 @@ describe('registerFsIpc', () => {
   it('registers every fs channel the preload invokes (and nothing else)', () => {
     registerFsIpc(store, windows)
     const channels = vi.mocked(ipcMain.handle).mock.calls.map(([ch]) => ch).sort()
-    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.makeDailyNote.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
+    expect(channels).toEqual([CONTRACT.createDir.channel, CONTRACT.createFile.channel, CONTRACT.mintNoteId.channel, CONTRACT.makeDailyNote.channel, CONTRACT.coldDiff.channel, CONTRACT.file.delete.channel, CONTRACT.file.putBack.channel, CONTRACT.file.clip.channel, CONTRACT.file.paste.channel, CONTRACT.file.duplicate.channel, CONTRACT.file.clipState.channel, CONTRACT.file.import.channel, CONTRACT.file.dragOut.channel, CONTRACT.file.droppedHere.channel, CONTRACT.ids.set.channel, CONTRACT.ids.check.channel, CONTRACT.ids.state.channel, CONTRACT.ids.reletter.channel, CONTRACT.ids.backfill.channel, CONTRACT.index.channel, CONTRACT.readFile.channel, CONTRACT.readHeads.channel, CONTRACT.readTextHead.channel, CONTRACT.readPdf.channel, CONTRACT.readImage.channel, CONTRACT.readAsset.channel, CONTRACT.writeAsset.channel, CONTRACT.downloadImage.channel, CONTRACT.file.rename.channel, CONTRACT.file.retitle.channel, CONTRACT.file.repairRename.channel, CONTRACT.tree.channel, CONTRACT.writeFile.channel, CONTRACT.shell.reveal.channel, CONTRACT.shell.openVsCode.channel, CONTRACT.shell.openDefault.channel, CONTRACT.shell.openLink.channel].sort())
   })
 
   it('answers with an envelope: a tree on success, a BridgeError on failure', async () => {
@@ -350,14 +351,12 @@ describe('registerFsIpc', () => {
       store.removeWindow('w-retitle')
     })
 
-    it("refuses the calling window's own vault root, and a refused edit answers a BridgeError envelope and broadcasts nothing", async () => {
+    it("the calling window's own vault root has a folder page (YAZ-4921): a title edit writes `title:` into its `.folder.md`, renames nothing and broadcasts nothing", async () => {
       windowOn('w-retitle')
       const w = fakeWindow()
       vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([w as never])
-      expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: root, title: 'Vault' })).toEqual({
-        ok: false,
-        error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: root },
-      })
+      expect(await registered(CONTRACT.file.retitle.channel)({ sender: {} }, { path: root, title: 'Vault' })).toEqual({ ok: true, value: { oldPath: root, newPath: root, kind: 'dir' } })
+      expect(await readFile(path.join(root, '.folder.md'), 'utf8')).toMatch(/^title: Vault$/m)
       expect(w.webContents.send).not.toHaveBeenCalled()
       store.removeWindow('w-retitle')
     })
@@ -415,6 +414,42 @@ describe('registerFsIpc', () => {
       fileClip.set({ op: 'copy', paths: [from] })
       return call(CONTRACT.file.paste, pasteReq(targetDir))
     }
+    // These cases are about ids: a new note's bytes are what the caller sent. The hint has its own test below (YAZ-4700).
+    let hintBefore = true
+    beforeEach(() => {
+      hintBefore = store.get().settings.commentsHint
+      store.setSettings({ ...store.get().settings, commentsHint: false })
+    })
+    afterEach(() => store.setSettings({ ...store.get().settings, commentsHint: hintBefore }))
+
+    it('a new note starts with the comment hint while Settings says so, and without it when the switch is off (YAZ-4615 D10, YAZ-4700)', async () => {
+      const vault = await open(false)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        store.setSettings({ ...store.get().settings, commentsHint: true })
+        expect(await call(CONTRACT.createFile, { path: at('With hint.md'), content: NOTE })).toMatchObject({ ok: true })
+        expect(await readFile(at('With hint.md'), 'utf8')).toBe(withCommentsHint(NOTE))
+        expect(await readFile(at('With hint.md'), 'utf8')).toMatch(/^---\n# comments: /)
+        store.setSettings({ ...store.get().settings, commentsHint: false })
+        expect(await call(CONTRACT.createFile, { path: at('No hint.md'), content: NOTE })).toMatchObject({ ok: true })
+        expect(await readFile(at('No hint.md'), 'utf8')).toBe(NOTE)
+      } finally {
+        await close(vault)
+      }
+    })
+
+    it('in a vault that uses IDs, a new note also starts with the hint, above its id (YAZ-4615 D10)', async () => {
+      const vault = await open(true)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        store.setSettings({ ...store.get().settings, commentsHint: true })
+        expect(await call(CONTRACT.mintNoteId, at('Plans'))).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: at('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await readFile(at('meeting-notes-yaz-1.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\nstatus: idea\nid: YAZ-1\n---\nbody\n')
+      } finally {
+        await close(vault)
+      }
+    })
 
     it.each([
       ['said no', false],
@@ -474,6 +509,42 @@ describe('registerFsIpc', () => {
         const given = Object.values(await vaultFiles(vault)).flatMap((content) => /^id: (YAZ-\d+)$/m.exec(content)?.[1] ?? [])
         expect(new Set(given).size).toBe(given.length)
       } finally {
+        await close(vault)
+      }
+    })
+
+    it('a note made inside a vault inside the window\'s vault takes the INNER vault\'s next ID (YAZ-4922 D1: the nearest folder that answered)', async () => {
+      const vault = await open(true)
+      const inner = path.join(vault, 'Plans')
+      try {
+        await mkdir(path.join(inner, '.yaseendocs'))
+        await writeFile(path.join(inner, '.yaseendocs', 'ids.json'), JSON.stringify({ enabled: true, letters: 'TECH' }))
+        expect(await call(CONTRACT.mintNoteId, path.join(inner, 'Deep'))).toEqual({ ok: true, value: 'TECH-1' })
+        expect(await call(CONTRACT.mintNoteId, vault)).toEqual({ ok: true, value: 'YAZ-1' })
+        // The inner vault's own sweep can give Plans/Name.md a number meanwhile: the next one is a TECH number either way.
+        expect(await call(CONTRACT.createFile, path.join(inner, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^TECH-[2-9]$/) } })
+      } finally {
+        await close(vault)
+      }
+    })
+
+    it('a window that is "a folder of" the vault (YAZ-4922 D3): a note made there gets the vault\'s next ID, and nothing writes an `ids.json` or any `.yaseendocs` into the folder', async () => {
+      const vault = await open(true)
+      const folder = path.join(vault, 'Plans')
+      try {
+        const before = await readFile(path.join(vault, '.yaseendocs', 'ids.json'), 'utf8')
+        store.setFolder(folder, { in: vault })
+        store.upsertWindow({ id: 'w-kind', root: folder, file: null, tabs: [], sidebarCollapsed: false, sidebarLens: 'files', bounds: { x: 0, y: 0, width: 800, height: 600 } })
+        expect(await call(CONTRACT.mintNoteId, folder)).toEqual({ ok: true, value: 'YAZ-1' })
+        expect(await call(CONTRACT.createFile, { path: path.join(folder, 'idea-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
+        expect(await call(CONTRACT.createFile, path.join(folder, 'Bare.md'))).toMatchObject({ ok: true, value: { id: expect.stringMatching(/^YAZ-[2-9]$/) } })
+        // The vault's own doors take the vault from this window too: its IDs are the vault's.
+        expect(await call(CONTRACT.ids.check, vault)).toMatchObject({ ok: true })
+        expect(await call(CONTRACT.ids.check, folder)).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
+        expect(Object.keys(await vaultFiles(folder)).filter((rel) => rel.startsWith('.yaseendocs'))).toEqual([])
+        expect(await readFile(path.join(vault, '.yaseendocs', 'ids.json'), 'utf8')).toBe(before)
+      } finally {
+        store.setFolder(folder, { in: null })
         await close(vault)
       }
     })
@@ -618,9 +689,9 @@ describe('registerFsIpc', () => {
         expect(await call(CONTRACT.createFile, { path: inYes('meeting-notes-yaz-1.md'), content: NOTE, id: 'YAZ-1' })).toMatchObject({ ok: true, value: { id: 'YAZ-1' } })
         expect(await call(CONTRACT.createDir, { path: inYes('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: true })
         expect(await paste(inNo('Plans', 'Name.md'), inYes('Plans'))).toMatchObject({ ok: true, value: { pasted: [{ to: expect.stringMatching(/\/Plans\/name-copy-yaz-\d+\.md$/) }] } })
-        // The title edit gives the note the next number of its OWN vault, and refuses that vault's folder, wherever the vault sits in the window's list (S47).
+        // The title edit gives the note the next number of its OWN vault; that vault's folder takes a title and keeps its name (YAZ-4921), wherever the vault sits in the window's list (S47).
         expect(await call(CONTRACT.file.retitle, { path: inYes('Plans', 'Name.md'), title: 'Big Plan' })).toMatchObject({ ok: true, value: { newPath: expect.stringMatching(/\/Plans\/big-plan-yaz-\d+\.md$/) } })
-        expect(await call(CONTRACT.file.retitle, { path: yes, title: 'Vault' })).toEqual({ ok: false, error: { code: 'BAD_REQUEST', message: 'the vault root itself cannot be renamed', path: yes } })
+        expect(await call(CONTRACT.file.retitle, { path: yes, title: 'Vault' })).toEqual({ ok: true, value: { oldPath: yes, newPath: yes, kind: 'dir' } })
         // In the vault that said no, from the SAME window: what Finder would make, and no title edit.
         expect(await call(CONTRACT.createFile, { path: inNo(`meeting-notes-${ID}.md`), content: NOTE, id: ID })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })
         expect(await call(CONTRACT.createDir, { path: inNo('q3-plans'), title: 'Q3 Plans' })).toMatchObject({ ok: false, error: { code: 'BAD_REQUEST' } })

@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FrontmatterWriteError } from '@shared/frontmatter'
-import { settleFileWrites, transformFile, writeProperties, writeProperty } from './writeProperty'
+import { settleFileWrites, transformFile, writeProperties, writeProperty, writeRouted } from './writeProperty'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -233,5 +233,42 @@ describe('settleFileWrites (YAZ-2174)', () => {
 
   it('resolves at once when nothing is in flight', async () => {
     await expect(settleFileWrites()).resolves.toBe(true)
+  })
+})
+
+describe('writeRouted: one key, capitals ignored (YAZ-4769)', () => {
+  const written = () => (writeFile.mock.calls[0][0] as { content: string }).content
+
+  beforeEach(() => writeFile.mockResolvedValue({ path: PATH, mtime: 200, size: 1 }))
+
+  it('a write under `Dessert Column` takes the note’s `dessert column` in the same write: renamed in place, its comment kept', async () => {
+    readFile.mockResolvedValue(file('---\nstatus: draft\n# the kind\ndessert column: Pie\ntags: []\n---\nBody\n', 100))
+    await writeRouted(PATH, [{ key: 'Dessert Column', value: 'Cake' }], new Set(), undefined)
+    expect(writeFile).toHaveBeenCalledTimes(1)
+    expect(written()).toBe('---\nstatus: draft\n# the kind\nDessert Column: Cake\ntags: []\n---\nBody\n')
+  })
+
+  it('a note holding both spellings keeps one: the column’s, with the value written; the other goes', async () => {
+    readFile.mockResolvedValue(file('---\nDessert Column: Pie\nDESSERT COLUMN: Tart\n---\n', 100))
+    await writeRouted(PATH, [{ key: 'Dessert Column', value: 'Cake' }], new Set(), undefined)
+    expect(written()).toBe('---\nDessert Column: Cake\n---\n')
+  })
+
+  it('a clear removes every spelling', async () => {
+    readFile.mockResolvedValue(file('---\ndessert column: Pie\nDessert column: Tart\nkeep: 1\n---\n', 100))
+    await writeRouted(PATH, [{ key: 'Dessert Column', value: undefined }], new Set(), undefined)
+    expect(written()).toBe('---\nkeep: 1\n---\n')
+  })
+
+  it('the app’s keys are never folded away: a `Title` column’s write leaves `title`', async () => {
+    readFile.mockResolvedValue(file('---\ntitle: Deep Work\n---\n', 100))
+    await writeRouted(PATH, [{ key: 'Title', value: 'x' }], new Set(), undefined)
+    expect(written()).toBe('---\ntitle: Deep Work\nTitle: x\n---\n')
+  })
+
+  it('a separate value (C3) is written in the page’s block, and the block’s other spelling goes', async () => {
+    readFile.mockResolvedValue(file('---\nin:\n  f1:\n    dessert column: Pie\n---\n', 100))
+    await writeRouted(PATH, [{ key: 'Dessert Column', value: 'Cake' }], new Set(['Dessert Column']), 'f1')
+    expect(written()).toBe('---\nin:\n  f1:\n    Dessert Column: Cake\n---\n')
   })
 })

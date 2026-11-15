@@ -10,6 +10,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { DEFAULT_SETTINGS, MEMORY_SAMPLE_MS, type MemoryReport, type MemoryTabRow } from '@shared/types'
 import { api } from '../api'
 import { SettingsDialog } from './SettingsDialog'
+import { setEmbedPictureStats } from '../editor/embed/pictureStats'
 import { agoText } from './memorySection'
 import settingsCss from './settings.css?inline'
 
@@ -235,7 +236,7 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
 
   it('D10: the two settings below the rows: sleep after 30 min and reload On by default; a choice writes its field', async () => {
     await mountMemory()
-    expect([...el.querySelectorAll<HTMLElement>('[data-setting]')].map((r) => r.dataset.setting)).toEqual(['memoryWindows', 'tabSleepAfter', 'memoryReload'])
+    expect([...el.querySelectorAll<HTMLElement>('[data-setting]')].map((r) => r.dataset.setting)).toEqual(['memoryWindows', 'tabSleepAfter', 'embedPictures', 'memoryReload'])
     const buttons = (id: string) => [...el.querySelectorAll<HTMLButtonElement>(`[data-setting="${id}"] button`)]
     expect(buttons('tabSleepAfter').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([
       ['15 min', 'false'],
@@ -249,6 +250,23 @@ describe('Settings › Memory (YAZ-3737 D9)', () => {
     expect(buttons('memoryReload').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('On')
     act(() => buttons('memoryReload')[1].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, memoryReload: false })
+  })
+
+  it('YAZ-4825 item 27: one row for the embed picture cache, with its count and its estimated bytes', async () => {
+    await mountMemory()
+    const cell = () => el.querySelector('[data-setting="embedPictures"] [data-embed-pictures]')!.textContent
+    expect(cell()).toBe('None now')
+    act(() => root?.unmount())
+    root = null
+    el.remove()
+    report.mockClear()
+    setEmbedPictureStats(3, 2 * 1024 * 1024)
+    try {
+      await mountMemory()
+      expect(cell()).toMatch(/^3 pictures · about 2(\.0)? MB$/)
+    } finally {
+      setEmbedPictureStats(0, 0)
+    }
   })
 
   it('YAZ-4024: the State ⓘ gives the true reason for a plain "Awake" and says what an empty cell means', async () => {

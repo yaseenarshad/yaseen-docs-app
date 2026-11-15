@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { type ViewSet, type ViewDef, type FilterNode, parseViews } from './viewSchema'
-import { type ViewResult, basenameKey, defaultLabel, folderAt, makeResolver, propertyKeys, propertyLabel, resolverFor, runView, targetBasename, targetKey } from './engine'
+import { basenameKey, makeResolver, targetBasename, targetKey } from '@shared/linkResolver'
+import { type Group, type RunOptions, type ViewResult, defaultLabel, folderAt, propertyKeys, propertyLabel, resolverFor, runView } from './engine'
 import { type Rule, fromGroup, ruleToExpr } from './view/filterRows'
 import { groupKeyOf } from './view/GroupHeader'
 import { DateValue, ErrorValue, FileValue } from './expr'
@@ -106,6 +107,17 @@ describe('runView: filters (GRO-2133)', () => {
     expect(r.rows).toHaveLength(count)
     expect(r.total).toBe(count)
     expect(r.errors).toEqual([])
+  })
+
+  it('crossOut (YAZ-4864) marks the matching rows `crossed` and filters none; a broken one marks none and reports', () => {
+    const r = run({ crossOut: { and: ['status == "idea"'] }, sort: [] })
+    expect(r.rows).toHaveLength(8)
+    expect(r.rows.filter((row) => row.crossed === true)).toHaveLength(2)
+    expect(r.rows.filter((row) => row.crossed === true).every((row) => row.record.properties.status === 'idea')).toBe(true)
+    const broken = run({ crossOut: 'status ==', sort: [] })
+    expect(broken.rows.some((row) => row.crossed === true)).toBe(false)
+    expect(broken.errors.map((e) => e.where)).toEqual(['views[0].crossOut'])
+    expect(run({ sort: [] }).rows.some((row) => 'crossed' in row)).toBe(false)
   })
 
   it('file.hasLink matches through the resolver: List of Topics and The Levels of an Agency', () => {
@@ -354,7 +366,7 @@ describe('runView: nested group by (YAZ-745)', () => {
     expect(lead.direct).toEqual([])
     expect(lead.children!.map(c => c.label)).toEqual(['1 Cross', '2 Paid'])
     expect(lead.children![1].rows.map(x => x.record.basename)).toEqual(['a1', 'a3'])
-    expect(lead.children![0].children).toBeUndefined() // two levels only
+    expect(lead.children![0].children).toBeUndefined() // the last level has no children
     expect(r.groups![1].children!.map(c => c.label)).toEqual(['3 Email'])
   })
 
@@ -446,11 +458,86 @@ describe('runView: nested group by (YAZ-745)', () => {
     expect(r.groups![0].children!.map(c => c.summaries['file.name'])).toEqual([1, 1, 1])
   })
 
-  it('entries beyond two are ignored in v1', () => {
-    const recs = [rec('a', { dept: 'A', proc: 'p', extra: 'x' })]
-    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'extra' }], recs)
-    expect(r.groups![0].children![0].label).toBe('p')
-    expect(r.groups![0].children![0].children).toBeUndefined()
+  it('entries beyond five are ignored (YAZ-4531; five since YAZ-3746 13AF)', () => {
+    const recs = [rec('a', { dept: 'A', proc: 'p', step: 's', part: 'q', unit: 'u', extra: 'x' })]
+    const r = T([{ property: 'dept' }, { property: 'proc' }, { property: 'step' }, { property: 'part' }, { property: 'unit' }, { property: 'extra' }], recs)
+    const fifth = r.groups![0].children![0].children![0].children![0].children![0]
+    expect(fifth.label).toBe('u')
+    expect(fifth.children).toBeUndefined()
+  })
+})
+
+describe('runView: three group levels (YAZ-4531)', () => {
+  const rec = (name: string, properties: Record<string, unknown>) =>
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, basename: name, title: name, properties }) as IndexRecord
+  const T = (recs: IndexRecord[], extra: Partial<ViewDef> = {}) =>
+    runView({ views: [] }, { type: 'table', name: 'T', groupBy: [{ property: 'a' }, { property: 'b' }, { property: 'c' }], ...extra }, recs, {})
+  const names = (rows: readonly { record: IndexRecord }[] | undefined) => rows!.map(x => x.record.basename)
+
+  it('rows sit under the innermost group; each group spans its branch; only the last level has no children', () => {
+    const recs = [rec('x1', { a: 'A', b: 'B1', c: 'C1' }), rec('x2', { a: 'A', b: 'B1', c: 'C2' }), rec('x3', { a: 'A', b: 'B2', c: 'C1' })]
+    const r = T(recs, { summaries: { 'file.name': 'Count' } })
+    const [a] = r.groups!
+    expect(names(a.rows)).toEqual(['x1', 'x2', 'x3'])
+    expect(a.children!.map(g => g.label)).toEqual(['B1', 'B2'])
+    const b1 = a.children![0]
+    expect(names(b1.rows)).toEqual(['x1', 'x2'])
+    expect(b1.direct).toEqual([])
+    expect(b1.children!.map(g => [g.label, names(g.rows)])).toEqual([['C1', ['x1']], ['C2', ['x2']]])
+    expect(b1.children![0].children).toBeUndefined()
+    expect(b1.children![0].direct).toBeUndefined()
+    expect(b1.summaries['file.name']).toBe(2)
+  })
+
+  it('the merge rule applies against each parent: at depth 2 the row is direct under level 1, at depth 3 under level 2', () => {
+    const recs = [rec('d2', { a: 'S', b: 'S', c: 'z' }), rec('d3', { a: 'S', b: 'T', c: 'T' }), rec('deep', { a: 'S', b: 'T', c: 'U' })]
+    const [s] = T(recs).groups!
+    expect(names(s.direct)).toEqual(['d2'])
+    expect(s.children!.map(g => g.label)).toEqual(['T'])
+    const t = s.children![0]
+    expect(names(t.direct)).toEqual(['d3'])
+    expect(t.children!.map(g => [g.label, names(g.rows)])).toEqual([['U', ['deep']]])
+  })
+
+  it('No value at level 3: a valued parent gets a "No value" child; a "No value" parent keeps those rows direct', () => {
+    const recs = [rec('v', { a: 'A', b: 'B' }), rec('n', { a: 'A' }), rec('nc', { a: 'A', c: 'C' })]
+    const [a] = T(recs).groups!
+    expect(a.children!.map(g => g.label)).toEqual(['B', 'No value'])
+    const [b, nv] = a.children!
+    expect(b.children!.map(g => [g.key, names(g.rows)])).toEqual([[null, ['v']]])
+    expect(nv.key).toBe(null)
+    expect(names(nv.direct)).toEqual(['n'])
+    expect(nv.children!.map(g => [g.label, names(g.rows)])).toEqual([['C', ['nc']]])
+  })
+
+  it('a branch with no inner keys keeps children: []; fan-out is one flag per level across all its groups', () => {
+    const recs = [rec('m', { a: 'A', b: 'B', c: ['c1', 'c2'] }), rec('o', { a: 'A', b: 'D', c: 'c1' }), rec('m2', { a: 'E', b: 'E' })]
+    const r = T(recs)
+    expect(r.groups!.every(g => !g.fannedOut)).toBe(true)
+    expect(r.groups!.flatMap(g => g.children!).every(g => !g.fannedOut)).toBe(true)
+    const third = r.groups!.flatMap(g => g.children!).flatMap(g => g.children!)
+    expect(third.map(g => g.label)).toEqual(['c1', 'c2', 'c1'])
+    expect(third.every(g => g.fannedOut)).toBe(true)
+    const e = r.groups![1]
+    expect(names(e.direct)).toEqual(['m2'])
+    expect(e.children).toEqual([])
+  })
+
+  it('Folder then Folder then Folder under a page: each level one step further down; a folder\'s own notes sit directly under it', () => {
+    const at = (path: string) => {
+      const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+      return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder: path.slice(0, path.lastIndexOf('/')), properties: {} } as IndexRecord
+    }
+    const recs = [at('p/a/Top.md'), at('p/a/b/Mid.md'), at('p/a/b/c/Low.md'), at('p/a/b/c/d/Lower.md')]
+    const r = runView({ views: [] }, { type: 'table', name: 'T', groupBy: [{ property: 'file.folder' }, { property: 'file.folder' }, { property: 'file.folder' }] }, recs,
+      { page: { folder: 'p', folders: [], vault: 'V' } })
+    const [a] = r.groups!
+    expect(a.key).toBe('p/a')
+    expect(names(a.direct)).toEqual(['Top'])
+    const b = a.children![0]
+    expect(b.key).toBe('p/a/b')
+    expect(names(b.direct)).toEqual(['Mid'])
+    expect(b.children!.map(g => [g.key, g.label, names(g.rows)])).toEqual([['p/a/b/c', 'c', ['Low', 'Lower']]])
   })
 })
 
@@ -552,6 +639,113 @@ describe('runView: group by Folder under a page (YAZ-2541)', () => {
   })
 })
 
+describe("a Folder level's Depth and Layout (YAZ-4918)", () => {
+  const at = (path: string, properties: Record<string, unknown> = {}) => {
+    const basename = path.slice(path.lastIndexOf('/') + 1).replace(/\.md$/, '')
+    const folder = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : ''
+    return { ...TEST_RECORDS[0], path: `/vault/${path}`, basename, title: basename, folder, properties } as IndexRecord
+  }
+  /** The page `stages`: notes one, two, three and four folders down, and a shortcut living in `Sub`. */
+  const recs = [
+    at('stages/Lead Gen.md', { status: 'open' }),
+    at('stages/Sales.md', { status: 'done' }),
+    at('stages/archive/Old.md', { status: 'done' }),
+    at('stages/archive/2019/Older.md', { status: 'open' }),
+    at('stages/archive/2019/q1/Deep.md', { status: 'done' }),
+    at('stages/archive/2019/q1/Deeper.md', { status: 'open' }),
+    at('stages/active/Now.md', { status: 'open' }),
+    at('Sub/Outsider.md', { status: 'open' }),
+  ]
+  const folders = [
+    { ...at('stages/.folder.md'), title: 'Stages' },
+    { ...at('stages/archive/.folder.md'), title: 'Archive' },
+    { ...at('stages/archive/2019/q1/.folder.md'), title: 'Q1' },
+  ]
+  const page = { folder: 'stages', folders, vault: 'My Vault' }
+  const T = (groupBy: ViewDef['groupBy']) => runView({ views: [] }, { type: 'table', name: 'T', groupBy }, recs, { page })
+  const names = (rows: readonly { record: IndexRecord }[] | undefined) => (rows ?? []).map((x) => x.record.basename)
+  /** A group as `label [nested?] direct | rows`, its children indented under it. */
+  const tree = (groups: readonly Group[], indent = ''): string[] =>
+    groups.flatMap((g) => [
+      `${indent}${g.label}${g.nested ? ' *' : ''}${g.children === undefined ? ` = ${names(g.rows).join(',')}` : ` (${names(g.direct).join(',')})`}`,
+      ...tree(g.children ?? [], `${indent}  `),
+    ])
+
+  it('Top folder (no Depth) reads and groups as before, and saves nothing new', () => {
+    const r = T({ property: 'file.folder' })
+    expect(tree(r.groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive = Old,Older,Deep,Deeper', 'Sub = Outsider'])
+    expect(r.groups!.some((g) => g.nested)).toBe(false)
+  })
+
+  it('Depth 2: the subfolders nest inside their folder\'s group on the SAME level; a folder\'s own notes sit first, above them; a folder with no subfolder is a leaf', () => {
+    const r = T({ property: 'file.folder', depth: 2 })
+    expect(tree(r.groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive * (Old)', '  2019 = Older,Deep,Deeper', 'Sub = Outsider'])
+    // The outer group's rows stay the whole branch, so its count and summaries are unchanged.
+    expect(r.groups![2].rows).toHaveLength(4)
+  })
+
+  it('Depth 3 goes one step further; All goes to the bottom of the tree', () => {
+    expect(tree(T({ property: 'file.folder', depth: 3 }).groups!)).toEqual(['Stages = Lead Gen,Sales', 'active = Now', 'Archive * (Old)', '  2019 * (Older)', '    Q1 = Deep,Deeper', 'Sub = Outsider'])
+    expect(tree(T({ property: 'file.folder', depth: 'all' }).groups!)).toEqual(tree(T({ property: 'file.folder', depth: 3 }).groups!))
+  })
+
+  it('"Folder (All), then Status": the Status groups sit inside each deepest folder, and a folder\'s own notes above its subfolders are not split', () => {
+    const r = T([{ property: 'file.folder', depth: 'all' }, { property: 'status' }])
+    expect(tree(r.groups!)).toEqual([
+      'Stages ()', '  done = Sales', '  open = Lead Gen',
+      'active ()', '  open = Now',
+      'Archive * (Old)', '  2019 * (Older)', '    Q1 ()', '      done = Deep', '      open = Deeper',
+      'Sub ()', '  open = Outsider',
+    ])
+  })
+
+  it('"Status, then Folder (2)": the nested folder groups sit inside each Status group', () => {
+    const r = T([{ property: 'status' }, { property: 'file.folder', depth: 2 }])
+    expect(tree(r.groups!)).toEqual([
+      'done ()', '  Stages = Sales', '  Archive * (Old)', '    2019 = Deep',
+      'open ()', '  Stages = Lead Gen', '  active = Now', '  Archive * ()', '    2019 = Older,Deeper', '  Sub = Outsider',
+    ])
+  })
+
+  it('Full path: one flat header per folder at the Depth, named by its path from the page with " › " (titles as the sidebar names them)', () => {
+    const r = T({ property: 'file.folder', depth: 'all', layout: 'path' })
+    expect(r.groups!.map((g) => [g.key, g.label, names(g.rows).join(',')])).toEqual([
+      ['stages', 'Stages', 'Lead Gen,Sales'],
+      ['stages/active', 'active', 'Now'],
+      ['stages/archive', 'Archive', 'Old'],
+      ['stages/archive/2019', 'Archive › 2019', 'Older'],
+      ['stages/archive/2019/q1', 'Archive › 2019 › Q1', 'Deep,Deeper'],
+      ['Sub', 'Sub', 'Outsider'],
+    ])
+    expect(r.groups!.every((g) => g.children === undefined && g.nested === undefined)).toBe(true)
+    expect(T({ property: 'file.folder', depth: 2, layout: 'path' }).groups!.map((g) => [g.label, names(g.rows).join(',')])).toEqual([
+      ['Stages', 'Lead Gen,Sales'], ['active', 'Now'], ['Archive', 'Old'], ['Archive › 2019', 'Older,Deep,Deeper'], ['Sub', 'Outsider'],
+    ])
+  })
+
+  it('"Folder (All, Full path), then Status" keeps the flat headers and groups Status inside each', () => {
+    const r = T([{ property: 'file.folder', depth: 'all', layout: 'path' }, { property: 'status' }])
+    expect(tree(r.groups!)).toEqual([
+      'Stages ()', '  done = Sales', '  open = Lead Gen',
+      'active ()', '  open = Now',
+      'Archive ()', '  done = Old',
+      'Archive › 2019 ()', '  open = Older',
+      'Archive › 2019 › Q1 ()', '  done = Deep', '  open = Deeper',
+      'Sub ()', '  open = Outsider',
+    ])
+  })
+
+  it('a Depth the app does not know, and a Depth off a Folder level, read as Top folder', () => {
+    expect(tree(T({ property: 'file.folder', depth: 9 as unknown as 2 }).groups!)).toEqual(tree(T({ property: 'file.folder' }).groups!))
+    expect(tree(T({ property: 'status', depth: 'all' }).groups!)).toEqual(['done = Sales,Old,Deep', 'open = Lead Gen,Older,Deeper,Now,Outsider'])
+  })
+
+  it('"Folder (2), then Folder" as two view levels: the second level is the next folder down past the Depth', () => {
+    const r = T([{ property: 'file.folder', depth: 2 }, { property: 'file.folder' }])
+    expect(tree(r.groups!)).toEqual(['Stages (Lead Gen,Sales)', 'active (Now)', 'Archive * (Old)', '  2019 (Older)', '    Q1 = Deep,Deeper', 'Sub (Outsider)'])
+  })
+})
+
 describe('propertyKeys / propertyLabel (GRO-2133)', () => {
   it('propertyKeys: view.order when set, else file.name + sorted note keys', () => {
     expect(propertyKeys(yasin, yasin.views[0], TEST_RECORDS)).toEqual(['file.name'])
@@ -561,18 +755,25 @@ describe('propertyKeys / propertyLabel (GRO-2133)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [])).toEqual(['file.name'])
   })
 
-  it('propertyKeys: every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12)', () => {
+  it('propertyKeys: on a page with no column, every key the rows hold is a default column — `id`, `also_in` and `title` like any other (YAZ-2523 V12; the folder host takes the app’s keys out first)', () => {
     const own = [{ ...TEST_RECORDS[0], properties: { id: 'k3m9x2pq7abc', also_in: ['f7n2w8rt4xyz'], title: 'Zebra', status: 'idea' } }]
     expect(propertyKeys(yasin, yasin.views[1], own)).toEqual(['file.name', 'note.also_in', 'note.id', 'note.status', 'note.title'])
   })
 
   it('propertyKeys: a DECLARED column is a column before any member carries it (YAZ-1549)', () => {
     expect(propertyKeys(yasin, yasin.views[1], [], ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
-    // seen and declared merge, once each
-    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toContain('note.owner')
+    // A page with columns shows them alone (YAZ-4713 C4): the rows' other fields wait in Columns ⚙ › Other properties.
+    expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name', 'note.owner', 'note.status'])
     expect(propertyKeys(yasin, yasin.views[1], TEST_RECORDS, ['status']).filter((k) => k === 'note.status')).toHaveLength(1)
     // an explicit order still wins
     expect(propertyKeys(yasin, { ...yasin.views[1], order: ['file.name'] }, TEST_RECORDS, ['status'])).toEqual(['file.name'])
+  })
+
+  it('propertyKeys: a calendar with no order shows the name alone (YAZ-4857 item 4); its order wins; the other types keep their default', () => {
+    const calendar = { type: 'calendar', name: 'C' }
+    expect(propertyKeys(yasin, calendar, TEST_RECORDS, ['status', 'owner'])).toEqual(['file.name'])
+    expect(propertyKeys(yasin, { ...calendar, order: ['file.name', 'note.status'] }, TEST_RECORDS)).toEqual(['file.name', 'note.status'])
+    for (const type of ['table', 'board', 'list', 'cards']) expect(propertyKeys(yasin, { type, name: 'X' }, [], ['status'])).toEqual(['file.name', 'note.status'])
   })
 
   it('propertyLabel: displayName (bare or note.-prefixed key) else the default label (YAZ-1513)', () => {
@@ -637,6 +838,44 @@ describe('runView: Name is the title, File name its own column (YAZ-2420 D18)', 
   })
 })
 
+describe('runView: subfolder rows (YAZ-4579 D31/D33)', () => {
+  const note = (path: string, title: string): IndexRecord => ({ ...TEST_RECORDS[0], path: `/vault/${path}`, name: path.slice(path.lastIndexOf('/') + 1), basename: title, title, folder: 'Schema', properties: {} })
+  /** A subfolder's row: its `.folder.md`, titled as the folder, `folder` = the page. */
+  const folderRow = (dir: string): IndexRecord => ({ ...note(`Schema/${dir}/.folder.md`, dir), basename: '.folder' })
+  /** In the order ViewsPane hands them: the notes, then the folder rows. */
+  const records = [note('Schema/Apple.md', 'Apple'), note('Schema/Zoo.md', 'Zoo'), folderRow('Users'), folderRow('Orders')]
+  const table = (view: Partial<ViewDef>): ViewResult => {
+    const v: ViewDef = { type: 'table', name: 'T', ...view }
+    return runView({ views: [v] }, v, records)
+  }
+  const titles = (r: ViewResult): string[] => r.rows.map(row => row.record.title)
+  const byName: Partial<ViewDef> = { sort: [{ property: 'file.name', direction: 'ASC' }] }
+
+  it('`file.kind` is `folder` for a folder row and `note` for a note, under the label "Kind"; a filter on it keeps one kind', () => {
+    expect(table({ order: ['file.name', 'file.kind'] }).rows.map(row => row.values['file.kind'])).toEqual(['folder', 'folder', 'note', 'note'])
+    expect(titles(table({ filters: 'file.kind == "folder"' }))).toEqual(['Users', 'Orders'])
+    expect(titles(table({ filters: 'file.kind == "note"' }))).toEqual(['Apple', 'Zoo'])
+    expect(defaultLabel('file.kind')).toBe('Kind')
+  })
+
+  it('Folders first (D33), the default: folder rows before the notes, each part in the view’s sort — or, with none, as handed in', () => {
+    expect(titles(table(byName))).toEqual(['Orders', 'Users', 'Apple', 'Zoo'])
+    expect(titles(table({ sort: [{ property: 'file.name', direction: 'DESC' }] }))).toEqual(['Users', 'Orders', 'Zoo', 'Apple'])
+    expect(titles(table({}))).toEqual(['Users', 'Orders', 'Apple', 'Zoo'])
+  })
+
+  it('`foldersFirst: false`: the folder rows sort among the notes by the view’s sort alone', () => {
+    expect(titles(table({ ...byName, foldersFirst: false }))).toEqual(['Apple', 'Orders', 'Users', 'Zoo'])
+    expect(titles(table({ foldersFirst: false }))).toEqual(['Apple', 'Zoo', 'Users', 'Orders'])
+  })
+
+  it('folders first holds inside each group, and before a limit cuts', () => {
+    const grouped = table({ ...byName, groupBy: { property: 'file.folder', direction: 'ASC' } })
+    expect(grouped.groups!.map(g => g.rows.map(row => row.record.title))).toEqual([['Orders', 'Users', 'Apple', 'Zoo']])
+    expect(titles(table({ ...byName, limit: 1 }))).toEqual(['Orders'])
+  })
+})
+
 describe('targetBasename (YAZ-2241)', () => {
   it('names the basename of EVERY note a target resolves to without aliases, whatever its spelling', () => {
     // The rename detector skips a file whose basename no link names; that is only sound if every
@@ -669,6 +908,43 @@ describe('targetBasename (YAZ-2241)', () => {
       }
     }
     expect(resolved).toBeGreaterThan(1000)
+  })
+})
+
+describe('views: words that only LOOK like an ID (YAZ-4954)', () => {
+  const rec = (name: string, properties: Record<string, unknown> = {}, links: string[] = []) =>
+    ({ ...TEST_RECORDS[0], path: `/vault/${name}.md`, name: `${name}.md`, basename: name, title: name, folder: '', properties, links }) as IndexRecord
+  const COVID = rec('Covid notes')
+  const ID_NOTE = rec('COVID-19')
+  // As the index reads them (`scan.test.ts`): the words-first link keeps both sides, the ID-first one its ID.
+  const A = rec('A', { related: '[[Covid notes|COVID-19]]' }, ['Covid notes|COVID-19'])
+  const B = rec('B', { related: '[[COVID-19|Covid notes]]' }, ['COVID-19'])
+  const view = (records: IndexRecord[], filters?: string) =>
+    runView({ views: [], formulas: { page: 'related.asFile().name' } }, { type: 'table', name: 'T', order: ['formula.page'], sort: [{ property: 'file.basename', direction: 'ASC' }], ...(filters && { filters }) }, records, { resolve: resolverFor(records, '/vault') })
+
+  it('a frontmatter value: the left side is the page when it is a note; the other order names the ID', () => {
+    const r = view([A, B, COVID, ID_NOTE], 'file.basename == "A" || file.basename == "B"')
+    expect(r.rows.map(x => [x.record.basename, x.values['formula.page']])).toEqual([['A', 'Covid notes'], ['B', 'COVID-19']])
+  })
+
+  it('only one side is a note: that side', () => {
+    expect(view([A, ID_NOTE], 'file.basename == "A"').rows[0].values['formula.page']).toBe('COVID-19')
+    expect(view([A, COVID], 'file.basename == "A"').rows[0].values['formula.page']).toBe('Covid notes')
+  })
+
+  it('file.hasLink and a property compare pick the same page', () => {
+    const all = [A, B, COVID, ID_NOTE]
+    expect(view(all, 'file.hasLink("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+    expect(view(all, 'file.hasLink("COVID-19")').rows.map(x => x.record.basename)).toEqual(['B'])
+    expect(view(all, 'related == link("Covid notes")').rows.map(x => x.record.basename)).toEqual(['A'])
+  })
+
+  it('the resolver reads a kept pair and a whole link by the same rule', () => {
+    const resolve = makeResolver([A, COVID, ID_NOTE].map(r => new FileValue(r)), '/vault')
+    expect(resolve('Covid notes|COVID-19')?.record.title).toBe('Covid notes')
+    expect(resolve('[[Covid notes|COVID-19]]')?.record.title).toBe('Covid notes')
+    expect(resolve('COVID-19|Covid notes')?.record.title).toBe('COVID-19')
+    expect(makeResolver([ID_NOTE].map(r => new FileValue(r)))('Covid notes|COVID-19')?.record.title).toBe('COVID-19')
   })
 })
 
@@ -1065,5 +1341,113 @@ describe('runView: RunOptions.resolve (🔒 D2, YAZ-819)', () => {
     expect(runView(def, view, members).rows[0].values['formula.out']).toBe(null)
     // …and over the full snapshot the default resolves it, which is every whole-vault caller.
     expect(runView(def, view, TEST_RECORDS).rows[0].values['formula.out']).toBeInstanceOf(FileValue)
+  })
+})
+
+describe('runView: option order (YAZ-3940)', () => {
+  const OPTIONS = ['Later', 'Ready', 'Done']
+  const notes = (statuses: unknown[]): IndexRecord[] => statuses.map((status, i) => ({
+    ...TEST_RECORDS[0], path: `/vault/n${i}.md`, basename: `n${i}`, title: `n${i}`, properties: { status },
+  }))
+  const optionOrder = (property: string) => (property === 'note.status' || property === 'status' ? OPTIONS : undefined)
+  const recs = notes(['Done', 'Legacy', 'Ready', null, 'Archive', 'Later'])
+  const one = (view: Partial<ViewDef>, opts: Parameters<typeof runView>[3] = { optionOrder }) => {
+    const v: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'note.status'], ...view }
+    return runView({ views: [v] }, v, recs, opts)
+  }
+  const statuses = (r: ViewResult) => r.rows.map(row => row.record.properties.status ?? null)
+
+  it('groups follow the option order; values that are not options come after the options, A to Z; No value last', () => {
+    expect(one({ groupBy: { property: 'note.status' } }).groups!.map(g => g.key)).toEqual(['Later', 'Ready', 'Done', 'Archive', 'Legacy', null])
+  })
+
+  it('DESC reverses the options; the values that are not options stay A to Z after them', () => {
+    expect(one({ groupBy: { property: 'note.status', direction: 'DESC' } }).groups!.map(g => g.key)).toEqual(['Done', 'Ready', 'Later', 'Archive', 'Legacy', null])
+  })
+
+  it('sorts follow the option order too, with a missing value last whatever the direction', () => {
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'ASC' }] }))).toEqual(['Later', 'Ready', 'Done', 'Archive', 'Legacy', null])
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'DESC' }] }))).toEqual(['Done', 'Ready', 'Later', 'Archive', 'Legacy', null])
+  })
+
+  it('`by: value` sorts and groups by the value, A to Z or Z to A, as without options', () => {
+    expect(statuses(one({ sort: [{ property: 'note.status', direction: 'ASC', by: 'value' }] }))).toEqual(['Archive', 'Done', 'Later', 'Legacy', 'Ready', null])
+    expect(one({ groupBy: { property: 'note.status', direction: 'DESC', by: 'value' } }).groups!.map(g => g.key)).toEqual(['Ready', 'Legacy', 'Later', 'Done', 'Archive', null])
+  })
+
+  it('without `optionOrder` the engine orders by value as before', () => {
+    expect(one({ groupBy: { property: 'note.status' } }, {}).groups!.map(g => g.key)).toEqual(['Archive', 'Done', 'Later', 'Legacy', 'Ready', null])
+  })
+
+  it('a Multi-select list sorts by its first element and groups each element in option order', () => {
+    const tagged = notes([['Done', 'Later'], ['Ready']])
+    const v: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: { property: 'note.status' } }
+    const r = runView({ views: [v] }, v, tagged, { optionOrder })
+    expect(r.rows.map(row => row.record.basename)).toEqual(['n1', 'n0'])
+    expect(r.groups!.map(g => g.key)).toEqual(['Later', 'Ready', 'Done'])
+  })
+
+  it('asks for the options once per sort or group level, not once per comparison', () => {
+    let calls = 0
+    const counted = (property: string) => { calls++; return optionOrder(property) }
+    one({ sort: [{ property: 'note.status', direction: 'ASC' }], groupBy: [{ property: 'file.folder' }, { property: 'note.status' }] }, { optionOrder: counted })
+    expect(calls).toBeLessThanOrEqual(3)
+  })
+})
+
+describe('one key, capitals ignored (YAZ-4769)', () => {
+  const recs = (values: Record<string, unknown>[]): IndexRecord[] => values.map((properties, i) => ({ ...TEST_RECORDS[0], path: `/vault/n${i}.md`, name: `n${i}.md`, basename: `n${i}`, title: `n${i}`, properties }))
+
+  it('propertyKeys: a view key naming a page column in other capitals is the column’s key, shown once where it is first named', () => {
+    const view: ViewDef = { type: 'table', name: 'T', order: ['file.name', 'note.Dessert Column', 'note.dessert column', 'note.other', 'formula.Dessert Column'] }
+    expect(propertyKeys({ views: [] }, view, [], ['dessert column'])).toEqual(['file.name', 'note.dessert column', 'note.other', 'formula.Dessert Column'])
+    expect(propertyKeys({ views: [] }, view, [])).toEqual(view.order) // no page columns: as written
+  })
+
+  it('a sort that names the column in other capitals sorts by it', () => {
+    const view: ViewDef = { type: 'table', name: 'T', sort: [{ property: 'note.SCORE', direction: 'DESC' }] }
+    const r = runView({ views: [] }, view, recs([{ score: 1 }, { score: 3 }, { score: 2 }]), { declared: ['score'] })
+    expect(names(r)).toEqual(['n1', 'n2', 'n0'])
+  })
+})
+
+describe('runView: live relative dates (YAZ-4919)', () => {
+  // TEST_RECORDS: Agentic Agency is dated 2026-08-01 (a Saturday), Creator Economy 2026-07-15 (a Wednesday); the rest have no date.
+  const titles = (filters: string, opts: RunOptions) => {
+    const def = parseViews(`views:\n  - type: table\n    name: T\n    filters: '${filters}'\n`).def
+    const r = runView(def, def.views[0], TEST_RECORDS, opts)
+    expect(r.errors).toEqual([])
+    return r.rows.map((row) => row.record.title)
+  }
+  const at = (y: number, m: number, d: number, h = 10) => new Date(y, m - 1, d, h).getTime()
+
+  it('isToday / isThisWeek / isThisMonth read the run\'s clock, injected; an undated note is out, with no error', () => {
+    expect(titles('note.date.isToday()', { now: at(2026, 8, 1, 23) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isToday()', { now: at(2026, 8, 2) })).toEqual([])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 7, 20) })).toEqual(['Creator Economy'])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 8, 31) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisMonth()', { now: at(2026, 9, 1) })).toEqual([])
+  })
+
+  it('isThisWeek starts the week on Sunday, or on Monday by the option (Settings › Folder pages › Week starts on)', () => {
+    // Thursday 2026-07-30: Sunday's week runs 07-26 … 08-01, Monday's 07-27 … 08-02; both hold Saturday 08-01.
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 30) })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 30), weekStartsOn: 'monday' })).toEqual(['Agentic Agency'])
+    // Sunday 2026-08-02: Sunday's week is 08-02 … 08-08 (08-01 out); Monday's is 07-27 … 08-02 (08-01 in).
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 8, 2) })).toEqual([])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 8, 2), weekStartsOn: 'monday' })).toEqual(['Agentic Agency'])
+    expect(titles('note.date.isThisWeek()', { now: at(2026, 7, 13) })).toEqual(['Creator Economy'])
+  })
+
+  it('a fixed-date rule reads as before, whatever the clock; the clock is read ONCE per run, not per row', () => {
+    expect(titles('note.date == date("2026-08-01")', { now: at(2030, 1, 1) })).toEqual(['Agentic Agency'])
+    expect(titles('!note.date.isEmpty() && note.date < date("2026-08-01")', { now: at(2030, 1, 1) })).toEqual(['Creator Economy'])
+    const spy = vi.spyOn(Date, 'now')
+    try {
+      titles('note.date.isToday() || note.date.isThisWeek()', {})
+      expect(spy).toHaveBeenCalledTimes(1)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

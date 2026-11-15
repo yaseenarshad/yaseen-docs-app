@@ -1,7 +1,7 @@
 /**
  * Settings › Files & Links for drawings (YAZ-3943 demo 2 and round 3): "New boards keep pictures" (inside, the assets
  * folder, or a folder you pick), "Allowed picture folders" (this Mac's outside folders, each with Remove) and the
- * hover row "Links in drawings". The bridge is mocked: no row may reach a real main process.
+ * hover row "Links in drawings and diagrams". The bridge is mocked: no row may reach a real main process.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
@@ -142,11 +142,11 @@ describe('YAZ-4074 6A item 13: a pick on the same page shows in the list', () =>
   })
 })
 
-describe('Settings › Files & Links › Preview on hover › Links in drawings (YAZ-3943 demo 2)', () => {
+describe('Settings › Files & Links › Preview on hover › Links in drawings and diagrams (YAZ-3943 demo 2, YAZ-4748 D7)', () => {
   it('is on by default, and Off turns the drawings place off alone', async () => {
     await mount()
-    expect(row('hoverPreviewIn.drawings').textContent).toContain('Links in drawings')
-    act(() => row('hoverPreviewIn.drawings').querySelector<HTMLButtonElement>('[aria-label="Preview on hover: Links in drawings"] button:last-child')!.click())
+    expect(row('hoverPreviewIn.drawings').textContent).toContain('Links in drawings and diagrams')
+    act(() => row('hoverPreviewIn.drawings').querySelector<HTMLButtonElement>('[aria-label="Preview on hover: Links in drawings and diagrams"] button:last-child')!.click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, hoverPreviewIn: { ...DEFAULT_SETTINGS.hoverPreviewIn, drawings: false } })
   })
 })
