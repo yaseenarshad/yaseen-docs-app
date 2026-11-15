@@ -18,6 +18,8 @@ import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
+import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
+import { useCardViewMenu } from '../cardMenu/cardViewMenu'
 
 /** The words of a card file that is not valid (round 15, item 3). */
 export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
@@ -28,7 +30,8 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  * hidden in review" while Review is on) and its title band (none for a card with no title: the ID names it). The top
  * bar says the title ("Untitled card" with none); the heading "Title · ID" is for VoiceOver only, which names a card
  * with no title by its ID, when it is due and how sure you are, its review history, and "Open
- * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card and no ⋯ in stage one.
+ * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card. YAZ-5504: ⋯ in the
+ * top bar holds the card's actions (Archive card, Title on the front, …: two taps each) and Find in card.
  *
  * A card file that is not valid (2 or more cards, text outside the card, or no card; from git or an agent): the first
  * card and one line, "This card file needs a fix on the Mac." (round 15, item 3). The fix actions stay on the Mac.
@@ -64,15 +67,18 @@ export default function CardView({ path, id }: { path: string; id: string }) {
       }),
     [sync, vault, path],
   )
+  // YAZ-5504: the card as the phone shows it (with the waiting actions), so a change from its ⋯ shows at once.
+  const answers = useAnswers()
+  useAnswersChanged(answers, path, () => setReads((n) => n + 1))
   useEffect(() => {
     let live = true
-    void store.read(vault, path).then((file) => {
-      if (live) setText(file === null ? null : typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content))
+    void shownText(store, vault, path, answers).then((content) => {
+      if (live) setText(content)
     })
     return () => {
       live = false
     }
-  }, [store, vault, path, reads])
+  }, [store, vault, path, reads, answers])
 
   const record = data?.byPath[path]
   const isFile = record?.kind === 'card'
@@ -86,6 +92,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const label = name === '' ? (card?.id ?? id) : name
 
   const reviewOn = data?.review.enabled === true
+  // YAZ-5504: ⋯ in the top bar: the card actions (two taps each), then Find in card.
+  const tools = useCardViewMenu(host, { path, id: card?.id ?? null, answers, upNext: reviewOn })
   const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
   useEffect(() => {
     const el = host.current
@@ -114,7 +122,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
 
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} tools={tools.button} notice={tools.bar} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
       <article className="reader card-view" aria-label={label} style={look?.style}>
         {/* YAZ-5478: a card file's comment count, at the top right; a tap goes to its comments under the card. */}
         {isFile && typeof text === 'string' && <PageCommentsCount text={text} />}
@@ -149,6 +157,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         )}
         {/* YAZ-5477: a card FILE's comments (its front matter's), and its Comment button; a card in a page has none. */}
         {isFile && typeof text === 'string' && <PageComments path={path} text={text} noun="card file" />}
+        {tools.toast}
       </article>
     </Frame>
   )

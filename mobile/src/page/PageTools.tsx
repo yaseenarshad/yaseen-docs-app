@@ -17,7 +17,19 @@ const HeadingsSheet = lazy(() => import('./find/HeadingsSheet'))
 
 export type PageTool = 'find' | 'headings' | null
 
-export function usePageTools(host: RefObject<HTMLElement | null>): { button: ReactNode; bar: ReactNode; sheet: ReactNode } {
+/**
+ * YAZ-5504: the same ⋯ for a card's own view: `section` puts the card actions first (a section of rows, closed with
+ * `close`), then "Find in card" (`find`); a card has no headings (`headings: false`). `label` names the button and menu.
+ */
+export interface PageToolsOptions {
+  label?: string
+  find?: string
+  headings?: boolean
+  section?: (close: () => void) => ReactNode
+}
+
+export function usePageTools(host: RefObject<HTMLElement | null>, options: PageToolsOptions = {}): { button: ReactNode; bar: ReactNode; sheet: ReactNode } {
+  const { label = 'Page tools', find = 'Find in page', headings = true, section } = options
   const [menu, setMenu] = useState(false)
   const [tool, setTool] = useState<PageTool>(null)
   const box = useRef<HTMLDivElement>(null)
@@ -40,17 +52,25 @@ export function usePageTools(host: RefObject<HTMLElement | null>): { button: Rea
   }
   const button = (
     <div className="page-tools" ref={box}>
-      <button type="button" className="icon-btn page-tools__btn" aria-label="Page tools" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+      <button type="button" className="icon-btn page-tools__btn" aria-label={label} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
         ⋯
       </button>
       {menu && (
-        <div className="page-tools__menu" role="menu" aria-label="Page tools">
+        <div className="page-tools__menu" role="menu" aria-label={label}>
+          {section !== undefined && (
+            <>
+              {section(() => setMenu(false))}
+              <hr className="page-tools__line" />
+            </>
+          )}
           <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('find')}>
-            <span aria-hidden="true">🔍</span> Find in page
+            <span aria-hidden="true">🔍</span> {find}
           </button>
-          <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('headings')}>
-            <span aria-hidden="true">☰</span> Headings
-          </button>
+          {headings && (
+            <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('headings')}>
+              <span aria-hidden="true">☰</span> Headings
+            </button>
+          )}
         </div>
       )}
     </div>

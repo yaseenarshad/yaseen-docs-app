@@ -4,12 +4,13 @@ import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
-import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
+import { READER_FILES, READER_ID, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
 import { FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
 import { READING_LOOK_PAGE } from './readingLookFixture'
+import { fixtureAnswers } from './fixtureAnswers'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
@@ -27,8 +28,10 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
 
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
+ * YAZ-5504: `card-menu` a card's own view with its ⋯ open, Archive card tapped once ("Tap again to archive");
+ * `page-card-menu` the page of three cards with the ⋯ of its first card open (a made-up answer list, `fixtureAnswers`).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'card-menu', 'page-card-menu'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -120,6 +123,15 @@ const COMMENTED_CARD = [
   '',
 ].join('\n')
 
+/** YAZ-5504: the page of `page-card-menu`: three cards, none archived (an archived card is dim by design, the Mac's). */
+const MENU_CARDS = [
+  '# Rivers of Europe',
+  'Three cards for the trip.',
+  cardBlock('DEMO-51', 'Which river runs through Madrid?\n---\nThe Manzanares', ['title "River of Madrid"']),
+  cardBlock('DEMO-52', 'Which river runs through Paris?\n---\nThe Seine'),
+  cardBlock('DEMO-53', 'Which river runs through Vienna?\n---\nThe Danube', ['title "River of Vienna"', 'notitle', 'fix']),
+].join('\n\n')
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
@@ -127,6 +139,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const extra: Record<string, string | Uint8Array> =
     name === 'page-tricks'
       ? { 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` }
+      : name === 'page-card-menu'
+        ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${MENU_CARDS}\n` }
       : name === 'page-cards' || name === 'search-tree' || name === 'search-found' || name === 'search-collapsed'
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-code'
@@ -200,7 +214,13 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       return file === null ? shown : { ...shown, url: URL.createObjectURL(new Blob([file.content as BlobPart], { type: 'image/svg+xml' })), type: 'image/svg+xml' }
     },
   }
-  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
+  const sync = fakeSync()
+  // YAZ-5504: the card menu's fixtures get a made-up answer list (in memory; nothing is sent).
+  if (name === 'card-menu' || name === 'page-card-menu') {
+    const answers = fixtureAnswers(store, READER_ID)
+    sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
+  }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
   root.render(<App services={services} />)
   await until(() => document.querySelector('[role="tab"]') !== null)
   press('Search')
@@ -392,6 +412,20 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'page-comments':
       await open(/^Review notes/, '.page-comments')
       document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
+      break
+    case 'card-menu':
+      await typed('la bib')
+      await open(/^la biblioteca/, '.card-view__card .card__body')
+      press('Card tools')
+      await until(() => document.querySelector('[data-action="off"]:not(:disabled)') !== null)
+      press('Archive card')
+      await wait(50)
+      break
+    case 'page-card-menu':
+      await typed('rivers')
+      await open(/^Rivers of Europe/, '.reader__body .page-card')
+      press('Card actions: River of Madrid')
+      await until(() => document.querySelector('.card-menu [data-action="off"]:not(:disabled)') !== null)
       break
     case 'card-file-comments':
       await typed('seville')
