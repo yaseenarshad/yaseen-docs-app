@@ -175,7 +175,10 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
 
 ## How to publish
 
-The preview site is `https://preview.notecard.yaseenarshad.com` (Worker `yaseen-notecards-preview`, `wrangler.jsonc`).
+The preview site is `https://preview.docs.yaseenarshad.com` (YAZ-5476), and the old `https://preview.notecard.yaseenarshad.com`
+still answers with the same build: both are custom domains of ONE Worker (`yaseen-notecards-preview`, `wrangler.jsonc`), so
+one publish updates both. The old address stays until Yaseen has moved: a phone keeps its token, vault copy and waiting
+answers per address.
 Publish only when Yaseen says so (round 15). From the repo root, signed in to Cloudflare (`npx wrangler whoami`):
 
 ```
@@ -189,8 +192,8 @@ Wrangler is not a dependency of the repo; `npx` fetches that exact version. To s
 sending it: `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc --dry-run`.
 
 The Worker has no script: Cloudflare serves the files of `dist/` and applies `_headers`. No request reaches code of
-ours, so nothing logs an address. The stable site `notecard.yaseenarshad.com` is NOT in this config: it publishes on
-a version tag, when Yaseen says (decision 8, round 10 item 16).
+ours, so nothing logs an address. The stable site `docs.yaseenarshad.com` is NOT in this config: it is added when
+Yaseen says "release" (decision 8, round 10 item 16; YAZ-5476).
 
 ## If a bad version ships
 
@@ -218,6 +221,6 @@ deletes only this app's shell caches (`notecards-shell-*`, `notecards-meta`), un
 page again one time. It never touches IndexedDB: the token, the vault copy and the waiting answers stay. Then fix the
 bug and run `npm run mobile:publish:preview`. The app registers its normal worker again at the next open.
 
-**On a broken phone:** close Notecard in the app switcher (swipe it up), then open it again; do it two times. A new
+**On a broken phone:** close Yaseen Docs in the app switcher (swipe it up), then open it again; do it two times. A new
 worker takes over when no page of the old one is open. Do NOT remove the site's data in Settings (Safari › Advanced ›
 Website Data): that deletes IndexedDB, with the token and the answers that wait to be sent.

@@ -60,7 +60,8 @@ export const ORPHAN_AGE_MS = 60 * 60_000
  * The app's sites (the stable one and its preview). Yaseen, 2026-11-14: the address is `notecard.yaseenarshad.com`. A
  * link shared before that names `notecards.yaseenarshad.com`; the paste box still reads it (it carries the same code).
  */
-const SITES = ['notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
+// YAZ-5476: the app is Yaseen Docs, at `docs.yaseenarshad.com` (now its preview, `preview.docs.yaseenarshad.com`).
+const SITES = ['docs.yaseenarshad.com', 'notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
 const isOurSite = (host: string) => SITES.some((site) => host === site || host.endsWith(`.${site}`))
 const LINK_ID = /^[0-9a-f]{20,40}$/i
 
@@ -423,15 +424,15 @@ export function joinMessage(result: JoinResult): string {
       return 'That group is gone, or the link is wrong. Ask the admin for the link again.'
     case 'not-a-group-link':
     case 'not-a-link':
-      return 'That is not a Notecard group link. Ask the admin to send it again.'
+      return 'That is not a Yaseen Docs group link. Ask the admin to send it again.'
     case 'other-app':
-      return "That link is from another app. Paste the link from the admin's Notecard."
+      return "That link is from another app. Paste the link from the admin's Yaseen Docs."
     case 'empty':
       return 'Paste the group link that the admin sent you.'
     case 'needs-repair':
       return "That group's file cannot be read. Ask the admin to fix it."
     case 'newer-app':
-      return 'The admin has a newer Notecard. Update this app, then paste the link again.'
+      return 'The admin has a newer Yaseen Docs. Update this app, then paste the link again.'
     case 'offline':
       return 'No connection. Try again when you are online.'
     case 'rate-limited':
@@ -822,7 +823,7 @@ export function groupViewMessage(view: GroupView): string | null {
     case 'needs-repair':
       return "This group's file cannot be read. Ask the admin to fix it."
     case 'newer-app':
-      return 'This group needs a newer app. Update Notecard.'
+      return 'This group needs a newer app. Update Yaseen Docs.'
     case 'offline':
       return 'No connection.'
     case 'removing':

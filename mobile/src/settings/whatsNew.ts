@@ -12,6 +12,16 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '0.8.0',
+    date: '2026-11-14',
+    items: [
+      'The app is now called Yaseen Docs, with the Yaseen Docs logo.',
+      "The tabs follow the open vault: Search always. Review and Friends when the vault's review is on. Today when its daily notes are on.",
+      'A vault with Search alone shows no tab bar.',
+      'A new address: preview.docs.yaseenarshad.com.',
+    ],
+  },
+  {
     version: '0.7.0',
     date: '2026-11-14',
     items: [
