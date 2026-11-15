@@ -2,7 +2,7 @@
 import { readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { readComments } from '@shared/comments'
+import { addComment, readComments } from '@shared/comments'
 import { makeTwoMachines, REAL_GIT_TIMEOUT_MS } from './gitFixture'
 import { syncPass } from './sync'
 
@@ -70,5 +70,30 @@ describe('a page on real git: comments by id, text line by line (D4, D9)', { tim
     expect(a.read('plan.md')).toContain('Para five, me.')
     expect(status.merged?.[0]?.copy).toBeUndefined()
     expect(status.merged?.[0]?.title).toBe('Plan by Sam')
+  })
+})
+
+describe('YAZ-5512 X1: a phone comment never stops the Mac sync', { timeout: REAL_GIT_TIMEOUT_MS }, () => {
+  // The page has no properties and a card with a back (`---`). The phone's comment makes its first block; the Mac
+  // edits the first line before it syncs. Git stops on the page; the old settle threw on every pass from then on, so
+  // a vault in this state never pushed again. This IS that stuck state: the next pass must land it.
+  const CARDS = '# Words\n\n```card\nHola\n---\nHello\n```\n<!-- card: NC-1 -->\n\nThe end.\n'
+  it('a vault stuck on such a page syncs on its next pass: both edits, the comment, no copy', async () => {
+    const p = await makeTwoMachines({ 'words.md': CARDS })
+    cleanups.push(p.cleanup)
+    const { a, b } = p
+    await b.write('words.md', addComment(CARDS, 'from phone', { id: 'pho00001', at: '2026-11-14T06:00:00Z', by: 'yaseen' }))
+    expect((await syncPass(b.root)).state).toBe('synced')
+    await a.write('words.md', CARDS.replace('# Words', '# Words edited'))
+    const status = await syncPass(a.root)
+    expect(status.state).toBe('synced')
+    const page = a.read('words.md')
+    expect(page).toContain('# Words edited')
+    expect(page).toContain('```card\nHola\n---\nHello\n```\n<!-- card: NC-1 -->')
+    expect(readComments(page).map((c) => c.body)).toEqual(['from phone'])
+    expect(readdirSync(a.root).filter((f) => f.includes('(conflict,'))).toEqual([])
+    // It reached GitHub: the other machine gets the Mac's edit.
+    expect((await syncPass(b.root)).state).toBe('synced')
+    expect(b.read('words.md')).toBe(page)
   })
 })

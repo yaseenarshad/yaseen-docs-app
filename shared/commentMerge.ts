@@ -16,11 +16,11 @@
  *    with every comment merged into it, and my rest is handed back as `copy`, with no comments, so no
  *    comment shows two times. (Git stops on the comments alone: both sides append at one place.)
  *
- * Null only when a version's comments are not ours to write (`foreign` / `invalid` bytes): the pass
- * then stops as it always did.
+ * Null when a version's comments are not ours to write (`foreign` / `invalid` bytes), or the merged page cannot be
+ * written (YAZ-5512 X1): `resolve.ts` then keeps both whole pages (D9). It never throws.
  */
 import { COMMENTS_KEY, commentsShape, isIdComment, nextCommentNumber, rawComments, withComments, writableComments } from './comments'
-import { setFrontmatterProperty } from './frontmatter'
+import { setFrontmatterProperty, splitFrontmatter } from './frontmatter'
 
 export interface Renumbered {
   /** The comment's label before and after: `#4` → `#5`, a reply `#2.1` → `#2.2`. */
@@ -45,8 +45,21 @@ const ours = (content: string): boolean => {
   return shape === 'absent' || shape === 'list'
 }
 
-/** The page with its comments taken out: what `mergeLines` merges. */
-export const pageRest = (content: string): string => setFrontmatterProperty(content, COMMENTS_KEY, undefined)
+const EMPTY_BLOCK_RE = /^---[ \t]*\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/
+
+/**
+ * The page with its comments taken out: what `mergeLines` merges. A block that held ONLY `comments` goes with them
+ * (YAZ-5512 X1, X2): a comment on a page with no properties makes the page's first block, and that block is not "the
+ * rest" — left in as an empty `---`/`---` pair, the rest looked changed on that side, so a Mac edit of the first line
+ * clashed with it (a copy), and before S1 the empty pair swallowed the page to its next `---` line (a throw). Kept
+ * when the body itself would then read as a block, and an empty block the page already had stays.
+ */
+export function pageRest(content: string): string {
+  const rest = setFrontmatterProperty(content, COMMENTS_KEY, undefined)
+  if (rest === content) return rest
+  const { frontmatter, body } = splitFrontmatter(rest)
+  return EMPTY_BLOCK_RE.test(frontmatter) && splitFrontmatter(body).frontmatter === '' ? body : rest
+}
 const restOf = pageRest
 
 /** Entries by id; an entry that is not a comment we know is kept by its exact JSON. */
@@ -83,6 +96,16 @@ const label = (list: readonly unknown[], e: Entry, n: number): string => {
 export type LineMerge = (base: string, theirs: string, mine: string) => string | null
 
 export function mergePageComments(base: string | null, theirs: string, mine: string, mergeLines?: LineMerge): PageMerge | null {
+  // YAZ-5512 X1: this runs inside sync's pass, and a throw there stops the whole vault's sync on every pass after.
+  // Anything the merge cannot write (a merged block that will not take the comments) is null: both pages kept (D9).
+  try {
+    return merge(base, theirs, mine, mergeLines)
+  } catch {
+    return null
+  }
+}
+
+function merge(base: string | null, theirs: string, mine: string, mergeLines: LineMerge | undefined): PageMerge | null {
   if (!ours(theirs) || !ours(mine) || (base !== null && !ours(base))) return null // resolve.ts keeps both whole files (D9)
   const [b, t, m] = [base === null ? new Map<string, unknown>() : keyed(writableComments(base)), keyed(writableComments(theirs)), keyed(writableComments(mine))]
 

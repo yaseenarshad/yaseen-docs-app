@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
-import { mergePageComments, pageRest } from '@shared/commentMerge'
+import { mergePageComments, pageRest, type PageMerge } from '@shared/commentMerge'
 import { uniteCardLines } from '@shared/cardMerge'
 import { mergeConfigFile } from '@shared/configMerge'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
@@ -270,13 +270,21 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
     // YAZ-4615 D4, D9: comments by id; the rest merged line by line, kept both ways only when the
     // same lines changed on both sides.
     const b = base?.toString('utf8') ?? null
-    // YAZ-5089 (decision 5 on YAZ-5055): a card answered or marked on both sides is no clash. Each side takes the union
-    // of the card's reviews and the three-way result of its marks first (`shared/cardMerge.ts`); a card file too.
-    const [t, m] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
-    let merged = mergePageComments(b, t, m)
-    if (merged?.copy !== undefined && b !== null) {
-      const lined = await lineMerge(bin, root, pageRest(b), pageRest(t), pageRest(m))
-      if (lined !== null) merged = mergePageComments(b, t, m, () => lined)
+    let merged: PageMerge | null
+    try {
+      // YAZ-5089 (decision 5 on YAZ-5055): a card answered or marked on both sides is no clash. Each side takes the union
+      // of the card's reviews and the three-way result of its marks first (`shared/cardMerge.ts`); a card file too.
+      const [t, m] = uniteCardLines(b, theirs.toString('utf8'), mine.toString('utf8'))
+      merged = mergePageComments(b, t, m)
+      if (merged?.copy !== undefined && b !== null) {
+        const lined = await lineMerge(bin, root, pageRest(b), pageRest(t), pageRest(m))
+        if (lined !== null) merged = mergePageComments(b, t, m, () => lined)
+      }
+    } catch (err) {
+      // YAZ-5512 X1: a throw here stopped the pass, and every pass after it on the same page, so the vault never
+      // pushed again. Whatever this page's merge cannot do keeps both whole pages (D9): nothing lost, sync goes on.
+      console.warn(`[git-sync] ${rel}: the page merge failed (${err instanceof Error ? err.message : String(err)}); both versions kept`)
+      merged = null
     }
     // Comments that are not ours to read (a value of the user's own, a block that does not parse):
     // the whole page is kept both ways, as a board is (D9 — one page never stops the vault's sync).
