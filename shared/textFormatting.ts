@@ -86,3 +86,6 @@ export function sanitizeTextFormatting(raw: unknown): TextFormatting {
  * sanitise here would also put the whole sanitiser into the main bundle.
  */
 export const textFormattingFile = (formatting: TextFormatting): Record<string, unknown> => ({ version: TEXT_FORMATTING_VERSION, ...formatting })
+
+/** The top-level keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save (`writeConfig`'s `known`). */
+export const TEXT_FORMATTING_KEYS: readonly string[] = ['version', 'text', 'line', ...HEADING_KEYS]

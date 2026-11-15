@@ -2,6 +2,7 @@ import { existsSync, type Stats } from 'node:fs'
 import { mkdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
+import { keepUnknownKeys } from '@shared/configMerge'
 import { atomicWrite, BridgeFailure, createDurable, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 
@@ -113,11 +114,24 @@ function configText(value: unknown): string {
   return `${content}\n`
 }
 
-/** `mkdir -p` the dotfolder lazily, then an atomic pretty-printed write; own subscribers notified synchronously. */
-export async function writeConfig(root: string, name: string, value: unknown): Promise<void> {
+/**
+ * `mkdir -p` the dotfolder lazily, then an atomic pretty-printed write; own subscribers notified synchronously.
+ *
+ * `known` (YAZ-5483): the top-level keys this writer owns. With it, every OTHER top-level key of the file on disk is
+ * kept (`keepUnknownKeys`), so a Mac on an older build never erases a key a newer build added. A known key the value
+ * leaves out is dropped as before ("the default is never stored"). Without it the value is written as is.
+ */
+export async function writeConfig(root: string, name: string, value: unknown, known?: readonly string[] | null): Promise<void> {
   const r = requireAbsPath(root, 'root')
   const n = requireConfigName(name)
-  const content = configText(value)
+  // The bridge sends an omitted argument as null (or undefined): both mean "no `known`".
+  if (known != null && !(Array.isArray(known) && known.every((k) => typeof k === 'string'))) throw new BridgeFailure('BAD_REQUEST', "'known' must be a list of key names")
+  let kept = value
+  if (known != null) {
+    const onDisk = await readConfigDetailed(r, n)
+    if (onDisk.state === 'ok') kept = keepUnknownKeys(onDisk.value, value, known)
+  }
+  const content = configText(kept)
   const dir = path.join(r, VAULT_CONFIG_DIR)
   const file = path.join(dir, n)
   const { mtime } = await fsCall(file, async () => {

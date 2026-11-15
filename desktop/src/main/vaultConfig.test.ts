@@ -103,6 +103,29 @@ describe('writeConfig', () => {
     expect((await failure(writeConfig(root, 'a.json', undefined))).code).toBe('BAD_REQUEST')
     expect(await readdir(root)).toEqual([]) // no folder created by any rejected write
   })
+
+  it("YAZ-5483 `known`: keeps the file's top-level keys the writer does not know; a known key the value leaves out goes", async () => {
+    const root = await makeRoot()
+    await writeConfig(root, 'text-formatting.json', { version: 1, h1: { size: 30 }, h2: { bold: true }, spacing: { line: 1.6 } })
+    await writeConfig(root, 'text-formatting.json', { version: 1, h2: { underline: true } }, ['version', 'h1', 'h2'])
+    expect(await readConfig(root, 'text-formatting.json')).toEqual({ version: 1, h2: { underline: true }, spacing: { line: 1.6 } })
+    // Without `known` the value is written as is (the writers with their own whole-file rules).
+    await writeConfig(root, 'text-formatting.json', { version: 1 })
+    expect(await readConfig(root, 'text-formatting.json')).toEqual({ version: 1 })
+  })
+
+  it('YAZ-5483 `known`: no file, or a malformed one, carries nothing; a `known` that is not a list of names is refused', async () => {
+    const root = await makeRoot()
+    await writeConfig(root, 'a.json', { x: 1 }, ['x'])
+    expect(await readConfig(root, 'a.json')).toEqual({ x: 1 })
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'b.json'), '{ broken')
+    await writeConfig(root, 'b.json', { x: 1 }, ['x'])
+    expect(await readConfig(root, 'b.json')).toEqual({ x: 1 })
+    expect((await failure(writeConfig(root, 'a.json', {}, 'x' as unknown as string[]))).code).toBe('BAD_REQUEST')
+    // The bridge sends an omitted `known` as null: the plain write.
+    await writeConfig(root, 'a.json', { y: 2 }, null)
+    expect(await readConfig(root, 'a.json')).toEqual({ y: 2 })
+  })
 })
 
 describe('createConfig (the Draw import, YAZ-3028 D6)', () => {

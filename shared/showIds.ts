@@ -17,6 +17,8 @@ export interface ShowIdsSettings {
   files: IdsInFiles
 }
 export const DEFAULT_SHOW_IDS: ShowIdsSettings = { search: 'always', title: true, files: 'off' }
+/** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
+export const SHOW_IDS_KEYS: readonly string[] = Object.keys(DEFAULT_SHOW_IDS)
 
 /**
  * What the file holds, or the default for anything else: an old file (`search` alone) reads as title On, files list

@@ -13,6 +13,8 @@
 import { isRecord } from './guards'
 
 export const ICONS_FILE = 'icons.json'
+/** The keys this build's writer owns (YAZ-5483): every other key of the file (a later version's) is kept on a save. */
+export const ICONS_KEYS: readonly string[] = ['version', 'paths']
 
 /** At most this many picks and rules: a hand edit must not grow either without end. */
 export const MAX_ICON_PATHS = 5000

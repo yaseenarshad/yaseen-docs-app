@@ -1966,10 +1966,12 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
     id: 'cards',
     title: 'Cards',
     available: (ctx) => ctx.review !== undefined,
-    vault: true,
-    page: "These settings are saved in this vault's .yaseendocs folder and sync with it.",
+    // YAZ-5483: the section is not all the vault's. The groups saved in review.json are `vault: true` (they name the
+    // vault in a window with two or more); Card look and the Inbox O row are the app's settings and say so.
+    page: "These settings are saved in this vault's .yaseendocs folder and sync with it, except the ones marked For the whole app.",
     groups: [
       {
+        vault: true,
         items: [
           {
             id: 'enabled',
@@ -2002,6 +2004,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       // rows, in groups by what they are for. Only the grouping and the order changed.
       {
         title: 'Daily limits',
+        vault: true,
         items: [
           reviewField('newPerDay', NEW_PER_DAY_FIELD, 'New cards a day', 'How many new cards the Inbox shows each day. Empty means no limit.', 'cards'),
           // YAZ-5028: beside New cards a day, the same box.
@@ -2032,6 +2035,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Answers',
+        vault: true,
         items: [
           {
             id: 'buttons',
@@ -2101,7 +2105,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // the page they can"): the app's settings, as Card look's rows: a habit of the person, not of the vault.
             id: 'inboxOpenAt',
             label: (ctx) => unit(ctx, 'Inbox: O opens the page at'),
-            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before.'),
+            hint: (ctx) => unit(ctx, 'Where O in the Inbox opens a card that is in a page: at the top of the page, or at the card, with one flash. A card file opens as before. For the whole app.'),
             keywords: [...REVIEW_KEYWORDS, 'inbox', 'open', 'o', 'top', 'card', 'land', 'jump', 'scroll'],
             available: reviewOn,
             render: (ctx) => (
@@ -2120,6 +2124,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Scheduling',
+        vault: true,
         items: [
           reviewField('retention', RETENTION_FIELD, 'Remember rate', 'How sure you want to be to remember a card when it comes back. Higher means shorter waits. 70 to 99.', '%'),
           reviewField('maxDays', wholeField('maxDays'), 'Longest wait', 'A card never waits longer than this.', 'days'),
@@ -2136,12 +2141,14 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       },
       {
         title: 'Card look',
+        // YAZ-5483: every row here writes the app's settings (`ctx.onChange`), not the vault.
+        hint: 'For the whole app: these are saved on this Mac, not in the vault.',
         items: [
           {
             // YAZ-5005: how the app looks, for every vault (the app's settings, not review.json): `data-shown-hidden-words` on `.app`.
             id: 'shownHiddenWords',
             label: 'Shown hidden words',
-            hint: 'How a hidden word looks once it shows: in the page, the Inbox and the card window. For the whole app.',
+            hint: 'How a hidden word looks once it shows: in the page, the Inbox and the card window.',
             keywords: [...REVIEW_KEYWORDS, 'cloze', 'highlight', 'underline'],
             available: reviewOn,
             render: ({ settings, onChange }) => (

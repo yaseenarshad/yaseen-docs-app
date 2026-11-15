@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, linkPillsFile, sanitizeLinkPills, type LinkPills } from '@shared/linkPills'
+import { LINK_PILLS_FILE, LINK_PILLS_KEYS, NO_LINK_PILLS, isDefaultLinkPills, linkPillsFile, sanitizeLinkPills, type LinkPills } from '@shared/linkPills'
 import { BridgeRequestError, api } from '../api'
 import type { NoticeKind } from '../lib/notice'
 
@@ -63,7 +63,7 @@ export function useLinkPills(root: string | null, onNotice: (text: string, icon?
       if (malformed.current) return onNotice(`Can't save the link pills: ${LINK_PILLS_FILE} is not valid JSON`, 'error')
       const clean = settled(next)
       setPills(clean)
-      api.vaultConfig.write(root, LINK_PILLS_FILE, linkPillsFile(clean)).catch(() =>
+      api.vaultConfig.write(root, LINK_PILLS_FILE, linkPillsFile(clean), LINK_PILLS_KEYS).catch(() =>
         api.vaultConfig.read(root, LINK_PILLS_FILE).then(
           (raw) => setPills(settled(raw)),
           () => undefined,

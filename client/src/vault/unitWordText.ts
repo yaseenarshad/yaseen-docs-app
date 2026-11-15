@@ -23,6 +23,8 @@ export interface UnitWord {
 
 export const PAGE_WORD: UnitWord = Object.freeze({ one: 'page', many: 'pages' })
 export const DEFAULT_UNIT_WORD: UnitWordSettings = Object.freeze({ unit: 'page', own: Object.freeze({ one: '', many: '' }) })
+/** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
+export const UNIT_WORD_KEYS: readonly string[] = Object.keys(DEFAULT_UNIT_WORD)
 
 /** The three built-in words, in the order the Settings row shows them. */
 export const UNIT_WORDS: Readonly<Record<Exclude<UnitChoice, 'own'>, UnitWord>> = Object.freeze({

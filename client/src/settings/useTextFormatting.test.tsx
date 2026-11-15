@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
+import { TEXT_FORMATTING_FILE, TEXT_FORMATTING_KEYS } from '@shared/textFormatting'
 import type { VaultConfigChange } from '@shared/types'
 import { NO_TEXT_FORMATTING, useTextFormatting, type TextFormattingState } from './useTextFormatting'
 
@@ -100,7 +100,7 @@ describe('useTextFormatting', () => {
     await mount('/vault')
     await act(async () => state.save({ text: { size: 17 }, h2: { size: 21, bold: undefined } }))
     expect(state.formatting).toEqual({ text: { size: 17 }, h2: { size: 21 } })
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 }, h2: { size: 21 } })
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 }, h2: { size: 21 } }, TEXT_FORMATTING_KEYS)
     write.mockRejectedValue(new Error('read-only'))
     read.mockResolvedValue({ version: 1, text: { size: 17 } })
     await act(async () => state.save({ text: { size: 20 } }))
@@ -125,6 +125,6 @@ describe('useTextFormatting', () => {
     await changed({ root: '/vault', name: TEXT_FORMATTING_FILE })
     expect(state.formatting).toEqual({ h2: { size: 21 } })
     await act(async () => state.save({ h2: { size: 22 } }))
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 1, h2: { size: 22 } })
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 1, h2: { size: 22 } }, TEXT_FORMATTING_KEYS)
   })
 })

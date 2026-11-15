@@ -10,7 +10,8 @@ import { StrictMode, act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { dailyPageName } from '@shared/dailyPage'
 import { IDS_FILE } from '@shared/pageId'
-import { TEXT_FORMATTING_FILE } from '@shared/textFormatting'
+import { TEXT_FORMATTING_FILE, TEXT_FORMATTING_KEYS } from '@shared/textFormatting'
+import { REVIEW_SETTINGS_KEYS } from '@shared/reviews'
 import { DEFAULT_SETTINGS, defaultAppState, defaultFolderState, defaultRightPanelIdentity, type AppState, type FilesAction, type FocusFolder, type InboxCarry, type ListScope, type IndexRecord, type IndexResponse, type MovedTab, type MemoryTabFacts, type PageView, type RestoreSessionResult, type SidebarTab, type StartView, type TabAction, type TabRef, type TreeNode, type TreeResponse, type UpdateState, type WindowEntry, type WindowIdentity, type ZoomStep } from '@shared/types'
 import frameDark from '@milkdown/crepe/theme/frame-dark.css?inline'
 import frameLight from '@milkdown/crepe/theme/frame.css?inline'
@@ -6285,7 +6286,7 @@ describe('App "Give this vault\u2019s pages IDs" in Settings (YAZ-2523 V4, YAZ-2
     expect(el.querySelector('.confirm__text')?.textContent).toBe('Cards will turn off. Your cards and reviews stay in the files.')
     await act(async () => sheetBtn(el, 'Turn off')?.click())
     expect(bridge.ids.set).toHaveBeenCalledExactlyOnceWith('/v', false, undefined)
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', 'review.json', expect.objectContaining({ enabled: false }))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/v', 'review.json', expect.objectContaining({ enabled: false }), REVIEW_SETTINGS_KEYS)
   })
 
   it('`ids.json` that is not valid JSON: On and Off save nothing, the front end never reads the file, and a notice says why', async () => {
@@ -6470,7 +6471,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
     expect(select.value).toBe('1')
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Text larger"]')?.click())
-    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 } }]])
+    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 } }, TEXT_FORMATTING_KEYS]])
     // The page layer of /w takes the new size at once; nothing reaches the layer of /v.
     await act(async () => {})
     expect(el.querySelector<HTMLElement>('.tabstack__layer [data-path="/w/b.md"]')?.closest<HTMLElement>('.tabstack__layer')?.style.getPropertyValue('--text-size')).toBe('17px')
@@ -6656,7 +6657,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       field.dispatchEvent(new Event('input', { bubbles: true }))
     })
     await act(async () => sheetBtn(el, 'Turn on both')?.click())
-    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }))
+    expect(bridge.vaultConfig.write).toHaveBeenLastCalledWith('/w', 'review.json', expect.objectContaining({ enabled: true }), REVIEW_SETTINGS_KEYS)
     settingsPage(el, PAGE.githubSync)
     await act(async () => turnOn('githubSync'))
     expect(bridge.github.setEnabled).toHaveBeenCalledExactlyOnceWith('/w', true)
@@ -6677,11 +6678,11 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
         })
     act(() => emitSettings())
     // Files & Links names it twice: its "This vault" group and its "Link pills" group (YAZ-4924).
-    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ['Cards', 'Vault: v'], ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
+    expect(named()).toEqual([['Files & Links', 'Vault: v'], ['Files & Links', 'Vault: v'], ...Array.from({ length: 4 }, () => ['Cards', 'Vault: v']), ['Sync', 'Vault: v'], ['Storage', 'Vault: v'], ['Sharing', 'Vault: v']])
     act(() => button(el, 'Close settings')?.click())
     show('/w/b.md')
     act(() => emitSettings())
-    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ['Cards', 'Vault: w'], ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
+    expect(named()).toEqual([['Files & Links', 'Vault: w'], ['Files & Links', 'Vault: w'], ...Array.from({ length: 4 }, () => ['Cards', 'Vault: w']), ['Sync', 'Vault: w'], ['Storage', 'Vault: w'], ['Sharing', 'Vault: w']])
   })
 
   it('two vaults that have no answer on IDs: no box for either, and nothing is written (YAZ-2677 S4)', async () => {
