@@ -535,6 +535,21 @@ export function splitBlocks(text: string, size: number): string[] {
 }
 
 /**
+ * The renderer's warm-up alone, in slices (`renderPage` runs it before its first page). YAZ-5589: the Today button runs
+ * it once the app is idle, so a warm renderer draws the first piece of a page in the same frame as the tap.
+ */
+export async function warmRenderer(look: PageLook, slice: Slice): Promise<void> {
+  if (warm) return
+  cleanLocal('<p>w</p>')
+  await slice()
+  for (const text of WARM_UP) {
+    renderPiece(text, look)
+    await slice()
+  }
+  warm = true
+}
+
+/**
  * Draws `body` (a page's Markdown, its properties left out) into `into`, in place of what it held. A long page draws
  * piece by piece, with `slice()` between pieces. `live()` false: stop (the page changed again, or closed).
  */
@@ -547,13 +562,7 @@ export async function renderPage(body: string, look: PageLook, into: HTMLElement
   // first that opens). It runs once, cut into its own slices: the cleaner, then small texts with each kind of block.
   // Then the pieces of a long page start small and grow while they are quick.
   if (!warm) {
-    cleanLocal('<p>w</p>')
-    await slice()
-    for (const text of WARM_UP) {
-      renderPiece(text, look)
-      await slice()
-    }
-    warm = true
+    await warmRenderer(look, slice)
     if (!live()) return
   }
   if (body.length <= ONE_PIECE) {

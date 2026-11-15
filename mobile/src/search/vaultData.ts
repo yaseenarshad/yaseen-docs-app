@@ -87,21 +87,51 @@ export async function loadVaultData(store: VaultStore, vault: string, repoName: 
   }
 }
 
+/**
+ * YAZ-5589: the data read last, for each phone's store (memory only). A screen that mounts starts from it, so a page
+ * opened from a tab draws in the same frame as the tap; its own read follows, and keeps this same object when nothing
+ * changed (no second draw).
+ */
+const held = new WeakMap<VaultStore, VaultData>()
+export const heldVaultData = (store: VaultStore, vault: string): VaultData | null => {
+  const data = held.get(store)
+  return data !== undefined && data.vault === vault ? data : null
+}
+/** The same vault's data (every part but `version`). */
+export const sameVaultData = (a: VaultData, b: VaultData): boolean =>
+  a.vault === b.vault &&
+  a.commit === b.commit &&
+  a.records.length === b.records.length &&
+  a.files.length === b.files.length &&
+  JSON.stringify([a.byPath, a.folders, a.files, a.letters, a.ids, a.review]) === JSON.stringify([b.byPath, b.folders, b.files, b.letters, b.ids, b.review])
+/** `next`, or the held data when it is the same: the one object the screens share, and remembered. */
+function hold(store: VaultStore, next: VaultData): VaultData {
+  const last = heldVaultData(store, next.vault)
+  const kept = last !== null && sameVaultData(last, next) ? last : next
+  held.set(store, kept)
+  return kept
+}
+/** The held data of `vault`, else read now (and held). */
+export async function vaultDataFor(store: VaultStore, vault: string, repoName: string): Promise<VaultData> {
+  return heldVaultData(store, vault) ?? hold(store, await loadVaultData(store, vault, repoName))
+}
+
 /** The open vault's data, kept current with each `changed` event of that vault; null while it loads or with no vault. */
 export function useVaultData(): VaultData | null {
   const { services, vaultKey, vault } = useApp()
   const { store, sync } = services
-  const [data, setData] = useState<VaultData | null>(null)
+  const [data, setData] = useState<VaultData | null>(() => (vaultKey === null ? null : heldVaultData(store, vaultKey)))
   const repoName = vault?.repo.split('/')[1] ?? ''
   useEffect(() => {
-    setData(null)
+    setData((d) => (vaultKey !== null && d !== null && d.vault === vaultKey ? d : vaultKey === null ? null : heldVaultData(store, vaultKey)))
     if (vaultKey === null) return
     let live = true
     let generation = 0
     const load = (index?: PhoneIndex) => {
       const mine = ++generation
       void loadVaultData(store, vaultKey, repoName, index).then((next) => {
-        if (live && mine === generation) setData(next)
+        const kept = hold(store, next)
+        if (live && mine === generation) setData(kept)
       })
     }
     load()

@@ -7,14 +7,13 @@ import { FirstDownload } from './FirstDownload'
 import { ForwardButton, Frame, vaultName } from './Frame'
 import { Friends } from './Friends'
 import { lazyScreen } from './LazyScreen'
+import { PageView, routeWaiting } from './PageScreen'
 import { Review } from './Review'
 import './reviewSlot.css'
 import { Search } from './Search'
 import { SignIn } from './SignIn'
 
-/** The reader (4C): a chunk of its own, with the Markdown renderer, so the tabs do not load it. */
-const routeWaiting = <div className="app" aria-busy="true" />
-const PageView = lazyScreen(() => import('../page/PageView'), { waiting: routeWaiting })
+// The reader (4C): `PageScreen.tsx`.
 const CardView = lazyScreen(() => import('../page/CardView'), { waiting: routeWaiting })
 /** A drawing file on its own: with the sheets' reader parts. */
 const DrawingView = lazyScreen(() => import('../explore/DrawingView'), { waiting: routeWaiting })

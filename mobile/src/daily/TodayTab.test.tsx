@@ -135,6 +135,39 @@ describe('YAZ-5470: the Today button', () => {
 })
 
 /**
+ * YAZ-5589: Today opens AT ONCE, as Search. Once the app is idle the button reads its page ahead (the chunks, the text,
+ * the look, the renderer); then a tap draws the page in the SAME frame: no waiting screen (`aria-busy`), no empty frame.
+ */
+describe('YAZ-5589: Today opens at once', () => {
+  it("todayTab_noLoadingState_whenTheDailyPageIsReadAhead: the tap's own frame shows the page, its title and text", async () => {
+    h = await open({ ...ON, 'Daily/2026-11-12.md': '# Yesterday words\n', 'Daily/2026-11-13.md': '# Today words\n\n- A made-up walk\n' })
+    await until(h, () => today(h!) !== null)
+    // The read ahead, once the app is idle (with none, the same check below fails).
+    await until(h, () => today(h!)?.dataset.ahead === 'ready').catch(() => {})
+    // One synchronous step: the tap and what React draws for it, no waiting for the storage or a chunk.
+    act(() => today(h!)!.click())
+    expect(h.host.querySelector('[aria-busy="true"]')).toBeNull()
+    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('2026-11-13')
+    expect(h.host.querySelector('.reader__body')?.textContent).toContain('A made-up walk')
+    expect(h.text()).not.toMatch(/Loading/)
+    // The rest of the draw (its cards, the title's place) in its own step.
+    await act(async () => {})
+  })
+
+  it('a tap before the read ahead keeps the screen under until the page is drawn: never the empty waiting screen', async () => {
+    h = await open({ ...ON, 'Daily/2026-11-13.md': '# Today words\n\n- A made-up swim\n' })
+    await until(h, () => today(h!) !== null)
+    const seen: boolean[] = []
+    const watch = new MutationObserver(() => seen.push(h!.host.querySelector('.app[aria-busy="true"]') !== null))
+    watch.observe(h.host, { subtree: true, childList: true, attributes: true })
+    await h.click('Today')
+    await h.waitText('A made-up swim')
+    watch.disconnect()
+    expect(seen.filter(Boolean)).toEqual([])
+  })
+})
+
+/**
  * YAZ-5557: the Today button opens today's page in the page view (`openFile`, a full page), so its calendar tables are
  * drawn and marked by the same code as any page (`useTables` → `watchCalendars` → `markCalendar`): the next time slot
  * shows there with the vault's Shade the next time slot on.
