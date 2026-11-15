@@ -16,6 +16,7 @@ import { join } from 'node:path'
  *     (`?notecards-update=1`) runs it, and from then on every open does;
  *  5. a broken deploy (a chunk missing) never installs; the last good version keeps working, also offline;
  *  6. dark mode paints the dark background.
+ * YAZ-5564: a browser tab shows only the install screen (1g); every other step runs as the Home Screen app.
  * Run after `npm run mobile:build`: `npx vite-node mobile/publish/proveOffline.ts`. Pictures go to $PROOF_DIR (or a temp folder).
  */
 
@@ -218,12 +219,15 @@ async function shot(name: string) {
   writeFileSync(join(out, `${name}.png`), Buffer.from(data, 'base64'))
 }
 const text = () => evaluate('document.body.innerText')
+/** YAZ-5564: each next document is the Home Screen app (iOS's `navigator.standalone`); a plain tab shows the install screen. */
+const asHomeScreenApp = () => send('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(Navigator.prototype, 'standalone', { configurable: true, get: () => true })` }, page)
 const shellCaches = `caches.keys().then(ks => ks.filter(k => k.startsWith('notecards-shell-')).sort())`
 
 try {
   // 0. LIVE with PROOF_EXPECT_UPDATE: this browser profile had the previous build. The new one must install, take over,
   // and run at a later open.
   if (LIVE && process.env.PROOF_EXPECT_UPDATE) {
+    await asHomeScreenApp()
     const liveEntry = /src="(\/assets\/index-[^"]+\.js)"/.exec(await fetch(`${ORIGIN}/`).then((r) => r.text()))![1]
     await open(`${ORIGIN}/`)
     // Which build runs: is the live worker's version stored yet? (An icon-only change keeps the entry's name.)
@@ -248,6 +252,19 @@ try {
 
   // 1. Online, the first open.
   await host(v1)
+  // 1g. YAZ-5564: in a browser tab the app shows only the install screen: no sign-in, no worker, no storage. The real
+  // build ignores the dev override (`?as-installed`).
+  if (!LIVE || !process.env.PROOF_EXPECT_UPDATE) {
+    for (const path of ['/', '/?as-installed']) {
+      await open(`${ORIGIN}${path}`)
+      const gate = await until(`document.body.innerText.includes('Install the app first, so your vaults download once.')`)
+      const none = await evaluate(`Promise.all([!document.querySelector('input, button, form'), navigator.serviceWorker.getRegistration().then(r => !r), indexedDB.databases().then(d => d.length === 0)])`)
+      record(`1g a browser tab (${path}): only the install screen; no sign-in, no worker, no storage`, gate && none.every(Boolean), JSON.stringify(none))
+    }
+    await shot('1g-tab-gate')
+  }
+  // From here the page is the Home Screen app, as iOS reports it (`navigator.standalone`).
+  await asHomeScreenApp()
   await open(`${ORIGIN}/`)
   record('1a the app shows (sign-in)', (await until(`!!document.querySelector('input[name="token"]')`)), '')
   const h = docHeaders.at(-1) ?? {}

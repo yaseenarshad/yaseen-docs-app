@@ -173,7 +173,7 @@ describe('the look (YAZ-5471)', () => {
     const td = box.querySelector('td')!
     expect(getComputedStyle(td).borderBottomStyle).toBe('solid')
     expect(getComputedStyle(td).borderRightStyle).not.toBe('solid')
-    expect(sheet('./tables.css')).toMatch(/@media \(prefers-color-scheme: dark\)/)
+    expect(sheet('./tables.css')).toMatch(/:root:where\(\[data-scheme='dark'\]\) \{/)
   })
 
   it("a card's table in a page gets the same frame and widths", async () => {

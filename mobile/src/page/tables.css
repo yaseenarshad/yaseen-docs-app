@@ -7,13 +7,11 @@
   --table-head-bg: color-mix(in srgb, var(--fg) 5%, var(--bg));
   --table-edge-shadow: rgba(0, 0, 0, 0.14);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --table-row-line: color-mix(in srgb, var(--fg) 14%, var(--bg));
-    --table-head-line: color-mix(in srgb, var(--fg) 24%, var(--bg));
-    --table-head-bg: color-mix(in srgb, var(--fg) 7%, var(--bg));
-    --table-edge-shadow: rgba(0, 0, 0, 0.5);
-  }
+:root:where([data-scheme='dark']) {
+  --table-row-line: color-mix(in srgb, var(--fg) 14%, var(--bg));
+  --table-head-line: color-mix(in srgb, var(--fg) 24%, var(--bg));
+  --table-head-bg: color-mix(in srgb, var(--fg) 7%, var(--bg));
+  --table-edge-shadow: rgba(0, 0, 0, 0.5);
 }
 
 /* The box: as wide as the text column; its width is what the columns share (a container query unit, `100cqw`). */
@@ -123,30 +121,28 @@
   /* The Mac's outline colour (`table.css` `--table-outline`), for a table with its own border. */
   --table-file-outline: #a8a8a8;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --table-fill-red: rgba(255, 90, 80, 0.3);
-    --table-fill-orange: rgba(255, 150, 50, 0.3);
-    --table-fill-yellow: rgba(255, 213, 0, 0.3);
-    --table-fill-green: rgba(80, 200, 120, 0.3);
-    --table-fill-teal: rgba(40, 190, 180, 0.3);
-    --table-fill-blue: rgba(80, 160, 255, 0.3);
-    --table-fill-purple: rgba(160, 110, 255, 0.3);
-    --table-fill-pink: rgba(255, 120, 180, 0.3);
-    --table-fill-grey: rgba(150, 150, 150, 0.3);
-    --table-fill-brown: rgba(170, 120, 70, 0.3);
-    --table-text-red: #ff7b72;
-    --table-text-orange: #f0a35e;
-    --table-text-yellow: #e3c04a;
-    --table-text-green: #6fd47f;
-    --table-text-teal: #4fd1c5;
-    --table-text-blue: #79b8ff;
-    --table-text-purple: #c39bff;
-    --table-text-pink: #ff8fc0;
-    --table-text-grey: #a0a0a0;
-    --table-text-brown: #c99a6e;
-    --table-file-outline: #757575;
-  }
+:root:where([data-scheme='dark']) {
+  --table-fill-red: rgba(255, 90, 80, 0.3);
+  --table-fill-orange: rgba(255, 150, 50, 0.3);
+  --table-fill-yellow: rgba(255, 213, 0, 0.3);
+  --table-fill-green: rgba(80, 200, 120, 0.3);
+  --table-fill-teal: rgba(40, 190, 180, 0.3);
+  --table-fill-blue: rgba(80, 160, 255, 0.3);
+  --table-fill-purple: rgba(160, 110, 255, 0.3);
+  --table-fill-pink: rgba(255, 120, 180, 0.3);
+  --table-fill-grey: rgba(150, 150, 150, 0.3);
+  --table-fill-brown: rgba(170, 120, 70, 0.3);
+  --table-text-red: #ff7b72;
+  --table-text-orange: #f0a35e;
+  --table-text-yellow: #e3c04a;
+  --table-text-green: #6fd47f;
+  --table-text-teal: #4fd1c5;
+  --table-text-blue: #79b8ff;
+  --table-text-purple: #c39bff;
+  --table-text-pink: #ff8fc0;
+  --table-text-grey: #a0a0a0;
+  --table-text-brown: #c99a6e;
+  --table-file-outline: #757575;
 }
 .page-table-box .page-table-frame .page-table table :is(th, td) {
   background-image: linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
@@ -222,9 +218,7 @@
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
 /* A custom text colour: made readable on each theme's page (`tableFile.ts` `readableInk`). */
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-light); }
-@media (prefers-color-scheme: dark) {
-  .page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-dark); }
-}
+:where([data-scheme='dark']) .page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-dark); }
 
 /* The header row's own look (`header …`): a colour at the Mac's strengths (Light 6%, Medium 12%, Strong 20% of the text
    colour; a colour 2.5 times that, Black 5 times), mixed into the page's colour so it stays solid when it sticks. Plain

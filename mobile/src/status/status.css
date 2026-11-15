@@ -9,11 +9,9 @@
   --dot-attention: var(--danger);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --dot-pending: var(--warn);
-    --dot-syncing: #5aa2f5;
-  }
+:root:where([data-scheme='dark']) {
+  --dot-pending: var(--warn);
+  --dot-syncing: #5aa2f5;
 }
 
 /* One line in the top bar. It never wraps, so the bar keeps its height. The box is at least as wide as "Syncing…",

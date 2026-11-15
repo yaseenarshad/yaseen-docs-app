@@ -31,7 +31,7 @@ const contrast = (a: string, b: string) => {
 }
 
 const light = { ...tokens(block(app, ':root {')), ...tokens(block(css, ':root {')) }
-const dark = { ...light, ...tokens(block(app, '@media (prefers-color-scheme: dark)')), ...tokens(block(css, '@media (prefers-color-scheme: dark)')) }
+const dark = { ...light, ...tokens(block(app, ":root:where([data-scheme='dark'])")), ...tokens(block(css, ":root:where([data-scheme='dark'])")) }
 const resolve = (theme: Record<string, string>, value: string): string => (value.startsWith('var(') ? resolve(theme, theme[value.slice(4, -1)]) : value)
 const DOTS = ['--dot-synced', '--dot-pending', '--dot-syncing', '--dot-off', '--dot-attention']
 
@@ -54,7 +54,7 @@ describe('the colours', () => {
 
   it("green, amber and red are the Mac's own tokens where they pass; blue and grey are the mockup's and the Mac's", () => {
     expect(tokens(block(css, ':root {'))).toMatchObject({ '--dot-synced': 'var(--ok)', '--dot-attention': 'var(--danger)', '--dot-off': 'var(--fg-muted)' })
-    expect(tokens(block(css, '@media (prefers-color-scheme: dark)'))).toMatchObject({ '--dot-pending': 'var(--warn)' })
+    expect(tokens(block(css, ":root:where([data-scheme='dark'])"))).toMatchObject({ '--dot-pending': 'var(--warn)' })
   })
 
   it('the five states are five different colours in each mode, and grey is a ring, not a filled dot', () => {

@@ -8,13 +8,11 @@
   --fr-done: var(--ok);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --fr-muted: #9e9e9e;
-    --fr-cheer: var(--accent);
-    --fr-started: var(--warn);
-    --fr-done: var(--ok);
-  }
+:root:where([data-scheme='dark']) {
+  --fr-muted: #9e9e9e;
+  --fr-cheer: var(--accent);
+  --fr-started: var(--warn);
+  --fr-done: var(--ok);
 }
 
 .fr-wait {

@@ -4,6 +4,7 @@ import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
+import { AppearancePart } from '../settings/AppearancePart'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
@@ -63,6 +64,8 @@ export function Settings() {
       {app.vaultKey !== null && <VaultHealth />}
 
       <FriendsPart />
+
+      <AppearancePart />
 
       <AboutPart />
 

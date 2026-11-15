@@ -82,6 +82,9 @@ export function specificity(selector: string): number {
   return ids * 1e6 + classes * 1e3 + types + extra
 }
 
+/** The page's dark theme (`settings/appearance.ts`): the condition of every dark rule. */
+const DARK = ":where([data-scheme='dark'])"
+
 export function parseSheets(sheets: Sheet[], theme: Theme, width: number): Rule[] {
   const rules: Rule[] = []
   let order = 0
@@ -109,11 +112,14 @@ export function parseSheets(sheets: Sheet[], theme: Theme, width: number): Rule[
             const k = d.indexOf(':')
             if (k > 0) decls.push([d.slice(0, k).trim().toLowerCase(), d.slice(k + 1).trim().replace(/\s*!important$/, '')])
           }
-          for (const sel of splitTop(head, ',')) {
+          for (const raw of splitTop(head, ',')) {
+            // YAZ-5565: a dark rule is `:where([data-scheme='dark'])` (Settings › Appearance): it holds in the dark theme only.
+            if (raw.includes(DARK) && theme !== 'dark') continue
+            const sel = raw.replace(DARK, '').trim()
             const pm = /::?(placeholder|before|after)\s*$/.exec(sel)
             const base = (pm ? sel.slice(0, pm.index) : sel).trim() || '*'
             if (/::[\w-]+/.test(base)) continue // other pseudo-elements: scrollbars, selection, webkit parts
-            rules.push({ file: sheet.file, selector: base, pseudo: pm ? `::${pm[1]}` : null, spec: specificity(sel), order: order++, decls })
+            rules.push({ file: sheet.file, selector: base, pseudo: pm ? `::${pm[1]}` : null, spec: specificity(raw), order: order++, decls })
           }
         }
         i = j

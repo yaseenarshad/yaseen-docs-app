@@ -11,7 +11,7 @@ const here = new URL('..', import.meta.url).pathname
 const read = (path: string) => readFileSync(join(here, path), 'utf8')
 const css = read('src/styles.css')
 const token = (block: 'light' | 'dark', name: string) => {
-  const from = block === 'light' ? css.indexOf(':root {') : css.indexOf('@media (prefers-color-scheme: dark)')
+  const from = block === 'light' ? css.indexOf(':root {') : css.indexOf(":root:where([data-scheme='dark'])")
   return new RegExp(`${name}:\\s*(#[0-9a-f]{6});`).exec(css.slice(from))![1]
 }
 const manifest = JSON.parse(read('public/manifest.webmanifest'))

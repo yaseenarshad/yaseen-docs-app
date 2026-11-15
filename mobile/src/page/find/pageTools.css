@@ -4,11 +4,9 @@
   --find-match-bg: rgba(255, 213, 0, 0.35);
   --find-match-active-bg: #ffd400;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --find-match-bg: rgba(255, 213, 0, 0.22);
-    --find-match-active-bg: #e6bf00;
-  }
+:root:where([data-scheme='dark']) {
+  --find-match-bg: rgba(255, 213, 0, 0.22);
+  --find-match-active-bg: #e6bf00;
 }
 ::highlight(find-match) {
   background-color: var(--find-match-bg);
