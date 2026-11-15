@@ -18,13 +18,13 @@ export const FILTERS: readonly { id: CardFilter; label: string }[] = [
   { id: 'new', label: 'New cards' },
 ]
 
-/** The mockup's glyph of each list (YAZ-5415, round 3): the count at the top and the review sheet. */
+/** The mockup's glyph of each list (round 3): the count at the top and the review sheet. */
 export const FILTER_ICON: Record<CardFilter, string> = { all: '▣', next: '⤒', due: '◷', new: '◌' }
 
-/** The hint line (YAZ-5415): "Tap anywhere · 3 left" while parts hide, "Did you remember it?" once all show. */
+/** The hint line: "Tap anywhere · 3 left" while parts hide, "Did you remember it?" once all show. */
 export const hintText = (left: number): string => (left > 0 ? `Tap anywhere · ${left} left` : 'Did you remember it?')
 
-/** How long "↶ Undo" stays in the hint line after an answer or an action (YAZ-5415, round 5). It stays in ⋯. */
+/** How long "↶ Undo" stays in the hint line after an answer or an action (round 5). It stays in ⋯. */
 export const UNDO_SHOWN_MS = 4000
 
 export const filterLabel = (filter: CardFilter): string => FILTERS.find((f) => f.id === filter)?.label ?? 'All cards'
@@ -35,7 +35,7 @@ export const filterDone = (filter: CardFilter): string => (filter === 'due' ? 'N
 /** Round 12, item 9: the amber line. "1 answer could not be saved". */
 export const lostTitle = (n: number): string => `${n} answer${n === 1 ? '' : 's'} could not be saved`
 
-/** What a lost action was, in the ONE word table of the dot and the Review tab (`status/dot.ts`, YAZ-5227). */
+/** What a lost action was, in the ONE word table of the dot and the Review tab (`status/dot.ts`). */
 export function lostAction(op: CardOp, _s?: ReviewSettings): string {
   return lostRows([{ seq: 0, op, path: '', title: '', lostAt: 0 }])[0].answer
 }

@@ -1,4 +1,4 @@
-/* THE END OF DUE TODAY ON THE PHONE (YAZ-5495; the Mac's `dueTodayEnd.css`, YAZ-5043, Option A). In the Review chunk,
+/* THE END OF DUE TODAY ON THE PHONE (the Mac's `dueTodayEnd.css`, YAZ-5043, Option A). In the Review chunk,
    never in the first load. The ring comes down from the step bar flat as a line, rounds into a ring, fills to the % in
    600 ms, and four dots float out once. Done: it closes in green and the ✓ shows. Every animation here is `transform`
    or `opacity` (the compositor runs them): the fill is two half rings that TURN into place (`ringTurns` in

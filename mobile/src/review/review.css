@@ -1,8 +1,8 @@
-/* The Review tab (4B, YAZ-5078). Clean and plain on 4A's tokens; the fine look is tuned in the demo round (7-).
+/* The Review tab (4B). Clean and plain on 4A's tokens; the fine look is tuned in the demo round (7-).
    The card itself wears the Mac's own styles (`card.css`, `table.css`, `cardScreens.css`). These are the Mac's values of
    the three tokens those styles read that the phone's frame does not set (`client/src/app.css`, light and dark). */
 :root {
-  /* The lost line's text (YAZ-5234): the phone's own darker amber, 5.9:1 on white. The Mac's --warn stays for borders. */
+  /* The lost line's text: the phone's own darker amber, 5.9:1 on white. The Mac's --warn stays for borders. */
   --review-warn-text: #8a5a00;
   --bg-hover: #eeeef0;
   --next-hidden: #2a8bd1;
@@ -18,7 +18,7 @@
 }
 
 /* `.review`, `.review--waiting`, `.review--off`, `.review-slot` and `.review-host` are in `screens/reviewSlot.css`: the
-   first load draws them (the Review tab's place and its "Loading…" before this chunk comes; YAZ-5363). */
+   first load draws them (the Review tab's place and its "Loading…" before this chunk comes). */
 
 /* ---- YAZ-5415: the Mochi look (round 5 of the mockup). One line at the top (the shell's top bar draws the dot and the
    gear; this screen draws the count into its middle), a thin progress bar in steps, the card with its chip and crumb
@@ -336,7 +336,7 @@
   display: none;
 }
 
-/* YAZ-5538: no press look on the card. A tap shows the next part (or rings ✕ and ✓), and that is all it does: the
+/* No press look on the card. A tap shows the next part (or rings ✕ and ✓), and that is all it does: the
    accent tint that flashed on each tap is gone, as the Mac's card has none. */
 
 .review__cardtop {
@@ -418,7 +418,7 @@
 .review__id {
   color: var(--fg-muted);
   font-size: 13px;
-  /* The card ID is one word ("NC-48"): never broken over two lines (YAZ-5299). The title wraps. */
+  /* The card ID is one word ("NC-48"): never broken over two lines. The title wraps. */
   white-space: nowrap;
 }
 
@@ -429,11 +429,11 @@
 }
 
 .review__card .phone-card__body {
-  /* YAZ-5484: the vault's Card text size and Card spacing (card-look.json, `page/cardLook.ts`), else the phone's own. */
+  /* The vault's Card text size and Card spacing (card-look.json, `page/cardLook.ts`), else the phone's own. */
   font-size: var(--card-text-size, 17px);
   line-height: var(--card-line-height, 1.55);
 }
-/* YAZ-5484: the vault's space between blocks, on top of the phone's own; its Card width only as a max (a narrow screen
+/* The vault's space between blocks, on top of the phone's own; its Card width only as a max (a narrow screen
    fills its width); its Card title size on the title. */
 .review__card .phone-card__body .card__side > p {
   padding-block: var(--card-block-gap, 0);
@@ -453,7 +453,7 @@
   user-select: text;
 }
 
-/* YAZ-5448: a code block wraps its long lines (front, back and the hidden parts): `pre-wrap` keeps the indents, a long
+/* A code block wraps its long lines (front, back and the hidden parts): `pre-wrap` keeps the indents, a long
    word breaks anywhere. Inline code too. */
 .review__card pre {
   white-space: pre-wrap;
@@ -498,7 +498,7 @@
   }
 }
 
-/* YAZ-5538: a part that shows simply shows: no press tint on the hidden word, no flash once it is shown. */
+/* A part that shows simply shows: no press tint on the hidden word, no flash once it is shown. */
 
 /* More of the card below: a soft fade at its foot and a small "↓ more"; both go at the end. */
 .review__fade {
@@ -555,7 +555,7 @@
   text-align: center;
 }
 
-/* YAZ-5500: "Last: Capital of Spain (Forgot)" — one quiet line; a long title gives way with "…", the answer word stays. */
+/* "Last: Capital of Spain (Forgot)" — one quiet line; a long title gives way with "…", the answer word stays. */
 .review__lastanswer {
   display: inline-flex;
   min-width: 0;
@@ -575,7 +575,7 @@
   white-space: pre;
 }
 
-/* YAZ-5500: "· ↶ Undo" after the answer word: the button sits close, its 44 pt box still reaches the finger. */
+/* "· ↶ Undo" after the answer word: the button sits close, its 44 pt box still reaches the finger. */
 .review__lastanswer-sep {
   flex: none;
   white-space: pre;
@@ -722,7 +722,7 @@
   font-size: 20px;
 }
 
-/* THE END (the Mac's end cue, YAZ-5049 round 3): one more tap when every part shows bounces ✕ and ✓ once, with a soft
+/* THE END (the Mac's end cue): one more tap when every part shows bounces ✕ and ✓ once, with a soft
    ring. Two names, so each new tap plays it again. With Reduce motion: the ring alone, as on the Mac. */
 .review__answers[data-nudge='a'] .review__answer {
   animation: review-nudge-a 0.55s cubic-bezier(0.3, 1.6, 0.5, 1);
@@ -891,9 +891,9 @@
   color: var(--danger);
 }
 
-/* ---- The kept tab (YAZ-5224): the Review box fills the screen as the tab did ---- */
+/* ---- The kept tab: the Review box fills the screen as the tab did ---- */
 
-/* For VoiceOver only (YAZ-5229). */
+/* For VoiceOver only. */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -907,32 +907,32 @@
 }
 
 /* A card's sound: as wide as its parts, not the whole card, so the middle of a short card stays a tap that steps
-   (YAZ-5298). Only Play and the bar are the player's own taps. */
+  . Only Play and the bar are the player's own taps. */
 .review__card .card__audio {
   display: inline-flex;
 }
 
-/* A card's sound: the Mac's 24 px button, 44 pt to a finger here (YAZ-5233). */
+/* A card's sound: the Mac's 24 px button, 44 pt to a finger here. */
 .review__card .card__audio-play {
   min-width: var(--tap);
   min-height: var(--tap);
 }
 
-/* A sound's progress bar (YAZ-5317, YAZ-5333): on the phone it shows the progress only. It takes no tap (a 4 px line
+/* A sound's progress bar: on the phone it shows the progress only. It takes no tap (a 4 px line
    is no target, and a 44 pt box around it covered the middle of a short card): a tap on it steps the card. Play is the
    player's one control, 44 × 44. */
 .review__card .card__audio-bar {
   cursor: inherit;
 }
 
-/* ---- "A new version is ready." (YAZ-5313) ----
+/* ---- "A new version is ready." ----
    The line is 5-'s (`pwa/update.css`): fixed over the tab bar. While it shows, the controls keep the room it needs
    above it, so the line never lies over Undo or the answer buttons. */
 #root:has(> .update-line) {
   --update-room: 72px;
 }
 
-/* ---- Narrow screens (YAZ-5231, YAZ-5415): four answer buttons do not fit centred at 320 px; they take the middle ---- */
+/* ---- Narrow screens: four answer buttons do not fit centred at 320 px; they take the middle ---- */
 @media (max-width: 374px) {
   .review__ctrl:has([data-count='4']) {
     grid-template-columns: auto 1fr auto;

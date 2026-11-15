@@ -3,7 +3,7 @@ import type { DueTodayEnd } from '@client/review/useCardReview'
 import './dueEnd.css'
 
 /**
- * THE END OF DUE TODAY ON THE PHONE (YAZ-5495; the Mac's `DueTodayEnd.tsx`, YAZ-5043, Option A). The stop itself is
+ * THE END OF DUE TODAY ON THE PHONE (the Mac's `DueTodayEnd.tsx`, YAZ-5043, Option A). The stop itself is
  * the Mac's shared hook (`useCardReview`'s `end`, `goOn`): the same rules, the same words. This is its screen, made for
  * a phone:
  *
