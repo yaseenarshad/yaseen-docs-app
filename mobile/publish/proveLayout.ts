@@ -18,9 +18,13 @@ import { join } from 'node:path'
  *    line, no column is too narrow to read, the page never scrolls sideways.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
+ *  - the folder page (`#fixture=folder-*`, YAZ-5460), light and dark, at 375 px: a held folder's menu, the page with
+ *    its text and tabs, its table (in its box, the header row and the Name column marked to stay), the grouped table,
+ *    the board (its columns scroll sideways in their row), the cards, the calendar's agenda, the page in a sheet; the
+ *    page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_FOLDERS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -279,6 +283,51 @@ if (process.env.LAYOUT_LOOK !== 'no') {
     const ok = m.blocks > 20 && !m.wide
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-look ${scheme} at 375x667: ${m.blocks} blocks, ${m.height}px tall; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}; ${shots.length} pictures  ${shots[0]}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5460: the folder page and its views, light and dark, at 375 px.
+const FOLDER_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.folder-table table')
+  const board = document.querySelector('.folder-board')
+  const narrow = table ? [...table.rows[0].cells].filter((c) => r(c).width < 44).map((c) => c.textContent) : []
+  return {
+    menu: !!document.querySelector('.hold-menu [role=menu]'),
+    page: !!document.querySelector('.folder-page'),
+    tabs: document.querySelectorAll('.folder-tabs__tab').length,
+    table: !!table,
+    pinned: table ? table.getAttribute('data-pin-rows') === '1' && table.getAttribute('data-pin-cols') === '1' : null,
+    inBox: table ? !!table.closest('.page-table-box') : null,
+    narrow,
+    board: board ? { columns: board.children.length, scrolls: board.scrollWidth > board.clientWidth + 1 } : null,
+    cards: document.querySelectorAll('.folder-card').length,
+    agenda: document.querySelectorAll('.folder-agenda__day').length,
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 || [...document.querySelectorAll('.screen, .explore-sheet__body')].some((s) => s.scrollWidth > s.clientWidth + 1),
+  }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  const want: Record<string, (m: any) => boolean> = {
+    'folder-hold': (m) => m.menu,
+    'folder-page': (m) => m.page && m.tabs === 5 && m.table && m.pinned && m.inBox,
+    'folder-table': (m) => m.table && m.pinned && m.inBox && m.narrow.length === 0,
+    'folder-grouped': (m) => m.table && m.pinned && m.narrow.length === 0,
+    'folder-board': (m) => m.board !== null && m.board.columns === 3 && m.board.scrolls && m.cards === 5,
+    'folder-cards': (m) => m.cards === 5,
+    'folder-calendar': (m) => m.agenda === 5,
+    'folder-sheet': (m) => m.page && m.table,
+  }
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [name, check] of Object.entries(want)) {
+      const file = await open(name, 375, 667)
+      const m = await evaluate(FOLDER_CHECK)
+      const ok = check(m) && !m.pageWide
+      if (!ok) failed++
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

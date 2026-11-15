@@ -6,6 +6,7 @@ import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
+import { FOLDER_FILES } from './folderVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
 import { FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
@@ -27,8 +28,12 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
 
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
+ * YAZ-5460: the folder page on the made-up `Projects` folder (`folderVault.ts`): `folder-hold` the menu of a held
+ * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
+ * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (every day, "Earlier" open) its other views;
+ * `folder-sheet` the page in a sheet over Search (the vault says "explore").
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -180,6 +185,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
           : name === 'card-file-comments'
             ? { 'cards/river-of-seville-demo-45.md': COMMENTED_CARD }
+          : name.startsWith('folder-')
+            ? { ...FOLDER_FILES, ...(name === 'folder-sheet' && { '.yaseendocs/link-click.json': '{"click":"explore"}' }) }
             : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
@@ -219,7 +226,45 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   }
   const fakeClipboard = (works: boolean) =>
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => (works ? Promise.resolve() : Promise.reject(new DOMException('Not allowed', 'NotAllowedError'))) } })
+  /** YAZ-5460: a finger held on a folder row of the tree, as long as the hold. */
+  const hold = async (folder: string) => {
+    const row = [...document.querySelectorAll<HTMLElement>('.tree__row')].find((r) => r.querySelector('.tree__label')?.textContent === folder)
+    row?.dispatchEvent(new (typeof PointerEvent === 'function' ? PointerEvent : MouseEvent)('pointerdown', { bubbles: true, button: 0, clientX: 40, clientY: 40 }))
+    await until(() => document.querySelector('.hold-menu') !== null, 1500)
+    await wait(250)
+  }
+  const folderTab = async (tab: string) => {
+    press(/^Open folder page$/)
+    await until(() => document.querySelector('.folder-view') !== null)
+    if (tab !== '') press(tab)
+    await wait(400)
+  }
   switch (name) {
+    case 'folder-hold':
+      await hold('Projects')
+      break
+    case 'folder-page':
+    case 'folder-sheet':
+      await hold('Projects')
+      await folderTab('')
+      break
+    case 'folder-table':
+      await hold('Projects')
+      await folderTab('')
+      document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
+      await wait(150)
+      break
+    case 'folder-grouped':
+    case 'folder-board':
+    case 'folder-cards':
+    case 'folder-calendar':
+      await hold('Projects')
+      await folderTab({ 'folder-grouped': 'By status', 'folder-board': 'Board', 'folder-cards': 'Cards', 'folder-calendar': 'Calendar' }[name])
+      if (name === 'folder-calendar') press(/^Earlier/)
+      await wait(150)
+      document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
+      await wait(150)
+      break
     case 'page-copied':
     case 'page-copy-by-hand':
       fakeClipboard(name === 'page-copied')

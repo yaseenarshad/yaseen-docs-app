@@ -45,6 +45,14 @@ export default function FolderBody({ path, onDrawn, sheet = true }: { path: stri
     lastTab.set(key, index)
     setTab(index)
   }
+  // The open tab in sight in its row (the row scrolls sideways): a fresh open on the Calendar shows its tab.
+  const tabs = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const row = tabs.current
+    const on = row?.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (row == null || on == null) return
+    if (on.offsetLeft + on.offsetWidth > row.scrollLeft + row.clientWidth || on.offsetLeft < row.scrollLeft) row.scrollLeft = on.offsetLeft - 16
+  }, [shown, model])
   const there = data === null || data.folders.some((f) => f.folder === path) || data.records.some((r) => r.folder === path || r.folder.startsWith(`${path}/`))
   return (
     <article className="reader folder-page" aria-label={model?.title ?? path}>
@@ -57,7 +65,7 @@ export default function FolderBody({ path, onDrawn, sheet = true }: { path: stri
         <>
           <FolderText model={model} sheet={sheet} onDrawn={onDrawn} />
           {model.tabs.length > 0 && (
-            <div className="folder-tabs" role="tablist" aria-label="Views">
+            <div className="folder-tabs" role="tablist" aria-label="Views" ref={tabs}>
               {model.tabs.map((t) => (
                 <button key={t.index} type="button" role="tab" className="folder-tabs__tab" data-type={t.type} aria-selected={t.index === shown} onClick={() => choose(t.index)}>
                   <span className="folder-tabs__glyph" aria-hidden />
