@@ -12,7 +12,10 @@ import { join } from 'node:path'
  *  - the tables (`#fixture=page-tables`, `page-table-full`, YAZ-5471): words whole, the wide one scrolls in its box;
  *  - the frozen table (`#fixture=page-table-frozen`, `page-table-frozen-full`, YAZ-5480): while the page scrolls down
  *    and the table sideways, its two frozen rows stay at the top and its frozen column at the left; at the table's end
- *    the rows stop inside it; full screen too.
+ *    the rows stop inside it; full screen too;
+ *  - the table look (`#fixture=page-table-look`, YAZ-5482), light and dark: the merged cells span their rows and
+ *    columns, the fills and text colours paint (a custom dark ink made readable in dark mode), a clipped cell is one
+ *    line, no column is too narrow to read, the page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go).
  */
@@ -218,6 +221,43 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-frozen-full at 375x667: scale ${m.scale}; scrolled ${m.scrolled?.join(',')}, header ${m.headTop}px from the top and ${m.headLeft}px from the left, column ${m.bodyLeft}px from the left (rows ${m.ranges})  ${file}`)
   }
+}
+// YAZ-5482: the file's look on the phone, in light and dark (`src/dev/tableFixtures.ts`: LOOK, LOOK_CLIP).
+const LOOK_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const [look, clip] = [...document.querySelectorAll('.reader__body table')]
+  const row = (i) => look.rows[i]
+  const garden = row(1).cells[0], kitchen = row(3).cells[0], total = row(5).cells[1]
+  const heads = [...look.rows[0].cells]
+  const ink = getComputedStyle(row(4).cells[4]).color
+  const fills = [row(2).cells[0], row(2).cells[3], row(3).cells[4], heads[0]].map((c) => getComputedStyle(c).backgroundImage.includes('rgb'))
+  const box = clip.rows[1].querySelector('.page-table__clip')
+  const narrow = [...document.querySelectorAll('.reader__body table')].flatMap((t) => [...t.rows[0].cells].map((c) => Math.round(r(c).width))).filter((w) => w < 44)
+  return {
+    rowspan: Math.round(r(garden).height) === Math.round(r(row(2)).bottom - r(row(1)).top),
+    colspan: Math.abs(r(total).width - (r(heads[1]).width + r(heads[2]).width)) <= 1,
+    kitchenBelow: r(kitchen).top >= r(garden).bottom - 1,
+    fills, ink, clipCut: !!box && box.scrollWidth > box.clientWidth, clipOneLine: !!box && r(box).height < 30,
+    narrow, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+    clipInfo: box && [box.scrollWidth, box.clientWidth, box.style.maxWidth, Math.round(r(box).height), box.textContent.slice(0, 20)],
+  }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('page-table-look', 375, 667)
+    const m = await evaluate(LOOK_CHECK)
+    const dark = scheme === 'dark'
+    const ok = m.rowspan && m.colspan && m.kitchenBelow && m.fills.every(Boolean) && m.ink === (dark ? 'rgb(141, 141, 160)' : 'rgb(26, 26, 64)') && m.clipCut && m.clipOneLine && m.narrow.length === 0 && !m.pageWide
+    if (!ok) failed++
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    await evaluate(`document.querySelectorAll('.reader__body table')[1].scrollIntoView({ block: 'center' })`)
+    await wait(200)
+    writeFileSync(shot.replace('.png', '-clip.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-look at 375x667, ${scheme}: merged ${m.rowspan ? 'rows' : 'ROWS NOT'} and ${m.colspan ? 'columns' : 'COLUMNS NOT'}; fills ${m.fills.map((f: boolean) => (f ? 'Y' : 'n')).join('')}; custom ink ${m.ink}; clip ${m.clipCut && m.clipOneLine ? 'one line, cut' : 'NOT CUT ' + JSON.stringify(m.clipInfo)}; narrow columns ${m.narrow.length === 0 ? 'none' : m.narrow.join(',')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()
 server.close()

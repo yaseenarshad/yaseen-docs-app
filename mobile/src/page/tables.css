@@ -68,7 +68,7 @@
 }
 :is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table th {
   border-bottom-color: var(--table-head-line);
-  background: var(--table-head-bg);
+  background-color: var(--table-head-bg);
   font-weight: 600;
   vertical-align: bottom;
 }
@@ -82,6 +82,176 @@
 :is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table :is(th, td)[align='right'] {
   text-align: end;
 }
+/* YAZ-5482: THE FILE'S LOOK, translated for the phone (`tableFile.ts` reads the table comment with the Mac's parser).
+   A cell's tint (its fill, or a stripe) is a layer over its own colour (the page, or the header's shade, solid under a
+   frozen cell), so a frozen cell keeps its fill and still hides what passes under it. The colours are the Mac's ten
+   (`client/src/editor/table/table.css`), each with its light and its dark shade; set on the root, so the full-screen
+   view has them too. */
+:root {
+  --table-fill-red: rgba(255, 90, 80, 0.35);
+  --table-fill-orange: rgba(255, 150, 50, 0.35);
+  --table-fill-yellow: rgba(255, 213, 0, 0.4);
+  --table-fill-green: rgba(80, 200, 120, 0.35);
+  --table-fill-teal: rgba(40, 190, 180, 0.35);
+  --table-fill-blue: rgba(80, 160, 255, 0.35);
+  --table-fill-purple: rgba(160, 110, 255, 0.35);
+  --table-fill-pink: rgba(255, 120, 180, 0.35);
+  --table-fill-grey: rgba(150, 150, 150, 0.35);
+  --table-fill-brown: rgba(170, 120, 70, 0.35);
+  --table-text-red: #c0392b;
+  --table-text-orange: #b45309;
+  --table-text-yellow: #a16207;
+  --table-text-green: #2e7d32;
+  --table-text-teal: #0f766e;
+  --table-text-blue: #1d5fbf;
+  --table-text-purple: #7b3fbf;
+  --table-text-pink: #c2185b;
+  --table-text-grey: #6b6b6b;
+  --table-text-brown: #8b5a2b;
+  --table-fill-solid-red: rgb(255, 90, 80);
+  --table-fill-solid-orange: rgb(255, 150, 50);
+  --table-fill-solid-yellow: rgb(255, 213, 0);
+  --table-fill-solid-green: rgb(80, 200, 120);
+  --table-fill-solid-teal: rgb(40, 190, 180);
+  --table-fill-solid-blue: rgb(80, 160, 255);
+  --table-fill-solid-purple: rgb(160, 110, 255);
+  --table-fill-solid-pink: rgb(255, 120, 180);
+  --table-fill-solid-black: rgb(18, 18, 18);
+  /* The Mac's outline colour (`table.css` `--table-outline`), for a table with its own border. */
+  --table-file-outline: #a8a8a8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --table-fill-red: rgba(255, 90, 80, 0.3);
+    --table-fill-orange: rgba(255, 150, 50, 0.3);
+    --table-fill-yellow: rgba(255, 213, 0, 0.3);
+    --table-fill-green: rgba(80, 200, 120, 0.3);
+    --table-fill-teal: rgba(40, 190, 180, 0.3);
+    --table-fill-blue: rgba(80, 160, 255, 0.3);
+    --table-fill-purple: rgba(160, 110, 255, 0.3);
+    --table-fill-pink: rgba(255, 120, 180, 0.3);
+    --table-fill-grey: rgba(150, 150, 150, 0.3);
+    --table-fill-brown: rgba(170, 120, 70, 0.3);
+    --table-text-red: #ff7b72;
+    --table-text-orange: #f0a35e;
+    --table-text-yellow: #e3c04a;
+    --table-text-green: #6fd47f;
+    --table-text-teal: #4fd1c5;
+    --table-text-blue: #79b8ff;
+    --table-text-purple: #c39bff;
+    --table-text-pink: #ff8fc0;
+    --table-text-grey: #a0a0a0;
+    --table-text-brown: #c99a6e;
+    --table-file-outline: #757575;
+  }
+}
+.page-table-box .page-table-frame .page-table table :is(th, td) {
+  background-image: linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
+/* Stripes: every second body row, as the Mac's. */
+.page-table-box .page-table-frame .page-table table[data-stripes] tbody tr:nth-child(even) > td {
+  --cell-tint: color-mix(in srgb, var(--fg) 4%, transparent);
+}
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='red'] { --cell-tint: var(--table-fill-red); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='orange'] { --cell-tint: var(--table-fill-orange); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='yellow'] { --cell-tint: var(--table-fill-yellow); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='green'] { --cell-tint: var(--table-fill-green); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='teal'] { --cell-tint: var(--table-fill-teal); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='blue'] { --cell-tint: var(--table-fill-blue); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='purple'] { --cell-tint: var(--table-fill-purple); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='pink'] { --cell-tint: var(--table-fill-pink); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='grey'] { --cell-tint: var(--table-fill-grey); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='brown'] { --cell-tint: var(--table-fill-brown); }
+/* A custom fill: the Mac's wash of it (35%, both themes). */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-fill^='#'] { --cell-tint: color-mix(in srgb, var(--table-fill-custom) 35%, transparent); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='red'] { color: var(--table-text-red); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='orange'] { color: var(--table-text-orange); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='yellow'] { color: var(--table-text-yellow); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='green'] { color: var(--table-text-green); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='teal'] { color: var(--table-text-teal); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='blue'] { color: var(--table-text-blue); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='purple'] { color: var(--table-text-purple); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='pink'] { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='grey'] { color: var(--table-text-grey); }
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color='brown'] { color: var(--table-text-brown); }
+/* A custom text colour: made readable on each theme's page (`tableFile.ts` `readableInk`). */
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-light); }
+@media (prefers-color-scheme: dark) {
+  .page-table-box .page-table-frame .page-table table :is(th, td)[data-color^='#'] { color: var(--cell-ink-dark); }
+}
+
+/* The header row's own look (`header …`): a colour at the Mac's strengths (Light 6%, Medium 12%, Strong 20% of the text
+   colour; a colour 2.5 times that, Black 5 times), mixed into the page's colour so it stays solid when it sticks. Plain
+   (strength off) is no shade. Its weight, text colour and alignment. */
+.page-table-box table[data-header-color='gray'] { --th-hue: var(--fg); --th-scale: 1; }
+.page-table-box table[data-header-color='red'] { --th-hue: var(--table-fill-solid-red); --th-scale: 2.5; }
+.page-table-box table[data-header-color='orange'] { --th-hue: var(--table-fill-solid-orange); --th-scale: 2.5; }
+.page-table-box table[data-header-color='yellow'] { --th-hue: var(--table-fill-solid-yellow); --th-scale: 2.5; }
+.page-table-box table[data-header-color='green'] { --th-hue: var(--table-fill-solid-green); --th-scale: 2.5; }
+.page-table-box table[data-header-color='teal'] { --th-hue: var(--table-fill-solid-teal); --th-scale: 2.5; }
+.page-table-box table[data-header-color='blue'] { --th-hue: var(--table-fill-solid-blue); --th-scale: 2.5; }
+.page-table-box table[data-header-color='purple'] { --th-hue: var(--table-fill-solid-purple); --th-scale: 2.5; }
+.page-table-box table[data-header-color='pink'] { --th-hue: var(--table-fill-solid-pink); --th-scale: 2.5; }
+.page-table-box table[data-header-color='black'] { --th-hue: var(--table-fill-solid-black); --th-scale: 5; }
+.page-table-box table[data-header-strength='off'] { --th-strength: 0; }
+.page-table-box table[data-header-strength='light'] { --th-strength: 6; }
+.page-table-box table[data-header-strength='medium'] { --th-strength: 12; }
+.page-table-box table[data-header-strength='strong'] { --th-strength: 20; }
+.page-table-box table:is([data-header-color], [data-header-strength]) {
+  --table-head-bg: color-mix(in srgb, var(--th-hue, var(--fg)) calc(min(100, var(--th-strength, 6) * var(--th-scale, 1)) * 1%), var(--bg));
+}
+/* White text on a coloured header (the Mac's choice for a dark header): the colour deepened toward black, so the white
+   reads in both themes (a Strong red is pink on a light page, and white on it is not read: 2.4:1). 55% of each colour
+   with black is 4.5:1 or more under white. */
+.page-table-box table[data-header-text='white'][data-header-color] {
+  --table-head-bg: color-mix(in srgb, var(--th-hue) 55%, #000);
+}
+.page-table-box .page-table-frame .page-table table[data-header-weight='regular'] th { font-weight: 400; }
+.page-table-box .page-table-frame .page-table table[data-header-text='muted'] th { color: var(--fg-muted); }
+.page-table-box .page-table-frame .page-table table[data-header-text='full'] th { color: var(--fg); }
+.page-table-box .page-table-frame .page-table table[data-header-text='white'] th { color: #fff; }
+.page-table-box .page-table-frame .page-table table[data-header-text='red'] th { color: var(--table-text-red); }
+.page-table-box .page-table-frame .page-table table[data-header-text='orange'] th { color: var(--table-text-orange); }
+.page-table-box .page-table-frame .page-table table[data-header-text='yellow'] th { color: var(--table-text-yellow); }
+.page-table-box .page-table-frame .page-table table[data-header-text='green'] th { color: var(--table-text-green); }
+.page-table-box .page-table-frame .page-table table[data-header-text='teal'] th { color: var(--table-text-teal); }
+.page-table-box .page-table-frame .page-table table[data-header-text='blue'] th { color: var(--table-text-blue); }
+.page-table-box .page-table-frame .page-table table[data-header-text='purple'] th { color: var(--table-text-purple); }
+.page-table-box .page-table-frame .page-table table[data-header-text='pink'] th { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table[data-header-align='left'] th { text-align: left !important; }
+.page-table-box .page-table-frame .page-table table[data-header-align='center'] th { text-align: center !important; }
+.page-table-box .page-table-frame .page-table table[data-header-align='right'] th { text-align: right !important; }
+
+/* The table's vertical alignment (a cell's own is in its style, so it wins). */
+.page-table-box .page-table-frame .page-table table[data-valign='middle'] :is(th, td) { vertical-align: middle; }
+.page-table-box .page-table-frame .page-table table[data-valign='bottom'] :is(th, td) { vertical-align: bottom; }
+/* Row height: the phone's padding is the Mac's normal; compact and tall in step with it. */
+.page-table-box .page-table-frame .page-table table[data-height='compact'] :is(th, td) { padding-block: 0.2em; }
+.page-table-box .page-table-frame .page-table table[data-height='tall'] :is(th, td) { padding-block: 0.85em; }
+/* The table's own border: lines between the columns too, as the Mac draws them, at its thickness (at most 2 px on a
+   phone) and darkness of the Mac's outline colour. The frame is the outside edge. */
+.page-table-box .page-table-frame .page-table table[data-border] :is(th, td) {
+  border-bottom: var(--table-border-px, 1px) solid color-mix(in srgb, var(--table-file-outline) var(--table-border-dark, 20%), transparent);
+  border-right: var(--table-border-px, 1px) solid color-mix(in srgb, var(--table-file-outline) var(--table-border-dark, 20%), transparent);
+}
+.page-table-box .page-table-frame .page-table table[data-border] tr > :last-child:not([rowspan]) {
+  border-right: 0;
+}
+/* A merged cell's text sits at its top, as any cell's; a tall merged cell in a column of a few rows reads as one. */
+.page-table-box .page-table-frame .page-table table [data-merged] {
+  overflow-wrap: break-word;
+}
+/* Clip (one line, cut with "…"): in the page; the full-screen view shows the whole text. */
+.page-table__clip {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-view .page-table__clip {
+  max-width: none !important;
+  white-space: normal;
+}
+
 /* Review has no widths from `tableLayout.ts`: a word stays whole there; the card scrolls sideways when it must. */
 .review__card .card__sides .card__table table :is(th, td) {
   overflow-wrap: normal;
@@ -126,13 +296,13 @@
   position: sticky;
   left: var(--pin-left, 0px);
   z-index: 1;
-  background: var(--bg);
+  background-color: var(--bg);
 }
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-col][data-pin-row] {
   z-index: 3;
 }
-.page-table-box .page-table-frame .page-table table th[data-pin-col] {
-  background: var(--table-head-bg);
+.page-table-box .page-table-frame .page-table table:not([data-pin-cols-off]) th[data-pin-col] {
+  background-color: var(--table-head-bg);
 }
 .page-table-frame[data-more-left] .page-table table:not([data-pin-cols-off]) [data-pin-col-end] {
   box-shadow: 6px 0 8px -6px var(--table-edge-shadow);
@@ -152,13 +322,21 @@
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-pin-row] {
   position: relative;
   z-index: 2;
-  background: var(--bg);
+  background-color: var(--bg);
 }
 .page-table-box .page-table-frame .page-table table th[data-pin-row] {
-  background: var(--table-head-bg);
+  background-color: var(--table-head-bg);
 }
 .page-table-box .page-table-frame .page-table table td[data-pin-row-end] {
   border-bottom-color: var(--table-head-line);
+}
+/* Over the screen's top edge, a strip of the header's shade: the part of a pixel between the edge and the pinned row
+   would show the rows passing under it. Outside the table it is cut off by the box. */
+.page-table-box .page-table-frame .page-table table tr:first-child > th[data-pin-row] {
+  box-shadow: 0 -3px 0 var(--table-head-bg);
+}
+.page-table-frame[data-more-left] .page-table table:not([data-pin-cols-off]) tr:first-child > th[data-pin-row][data-pin-col-end] {
+  box-shadow: 0 -3px 0 var(--table-head-bg), 6px 0 8px -6px var(--table-edge-shadow);
 }
 @keyframes page-table-pin {
   from {

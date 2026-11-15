@@ -94,14 +94,20 @@ export interface Column {
   max: number
   /** GROW: its narrowest, em. */
   min: number
+  /** GROW: its share of the screen against the other long columns (YAZ-5482: the Mac's width); else its widest. */
+  weight?: number
 }
 
 const round = (n: number) => Math.round(n * 10) / 10
 
 /** The columns of a table, from its cells (pure: no layout). */
 export function columnsOf(table: HTMLTableElement): Column[] {
-  const rows = [...table.rows]
-  const count = Math.max(0, ...rows.map((r) => r.cells.length))
+  // Each column's cells by the grid (YAZ-5482: a merged cell sits in its left column); one that spans columns sizes none.
+  const grid = gridColumns(table)
+  const byColumn: HTMLTableCellElement[][] = []
+  for (const [cell, c] of grid) if (cell.colSpan <= 1) (byColumn[c] ??= []).push(cell)
+  const count = Math.max(0, ...[...grid].map(([cell, c]) => c + Math.max(1, cell.colSpan)))
+  const widths = macWidths(table)
   const cols: Column[] = []
   for (let c = 0; c < count; c++) {
     let body = 0
@@ -110,9 +116,9 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     let head = 0
     let filled = 0
     let numbers = 0
-    for (const row of rows) {
-      const cell = row.cells[c]
-      if (cell === undefined) continue
+    let clip = false
+    for (const cell of byColumn[c] ?? []) {
+      if (cell.hasAttribute('data-clip')) clip = true
       const em = cellEm(cell)
       if (cell.tagName === 'TH') {
         // A header may wrap between its words: only its longest word counts toward a FIT column.
@@ -131,14 +137,27 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     }
     const natural = Math.max(body, head) + PAD
     const num = filled > 0 && numbers >= filled * NUM_SHARE
+    // YAZ-5482: the Mac's width for the column, in em on a phone (`macWidths`), or null (`auto`).
+    const mac = widths[c] ?? null
     if (natural <= FIT_MAX) {
+      // A short column stays as wide as its text, whatever the Mac's width: on a phone its room goes to the long ones
+      // (in the headless pictures, the Mac's extra room on short columns squeezed the long column into a tower).
       cols.push({ kind: 'fit', num, max: round(natural), min: round(natural) })
       continue
     }
+    // A clipped column (one line, cut with "…") has no word that holds it open: its min is GROW_MIN.
+    const min0 = clip ? GROW_MIN : Math.max(GROW_MIN, whole + PAD, Math.min(GROW_MIN_LONG, Math.max(word + PAD, natural / 4)))
     const max = Math.min(GROW_MAX, natural)
     // A whole code (it never wraps) sets the min too, past the long-text cap.
-    const min = Math.min(max, Math.max(GROW_MIN, whole + PAD, Math.min(GROW_MIN_LONG, Math.max(word + PAD, natural / 4))))
-    cols.push({ kind: 'grow', num: false, max: round(max), min: round(min) })
+    if (mac === null) {
+      cols.push({ kind: 'grow', num: false, max: round(max), min: round(Math.min(max, min0)) })
+      continue
+    }
+    // YAZ-5482: a longer column the Mac sized shares the screen in the Mac's proportions (its weight), and the Mac's
+    // width is a floor up to GROW_MIN_LONG (a phone has no room for more); never under the column's own min, so its
+    // words stay whole, and never past its widest (a comfortable line).
+    const min = Math.min(max, Math.max(min0, Math.min(mac, GROW_MIN_LONG)))
+    cols.push({ kind: 'grow', num: false, max: round(max), min: round(min), weight: mac })
   }
   // The columns that stay in place (the first of a wide table, or the file's frozen ones): each at most STICKY_MAX wide.
   for (const col of cols.slice(0, frozenColumns(table, cols.length))) {
@@ -147,6 +166,23 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     col.min = Math.min(col.min, col.max)
   }
   return cols
+}
+
+/** The phone's share of a Mac column's width: a phone shows a table smaller than the Mac's page does. */
+export const MAC_WIDTH_SCALE = 0.7
+/** The px of one em of the phone's table font (14 px: `tables.css`, 0.875em of the reader's 16). */
+const TABLE_PX = 14
+
+/**
+ * The Mac's column widths (YAZ-5482: the table comment's `widths`, as `tableFile.ts` puts them on the table,
+ * `data-widths="140 240 auto"`), in em of the phone's table font, scaled by `MAC_WIDTH_SCALE`; `null` for `auto`.
+ * Translated, not copied (`columnsOf`): a short column keeps its text's width; a longer one takes the Mac's width as
+ * its share of the screen and as a floor up to `GROW_MIN_LONG`; no column is ever under its words (readable).
+ */
+export function macWidths(table: HTMLTableElement): Array<number | null> {
+  const own = table.getAttribute('data-widths')
+  if (own === null) return []
+  return own.split(' ').map((w) => (w === 'auto' || !(Number(w) > 0) ? null : (Number(w) * MAC_WIDTH_SCALE) / TABLE_PX))
 }
 
 /**
@@ -231,6 +267,7 @@ export function layoutTable(table: HTMLTableElement): void {
   if (cols.length === 0) return
   const fixed = cols.reduce((n, c) => n + (c.kind === 'fit' ? c.max : 0), 0)
   const grow = cols.reduce((n, c) => n + (c.kind === 'grow' ? c.max : 0), 0)
+  const weights = cols.reduce((n, c) => n + (c.kind === 'grow' ? (c.weight ?? c.max) : 0), 0)
   const group = document.createElement('colgroup')
   for (const col of cols) {
     const el = document.createElement('col')
@@ -238,7 +275,7 @@ export function layoutTable(table: HTMLTableElement): void {
       el.className = 'page-table__grow'
       el.style.setProperty('--col-min', `${col.min}em`)
       el.style.setProperty('--col-max', `${col.max}em`)
-      el.style.setProperty('--col-weight', String(round((col.max / grow) * 1000) / 1000))
+      el.style.setProperty('--col-weight', String(round(((col.weight ?? col.max) / weights) * 1000) / 1000))
     }
     group.append(el)
   }
@@ -246,14 +283,24 @@ export function layoutTable(table: HTMLTableElement): void {
   table.style.setProperty('--table-fixed', `${round(fixed)}em`)
   // Its width with every column at its widest: the full-screen view lays it out so.
   table.style.setProperty('--table-full', `${round(fixed + grow)}em`)
-  for (const row of table.rows) {
-    ;[...row.cells].forEach((cell, c) => {
-      const col = cols[c]
-      if (col === undefined) return
-      if (col.kind === 'fit') cell.setAttribute('data-fit', '')
-      if (col.num && cell.getAttribute('align') === null) cell.setAttribute('data-num', '')
-    })
+  for (const [cell, c] of gridColumns(table)) {
+    const col = cols[c]
+    if (col === undefined) continue
+    // YAZ-5482: a clipped cell holds its text in one line, cut with "…" at its column's widest.
+    if (cell.hasAttribute('data-clip')) clipCell(cell, cols.slice(c, c + Math.max(1, cell.colSpan)).reduce((n, k) => n + k.max, 0) - PAD)
+    if (cell.colSpan > 1) continue
+    if (col.kind === 'fit') cell.setAttribute('data-fit', '')
+    if (col.num && cell.getAttribute('align') === null) cell.setAttribute('data-num', '')
   }
+}
+
+/** A clipped cell's text in one box, one line, cut with "…" at `max` em (a cell itself cannot cut its text). */
+function clipCell(cell: HTMLTableCellElement, max: number): void {
+  const box = document.createElement('div')
+  box.className = 'page-table__clip'
+  box.style.maxWidth = `${max}em`
+  box.append(...cell.childNodes)
+  cell.append(box)
 }
 
 /** The ⤢ button under a table (shown when the table is wider than the screen: `data-wide`, `useTables`). */

@@ -8,7 +8,7 @@ import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './r
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
-import { FROZEN_PAGE, TABLE_PAGE } from './tableFixtures'
+import { FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
@@ -22,8 +22,9 @@ import { FROZEN_PAGE, TABLE_PAGE } from './tableFixtures'
  * YAZ-5471: `page-tables` a page of made-up tables in the real shapes (`tableFixtures.ts`), at its six-column table;
  * `page-table-full` that table full screen (its ⤢).
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
+ * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-table-frozen', 'page-table-frozen-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -116,6 +117,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
           ? { 'Table shapes.md': `---\ntitle: Table shapes\n---\n\n${TABLE_PAGE}\n` }
         : name === 'page-table-frozen' || name === 'page-table-frozen-full'
           ? { 'Frozen table.md': `---\ntitle: Frozen table\n---\n\n${FROZEN_PAGE}\n` }
+        : name === 'page-table-look'
+          ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
         : name === 'page-drawing'
           ? DRAWING_FILES
           : name === 'search-favorites'
@@ -396,6 +399,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await wait(200)
       break
     }
+    case 'page-table-look':
+      await typed('table look')
+      await open(/^Table look/, '.reader__body .page-table-box')
+      await wait(200)
+      break
     case 'page-tricks':
       await typed('parser')
       await open(/^Parser tricks/, '.reader__body h1')
