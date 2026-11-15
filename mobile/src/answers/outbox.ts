@@ -88,34 +88,35 @@ export interface Outbox {
 const EMPTY: AnswerBook = { v: 1, next: 1, waiting: [], lost: [] }
 
 /**
- * Each change of a vault's list runs alone, in every tab (YAZ-5182): the read of the stored list and its write are held
- * together by the Web Lock `notecards-answers:<vault>`. Where Web Locks are missing, one queue for each vault in this
- * page does it (two lists of one vault in one page, and the tests).
+ * A stored list of one vault: the answer list, and the comment list (`comments/outbox.ts`) too. Each change runs alone,
+ * in every tab (YAZ-5182): the read of the stored list and its write are held together by the Web Lock
+ * `<lockName>:<vault>` (`vaultLock`). Each change starts from the STORED list, so another tab's change is kept (P4). A
+ * write that fails (a full phone) leaves the stored list as it was.
  */
-const listLock = <T>(vault: string, fn: () => Promise<T>): Promise<T> => vaultLock('notecards-answers', vault, fn)
-
-/** The answer list of vault `vault`, read from the store. */
-export async function openOutbox(store: VaultStore, vault: string): Promise<Outbox> {
-  const saved = await store.getState<AnswerBook>(vault, ANSWERS_STATE)
-  let book: AnswerBook = saved?.v === 1 ? saved : EMPTY
+export async function openStoredList<B>(store: VaultStore, vault: string, key: string, lockName: string, bookOf: (saved: B | undefined) => B) {
+  let book = bookOf(await store.getState<B>(vault, key))
   const reread = async () => {
-    const stored = await store.getState<AnswerBook>(vault, ANSWERS_STATE)
-    book = stored?.v === 1 ? stored : EMPTY
+    book = bookOf(await store.getState<B>(vault, key))
   }
-  // One change at a time, in every tab (`listLock`). Each one starts from the STORED list, so another tab's change is
-  // kept (P4). A write that fails (a full phone) leaves the stored list as it was.
-  const change = <T>(edit: (book: AnswerBook) => { next: AnswerBook; out: T } | null, fallback: T): Promise<T> =>
-    listLock(vault, async () => {
+  const change = <T>(edit: (book: B) => { next: B; out: T } | null, fallback: T): Promise<T> =>
+    vaultLock(lockName, vault, async () => {
       await reread()
       const made = edit(book)
       if (made === null) return fallback
-      await store.setState(vault, ANSWERS_STATE, made.next)
+      await store.setState(vault, key, made.next)
       book = made.next
       return made.out
     })
+  return { book: () => book, change, refresh: () => vaultLock(lockName, vault, reread) }
+}
+
+/** The answer list of vault `vault`, read from the store. */
+export async function openOutbox(store: VaultStore, vault: string): Promise<Outbox> {
+  const list = await openStoredList<AnswerBook>(store, vault, ANSWERS_STATE, 'notecards-answers', (saved) => (saved?.v === 1 ? saved : EMPTY))
+  const { change } = list
   return {
-    waiting: () => book.waiting,
-    lost: () => book.lost,
+    waiting: () => list.book().waiting,
+    lost: () => list.book().lost,
     add(entries, now) {
       return change((b) => {
         const group = b.next
@@ -155,7 +156,7 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
         return { next: { ...b, waiting: b.waiting.filter((w) => !leave.has(w.seq)), lost: [...b.lost, ...newlyLost] }, out: undefined }
       }, undefined)
     },
-    refresh: () => listLock(vault, reread),
+    refresh: list.refresh,
     discard(seq) {
       return change((b) => (b.lost.some((l) => l.seq === seq) ? { next: { ...b, lost: b.lost.filter((l) => l.seq !== seq) }, out: true } : null), false)
     },

@@ -1,5 +1,5 @@
 import type { VaultStore } from '../store'
-import { vaultLock } from '../sync/vaultLock'
+import { openStoredList } from '../answers/outbox'
 import type { TaskTick } from './taskWrite'
 
 /**
@@ -89,26 +89,12 @@ export async function keptComments(store: VaultStore, vault: string): Promise<nu
   return bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE)).waiting.length
 }
 
-/** One change at a time, in every tab (Web Locks), as the answer list does; one queue per vault where they are missing. */
-const bookLock = <T>(vault: string, fn: () => Promise<T>): Promise<T> => vaultLock('notecards-comments', vault, fn)
-
 export async function openCommentBox(store: VaultStore, vault: string): Promise<CommentBox> {
-  let book = bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE))
-  const reread = async () => {
-    book = bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE))
-  }
-  // Each change starts from the STORED list (another tab's change is kept); a failed write leaves it as it was.
-  const change = <T>(edit: (b: CommentBook) => { next: CommentBook; out: T } | null, fallback: T): Promise<T> =>
-    bookLock(vault, async () => {
-      await reread()
-      const made = edit(book)
-      if (made === null) return fallback
-      await store.setState(vault, COMMENTS_STATE, made.next)
-      book = made.next
-      return made.out
-    })
+  // The answer list's stored list (`openStoredList`): one change at a time in every tab, each from the STORED list.
+  const list = await openStoredList<CommentBook>(store, vault, COMMENTS_STATE, 'notecards-comments', bookOf)
+  const { change } = list
   return {
-    waiting: () => book.waiting,
+    waiting: () => list.book().waiting,
     add: (comment) => change((b) => (b.waiting.some((c) => c.id === comment.id) ? null : { next: { ...b, waiting: [...b.waiting, comment] }, out: undefined }), undefined),
     remove: (id) =>
       change((b) => {
@@ -149,6 +135,6 @@ export async function openCommentBox(store: VaultStore, vault: string): Promise<
         if (!b.waiting.some((w) => want.has(w.id) && w.by === undefined)) return null
         return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.id) && w.by === undefined ? { ...w, by } : w)) }, out: undefined }
       }, undefined),
-    refresh: () => bookLock(vault, reread),
+    refresh: list.refresh,
   }
 }
