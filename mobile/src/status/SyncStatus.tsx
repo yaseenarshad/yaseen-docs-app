@@ -12,8 +12,7 @@ import { useOnline } from './useOnline'
 import './status.css'
 
 /** The sheet is a chunk of its own (the first load stays under its ceiling); it loads after the first paint. */
-const loadSheet = () => import('./StatusSheet')
-const StatusSheet = lazyScreen(loadSheet, { waiting: false })
+const StatusSheet = lazyScreen(() => import('./StatusSheet'), { waiting: false })
 /** The toast's words are a chunk of their own too. */
 const loadWords = () => import('./passWords')
 
@@ -30,7 +29,7 @@ export function SyncStatus() {
   const app = useApp()
   const [busy, setBusy] = useState(false)
   const [toast, say] = useToast()
-  useEffect(() => void loadSheet().catch(() => {}), [])
+  useEffect(() => void StatusSheet.preload().catch(() => {}), [])
   const online = useOnline()
   const answers = useDotAnswers(app.services.sync, app.vaultKey)
   const [open, setOpen] = useState(false)

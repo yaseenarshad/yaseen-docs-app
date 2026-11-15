@@ -75,6 +75,50 @@ describe('lazyScreen', () => {
   })
 })
 
+describe('YAZ-5552: a loaded screen mounts again at once', () => {
+  it('the second mount draws in the same render (no suspend, no 300 ms reveal), one import; after a failure the next mount imports again', async () => {
+    let calls = 0
+    const Sheet = lazyScreen(async () => {
+      calls++
+      if (calls === 1) throw new TypeError('Failed to fetch dynamically imported module')
+      return { default: () => createElement('p', null, 'Sheet') }
+    })
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    const onError = (e: ErrorEvent) => e.preventDefault()
+    window.addEventListener('error', onError)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await act(async () => root.render(createElement(Sheet, {})))
+    await settle()
+    expect(host.textContent).toContain(CHUNK_FAILED)
+    // Closed, then opened again (a sheet): a failed import is not kept for the next mount.
+    act(() => root.render(null))
+    await act(async () => root.render(createElement(Sheet, {})))
+    await settle()
+    expect(calls).toBe(2)
+    expect(host.textContent).toBe('Sheet')
+    for (let i = 0; i < 3; i++) {
+      act(() => root.render(null))
+      expect(host.textContent).toBe('')
+      act(() => root.render(createElement(Sheet, {})))
+      expect(host.textContent).toBe('Sheet')
+    }
+    expect(calls).toBe(2)
+    window.removeEventListener('error', onError)
+    act(() => root.unmount())
+  })
+
+  it('preloaded: the FIRST mount draws in the same render too', async () => {
+    const Sheet = lazyScreen(async () => ({ default: () => createElement('p', null, 'Ready') }))
+    await Sheet.preload()
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    act(() => root.render(createElement(Sheet, {})))
+    expect(host.textContent).toBe('Ready')
+    act(() => root.unmount())
+  })
+})
+
 const settleLonger = async () => {
   for (let i = 0; i < 6; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 0))))
 }

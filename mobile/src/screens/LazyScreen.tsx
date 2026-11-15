@@ -12,24 +12,38 @@ import { Component, lazy, Suspense, useMemo, useState, type ComponentType, type 
  * screen with no bars: the "flash" of Today).
  */
 export function lazyScreen<P extends object>(load: () => Promise<{ default: ComponentType<P> }>, options: { waiting?: ReactNode } = {}) {
+  // YAZ-5552: ONE `lazy` per screen, kept across mounts (a new one at each mount suspended at every open, and React
+  // shows a boundary's content that suspended about 300 ms later, its reveal throttle: the sync dot's sheet opened 0.3 s
+  // after the tap). YAZ-5589: once the chunk is loaded the screen draws with no `lazy` at all (no `waiting` frame).
   type M = { default: ComponentType<P> }
   let loaded: M | null = null
   let loading: Promise<M> | null = null
+  let failed = false
   const loadOnce = (): Promise<M> => {
     loading ??= load().then(
       (m) => (loaded = m),
       (error: unknown) => {
         // A failed load is tried again at the next call (no cached failure).
         loading = null
+        failed = true
         throw error
       },
     )
     return loading
   }
+  let shared = lazy(loadOnce)
+  // React keeps a failed import's error, so "Try again" (and the next mount after a failure) needs a fresh one.
+  const fresh = () => {
+    if (failed) {
+      failed = false
+      shared = lazy(loadOnce)
+    }
+    return shared
+  }
   function LazyScreen(props: P & { onBack?: () => void }) {
     const [attempt, setAttempt] = useState(0)
-    // A new `lazy` for each attempt: React keeps a failed import's error, so "Try again" needs a fresh one.
-    const Screen = useMemo(() => lazy(loadOnce), [attempt]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Picked once a mount (and at each Try again): a type changed under a drawn screen would draw it anew, its state lost.
+    const Screen = useMemo(() => fresh(), [attempt]) // eslint-disable-line react-hooks/exhaustive-deps
     const { onBack, ...rest } = props
     // Chosen once, at mount: a screen drawn through `lazy` keeps that place (a change of the tree would remount it).
     const [Loaded] = useState(() => loaded?.default)
@@ -41,7 +55,8 @@ export function lazyScreen<P extends object>(load: () => Promise<{ default: Comp
       </ChunkBoundary>
     )
   }
-  return Object.assign(LazyScreen, { preload: loadOnce })
+  /** Loads the chunk ahead (after the first paint, or the Today button once idle): the first open then draws at once too. */
+  return Object.assign(LazyScreen, { preload: (): Promise<void> => loadOnce().then(() => undefined) })
 }
 
 /** A stylesheet that loaded (it has a sheet whose rules can be read). A failed or a cross-origin one has none. */

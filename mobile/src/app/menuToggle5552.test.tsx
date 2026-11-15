@@ -173,7 +173,9 @@ describe('YAZ-5552: every menu: a tap opens it, a tap on its button again closes
     await h.settle()
     await h.syncSet({ status: 'attention', problem: 'UNAUTHORIZED' })
     await waitFor(h, () => q('.sync-status[aria-haspopup="dialog"]') !== null)
-    // The sheet is a chunk of its own: its first open waits for it.
+    // The sheet is a chunk of its own: its first open waits for it. Each open after draws in the tap itself (one
+    // `lazy` for every mount: a new one suspended again and React showed the sheet ~300 ms late, so the tap below
+    // found it shut whenever `settle` ended first).
     await fingerTap(q('.sync-status')!, h.settle)
     await waitFor(h, has('.status-sheet'))
     await fingerTap(q('.sync-status')!, h.settle)
