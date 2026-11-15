@@ -31,6 +31,8 @@ export type CardOp =
    * An answer. `nth` (YAZ-5078): this is the person's nth review of the same time and rating on the line (the review
    * time is to the minute, so a new card that comes back at once gets two in one minute, as the Mac writes them).
    * Absent: the first. The send stays idempotent: the review goes on only while the line holds fewer than `nth`.
+   * YAZ-5514 (W4): a count alone cannot tell "my second copy never landed" from "both landed and the Mac took one
+   * out", so a resend is settled by the action's own commit (`WaitingAnswer.commit`, `send.ts`), never by the count.
    */
   | { kind: 'review'; id: string; review: CardReview; nth?: number }
   /**
