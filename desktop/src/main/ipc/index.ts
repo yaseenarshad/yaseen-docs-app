@@ -10,6 +10,7 @@ import type { Store } from '../store'
 import type { WindowManagerIpc } from '../windows'
 import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/copyLibrary'
 import { libraryFolderOf } from '../library/folder'
+import { keepDailyPagesFiles } from '../dailyPagesVaultFile'
 import { registerBoardIpc } from './board'
 import { registerComponentsIpc } from './components'
 import { registerDialogIpc } from './dialog'
@@ -68,6 +69,8 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   registerWatchIpc()
   registerStateIpc(store, settingsFolder)
   registerVaultConfigIpc(store)
+  // YAZ-5476: each open vault's `.yaseendocs/daily-pages.json` mirrors Settings › Daily pages, for the phone.
+  keepDailyPagesFiles(store)
   registerFavoritesIpc(store)
   registerIconsIpc(store)
   registerNewPlacesIpc(store)
