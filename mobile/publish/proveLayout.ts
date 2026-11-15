@@ -65,6 +65,7 @@ import { freePort } from './freePort'
  *  - the Type filter of Search (`#fixture=search-types`, `search-types-menu`, `search-types-favorites`, YAZ-5534), light and
  *    dark, at 375 px: the bar one line, the pill naming the pick; each menu row a 44 px tap; each row of the types in the
  *    tree under its open parent folders; the page never scrolls sideways.
+ *    YAZ-5545: on `search-types`, each drawing and diagram row's icon is the Mac's Material icon, drawn, with its contrast.
  *  - "Linked mentions" at the end of a page (`#fixture=explore-mentions`, `page-linked-from`, YAZ-5535), light and dark, at
  *    375 px: in an Explore panel no foot under the body (the body is the box's last part, to its bottom), the section in
  *    the page's scroll (not sticky: it moves when the body scrolls), collapsed with its count, a 44 px tap inside the
@@ -987,6 +988,27 @@ const TYPES_CHECK = `(() => {
     rows: rows.map((b) => depth(b) + ':' + b.dataset.kind + ':' + b.querySelector('.tree__label').textContent),
     placed,
     wide: screen.scrollWidth > screen.clientWidth + 1,
+    icons: [...document.querySelectorAll('.search__found .tree__row:is([data-kind=drawing], [data-kind=diagram])')].map((b) => {
+      const icon = b.querySelector('.file-icon'), ib = r(icon), lb = r(b.querySelector('.tree__label'))
+      const cs = getComputedStyle(icon)
+      // The icon's own fill (Material's, in the inline SVG; an <img> is Material's served file), against the row's ground.
+      const fill = (/%23([0-9a-f]{6})/i.exec(cs.backgroundImage) || [])[1]
+      let el = b, ground = 'rgba(0, 0, 0, 0)'
+      while (el && /rgba\\(0, 0, 0, 0\\)|transparent/.test(ground)) { ground = getComputedStyle(el).backgroundColor; el = el.parentElement }
+      if (/rgba\\(0, 0, 0, 0\\)|transparent/.test(ground)) ground = getComputedStyle(document.body).backgroundColor
+      const lum = (rgb) => { const c = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] }
+      const g = ground.match(/\\d+/g).slice(0, 3).map(Number)
+      const f = fill ? [0, 2, 4].map((i) => parseInt(fill.slice(i, i + 2), 16)) : null
+      const [hi, lo] = f ? [lum(f), lum(g)].sort((a, b) => b - a) : [0, 0]
+      return {
+        name: b.querySelector('.tree__label').textContent, kind: b.dataset.kind, tag: icon.tagName,
+        src: icon.tagName === 'IMG' ? icon.getAttribute('src') : (cs.backgroundImage.startsWith('url("data:image/svg+xml') ? 'inline ' + (fill ? '#' + fill : '?') : cs.backgroundImage.slice(0, 30)),
+        mask: cs.maskImage !== 'none',
+        size: Math.round(ib.width) + 'x' + Math.round(ib.height),
+        shown: ib.width >= 15 && ib.height >= 15 && ib.right <= lb.left + 1 && ib.top >= r(b).top - 0.5 && ib.bottom <= r(b).bottom + 0.5 && cs.visibility === 'visible' && cs.opacity === '1' && (icon.tagName === 'IMG' ? icon.complete && icon.naturalWidth > 0 : true),
+        contrast: f ? Math.round(((hi + 0.05) / (lo + 0.05)) * 100) / 100 : null,
+      }
+    }),
   }
 })()`
 if (process.env.LAYOUT_TYPES !== 'no') {
@@ -1006,6 +1028,19 @@ if (process.env.LAYOUT_TYPES !== 'no') {
       const ok = m.pill === want.pill && m.lines === 1 && m.outside.length === 0 && m.menu.length === want.menu && m.short === 0 && m.rows.length > 0 && m.placed && !m.wide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: pill "${m.pill}", bar ${m.lines} line${m.outside.length ? `, OUTSIDE ${m.outside}` : ''}; menu ${JSON.stringify(m.menu)}${m.short ? `, ${m.short} SHORT` : ''}; ${m.rows.length} rows ${m.placed ? 'each under its open parents' : 'NOT UNDER THEIR PARENTS'}: ${m.rows.join(' / ')}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+      // YAZ-5545: each drawing and diagram row shows the Mac's Material icon, drawn (an image in its own colours, 16 px,
+      // before the name, inside the row; a draw.io picture Material's served `svg`). The contrast is the Mac's own colour's
+      // against this ground, reported (the Mac's colours are kept as they are).
+      if (name === 'search-types') {
+        const WANT_ICON: Record<string, string> = { drawing: 'inline #5c6bc0', diagram: 'inline #fb8c00' }
+        const iconsOk = m.icons.length > 0 && m.icons.every((i: any) => i.shown && !i.mask && (i.tag === 'IMG' ? i.src === '/material-icons/svg.svg' : i.src === WANT_ICON[i.kind]))
+        if (!iconsOk) failed++
+        // A picture of the drawing and diagram rows together: scrolled so the last of them shows.
+        await evaluate(`[...document.querySelectorAll('.search__found .tree__row[data-kind=diagram]')].pop()?.scrollIntoView({ block: 'center' })`)
+        await wait(150)
+        writeFileSync(shot.replace('.png', '-icons.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        console.log(`${iconsOk ? 'PASS' : 'FAIL'}  ${name} ${scheme} drawing and diagram icons: ${m.icons.map((i: any) => `${i.name} [${i.kind}] ${i.src} ${i.size}${i.mask ? ' MASKED' : ''}${i.shown ? '' : ' NOT SHOWN'}${i.contrast === null ? '' : ` ${i.contrast}:1`}`).join(' / ')}`)
+      }
     }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

@@ -823,16 +823,15 @@ button,
    arrows. A page is the grey page glyph; a card and a card file are the card glyph in the card colour. ---- */
 :root {
   --kind-card: #8a63c9;
-  /* YAZ-5473: the Mac's drawing (Excalidraw) and diagram (draw.io) colours. */
-  --kind-drawing: #c08410;
-  --kind-diagram: #e0682c;
+  /* YAZ-5545: Material Icon Theme's `excalidraw` and `drawio` icons, the Mac's default set (`client/public/material-icons/`),
+     the same SVG and colours; only these two, inline, so no fetch and nothing more of the set. */
+  --material-excalidraw: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%235c6bc0' d='m15 1-5 1-9 10 3 3 10-9zm-4 3h1v1h-1zm1 5-3 3 4 3 2-2zM7 4 4 7 2 5 1 1l4 1z'/%3E%3C/svg%3E");
+  --material-drawio: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23fb8c00' d='m25.329 20-7.001-8H20V4h-8v8h1.672l-7.001 8H4v8h8v-8H9.328L16 12.376 22.672 20H20v8h8v-8z'/%3E%3C/svg%3E");
   --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='5.25' width='10' height='8' rx='1.25'/%3E%3Cpath d='M4.5 3h8.25a1.25 1.25 0 0 1 1.25 1.25v6.25'/%3E%3C/svg%3E");
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --kind-card: #b394e6;
-    --kind-drawing: #e0aa3e;
-    --kind-diagram: #f08d5a;
   }
 }
 .file-icon[data-kind='markdown'] {
@@ -843,13 +842,22 @@ button,
   background: var(--kind-card);
   mask: var(--card-link-icon) center / 16px 16px no-repeat;
 }
+/* YAZ-5545: a drawing and a diagram are Material's icons in their own colours, as the Mac's default (Material, "Colour"):
+   an image, not a mask. The phone cannot know the Mac's icon set (an app setting, not the vault's), so no Line glyph. A
+   colour the vault picked (`data-icon-colors`, `treeIcons.ts`) draws the icon as a silhouette in it, as the Mac's app.css. */
 .file-icon[data-kind='drawing'] {
-  background: var(--kind-drawing);
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13l.8-3.2L11 2.6l2.4 2.4-7.2 7.2zM9.5 4l2.5 2.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  background: var(--material-excalidraw) center / 16px 16px no-repeat;
 }
 .file-icon[data-kind='diagram'] {
+  background: var(--material-drawio) center / 16px 16px no-repeat;
+}
+[data-icon-colors~='drawing'] .file-icon[data-kind='drawing'] {
+  background: var(--kind-drawing);
+  mask: var(--material-excalidraw) center / 16px 16px no-repeat;
+}
+[data-icon-colors~='diagram'] .file-icon[data-kind='diagram'] {
   background: var(--kind-diagram);
-  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 2.5h5v4H2zM9 9.5h5v4H9zM4.5 6.5v3a1 1 0 0 0 1 1H9'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+  mask: var(--material-drawio) center / 16px 16px no-repeat;
 }
 .file-icon[data-kind='folder'] {
   background: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6.922 3.768-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232' fill='%2390a4ae'/%3E%3C/svg%3E") center / 16px 16px no-repeat;

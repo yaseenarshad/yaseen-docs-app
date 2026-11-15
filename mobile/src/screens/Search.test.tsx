@@ -45,9 +45,10 @@ async function waitFor(x: Harness, done: () => boolean, ms = 3000): Promise<void
 
 const box = (x: Harness) => x.host.querySelector<HTMLInputElement>('input[type="search"]')!
 /** A row as the person sees it (YAZ-5438): its name, then its icon's kind (a card's ID beside it). Tree rows and result rows. */
+// YAZ-5545: the row's own kind first: a draw.io picture's icon is Material's `svg` (an <img>, no kind).
 const rows = (x: Harness) =>
   [...x.host.querySelectorAll('.search__rows .row, .tree .tree__row')].map((r) => {
-    const kind = { folder: 'folder', markdown: 'page', card: 'card', drawing: 'drawing', diagram: 'diagram' }[r.querySelector('.file-icon')?.getAttribute('data-kind') ?? ''] ?? '?'
+    const kind = { folder: 'folder', markdown: 'page', card: 'card', drawing: 'drawing', diagram: 'diagram' }[r.getAttribute('data-kind') ?? r.querySelector('.file-icon')?.getAttribute('data-kind') ?? ''] ?? '?'
     const side = r.querySelector('.row__side')?.textContent
     return `${r.querySelector('.row__main, .tree__label')?.textContent} | ${kind}${side ? ` · ${side}` : ''}`
   })

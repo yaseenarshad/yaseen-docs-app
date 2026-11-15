@@ -15,6 +15,8 @@ import { vaultName } from '../screens/Frame'
 import { openFile } from '../explore/openFile'
 import { useFileText, useSheetTap } from '../explore/SheetBody'
 import { boardKindOf } from '../drawing/boardFiles'
+import { RowIcon } from '../search/rowIcon'
+import { TreeIconsContext, useTreeIcons } from '../search/treeIcons'
 import { folderModel, type FolderModel } from './folderModel'
 import { useFolderPages } from './folderPagesFile'
 import { FolderViewPane } from './FolderViewPane'
@@ -143,6 +145,8 @@ function OtherFiles({ model }: { model: FolderModel }) {
   const [open, setOpen] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
   const { media } = useSheetTap(model.data, setNotice)
+  // YAZ-5551: a drawing's or a diagram's row is the Search tree's icon (`RowIcon`: the Mac's Material icon, the vault's own pick or rule first).
+  const icons = useTreeIcons(app.services.store, model.data)
   if (model.other.length === 0) return null
   const tap = async (path: string, type: string) => {
     if (type === 'page') return openFile(app, { kind: 'page', path }, { from: 'inside' })
@@ -163,18 +167,27 @@ function OtherFiles({ model }: { model: FolderModel }) {
         </p>
       )}
       {open && (
-        <ul className="folder-other__list">
+        <TreeIconsContext.Provider value={icons}>
+        <ul className="folder-other__list" style={icons.style} data-icon-colors={icons.colored}>
           {model.other.map((f) => (
             <li key={`${f.type}\n${f.path}`}>
               <button type="button" className="folder-other__row" onClick={() => void tap(f.path, f.type)}>
-                <span className="file-icon" data-kind={f.type === 'page' ? 'markdown' : f.type === 'folder' ? 'folder' : (boardKindOf(f.path) ?? 'file')} aria-hidden />
+                <OtherIcon path={f.path} type={f.type} />
                 <span className="folder-other__name">{f.name}</span>
                 <span className="folder-other__type">{f.type === 'page' ? app.unit('Page') : f.type === 'folder' ? 'Folder' : f.type}</span>
               </button>
             </li>
           ))}
         </ul>
+        </TreeIconsContext.Provider>
       )}
     </section>
   )
+}
+
+/** A row of Other files: a page's or a folder's glyph, a board's `RowIcon` (YAZ-5551), any other file the plain sheet. */
+function OtherIcon({ path, type }: { path: string; type: string }) {
+  const board = boardKindOf(path)
+  if (type !== 'page' && type !== 'folder' && board !== null) return <RowIcon kind={board} path={path} />
+  return <span className="file-icon" data-kind={type === 'page' ? 'markdown' : type === 'folder' ? 'folder' : 'file'} aria-hidden />
 }
