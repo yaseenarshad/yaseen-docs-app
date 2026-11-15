@@ -1,7 +1,7 @@
 import { Component, lazy, Suspense, useMemo, useState, type ComponentType, type ReactNode } from 'react'
 
 /**
- * THE ONE WAY THE APP LOADS A SCREEN OF ITS OWN CHUNK (YAZ-5230): `lazyScreen(load)`. A chunk can fail to load: no
+ * THE ONE WAY THE APP LOADS A SCREEN OF ITS OWN CHUNK: `lazyScreen(load)`. A chunk can fail to load: no
  * signal at a cold start, or a new build whose old file names are gone. Without a boundary React unmounts the whole
  * app and the screen goes blank. With it, only the screen's place says so, in plain words, with "Try again" (a new
  * import, not React's cached failure), and "‹ Back" for a screen over the tabs. The tabs, the dot and the waiting
@@ -34,7 +34,7 @@ function sheetLoaded(link: HTMLLinkElement): boolean {
 }
 
 /**
- * YAZ-5300: before "Try again", each stylesheet of a chunk (`/assets/…`) that did not load is linked again: a NEW
+ * Before "Try again", each stylesheet of a chunk (`/assets/…`) that did not load is linked again: a NEW
  * `<link>` to the same file, which the browser fetches again. Vite's preload helper links a chunk's CSS one time and
  * skips it at the next import of that chunk, so without this the screen comes back with no styles of its own. A sheet
  * that loaded stays as it is. Resolves when each new link has loaded or failed (at most 10 s).
@@ -64,7 +64,7 @@ class ChunkBoundary extends Component<{ children: ReactNode; onRetry: () => void
     return { failed: true }
   }
   componentDidCatch(): void {
-    // Shown on the screen; nothing to log (no raw error text reaches the person, YAZ-5076).
+    // Shown on the screen; nothing to log (no raw error text reaches the person).
   }
   render() {
     if (!this.state.failed) return this.props.children

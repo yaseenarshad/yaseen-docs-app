@@ -4,7 +4,7 @@
   flex-wrap: wrap;
 }
 
-/* YAZ-5521 (sweep2 S-C): a long word or URL in the question wraps (`anywhere`), and the ask is never wider than its row
+/* A long word or URL in the question wraps (`anywhere`), and the ask is never wider than its row
    (`min-width: 0`: a flex item's least width was its longest word, 600 px, and its buttons with it). */
 .discard-answer__ask {
   flex: 1 0 100%;

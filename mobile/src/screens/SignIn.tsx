@@ -9,7 +9,7 @@ import { Frame, Problem } from './Frame'
 import { FormLine, InstallHint } from './InstallHint'
 import { lazyScreen } from './LazyScreen'
 
-/** YAZ-5408: the repo list loads as its own chunk when the person taps "Show my repos". */
+/** The repo list loads as its own chunk when the person taps "Show my repos". */
 const RepoPicker = lazyScreen(() => import('./RepoPicker'), { waiting: <div className="lazy-screen" aria-busy="true" /> })
 
 /**
@@ -28,7 +28,7 @@ type Step = 'token' | 'pick' | 'typed'
 export type SignInMode = { kind: 'first' } | { kind: 'add' } | { kind: 'again'; vault: string }
 
 /**
- * The sign-in screen (decision 13; YAZ-5408): the token first, then the repo from the token's list. One link
+ * The sign-in screen (decision 13): the token first, then the repo from the token's list. One link
  * "How to make a token" opens "Set up your phone". "Scan a code" reads the Mac's code (round 11, item 23). The token is
  * pasted here, inside the installed app: Safari and the app do not share storage.
  */
@@ -42,7 +42,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
   const [asking, setAsking] = useState(false)
   const [step, setStep] = useState<Step>('token')
   const repoField = useRef<HTMLInputElement>(null)
-  /** Set in the same turn as the tap: a second tap before the next render sees it (YAZ-5178). */
+  /** Set in the same turn as the tap: a second tap before the next render sees it. */
   const checking = useRef(false)
   const again = mode.kind === 'again' ? (app.list.vaults.find((v) => vaultId(v) === mode.vault) ?? null) : null
 

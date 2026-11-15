@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 /**
- * THE app's one quiet toast (YAZ-5469): a few words that fade after about 2 s. `role="status"`, so VoiceOver reads them
+ * THE app's one quiet toast: a few words that fade after about 2 s. `role="status"`, so VoiceOver reads them
  * without moving the focus. `top`: under the top bar (the dot's "Synced · up to date"); else near the thumb.
  */
 export function Toast({ text, top = false }: { text: string; top?: boolean }) {
@@ -14,7 +14,7 @@ export function Toast({ text, top = false }: { text: string; top?: boolean }) {
 
 /**
  * The words a toast shows, and `say` to show new ones; they go after `ms`. A new `say` starts the time again; `say(null)`
- * takes the toast away now (YAZ-5524: a dialog that replaces it).
+ * takes the toast away now (a dialog that replaces it).
  */
 export function useToast(ms = 2000): [string | null, (text: string | null) => void] {
   const [said, setSaid] = useState<{ text: string } | null>(null)

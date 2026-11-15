@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * The Review tab's place in the top bar (YAZ-5415, the Mochi look): the shell's top bar draws an empty box in its
+ * The Review tab's place in the top bar (the Mochi look): the shell's top bar draws an empty box in its
  * middle while the Review tab shows; the Review screen (a lazy chunk, kept mounted behind other screens) draws its
  * "▣ All cards ▾ 3 / 12" into it with a portal. With no box (the screen alone, in a test) the screen draws it itself.
  */

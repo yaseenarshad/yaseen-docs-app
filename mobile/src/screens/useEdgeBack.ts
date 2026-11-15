@@ -7,8 +7,8 @@ import { browserFacts, whereAmI } from '../pwa/homeScreen'
 const SLIDE_MS = 180
 
 /**
- * YAZ-5435: the left-edge swipe of a screen with Back (`edgeSwipe.ts` has the rules). Every listener is PASSIVE: the
- * swipe never makes a scroll wait (YAZ-5436). Nothing on the screen moves sideways by itself (the frame does not
+ * The left-edge swipe of a screen with Back (`edgeSwipe.ts` has the rules). Every listener is PASSIVE: the
+ * swipe never makes a scroll wait. Nothing on the screen moves sideways by itself (the frame does not
  * scroll; a wide table starts past the edge zone), so the swipe needs no `preventDefault`.
  */
 export function useEdgeBack(frame: RefObject<HTMLElement | null>, back: (() => void) | undefined): void {
@@ -24,7 +24,7 @@ export function useEdgeBack(frame: RefObject<HTMLElement | null>, back: (() => v
     const swipe = edgeSwipe(width)
     const still = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
     let timer: ReturnType<typeof setTimeout> | undefined
-    // YAZ-5518: the overlays open when the finger came down: its `pointerdown` (here, before the page's own listeners,
+    // The overlays open when the finger came down: its `pointerdown` (here, before the page's own listeners,
     // which shut a menu on it) or its `touchstart`. A touch that closed one (a tap outside a menu) is that Back.
     let open = 0
     const down = () => void (open = overlayCount())
