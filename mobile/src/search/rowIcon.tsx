@@ -19,12 +19,18 @@ export function RowIcon({ kind, open = false, path }: { kind: TreeKind; open?: b
   const name = path === undefined ? '' : path.slice(path.lastIndexOf('/') + 1)
   const own = path === undefined ? null : icons.pick(path, name, kind === 'folder' ? 'folder' : 'file')
   if (own !== null) return <OwnIcon key={`${own}${open}`} id={own} open={open && kind === 'folder'} kind={kind} />
-  return <span className={`file-icon${open ? ' file-icon--open' : ''}`} data-kind={ICON_KIND[kind]} aria-hidden />
+  return <Glyph kind={kind} open={open} />
+}
+
+/** The kind's glyph, in the vault's colour where it set one (`treeIcons.ts`). */
+function Glyph({ kind, open }: { kind: TreeKind; open: boolean }) {
+  const icons = useTreeIconsHere()
+  return <span className={`file-icon${open ? ' file-icon--open' : ''}`} data-kind={ICON_KIND[kind]} style={icons.glyph(ICON_KIND[kind], open)} aria-hidden />
 }
 
 function OwnIcon({ id, open, kind }: { id: string; open: boolean; kind: TreeKind }) {
   const tries = [...(open ? [`${openTwin(id)}.svg`] : []), `${id}.svg`, `${id}.clone.svg`]
   const [at, setAt] = useState(0)
-  if (at >= tries.length) return <span className={`file-icon${open ? ' file-icon--open' : ''}`} data-kind={ICON_KIND[kind]} aria-hidden />
+  if (at >= tries.length) return <Glyph kind={kind} open={open} />
   return <img className="file-icon file-icon--own" src={`/material-icons/${tries[at]}`} alt="" aria-hidden width={16} height={16} onError={() => setAt(at + 1)} />
 }

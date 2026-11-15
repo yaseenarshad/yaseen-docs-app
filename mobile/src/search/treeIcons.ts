@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { ICONS_FILE, cleanIconColors, globRegExp, parseIconsConfig, type IconRuleKind } from '@shared/vaultIcons'
 import { VAULT_CONFIG_DIR, type SidebarIconColors } from '@shared/types'
+import type { CSSProperties } from 'react'
 import type { VaultStore } from '../store'
 import type { VaultData } from './vaultData'
-import './treeIcons.css'
 
 /**
  * THE VAULT'S OWN ICONS IN THE SEARCH TREE (YAZ-5488), read only, from the phone's copy of `.yaseendocs/icons.json`
@@ -20,9 +20,29 @@ export interface TreeIcons {
   style: Record<string, string>
   /** The kinds with a colour, for the tree's `data-icon-colors` (the Mac's on `.app`), or undefined. */
   colored: string | undefined
+  /**
+   * The glyph's own style where the vault set a colour the phone's CSS does not read (the card, drawing and diagram
+   * glyphs read `--kind-<kind>` already): a page's glyph in the page colour (else grey), Material's default folder as a
+   * silhouette in the folder colour, as the Mac's `app.css` draws them. Inline, so no stylesheet joins the first load.
+   */
+  glyph: (kind: string, open: boolean) => CSSProperties | undefined
 }
 
-export const NO_TREE_ICONS: TreeIcons = { pick: () => null, style: {}, colored: undefined }
+export const NO_TREE_ICONS: TreeIcons = { pick: () => null, style: {}, colored: undefined, glyph: () => undefined }
+
+/** The phone's folder glyphs (`styles.css`) as masks. */
+const FOLDER_MASK = "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6.922 3.768-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232' fill='black'/%3E%3C/svg%3E\") center / 16px 16px no-repeat"
+const FOLDER_OPEN_MASK = "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M14.483 6H4.721a1 1 0 0 0-.949.684L2 12V5h12a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232l-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h11l2.403-5.606A1 1 0 0 0 14.483 6' fill='black'/%3E%3C/svg%3E\") center / 16px 16px no-repeat"
+
+function glyphOf(colors: SidebarIconColors): TreeIcons['glyph'] {
+  const { page, folder } = colors
+  if (page === undefined && folder === undefined) return NO_TREE_ICONS.glyph
+  return (kind, open) => {
+    if (kind === 'markdown' && page !== undefined) return { background: page }
+    if (kind === 'folder' && folder !== undefined) return { background: folder, mask: open ? FOLDER_OPEN_MASK : FOLDER_MASK }
+    return undefined
+  }
+}
 
 /** The Mac's kind names (`SIDEBAR_ICON_KINDS`) as the phone's CSS variables. */
 const colourVars = (colors: SidebarIconColors): Record<string, string> => Object.fromEntries(Object.entries(colors).map(([kind, colour]) => [`--kind-${kind}`, colour]))
@@ -35,11 +55,13 @@ export function treeIconsOf(raw: unknown): TreeIcons {
   const colors = cleanIconColors(config.colors)
   const style = colourVars(colors)
   const colored = Object.keys(colors).join(' ') || undefined
-  if (paths.size === 0 && rules.length === 0) return { pick: NO_TREE_ICONS.pick, style, colored }
+  const glyph = glyphOf(colors)
+  if (paths.size === 0 && rules.length === 0) return { pick: NO_TREE_ICONS.pick, style, colored, glyph }
   return {
     pick: (path, name, kind) => paths.get(path) ?? rules.find((rule) => rule.kind === kind && rule.test.test(name))?.icon ?? null,
     style,
     colored,
+    glyph,
   }
 }
 

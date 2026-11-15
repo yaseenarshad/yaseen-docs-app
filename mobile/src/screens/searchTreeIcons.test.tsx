@@ -79,6 +79,14 @@ describe('the Search tree draws the vault\'s own icons and colours (YAZ-5488)', 
     expect(iconOf(h, 'git')?.getAttribute('data-kind')).toBe('folder')
   })
 
+  it('colours alone: the page glyph in the page colour, the default folder as a silhouette in the folder colour', async () => {
+    h = await openSearch({ ...READER_FILES, '.yaseendocs/icons.json': JSON.stringify({ version: 2, paths: {}, colors: { page: '#123456', folder: '#654321' } }) })
+    await waitFor(h, () => iconOf(h!, 'Trip plan')?.style.backgroundColor !== '')
+    expect(iconOf(h, 'Trip plan')?.style.backgroundColor).toBe('rgb(18, 52, 86)')
+    expect(iconOf(h, 'git')?.style.backgroundColor).toBe('rgb(101, 67, 33)')
+    expect(iconOf(h, 'git')?.style.getPropertyValue('mask')).toContain('svg')
+  })
+
   it('no icons.json: the look before', async () => {
     h = await openSearch(READER_FILES)
     await h.settle()

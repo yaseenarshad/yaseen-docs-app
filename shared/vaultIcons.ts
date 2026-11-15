@@ -16,7 +16,7 @@
 import { isRecord } from './guards'
 import { mergeConfigFile } from './configMerge'
 
-import { SIDEBAR_ICON_KINDS, type SidebarIconColors } from './types'
+import type { SidebarIconColors, SidebarIconKind } from './types'
 
 export const ICONS_FILE = 'icons.json'
 /** YAZ-5488: version 2 adds `rules` and `colors`. A reader takes any whole version of 1 or more. */
@@ -54,10 +54,15 @@ export interface VaultIcons {
   colors?: SidebarIconColors
 }
 
+/**
+ * The kinds of `SIDEBAR_ICON_KINDS` (`types.ts`), here as a copy so the phone's first load (which holds `types.ts`) does
+ * not keep the list for the Search chunk (`vaultIcons.test.ts` checks they are the same).
+ */
+export const ICON_COLOUR_KINDS: readonly SidebarIconKind[] = ['page', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image']
 /** An icon colour: `#rrggbb`. */
 const isHexColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)
 /** One entry of the icon colours: a known kind and a `#rrggbb`. */
-const isIconColour = ([kind, colour]: [string, unknown]): boolean => (SIDEBAR_ICON_KINDS as readonly string[]).includes(kind) && isHexColour(colour)
+const isIconColour = ([kind, colour]: [string, unknown]): boolean => (ICON_COLOUR_KINDS as readonly string[]).includes(kind) && isHexColour(colour)
 /** The icon colours, strict (the IPC boundary). */
 export const isIconColors = (v: unknown): v is SidebarIconColors => isRecord(v) && Object.entries(v).every(isIconColour)
 /** The icon colours on load: each entry that does not read is dropped, so that kind has its built-in colour. */

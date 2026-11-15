@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { ICONS_FILE, mergeIconsFile, parseIconsConfig } from '@shared/vaultIcons'
-import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
+import { ICON_COLOUR_KINDS, ICONS_FILE, mergeIconsFile, parseIconsConfig } from '@shared/vaultIcons'
+import { DEFAULT_SETTINGS, SIDEBAR_ICON_KINDS, type SettingsState } from '@shared/types'
 import { ICON_LOOK_MOVE, getIcons, iconLookPart, removePath, renamePath, setIcons } from './icons'
 
 /** A vault's own icons (YAZ-3440 D8): `.yaseendocs/icons.json` in real tmp vaults, as favorites.test does. */
@@ -71,6 +71,10 @@ describe('icons.json (YAZ-3440 D8)', () => {
     // An empty list is the vault's own (no rules), not the app's fallback.
     await setIcons(root, { paths: {}, rules: [] })
     expect(await getIcons(root)).toEqual({ paths: {}, rules: [], colors: { card: '#aa00ff' } })
+  })
+
+  it('YAZ-5488: the colour kinds are the sidebar\'s kinds (a copy, for the phone\'s first load)', () => {
+    expect(ICON_COLOUR_KINDS).toEqual(SIDEBAR_ICON_KINDS)
   })
 
   it('YAZ-5488: a bad rule list or colour is refused at the bridge; a bad colour in the file costs itself alone', async () => {
