@@ -33,7 +33,7 @@ import { markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } 
  *  - `[[link]]`: what `look.link` says: a page, a card or a file opens; a broken link keeps its text, marked missing.
  *  - `![[ID]]` of a card: a box the page view fills with the card (round 15, item 1); an ID no card has: "Missing card ·
  *    ID", as the Mac. A picture or a sound waits for its bytes (`data-vault-src`, `data-vault-sound`): the address is
- *    never one the browser fetches. A drawing: a picture the phone draws (`drawing/`, YAZ-5440); a plain draw.io file: "Open it on the Mac" (C3). A picture from the web: a calm line, because
+ *    never one the browser fetches. A drawing: a picture the phone draws (`drawing/`, YAZ-5440); a plain draw.io file: a diagram draw.io's viewer draws (`drawing/diagram/`, YAZ-5533). A picture from the web: a calm line, because
  *    the page's CSP loads none (decision 8, round 12 item 13).
  *  - The page's own card (a `card` fence): drawn read only by `look.card` (`renderCard`); its card line is out of sight,
  *    and gives the card its head (ID, "Archived", "Title hidden in review") and its title band, as the Mac's page card

@@ -210,7 +210,7 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
  * A DRAWING FILE ON ITS OWN (YAZ-5473), in a sheet or full screen: drawn by THE SAME CODE as a drawing in a page
  * (YAZ-5440): the reader draws `![[its name]]` from its own folder, so an Excalidraw drawing is drawn on the phone (it
  * fits the width; a tap opens it full screen, with pinch zoom), a `.drawio.svg` shows as the picture it is, and a plain
- * `.drawio` says "Open it on the Mac". Nothing is saved: the picture lives in memory while it shows.
+ * `.drawio` is drawn by draw.io's own viewer (YAZ-5533), with a page picker for several pages. Nothing is saved: the picture lives in memory while it shows.
  */
 export function DrawingBody({ path, onDrawn }: { path: string; onDrawn(): void }) {
   const app = useApp()

@@ -20,6 +20,19 @@ import { audit, type Finding, type Sheet, type Theme } from './dev/cssAudit'
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = false
 // jsdom has no layout: a fixture's scroll to its part does nothing here.
 Element.prototype.scrollIntoView ??= function () {}
+// YAZ-5533: a diagram's picture is a `blob:` URL; jsdom has none.
+URL.createObjectURL ??= () => 'blob:contrast'
+URL.revokeObjectURL ??= () => {}
+
+/**
+ * YAZ-5533: jsdom loads no frame, so draw.io's viewer is faked here: each diagram is a made-up picture of two pages
+ * with a shape library still to come. The rest of the diagram chunk is real (its figure and its stylesheet).
+ */
+vi.mock('./drawing/diagram/drawDiagram', async () => {
+  const real = await vi.importActual<typeof import('./drawing/diagram/figure')>('./drawing/diagram/figure')
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#dae8fc"/></svg>'
+  return { ...real, DiagramUnavailable: class extends Error {}, drawDiagram: async () => ({ svg, width: 320, height: 180, pages: [{ id: 'a', name: 'Overview' }, { id: 'b', name: 'Details' }], page: 'a', missing: ['aws4.xml'] }) }
+})
 
 const read = (file: string): Sheet => ({ file: relative(REPO, file), css: readFileSync(file, 'utf8') })
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../..') + '/'
@@ -99,6 +112,8 @@ const FIXTURES = [
   'card-file-comments',
   'card-invalid',
   'page-offline',
+  // YAZ-5533: plain draw.io diagrams (the viewer's frame faked below: jsdom runs no frame), with a page picker and a note.
+  'page-diagrams',
   'page-copied',
   'page-copy-by-hand',
   'page-last',

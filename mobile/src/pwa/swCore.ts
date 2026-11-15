@@ -13,6 +13,11 @@
  * - It never takes over by itself. The page sends `SKIP_WAITING` at a safe moment (`safeMoment.ts`).
  * - After a takeover it keeps the version before too, so a page that still runs the old version can load its lazy
  *   chunks, even when the host no longer has them. Older versions are deleted.
+ * - DRAW.IO (YAZ-5533) is NOT in the shell: nothing about it downloads at install. Its files (`/drawio/<hash>/…`: the
+ *   viewer, the renderer page, one file per shape library and font family) are fetched from this site the first time
+ *   a diagram asks for them, and kept from then on in a cache of their own (`notecards-drawio-<hash>`), which an app
+ *   update keeps while the draw.io files are the same. Only this site's answer of the right kind is kept: the host's
+ *   app page for a missing file (the single-page fallback) never is.
  *
  * The types here are the small parts of the worker's API that it uses, so the logic runs in Node tests with fakes.
  */
@@ -30,6 +35,10 @@ export interface ShellBuild {
    * script). A page that does not name it is another page (a captive portal, another deploy): the install refuses it.
    */
   pages: Record<string, string>
+  /** YAZ-5533: the draw.io folder of this build (`/drawio/<hash>/`); its files are kept on first use, not at install. */
+  drawio?: string
+  /** YAZ-5533: the app's own small diagram chunk and its stylesheet (`/assets/drawDiagram-….js`, `.css`): kept on first use with draw.io's files. */
+  drawioChunks?: string[]
 }
 
 export const CACHE_PREFIX = 'notecards-shell-'
@@ -40,6 +49,10 @@ const PAGES_KEY = '/__notecards/pages'
 /** YAZ-5303: every version that was ever the active one: only such a version's cache may go (never a newer one). */
 const RETIRED_KEY = '/__notecards/were-active'
 export const cacheName = (version: string) => `${CACHE_PREFIX}${version}`
+/** YAZ-5533: the draw.io files a diagram fetched, one cache per draw.io folder (`/drawio/<hash>/`). */
+export const DRAWIO_CACHE_PREFIX = 'notecards-drawio-'
+export const drawioCacheName = (base: string) => `${DRAWIO_CACHE_PREFIX}${base.split('/').filter(Boolean).pop() ?? ''}`
+const isDrawio = (path: string) => path.startsWith('/drawio/')
 /** The message from the page: "take over now" (the page decided it is a safe moment). */
 export const SKIP_WAITING = 'notecards:skip-waiting'
 /**
@@ -91,7 +104,7 @@ export interface SwScope {
 /** A hashed build file: its name changes with its bytes, so a copy of it is right forever. */
 const isHashed = (path: string) => path.startsWith('/assets/')
 
-export type Route = { kind: 'pass' } | { kind: 'shell'; key: string }
+export type Route = { kind: 'pass' } | { kind: 'shell'; key: string } | { kind: 'drawio'; key: string }
 const PASS: Route = { kind: 'pass' }
 
 /** What the worker does with a request: `pass` (it does not touch it: the network answers) or `shell` (its kept copy). */
@@ -106,6 +119,8 @@ export function route(request: RequestLike, origin: string, build: ShellBuild): 
   if (url.origin !== origin) return PASS
   const path = url.pathname
   if (path === '/sw.js') return PASS
+  // YAZ-5533: a draw.io file (the renderer frame's page too): kept on first use, never the app page in its place.
+  if (isDrawio(path) || build.drawioChunks?.includes(path)) return { kind: 'drawio', key: path }
   if (request.mode === 'navigate') {
     // The landing pages of the three shared links (YAZ-5290).
     const landing = /^\/(friend|group|join)(\/|\.html)?$/.exec(path)
@@ -143,6 +158,46 @@ export async function respond(scope: Pick<SwScope, 'caches' | 'fetch'>, build: S
   const answer = await scope.fetch(new URL(key, request.url).href, { cache: 'no-cache', credentials: 'same-origin' })
   const type = expectedType(key)
   if (type && !type.test(answer.headers.get('content-type') ?? '')) return new Response('', { status: 404, statusText: 'Not Found' })
+  return answer
+}
+
+/** YAZ-5533: the kind each draw.io file must be: the renderer page (`render`) is HTML that loads the Mac's renderer. */
+function drawioKind(path: string, response: Response, body: string | null): boolean {
+  const type = response.headers.get('content-type') ?? ''
+  if (/\/render$/.test(path)) return /text\/html/.test(type) && body !== null && body.includes('yaseen-render.js') && body.includes('phone-shim.js')
+  if (path.endsWith('.js')) return /javascript/.test(type)
+  if (path.endsWith('.css')) return /text\/css/.test(type)
+  if (path.endsWith('.txt')) return /text\/plain/.test(type)
+  return false
+}
+
+/**
+ * YAZ-5533: the answer to a draw.io file. The kept copy (any draw.io cache: an open page of an older version may use
+ * an older folder); else this site, and when the answer is the file (200, its kind; never the host's app page for a
+ * missing file), it is kept in this build's draw.io cache. With no signal and no kept copy: 503, and the diagram says
+ * it needs the internet the first time.
+ */
+export async function respondDrawio(scope: Pick<SwScope, 'caches' | 'fetch'>, build: ShellBuild, key: string, request: RequestLike): Promise<Response> {
+  for (const name of await scope.caches.keys()) {
+    if (!name.startsWith(DRAWIO_CACHE_PREFIX)) continue
+    const hit = await (await scope.caches.open(name)).match(key)
+    if (hit) return hit
+  }
+  let answer: Response
+  try {
+    answer = await plain(await scope.fetch(new URL(key, request.url).href, { cache: 'no-cache', credentials: 'same-origin' }))
+  } catch {
+    return new Response('', { status: 503, statusText: 'Offline' })
+  }
+  const body = /\/render$/.test(key) ? await answer.clone().text() : null
+  if (!answer.ok || !drawioKind(key, answer, body)) return new Response('', { status: 404, statusText: 'Not Found' })
+  if (build.drawio !== undefined && (key.startsWith(build.drawio) || build.drawioChunks?.includes(key))) {
+    try {
+      await (await scope.caches.open(drawioCacheName(build.drawio))).put(key, answer.clone())
+    } catch {
+      // A full phone: the file still answers; it is fetched again next time.
+    }
+  }
   return answer
 }
 
@@ -237,6 +292,8 @@ export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: S
   const keep = new Set([cacheName(build.version)])
   const alive: Record<string, string> = {}
   for (const page of open) {
+    // YAZ-5533: the hidden draw.io frame of a page is no page of its own.
+    if (isDrawio(pathOf(page.url))) continue
     const version = page.id ? pages[page.id] : undefined
     if (version === undefined) return // a page of an unknown version: keep everything
     keep.add(cacheName(version))
@@ -247,7 +304,21 @@ export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: S
     if (!name.startsWith(CACHE_PREFIX) || keep.has(name) || !wereActive.has(name.slice(CACHE_PREFIX.length))) continue
     await scope.caches.delete(name)
   }
+  // YAZ-5533: an older draw.io folder goes once every open page runs this version (none can ask for it any more).
+  if (Object.values(alive).every((v) => v === build.version)) {
+    for (const name of await scope.caches.keys()) {
+      if (name.startsWith(DRAWIO_CACHE_PREFIX) && (build.drawio === undefined || name !== drawioCacheName(build.drawio))) await scope.caches.delete(name)
+    }
+  }
   await meta.put(PAGES_KEY, new Response(JSON.stringify(alive)))
+}
+
+const pathOf = (url: string): string => {
+  try {
+    return new URL(url).pathname
+  } catch {
+    return ''
+  }
 }
 
 /** Activate: notes this version as the active one. No cache goes here: `prune` removes a version when no page runs it. */
@@ -277,6 +348,7 @@ export function wire(scope: SwScope, build: ShellBuild): void {
   scope.addEventListener('fetch', (event) => {
     const r = route(event.request, scope.location.origin, build)
     if (r.kind === 'pass') return // not ours: the browser does the request as if there were no worker
+    if (r.kind === 'drawio') return void event.respondWith(respondDrawio(scope, build, r.key, event.request))
     event.respondWith(respond(scope, build, r.key, event.request))
     // A page open: the new page runs this version; then a version with no page left can go.
     if (event.request.mode === 'navigate' && event.resultingClientId) event.waitUntil(notePage(scope.caches, event.resultingClientId, build.version).then(() => prune(scope, build)))

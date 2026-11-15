@@ -25,7 +25,11 @@ the code editor. One exception (YAZ-5440): the drawing engine lives in ONE lazy 
 draws a page's Excalidraw drawings with the Mac's own picture code (`client/src/drawings/drawingPicture.ts`), in memory
 only (nothing is saved). Only that folder may import it; `src/drawingWall.test.ts` proves it in the build (not in the
 first load, the reader's chunk or Review), and `drawingChunkTrim` in `vite.config.ts` keeps the engine's editor extras
-(Mermaid, the WebAssembly font cutter, the languages) off the phone. Three checks hold the rule:
+(Mermaid, the WebAssembly font cutter, the languages) off the phone. YAZ-5533, draw.io: a plain `.drawio` is drawn by draw.io's
+own read-only viewer (`viewer-static.min.js`, the Mac's verified v31.5.2 pack; `publish/drawioPhone.ts` fails the build
+when the phone's release is not the Mac's) and the Mac's `yaseen-render.js`, unchanged, in ONE hidden same-origin frame
+(`/drawio/<hash>/render`, `mobile/drawio/`) with its own strict CSP. They are files, not chunks; the app's side is one
+small lazy chunk (`src/drawing/diagram/`). None of it is in the first load or the install (below). Three checks hold the rule:
 
 * `mobile/tsconfig.json` has browser types only. `process`, `Buffer` or `require` in `src/` fail the typecheck.
 * `importRules.ts` lists what is forbidden. The build fails on it (`phoneImportGuard` in `vite.config.ts`), for
@@ -150,6 +154,12 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
   writes `dist/sw.js` with the build's file list. It keeps the app's own files only: the pages, ALL chunks (the lazy
   sync engine and QR reader too, so they work offline), the manifest, the icons (the build check prints the size). It
   never touches a request to another origin (GitHub, avatars) or a write. A new version installs whole or not at all.
+  NOTHING about draw.io is in the install (YAZ-5533, Yaseen: draw.io must not bloat the app): its files
+  (`/drawio/<hash>/…`: the viewer, the renderer page, one file per shape library and per font family) and the app's
+  diagram chunk are fetched from this site the first time a diagram is opened, only what that diagram uses, and kept
+  from then on in `notecards-drawio-<hash>` (an update that does not change them keeps them). Before that, with no
+  signal, a diagram says "Diagrams need the internet the first time; then they work offline"; a shape library not
+  fetched yet draws as placeholder boxes until the phone is online.
   A version's cache stays while any open page runs that version (each page open notes its version; YAZ-5303), so an
   open page of an old version still loads its lazy chunks; with no page of it left, the next open removes it.
 * **Updates** (`src/pwa/updates.ts`, `safeMoment.ts`, `UpdateLine.tsx`): a new version downloads in the background.
@@ -167,6 +177,12 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
   `Strict-Transport-Security: max-age=31536000`, the cache rules; no long cache under `/assets/`, because Cloudflare
   answers a missing chunk with the app page). `publish/headers.test.ts` fails when the code calls an origin that the CSP does not name, or the CSP
   names more.
+* **draw.io's frame:** `/drawio/*` has its own policy (`script-src 'self'`, `connect-src 'none'`, pictures from `data:`
+  and `blob:` only, no frame, no form) and the one exception the app needs: `frame-ancestors 'self'` (every other path
+  keeps `'none'`). Its shim takes away the frame's IndexedDB, storage, caches, cookies and service worker.
+* **draw.io proofs:** `npx vite-node mobile/publish/proveDiagrams.ts` (after `npm run mobile:build` and
+  `npm run build:fixtures -w mobile`): the made-up diagrams draw in Chromium and WebKit, light and dark; nothing leaves
+  the site; hostile labels run nothing; the pixel check against the Mac's renderer; offline with the real worker.
 * **Build check:** `npm run mobile:build` ends with `publish/checkBuild.ts`: no screen fixtures, no `localhost`, no
   source maps, no token in `dist/`; every publish part there; the size report.
 * **Headless check:** `npx vite-node mobile/publish/proveOffline.ts` (after the build). Chrome with no window opens the
