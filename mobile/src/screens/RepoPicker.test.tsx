@@ -165,3 +165,49 @@ describe('the token comes first (YAZ-5408)', () => {
     expect(h.github.calls.every((c) => c.url.startsWith('https://api.github.com/'))).toBe(true)
   })
 })
+
+describe('the picker calls GitHub once for each thing (YAZ-5441, YAZ-5442)', () => {
+  it('a double tap on a repo row runs the existing check ONE time', async () => {
+    h = await mount()
+    await showRepos(h, GOOD)
+    await h.waitText('Choose the repo of your vault')
+    const row = (label: string) => [...h!.host.querySelectorAll<HTMLButtonElement>('.repo-row')].find((b) => b.getAttribute('aria-label') === label)!
+    const before = h.github.calls.length
+    // Two taps on one row and one on another, all in one turn (before the row shows "Checking…").
+    const vault = row('yaseen/vault, private, a vault')
+    const second = row('yaseen/second, private, a vault')
+    await act(async () => {
+      vault.click()
+      vault.click()
+      second.click()
+    })
+    await h.settle()
+    const after = paths(h).slice(before)
+    expect(after.filter((p) => p === 'GET /user')).toHaveLength(1)
+    expect(after.filter((p) => p === 'GET /repos/yaseen/vault')).toHaveLength(1)
+    expect(after.filter((p) => p === 'GET /repos/yaseen/second')).toHaveLength(0)
+    expect(after.filter((p) => p === 'POST /gists')).toHaveLength(1)
+  })
+
+  it('the first 12 looks run at most 4 at a time', async () => {
+    h = await mount()
+    const inner = h.services.fetch!
+    let open = 0
+    let most = 0
+    h.services.fetch = async (url, init) => {
+      const look = new URL(url).pathname.endsWith('/contents/.yaseendocs')
+      if (look) most = Math.max(most, ++open)
+      try {
+        if (look) await new Promise((r) => setTimeout(r, 5))
+        return await inner(url, init)
+      } finally {
+        if (look) open--
+      }
+    }
+    await showRepos(h, MANY)
+    await h.waitText('Choose the repo of your vault')
+    expect(paths(h).filter((p) => p.endsWith('/contents/.yaseendocs')).length).toBeGreaterThanOrEqual(12)
+    expect(most).toBeGreaterThan(0)
+    expect(most).toBeLessThanOrEqual(4)
+  })
+})

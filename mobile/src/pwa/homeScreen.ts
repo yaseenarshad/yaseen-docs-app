@@ -19,6 +19,15 @@ export const HOME_SCREEN = {
   formLine: 'Sign in from the Home Screen app. Safari keeps its data apart.',
 }
 
+/**
+ * YAZ-5443: Safari's ☰ button. VoiceOver reads the bare glyph as "trigram for heaven", so each place that shows it in
+ * text wraps it in an element with this spoken name (`role="img"`, as the install hint's drawn lines).
+ */
+export const THREE_LINES = { glyph: '☰', name: 'the three lines' } as const
+
+/** A text split around each ☰: the parts between are plain text, the glyph goes in its own named element. */
+export const splitThreeLines = (text: string): string[] => text.split(THREE_LINES.glyph)
+
 const tapWords = (s: { tap: string; where?: string }) => (s.where === undefined ? s.tap : `${s.tap} ${s.where}`)
 /** The Safari steps in one sentence (the `/friend` page). */
 export const safariLine = (): string => `In Safari, tap ${HOME_SCREEN.safari.map(tapWords).join(', then ')}.`

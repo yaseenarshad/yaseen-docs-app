@@ -127,12 +127,19 @@ describe('each sign-in result has plain words and a way forward', () => {
   it('"How to make a token" opens "Set up your phone" with the two permissions and the supported setup; Back returns', async () => {
     h = await mount()
     await h.click('How to make a token')
+    await h.waitText('Set up your phone')
     const text = h.text()
     expect(text).toContain('Set up your phone')
     expect(text).toContain('one GitHub account and one token')
     expect(text).toContain('Contents: Read and write')
     expect(text).toContain('Gists: Read and write')
     expect(text).toContain('Add to Home Screen')
+    // YAZ-5443: VoiceOver reads the ☰ as "the three lines", not "trigram for heaven".
+    const glyphs = [...h.host.querySelectorAll('.guide-steps li')].filter((li) => li.textContent!.includes('☰'))
+    expect(glyphs).toHaveLength(1)
+    const named = glyphs[0].querySelector('[role="img"]')!
+    expect([named.getAttribute('aria-label'), named.textContent]).toEqual(['the three lines', '☰'])
+    expect([...glyphs[0].childNodes].filter((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.includes('☰'))).toEqual([])
     await h.click('‹ Back')
     expect(h.button('Show my repos')).not.toBeNull()
   })

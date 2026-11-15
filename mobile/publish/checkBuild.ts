@@ -50,6 +50,7 @@ export const NOT_FIRST_LOAD: RegExp[] = [
   /^node_modules\/(marked|dompurify)\//, // the reader's Markdown
   /^mobile\/src\/(page\/pageRender|media\/(ahead|plan|refs)|scan\/qrDecode)\.ts$/,
   /^node_modules\/qr\//, // the QR reader
+  /^mobile\/src\/settings\/(whatsNew\.ts|WhatsNewList\.tsx)$/, // Settings › What's new, loaded when opened (YAZ-5446)
 ]
 
 /** YAZ-5377: modules that no production chunk may hold: dev-only and test-only code, and the fixtures. */

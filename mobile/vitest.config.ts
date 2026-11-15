@@ -1,7 +1,7 @@
 import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 import { configDefaults, defineConfig } from 'vitest/config'
-import { phoneResolve } from './vite.config'
+import { buildDefine, phoneResolve } from './vite.config'
 
 /**
  * The `mobile` project of the root vitest run: the app's aliases and its one React (`phoneResolve`), Node by default.
@@ -38,6 +38,8 @@ export default defineConfig({
   root: import.meta.dirname,
   plugins: [react(), recordStylesheets()],
   resolve: phoneResolve,
+  // YAZ-5446: the build's version, time and commit, as the build sets them; a fixed time, so a test can read it.
+  define: buildDefine(new Date('2026-11-14T10:42:00Z')),
   test: {
     name: 'mobile',
     // Store tests run in plain Node with fake-indexeddb; a file that draws React says `@vitest-environment jsdom`.
