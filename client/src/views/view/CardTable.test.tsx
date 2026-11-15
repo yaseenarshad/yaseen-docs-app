@@ -39,7 +39,7 @@ const RECORDS = [
 ]
 /** A table that lists cards, its pages' table already set: two columns, a sort, a width. */
 const VIEW = 'views:\n  - type: table\n    name: T\n    rows: cards\n    order: [file.name, note.status]\n    sort:\n      - property: note.status\n        direction: ASC\n    columnSize:\n      file.name: 300\n'
-const CARD_HEADERS = ['Name', 'Page', 'Card status', 'Card next review', 'Card last review', 'Card reviews', 'Card success rate', 'Card up next', 'Card ID', 'Level']
+const CARD_HEADERS = ['Name', 'Page', 'Card status', 'Card fix status', 'Card next review', 'Card last review', 'Card reviews', 'Card success rate', 'Card up next', 'Card ID', 'Level']
 
 let root: Root | null = null
 let container: HTMLElement | null = null
@@ -335,6 +335,26 @@ describe('YAZ-5411: a Cards table in a Read only vault asks "Allow edits?" first
     }
     expect(vault.ask).toHaveBeenCalledTimes(2)
     expect(changeCardLine).not.toHaveBeenCalled()
+  })
+
+  it('YAZ-5430: Card fix status asks first too: Cancel writes nothing; Allow opens its Select and Needs fixing writes `fix`', async () => {
+    const vault = lockedVault(false)
+    const { el } = mount(VIEW, vault)
+    act(() => void cellOf(el, 'Card fix status').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    expect(vault.ask).toHaveBeenCalledOnce()
+    expect(document.querySelector('[role="option"]')).toBeNull()
+    expect(changeCardLine).not.toHaveBeenCalled()
+    vault.answer = true
+    act(() => void cellOf(el, 'Card fix status').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((o) => o.textContent?.startsWith('Needs fixing'))!
+    await act(async () => void option.click())
+    await flush()
+    expect(changeCardLine).toHaveBeenCalledOnce()
+    const [path, id, change] = vi.mocked(changeCardLine).mock.calls[0]
+    expect([path, id]).toEqual([TRIP, 'GEO-1'])
+    expect(formatCardLine(change(parseCardLine('<!-- card: GEO-1, title "Capital of Spain", level "A2" -->')!))).toBe('<!-- card: GEO-1, title "Capital of Spain", level "A2", fix -->')
   })
 
   it('"+ New": the vault\'s file-action ask comes first; refused, no card file and no error line', async () => {
