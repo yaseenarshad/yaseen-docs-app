@@ -156,6 +156,9 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
   It takes over at the next open, before the app runs (`main.tsx`), or after "A new version is ready." → Restart, or
   when the app comes back after 5 minutes away; never while answers wait to be sent, never on the Review tab or over
   a form unless the person taps Restart.
+  **Keep this.** It is how an installed home-screen app gets each new build: a person never has to delete and add the
+  app again. Every publish must keep `UpdateLine.tsx` ("A new version is ready." → Restart), the `no-cache` rule on
+  `sw.js`, and `updateViaCache: "none"`. To test it: publish, close the app, open it again; the line shows, then Restart.
 * **Shared links:** `https://<site>/friend#<code>`, `/group#<code>` and `/join#<group>-<pointer>` (`src/pwa/friendLink.ts`:
   `friendLink`, `groupLinkFor`, `joinLinkFor`, `landingCodeFrom`). The code is after `#`, so no server sees it. One landing
   page for Safari (`friend.html`, also built as `group.html` and `join.html`): "Copy this code. Open the app. Tap Paste.",
