@@ -15,6 +15,7 @@ import { ICONS_FILE, mergeIconsFile } from '@shared/vaultIcons'
 import { atomicWrite } from '../fs/fsUtils'
 import { mergeSharesFile, SHARES_FILE } from '../share/shareLinks'
 import { git, zList } from './exec'
+import { FRIENDS_LIST } from './friendsListRule'
 
 /**
  * A REBASE THAT STOPPED ON CONFLICTS, FINISHED INSTEAD OF ABANDONED — for DRAWINGS (🔒 YAZ-1897
@@ -224,6 +225,13 @@ async function settle(bin: string, root: string, rel: string, copies: Map<string
   const stages = await stagesOf(bin, root, rel)
   if (stages === null) return null
   const { base, theirs, mine } = stages
+  // YAZ-5083 round 5: the friends list file has one writer (the phone, by GitHub's API): GitHub's side wins, always.
+  // No merge, no copy, nothing to tell anyone.
+  if (rel === FRIENDS_LIST) {
+    if (theirs === null) await rm(abs(root, rel), { force: true })
+    else await atomicWrite(abs(root, rel), theirs)
+    return { staged: [rel], report: null }
+  }
   // A board or page deleted on one side, edited on the other: the edit stays (S11). Nothing to tell anyone.
   // (`settles` already let only boards, pages and the list files through; a list file is never deleted by the app.)
   if (theirs === null || mine === null) {
@@ -302,7 +310,7 @@ function pageTitle(rel: string, text: string): string {
 
 /** Whether sync may settle a conflict on `rel` at all: a board, a page (YAZ-4615 D4, D9), or one of the per-entry list files. */
 const settles = (rel: string): boolean =>
-  isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH
+  rel === FRIENDS_LIST || isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH
 
 /**
  * The merge a file knows how to do, or null for keep-both. `clashes: null` marks a merge nobody
