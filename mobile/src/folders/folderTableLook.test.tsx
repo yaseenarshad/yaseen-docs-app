@@ -92,3 +92,28 @@ describe("the folder table wears the vault's folder page defaults (YAZ-5549)", (
     expect(css).toMatch(/\.folder-table tbody tr:not\(\.folder-table__group\) > td \{\s*height: var\(--folder-row-h, 28px\);/)
   })
 })
+
+describe('the folder table is a grid, as Google Sheets and the Mac (YAZ-5595)', () => {
+  const css = readFileSync(resolve(import.meta.dirname, 'folders.css'), 'utf8')
+  const grid = '.page-table-box .page-table-frame .page-table table.folder-table__table'
+  /** The body of the rule whose selector is exactly `selector`, else null. */
+  const rule = (selector: string): string | null => {
+    const at = css.indexOf(`\n${selector} {`)
+    return at < 0 ? null : css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at))
+  }
+
+  it("a line right of every cell in the tables' light line colour; none after the last column (the frame is the edge)", () => {
+    expect(rule(`${grid} :is(th, td)`)).toMatch(/border-right: 1px solid var\(--table-row-line\);/)
+    expect(rule(`${grid} tr > :last-child`)).toMatch(/border-right: 0;/)
+  })
+
+  it('the last body row keeps its line over the summaries; the frame a light outer border, near square', () => {
+    expect(rule(`${grid}:has(tfoot) tbody tr:last-child > :is(th, td)`)).toMatch(/border-bottom: 1px solid var\(--table-row-line\);/)
+    expect(rule('.page-table-box .page-table-frame:has(table.folder-table__table)')).toMatch(/border-radius: 4px;/)
+  })
+
+  it('the table drawn wears the class the grid keys on (the full-screen copy keeps it)', async () => {
+    const table = await opened(null)
+    expect(table.classList.contains('folder-table__table')).toBe(true)
+  })
+})

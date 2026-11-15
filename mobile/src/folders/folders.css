@@ -93,6 +93,29 @@
   font-size: 13px;
   line-height: var(--tap);
 }
+/* YAZ-5598: the Mac's toolbar toggle after the count: Collapse all groups (chevrons up) or Expand all (down), a 44 px tap. */
+.folder-view__fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  vertical-align: top;
+}
+.folder-view__fold svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 /* Other files (the Mac's tray): a head that folds, then a line for each file with its kind. */
 .folder-other {
@@ -220,19 +243,105 @@
   text-align: left;
   vertical-align: middle;
 }
-.folder-table .folder-table__group[data-level='1'] > th {
+/* YAZ-5599: the group row is one cell across the row; its line (the arrow, the name, the count) is as wide as the
+   table's visible part (`--folder-group-w`, measured), so it never widens a column, and stays at the left while the
+   table scrolls sideways (sticky, the Mac's `.view-group`). The name is one line, cut with "…" at that edge; the count
+   always shows after it. Each level steps in (the Mac's indent), inside the line. */
+.folder-table .page-table-box .page-table-frame .page-table table tr.folder-table__group > th {
+  padding-inline: 0;
+  /* Clip, not hidden: a hidden cell would be the line's scroll box, and the line would not stay at the left. */
+  overflow: clip;
+}
+.folder-table__group-line {
+  position: sticky;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: var(--folder-group-w, 100%);
+  height: var(--tap);
+  padding: 0 0.75em;
+  white-space: nowrap;
+}
+.folder-table__group[data-level='1'] .folder-table__group-line {
   padding-left: 1.5em;
 }
-.folder-table .folder-table__group[data-level='2'] > th {
+.folder-table__group[data-level='2'] .folder-table__group-line {
   padding-left: 2.25em;
 }
+.folder-table__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .folder-table__count {
+  flex: none;
   color: var(--fg-muted);
   font-weight: 400;
 }
 .folder-table tfoot td {
   color: var(--fg-muted);
   font-size: 13px;
+}
+/* YAZ-5598: a group row's ⌄ (the Mac's `view-group__toggle`), before its name: a 44 px tap, so the group row is a
+   finger's tap tall, no taller; folded, it turns to ›. The full-screen view is a still copy: no arrows there. */
+.folder-table .page-table-box .page-table-frame .page-table table tr.folder-table__group > :is(th, td) {
+  height: var(--tap);
+  padding-block: 0;
+}
+.folder-table__fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  flex: none;
+  margin: 0 -8px 0 -14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  vertical-align: middle;
+  -webkit-tap-highlight-color: transparent;
+}
+.folder-table__fold svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 120ms ease;
+}
+.folder-table__fold[aria-expanded='false'] svg {
+  transform: rotate(-90deg);
+}
+.table-view .folder-table__fold {
+  display: none;
+}
+
+/*
+ * YAZ-5595: the grid, as Google Sheets and the Mac's folder table (`views.css` `.view-table`: a line right of and under
+ * every cell, always, no setting): a thin line between every column and every row, in the phone tables' light line
+ * colour (`--table-row-line`, light and dark, `tables.css`). The frame is the light outer border, its corners near square;
+ * the header row keeps its shade and its darker line under it. The lines belong to the cells, so a frozen column carries
+ * its own while the table scrolls sideways, and the finger band (each cell's colour) still covers the whole row, its
+ * lines over it. The last column has no line of its own (the frame is its edge); the last body row keeps its line when
+ * the summaries' foot follows. Keyed on the table's own class, so the full-screen view (⤢, a copy of the box) keeps it.
+ */
+.page-table-box .page-table-frame:has(table.folder-table__table) {
+  border-radius: 4px;
+}
+.page-table-box .page-table-frame .page-table table.folder-table__table :is(th, td) {
+  border-right: 1px solid var(--table-row-line);
+}
+.page-table-box .page-table-frame .page-table table.folder-table__table tr > :last-child {
+  border-right: 0;
+}
+.page-table-box .page-table-frame .page-table table.folder-table__table:has(tfoot) tbody tr:last-child > :is(th, td) {
+  border-bottom: 1px solid var(--table-row-line);
 }
 
 /*

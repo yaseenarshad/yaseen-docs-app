@@ -86,6 +86,13 @@ import { freePort } from './freePort'
  *  - a folder's table as the vault's folder-pages.json says (`#fixture=folder-table`, `folder-table-look`, YAZ-5549), light
  *    and dark, at 375 px (in the folder views' part): the row height (Short: the Name cell keeps 44 px; Tall: 68 px),
  *    the `#` numbers, a subfolder's "N inside".
+ *  - the folder table's grid (`#fixture=folder-table`, `folder-grouped`, `folder-table-band`, YAZ-5595), light and dark, at
+ *    375 px: a line between every column and every row, subtle; the frame; the header set apart; the frozen columns keep
+ *    their lines while the table scrolls sideways; the band across the whole row, its lines drawn.
+ *  - a grouped folder table folds (`#fixture=folder-grouped`, YAZ-5598), light and dark, at 375 px: each group's ⌄ a
+ *    44 px tap on top; a tap folds the group (count kept, arrow turned); the toolbar toggle folds and opens them all.
+ *  - a group row spans the folder table (`#fixture=folder-grouped`, YAZ-5599), light and dark, at 375 px: each name on
+ *    one line, the count after it; a long name cut with "…" at the visible edge; scrolled sideways, the line stays put.
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
@@ -629,6 +636,165 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
       writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5595: the folder table's grid (Google Sheets, the Mac's `.view-table`), light and dark, at 375 px: a 1 px line right
+// of every cell but the row's last and under every body row, in the light line colour (subtle: under 1.6:1 on the page);
+// the frame a light outer border; the header row its own shade and a darker line; scrolled sideways, the frozen cells
+// stay put with their lines; the banded row (`folder-table-band`) one colour across, its lines still drawn.
+const GRID_CHECK = `(async () => {
+  const table = document.querySelector('.folder-table table')
+  if (!table) return { error: 'no table' }
+  const cs = (el) => getComputedStyle(el)
+  const rgb = (c) => { const m = c.match(/[\\d.]+/g).map(Number); return c.startsWith('color(') ? m.slice(0, 3).map((v) => v * 255) : m.slice(0, 3) }
+  const lum = (c) => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100 }
+  // The page's colour: a frozen body cell's (var(--bg), solid), off the band.
+  const page = cs(table.querySelector('tbody tr[data-row]:not([data-band]) td[data-pin-col]') ?? document.body).backgroundColor
+  const rows = [...table.rows]
+  const cols = { missing: [], lastWithLine: [] }
+  for (const tr of rows) [...tr.cells].forEach((c, i, all) => {
+    const w = cs(c).borderRightWidth
+    if (i < all.length - 1 && (w !== '1px' || cs(c).borderRightStyle !== 'solid')) cols.missing.push(tr.rowIndex + ':' + i)
+    if (i === all.length - 1 && w !== '0px') cols.lastWithLine.push(tr.rowIndex)
+  })
+  const body = [...table.tBodies[0].rows]
+  const rowGaps = body.slice(0, table.tFoot ? body.length : body.length - 1).filter((tr) => [...tr.cells].some((c) => cs(c).borderBottomWidth !== '1px')).map((tr) => tr.rowIndex)
+  const td = table.querySelector('tbody tr[data-row] td:not(.folder-table__num):not([data-name])') ?? table.querySelector('tbody td')
+  const th = table.tHead.rows[0].cells[1] ?? table.tHead.rows[0].cells[0]
+  const frame = table.closest('.page-table-frame')
+  const line = cs(td).borderRightColor
+  const box = table.closest('.page-table')
+  const pinned = [...table.querySelectorAll('[data-pin-col]')]
+  const before = pinned.map((c) => Math.round(c.getBoundingClientRect().left))
+  box.scrollLeft = 80
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const scrolled = box.scrollLeft
+  const after = pinned.map((c) => Math.round(c.getBoundingClientRect().left))
+  const pinnedLines = pinned.filter((c) => c !== c.parentElement.lastElementChild).every((c) => cs(c).borderRightWidth === '1px')
+  const banded = table.querySelector('tr[data-band]')
+  const band = banded ? { colours: [...new Set([...banded.cells].map((c) => cs(c).backgroundColor))].length, lines: [...banded.cells].slice(0, -1).every((c) => cs(c).borderRightWidth === '1px') } : null
+  return {
+    rows: rows.length, cols, rowGaps,
+    line, page, contrast: ratio(line, page),
+    frame: cs(frame).borderTopWidth + ' ' + cs(frame).borderTopColor, frameRadius: cs(frame).borderTopLeftRadius,
+    headShade: cs(th).backgroundColor !== cs(td).backgroundColor, headLine: cs(th).borderBottomColor !== line,
+    scrolled, pinned: pinned.length, pinnedStay: scrolled === 0 || before.join() === after.join(), pinnedLines,
+    band,
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['folder-table', 'folder-grouped', 'folder-table-band']) {
+      const file = await open(name, 375, 667)
+      const shot = file.replace('.png', `-grid-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(GRID_CHECK)
+      const ok = m.error === undefined && m.cols.missing.length === 0 && m.cols.lastWithLine.length === 0 && m.rowGaps.length === 0 && m.contrast > 1.05 && m.contrast < 1.6 && m.frame.startsWith('1px ') && m.headShade && m.headLine && m.pinned > 0 && m.pinnedStay && m.pinnedLines && (name !== 'folder-table-band' || (m.band !== null && m.band.colours === 1 && m.band.lines)) && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} grid ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5598: a grouped folder table folds (`folder-grouped`), light and dark, at 375 px: each group row's ⌄ a 44 px tap
+// at the row's left, on top; a real tap folds its group (its rows gone, the count kept, the arrow turned ›), the grid
+// and the other groups' numbers as before; the toolbar toggle after the count (44 px) folds every group, then opens them.
+const FOLD_STATE = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const groups = [...document.querySelectorAll('.folder-table tr.folder-table__group')]
+  const rowsOf = (g) => { const out = []; for (let tr = g.nextElementSibling; tr && !tr.classList.contains('folder-table__group'); tr = tr.nextElementSibling) out.push(tr); return out }
+  const all = document.querySelector('.folder-view__fold')
+  return {
+    groups: groups.map((g) => {
+      const a = g.querySelector('.folder-table__fold')
+      const b = r(a)
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2)
+      return { name: g.querySelector('.folder-table__label').textContent, count: g.querySelector('.folder-table__count').textContent.trim(), rows: rowsOf(g).length, numbers: rowsOf(g).map((tr) => tr.cells[0].textContent).join(','), open: a.getAttribute('aria-expanded'), tap: [Math.round(b.width), Math.round(b.height)], row: Math.round(r(g).height), x: Math.round(b.left + b.width / 2), y: Math.round(b.top + b.height / 2), onTop: a.contains(hit), turn: getComputedStyle(a.querySelector('svg')).transform, lines: getComputedStyle(g.cells[0]).borderBottomWidth }
+    }),
+    all: all ? { label: all.getAttribute('aria-label'), tap: [Math.round(r(all).width), Math.round(r(all).height)], x: Math.round(r(all).left + r(all).width / 2), y: Math.round(r(all).top + r(all).height / 2) } : null,
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  const tapAt = async (x: number, y: number) => {
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, page)
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, page)
+    await wait(250)
+  }
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('folder-grouped', 375, 667)
+    await evaluate(`(() => { try { localStorage.removeItem('notecard.folderFolds') } catch {} })()`)
+    const before = await evaluate(FOLD_STATE)
+    const g0 = before.groups[0]
+    await tapAt(g0.x, g0.y)
+    const folded = await evaluate(FOLD_STATE)
+    const shot = file.replace('.png', `-fold-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const f0 = folded.groups.find((g: any) => g.name === g0.name)
+    await tapAt(folded.all.x, folded.all.y)
+    const allShut = await evaluate(FOLD_STATE)
+    const shotAll = file.replace('.png', `-fold-all-${scheme}.png`)
+    writeFileSync(shotAll, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    await tapAt(allShut.all.x, allShut.all.y)
+    const allOpen = await evaluate(FOLD_STATE)
+    const ok =
+      before.groups.length > 1 && before.groups.every((g: any) => g.tap[0] >= 44 && g.tap[1] >= 44 && g.row >= 44 && g.row <= 46 && g.onTop && g.open === 'true' && g.rows === Number(g.count) && (g.rows === 0 || g.numbers.startsWith('1')) && g.lines === '1px') &&
+      f0 !== undefined && f0.rows === 0 && f0.count === g0.count && f0.open === 'false' && f0.turn !== 'none' && folded.groups.filter((g: any) => g.name !== g0.name).every((g: any) => g.rows === Number(g.count)) &&
+      before.all !== null && before.all.label === 'Collapse all groups' && before.all.tap[0] >= 44 && before.all.tap[1] >= 44 &&
+      allShut.groups.every((g: any) => g.rows === 0 && g.open === 'false') && allShut.all.label === 'Expand all groups' &&
+      allOpen.groups.every((g: any) => g.rows === Number(g.count) && g.open === 'true') && !before.pageWide && !allShut.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  folder-grouped fold ${scheme} at 375x667: before ${JSON.stringify(before.groups.map((g: any) => [g.name, g.count, g.rows, g.tap.join('x'), g.row, g.onTop]))}; tapped "${g0.name}": ${JSON.stringify(f0)}; collapse all: ${JSON.stringify(allShut.groups.map((g: any) => [g.name, g.rows, g.open]))} "${allShut.all?.label}"; expand all: ${JSON.stringify(allOpen.groups.map((g: any) => [g.name, g.rows]))}  ${shot} ${shotAll}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5599: a group row spans the folder table (`folder-grouped`), light and dark, at 375 px: each group's name on one
+// line, its count after it, inside the table's visible part; a long name (the Mac's month groups, "2026-11-November"
+// and more, set on the first group here) still one line, cut with "…" at the visible edge, the count kept; the table made
+// wider than the screen (a wide Due column, set here) and scrolled sideways: the line stays at the left, whole.
+const GROUP_LINE = `(async () => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.folder-table table')
+  const box = table.closest('.page-table')
+  const one = (el) => { const lh = parseFloat(getComputedStyle(el).lineHeight) || 20; return r(el).height <= lh * 1.3 }
+  const read = () => {
+    const edge = r(box).right
+    return [...table.querySelectorAll('tr.folder-table__group')].map((g) => {
+      const line = g.querySelector('.folder-table__group-line'), label = g.querySelector('.folder-table__label'), count = g.querySelector('.folder-table__count')
+      return { name: label.textContent, cells: g.cells.length, span: g.cells[0].colSpan, oneLine: one(label) && Math.round(r(line).height) <= 46, cut: label.scrollWidth > label.clientWidth + 1, ellipsis: getComputedStyle(label).textOverflow, countIn: r(count).width > 0 && r(count).right <= edge + 0.5, lineLeft: Math.round(r(line).left), lineIn: r(line).right <= edge + 0.5 && r(line).left >= r(box).left - 0.5 }
+    })
+  }
+  const first = read()
+  table.querySelector('tr.folder-table__group .folder-table__label').textContent = '2026-11-November, the long month of the garden shed and the kitchen paint'
+  await new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)))
+  const long = read()[0]
+  const due = [...table.tHead.rows[0].cells].find((c) => c.textContent === 'Due')
+  due.style.minWidth = '420px'
+  await new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)))
+  box.scrollLeft = 200
+  await new Promise((f) => requestAnimationFrame(() => requestAnimationFrame(f)))
+  const scrolled = box.scrollLeft
+  const after = read()
+  return { columns: table.tHead.rows[0].cells.length, first, long, scrolled, after, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('folder-grouped', 375, 667)
+    const m = await evaluate(GROUP_LINE)
+    const shot = file.replace('.png', `-group-line-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok =
+      m.first.length > 1 && m.first.every((g: any) => g.cells === 1 && g.span === m.columns && g.oneLine && !g.cut && g.countIn && g.lineIn) &&
+      m.long.oneLine && m.long.cut && m.long.ellipsis === 'ellipsis' && m.long.countIn && m.long.lineIn &&
+      m.scrolled > 0 && m.after.every((g: any, i: number) => g.oneLine && g.countIn && g.lineIn && g.lineLeft === m.first[i].lineLeft) && !m.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  folder-grouped group line ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
