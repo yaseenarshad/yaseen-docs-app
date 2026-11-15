@@ -1,8 +1,8 @@
 import { matchTier, readNeedle } from '@client/links/completion'
 import { SEARCH_CAP, idQuery, searchCandidates, searchRows, type SearchCandidate } from '@client/search/searchCandidates'
-import { filterTest, typeOf } from '@client/search/searchType'
 import { holdsId } from '@shared/pageId'
 import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
+import { boardKindOf } from '../drawing/boardFiles'
 
 /**
  * THE PHONE'S SEARCH (YAZ-5079, 4C): the Mac's own search over the index records, with no bridge. The rows are the Mac's
@@ -16,13 +16,27 @@ import { FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
  *  - `findRows` reads the rows ONE time in slices and keeps only the rows that can show: each row whose ID the text holds,
  *    each row of `#<digits>`, and in each rank tier of the title match only its first `SEARCH_CAP` rows (the cap cuts
  *    after the tiers, so no later row can show). Then `searchRows` ranks that short list as the Mac ranks the whole one.
- *  - The Type filter (round 15, item 2) runs in the same pass, BEFORE the ranking, as the Mac's (`filterTest`, D16).
+ *  - The Type filter (round 15, item 2; YAZ-5534) runs in the same pass, BEFORE the ranking, as the Mac's (D16).
  *
  * No folder rows: the phone opens no folder. The search box has no pinned items (the Mac's `first`).
  */
 
-/** The Type filter of the phone (round 15, item 2): All types, Pages, Cards. Cards only while Review is on. */
-export type PhoneType = 'all' | 'pages' | 'cards'
+/**
+ * The Type filter of the phone (YAZ-5534): the Mac's types and words (`searchFilter.ts`, YAZ-5047: Pages, Cards, Drawings,
+ * Diagrams, in that order), the ones the phone opens. Cards only while Review is on.
+ */
+export type PhoneKind = 'pages' | 'cards' | 'drawings' | 'diagrams'
+/** The types on, any mix (YAZ-5534: multi-select), in the menu's order; none on is All types. */
+export type PhoneType = readonly PhoneKind[]
+/** All types: no type on. */
+export const ALL_TYPES: PhoneType = []
+/** Each type in the menu's order, with the word the Mac's menu and chip show (`searchFilter.ts` `TYPES`). */
+export const PHONE_KINDS: readonly (readonly [PhoneKind, string])[] = [
+  ['pages', 'Pages'],
+  ['cards', 'Cards'],
+  ['drawings', 'Drawings'],
+  ['diagrams', 'Diagrams'],
+]
 
 /** Called after each small piece of work: it gives the thread back when the slice has run long enough (`uiSlicer`). */
 export type Slice = () => Promise<void>
@@ -63,9 +77,25 @@ export async function buildRows(source: SearchSource, slice: Slice = noSlice, li
   return rows
 }
 
-/** The rows `type` keeps: the Mac's own test (`filterTest`), with no time range. */
+/**
+ * A row's type: a card (a card file's while Review is on, or a card in a page), a drawing (`.excalidraw`) or a diagram
+ * (`.drawio`, `.drawio.svg`, `.drawio.png`) by YAZ-5473's kinds (`boardKindOf`), else a page; a folder has none. The Mac's
+ * `typeOf` reads `.drawio.svg` as an image, a type the phone has not: here it is the diagram its tree row shows.
+ */
+export function phoneKindOf(row: Pick<SearchCandidate, 'kind' | 'path' | 'card'>): PhoneKind | null {
+  if (row.kind === 'dir') return null
+  if (row.card === true) return 'cards'
+  const board = boardKindOf(row.path)
+  return board === 'drawing' ? 'drawings' : board === 'diagram' ? 'diagrams' : 'pages'
+}
+
+/** The rows `type` keeps: a row of any type on; undefined for All types (a folder too). */
 export function typeTest(type: PhoneType): ((row: SearchCandidate) => boolean) | undefined {
-  return filterTest({ type, time: 'any' }, () => 0, undefined)
+  if (type.length === 0) return undefined
+  return (row) => {
+    const kind = phoneKindOf(row)
+    return kind !== null && type.includes(kind)
+  }
 }
 
 /**
@@ -107,20 +137,4 @@ export async function findRows(rows: readonly SearchCandidate[], query: string, 
     if (!live()) return null
   }
   return searchRows(short, query)
-}
-
-/** The rows of the empty box: `type` Cards lists the cards; All types and Pages list the pages (round 15, item 2). */
-export function emptyBoxRows(rows: readonly SearchCandidate[], type: PhoneType): SearchCandidate[] {
-  // The first row of each record is its title row (`searchCandidates`); a card in a page is a card row of its own.
-  const seen = new Set<string>()
-  const out: SearchCandidate[] = []
-  for (const row of rows) {
-    const cardInPage = row.page !== undefined
-    if (!cardInPage && seen.has(row.path)) continue
-    if (!cardInPage) seen.add(row.path)
-    const kind = typeOf(row)
-    if ((type === 'cards' && kind === 'cards') || (type !== 'cards' && kind === 'pages' && !cardInPage)) out.push(row)
-  }
-  // By name, letter case aside. A plain compare of lowered names: `localeCompare` on 20,000 rows is a long task.
-  return out.map((row) => ({ row, key: row.lower })).sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0)).map((held) => held.row)
 }

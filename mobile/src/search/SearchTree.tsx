@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { readNeedle } from '@client/links/completion'
 import { idNeedle, marked } from '@client/search/marked'
 import { SEARCH_CAP, type SearchCandidate } from '@client/search/searchCandidates'
-import { folderHits, folderRowsOf, foundRows, foundTree, vaultNodes, type FoundRow } from './foundTree'
+import { folderHits, folderRowsOf, foundRows, foundTreeOf, vaultNodes, type FoundRow } from './foundTree'
 import type { PhoneType } from './searchRun'
 import { useApp } from '../app/AppState'
 import type { Route } from '../app/nav'
@@ -13,7 +13,7 @@ import { TreeIconsContext, useTreeIcons } from './treeIcons'
 import { buildTree, visibleRows, type TreeRow } from './vaultTree'
 import type { Scope } from './lists'
 import { ListTree } from './ListTree'
-import { bumpFolds, useFolds } from './folds'
+import { bumpFolds, flipsOf, forgetFlips, searchKey, setFlips, useFolds } from './folds'
 import { rowId, useIdsForm } from './showIds'
 import { openFile } from '../explore/openFile'
 import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
@@ -107,67 +107,26 @@ function routeOf(row: SearchCandidate): Route {
   return boardKindOf(row.path) !== null ? { kind: 'drawing', path: row.path } : { kind: 'page', path: row.path }
 }
 
-/** A result row: the Mac's icon (a page, or a card: a card file's or a card in a page), the name, a card's ID. */
-function ResultRow({ row }: { row: SearchCandidate }) {
-  const app = useApp()
-  const card = row.card === true
-  const side = card ? (row.id ?? '') : ''
-  const board = card ? null : boardKindOf(row.path)
-  return (
-    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : (board ?? app.unit('page'))}`} onClick={() => openFile(app, routeOf(row))}>
-      <RowIcon kind={card ? 'card' : (board ?? 'page')} />
-      <span className="row__main">{row.label}</span>
-      {side !== '' && <span className="row__side">{side}</span>}
-    </button>
-  )
-}
-
-/** The cards of Cards with an empty box, under their heading. */
-export function ResultList({ rows, shown, onMore }: { rows: readonly SearchCandidate[]; shown: number; onMore: () => void }) {
-  useEffect(forgetFlips, [])
-  if (rows.length === 0) return null
-  return (
-    <>
-      <h2 className="section">Cards</h2>
-      <ul className="rows search__rows" aria-label="Cards">
-        {rows.slice(0, shown).map((row) => (
-          <li key={`${row.path}\n${row.label}`}>
-            <ResultRow row={row} />
-          </li>
-        ))}
-      </ul>
-      {rows.length > shown && <ShowMore onMore={onMore} />}
-    </>
-  )
-}
-
-/**
- * The folds tapped during a search (YAZ-5447): they last as long as its text, a page opened over the tab and closed too.
- * The box emptied ends the search, and its folds (the Mac's `setText`): the empty box's list forgets them as it shows.
- */
-let flips: { key: string; open: ReadonlySet<string> } = { key: '', open: new Set() }
-function forgetFlips(): void {
-  flips = { key: '', open: new Set() }
-}
-
 /**
  * THE RESULTS IN THE TREE (YAZ-5447), the box has text: the Mac's Search tab (`foundTree.ts`). The matches stand in the
  * vault's tree, each folder that leads to one open at its depth, every other row hidden. A match shows its name with
  * the typed text marked (the Mac's `marked`, its `tree__mark`); a row that is no match (a parent, a row inside a
  * matched folder) is dim. A row found by its ID reads `ID — name`, the matched digits marked; a card's ID stands at the
  * right, as in the phone's rows before. "No matches" as the Mac says it, "with these filters" with a Type on.
+ * YAZ-5534: a Type on with NO text shows here too: every row of the types on (`rows`, Search's pool cut to them) in the
+ * tree, its parents open, in the tree's own order (no text, no ranking): the Mac's search engine, the Type its query.
  */
 export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { data: VaultData; rows: readonly SearchCandidate[]; query: string; type: PhoneType; shown: number; onMore: () => void; scope: Scope | null }) {
   const app = useApp()
-  const key = `${app.vaultKey}\n${type}\n${scope?.kind}\n${query}`
-  const [, setTurn] = useState(0)
-  if (flips.key !== key) flips = { key, open: new Set() }
-  const flipped = flips.open
+  const key = searchKey(app.vaultKey, type, scope, query)
+  // A fold here, or Collapse all / Expand all in the box (a Type with no text), draws the tree again.
+  useFolds()
+  const flipped = flipsOf(key)
   const vault = vaultNodes(data)
   const folderRows = useMemo(() => folderRowsOf(data), [data])
   // YAZ-5452: with a list on, the folders of that list only (`rows` came already cut to it, `Search.tsx`).
   const folders = useMemo(() => folderHits(scope === null ? folderRows : folderRows.filter((r) => scope.has(r.path)), query, type), [folderRows, query, type, scope])
-  const found = useMemo(() => foundTree(vault, rows, folders, query), [vault, rows, folders, query])
+  const found = foundTreeOf(vault, rows, folders, query)
   const drawn = useMemo(() => foundRows(vault, found, flipped, data.review.enabled), [vault, found, flipped, data])
   const needle = readNeedle(query)
   const { hold, layer } = useFolderHold()
@@ -175,11 +134,9 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   const shownRows = drawn.slice(0, shown)
   // YAZ-5488: the vault's own icons and colours (icons.json).
   const icons = useTreeIcons(app.services.store, data)
-  const toggle = (path: string) => {
-    flips = { key, open: new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]) }
-    setTurn((n) => n + 1)
-  }
-  if (drawn.length === 0) return <p className="muted">{type === 'all' && scope === null ? 'No matches' : 'No matches with these filters.'}</p>
+  const toggle = (path: string) => setFlips(key, new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]))
+  if (scope?.loading === true) return null
+  if (drawn.length === 0) return <p className="muted">{type.length === 0 && scope === null ? 'No matches' : 'No matches with these filters.'}</p>
   const open = (row: FoundRow) => {
     if (row.kind === 'folder') return toggle(row.path)
     const route: Route = row.hit !== undefined ? routeOf(row.hit) : treeRoute({ kind: row.kind, path: row.path, label: row.label, depth: row.depth, ...(row.id !== undefined && { id: row.id }) })

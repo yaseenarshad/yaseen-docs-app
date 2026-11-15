@@ -5,7 +5,7 @@ import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { READER_FILES, READER_ID, READER_NOT_STORED, STICKY_FILES, cardBlock, seedReaderVault } from './readerVault'
-import { DRAWING_FILES } from './drawingVault'
+import { DRAWING_FILES, FLOW_DRAWIO_SVG, GARDEN_SCENE } from './drawingVault'
 import { FOLDER_FILES } from './folderVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
@@ -57,8 +57,20 @@ import { fixtureAnswers } from './fixtureAnswers'
  * YAZ-5524 (sweep3 S-1): `page-no-id` a page with a long title and NO ID chip; `-waiting1-offline` "1 comment waiting ·
  * no signal", `-waiting2-offline` "2 waiting · no signal" (a comment and a tick), `-waiting`, `-not-sent`. YAZ-5524 S-2:
  * `-mixed-offline` (also on `page`, with the ID chip): one comment not sent AND two waiting, no signal.
+ * YAZ-5534: the Type filter over a made-up vault of pages, cards, drawings and diagrams in folders (`TYPES_FILES`):
+ * `search-types` Cards, Drawings and Diagrams on, no text: each in its folders, the parents open ("3 types");
+ * `search-types-menu` the menu open, Pages and Cards checked; `search-types-favorites` Favorites with Cards.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline'] as const
+/** YAZ-5534: drawings and diagrams in folders beside the reader vault's pages and cards (made up). */
+const TYPES_FILES: Record<string, string | Uint8Array> = {
+  'travel/Rivers of Europe.md': '---\ntitle: Rivers of Europe\n---\n\nThe long ones.\n',
+  'travel/plans/Garden beds.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
+  'travel/plans/Seed to harvest.drawio.svg': new TextEncoder().encode(FLOW_DRAWIO_SVG),
+  'work/flows/Sign in.drawio': new TextEncoder().encode('<mxfile><diagram id="d" name="Page-1"></diagram></mxfile>'),
+  'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
+  '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
+}
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -199,6 +211,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
         : name === 'search-sticky' || name === 'search-lines'
           ? STICKY_FILES
+        : name === 'search-types' || name === 'search-types-menu' || name === 'search-types-favorites'
+          ? TYPES_FILES
         : name === 'page-drawing'
           ? DRAWING_FILES
           : name === 'search-favorites'
@@ -459,6 +473,26 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     case 'search-none':
       await typed('zebra')
       break
+    case 'search-types':
+    case 'search-types-menu':
+    case 'search-types-favorites': {
+      // YAZ-5534: the types picked in the menu, which stays open for more; the pill again closes it.
+      if (name === 'search-types-favorites') {
+        press('Favorites')
+        await until(() => document.querySelector('[role="tree"][aria-label="Favorites"]') !== null)
+      }
+      press(/^All types/)
+      await until(() => document.querySelector('[role="menu"][aria-label="Type"]') !== null)
+      const picks = name === 'search-types' ? ['Cards', 'Drawings', 'Diagrams'] : name === 'search-types-menu' ? ['Pages', 'Cards'] : ['Cards']
+      for (const pick of picks) {
+        press(pick)
+        await wait(60)
+      }
+      await until(() => document.querySelector('.search__found') !== null)
+      if (name !== 'search-types-menu') press(/ ▾$/)
+      await wait(150)
+      break
+    }
     case 'page':
       await open(/^Spanish words/, '.reader__body h1')
       break

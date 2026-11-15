@@ -2,7 +2,7 @@ import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState }
 import type { SearchCandidate } from '@client/search/searchCandidates'
 import type { Scope } from '../search/lists'
 import { useApp } from '../app/AppState'
-import { buildRows, emptyBoxRows, findRows, type PhoneType } from '../search/searchRun'
+import { buildRows, findRows, typeTest, type PhoneType } from '../search/searchRun'
 import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
@@ -11,8 +11,7 @@ import { recordsWithBoards } from '../drawing/boardFiles'
 
 /** The tree (YAZ-5438): its own chunk, loaded when the box is empty. */
 const SearchTree = lazy(() => import('../search/SearchTree'))
-/** The cards of Cards (an empty box), and the results in the tree (YAZ-5447): the same chunk (the first load stays under its ceiling, YAZ-5377). */
-const ResultList = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultList })))
+/** The results in the tree (YAZ-5447): the same chunk (the first load stays under its ceiling, YAZ-5377). */
 const ResultTree = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultTree })))
 /** The filter bar: Type and the vault's lists (YAZ-5452), the same chunk. */
 const SearchBar = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.SearchBar })))
@@ -25,9 +24,9 @@ const STEP = 100
 /**
  * THE SEARCH TAB (YAZ-5079, 4C; decisions 10 and 21, round 15 item 2). One box: cards and pages in one list, by title,
  * alias and ID, as the Mac's search finds them (`searchRun.ts`). The list changes with each letter, from the phone's own
- * index, so it works with no signal. The Type filter: All types, Pages, Cards (Cards only while the vault's Review is
- * on). A tap on a page opens it read only; a tap on a card opens the card alone (round 12, item 10). The words follow
- * the vault's word for "page" (`unit`).
+ * index, so it works with no signal. The Type filter (YAZ-5534): All types, Pages, Cards, Drawings, Diagrams, any mix
+ * (Cards only while the vault's Review is on). A tap on a page opens it read only; a tap on a card opens the card alone
+ * (round 12, item 10). The words follow the vault's word for "page" (`unit`).
  *
  * YAZ-5438: the box empty shows the Mac's sidebar tree (`SearchTree`): folders that open and close, pages and card
  * files, with the Mac's icons and order (Cards: the cards, each with the card icon). A result row has the same icons
@@ -37,6 +36,8 @@ const STEP = 100
  * YAZ-5447: with text, the results stand in that tree, as on the Mac's Search tab (`ResultTree`, `foundTree.ts`).
  * YAZ-5452: a list filter (Favorites, `SearchBar`) cuts the rows to that list before the search, so the text finds only in it.
  * YAZ-5474: with an empty box, the ✕'s place holds the Mac's Collapse all / Expand all (`folds.tsx`).
+ * YAZ-5534: a Type on shows its rows in that same result tree, with text or not, in a list too (Favorites + Cards):
+ * the parents of each row open, so the folder it sits in shows. The fold button folds that tree.
  */
 export function Search() {
   const app = useApp()
@@ -50,7 +51,7 @@ export function Search() {
   const [found, setFound] = useState<SearchCandidate[] | null>(null)
   const [shown, setShown] = useState(held.shown ?? STEP)
   /** The query and Type the rows shown are for: a new one starts the list again at its top (YAZ-5211). */
-  const listOf = useRef(`${held.query}\n${held.type}`)
+  const listOf = useRef(`${held.query}\n${held.type.join('+')}`)
   const section = useRef<HTMLElement>(null)
   const input = useRef<HTMLInputElement>(null)
   /** YAZ-5439: clear the box and leave the search (the keyboard goes away). */
@@ -61,7 +62,7 @@ export function Search() {
   const [notice] = useState(() => takeSearchNotice())
   const cards = data?.review.enabled ?? false
   // Cards is a choice only while Review is on, as on the Mac.
-  const kind: PhoneType = type === 'cards' && !cards ? 'all' : type
+  const kind: PhoneType = useMemo(() => (cards || !type.includes('cards') ? type : type.filter((k) => k !== 'cards')), [type, cards])
   const pool = useMemo(() => (rows !== null && scope !== null ? rows.filter((r) => scope.has(r.page ?? r.path)) : rows), [rows, scope])
 
   // The rows, built again when the index changes (R4: a new page is in search after the pass that brings it).
@@ -79,8 +80,8 @@ export function Search() {
   // Each letter searches again; a search that a newer letter replaced stops.
   useEffect(() => {
     keepSearch(vaultKey, query, kind)
-    if (listOf.current !== `${query}\n${kind}`) {
-      listOf.current = `${query}\n${kind}`
+    if (listOf.current !== `${query}\n${kind.join('+')}`) {
+      listOf.current = `${query}\n${kind.join('+')}`
       setShown(STEP)
       keepPlace(STEP, 0)
     }
@@ -98,9 +99,13 @@ export function Search() {
   // N5 (sweep1): a vault with its whole copy on the phone and no page is empty (the Mac's "No pages here."); only before
   // its first sync do the pages come with the next one.
   const synced = app.sync.vault === vaultKey && app.sync.ready
-  const tree = empty && kind !== 'cards'
-  const list = useMemo(() => (pool !== null && empty && kind === 'cards' ? emptyBoxRows(pool, kind) : null), [pool, empty, kind])
-  const results = empty ? list : found
+  const tree = empty && kind.length === 0
+  // YAZ-5534: a Type with no text: every row of its types, drawn in the result tree as a search's.
+  const typed = useMemo(() => {
+    const keep = typeTest(kind)
+    return pool !== null && empty && keep !== undefined ? pool.filter(keep) : null
+  }, [pool, empty, kind])
+  const results = empty ? typed : found
 
   // YAZ-5211: the list's scroll place is kept as the person scrolls, and given back when the tab shows again.
   useEffect(() => keepPlace(shown), [shown])
@@ -150,11 +155,11 @@ export function Search() {
           <span aria-hidden>✕</span>
         </button>
       ) : (
-        tree &&
+        (tree || typed !== null) &&
         data !== null &&
         data.records.length > 0 && (
           <Suspense fallback={null}>
-            <FoldButton data={data} scope={scope} />
+            <FoldButton data={data} scope={scope} {...(typed !== null && { found: { rows: typed, type: kind } })} />
           </Suspense>
         )
       )}
@@ -173,14 +178,9 @@ export function Search() {
           <SearchTree data={data} cards={cards} shown={shown} onMore={more} scope={scope} />
         </Suspense>
       )}
-      {!empty && found !== null && data !== null && (
+      {results !== null && data !== null && data.records.length > 0 && (
         <Suspense fallback={null}>
-          <ResultTree data={data} rows={found} query={query} type={kind} shown={shown} onMore={more} scope={scope} />
-        </Suspense>
-      )}
-      {list !== null && (
-        <Suspense fallback={null}>
-          <ResultList rows={list} shown={shown} onMore={more} />
+          <ResultTree data={data} rows={results} query={empty ? '' : query} type={kind} shown={shown} onMore={more} scope={scope} />
         </Suspense>
       )}
     </section>

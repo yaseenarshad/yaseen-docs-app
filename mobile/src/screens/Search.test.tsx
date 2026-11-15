@@ -47,10 +47,22 @@ const box = (x: Harness) => x.host.querySelector<HTMLInputElement>('input[type="
 /** A row as the person sees it (YAZ-5438): its name, then its icon's kind (a card's ID beside it). Tree rows and result rows. */
 const rows = (x: Harness) =>
   [...x.host.querySelectorAll('.search__rows .row, .tree .tree__row')].map((r) => {
-    const kind = { folder: 'folder', markdown: 'page', card: 'card' }[r.querySelector('.file-icon')?.getAttribute('data-kind') ?? ''] ?? '?'
+    const kind = { folder: 'folder', markdown: 'page', card: 'card', drawing: 'drawing', diagram: 'diagram' }[r.querySelector('.file-icon')?.getAttribute('data-kind') ?? ''] ?? '?'
     const side = r.querySelector('.row__side')?.textContent
     return `${r.querySelector('.row__main, .tree__label')?.textContent} | ${kind}${side ? ` · ${side}` : ''}`
   })
+
+/** YAZ-5534: drawings and diagrams in folders (made up). */
+const BOARDS: Record<string, string> = {
+  ...READER_FILES,
+  'art/sketches/Sketch.excalidraw': '{"type":"excalidraw","elements":[]}',
+  'flows/Login.drawio': '<mxfile></mxfile>',
+  'flows/Signup.drawio.svg': '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+  'flows/Pay.drawio.png': 'png',
+}
+const menu = (x: Harness) => [...x.host.querySelectorAll('[role="menuitemcheckbox"]')].map((m) => m.textContent)
+const pill = (x: Harness) => x.host.querySelector('.pill[aria-haspopup]')?.textContent
+const context = (x: Harness) => [...x.host.querySelectorAll('.search__found .tree__row--context .tree__label')].map((l) => l.textContent)
 
 async function typeQuery(x: Harness, value: string): Promise<void> {
   await act(async () => {
@@ -104,30 +116,98 @@ describe('the Search tab (YAZ-5079)', () => {
     expect(h.text()).toContain('No matches')
   })
 
-  it('the Type filter: All types, Pages, Cards; Cards lists the cards with an empty box', async () => {
-    h = await openSearch()
+  it('the Type filter (YAZ-5534): the Mac\'s words and order, any mix with a check on each; All types clears; the pill names the pick', async () => {
+    h = await openSearch(BOARDS)
     await h.click(/All types/)
-    expect([...h.host.querySelectorAll('[role="menuitemradio"]')].map((m) => m.textContent)).toEqual(['All types✓', 'Pages', 'Cards'])
+    expect(menu(h)).toEqual(['All types✓', 'Pages', 'Cards', 'Drawings', 'Diagrams'])
+    // The icons of the tree rows of each type.
+    expect([...h.host.querySelectorAll('[role="menuitemcheckbox"] .file-icon')].map((i) => i.getAttribute('data-kind'))).toEqual(['markdown', 'card', 'drawing', 'diagram'])
     await h.click('Cards')
-    expect(h.host.querySelector('h2.section')?.textContent).toBe('Cards')
-    expect(rows(h)).toEqual(['Capital of Spain | card · DEMO-40', 'git pull | card · DEMO-38', 'la biblioteca | card · DEMO-12', 'Two cards in one | card · DEMO-41'])
+    // The menu stays open for more.
+    expect(menu(h)).toEqual(['All types', 'Pages', 'Cards✓', 'Drawings', 'Diagrams'])
+    expect(pill(h)).toBe('Cards ▾')
+    await h.click('Pages')
+    expect(menu(h)).toEqual(['All types', 'Pages✓', 'Cards✓', 'Drawings', 'Diagrams'])
+    expect(pill(h)).toBe('Pages + Cards ▾')
+    await h.click('Diagrams')
+    expect(pill(h)).toBe('3 types ▾')
+    await h.click('Pages✓')
+    await h.click('Cards✓')
+    await h.click('Drawings')
+    // jsdom has no layout: two names always fit here (the layout check shows the count where they do not, at 375 pt).
+    expect(pill(h)).toBe('Drawings + Diagrams ▾')
+    expect(h.host.querySelector('.pill[aria-haspopup]')?.hasAttribute('data-on')).toBe(true)
+    // All types clears the others and closes the menu.
+    await h.click('All types')
+    expect(h.host.querySelector('[role="menu"]')).toBeNull()
+    expect(pill(h)).toBe('All types ▾')
+    expect(h.host.querySelector('.pill[aria-haspopup]')?.hasAttribute('data-on')).toBe(false)
+    expect(rows(h)[0]).toBe('art | folder')
+  })
+
+  it('a Type with no text shows its rows inside the folder tree, their parent folders open (YAZ-5534), each type alone and mixed', async () => {
+    h = await openSearch(BOARDS)
+    await h.click(/All types/)
+    await h.click('Cards')
+    await waitFor(h, () => h!.host.querySelector('.search__found') !== null)
+    // The cards stand in their folders and pages (a card in a page under its page), the parents dim.
+    expect(rows(h)).toEqual(['cards | folder', 'Capital of Spain | card · DEMO-40', 'Two cards in one | card · DEMO-41', 'git | folder', 'Git cheat sheet | page', 'git pull | card · DEMO-38', 'Spanish words | page', 'la biblioteca | card · DEMO-12'])
+    expect(context(h)).toEqual(['cards', 'git', 'Git cheat sheet', 'Spanish words'])
+    await h.click('Cards✓')
+    await h.click('Drawings')
+    await waitFor(h, () => rows(h!).join() === 'art | folder,sketches | folder,Sketch | drawing')
+    await h.click('Diagrams')
+    await waitFor(h, () => rows(h!).length === 7)
+    expect(rows(h)).toEqual(['art | folder', 'sketches | folder', 'Sketch | drawing', 'flows | folder', 'Login | diagram', 'Pay.drawio | diagram', 'Signup.drawio | diagram'])
+    await h.click('Drawings✓')
+    await waitFor(h, () => rows(h!).length === 4)
+    expect(rows(h)).toEqual(['flows | folder', 'Login | diagram', 'Pay.drawio | diagram', 'Signup.drawio | diagram'])
+    // Pages: no board, no card, no folder of its own.
+    await h.click('Diagrams✓')
+    await h.click('Pages')
+    await waitFor(h, () => rows(h!).every((r) => r.endsWith('| page') || r.endsWith('| folder')) && rows(h!).length > 0)
+    expect(rows(h)).toEqual(['git | folder', 'Git cheat sheet | page', 'Café notes | page', 'Spanish words | page', 'Trip plan | page'])
+    // With typed text: the same engine, the Type's rows only.
+    await typeQuery(h, 'spanish')
+    expect(rows(h)).toEqual(['Spanish words | page'])
+    await h.click('Pages✓')
+    await h.click('Cards')
     await typeQuery(h, 'spanish')
     expect(rows(h)).toEqual([])
     expect(h.text()).toContain('No matches with these filters.')
-    await h.click(/Cards/)
-    await h.click('Pages')
-    await typeQuery(h, 'spa')
-    expect(rows(h)).toEqual(['Spanish words | page'])
-    // A folder is no Page (the Mac's Type): `git` finds the page in it, not the folder.
     await typeQuery(h, 'git')
-    expect(rows(h)).toEqual(['git | folder', 'Git cheat sheet | page'])
-    expect(h.host.querySelector('.search__found .tree__row--context .tree__label')?.textContent).toBe('git')
+    expect(rows(h)).toEqual(['git | folder', 'Git cheat sheet | page', 'git pull | card · DEMO-38'])
+    await typeQuery(h, 'log')
+    await h.click('Diagrams')
+    await waitFor(h, () => rows(h!).join() === 'flows | folder,Login | diagram')
+  })
+
+  it('Collapse all and Expand all fold the tree of a Type (YAZ-5534); a tapped fold lasts while the Type is on', async () => {
+    h = await openSearch(BOARDS)
+    await h.click(/All types/)
+    await h.click('Drawings')
+    await h.click('Diagrams')
+    await waitFor(h, () => rows(h!).length === 7)
+    const fold = () => h!.host.querySelector<HTMLButtonElement>('.search__fold')
+    await waitFor(h, () => fold() !== null)
+    expect(fold()!.getAttribute('aria-label')).toBe('Collapse all folders')
+    await act(async () => fold()!.click())
+    expect(rows(h)).toEqual(['art | folder', 'flows | folder'])
+    expect(fold()!.getAttribute('aria-label')).toBe('Expand all folders')
+    await act(async () => fold()!.click())
+    expect(rows(h)).toHaveLength(7)
+    // One folder tapped shut; the button still says Collapse all (one is open).
+    await h.click(/^flows/)
+    expect(rows(h)).toEqual(['art | folder', 'sketches | folder', 'Sketch | drawing', 'flows | folder'])
+    expect(fold()!.getAttribute('aria-label')).toBe('Collapse all folders')
+    // Guide lines and sticky folders read the same rows (TreeLook): each open folder is drawn open.
+    expect(h.host.querySelectorAll('.search__found .file-icon--open')).toHaveLength(2)
   })
 
   it('Review off: no Cards type; a card file is a page row; a card in a page has no row', async () => {
     h = await openSearch({ ...READER_FILES, '.yaseendocs/review.json': '{"enabled": false}' })
     await h.click(/All types/)
-    expect([...h.host.querySelectorAll('[role="menuitemradio"]')].map((m) => m.textContent)).toEqual(['All types✓', 'Pages'])
+    expect(menu(h)).toEqual(['All types✓', 'Pages', 'Drawings', 'Diagrams'])
     await h.click('All types✓')
     await typeQuery(h, 'capital')
     expect(rows(h)).toContain('Capital of Spain | page')

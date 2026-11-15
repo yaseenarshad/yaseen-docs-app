@@ -135,8 +135,10 @@ describe('the Favorites filter (YAZ-5452)', () => {
     await typeQuery(h, '')
     await h.click(/All types/)
     await h.click('Cards')
-    await waitFor(h, () => h!.host.querySelector('.search__rows') !== null)
-    expect([...h.host.querySelectorAll('.search__rows .row__main')].map((r) => r.textContent)).toEqual(['git pull'])
+    // YAZ-5534: Favorites + Cards: the cards of the favorites, in the folder tree, their parents open.
+    await waitFor(h, () => h!.host.querySelector('.search__found') !== null)
+    expect(tree(h)).toEqual(['0:folder-open:git', '1:markdown:Git cheat sheet', '2:card:git pull'])
+    expect([...h.host.querySelectorAll('.search__found .tree__row:not(.tree__row--context) .tree__label')].map((r) => r.textContent)).toEqual(['git pull'])
   })
 
   it('a sync that brings a new favorites.json changes the list at once', async () => {
