@@ -350,8 +350,12 @@ interface ArchiveStep {
 
 type UndoStep = AnswerStep | AddStep | ResetStep | ArchiveStep
 
-/** A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps. */
-type QueueCard = DueCard & { repeat?: boolean }
+/**
+ * A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps.
+ * `fromNew` (YAZ-5610, Yaseen's rule from Mochi): a new card past its first Remembered, back the same day as a Due today
+ * card; it is no missed card (the % screen's "Review missed cards" leaves it out) and waits at the end of the session.
+ */
+type QueueCard = DueCard & { repeat?: boolean; fromNew?: boolean }
 
 interface IndexSource {
   readonly records: readonly IndexRecord[]
@@ -376,8 +380,8 @@ const fitted = (s: Session): Session => {
  * Where a Forgot's repeat goes (YAZ-5043): a new card's at the end; a due card's at the end of the DUE part of `rest`,
  * so the missed cards come before the new cards under All cards too.
  */
-const repeatPlace = (rest: readonly QueueCard[], from: number, card: DueCard): number => {
-  if (card.isNew) return rest.length
+const repeatPlace = (rest: readonly QueueCard[], from: number, card: QueueCard): number => {
+  if (card.isNew || card.fromNew === true) return rest.length
   for (let i = rest.length - 1; i >= from; i--) if (!rest[i].isNew) return i + 1
   return from
 }
@@ -386,10 +390,10 @@ const repeatPlace = (rest: readonly QueueCard[], from: number, card: DueCard): n
  * The stop after a due card's answer (YAZ-5043), or none: the first pass done (missed cards wait, or none: Due today
  * is done), or the missed cards done. Only under All cards and Due today, and each stop once (`stage`).
  */
-const dueStop = (s: Session, card: DueCard): Pick<Session, 'stage' | 'pause'> => {
+const dueStop = (s: Session, card: QueueCard): Pick<Session, 'stage' | 'pause'> => {
   const none = { stage: s.stage, pause: null }
-  if (card.isNew || s.stage === 'over' || (s.filter !== 'all' && s.filter !== 'due')) return none
-  const due = s.queue.filter((c) => !c.isNew)
+  if (card.isNew || card.fromNew === true || s.stage === 'over' || (s.filter !== 'all' && s.filter !== 'due')) return none
+  const due = s.queue.filter((c) => !c.isNew && c.fromNew !== true)
   const missed = due.filter((c) => c.repeat === true).length
   if (due.length > missed) return none
   if (s.stage === 'first' && missed > 0) return { stage: 'missed', pause: 'missed' }
@@ -586,7 +590,7 @@ const endOf = (s: Session): DueTodayEnd | null => {
     kind: s.pause,
     id: `${s.id}:${s.answered.length}:${s.pause}`,
     ...dueFirsts(s.answered),
-    missed: s.queue.filter((c) => !c.isNew && c.repeat === true).length,
+    missed: s.queue.filter((c) => !c.isNew && c.repeat === true && c.fromNew !== true).length,
     fresh: s.queue.filter((c) => c.isNew).length,
   }
 }
@@ -859,11 +863,15 @@ export function useCardReview(
         const undo = written !== 'gone' ? [...s.undo, { kind: 'answer' as const, card, review: chosen.review, next: written.next, at: s.at, repeat, stage: s.stage }].slice(-UNDO_DEPTH) : s.undo
         // The cards before (passed over with →) stay; the ones after are settled, as the head was before ← →.
         const after = settle(s.queue.slice(s.at + 1), s.scope)
-        // The repeat keeps the filter it showed under (YAZ-5017): a new card's second Remembered is still under New cards.
-        // A due card's waits at the end of the due cards (YAZ-5043), before the new cards.
+        // A due card's repeat waits at the end of the due cards (YAZ-5043), before the new cards. A new card's first
+        // Remembered moves it into Due today (YAZ-5610, Yaseen's rule from Mochi: New one less, Due today one more, the
+        // same cards in all); it comes back at the end, and its second Remembered lets it go. A new card's Forgot keeps
+        // it under New cards (YAZ-5017).
         const rest: QueueCard[] = [...s.queue.slice(0, s.at), ...after]
         const place = repeatPlace(rest, s.at, card)
-        const queue = repeat ? [...rest.slice(0, place), { ...card, due: chosen.due, next: false, repeat: true }, ...rest.slice(place)] : rest
+        const learned = card.isNew && rating !== 'again'
+        const back: QueueCard = { ...card, due: chosen.due, next: false, repeat: true, ...(learned ? { isNew: false, fromNew: true } : {}) }
+        const queue = repeat ? [...rest.slice(0, place), back, ...rest.slice(place)] : rest
         // YAZ-5432: with what the card was, so each filter's bar reads its own answers.
         const answered = written !== 'gone' ? [...s.answered, { key, rating, isNew: card.isNew, next: card.next, first }] : s.answered
         // A repeat is the same card (YAZ-5594, YAZ-5610): "3 / 13" and the bar's size stay; the card is not done yet.

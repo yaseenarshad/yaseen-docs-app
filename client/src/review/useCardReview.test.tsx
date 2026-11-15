@@ -1180,4 +1180,68 @@ describe('YAZ-5594, YAZ-5610: the bar and every list`s count are per card; a car
     expect((await draw()).parts).toEqual(['grey 100%'])
     act(() => bar.unmount())
   })
+
+  it('YAZ-5610: 3 due cards, one forgotten 3 times — Due today and All cards stay 3 (no "of 4, 5, 6"); remembered, 2 left', async () => {
+    await mount()
+    await act(async () => review.start())
+    const toFirst = async () => {
+      // → past the others to the forgotten card, at the end of the due cards.
+      while (review.session?.card?.id !== 'WIKI-11') act(() => review.move(1))
+    }
+    await answer('WIKI-11', 'again')
+    for (let i = 0; i < 2; i++) {
+      expect(read()).toMatchObject({ due: 3, all: 3, place: '2 / 3' })
+      expect(review.dueCount).toBe(3)
+      await toFirst()
+      await answer('WIKI-11', 'again')
+    }
+    expect(read()).toMatchObject({ card: 'WIKI-12', due: 3, all: 3, place: '2 / 3', steps: 'r..', done: 0 })
+    act(() => review.setFilter('due'))
+    expect(read()).toMatchObject({ due: 3, place: '2 / 3' })
+    await toFirst()
+    // Two cards passed over with →, then the forgotten one: the third card of the three.
+    expect(read()).toMatchObject({ card: 'WIKI-11', place: '3 / 3' })
+    await answer('WIKI-11', 'good')
+    expect(read()).toMatchObject({ card: 'WIKI-12', due: 2, all: 2, place: '2 / 3', steps: 'g..', done: 1 })
+    expect(review.dueCount).toBe(2)
+  })
+
+  it('YAZ-5610, Yaseen`s rule from Mochi: a new card`s first ✓ moves it from New cards into Due today (New −1, Due +1, All the same); the second ✓ finishes it', async () => {
+    vault = new Map()
+    page('M.md', ['Old {{a}}?', known('WIKI-31')], ['New {{x}}?', 'WIKI-32'], ['New {{y}}?', 'WIKI-33'])
+    await mount()
+    await act(async () => review.start())
+    const lists = () => ({ counts: review.session!.counts, place: `${review.session!.position} / ${review.session!.total}`, done: review.session!.progress.done, size: review.session!.progress.size })
+    expect(lists()).toEqual({ counts: { all: 3, next: 0, due: 1, new: 2 }, place: '1 / 3', done: 0, size: 3 })
+    await answer('WIKI-31', 'good')
+    expect(review.session?.end?.kind).toBe('done')
+    await act(async () => review.goOn())
+    await answer('WIKI-32', 'good')
+    // Out of New cards, into Due today: no new card in all, and not done yet.
+    expect(lists()).toEqual({ counts: { all: 2, next: 0, due: 1, new: 1 }, place: '3 / 3', done: 1, size: 3 })
+    expect(review.session?.card?.id).toBe('WIKI-33')
+    await act(async () => review.setFilter('new'))
+    expect(lists()).toMatchObject({ place: '2 / 2', done: 1, size: 2 })
+    await act(async () => review.setFilter('due'))
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-32', isNew: false })
+    expect(lists()).toMatchObject({ place: '2 / 2', done: 1, size: 2 })
+    // No % screen for it: it is no missed card.
+    await answer('WIKI-32', 'good')
+    expect(review.session?.end).toBeNull()
+    await act(async () => review.setFilter('all'))
+    expect(lists()).toEqual({ counts: { all: 1, next: 0, due: 0, new: 1 }, place: '3 / 3', done: 2, size: 3 })
+    await shown('WIKI-33')
+  })
+
+  it('YAZ-5610: New cards too — a new card forgotten 3 times stays one card of "/ 2"', async () => {
+    vault = new Map()
+    page('N.md', ['New {{x}}?', 'WIKI-21'], ['New {{y}}?', 'WIKI-22'])
+    await mount()
+    await act(async () => review.start(undefined, { filter: 'new' }))
+    for (let i = 0; i < 3; i++) {
+      while (review.session?.card?.id !== 'WIKI-21') act(() => review.move(1))
+      await answer('WIKI-21', 'again')
+      expect(review.session).toMatchObject({ total: 2, counts: { new: 2, all: 2 }, progress: { size: 2, done: 0 } })
+    }
+  })
 })

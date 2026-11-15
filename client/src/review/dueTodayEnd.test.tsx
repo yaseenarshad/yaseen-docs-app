@@ -173,7 +173,7 @@ describe('YAZ-5043: the end of Due today', () => {
     expect(showing()).toBe('NEW-1')
   })
 
-  it('2. New cards alone (item 14): only the three new cards show; each comes back once, and no % screen ever stops them', async () => {
+  it('2. New cards alone (item 14): only the three new cards show, and no % screen ever stops them; each first Remembered moves the card into Due today (YAZ-5610)', async () => {
     await mount()
     await step(() => review.setFilter('new'))
     const seen: string[] = []
@@ -181,10 +181,12 @@ describe('YAZ-5043: the end of Due today', () => {
       expect(el.querySelector('.due-end')).toBeNull()
       seen.push(await answer('good'))
     }
-    expect(seen).toEqual([...NEW, ...NEW])
-    expect(review.session?.end).toBeNull()
+    // Yaseen's rule (from Mochi): a new card's first Remembered takes it out of New cards into Due today, where it comes
+    // back the same day: New one less, Due today one more, All cards the same cards.
+    expect(seen).toEqual(NEW)
+    expect(review.session).toMatchObject({ end: null, counts: { new: 0, due: 8, all: 8 } })
     expect(doneText()[0]).toBe('No new cards left.')
-    expect(doneText()).toContain('5 more in All cards')
+    expect(doneText()).toContain('8 more in All cards')
   })
 
   it('3a. Due today with two Forgot: the first pass stops at "You remembered 60% of 5 cards." with ONE button, "Review missed cards 2"', async () => {

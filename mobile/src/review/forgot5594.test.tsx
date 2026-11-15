@@ -108,11 +108,17 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     expect(q('.review__again')).toBeNull()
   })
 
-  it('YAZ-5594 reopened: 3 cards, the last forgotten 3 times then remembered — "3 / 3" and 3 steps all along', async () => {
+  it('YAZ-5594 reopened, YAZ-5610: 3 cards, the last forgotten 3 times then remembered — "3 / 3", 3 steps, the list says 1', async () => {
     const known = (x: string, id: string) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `${id}, 2026-10-04T09:00Z good, 2026-10-04T09:01Z good`)
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', known('A', 'PB-1'), known('B', 'PB-2'), known('C', 'PB-3')) })
     const steps = () => [...h!.host.querySelectorAll('.review__progress .review__step')].map((s) => ({ remembered: 'g', forgot: 'r' })[(s as HTMLElement).dataset.answer ?? ''] ?? '.').join('')
     const bar = () => [steps(), q('.review__progress')?.getAttribute('aria-valuenow'), q('.review__progress')?.getAttribute('aria-valuemax')]
+    const dueRow = async () => {
+      await h!.click(/Choose what to review/)
+      const row = [...h!.host.querySelectorAll('.review__sheet-row')].map((r) => (r.textContent ?? '').replace(/\s+/g, ' ').trim()).find((t) => t.includes('Due today'))
+      await h!.click(/Choose what to review/)
+      return row
+    }
     expect([place(), ...bar()]).toEqual([[1, 3], '...', '0', '3'])
     await h.click('Remembered')
     await h.click('Remembered')
@@ -129,6 +135,8 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     await h.click('Undo')
     expect([place(), ...bar()]).toEqual([[3, 3], 'ggr', '2', '3'])
     await h.click('Forgot')
+    // The list's count: the one card left, not one per ✕.
+    expect(await dueRow()).toBe('◷Due today1')
     await h.click('Remembered')
     expect(q('.review__done-title')?.textContent).toBe('Due today is done.')
     expect(bar()).toEqual(['ggg', '3', '3'])
