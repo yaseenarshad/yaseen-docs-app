@@ -7,7 +7,7 @@
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
  */
 import { previewCard } from '../editor/card/cardOpen'
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
@@ -24,6 +24,7 @@ import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/w
 import type { ExploreVault } from '../explore/ExplorePage'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { MenuSection } from '../sidebar/menuSections'
+import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
 import { CardBody, CardReviews, type CardLinkDoors } from './cardParts'
 
@@ -184,6 +185,10 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleReadOnl
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
+  // The icons of the `[[` picker's rows and the pills (YAZ-5407): the sidebar's, as a page's editor draws them.
+  const iconsHere = useContext(IconsContext)
+  const icons = useRef(iconsHere)
+  icons.current = iconsHere
   const start = useRef({ text, title, path, vault, select, titleReadOnly })
   useEffect(() => {
     const host = hostRef.current
@@ -201,6 +206,7 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleReadOnl
       // The `[[` picker's pages and cards, as in a page (YAZ-5185): without it the picker had only "Create".
       wikilinkCandidates: vault.wikilinkCandidates,
       viewOnlyLinks: vault.viewOnlyLinks,
+      linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
       image: { root: vault.root, pagePath: path },
       cards: { path, onEditDone: (t, next) => doneRef.current(t, next), titleReadOnly },
     })

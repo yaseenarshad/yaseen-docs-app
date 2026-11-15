@@ -683,7 +683,7 @@ describe('the convert actions (YAZ-5037 phase 5)', () => {
 describe('[[ in Edit card on a card file (YAZ-5185)', () => {
   it('lists the vault\'s pages and cards, as in a page, not only "Create"', async () => {
     const candidates = createWikilinkCandidateSource()
-    candidates.update([nameCandidate('Europe'), { name: 'Estar', insert: 'WIKI-12', label: 'Estar', lower: 'estar', card: true }])
+    candidates.update([{ ...nameCandidate('Europe'), path: `${ROOT}/Europe.md` }, { name: 'Estar', insert: 'WIKI-12', label: 'Estar', lower: 'estar', card: true }])
     await mount(FILE, { candidates })
     act(() => editButton()!.click())
     const dom = await cardEditor()
@@ -693,6 +693,11 @@ describe('[[ in Edit card on a card file (YAZ-5185)', () => {
     const rows = () => [...document.querySelectorAll(`.${WIKILINK_PICKER_CLASS} [role="option"]`)].map((o) => o.textContent ?? '')
     await vi.waitFor(() => expect(rows()).toContain('Europe'))
     expect(rows().some((r) => r.includes('Estar'))).toBe(true)
+    // YAZ-5407: each row has its icon, as in a page's picker: the page row the sidebar's file icon, the card row the card icon.
+    const option = (label: string) => [...document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"]`)].find((o) => o.textContent?.includes(label))!
+    expect(option('Europe').querySelector('.file-icon')).not.toBeNull()
+    expect(option('Estar').querySelector('.wikilink-picker__card-icon')).not.toBeNull()
+    expect(option('Estar').dataset.card).toBe('true')
     document.querySelectorAll(`.${WIKILINK_PICKER_CLASS}`).forEach((p) => p.remove())
   })
 })

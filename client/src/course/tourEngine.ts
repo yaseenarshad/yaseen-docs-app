@@ -176,19 +176,67 @@ export function holeOf(b: Box, view: { width: number; height: number }, pad = SP
   return { left, top, width: Math.max(0, right - left), height: Math.max(0, bottom - top) }
 }
 
-/** The dim: the whole window with a hole for each box (even-odd fill). */
-export function dimPath(view: { width: number; height: number }, holes: readonly Box[], radius = 8): string {
-  const parts = [`M0 0H${view.width}V${view.height}H0Z`]
-  for (const h of holes) {
-    if (h.width <= 0 || h.height <= 0) continue
-    const r = Math.min(radius, h.width / 2, h.height / 2)
-    const x = Math.round(h.left)
-    const y = Math.round(h.top)
-    const w = Math.round(h.width)
-    const ht = Math.round(h.height)
-    parts.push(`M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + ht - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + ht}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + ht - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`)
-  }
-  return parts.join('')
+/** One hole cut in the dim: a rounded box. */
+export interface DimHole {
+  x: number
+  y: number
+  width: number
+  height: number
+  r: number
+}
+
+/**
+ * The dim's holes, one per box (empty ones left out). The layer cuts them with a mask, so the holes are a UNION
+ * (YAZ-5403): a menu that opens over the lit control, or a lit row inside an open menu, stays bright where they overlap.
+ * (An even-odd path filled the overlap again: the `/` menu over the lit card editor, and "New card" lit inside the
+ * folder's menu, came out dark.)
+ */
+export function dimHoles(holes: readonly Box[], radius = 8): DimHole[] {
+  return holes
+    .filter((h) => h.width > 0 && h.height > 0)
+    .map((h) => {
+      const width = Math.round(h.width)
+      const height = Math.round(h.height)
+      return { x: Math.round(h.left), y: Math.round(h.top), width, height, r: Math.min(radius, width / 2, height / 2) }
+    })
+}
+
+// ---- the arrow (YAZ-5405) ----
+
+export type ArrowSide = 'left' | 'right' | 'top' | 'bottom'
+export interface ArrowPlace {
+  /** The side of the target the arrow sits on; it points from there at the target. */
+  side: ArrowSide
+  left: number
+  top: number
+  width: number
+  height: number
+}
+/** The arrow's size along its line (`length`) and across it (`thick`), and its gap to the lit hole (past the ring). */
+export const ARROW = { length: 44, thick: 28, gap: 12 }
+
+/**
+ * Where the red arrow goes (YAZ-5405): outside the lit hole, on the side with the most free room, pointing at it.
+ * It stays in the window, and off every box in `avoid` (the coach card, the docked course, an open menu) when a side
+ * allows; else on the roomiest side that fits. No side fits (a target that fills the window): null, the ring alone.
+ */
+export function arrowPlace(target: Box, view: { width: number; height: number }, avoid: readonly Box[] = []): ArrowPlace | null {
+  const { length: L, thick: T, gap: G } = ARROW
+  // The arrow's line goes through the middle of the target's part that is in the window.
+  const midX = clamp((Math.max(0, target.left) + Math.min(view.width, target.left + target.width)) / 2, T / 2, view.width - T / 2)
+  const midY = clamp((Math.max(0, target.top) + Math.min(view.height, target.top + target.height)) / 2, T / 2, view.height - T / 2)
+  const sides: Array<ArrowPlace & { room: number }> = [
+    { side: 'left', room: target.left, left: target.left - G - L, top: midY - T / 2, width: L, height: T },
+    { side: 'right', room: view.width - (target.left + target.width), left: target.left + target.width + G, top: midY - T / 2, width: L, height: T },
+    { side: 'top', room: target.top, left: midX - T / 2, top: target.top - G - L, width: T, height: L },
+    { side: 'bottom', room: view.height - (target.top + target.height), left: midX - T / 2, top: target.top + target.height + G, width: T, height: L },
+  ]
+  const fits = (p: Box): boolean => p.left >= 0 && p.top >= 0 && p.left + p.width <= view.width && p.top + p.height <= view.height
+  const clear = (p: Box): boolean => avoid.every((a) => !overlaps(p, a))
+  const ranked = sides.filter(fits).sort((a, b) => b.room - a.room)
+  const pick = ranked.find(clear) ?? ranked[0]
+  if (pick === undefined) return null
+  return { side: pick.side, left: Math.round(pick.left), top: Math.round(pick.top), width: pick.width, height: pick.height }
 }
 
 const overlaps = (a: Box, b: Box): boolean => a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height
