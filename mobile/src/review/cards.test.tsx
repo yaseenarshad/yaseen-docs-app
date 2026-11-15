@@ -124,15 +124,15 @@ describe('Review: the kinds of card', () => {
       'a.md': page('A', '![[NC-17]]'),
       'b.md': page('B', '![[NC-17]]'),
     })
-    expect(h.text()).toContain('1 of 1')
+    expect(h.text()).toContain('1 / 1')
   })
 
   it('"Title on the front: Hide" (notitle): the ID alone until the card is fully shown, then the title', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('What is {{this}}?', 'QA-1, title "Secret title", notitle')) })
-    expect(h.head()).toBe('QA-1 · in P')
+    expect(h.head()).toBe('QA-1')
     expect(h.cardText()).not.toContain('Secret title')
     await h.tap()
-    expect(h.head()).toBe('Secret title · QA-1 · in P')
+    expect(h.head()).toBe('Secret title · QA-1')
   })
 
   it('a card file that is not valid (two cards): "This card file needs a fix on the Mac."; review works', async () => {

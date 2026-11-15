@@ -86,7 +86,7 @@ describe('checker round 3: VoiceOver by the accessibility tree (YAZ-5268)', () =
   it('V3: a card with 3 hidden words: reading order; nothing hidden early; each step announced once, only the new part', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Rivers\n---\n{{Seine}} runs through {{Paris}} to the {{sea}}.\n---\nThe last side.', `RV-1, ${OLD}`)) })
     const box = h.host.querySelector('.review')!
-    const live = h.host.querySelector('.review__card ~ p[aria-live]')!
+    const live = h.host.querySelector('.review__stage ~ p[aria-live]')!
     const order0 = readingOrder(box)
     console.log('[V3] order at start:', JSON.stringify(order0))
     const all = order0.join(' ')
@@ -120,7 +120,7 @@ describe('checker round 3: VoiceOver by the accessibility tree (YAZ-5268)', () =
 describe('checker round 3: VoiceOver, the common card shape', () => {
   it('V4: front "Hola", back "{{Hello}}": the step to the back must not say "Hello" before the word shows', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Hola\n---\n{{Hello}}', `HL-1, ${OLD}`)) })
-    const live = h.host.querySelector('.review__card ~ p[aria-live]')!
+    const live = h.host.querySelector('.review__stage ~ p[aria-live]')!
     await h.tap()
     await real(20)
     console.log('[V4] after the step to the back:', JSON.stringify(live.textContent), '| the word shows:', h.cardText())

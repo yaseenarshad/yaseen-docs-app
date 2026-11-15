@@ -90,7 +90,7 @@ describe('the guard on the screen (YAZ-5266)', () => {
       await press(h, 'Remembered')
       if (ms > 0) await real(ms)
       await press(h, 'Undo')
-      expect(h.head()).toBe('GD-1 · in P')
+      expect(h.head()).toBe('GD-1')
       expect(guarded(h)).toBe(false)
       const before = h.cardText()
       await act(async () => h!.host.querySelector<HTMLElement>('.review__card')!.click())
@@ -107,7 +107,7 @@ describe('the guard on the screen (YAZ-5266)', () => {
       throw new Error('the disk is full')
     }
     await press(h, 'Remembered')
-    expect(h.head()).toBe('GD-1 · in P')
+    expect(h.head()).toBe('GD-1')
     expect(h.host.querySelector('.review__notice')?.textContent).toBe("Can't save the answer.")
     expect(guarded(h)).toBe(false)
     ;(h.answers as { add: unknown }).add = add
@@ -138,10 +138,10 @@ describe('the guard on the screen (YAZ-5266)', () => {
     }
     await press(h, 'Remembered')
     expect(h.host.querySelector('.review__notice')?.textContent).toBe("Can't save the answer.")
-    expect(h.last()).toBe('Answered·Undo')
+    expect(h.last()).toBe('Answered↶ Undo')
     ;(h.answers as { add: unknown }).add = add
     await press(h, 'Undo')
-    expect(h.head()).toBe('GD-1 · in P')
+    expect(h.head()).toBe('GD-1')
     expect(reviews(h)).toEqual([])
   })
 })

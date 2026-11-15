@@ -31,7 +31,9 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
   const box = useRef<HTMLDivElement>(null)
   // The pills follow the index: a new snapshot draws the card again.
   const snapshot = useSyncExternalStore(links.subscribe, () => links.records)
-  const { sides, shown } = show
+  const { sides, shown, next } = show
+  // Words shown out of order (YAZ-5415: a tap on a hidden part shows THAT part, as the Mac's click): by value.
+  const picked = show.picked?.join(',') ?? ''
 
   // One watch for the life of the card: each drawing's new pictures are watched too; the card's sound stops at the end.
   useEffect(() => {
@@ -49,9 +51,9 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
     const el = box.current
     if (el === null) return
     // The phone's ONE card drawing (YAZ-5242): the same as the card view's and the page's, local media only.
-    const drawn = drawLocalCard(text, { sides, shown }, { links, files, holder })
+    const drawn = drawLocalCard(text, { sides, shown, picked: picked === '' ? [] : picked.split(',').map(Number), next }, { links, files, holder })
     el.replaceChildren(drawn)
-  }, [text, holder, sides, shown, links, snapshot, files])
+  }, [text, holder, sides, shown, picked, next, links, snapshot, files])
 
   const onClick = (event: React.MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null

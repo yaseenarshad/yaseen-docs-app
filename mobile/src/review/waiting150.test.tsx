@@ -102,8 +102,8 @@ describe('YAZ-5304: the Review screen with 150 answers waiting, no signal', () =
     h.sync.review = async () => link
     await h.click('Search')
     await h.click('Review')
-    for (let i = 0; i < 40 && !h.text().includes('1 of 3000'); i++) await h.settle()
-    expect(h.text()).toContain('1 of 3000')
+    for (let i = 0; i < 40 && !h.text().includes('1 / 3000'); i++) await h.settle()
+    expect(h.text()).toContain('1 / 3000')
 
     const answer = async () => {
       await act(async () => h!.button('Remembered')!.click())
@@ -123,7 +123,7 @@ describe('YAZ-5304: the Review screen with 150 answers waiting, no signal', () =
 
     // The counts agree: the list (by group), the screen, the dot and its sheet.
     expect(waitingCount(t.answers.waiting())).toBe(150)
-    expect(h.text()).toContain('151 of 3000')
+    expect(h.text()).toContain('151 / 3000')
     const dot = h.host.querySelector('.sync-status')!
     expect(dot.getAttribute('aria-label')).toBe('Sync status: 150 answers waiting · no signal')
     await act(async () => (dot as HTMLElement).click())
@@ -136,7 +136,7 @@ describe('YAZ-5304: the Review screen with 150 answers waiting, no signal', () =
     // Undo of the last one: 149.
     await h.click('Undo')
     expect(waitingCount(t.answers.waiting())).toBe(149)
-    expect(h.text()).toContain('150 of 3000')
+    expect(h.text()).toContain('150 / 3000')
     expect(h.host.querySelector('.sync-status')!.getAttribute('aria-label')).toBe('Sync status: 149 answers waiting · no signal')
     await answer() // 150 again
 

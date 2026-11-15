@@ -33,7 +33,6 @@
  */
 import { Fragment, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
-import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -41,7 +40,8 @@ import { todayCards } from './reviewTime'
 import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
-import { pickLabel, useNewCardsPicker } from './NewCardsPicker'
+import { useNewCardsPicker } from './NewCardsPicker'
+import { pickLabel, progressRuns, showsFilter } from './inboxMenu'
 import { ChevronIcon, DueIcon, FixIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
@@ -61,22 +61,12 @@ export const CARD_FILTERS: readonly {
 
 /**
  * The filters the cards menu offers (YAZ-5321, Yaseen: "Up next should only show if they have in the card base, in the
- * vault, up next selected"): Up next only while some card of the vault is marked Up next, or while it is the filter
- * on show (its last card answered just now). One mark brings the row back.
+ * vault, up next selected"): the rule is `showsFilter` (`inboxMenu.ts`, shared with the phone).
  */
-export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => f.id !== 'next' || session.upNext || session.filter === 'next')
+export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => showsFilter(f.id, session))
 
-/** The bar's parts (YAZ-5020): each run of the same answer as one part, so a long session draws a few boxes, not one per card. */
-export function progressRuns(answered: readonly CardRating[]): { missed: boolean; count: number }[] {
-  const runs: { missed: boolean; count: number }[] = []
-  for (const rating of answered) {
-    const missed = rating === 'again'
-    const last = runs.at(-1)
-    if (last !== undefined && last.missed === missed) last.count++
-    else runs.push({ missed, count: 1 })
-  }
-  return runs
-}
+/** The bar's parts (YAZ-5020): `progressRuns` lives in `inboxMenu.ts` (shared with the phone). */
+export { progressRuns }
 
 interface CardInboxBarProps {
   session: CardReviewSession

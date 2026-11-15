@@ -29,3 +29,19 @@
 .review-host > .review {
   flex: 1 0 auto;
 }
+
+/* YAZ-5415: on the Review tab the screen does not scroll; the card scrolls inside itself, the buttons stay put. */
+.screen--review > .review-slot {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.screen--review .review-host {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+.screen--review .review-host > .review {
+  flex: 1 1 0;
+  min-height: 0;
+}

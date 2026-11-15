@@ -27,7 +27,7 @@ describe('Review: the app goes to the background and comes back (round 10, addit
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...cards(2)) })
     const unfollow = followAnswers(h.answers) // the shell's wiring (app/lazySync.ts)
     await h.click('Remembered') // TM-1: one answer waits
-    expect(h.head()).toBe('TM-2 · in P')
+    expect(h.head()).toBe('TM-2')
     expect(h.commits()).toBe(0)
 
     // TM-2 shows at NOW. 5 s of work, then 100 s in the background, then 3 s of work.
@@ -72,7 +72,7 @@ describe('Review: the day changes at local midnight during a session (decision 9
     const due14 = '2026-11-10T09:00Z good, 2026-11-10T09:15Z good'
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 1, "fuzz": false}', 'p.md': page('P', cardBlock('Old?\n---\n{{old}}', `TM-1, ${due14}`), ...cards(2).slice(1)) })
     // Only the new card is due before midnight; two Remembered end it.
-    expect(h.head()).toBe('TM-2 · in P')
+    expect(h.head()).toBe('TM-2')
     await h.click('Remembered')
     vi.setSystemTime(late + 30_000)
     await h.click('Remembered')
@@ -85,6 +85,6 @@ describe('Review: the day changes at local midnight during a session (decision 9
     const due = h.button(/^Review \d+ more$/)
     expect(due?.textContent).toBe('Review 1 more')
     await h.click('Review 1 more')
-    expect(h.head()).toBe('TM-1 · in P')
+    expect(h.head()).toBe('TM-1')
   })
 })

@@ -41,6 +41,40 @@ const FILES: Record<string, string> = {
   ),
 }
 
+/**
+ * YAZ-5415 (the Mochi look): a long made-up card in a folder, and pages in three folders for the folder pick.
+ * `#fixture=review-mochi` (the card part shown), `-sheet`, `-folders`, `-end` (all shown: the bounce), `-more`.
+ */
+const MOCHI: Record<string, string> = {
+  '.yaseendocs/review.json': '{"newPerDay": 3}',
+  'learning/memory.md': page(
+    'Memory',
+    block(
+      [
+        'How does a review plan keep a fact?',
+        '---',
+        'You see the fact again just before you would {{forget}} it. Each good answer makes the next gap {{longer}}.',
+        '',
+        '**Why it works**',
+        '',
+        '- Each recall takes {{effort}}, and the effort makes the memory stronger.',
+        '- The gaps grow: one day, three days, one week, then {{a month}}.',
+        '- A miss sends the card back to a {{short}} gap.',
+        '',
+        '**How to use it**',
+        '',
+        'Keep cards small: one idea each. Write the answer in your {{own words}}. Review a little each day.',
+        '',
+        'A long card is fine when its parts belong together, but each hidden part is one thing you can say out loud.',
+      ].join('\n'),
+      `MEM-1, ${DUE}`,
+    ),
+    block('What is the testing effect?\n---\nTo {{recall}} a fact makes it stronger than to read it again.', `MEM-2, ${DUE}`),
+  ),
+  'languages/words.md': page('Words', block('What does "la ventana" mean?\n---\nThe {{window}}.', 'LAN-1'), block('Hola\n---\n{{Hello}}', 'LAN-2'), block('Gracias\n---\n{{Thank you}}', 'LAN-3')),
+  'trip/plan.md': page('Plan', block('Which line goes to the old town?\n---\nLine {{12}}.', 'TRP-1'), block('When does the museum open?\n---\nAt {{ten}}.', 'TRP-2')),
+}
+
 /** A made-up robin: a small picture drawn as a data URL. */
 const ROBIN = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140"><rect width="240" height="140" fill="#e9eef5"/><circle cx="120" cy="78" r="38" fill="#7a5a43"/><circle cx="106" cy="86" r="22" fill="#d8642b"/><circle cx="134" cy="62" r="5" fill="#222"/></svg>')}`
 
@@ -55,7 +89,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   step('setup')
   // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
@@ -147,6 +181,33 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       }
       await wait(60)
       tap()
+      break
+    case 'review-mochi':
+    case 'review-mochi-end':
+      for (let i = 0; i < (name === 'review-mochi' ? 4 : 9); i++) {
+        tap()
+        await wait(40)
+      }
+      if (name === 'review-mochi-end') tap()
+      break
+    case 'review-mochi-sheet':
+    case 'review-mochi-folders':
+      press(/Choose what to review/)
+      await wait(60)
+      if (name === 'review-mochi-folders') {
+        press(/^New cards from/)
+        await wait(60)
+        for (const f of ['languages', 'trip']) [...document.querySelectorAll<HTMLLabelElement>('.review__sheet-folder')].find((r) => r.textContent?.startsWith(f))?.querySelector('input')?.click()
+      }
+      break
+    case 'review-mochi-more':
+      tap()
+      await wait(40)
+      press('Forgot')
+      await wait(500)
+      press('Remembered')
+      await wait(500)
+      press('More card actions')
       break
     case 'review-done':
       for (let i = 0; i < 4; i++) {

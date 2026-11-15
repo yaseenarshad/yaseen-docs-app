@@ -42,7 +42,7 @@ async function app() {
 describe('the Review tab in the app shell', () => {
   it('reviews; ⋯ › Open page opens 4C\'s page at the card; Back comes back to the card', async () => {
     await app()
-    expect(h.text()).toContain('Hola · TB-1 · in Spanish words')
+    expect(h.text()).toContain('Hola · TB-1')
     await h.click('More card actions')
     await h.click('Open page')
     for (let i = 0; i < 30 && !h.text().includes('Madrid'); i++) await h.settle()
@@ -51,7 +51,7 @@ describe('the Review tab in the app shell', () => {
     expect(h.button('Remembered')).toBeNull()
     await h.click('‹ Back')
     for (let i = 0; i < 30 && !h.text().includes('TB-1'); i++) await h.settle()
-    expect(h.text()).toContain('Hola · TB-1 · in Spanish words')
+    expect(h.text()).toContain('Hola · TB-1')
   })
 
   it('a card file\'s ⋯ › Open card opens 4C\'s card view', async () => {

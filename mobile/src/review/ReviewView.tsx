@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { useAnswerTimer } from '@client/review/answerTimer'
-import { answerIcon, cardStateText } from '@client/review/cardInboxChip'
-import { addedLine, waitingLine } from '@client/review/cardWords'
+import { cardStateText } from '@client/review/cardInboxChip'
+import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
+import { progressRuns } from '@client/review/inboxMenu'
+import { addedLine, resetLine, waitingLine } from '@client/review/cardWords'
 import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
@@ -11,6 +14,7 @@ import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { ReviewHost } from '@client/review/reviewHost'
+import type { ReviewSettings } from '@shared/reviews'
 import { openPhoneDays, phoneReviewHost } from '../answers/reviewHost'
 import type { AnswersState } from '../answers/answers'
 import type { ReviewLink } from './link'
@@ -21,8 +25,12 @@ import { createReviewSource, type ReviewSource } from './source'
 import { setReviewInProgress } from './inProgress'
 import { useTapGuard } from './tapGuard'
 import { useWakeLock } from './wakeLock'
-import { FILTERS, NEEDS_FIX, filterDone, filterLabel, lostTitle } from './words'
+import { FILTER_ICON, NEEDS_FIX, UNDO_SHOWN_MS, filterDone, filterLabel, hintText, lostTitle } from './words'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
+import { useReviewTop } from '../screens/reviewTop'
+import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
+import { readNewFrom, saveNewFrom } from './newFromPick'
+import { ReviewSheet } from './ReviewSheet'
 import './review.css'
 
 /**
@@ -70,6 +78,8 @@ interface Setup {
   host: ReviewHost
   source: ReviewSource
   media: VaultMedia
+  /** This phone's pick of the folders new cards come from (`newFromPick.ts`); null: the Mac's. */
+  pick: string[] | null
 }
 
 /** ONE source and ONE host for the life of the vault (the hook follows their identity). */
@@ -82,8 +92,8 @@ export function ReviewView(props: ReviewViewProps) {
     const source = createReviewSource(link, vault, vaultName)
     const own = given === undefined ? storedMedia(link.store, vault) : null
     const media = given ?? own!
-    void openPhoneDays(link.store, vault).then((days) => {
-      if (live) setSetup({ source, media, host: phoneReviewHost({ answers: link.answers, days, vaultName: () => vaultName }) })
+    void Promise.all([openPhoneDays(link.store, vault), readNewFrom(link.store, vault)]).then(([days, pick]) => {
+      if (live) setSetup({ source, media, pick, host: phoneReviewHost({ answers: link.answers, days, vaultName: () => vaultName }) })
     })
     return () => {
       live = false
@@ -93,7 +103,7 @@ export function ReviewView(props: ReviewViewProps) {
     }
   }, [link, vault, vaultName, given])
   if (setup === null) return <Waiting />
-  return <ReviewSession {...props} source={setup.source} host={setup.host} media={setup.media} />
+  return <ReviewSession {...props} source={setup.source} host={setup.host} media={setup.media} pick={setup.pick} />
 }
 
 function Waiting() {
@@ -121,23 +131,29 @@ function useAnswersState(link: ReviewLink): AnswersState {
   return state
 }
 
-/** The step a card is at: how many sides show, and how many hidden words (as the Mac's Inbox). */
-interface Step {
-  key: string | null
-  sides: number
-  shown: number
-}
+/** The step a card is at: how many sides show, which hidden words, and the marked one (the Mac's `cardSteps.ts`). */
+type Step = Reveal & { key: string | null }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
 type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
-function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, shown = true }: ReviewViewProps & Setup) {
-  const { ready, settings } = useSourceState(source)
+function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
+  const { ready, settings: vaultSettings } = useSourceState(source)
+  // YAZ-5415: where new cards come from — the Mac's rule (`setNewFrom` → `saveSettings` → `newFrom`), this phone's pick.
+  const [pick, setPick] = useState(firstPick)
+  const settings = useMemo(() => (pick === null ? vaultSettings : { ...vaultSettings, newFrom: pick }), [vaultSettings, pick])
+  const saveSettings = useCallback(
+    (next: ReviewSettings) => {
+      setPick(next.newFrom)
+      void saveNewFrom(link.store, vault, next.newFrom)
+    },
+    [link, vault],
+  )
   const [notice, setNotice] = useState<string | null>(null)
   // No inner error text reaches the screen (YAZ-5076, YAZ-5228): the hook's words before the reason, e.g. "Can't undo the answer.".
   const onNotice = useCallback((text: string) => setNotice(`${text.split(':')[0].trim()}.`), [])
-  const review = useCardReview(vault, source, settings, onNotice, vaultName, host)
+  const review = useCardReview(vault, source, settings, onNotice, vaultName, host, saveSettings)
   const { session } = review
 
   // A session starts once the first index is in (an empty list is not "Inbox complete"), and again after review was off.
@@ -212,12 +228,16 @@ function SessionScreen({
   const cardFile = record?.kind === 'card'
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
 
-  // The step: one tap, one hidden word, else one side (D18).
+  // The step (D18; YAZ-5415 follows the Mac's `cardSteps.ts`, YAZ-5049 round 4): a tap shows the MARKED part (the next
+  // hidden one), else the next side; a tap ON a hidden part shows THAT part, and the mark goes on after it.
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
-  const [stepState, setStep] = useState<Step>({ key: cardKey, sides: 1, shown: 0 })
-  const step = stepState.key === cardKey ? stepState : { key: cardKey, sides: 1, shown: 0 }
+  const [stepState, setStep] = useState<Step>({ ...START, key: cardKey })
+  const step: Step = stepState.key === cardKey ? stepState : { ...START, key: cardKey }
   const upTo = (sides: number) => counts.slice(0, sides).reduce((a, b) => a + b, 0)
-  const done = text !== null && step.sides >= counts.length && step.shown >= upTo(counts.length)
+  const done = text !== null && step.sides >= counts.length && step.open.length >= upTo(counts.length)
+  const mark = markOf(step, upTo(step.sides))
+  // What the hint line counts: the hidden parts not shown yet, and each side still to come.
+  const left = text === null ? 0 : upTo(counts.length) - step.open.length + Math.max(0, counts.length - step.sides)
   // YAZ-5226: after an answer, taps wait until the next card is on the screen AND a short time has passed, so the
   // second tap of a double tap never lands on a card the person has not seen. The answer buttons still work at any
   // step of a card once it is seen (decision 11, as the Mac: "the buttons should always be there").
@@ -240,30 +260,78 @@ function SessionScreen({
   // Hidden and shown again: the guard starts from `ready` (YAZ-5266).
   const { reset: resetGuard } = guard
   useEffect(() => resetGuard(), [shown, resetGuard])
+
+  const cardBox = useRef<HTMLDivElement>(null)
+  // The end of the card (YAZ-5415; the Mac's end cue, YAZ-5049 round 3): one more tap when every part shows makes ✕
+  // and ✓ bounce once with a soft ring. Two names, so each new tap plays it again.
+  const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
+  // The part a step just showed: it flashes once, and VoiceOver hears it.
+  const lastShown = useRef<number | null>(null)
   const advance = () => {
-    if (done || page === null || guarded) return
-    setStep(step.shown < upTo(step.sides) ? { ...step, shown: step.shown + 1 } : { ...step, sides: step.sides + 1 })
+    if (page === null || guarded) return
+    const target: TapTarget = mark !== null ? mark : step.sides < counts.length ? 'side' : 'end'
+    // The Mac's reading scroll (YAZ-5049 round 6): a part out of view first comes into view; that tap shows nothing.
+    const view = cardBox.current
+    const move = view === null ? 0 : tapMove(view, target)
+    if (move !== 0 && view !== null) return glideCard(view, move)
+    if (done || target === 'end') return setNudge({ key: cardKey, n: nudge.key === cardKey ? nudge.n + 1 : 1 })
+    if (typeof target === 'number') {
+      lastShown.current = target
+      return setStep({ ...reveal(step, target, upTo(step.sides)), key: step.key })
+    }
+    lastShown.current = null
+    setStep({ ...step, sides: step.sides + 1, next: null })
+  }
+  /** A tap on a hidden part (the Mac's click on a blank): THAT part shows. */
+  const showPart = (word: number) => {
+    if (page === null || guarded || step.open.includes(word) || word >= upTo(step.sides)) return
+    lastShown.current = word
+    setStep({ ...reveal(step, word, upTo(step.sides)), key: step.key })
   }
 
   // YAZ-5229, YAZ-5268: VoiceOver hears ONLY what a step newly shows: a new side (its text), else the new word.
   const [revealed, setRevealed] = useState('')
-  const cardBox = useRef<HTMLDivElement>(null)
   const lastStep = useRef<Step>(step)
   useEffect(() => {
     const before = lastStep.current
     lastStep.current = step
-    if (before.key !== step.key || (step.shown === 0 && step.sides === 1)) return setRevealed('')
+    if (before.key !== step.key || (step.open.length === 0 && step.sides === 1)) return setRevealed('')
+    const body = cardBox.current?.querySelector('.phone-card__body')
+    // The part that shows flashes once (the drawing is in: the card draws in its own effect, before this one).
+    const word = step.open.length > before.open.length ? lastShown.current : null
+    if (word !== null) body?.querySelector(`[data-hidden="${word}"]`)?.classList.add('review__flash')
     const id = setTimeout(() => {
-      const body = cardBox.current?.querySelector('.phone-card__body')
       if (body == null) return
       if (step.sides > before.sides) {
         const side = body.querySelector(`.card__side[data-side="${step.sides - 1}"]`)
         // YAZ-5314: what VoiceOver reads of the side: a hidden word is "Hidden word", never its text.
         setRevealed(side === null ? '' : spokenText(side))
-      } else if (step.shown > before.shown) setRevealed((body.querySelectorAll('.card__hidden')[step.shown - 1]?.textContent ?? '').trim())
+      } else if (word !== null) setRevealed((body.querySelector(`[data-hidden="${word}"]`)?.textContent ?? '').trim())
     }, 0)
     return () => clearTimeout(id)
-  }, [step.key, step.sides, step.shown]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [step.key, step.sides, step.open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // No scroll bar (YAZ-5415, round 4): a soft fade and "↓ more" while more of the card lies below; both go at its end.
+  const [more, setMore] = useState(false)
+  useLayoutEffect(() => {
+    const view = cardBox.current
+    if (view === null) return setMore(false)
+    const check = () => setMore(moreBelow(view))
+    check()
+    view.addEventListener('scroll', check, { passive: true })
+    const watch = typeof ResizeObserver === 'function' ? new ResizeObserver(check) : null
+    const body = view.querySelector('.phone-card__body')
+    watch?.observe(view)
+    if (body !== null) watch?.observe(body)
+    return () => {
+      view.removeEventListener('scroll', check)
+      watch?.disconnect()
+    }
+  }, [cardKey, text, step.sides, step.open])
+  // A new card starts at its top.
+  useLayoutEffect(() => {
+    if (cardBox.current !== null) cardBox.current.scrollTop = 0
+  }, [cardKey])
 
   // The buttons' reviews are fixed when the card shows (D13): the answer writes what was fixed.
   const { showAnswers } = review
@@ -297,6 +365,26 @@ function SessionScreen({
   const [line, setLine] = useState<Line | null>(null)
   const ratings = answerRatings(review.settings)
 
+  // An open menu closes on a tap outside it, and that tap does nothing else (as the mockup).
+  const closedByTap = useRef(false)
+  useEffect(() => {
+    if (menu === null) return
+    const down = (e: Event) => {
+      if (e.target instanceof Element && e.target.closest('.review__sheet, .review__menu, .review__count-btn, .review__more') !== null) return
+      closedByTap.current = true
+      // A press that never becomes a click on this screen (the tab bar, a scroll) leaves no flag behind.
+      setTimeout(() => void (closedByTap.current = false), 600)
+      setMenu(null)
+    }
+    const key = (e: KeyboardEvent) => void (e.key === 'Escape' && setMenu(null))
+    document.addEventListener('pointerdown', down, true)
+    document.addEventListener('keydown', key)
+    return () => {
+      document.removeEventListener('pointerdown', down, true)
+      document.removeEventListener('keydown', key)
+    }
+  }, [menu])
+
   const answerWith = (rating: CardRating) => {
     if (page === null || card === null || guarded) return
     setMenu(null)
@@ -323,6 +411,7 @@ function SessionScreen({
   // Discard), and never asks the host for a card that is not there.
   const lostRow = line?.kind === 'answer' ? lostRows(answers.lost).find((r) => r.id === line.id && answers.lost.some((l) => r.seqs.includes(l.seq) && l.op.kind === 'review')) : undefined
   const undo = () => {
+    setMenu(null)
     setNotice(null)
     guard.undo()
     // YAZ-5078: Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
@@ -368,96 +457,136 @@ function SessionScreen({
     act(on ? 'Marked: Fix later' : 'Removed: Fix later', set(on), set(!on))
   }
 
-  // The line under the buttons shows while what it names is still the last thing done.
+  // The line (an answer, an add or Reset, a mark, Archive card) shows while what it names is still the last thing done.
   const answeredNow = session.answered.length
   const shownLine =
     session.lastAdd !== null
-      ? { text: `${addedLine(session.lastAdd.kind, session.lastAdd.count)}`, undo: session.canUndo }
+      ? { kind: 'add', text: session.lastAdd.reset ? resetLine(session.lastAdd.kind) : addedLine(session.lastAdd.kind, session.lastAdd.count), undo: session.canUndo }
       : line?.kind === 'answer' && line.count === answeredNow && answeredNow > 0
-        ? { text: 'Answered', undo: session.canUndo || lostRow !== undefined }
+        ? { kind: 'answer', text: 'Answered', undo: session.canUndo || lostRow !== undefined }
         : line?.kind === 'archive' && session.lastArchive !== null
-          ? { text: 'Archived', undo: session.canUndo }
-        : line?.kind === 'mark' && line.key === cardKey
-          ? { text: line.text, undo: line.undo !== undefined }
-          : line?.kind === 'mark' && line.text === 'Answer removed'
-            ? { text: line.text, undo: false }
-          : null
+          ? { kind: 'archive', text: 'Archived', undo: session.canUndo }
+          : line?.kind === 'mark' && line.key === cardKey
+            ? { kind: 'mark', text: line.text, undo: line.undo !== undefined }
+            : line?.kind === 'mark' && line.text === 'Answer removed'
+              ? { kind: 'mark', text: line.text, undo: false }
+              : null
+  // YAZ-5415 (round 5): the line sits IN the hint line for about 4 seconds, then goes; Undo stays in ⋯.
+  const [fresh, setFresh] = useState<object | null>(null)
+  const lineId = session.lastAdd ?? line
+  useEffect(() => {
+    if (lineId === null) return
+    setFresh(lineId)
+    const id = setTimeout(() => setFresh((f) => (f === lineId ? null : f)), UNDO_SHOWN_MS)
+    return () => clearTimeout(id)
+  }, [lineId])
+  const quietLine = shownLine !== null && fresh === lineId ? shownLine : null
+  // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
+  const canUndo = shownLine?.undo === true || session.canUndo
 
   const headTitle = title.waits && !done ? '' : title.text
-  const pageTitle = !cardFile && record !== undefined ? record.title : null
   const addKinds = (['new', 'next'] as const).filter((k) => session.adds[k] > 0 && (session.filter === 'all' || session.filter === k))
+  // The crumb (YAZ-5132's place, without the vault): "LEARNING / Memory", inside the card, on the chip's line.
+  const crumb = session.place.filter((p) => p.kind !== 'vault').map((p) => p.label)
+
+  // TAP ANYWHERE (YAZ-5415): a tap on the screen shows the next part — the card, the empty space, the hint line, the
+  // crumb. Not: a button or a link (✕ ✓ ← → ⋯, Undo, the menus' rows), an open menu, and the card's own taps (a link,
+  // a pill, a picture, a sound's Play: YAZ-5298). The CAPTURE phase: a sound player stops each click inside it (the
+  // Mac's `cardMedia`), so a tap on its name or its empty part reaches here first.
+  const onTap = (e: React.MouseEvent) => {
+    const target = e.target instanceof Element ? e.target : null
+    if (closedByTap.current) {
+      closedByTap.current = false
+      return
+    }
+    if (target === null || card === null) return
+    if (menu !== null) return void (target.closest('.review__sheet, .review__menu') === null && setMenu(null))
+    if (target.closest(SCREEN_OWN_TAPS) !== null || target.closest(CARD_OWN_TAPS) !== null) return
+    // The bar's own listener (the Mac's seek) never runs on the phone: the tap is a step (YAZ-5333).
+    if (target.closest('.card__audio-bar') !== null) e.stopPropagation()
+    const blank = target.closest<HTMLElement>('.card__blank[data-hidden]')
+    if (blank !== null && cardBox.current?.contains(blank) === true) return showPart(Number(blank.dataset.hidden))
+    advance()
+  }
+
+  const filter = session.filter === 'fix' ? 'all' : session.filter
+  const countButton = (
+    <button
+      type="button"
+      className="review__count-btn"
+      aria-haspopup="dialog"
+      aria-expanded={menu === 'filter'}
+      aria-label={`${filterLabel(session.filter)}${card !== null ? `, card ${session.position} of ${session.total}` : ''}. Choose what to review`}
+      onClick={() => setMenu(menu === 'filter' ? null : 'filter')}
+    >
+      <span className="review__mode">
+        {FILTER_ICON[filter]} {filterLabel(session.filter)} ▾
+      </span>
+      {card !== null && (
+        <span className="review__place">
+          {session.position} <small>/ {session.total}</small>
+        </span>
+      )}
+    </button>
+  )
+  const topBox = useReviewTop()
+  const today = <TodayLine session={session} mode={review.settings.timeSoFar} />
 
   return (
-    <div className="review">
+    <div className="review review--mochi" onClickCapture={onTap} onTouchStart={NO_OP}>
+      {topBox !== null && shown ? createPortal(countButton, topBox) : <div className="review__top">{countButton}</div>}
+      <Progress session={session} />
       {answers.lost.length > 0 && <LostAnswers answers={answers} link={link} />}
       {notice !== null && (
         <p className="review__notice" role="alert">
           {notice}
         </p>
       )}
-      <div className="review__top">
-        <button type="button" className="review__filter" aria-haspopup="menu" aria-expanded={menu === 'filter'} onClick={() => setMenu(menu === 'filter' ? null : 'filter')}>
-          {filterLabel(session.filter)} ▾
-        </button>
-        <TodayLine session={session} mode={review.settings.timeSoFar} />
-      </div>
-      {menu === 'filter' && (
-        <div className="review__menu" role="menu" aria-label="Which cards">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              role="menuitemradio"
-              aria-checked={session.filter === f.id}
-              className="review__menu-row"
-              onClick={() => {
-                setMenu(null)
-                review.setFilter(f.id)
-              }}
-            >
-              <span>{f.label}</span>
-              <span className="review__count">{session.counts[f.id]}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {menu === 'filter' && <ReviewSheet session={session} review={review} today={<p className="review__sheet-today">{today}</p>} onClose={() => setMenu(null)} />}
 
       {card !== null ? (
         <>
-          <div className="review__meta">
-            <span>{cardStateText(card, Date.now())}</span>
-            <span>
-              {session.position} of {session.total}
-            </span>
-          </div>
-          <p className="review__head">
-            {headTitle !== '' && (
-              <>
-                <span className="review__title">{headTitle}</span>
-                <span aria-hidden> · </span>
-              </>
-            )}
-            <span className="review__id">{card.id}</span>
-            {pageTitle !== null && <span className="review__in"> · in {pageTitle}</span>}
-          </p>
-          {needsFix === card.path && <p className="review__fix">{NEEDS_FIX}</p>}
-          {/* YAZ-5229: the card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
-              shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. A tap
-              on a link, a pill, a picture or a sound is theirs, never a step (YAZ-5078 checker, M1). */}
-          <div
-            ref={cardBox}
-            className="review__card card card-screen"
-            // YAZ-5298: the CAPTURE phase. A sound player stops each click inside it (the Mac's `cardMedia`, so its own
-            // clicks never reach the Mac's editor). Then a tap on its name, its time or its empty part never stepped the
-            // card. The capture sees every tap first; only the player's own controls keep theirs.
-            onClickCapture={(e) => {
-              if (e.target instanceof Element && e.target.closest(CARD_OWN_TAPS) !== null) return
-              // The bar's own listener (the Mac's seek) never runs on the phone: the tap is a step (YAZ-5333).
-              if (e.target instanceof Element && e.target.closest('.card__audio-bar') !== null) e.stopPropagation()
-              advance()
-            }}
-          >
-            {text !== null && page !== null ? <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, shown: step.shown }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} /> : <div className="review__card-wait" aria-busy="true" />}
+          <div className="review__stage">
+            {/* YAZ-5229: the card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
+                shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. */}
+            <div ref={cardBox} className="review__card card card-screen">
+              <div className="review__cardtop">
+                <span className="review__chip" data-new={card.isNew || undefined} title={cardStateText(card, Date.now())}>
+                  <i aria-hidden="true" />
+                  {card.isNew ? 'New' : 'Due'}
+                </span>
+                {crumb.length > 0 && (
+                  <span className="review__crumb" title={crumb.join(' / ')}>
+                    {crumb.slice(0, -1).map((c) => (
+                      <span key={c} className="review__crumb-folder">
+                        {c} /{' '}
+                      </span>
+                    ))}
+                    <b>{crumb.at(-1)}</b>
+                  </span>
+                )}
+                {counts.length > 1 && <span className="review__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</span>}
+              </div>
+              <p className="review__head">
+                {headTitle !== '' && (
+                  <>
+                    <span className="review__title">{headTitle}</span>
+                    <span aria-hidden> · </span>
+                  </>
+                )}
+                <span className="review__id">{card.id}</span>
+              </p>
+              {needsFix === card.path && <p className="review__fix">{NEEDS_FIX}</p>}
+              {text !== null && page !== null ? (
+                <PhoneCard text={text} holder={card.path} show={{ sides: step.sides, ...shownParts(step.open), next: mark ?? undefined }} links={source.links} files={source.files} media={media} retry={retry} onOpen={open} />
+              ) : (
+                <div className="review__card-wait" aria-busy="true" />
+              )}
+            </div>
+            <div className="review__fade" data-on={more || undefined} aria-hidden="true" />
+            <div className="review__more-cue" data-on={more || undefined} aria-hidden="true">
+              ↓ more
+            </div>
           </div>
           <button type="button" className="sr-only" onClick={advance} disabled={done}>
             {done ? 'The card is fully shown' : 'Show the next part'}
@@ -465,75 +594,127 @@ function SessionScreen({
           <p className="sr-only" aria-live="polite">
             {revealed}
           </p>
-          {counts.length > 1 && <p className="review__sides">{`Side ${Math.min(step.sides, counts.length)} of ${counts.length}`}</p>}
-        </>
-      ) : (
-        <DoneScreen review={review} session={session} addKinds={addKinds} />
-      )}
-
-      <div className="review__dock">
-        {card !== null && (
-          <div className="review__answers" data-guard={guarded ? '' : undefined}>
-            {ratings.map((rating) => (
-              <button key={rating} type="button" className="review__answer" data-rating={rating} disabled={page === null} onClick={() => answerWith(rating)}>
-                {answerIcon(rating, review.settings.buttons)}
-                <span>{answerLabel(rating, review.settings)}</span>
-              </button>
-            ))}
-            <button type="button" className="review__more" aria-label="More card actions" aria-haspopup="menu" aria-expanded={menu === 'more'} onClick={() => setMenu(menu === 'more' ? null : 'more')}>
-              ⋯
-            </button>
-          </div>
-        )}
-        {menu === 'more' && card !== null && (
-          <div className="review__menu review__menu--more" role="menu" aria-label="Card actions">
-            <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={archive}>
-              Archive card
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="review__menu-row"
-              disabled={page === null}
-              onClick={() => {
-                const on = page?.next !== true
-                act(on ? 'Marked: Up next' : 'Removed: Up next', () => review.setNext(card.path, card.id, on), () => review.setNext(card.path, card.id, !on))
-              }}
-            >
-              {page?.next === true ? 'Remove from Up next' : 'Up next'}
-            </button>
-            <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={toggleFix}>
-              {fixed ? 'Remove Fix later' : 'Fix later'}
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="review__menu-row"
-              onClick={() => {
-                setMenu(null)
-                open(cardFile ? { kind: 'card', path: card.path, id: card.id } : { kind: 'page', path: card.path, at: card.id })
-              }}
-            >
-              {cardFile ? 'Open card' : unit('Open page')}
-            </button>
-          </div>
-        )}
-        <div className="review__last" role="status" aria-live="polite">
-          {shownLine !== null && (
-            <>
-              <span>{shownLine.text}</span>
-              {shownLine.undo && (
+          <div className="review__hint">
+            {(quietLine === null || quietLine.kind === 'answer') && <span className="review__hint-text">{hintText(left)}</span>}
+            <span className="review__last" role="status" aria-live="polite">
+              {quietLine !== null && (
                 <>
-                  <span aria-hidden>·</span>
-                  <button type="button" className="link-btn review__undo" onClick={undo}>
-                    Undo
-                  </button>
+                  <span className={quietLine.kind === 'answer' ? 'sr-only' : 'review__line'}>{quietLine.text}</span>
+                  {quietLine.undo && (
+                    <button type="button" className="review__undo" aria-label="Undo" onClick={undo}>
+                      ↶ Undo
+                    </button>
+                  )}
                 </>
               )}
-            </>
+            </span>
+          </div>
+        </>
+      ) : (
+        <div className="review__stage review__stage--done">
+          <DoneScreen review={review} session={session} addKinds={addKinds} today={today} />
+          {quietLine !== null && (
+            <p className="review__hint review__last" role="status" aria-live="polite">
+              <span className="review__line">{quietLine.text}</span>
+              {quietLine.undo && (
+                <button type="button" className="review__undo" aria-label="Undo" onClick={undo}>
+                  ↶ Undo
+                </button>
+              )}
+            </p>
           )}
         </div>
-      </div>
+      )}
+
+      {card !== null && (
+        <div className="review__dock">
+          <div className="review__ctrl">
+            <div className="review__arrows">
+              <button type="button" className="review__arrow" aria-label="Previous card" disabled={!session.canBack} onClick={() => review.move(-1)}>
+                ←
+              </button>
+              <button type="button" className="review__arrow" aria-label="Next card" disabled={!session.canNext} onClick={() => review.move(1)}>
+                →
+              </button>
+            </div>
+            <div className="review__answers" data-count={ratings.length} data-guard={guarded ? '' : undefined} data-nudge={nudge.key === cardKey && nudge.key !== null ? (nudge.n % 2 === 1 ? 'a' : 'b') : undefined}>
+              {ratings.map((rating) => (
+                <button key={rating} type="button" className="review__answer" data-rating={rating} aria-label={answerLabel(rating, review.settings)} disabled={page === null} onClick={() => answerWith(rating)}>
+                  {ANSWER_GLYPH[rating]}
+                </button>
+              ))}
+            </div>
+            <div className="review__right">
+              <button type="button" className="review__arrow review__more" aria-label="More card actions" aria-haspopup="menu" aria-expanded={menu === 'more'} onClick={() => setMenu(menu === 'more' ? null : 'more')}>
+                ⋯
+              </button>
+            </div>
+          </div>
+          {menu === 'more' && (
+            <div className="review__menu review__menu--more" role="menu" aria-label="Card actions">
+              <button type="button" role="menuitem" className="review__menu-row" disabled={!canUndo} onClick={undo}>
+                Undo last answer
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="review__menu-row"
+                disabled={page === null}
+                onClick={() => {
+                  const on = page?.next !== true
+                  act(on ? 'Marked: Up next' : 'Removed: Up next', () => review.setNext(card.path, card.id, on), () => review.setNext(card.path, card.id, !on))
+                }}
+              >
+                {page?.next === true ? 'Remove from Up next' : 'Up next'}
+              </button>
+              <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={toggleFix}>
+                {fixed ? 'Remove Fix later' : 'Fix later'}
+              </button>
+              <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={archive}>
+                Archive card
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className="review__menu-row"
+                onClick={() => {
+                  setMenu(null)
+                  open(cardFile ? { kind: 'card', path: card.path, id: card.id } : { kind: 'page', path: card.path, at: card.id })
+                }}
+              >
+                {cardFile ? 'Open card' : unit('Open page')}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const NO_OP = () => undefined
+
+/** The answer buttons' glyphs (as Mochi): ✕ Forgot, ✓ Remembered; with four buttons, Hard and Easy too. */
+const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
+
+/** What a tap on the screen keeps for itself: every control (its own rule), and the open menus. */
+const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu'
+
+/**
+ * The progress bar in steps (YAZ-5415, round 4; the Mac's YAZ-5020): one step for each card of the session, in the
+ * order answered — grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs.
+ */
+function Progress({ session }: { session: CardReviewSession }) {
+  const size = Math.max(1, session.size)
+  const steps = size <= 80
+  return (
+    <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={session.answered.length} data-steps={steps || undefined}>
+      {steps
+        ? Array.from({ length: size }, (_, i) => {
+            const r = session.answered[i]
+            return <span key={i} className="review__step" data-answer={r === undefined ? undefined : r === 'again' ? 'forgot' : 'remembered'} />
+          })
+        : progressRuns(session.answered).map((run, i) => <span key={i} className="review__step" data-answer={run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
     </div>
   )
 }
@@ -594,7 +775,7 @@ function TodayLine({ session, mode: setting }: { session: CardReviewSession; mod
   )
 }
 
-function DoneScreen({ review, session, addKinds }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[] }) {
+function DoneScreen({ review, session, addKinds, today }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode }) {
   const adds = addKinds.map((k) => (
     <button key={k} type="button" className="btn review__add" onClick={() => review.addCards(k)}>
       {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
@@ -613,6 +794,7 @@ function DoneScreen({ review, session, addKinds }: { review: CardReviewApi; sess
   return (
     <div className="review__done" role="status">
       <p className="review__done-title">Inbox complete</p>
+      <p className="muted review__done-today">{today}</p>
       {addKinds.length > 0 ? (
         <>
           <p className="muted review__waits">{waitingLine(session.more, addKinds)}</p>
