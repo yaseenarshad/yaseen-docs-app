@@ -120,7 +120,7 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
   void version
   const held = new Set(comments.map((c) => c.id))
   // A check box tick waits in the same list, but it is no comment.
-  const pending = (port?.waiting(path) ?? []).filter((c) => !held.has(c.id) && c.task === undefined)
+  const pending = (port?.waiting(path) ?? []).filter((c) => !held.has(c.id) && c.task === undefined && c.setting === undefined)
 
   const onFocus = () => {
     setFocused(true)

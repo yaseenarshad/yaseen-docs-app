@@ -44,6 +44,11 @@ export interface ToolsFor {
   headings?: boolean
   /** YAZ-5568: the page's folds (none: the page does not fold, `folding: false`, a card): "Collapse all" / "Expand all". */
   folds?: PageFolds | null
+  /**
+   * YAZ-5568: the page's own "Folding" (the Mac's page cog row, `folding: true | false` in its frontmatter): "Folding on
+   * this page", a check row; none: the phone cannot write this page (no comments path, a card).
+   */
+  folding?: { on: boolean; set(on: boolean): void } | null
 }
 
 /** The Mac's fold-all icons (`FoldAllButton.tsx`'s shape): two chevrons up to collapse, down to expand. */
@@ -77,6 +82,10 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const foldAll = () => {
     setMenu(false)
     file.folds?.setAll(foldNext === 'collapse')
+  }
+  const folding = () => {
+    setMenu(false)
+    file.folding?.set(!file.folding.on)
   }
   const { copyPath, layer } = useCopyPath()
   const copy = async () => {
@@ -112,6 +121,14 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
                     {foldAllIcon(foldNext === 'collapse')}
                   </span>{' '}
                   {foldNext === 'collapse' ? 'Collapse all' : 'Expand all'}
+                </button>
+              )}
+              {menu && file.folding != null && (
+                <button type="button" role="menuitemcheckbox" aria-checked={file.folding.on} className="page-tools__item" onClick={folding}>
+                  <span aria-hidden="true" className="page-tools__icon">
+                    {file.folding.on ? '✓' : ''}
+                  </span>{' '}
+                  Folding on this page
                 </button>
               )}
             </>

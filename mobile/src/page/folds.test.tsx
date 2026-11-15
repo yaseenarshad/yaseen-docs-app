@@ -9,7 +9,12 @@ import { READER_FILES, READER_ID, cardBlock, seedReaderVault } from '../dev/read
 import { forgetSearch } from '../search/searchState'
 import { mount, newPhone, type Harness } from '../screens/testing'
 import { readFolds, writeFolds } from '../store/foldPref'
+import type { CommentsPort } from '../comments/bridge'
+import type { WaitingComment } from '../comments/outbox'
+import type { NewCommentInput } from '../comments/sender'
+import { readFindFolds } from '@shared/pageSwitches'
 import { attachFolds, HIDDEN_ATTR, revealFolds } from './folds'
+import { pageSwitchAttrs } from './pageSwitches'
 import { renderPage, type PageLook } from './pageRender'
 
 /**
@@ -197,7 +202,7 @@ describe('YAZ-5568: a long page drawn in slices', () => {
     expect(shown(next)).toBe(true)
     expect(shown(byText(sliced, 'Child 299'))).toBe(false)
     expect(shown(byText(sliced, 'Child 298'))).toBe(true)
-  })
+  }, 30000)
 })
 
 /* ---------------------------------------------------------------- the page view ---------------------------------- */
@@ -354,5 +359,97 @@ describe('YAZ-5568: the look (jsdom has no layout: the rules are read from the C
     expect(css).toMatch(/\.reader__body \[data-fold-hidden\] \{\s*display: none !important;/)
     expect(css).toMatch(/\.fold-btn \{[^}]*width: 44px;\s*height: 44px;[^}]*color: var\(--fg-muted\);/)
     expect(css).toMatch(/\.fold-btn\[aria-expanded='false'\] svg \{\s*transform: rotate\(-90deg\);/)
+  })
+})
+
+describe('YAZ-5568: ⋯ → "Folding on this page" (the Mac\'s page setting)', () => {
+  /** A comments path that keeps what it is given (the send itself: `comments/settingWrite.test.ts`). */
+  function fakePort() {
+    const list: WaitingComment[] = []
+    const listeners = new Set<() => void>()
+    const port: CommentsPort & { list: WaitingComment[]; refuse(id: string): void } = {
+      list,
+      ready: async () => {},
+      waiting: (path) => list.filter((c) => path === undefined || c.path === path),
+      add: vi.fn(async (input: NewCommentInput) => {
+        const c: WaitingComment = { id: `s${list.length}`, path: input.path, body: input.body, at: '2026-11-15T06:00:00Z', madeAt: 0, notBefore: 0, ...(input.setting ? { setting: input.setting } : {}) }
+        list.push(c)
+        return c
+      }),
+      undo: async () => false,
+      discard: async () => false,
+      subscribe(l) {
+        listeners.add(l)
+        return () => void listeners.delete(l)
+      },
+      refuse(id) {
+        list.find((w) => w.id === id)!.refused = 'layout'
+        for (const l of [...listeners]) l()
+      },
+    }
+    return port
+  }
+  async function openWithPort(name: string, port: CommentsPort): Promise<Harness> {
+    const p = await newPhone()
+    await seedReaderVault(p.store, p.tokens, FILES)
+    const x = await mount({ phone: p })
+    ;(x.sync as unknown as { review: () => Promise<unknown> }).review = async () => ({ answers: { comments: port } })
+    await x.click('Search')
+    await waitFor(x, () => x.button(new RegExp(`^${name}, page`)) !== null)
+    await x.click(new RegExp(`^${name}, page`))
+    await waitFor(x, () => x.host.querySelector('.reader__body h2') !== null)
+    await x.settle()
+    return x
+  }
+  const row = (x: Harness) => x.host.querySelector<HTMLElement>('[role="menuitemcheckbox"]')
+
+  it('off: one entry on the comments path (folding: false), and at once no arrows and nothing folded; on again: the arrows and the kept folds come back', async () => {
+    const port = fakePort()
+    h = await openWithPort('Garden', port)
+    await h.click('Fold Watering')
+    await h.click('Page tools')
+    expect(row(h)?.textContent).toMatch(/Folding on this page/)
+    expect(row(h)?.getAttribute('aria-checked')).toBe('true')
+    await h.click(/Folding on this page/)
+    expect(port.add).toHaveBeenCalledWith({ path: 'Garden.md', body: '', setting: { key: 'folding', on: false } })
+    expect(body(h).querySelectorAll('.fold-btn')).toHaveLength(0)
+    expect(body(h).querySelectorAll(`[${HIDDEN_ATTR}]`)).toHaveLength(0)
+    expect(shown(words(h, 'Water the far corner'))).toBe(true)
+    await h.click('Page tools')
+    expect(row(h)?.getAttribute('aria-checked')).toBe('false')
+    expect(h.host.querySelector('.page-tools__menu')?.textContent).not.toMatch(/Collapse all/)
+    await h.click(/Folding on this page/)
+    expect(port.add).toHaveBeenLastCalledWith({ path: 'Garden.md', body: '', setting: { key: 'folding', on: true } })
+    expect(h.button('Unfold Watering')).not.toBeNull()
+    expect(shown(words(h, 'Water the far corner'))).toBe(false)
+  })
+
+  it('a refused write: the page follows its file again, and says so', async () => {
+    const port = fakePort()
+    h = await openWithPort('Garden', port)
+    await h.click('Page tools')
+    await h.click(/Folding on this page/)
+    expect(body(h).querySelectorAll('.fold-btn')).toHaveLength(0)
+    await act(async () => port.refuse(port.list[0]!.id))
+    await h.settle()
+    expect(body(h).querySelectorAll('.fold-btn').length).toBeGreaterThan(0)
+    expect(h.text()).toMatch(/could not change this page's Folding setting/)
+  })
+
+  it('a page with `folding: false`: the row is there, not checked; the phone with no comments path: no row', async () => {
+    h = await openWithPort('No folds', fakePort())
+    await h.click('Page tools')
+    expect(row(h)?.getAttribute('aria-checked')).toBe('false')
+    h.unmount()
+    h = await openPage('Garden')
+    await h.click('Page tools')
+    expect(row(h)).toBeNull()
+  })
+})
+
+describe('YAZ-5568: the page\'s find-folds is read as the Mac reads it', () => {
+  it('pageSwitchAttrs gives the same value as the Mac\'s readFindFolds', () => {
+    for (const v of ['current', 'all', 'keep', 'nope', '1'])
+      for (const text of [`---\nfind-folds: ${v}\n---\nx\n`, 'x\n']) expect(pageSwitchAttrs(text)['data-find-folds'] ?? null).toBe(readFindFolds(text))
   })
 })

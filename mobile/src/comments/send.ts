@@ -7,6 +7,7 @@ import type { Change, GithubRemote } from '../sync/githubRemote'
 import { INDEX_STATE, type PhoneIndex } from '../sync/phoneIndex'
 import type { CommentBox, WaitingComment } from './outbox'
 import { applyTask } from './taskWrite'
+import { applySetting } from './settingWrite'
 import { applyComment } from './write'
 
 export interface CommentSendOptions {
@@ -54,7 +55,7 @@ export async function sendComments(options: CommentSendOptions): Promise<Comment
   const report: CommentSendReport = { result: 'nothing', commit: null, sent: 0, refused: 0, staleHeads: 0, stored: false }
   // An unsigned comment (no account known yet) waits for its `by`: the sender signs it first.
   // A tick is signed by nothing: it changes one box, not the comments.
-  const due = () => box.waiting().filter((c) => c.refused === undefined && (c.by !== undefined || c.task !== undefined) && c.notBefore <= now())
+  const due = () => box.waiting().filter((c) => c.refused === undefined && (c.by !== undefined || c.task !== undefined || c.setting !== undefined) && c.notBefore <= now())
   /** Commits GitHub refused to move the branch to (`STALE_HEAD`): never in it. */
   const notLanded = new Set<string>()
   if (due().length === 0) return report
@@ -218,8 +219,9 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
         continue
       }
       // A tick finds its task on the page as it is NOW, and sets its box; a task that changed is refused.
-      const out = c.task !== undefined ? applyTask(content, c.task) : applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
-      if (out.kind === 'added' || out.kind === 'ticked') {
+      // YAZ-5568: a page setting becomes what it says on the page as it is now (the Mac's writer, spliced).
+      const out = c.task !== undefined ? applyTask(content, c.task) : c.setting !== undefined ? applySetting(content, c.setting) : applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
+      if (out.kind === 'added' || out.kind === 'ticked' || out.kind === 'set') {
         content = out.content
         plan.added.push(c)
       } else if (out.kind === 'already') plan.already.push(c)

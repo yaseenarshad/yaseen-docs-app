@@ -15,7 +15,7 @@ import { UNTITLED_CARD, drawCard, pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
 import { headingTarget, landOn } from '../page/headings'
 import { attachFolds, revealFolds, type PageFolds } from '../page/folds'
-import { readPageSwitches } from '@shared/pageSwitches'
+import { pageSwitchAttrs } from '../page/pageSwitches'
 import { openLink, type LinkDoor } from '../page/openLink'
 import { LinkedMentions } from '../page/LinkedMentions'
 import { boardKindOf, boardLabel } from '../drawing/boardFiles'
@@ -135,7 +135,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       el.replaceChildren(...into.childNodes)
       const kept = folds.current?.folded() ?? []
       folds.current?.destroy()
-      folds.current = readPageSwitches(content).folding === false ? null : attachFolds(el, { title, initial: kept })
+      folds.current = pageSwitchAttrs(content)['data-folding'] === 'off' ? null : attachFolds(el, { title, initial: kept })
       folds.current?.apply()
       const head = el.firstElementChild
       // S2 (sweep1): the title hides before the card asked for is landed on (it leaves the flow; the page moves up).
