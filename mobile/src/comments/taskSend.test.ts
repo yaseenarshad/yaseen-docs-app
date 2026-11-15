@@ -138,6 +138,32 @@ describe('a tick from the phone reaches the page', () => {
     expect(t.port.waiting()).toEqual([])
   })
 
+  it('a busy branch: the Mac makes 35 commits after the lost try; the retry still finds it and does not tick twice (YAZ-5092 A2)', async () => {
+    // The old check walked at most 30 parents; past that it took the try as never landed and ticked again.
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    let lose = true
+    t.setHook(async (_url, init, forward) => {
+      const res = await forward()
+      if (isPatch(init) && lose) {
+        lose = false
+        for (let i = 0; i < 34; i++) await t.macPush({ 'home/Busy.md': `Mac edit ${i}\n` })
+        await t.macPush({ [PAGE]: TASKS_PAGE })
+        throw new TypeError('Load failed')
+      }
+      return res
+    })
+    await t.port.add({ path: PAGE, body: '', task: tickFor(TASKS_PAGE, '- [ ] Buy seeds', true) })
+    await t.settle()
+    t.setHook(null)
+    t.answers.online()
+    await t.settle()
+    expect(await t.remote(PAGE)).toBe(TASKS_PAGE)
+    expect(t.patches()).toBe(1)
+    expect(t.port.waiting()).toEqual([])
+    // One question, not a walk: one compare, no commit-by-commit reads.
+    expect(t.s.github.calls.filter((c) => c.url.includes('/compare/'))).toHaveLength(1)
+  })
+
   it('a lost answer whose commit never reached the branch (GitHub refused the move): the retry still ticks', async () => {
     const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
     let lose = true
