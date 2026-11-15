@@ -197,7 +197,15 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     [sync, store],
   )
 
-  const go = useCallback((action: NavAction) => setNav((n) => navigate(n, action)), [])
+  const go = useCallback(
+    (action: NavAction) => {
+      // YAZ-5457: a page or card opened goes to this phone's Recent (its own lazy chunk; it records only those two).
+      const vault = openKey.current
+      if (action.type === 'open') void import('../search/recent').then((m) => m.remember(store, vault, action.route))
+      setNav((n) => navigate(n, action))
+    },
+    [store],
+  )
 
   const deps = useMemo(
     () => ({ store, tokens, fetch: services.fetch, now: services.now, keepStorage: services.keepStorage }),

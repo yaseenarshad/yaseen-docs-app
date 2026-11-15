@@ -24,9 +24,11 @@
   font-size: 14px;
   cursor: pointer;
 }
-/* YAZ-5452: a list filter (Favorites) is a chip beside the Type pill; lit while on. */
+/* YAZ-5452, YAZ-5457: the list filters (Favorites, Focus, Recent) are chips beside the Type pill, lit while on. All four
+   fit one line of a 375 pt phone (343 pt inside the gutters: about 105 + 84 + 60 + 67 + 3 gaps of 6 = 334); a narrower
+   screen wraps the bar to a second line, never past the edge. */
 .search__chip {
-  padding: 6px 12px;
+  padding: 6px 10px;
 }
 .pill[aria-expanded='true'],
 .pill[aria-pressed='true'] {

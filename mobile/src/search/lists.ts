@@ -3,6 +3,7 @@ import { mergeFolders } from '@client/lists/focusFolders'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { FAVORITES_FILE, favoritesOf, focusOf, foldersOf, macListFiles, pickNewest, type MacListFile } from '@shared/vaultLists'
 import type { VaultStore } from '../store'
+import { readRecent, type RecentEntry } from './recent'
 import { readJson, type VaultData } from './vaultData'
 
 /**
@@ -18,9 +19,10 @@ import { readJson, type VaultData } from './vaultData'
  *  - Focus: `focus.<mac id>.json` (`focus.ts`) and the Focus tab's folders, `focus-folders.<mac id>.json`
  *    (`focusFolders.ts`). The `<mac id>` is a MAC's, not a window's: each Mac writes only its own file, so a sync never
  *    conflicts, and the Mac shows the NEWEST valid file by its `at` (of two with one `at`, the later name). So does the phone.
+ *  - Recent (YAZ-5457): the phone's own list of what was opened on it (`recent.ts`): the Mac's Recents are not in the vault.
  */
 
-export type ListKind = 'favorites' | 'focus'
+export type ListKind = 'favorites' | 'focus' | 'recent'
 
 /** A folder of the Focus or the Favorites tab (YAZ-4460): a named group of the list's items; it moves nothing on disk. */
 export interface ListFolder {
@@ -37,7 +39,9 @@ export interface Scope {
   folders: readonly ListFolder[]
   /** The list's own paths, vault-relative, in the Mac's order: its top rows. */
   top: readonly string[]
-  /** `path` is in the list: one of its paths, or inside a folder of it (the Mac's `atOrBelow`). */
+  /** Recent: what was opened, newest first (a card by its file or page, and its ID). */
+  recent?: readonly RecentEntry[]
+  /** `path` is in the list: one of its paths, or inside a folder of it (the Mac's `atOrBelow`); Recent: one of its paths. */
   has(path: string): boolean
   /** The list is still being read: nothing is drawn yet, and no "No favorites" line. */
   loading?: true
@@ -72,15 +76,20 @@ export async function readFavorites(store: VaultStore, vault: string): Promise<s
 }
 
 /** The list of `kind` of the vault as the phone holds it. */
-async function readList(store: VaultStore, data: VaultData, kind: ListKind): Promise<{ folders: ListFolder[]; top: string[] }> {
+async function readList(store: VaultStore, data: VaultData, kind: ListKind): Promise<{ folders: ListFolder[]; top: string[]; recent?: RecentEntry[] }> {
+  if (kind === 'recent') {
+    const recent = await readRecent(store, data.vault)
+    return { folders: [], top: [...new Set(recent.map((e) => e.path))], recent }
+  }
   const names = configNames(data.files)
   if (kind === 'favorites') return { folders: await readFolders(store, data.vault, names, 'favorite-folders'), top: await readFavorites(store, data.vault) }
   return { folders: await readFolders(store, data.vault, names, 'focus-folders'), top: (await newestOf(store, data.vault, names, 'focus', focusOf))?.rels ?? [] }
 }
 
 /** The filter of `kind` over its folders and top rows. */
-export function scopeOf(kind: ListKind, folders: readonly ListFolder[], top: readonly string[]): Scope {
+export function scopeOf(kind: ListKind, folders: readonly ListFolder[], top: readonly string[], recent?: readonly RecentEntry[]): Scope {
   const set = new Set([...folders.flatMap((f) => f.paths), ...top])
+  if (recent !== undefined) return { kind, folders, top, recent, has: (path) => set.has(path) }
   return { kind, folders, top, has: (path) => atOrBelow(set, path) }
 }
 
@@ -99,12 +108,12 @@ export const heldList = (vault: string | null, kind: ListKind): Scope | undefine
 
 /** The list of `kind` as the phone holds it now: the same object as before when nothing in it changed (no search runs again). */
 export async function loadScope(store: VaultStore, data: VaultData, kind: ListKind): Promise<Scope> {
-  const { folders, top } = await readList(store, data, kind)
+  const { folders, top, recent } = await readList(store, data, kind)
   const key = `${data.vault}\n${kind}`
-  const sign = JSON.stringify([folders, top])
+  const sign = JSON.stringify([folders, top, recent])
   const held = lists.get(key)
   if (held !== undefined && held.sign === sign) return held.scope
-  const scope = scopeOf(kind, folders, top)
+  const scope = scopeOf(kind, folders, top, recent)
   lists.set(key, { sign, scope })
   return scope
 }

@@ -5,16 +5,18 @@ import type { TreeNode } from '@shared/types'
 import { useApp } from '../app/AppState'
 import { vaultNodes, type VaultNodes } from './foundTree'
 import type { ListFolder, ListKind, Scope } from './lists'
+import type { RecentEntry } from './recent'
 import { ICON_KIND, RowIcon } from './rowIcon'
 import { ShowMore, TreeId, treeRoute } from './SearchTree'
 import { rowId, useIdsForm } from './showIds'
 import type { VaultData } from './vaultData'
-import { fileKind, type TreeKind } from './vaultTree'
+import { fileKind, fileLabel, type TreeKind } from './vaultTree'
 
 /** What a list is called, and its line when it holds nothing the phone can show. */
 const WORDS: Record<ListKind, { title: string; none: string }> = {
   favorites: { title: 'Favorites', none: 'No favorites in this vault yet. Add them on the Mac.' },
   focus: { title: 'Focus', none: 'Nothing in focus in this vault yet. Add it on the Mac.' },
+  recent: { title: 'Recent', none: 'Nothing opened on this phone yet.' },
 }
 
 /** One drawn row of a list. */
@@ -28,6 +30,8 @@ export interface ListRow {
   key: string
   open?: boolean
   id?: string
+  /** A card in a page (Recent): it opens alone, as a search row of it does. */
+  inPage?: true
 }
 
 /** The fold key of a folder of the tab: a NUL never stands in a path, so it is no path's. */
@@ -90,6 +94,25 @@ export function listRows(vault: VaultNodes, folders: readonly ListFolder[], top:
   return rows
 }
 
+/**
+ * Recent (YAZ-5457), newest first, one flat row each, as the Mac's Recents list: a page; a card file; a card in a page
+ * (its title, else its ID, as search names it). One that is gone from the vault has no row. No IDs at the end: the
+ * Mac's Recents rows have none either.
+ */
+export function recentRows(data: VaultData, recent: readonly RecentEntry[], cards: boolean): ListRow[] {
+  return recent.flatMap((e): ListRow[] => {
+    const record = data.byPath[e.path]
+    if (record === undefined) return []
+    const key = `${e.path}\0${e.id ?? ''}`
+    if (e.id === undefined || record.kind === 'card') {
+      const kind = fileKind(record)
+      return kind === 'card' && !cards ? [] : [{ kind, path: e.path, label: fileLabel(record), depth: 0, key, ...(e.id !== undefined && { id: e.id }) }]
+    }
+    const card = record.cards?.find((c) => c.id === e.id)
+    return card === undefined || !cards ? [] : [{ kind: 'card', path: e.path, label: card.title ?? e.id, depth: 0, key, id: e.id, inPage: true }]
+  })
+}
+
 /** A list filter on with an empty box (YAZ-5452): the list under its name, or its plain line when it holds nothing. */
 export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope }) {
   const app = useApp()
@@ -99,7 +122,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
   if (scope.loading === true) return null
   const words = WORDS[scope.kind]
   const open = foldsOf(app.vaultKey, scope.kind)
-  const rows = listRows(vaultNodes(data), scope.folders, scope.top, open, cards)
+  const rows = scope.recent !== undefined ? recentRows(data, scope.recent, cards) : listRows(vaultNodes(data), scope.folders, scope.top, open, cards)
   if (rows.length === 0) return <p className="muted search__none">{words.none}</p>
   const toggle = (key: string) => {
     if (open.has(key)) open.delete(key)
@@ -123,7 +146,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
               <span className={row.kind === 'folder' || row.kind === 'group' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               {row.kind === 'group' ? <StackIcon /> : <RowIcon kind={row.kind} open={row.open === true} />}
               <span className="tree__label">{row.label}</span>
-              <TreeId id={row.kind === 'folder' || row.kind === 'group' ? null : rowId(data, row.path, ids)} />
+              <TreeId id={row.kind === 'folder' || row.kind === 'group' || scope.recent !== undefined ? null : rowId(data, row.path, ids)} />
             </button>
           </li>
         ))}

@@ -6,6 +6,7 @@ import { forgetListFolds } from '../search/ListTree'
 import { forgetLists } from '../search/lists'
 import { forgetSearch } from '../search/searchState'
 import { forgetIdsForms } from '../search/showIds'
+import { MAX_RECENT, RECENT_STATE, readRecent, remember } from '../search/recent'
 import { mount, newPhone, type Harness } from './testing'
 
 /**
@@ -13,7 +14,8 @@ import { mount, newPhone, type Harness } from './testing'
  * Mac's order, the tree's icons, a folder that opens in place, a path that is gone hidden; a missing or corrupt file is
  * a plain line; typed text finds only inside the list, in the folder tree; a sync's new file shows at once.
  * YAZ-5453: Focus, the newest valid `focus.<mac id>.json`, and the folders of the Focus and Favorites tabs.
- * YAZ-5454: the trees follow the vault's "Show IDs in the files list" (`show-ids.json`). Made-up vault.
+ * YAZ-5454: the trees follow the vault's "Show IDs in the files list" (`show-ids.json`).
+ * YAZ-5457: Recent, the pages and cards opened on this phone, kept for each vault in the phone's storage. Made-up vault.
  */
 let h: Harness | null = null
 beforeEach(() => {
@@ -62,7 +64,7 @@ const chip = (x: Harness, name: string) => [...x.host.querySelectorAll<HTMLButto
 describe('the Favorites filter (YAZ-5452)', () => {
   it('a chip beside All types; on, only the favorites in the Mac order, with the tree icons; off again, the whole tree', async () => {
     h = await openSearch(favs(['Trip plan.md', 'cards/capital-of-spain-demo-40.md', 'Spanish words.md']))
-    expect([...h.host.querySelectorAll('.search__bar button')].map((b) => b.textContent)).toEqual(['All types ▾', 'Favorites', 'Focus'])
+    expect([...h.host.querySelectorAll('.search__bar button')].map((b) => b.textContent)).toEqual(['All types ▾', 'Favorites', 'Focus', 'Recent'])
     expect(chip(h, 'Favorites').getAttribute('aria-pressed')).toBe('false')
     await h.click('Favorites')
     await waitFor(h, () => h!.host.querySelector('[aria-label="Favorites"][role="tree"]') !== null)
@@ -258,5 +260,67 @@ describe('Show IDs in the files list (YAZ-5454)', () => {
     const index = await writeVaultFiles(h.store, { ...READER_FILES, ...showIds('number') }, {}, 'c2')
     await h.syncEmit({ type: 'changed', vault: READER_ID, settings: ['.yaseendocs/show-ids.json'], diff: { added: ['.yaseendocs/show-ids.json'], changed: [], removed: [], renamed: [] }, index })
     await waitFor(h, () => withIds(h!).includes('Trip plan #3'))
+  })
+})
+
+describe('the Recent filter (YAZ-5457)', () => {
+  const open = async (x: Harness, name: RegExp) => {
+    await x.click(name)
+    await waitFor(x, () => x.host.querySelector('.reader__title, .card-view__card') !== null)
+    await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
+    await x.click('‹ Back')
+    await waitFor(x, () => x.host.querySelector('.search') !== null)
+  }
+
+  it('each page and card opened on the phone, newest first, once each; kept in the phone storage for the vault', async () => {
+    h = await openSearch()
+    await h.click('Recent')
+    await waitFor(h, () => h!.text().includes('Nothing opened on this phone yet.'))
+    await h.click('Recent')
+    await open(h, /^Trip plan/)
+    await open(h, /^Café notes/)
+    await h.click(/^cards, folder/)
+    await open(h, /^Capital of Spain/)
+    await open(h, /^Trip plan/)
+    // A card in a page, from a search row.
+    await typeQuery(h, 'la bib')
+    await waitFor(h, () => h!.host.querySelector('.search__found') !== null)
+    await open(h, /^la biblioteca/)
+    await typeQuery(h, '')
+    await h.click('Recent')
+    await waitFor(h, () => h!.host.querySelector('[aria-label="Recent"][role="tree"]') !== null)
+    expect(tree(h)).toEqual(['0:card:la biblioteca', '0:markdown:Trip plan', '0:card:Capital of Spain', '0:markdown:Café notes'])
+    const stored = await h.store.getState<{ path: string; id?: string }[]>(READER_ID, RECENT_STATE)
+    expect(stored?.map((e) => `${e.path}${e.id ? ` ${e.id}` : ''}`)).toEqual(['Spanish words.md DEMO-12', 'Trip plan.md', 'cards/capital-of-spain-demo-40.md DEMO-40', 'Café notes.md'])
+    // A tap opens it again.
+    await h.click(/^la biblioteca, card/)
+    await waitFor(h, () => h!.host.querySelector('.card-view__card') !== null)
+  })
+
+  it('typed text finds only inside Recent; a page gone from the vault has no row', async () => {
+    h = await openSearch()
+    await remember(h.store, READER_ID, { kind: 'page', path: 'Gone.md' }, 1)
+    await remember(h.store, READER_ID, { kind: 'page', path: 'git/Git cheat sheet.md' }, 2)
+    await h.click('Recent')
+    await waitFor(h, () => tree(h!).length > 0)
+    expect(tree(h)).toEqual(['0:markdown:Git cheat sheet'])
+    await typeQuery(h, 'trip')
+    await waitFor(h, () => h!.text().includes('No matches with these filters.'))
+    await typeQuery(h, 'cheat')
+    await waitFor(h, () => [...h!.host.querySelectorAll('.search__found .tree__label')].map((l) => l.textContent).join() === 'git,Git cheat sheet')
+  })
+
+  it(`keeps ${MAX_RECENT} at most; only pages and cards; each vault its own list`, async () => {
+    const phone = await newPhone()
+    await seedReaderVault(phone.store, phone.tokens)
+    // Opened one right after the other: the writes queue, none is lost.
+    await Promise.all(Array.from({ length: MAX_RECENT + 5 }, (_, i) => remember(phone.store, READER_ID, { kind: 'page', path: `p${i}.md` }, i)))
+    await remember(phone.store, READER_ID, { kind: 'settings' })
+    await remember(phone.store, null, { kind: 'page', path: 'x.md' })
+    const list = await readRecent(phone.store, READER_ID)
+    expect(list).toHaveLength(MAX_RECENT)
+    expect(list[0].path).toBe(`p${MAX_RECENT + 4}.md`)
+    expect(list.some((e) => e.path === 'x.md')).toBe(false)
+    expect(await readRecent(phone.store, 'yaseen/second@main')).toEqual([])
   })
 })

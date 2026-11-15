@@ -8,12 +8,13 @@ import type { VaultData } from './vaultData'
 const LISTS: readonly [ListKind, string][] = [
   ['favorites', 'Favorites'],
   ['focus', 'Focus'],
+  ['recent', 'Recent'],
 ]
 
 /**
  * THE FILTER BAR OF SEARCH (round 15 item 2; YAZ-5452), in Search's lazy chunk so the first load does not grow
  * (YAZ-5377). "All types ▾" opens the Type menu (All types, Pages, Cards). Beside it, a chip for each list of the vault
- * (Favorites, Focus): a tap shows only that list, a second tap shows everything again. A chip and not a row of the Type menu:
+ * (Favorites, Focus, Recent): a tap shows only that list, a second tap shows everything again. A chip and not a row of the Type menu:
  * a list is not a type, and the two go together (Favorites with Cards: the cards of the favorites), as on the Mac,
  * where the Type filter works inside any tab. One list at a time: two lists at once has no clear meaning.
  *

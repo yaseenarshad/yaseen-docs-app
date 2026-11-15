@@ -7,12 +7,13 @@ import { fakeFriends, fakeScanner, fakeSync } from './fakes'
 import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
+import { remember } from '../search/recent'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'search-favorites', 'search-focus', 'search-ids'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'search-favorites', 'search-focus', 'search-ids', 'search-recent'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -193,6 +194,12 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'search-ids':
       press(/^git, folder/)
       await until(() => document.querySelector('.tree__id') !== null)
+      break
+    case 'search-recent':
+      // YAZ-5457: what this phone opened, newest first (a card in a page, a card file, a page), the Recent chip on.
+      for (const route of [{ kind: 'page', path: 'Trip plan.md' }, { kind: 'card', path: 'cards/capital-of-spain-demo-40.md', id: 'DEMO-40' }, { kind: 'card', path: 'Spanish words.md', id: 'DEMO-12' }] as const) await remember(store, 'yaseen/vault@main', route)
+      press('Recent')
+      await until(() => document.querySelector('[role="tree"][aria-label="Recent"]') !== null)
       break
     case 'search-clear':
       document.querySelector<HTMLInputElement>('input[name="search"]')?.focus()
