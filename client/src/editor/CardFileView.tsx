@@ -365,7 +365,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             title={propertiesLabel}
             onClick={() => {
               setStripPart((part) => (part === 'properties' ? null : 'properties'))
-              requestAnimationFrame(() => bodyRef.current?.querySelector('.card-reviews--strip')?.scrollIntoView({ block: 'nearest' }))
+              requestAnimationFrame(() => bodyRef.current?.querySelector('.card-reviews--strip')?.scrollIntoView?.({ block: 'nearest' }))
             }}
           >
             <PropertiesIcon />

@@ -12,7 +12,7 @@ import { searchSettings, settingCandidates, wordMatches, type SettingHit } from 
 const ctx = (sync?: SettingsCtx['sync'], review?: SettingsCtx['review']): SettingsCtx => ({ settings: { ...DEFAULT_SETTINGS }, onChange: () => undefined, sync, review })
 const REVIEW: SettingsCtx['review'] = { settings: DEFAULT_REVIEW_SETTINGS, save: () => undefined }
 // Settings › Review (YAZ-4967, D14): the card settings.
-const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'connectPhone', 'friendsSend']
+const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview', 'howCardsComeBack', 'githubToken', 'connectPhone', 'friendsSend']
 // Settings › Link pills (YAZ-4924): the preview row, then one row for each choice, after This vault.
 const LINK_PILL_ROWS = ['linkPills']
 // Preview links on hover (`folderLinks`) beside Preview rows; Confirm changes after Ask before deleting (YAZ-3746 13AN).
@@ -61,8 +61,11 @@ describe('settingCandidates', () => {
       'sidebarRevealActive',
       'sidebarIconSet',
       'sidebarFileIcons',
+      // YAZ-5488: the colours and the rules are the vault's, each group with its Vault dropdown.
+      'iconColorsVault',
       ...['page', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'].map((k) => `sidebarIconColors.${k}`),
       // The icon rules (YAZ-3440 D9).
+      'iconRulesVault',
       'sidebarIconRules',
       // ⌘D's place (YAZ-3556 D8).
       'goTo',

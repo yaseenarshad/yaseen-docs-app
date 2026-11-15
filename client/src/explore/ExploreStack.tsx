@@ -58,6 +58,11 @@ export interface ExploreStackProps {
   vaultOf: (path: string) => ExploreVault
   nameOf: (path: string) => string
   textVarsFor: (path: string) => CSSProperties
+  /**
+   * The card look of the vault that holds a card (YAZ-5484, `review/cardLook.ts`), on a card layer (the card window), so
+   * it draws with ITS vault's look; a page layer has it in `textVarsFor`. Absent: `.app`'s (the app's look).
+   */
+  cardVarsFor?: (path: string) => CSSProperties
   /** `unlocked` (YAZ-4939): the layer's timed "Allow edits" runs, so the vault's Read only does not lock this editor. */
   renderEditor: (path: string, openLink: (path: string) => void, unlocked: boolean, start?: PageView) => ReactNode
   createFolder: (sourcePath: string) => string
@@ -149,7 +154,7 @@ function focusCardFile(layer: HTMLElement): boolean {
   return body !== null && document.activeElement === body
 }
 
-export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false }: ExploreStackProps) {
+export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, nameOf, textVarsFor, cardVarsFor, renderEditor, createFolder, onFileAction, linkActions, openInTab, openLinkIn, onNotice, onRenameFile, pageFrameOf, commentsOrder, onChangeCommentsOrder, onClose, opensOf, editsOf, hidden = false }: ExploreStackProps) {
   const [layers, setLayers] = useState<readonly ExploreLayer[]>([])
   const layersRef = useRef(layers)
   layersRef.current = layers
@@ -723,7 +728,7 @@ export function ExploreStack({ request, requestLayer = null, vaults, vaultOf, na
             data-layer={layer.id}
             data-kind={layer.kind}
             className={`explore__layer explore__layer--${layer.kind}${covered ? ' explore__layer--covered' : ''}${out ? ' explore__layer--out' : ' explore__layer--in'}`}
-            style={style}
+            style={layer.kind === 'card' && cardVarsFor !== undefined ? { ...cardVarsFor(layer.path), ...style } : style}
             // A covered layer stays on screen, at its scroll; a press brings it to the front (round 6). Until then no key
             // reaches it (the stack's keys go to the front layer, Tab goes round the front layer) and assistive tech skips it.
             // A layer on its way out takes nothing.

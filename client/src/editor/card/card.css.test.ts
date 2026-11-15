@@ -9,6 +9,31 @@ import { beats, rules, specificity } from '../cssRules'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 const cardCss = read('./card.css')
+
+/**
+ * YAZ-5484: the card look is the vault's, as inherited CSS variables that `card.css` reads with style queries
+ * (`@container style(--shown-hidden-words: box) { … }`), so the nearest surface's value wins. The inner CSS of every
+ * block with exactly `condition`, for `rules`.
+ */
+function queried(css: string, condition: string): string {
+  const text = css.replace(/\/\*[\s\S]*?\*\//g, '')
+  let out = ''
+  for (let at = text.indexOf(`@container ${condition} {`); at !== -1; at = text.indexOf(`@container ${condition} {`, at + 1)) {
+    let depth = 0
+    const open = text.indexOf('{', at)
+    for (let i = open; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      else if (text[i] === '}' && --depth === 0) {
+        out += text.slice(open + 1, i)
+        break
+      }
+    }
+  }
+  return out
+}
+const UNDERLINE = 'style(--shown-hidden-words: underline) or (style(--shown-hidden-words: highlight) and style(--find-query: on))'
+const BOX = 'style(--shown-hidden-words: box)'
+const MARK = 'style(--mark-next-hidden: on)'
 const reset = read('../../../../node_modules/@milkdown/crepe/lib/theme/common/reset.css')
 
 it('every card rule that sets a margin or a padding beats `.milkdown *`, with no !important', () => {
@@ -36,8 +61,8 @@ it('a side has no blank line under its text in the page: the body sets `white-sp
   expect(rules(cardCss, '.card .card__rule').some((r) => /margin:\s*16px -16px/.test(r.body))).toBe(true)
 })
 
-it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word and draws a line under it; the blank keeps its own look', () => {
-  const underline = rules(cardCss, "[data-shown-hidden-words='underline'] .card .card__hidden")
+it('YAZ-5005: Underline (the vault\'s `--shown-hidden-words`, YAZ-5484) takes the highlight off a shown hidden word and draws a line under it; the blank keeps its own look', () => {
+  const underline = rules(queried(cardCss, UNDERLINE), ':root .card .card__hidden')
   expect(underline).toHaveLength(1)
   expect(underline[0].body).toMatch(/background:\s*none/)
   expect(underline[0].body).toMatch(/text-decoration:\s*underline/)
@@ -45,21 +70,25 @@ it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word an
   // It beats the highlight rule it replaces.
   expect(beats(specificity(underline[0].selector.split(',')[0]!.trim()), specificity('.card .card__hidden'))).toBe(true)
   // Underline leaves the blank as it is (Box, YAZ-5053, is the one look that draws the blank too).
-  expect(rules(cardCss, '.card__blank').every((r) => !r.selector.includes("data-shown-hidden-words='underline'"))).toBe(true)
+  expect(rules(queried(cardCss, UNDERLINE), '.card__blank')).toEqual([])
+  // No attribute of the old `.app` look is left: two vaults' values would clash on an ancestor.
+  expect(cardCss).not.toMatch(/data-shown-hidden-words|data-mark-next-hidden|data-card-clean/)
 })
 
 it('YAZ-5378 round 2: while ⌘F has a query, a shown hidden word in Highlight takes the Underline look — the SAME rule, in the page and in Edit card; Box and Underline do not change', () => {
+  // The find bar's `data-find-query` (on the searched view) is `--find-query: on` there, for the style query.
+  expect(rules(cardCss, '[data-find-query]').map((r) => [r.selector, r.body.trim()])).toEqual([['[data-find-query]', '--find-query: on;']])
   for (const word of ['.card__hidden', '.card__cloze']) {
-    const underline = rules(cardCss, `[data-shown-hidden-words='underline'] .card ${word}`)
+    // One rule: Underline, or Highlight in a view find is searching.
+    const underline = rules(queried(cardCss, UNDERLINE), `:root .card ${word}`)
     expect(underline, word).toHaveLength(1)
-    const selectors = underline[0].selector.split(/,(?![^(]*\))/).map((s) => s.trim())
-    // One rule, two selectors: the setting's Underline, and Highlight in a view find is searching (`data-find-query`).
-    expect(selectors).toEqual([`[data-shown-hidden-words='underline'] .card ${word}`, `[data-shown-hidden-words='highlight'] [data-find-query] .card ${word}`])
-    for (const selector of selectors) expect(beats(specificity(selector), specificity(`.card ${word}`)), selector).toBe(true)
-    // No other rule reads the find attribute: Box keeps its look.
-    expect(rules(cardCss, 'data-find-query').filter((r) => r.selector.includes(word))).toEqual(underline)
+    expect(underline[0].body).toMatch(/text-decoration:\s*underline/)
+    expect(beats(specificity(underline[0].selector), specificity(`.card ${word}`)), word).toBe(true)
+    // Box does not read the find query.
+    expect(rules(queried(cardCss, BOX), word).every((r) => !/underline/.test(r.body))).toBe(true)
   }
-  expect(rules(cardCss, 'data-find-query').every((r) => !r.selector.includes("'box'"))).toBe(true)
+  // Set once, read by the two Underline queries only.
+  expect(cardCss.replace(/\/\*[\s\S]*?\*\//g, '').match(/--find-query/g)?.length).toBe(3)
 })
 
 it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same horizontal padding in both looks — and the word in a blank is invisible and not selectable', () => {
@@ -70,7 +99,7 @@ it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same h
   // No other rule changes the padding, the width or the display of either one (Underline keeps the padding too), but
   // Box's (YAZ-5053), which sets the SAME padding on both at once, so a show still moves nothing.
   // (Round 2's word inside it gets the text's size back; that rule sets only the font size.)
-  const box = rules(cardCss, "[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank)").filter((r) => r.selector === "[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank)")
+  const box = rules(queried(cardCss, BOX), ':root .card :is(.card__hidden, .card__blank)').filter((r) => r.selector === ':root .card :is(.card__hidden, .card__blank)')
   expect(box).toHaveLength(1)
   for (const rule of [...rules(cardCss, '.card__hidden'), ...rules(cardCss, '.card__blank')].filter((r) => r.selector !== both[0].selector && r.selector !== box[0].selector))
     expect(rule.body, rule.selector).not.toMatch(/(^|[\s;])(padding|width|display|margin)(-[a-z]+)?\s*:/)
@@ -154,23 +183,23 @@ it("YAZ-5050: a card's text reads with the pages' Line spacing and Space between
 })
 
 it('YAZ-5053: Box, as Mochi — a hidden word is a plain grey box, a shown one sits in a lighter grey box with round corners; one padding for both, so the line keeps its place; light and dark from the text colour', () => {
-  const both = rules(cardCss, "[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank)")[0]!
+  const both = rules(queried(cardCss, BOX), ':root .card :is(.card__hidden, .card__blank)')[0]!
   expect(both.body).toMatch(/padding:\s*var\(--nc-box-above\) 6px var\(--nc-box-below\)/)
   expect(both.body).toMatch(/border-radius:\s*4px/)
   expect(both.body).toMatch(/border-bottom:\s*0/)
-  const blank = rules(cardCss, "[data-shown-hidden-words='box'] .card .card__blank")[0]!
-  const shown = rules(cardCss, "[data-shown-hidden-words='box'] .card .card__hidden")[0]!
+  const blank = rules(queried(cardCss, BOX), ':root .card .card__blank')[0]!
+  const shown = rules(queried(cardCss, BOX), ':root .card .card__hidden')[0]!
   expect(blank.body).toMatch(/background:\s*color-mix\(in srgb, var\(--fg\) 10%, transparent\)/)
   expect(shown.body).toMatch(/background:\s*color-mix\(in srgb, var\(--fg\) 5%, transparent\)/)
   // They beat the highlight and the blank's line under it.
   expect(beats(specificity(shown.selector), specificity('.card .card__hidden'))).toBe(true)
   expect(beats(specificity(both.selector), specificity('.card .card__blank'))).toBe(true)
   // Edit card's hidden word has the shown look.
-  expect(rules(cardCss, "[data-shown-hidden-words='box'] .card .card__cloze").some((r) => /color-mix\(in srgb, var\(--fg\) 5%, transparent\)/.test(r.body))).toBe(true)
+  expect(rules(queried(cardCss, BOX), ':root .card .card__cloze').some((r) => /color-mix\(in srgb, var\(--fg\) 5%, transparent\)/.test(r.body))).toBe(true)
 })
 
 it('YAZ-5053 round 2: Box never reaches into the next line, at any line spacing — the box is drawn by padding from the line (the span has no font size), capped by the line less a gap; the word keeps its size; Edit card`s grey is a band of the same height', () => {
-  const both = rules(cardCss, "[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank)")[0]!
+  const both = rules(queried(cardCss, BOX), ':root .card :is(.card__hidden, .card__blank)')[0]!
   // The span's own font line (about 1.2em, whatever the spacing) is what overlapped at 1.0 and 1.15: it is 0 now.
   expect(both.body).toMatch(/font-size:\s*0;/)
   // The height: the 1.5 look at most, and never more than the line less a gap.
@@ -178,13 +207,13 @@ it('YAZ-5053 round 2: Box never reaches into the next line, at any line spacing 
   expect(both.body).toMatch(/box-decoration-break:\s*clone/)
   // The text's size and line come from the span's parent, as lengths (registered, so the span's 0 does not change them).
   for (const name of ['--nc-box-em', '--nc-box-line']) expect(cardCss).toMatch(new RegExp(`@property ${name} \\{\\s*syntax: '<length>';\\s*inherits: true;`))
-  const parent = rules(cardCss, "[data-shown-hidden-words='box'] .card :has(> :is(.card__hidden, .card__blank, .card__cloze))")[0]!
+  const parent = rules(queried(cardCss, BOX), ':root .card :has(> :is(.card__hidden, .card__blank, .card__cloze))')[0]!
   expect(parent.body).toMatch(/--nc-box-em:\s*1em;/)
   expect(parent.body).toMatch(/--nc-box-line:\s*1lh;/)
   // The word gets the text's size back, so the line and the letters do not move.
-  expect(rules(cardCss, "[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank) > .card__word")[0]!.body).toMatch(/font-size:\s*var\(--nc-box-em\)/)
+  expect(rules(queried(cardCss, BOX), ':root .card :is(.card__hidden, .card__blank) > .card__word')[0]!.body).toMatch(/font-size:\s*var\(--nc-box-em\)/)
   // Edit card: a band in the middle of the line, at most the line less the same gap.
-  const edit = rules(cardCss, "[data-shown-hidden-words='box'] .card .card__editor .card__cloze")[0]!
+  const edit = rules(queried(cardCss, BOX), ':root .card .card__editor .card__cloze')[0]!
   expect(edit.body).toMatch(/0 50% \/ 100%\s+min\(100%, calc\(var\(--nc-box-line\) - var\(--nc-box-em\) \* 0\.2\)\) no-repeat/)
 })
 
@@ -206,12 +235,14 @@ it('YAZ-5049 round 2: the Inbox card is one long page, as Mochi — no scroll ba
 })
 
 it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes the colour in the look of Shown hidden words: the line, the highlight, or the box', () => {
-  const at = (sel: string) => rules(cardCss, sel).map((r) => r.body).join('\n')
-  expect(at("[data-mark-next-hidden] .card .card__blank[data-next]")).toMatch(/border-bottom-color:\s*var\(--next-hidden\)/)
-  expect(at("[data-mark-next-hidden][data-shown-hidden-words='highlight'] .card .card__blank[data-next]")).toMatch(/background:\s*color-mix\(in srgb, var\(--next-hidden\)/)
-  expect(at("[data-mark-next-hidden][data-shown-hidden-words='box'] .card .card__blank[data-next]")).toMatch(/background:\s*color-mix\(in srgb, var\(--next-hidden\)/)
+  // The vault's colour (`--card-next-hidden`, YAZ-5484) over the theme's.
+  const colour = 'var\\(--card-next-hidden, var\\(--next-hidden\\)\\)'
+  const at = (condition: string) => rules(queried(cardCss, condition), ':root .card .card__blank[data-next]').map((r) => r.body).join('\n')
+  expect(at(MARK)).toMatch(new RegExp(`border-bottom-color:\\s*${colour}`))
+  expect(at(`${MARK} and style(--shown-hidden-words: highlight)`)).toMatch(new RegExp(`background:\\s*color-mix\\(in srgb, ${colour} 22%`))
+  expect(at(`${MARK} and style(--shown-hidden-words: box)`)).toMatch(new RegExp(`background:\\s*color-mix\\(in srgb, ${colour} 35%`))
   // The box rule's grey loses to the colour: more weight.
-  expect(beats(specificity("[data-mark-next-hidden][data-shown-hidden-words='box'] .card .card__blank[data-next]"), specificity("[data-shown-hidden-words='box'] .card .card__blank"))).toBe(true)
+  expect(beats(specificity(':root .card .card__blank[data-next]'), specificity(':root .card .card__blank'))).toBe(true)
   // A calm default in light and dark, on the app's tokens: not a status colour.
   const app = read('../../app.css')
   const light = /:root\s*{[^}]*--next-hidden:\s*(#[0-9a-f]{6})/i.exec(app)?.[1]
@@ -222,11 +253,11 @@ it('YAZ-5053 round 3: with "Mark the next hidden word" on, the next blank takes 
 })
 
 it('YAZ-5050 round 4: Clean (and Custom, which starts from it) adds Mochi\'s looks: softer card text in light and dark, and 44 px inside the Inbox card; YAZ-5144: its short line is Card width (Narrow), no second width rule', () => {
-  const text = rules(cardCss, '[data-card-clean] .card__sides')[0]!
+  const text = rules(queried(cardCss, 'style(--card-clean: on)'), ':root .card__sides')[0]!
   expect(text.body).toMatch(/color:\s*color-mix\(in srgb, var\(--fg\) 90%, var\(--bg\)\)/)
   const screens = read('../../review/cardScreens.css')
-  expect(rules(screens, '[data-card-clean]').some((r) => /--inbox-card-pad:\s*44px/.test(r.body))).toBe(true)
-  expect(rules(screens, '[data-card-clean]').some((r) => /max-width/.test(r.body))).toBe(false)
+  // 44 px inside the Inbox card is the card look's own variable now (YAZ-5484, `review/cardLook.ts`); no rule sets a width.
+  expect(screens).not.toMatch(/data-card-clean/)
   // The Inbox card's width: Card width's text and the card's own sides, times the Inbox zoom (YAZ-5372).
   const column = rules(screens, '.card-inbox__column').find((r) => r.selector === '.card-inbox__column')!
   expect(column.body).toMatch(/width:\s*min\(calc\(\(var\(--card-text-width\) \+ 2 \* var\(--inbox-card-pad, 28px\)\) \* var\(--document-zoom, 1\)\), 100%\)/)

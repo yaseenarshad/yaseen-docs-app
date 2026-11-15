@@ -51,7 +51,7 @@ it('YAZ-5050 round 2: Settings › Review is split into groups by purpose, every
     ['newPerDay', 'upNextPerDay', 'newOrder'],
     ['buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt'],
     ['retention', 'maxDays', 'fuzz', 'weights'],
-    ['shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
+    ['cardLookVault', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardLineSpacing', 'cardBlockGap', 'cardBulletIndent', 'cardBulletGap', 'cardBulletSpace', 'cardSpacingPreview'],
     ['howCardsComeBack'],
     ['githubToken', 'connectPhone', 'friendsSend'],
   ])

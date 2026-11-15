@@ -17,7 +17,7 @@
   color: var(--fg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
   counter-reset: card-side 1;
-  /* Card look › Card text size (YAZ-5387): Custom's px (`--card-text-size`, `review/cardText.ts`) in every place a card
+  /* Card look › Card text size (YAZ-5387): Custom's px (`--card-text-size`, `review/cardLook.ts`; the vault's since YAZ-5484) in every place a card
      shows; Same as pages sets none, so the card keeps its page's (or its screen's) size: 1em is the parent's. */
   font-size: var(--card-text-size, 1em);
   /* No overflow clip: the line number (`data-line`, drawn left of the block) stays visible. The head and the code
@@ -311,27 +311,35 @@
   padding: 0 2px;
   background: var(--mark-bg);
 }
-[data-shown-hidden-words='underline'] .card .card__cloze,
-[data-shown-hidden-words='highlight'] [data-find-query] .card .card__cloze {
-  border-radius: 0;
-  background: none;
-  text-decoration: underline;
-  text-decoration-color: var(--accent);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
+/* YAZ-5484 (replaces YAZ-5005's one look for the whole app): the card look is the VAULT's, as inherited CSS variables
+   (`review/cardLook.ts`): `--shown-hidden-words`, `--mark-next-hidden` and `--card-clean`, on `.app` (the app's values,
+   the fallback) and on every surface that shows a card, each with its own card's vault. A style query reads the
+   NEAREST value, so two vaults side by side never clash (an attribute on an ancestor would). `:root` in front keeps the
+   weight the attribute had. `--find-query` is the find bar's `data-find-query` (below). */
+@container style(--shown-hidden-words: underline) or (style(--shown-hidden-words: highlight) and style(--find-query: on)) {
+  :root .card .card__cloze {
+    border-radius: 0;
+    background: none;
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
 }
 /* Box (YAZ-5053) in Edit card: the shown look, the editor's own padding kept. */
-[data-shown-hidden-words='box'] .card .card__cloze {
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
-}
-/* Edit card's word is the editor's text, with no inner span (the caret lives there): its grey is a band of the same
-   height as the read box, in the middle of its line, so it never reaches the next line either (YAZ-5053 round 2). */
-[data-shown-hidden-words='box'] .card .card__editor .card__cloze {
-  background: linear-gradient(color-mix(in srgb, var(--fg) 5%, transparent), color-mix(in srgb, var(--fg) 5%, transparent)) 0 50% / 100%
-    min(100%, calc(var(--nc-box-line) - var(--nc-box-em) * 0.2)) no-repeat;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+@container style(--shown-hidden-words: box) {
+  :root .card .card__cloze {
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+  }
+  /* Edit card's word is the editor's text, with no inner span (the caret lives there): its grey is a band of the same
+     height as the read box, in the middle of its line, so it never reaches the next line either (YAZ-5053 round 2). */
+  :root .card .card__editor .card__cloze {
+    background: linear-gradient(color-mix(in srgb, var(--fg) 5%, transparent), color-mix(in srgb, var(--fg) 5%, transparent)) 0 50% / 100%
+      min(100%, calc(var(--nc-box-line) - var(--nc-box-em) * 0.2)) no-repeat;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
 }
 /* The line between two sides: the render's rule (`.card__rule`), across the card, selectable as one block. Its room
    is the read rule's (16 px each side, `.card .card__rule` below): Done draws side 2 where Edit card had it (YAZ-5164
@@ -380,7 +388,7 @@
 }
 /* A card's text, read (YAZ-5050, Yaseen: "are the spacing on cards in view mode the same as … the entire vault?"): the
    pages' Line spacing and Space between blocks (`--edit-line-height`, `--edit-block-gap` on `.app`), or Settings ›
-   Review › Card spacing's Custom values (`--card-line-height`, `--card-block-gap`, set only then, `review/cardSpacing.ts`)
+   Review › Card spacing's Custom values (`--card-line-height`, `--card-block-gap`, set only then, `review/cardLook.ts`; the vault's since YAZ-5484)
    — in the page, the card window and the Inbox alike. A paragraph's padding is the space between blocks, as the page's
    (`app.css`); a heading has three gaps above it and one below. The page's own paragraph and heading rules reach a card
    in a page, so these weigh more (`card.css.test.ts`). */
@@ -399,9 +407,12 @@
 .card .card__body .card__sides .card__side li > p {
   padding: 0;
 }
-/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's softer text (#333 on white), the same step in dark. */
-[data-card-clean] .card__sides {
-  color: color-mix(in srgb, var(--fg) 90%, var(--bg));
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's softer text (#333 on white), the same step in dark.
+   `--card-clean` is the vault's (YAZ-5484, `review/cardLook.ts`). */
+@container style(--card-clean: on) {
+  :root .card__sides {
+    color: color-mix(in srgb, var(--fg) 90%, var(--bg));
+  }
 }
 /* A card's lists, read (YAZ-5026 round 2: "is this following the global settings?"): the page's look, from the same
    settings — Settings › Editor › Outline › Bullet indent and Bullet gap (`--page-bullet-indent`, `--page-bullet-gap` on
@@ -641,34 +652,42 @@
 .card .card__hidden {
   background: var(--mark-bg);
 }
-/* Settings › Review › Shown hidden words: Underline (YAZ-5005, app-wide, on `.app`): no highlight, a line under the
-   word in the accent colour, light and dark. The blanks (words not shown yet) do not change.
-   Highlight while ⌘F has a query (YAZ-5378 round 2, `data-find-query` on the searched view, FindBar): the same look,
-   so a hidden word's yellow is never taken for a find match. Box and Underline do not change. */
-[data-shown-hidden-words='underline'] .card .card__hidden,
-[data-shown-hidden-words='highlight'] [data-find-query] .card .card__hidden {
-  border-radius: 0;
-  background: none;
-  text-decoration: underline;
-  text-decoration-color: var(--accent);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 3px;
+/* Settings › Cards › Card look › Shown hidden words: Underline (YAZ-5005; the vault's since YAZ-5484,
+   `--shown-hidden-words`): no highlight, a line under the word in the accent colour, light and dark. The blanks (words
+   not shown yet) do not change.
+   Highlight while ⌘F has a query (YAZ-5378 round 2, `data-find-query` on the searched view, FindBar, which sets
+   `--find-query: on` there): the same look, so a hidden word's yellow is never taken for a find match. Box and
+   Underline do not change. */
+[data-find-query] {
+  --find-query: on;
+}
+@container style(--shown-hidden-words: underline) or (style(--shown-hidden-words: highlight) and style(--find-query: on)) {
+  :root .card .card__hidden {
+    border-radius: 0;
+    background: none;
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
 }
 /* Settings › Review › Shown hidden words: Box (YAZ-5053, Yaseen: "where its just a box? looks like mochi?"): a hidden word
    is a plain grey box, a shown one sits in a lighter grey box with round corners. ONE padding for both, so a show moves
    nothing on the line (YAZ-5013); a box that wraps keeps its ends on each line. The greys mix the text colour into the
    page's, so they hold in light and dark. */
-[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank) {
-  --nc-box-height: min(calc(var(--nc-box-em) * 1.15 + 4px), calc(var(--nc-box-line) - var(--nc-box-em) * 0.2));
-  --nc-box-middle: calc(var(--nc-box-em) * 0.3);
-  --nc-box-above: max(0px, calc(var(--nc-box-height) / 2 + var(--nc-box-middle)));
-  --nc-box-below: max(0px, calc(var(--nc-box-height) / 2 - var(--nc-box-middle)));
-  font-size: 0;
-  padding: var(--nc-box-above) 6px var(--nc-box-below);
-  border-bottom: 0;
-  border-radius: 4px;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
+@container style(--shown-hidden-words: box) {
+  :root .card :is(.card__hidden, .card__blank) {
+    --nc-box-height: min(calc(var(--nc-box-em) * 1.15 + 4px), calc(var(--nc-box-line) - var(--nc-box-em) * 0.2));
+    --nc-box-middle: calc(var(--nc-box-em) * 0.3);
+    --nc-box-above: max(0px, calc(var(--nc-box-height) / 2 + var(--nc-box-middle)));
+    --nc-box-below: max(0px, calc(var(--nc-box-height) / 2 - var(--nc-box-middle)));
+    font-size: 0;
+    padding: var(--nc-box-above) 6px var(--nc-box-below);
+    border-bottom: 0;
+    border-radius: 4px;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
 }
 /* Box at every line spacing (YAZ-5053 round 2, Yaseen: "depending on the line spacing it overlaps"): an inline box is
    as tall as its font's own line (about 1.2em) plus its padding, whatever the line spacing, so at 1.0 and 1.15 the box
@@ -687,29 +706,38 @@
   inherits: true;
   initial-value: 24px;
 }
-[data-shown-hidden-words='box'] .card :has(> :is(.card__hidden, .card__blank, .card__cloze)) {
-  --nc-box-em: 1em;
-  --nc-box-line: 1lh;
-}
-[data-shown-hidden-words='box'] .card :is(.card__hidden, .card__blank) > .card__word {
-  font-size: var(--nc-box-em);
-}
-[data-shown-hidden-words='box'] .card .card__blank {
-  background: color-mix(in srgb, var(--fg) 10%, transparent);
-}
-[data-shown-hidden-words='box'] .card .card__hidden {
-  background: color-mix(in srgb, var(--fg) 5%, transparent);
+@container style(--shown-hidden-words: box) {
+  :root .card :has(> :is(.card__hidden, .card__blank, .card__cloze)) {
+    --nc-box-em: 1em;
+    --nc-box-line: 1lh;
+  }
+  :root .card :is(.card__hidden, .card__blank) > .card__word {
+    font-size: var(--nc-box-em);
+  }
+  :root .card .card__blank {
+    background: color-mix(in srgb, var(--fg) 10%, transparent);
+  }
+  :root .card .card__hidden {
+    background: color-mix(in srgb, var(--fg) 5%, transparent);
+  }
 }
 /* Mark the next hidden word (YAZ-5053 round 3): the one blank the next Space shows takes the colour, in the look of
-   Shown hidden words: its line, its highlight, its box. */
-[data-mark-next-hidden] .card .card__blank[data-next] {
-  border-bottom-color: var(--next-hidden);
+   Shown hidden words: its line, its highlight, its box. The vault's (YAZ-5484): `--mark-next-hidden`, and its picked
+   colour `--card-next-hidden` over the theme's `--next-hidden` (`app.css`). The `[data-next]` outweighs the box's grey. */
+@container style(--mark-next-hidden: on) {
+  :root .card .card__blank[data-next] {
+    border-bottom-color: var(--card-next-hidden, var(--next-hidden));
+  }
 }
-[data-mark-next-hidden][data-shown-hidden-words='highlight'] .card .card__blank[data-next] {
-  background: color-mix(in srgb, var(--next-hidden) 22%, transparent);
+@container style(--mark-next-hidden: on) and style(--shown-hidden-words: highlight) {
+  :root .card .card__blank[data-next] {
+    background: color-mix(in srgb, var(--card-next-hidden, var(--next-hidden)) 22%, transparent);
+  }
 }
-[data-mark-next-hidden][data-shown-hidden-words='box'] .card .card__blank[data-next] {
-  background: color-mix(in srgb, var(--next-hidden) 35%, transparent);
+@container style(--mark-next-hidden: on) and style(--shown-hidden-words: box) {
+  :root .card .card__blank[data-next] {
+    background: color-mix(in srgb, var(--card-next-hidden, var(--next-hidden)) 35%, transparent);
+  }
 }
 /* The blank: the word's own width, a line under it; the word inside is invisible, and a selection skips it. An inline
    border does not change the line's height. */
@@ -731,7 +759,7 @@
    Only Edit card has the small "TITLE" label and the field. The title is the page title's own component (`PageTitle`):
    a click renames it. While Edit card is open, its band (in the editor) holds the title, so the card's own band hides. */
 /* Card look › Card title size (YAZ-5387 round 2, Yaseen: "default or custom"): Custom's px (`--card-title-size`,
-   `review/cardText.ts`), else Default, 1.125× the card's text (`CARD_TITLE_SCALE`). The band sits in the card, so 1em is
+   `review/cardLook.ts`, the vault's since YAZ-5484), else Default, 1.125× the card's text (`CARD_TITLE_SCALE`). The band sits in the card, so 1em is
    the card's text; the Inbox's band sits beside its card and says so itself (`cardScreens.css`). */
 .card-band {
   display: block;

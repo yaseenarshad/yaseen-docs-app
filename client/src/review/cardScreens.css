@@ -935,11 +935,9 @@ body.card-inbox--sizing {
   flex: none;
   padding: 24px var(--inbox-card-pad, 28px) 28px;
 }
-/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card. Its short line is Card width now
+/* Card spacing Clean (YAZ-5050 round 4) and Custom: Mochi's room inside the card (`--inbox-card-pad: 44px`), set by
+   the card look's variables (YAZ-5484, `review/cardLook.ts`) with the vault's look. Its short line is Card width now
    (YAZ-5144): Clean sets it to Custom 520 px, Mochi's line, so one rule sets a card's line. */
-[data-card-clean] {
-  --inbox-card-pad: 44px;
-}
 /* The buttons, their line and the key row (YAZ-5049 round 2, YAZ-5431): ONE band at the bottom of the view for every
    card. A short card: the column fills the view and the band is pushed to its end (`margin-top: auto`). A long card:
    the band sticks at the same bottom edge while the card scrolls under it, and at the scroll's end it sits right under

@@ -1420,14 +1420,20 @@ describe('App section indent settings (YAZ-2709)', () => {
   })
 })
 
-describe('App shown hidden words (YAZ-5005)', () => {
-  it('puts Settings › Review › Shown hidden words on the app container: Highlight by default, Underline live from a change, with no card drawn again', async () => {
+describe('App shown hidden words (YAZ-5005, the app\'s look as the fallback since YAZ-5484)', () => {
+  it('puts the app\'s Shown hidden words, next mark and Clean look on the app container as VARIABLES (no attribute: a vault\'s surface overrides them without a clash): Highlight by default, Underline live from a change, with no card drawn again', async () => {
     const { el, emitStateChanged } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: null, tabs: [] })
     const app = el.querySelector<HTMLElement>('.app')!
-    expect(app.getAttribute('data-shown-hidden-words')).toBe('highlight')
-    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, shownHiddenWords: 'underline' } }))
+    expect(app.style.getPropertyValue('--shown-hidden-words')).toBe('highlight')
+    expect(app.style.getPropertyValue('--mark-next-hidden')).toBe('on')
+    expect(app.style.getPropertyValue('--card-clean')).toBe('off')
+    for (const name of ['data-shown-hidden-words', 'data-mark-next-hidden', 'data-card-clean']) expect(app.hasAttribute(name), name).toBe(false)
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, shownHiddenWords: 'underline', markNextHidden: false, cardSpacing: 'clean' } }))
     expect(el.querySelector<HTMLElement>('.app')).toBe(app)
-    expect(app.getAttribute('data-shown-hidden-words')).toBe('underline')
+    expect(app.style.getPropertyValue('--shown-hidden-words')).toBe('underline')
+    expect(app.style.getPropertyValue('--mark-next-hidden')).toBe('off')
+    expect(app.style.getPropertyValue('--card-clean')).toBe('on')
+    expect(app.style.getPropertyValue('--inbox-card-pad')).toBe('44px')
   })
 })
 
@@ -6406,11 +6412,12 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
       // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a page (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json']],
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'card-look.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json']],
       coldDiff: [['/v']],
       // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a page (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
       // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
-      subscriptions: [2, 2, 20],
+      // YAZ-5484: card-look.json too.
+      subscriptions: [2, 2, 22],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -6455,6 +6462,109 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   const shownEditor = (el: HTMLElement) => el.querySelector('.tabstack__layer:not(.tabstack__layer--hidden) [data-editor]')
   /** Main says a vault's file changed, to every listener of the push. */
   const push = <T,>(spy: { mock: { calls: unknown[][] } }, payload: T) => (spy.mock.calls as [(p: T) => void][]).forEach(([listener]) => listener(payload))
+
+  it('YAZ-5488: the window draws the icon colours of the ACTIVE tab\'s vault (its icons.json); a vault with none draws the app\'s', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), TWO, {}, (b) => {
+      PAGES(b)
+      b.bridge.icons.get.mockImplementation(async (vault: string) => (vault === '/w' ? { paths: {}, colors: { folder: '#aa0000' } } : { paths: {} }))
+    })
+    await act(async () => {})
+    const app = el.querySelector<HTMLElement>('.app')!
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconColors: { folder: '#00bb00' } } }))
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#00bb00')
+    show('/w/b.md')
+    await act(async () => {})
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#aa0000')
+    expect(app.getAttribute('data-icon-colors')).toBe('folder')
+    show('/v/a.md')
+    await act(async () => {})
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#00bb00')
+  })
+
+  /**
+   * YAZ-5484 (replaces YAZ-5005's one card look for the whole app): TWO vaults with different card looks draw
+   * differently, side by side, on every surface that shows a card: the page layers (a card in a page, a card file's
+   * tab), the hover preview and Quick Look (the layer style, `textVarsFor`), Explore's card layer (the card window),
+   * and Preview a card. The Inbox and Settings' preview have their own tests (`CardInbox.test.tsx`,
+   * `SettingsDialog.test.tsx`). `.app` keeps the app's look (the fallback); a vault with no card-look.json reads it.
+   */
+  describe('YAZ-5484: two vaults\' card looks, side by side', () => {
+    const LOOKS: Record<string, unknown> = { '/v': { version: 1, hiddenWords: 'box', textSize: 20, spacing: 'clean' }, '/w': { version: 1, hiddenWords: 'underline', markNext: false, nextColour: '#aa3399', tables: 'center' } }
+    const withLooks = (looks: Record<string, unknown>) => (b: Bridge) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === 'card-look.json' && vault !== undefined ? (looks[vault] ?? null) : null))
+    }
+    const look = (el: HTMLElement | null | undefined) => ['--shown-hidden-words', '--mark-next-hidden', '--card-clean', '--card-text-size', '--card-next-hidden', '--card-table-inline', '--inbox-card-pad'].map((name) => el?.style.getPropertyValue(name))
+    const V_LOOK = ['box', 'on', 'on', '20px', 'initial', 'initial', '44px']
+    const W_LOOK = ['underline', 'off', 'off', 'initial', 'initial', 'auto', 'initial']
+    const layer = (el: HTMLElement, path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer')
+
+    it('page layers: each vault\'s own look on its layers; `.app` the app\'s; no attribute anywhere', async () => {
+      const { el } = await mount(defaultAppState(), TWO, {}, withLooks(LOOKS))
+      show('/w/b.md')
+      await act(async () => {})
+      expect(look(layer(el, '/v/a.md'))).toEqual(V_LOOK)
+      expect(look(layer(el, '/w/b.md'))).toEqual(W_LOOK)
+      const app = el.querySelector<HTMLElement>('.app')!
+      expect(look(app)).toEqual(['highlight', 'on', 'off', '', '', '', ''])
+      expect(el.querySelector('[data-shown-hidden-words], [data-mark-next-hidden], [data-card-clean]')).toBeNull()
+    })
+
+    it('a vault with NO card-look.json: its layers set no card variable and read `.app`\'s, the app\'s look', async () => {
+      const { el, emitStateChanged } = await mount(defaultAppState(), TWO, {}, withLooks({ '/v': LOOKS['/v'] }))
+      show('/w/b.md')
+      await act(async () => {})
+      act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, shownHiddenWords: 'underline' } }))
+      expect(look(layer(el, '/w/b.md'))).toEqual(['', '', '', '', '', '', ''])
+      expect(look(layer(el, '/v/a.md'))).toEqual(V_LOOK)
+      expect(el.querySelector<HTMLElement>('.app')!.style.getPropertyValue('--shown-hidden-words')).toBe('underline')
+    })
+
+    it('a change of one vault\'s file restyles only its layers', async () => {
+      const looks = { ...LOOKS }
+      const { el, bridge } = await mount(defaultAppState(), TWO, {}, withLooks(looks))
+      show('/w/b.md')
+      await act(async () => {})
+      const before = layer(el, '/v/a.md')!.style.cssText
+      looks['/w'] = { version: 1, hiddenWords: 'box' }
+      await act(async () => push(bridge.vaultConfig.onChange, { root: '/w', name: 'card-look.json' }))
+      expect(layer(el, '/w/b.md')!.style.getPropertyValue('--shown-hidden-words')).toBe('box')
+      expect(layer(el, '/v/a.md')!.style.cssText).toBe(before)
+    })
+
+    it('the hover preview and Quick Look wear the layer style of the file\'s vault', async () => {
+      const { el } = await mount(defaultAppState(), TWO, {}, withLooks(LOOKS))
+      await act(async () => {})
+      // The sidebar's hover preview (PagePreview) wears `textVarsFor` of its path.
+      // The stub keeps every prop the Sidebar gets; the hover preview's door is `textVarsFor`.
+      const textVarsFor = (captured.sidebar as unknown as { textVarsFor: (path: string) => Record<string, unknown> }).textVarsFor
+      const worn = (path: string) => {
+        const box = document.createElement('div')
+        for (const [name, value] of Object.entries(textVarsFor(path))) if (name.startsWith('--')) box.style.setProperty(name, String(value))
+        return look(box)
+      }
+      expect(worn('/v/x.md')).toEqual(V_LOOK)
+      expect(worn('/w/y.md')).toEqual(W_LOOK)
+      act(() => captured.sidebar?.onPreview('/w/y.md'))
+      expect(look(el.querySelector<HTMLElement>('.quicklook'))).toEqual(W_LOOK)
+      act(() => captured.sidebar?.onPreview('/v/x.md'))
+      expect(look(el.querySelector<HTMLElement>('.quicklook'))).toEqual(V_LOOK)
+    })
+
+    it('the card window (Explore\'s card layer) and Preview a card: the card\'s vault\'s look', async () => {
+      const { el } = await mount(defaultAppState(), TWO, {}, withLooks(LOOKS))
+      await act(async () => {})
+      act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_OPEN, { bubbles: true, detail: { path: '/w/cards.md', cardId: 'W-1', index: 0 } })))
+      await vi.waitFor(() => expect(document.querySelector('.explore__layer[data-kind="card"]')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      expect(look(document.querySelector<HTMLElement>('.explore__layer[data-kind="card"]'))).toEqual(W_LOOK)
+      act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_OPEN, { bubbles: true, detail: { path: '/v/cards.md', cardId: 'V-1', index: 0 } })))
+      await vi.waitFor(() => expect(document.querySelectorAll('.explore__layer[data-kind="card"]').length).toBe(2), { timeout: SLOW_RUNNER_MS })
+      expect([...document.querySelectorAll<HTMLElement>('.explore__layer[data-kind="card"]')].map(look)).toEqual([W_LOOK, V_LOOK])
+      act(() => void el.querySelector('.tabstack')?.dispatchEvent(new CustomEvent(CARD_PREVIEW, { bubbles: true, detail: { path: '/w/cards.md', id: 'W-1', text: 'Capital of {{Peru}}\n---\n{{Lima}}', title: '', notitle: false, reviews: [] } })))
+      await vi.waitFor(() => expect(document.querySelector('.card-preview')).not.toBeNull(), { timeout: SLOW_RUNNER_MS })
+      expect(look(document.querySelector<HTMLElement>('.card-preview'))).toEqual(W_LOOK)
+    })
+  })
 
   it('YAZ-5485: each vault\'s page spacing on its own layers; a vault with no spacing reads the app\'s values from .app', async () => {
     const files: Record<string, unknown> = { '/v': { version: 2, spacing: { line: 2, blockGap: 8 } } }
@@ -6540,7 +6650,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(18) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924), daily-pages.json (YAZ-5491) and new-places.json (YAZ-5486)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(20) // card-look.json (YAZ-5484), review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924), daily-pages.json (YAZ-5491) and new-places.json (YAZ-5486)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')

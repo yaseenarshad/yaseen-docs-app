@@ -118,6 +118,10 @@ export function stickFolders(scroller: HTMLElement, list: HTMLElement, layer: HT
         copy.removeAttribute('aria-label')
         copy.dataset.stuck = String(s.index)
         copy.style.zIndex = String(10 - s.depth)
+        // YAZ-5488: a vault icon that does not load moves its row to the next try (`rowIcon.tsx`); the copy, which has
+        // no React, is made again from the row a frame later, so it shows what the row shows.
+        const index = s.index
+        for (const img of copy.querySelectorAll('img')) img.addEventListener('error', () => recopy(index), { once: true })
         layer.append(copy)
         copies.set(s.index, copy)
       }
@@ -125,6 +129,15 @@ export function stickFolders(scroller: HTMLElement, list: HTMLElement, layer: HT
     }
     shown = next
   }
+  let gone = false
+  const recopy = (index: number) =>
+    requestAnimationFrame(() => {
+      if (gone) return
+      copies.get(index)?.remove()
+      copies.delete(index)
+      shown = []
+      draw()
+    })
   const onScroll = () => {
     if (frame === 0) frame = requestAnimationFrame(draw)
   }
@@ -151,6 +164,7 @@ export function stickFolders(scroller: HTMLElement, list: HTMLElement, layer: HT
   resized?.observe(scroller)
   if (list.parentElement !== null) resized?.observe(list.parentElement)
   return () => {
+    gone = true
     if (frame !== 0) cancelAnimationFrame(frame)
     scroller.removeEventListener('scroll', onScroll)
     layer.removeEventListener('click', tap)

@@ -147,6 +147,11 @@ export interface CardInboxProps {
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
   /**
+   * The card look of the vault that holds a card (YAZ-5484, `review/cardLook.ts`): its CSS variables, on the Inbox's
+   * root while its card shows, so the card draws with ITS vault's look. Absent: `.app`'s (the app's look).
+   */
+  cardVarsOf?: (path: string) => CSSProperties
+  /**
    * O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP
    * (YAZ-5022); with `card` (YAZ-5307, Settings › Cards › Inbox: O opens the page at › The card), landed on that card.
    */
@@ -218,7 +223,7 @@ interface AnswerLine {
 // The done screen's words moved to `cardWords.ts` (YAZ-5078), so the phone's Review screen says them too.
 export { addedLine, resetLine, waitingLine } from './cardWords'
 
-export function CardInbox({ shown = true, review, session, vaultOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -486,7 +491,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         ]
 
   return (
-    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
+    <div ref={rootRef} className="card-inbox" hidden={!shown} tabIndex={-1} role="region" aria-label={session.label === 'Inbox' ? 'Inbox' : `Review: ${session.label}`} style={{ ...(card !== null && cardVarsOf?.(card.path)), '--document-zoom': zoom / 100 } as CSSProperties}>
       <CardInboxBar
         session={session}
         setFilter={review.setFilter}

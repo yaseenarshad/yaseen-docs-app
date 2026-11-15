@@ -8,6 +8,7 @@ import type { ListFolder, ListKind, Scope } from './lists'
 import type { RecentEntry } from './recent'
 import { bumpFolds, useFolds } from './folds'
 import { ICON_KIND, RowIcon } from './rowIcon'
+import { TreeIconsContext, useTreeIcons } from './treeIcons'
 import { ShowMore, TreeId, kindWord, treeRoute } from './SearchTree'
 import { rowId, useIdsForm } from './showIds'
 import type { VaultData } from './vaultData'
@@ -127,6 +128,8 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
   const ids = useIdsForm(data)
   // YAZ-5460: hold a folder for its page (a folder of the tab, the stack glyph, is no folder on disk).
   const { hold, layer } = useFolderHold()
+  // YAZ-5488: the vault's own icons and colours (icons.json).
+  const icons = useTreeIcons(app.services.store, data)
   if (scope.loading === true) return null
   const words = WORDS[scope.kind]
   const open = foldsOf(app.vaultKey, scope.kind)
@@ -142,8 +145,9 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
   return (
     <>
       <h2 className="section">{words.title}</h2>
-      <TreeLook rows={drawn} />
-      <ul className="tree" role="tree" aria-label={words.title}>
+      <TreeIconsContext.Provider value={icons}>
+      <TreeLook rows={drawn} icons={icons} />
+      <ul className="tree" role="tree" aria-label={words.title} style={icons.style} data-icon-colors={icons.colored}>
         {drawn.map((row) => (
           <li key={row.key} role="treeitem" aria-expanded={row.kind === 'folder' || row.kind === 'group' ? row.open : undefined}>
             <button
@@ -156,13 +160,14 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
               {...(row.kind === 'folder' && hold(row.path, row.label))}
             >
               <span className={row.kind === 'folder' || row.kind === 'group' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
-              {row.kind === 'group' ? <StackIcon /> : <RowIcon kind={row.kind} open={row.open === true} />}
+              {row.kind === 'group' ? <StackIcon /> : <RowIcon kind={row.kind} open={row.open === true} path={row.path} />}
               <span className="tree__label">{row.label}</span>
               <TreeId id={row.kind === 'folder' || row.kind === 'group' || scope.recent !== undefined ? null : rowId(data, row.path, ids)} />
             </button>
           </li>
         ))}
       </ul>
+      </TreeIconsContext.Provider>
       {rows.length > shown && <ShowMore onMore={onMore} />}
       {layer}
     </>

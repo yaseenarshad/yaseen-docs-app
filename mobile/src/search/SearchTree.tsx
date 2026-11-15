@@ -9,6 +9,7 @@ import type { Route } from '../app/nav'
 import type { VaultData } from './vaultData'
 import { openFoldersOf } from './searchState'
 import { ICON_KIND, RowIcon } from './rowIcon'
+import { TreeIconsContext, useTreeIcons } from './treeIcons'
 import { buildTree, visibleRows, type TreeRow } from './vaultTree'
 import type { Scope } from './lists'
 import { ListTree } from './ListTree'
@@ -53,6 +54,8 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
   const turn = useFolds()
   // YAZ-5460: hold a folder for its page.
   const { hold, layer } = useFolderHold()
+  // YAZ-5488: the vault's own icons and colours (icons.json).
+  const icons = useTreeIcons(app.services.store, data)
   const tree = useMemo(() => buildTree(recordsWithBoards(data), data.folders), [data])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => visibleRows(tree, open, cards ? undefined : (r) => r.kind !== 'card'), [tree, open, cards, turn])
@@ -69,8 +72,9 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
   return (
     <>
       <h2 className="section">{app.unit('Pages')}</h2>
-      <TreeLook rows={drawn} />
-      <ul className="tree" role="tree" aria-label={app.unit('Pages')}>
+      <TreeIconsContext.Provider value={icons}>
+      <TreeLook rows={drawn} icons={icons} />
+      <ul className="tree" role="tree" aria-label={app.unit('Pages')} style={icons.style} data-icon-colors={icons.colored}>
         {drawn.map((row) => (
           <li key={row.path} role="treeitem" aria-expanded={row.kind === 'folder' ? row.open : undefined}>
             <button
@@ -83,13 +87,14 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
               {...(row.kind === 'folder' && hold(row.path, row.label))}
             >
               <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
-              <RowIcon kind={row.kind} open={row.open === true} />
+              <RowIcon kind={row.kind} open={row.open === true} path={row.path} />
               <span className="tree__label">{row.label}</span>
               <TreeId id={row.kind === 'folder' ? null : rowId(data, row.path, ids)} />
             </button>
           </li>
         ))}
       </ul>
+      </TreeIconsContext.Provider>
       {rows.length > shown && <ShowMore onMore={onMore} />}
       {layer}
     </>
@@ -168,6 +173,8 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   const { hold, layer } = useFolderHold()
   // YAZ-5506: the found tree's open folders stick too, as on the Mac's Search tab.
   const shownRows = drawn.slice(0, shown)
+  // YAZ-5488: the vault's own icons and colours (icons.json).
+  const icons = useTreeIcons(app.services.store, data)
   const toggle = (path: string) => {
     flips = { key, open: new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]) }
     setTurn((n) => n + 1)
@@ -180,8 +187,9 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   }
   return (
     <>
-      <TreeLook rows={shownRows} />
-      <ul className="tree search__found" role="tree" aria-label="Results">
+      <TreeIconsContext.Provider value={icons}>
+      <TreeLook rows={shownRows} icons={icons} />
+      <ul className="tree search__found" role="tree" aria-label="Results" style={icons.style} data-icon-colors={icons.colored}>
         {shownRows.map((row) => {
           const hit = row.hit
           // `ID — ` in front of a row the search found by its ID (the Mac's "Only when it matches"), its digits marked.
@@ -200,7 +208,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
                 {...(row.kind === 'folder' && hold(row.path, row.label))}
               >
                 <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
-                <RowIcon kind={row.kind} open={row.open === true} />
+                <RowIcon kind={row.kind} open={row.open === true} path={row.inPage === true ? undefined : row.path} />
                 <span className="tree__label">
                   {id !== null && hit !== undefined && <>{marked(id, idNeedle(hit, query))} — </>}
                   {marked(row.label, hit === undefined ? undefined : needle)}
@@ -211,6 +219,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
           )
         })}
       </ul>
+      </TreeIconsContext.Provider>
       {drawn.length > shown && <ShowMore onMore={onMore} />}
       {layer}
       {/* The Mac's limit line (🔒 D6): the ranking keeps the best SEARCH_CAP rows. */}
