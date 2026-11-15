@@ -13,10 +13,11 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  * YAZ-5449 to YAZ-5451: `page` has the ID chip, the dot alone and the page arrows; `page-copied` the toast after a tap
  * on the chip; `page-copy-by-hand` the path to copy by hand (the clipboard says no); `page-last` the last page (its
- * "next" side dim); `card-next` a card after one step of its arrows. The clipboard is a fake: nothing reaches the
+ * "next" side dim); `card-next` a card after one step of its arrows. YAZ-5468: `page-folder` the arrows of a page in a folder of
+ * two pages ("1 / 2": the folder's pages only). The clipboard is a fake: nothing reaches the
  * phone's real one.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -89,6 +90,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-code'
           ? { 'Code notes.md': `---\ntitle: Code notes\n---\n\n${CODE_PAGE}\n` }
+          : name === 'page-folder'
+            ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
           : name === 'page-drawing'
             ? DRAWING_FILES
             : {}
@@ -141,6 +144,13 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await open(/^Git cheat sheet/, '.reader__body')
       press(/Copy the path$/)
       await until(() => document.querySelector('.page-toast') !== null)
+      break
+    case 'page-folder':
+      if (!/Git cheat sheet/.test(document.querySelector('.tree')?.textContent ?? '')) {
+        press(/^git, folder/)
+        await wait(80)
+      }
+      await open(/^Git cheat sheet/, '.page-arrows')
       break
     case 'page-last':
       await open(/^Trip plan/, '.page-arrows')

@@ -36,7 +36,7 @@ async function waitFor(x: Harness, done: () => boolean, ms = 3000): Promise<void
 }
 
 /** A page in a folder in a folder (it comes first: folders before files, at each level), and one with no ID. */
-const FILES = { ...READER_FILES, 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nText.\n' }
+const FILES = { ...READER_FILES, 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nText.\n', 'git/Merge.md': '---\ntitle: Merge\n---\n\nText.\n' }
 
 async function openSearch(files: Record<string, string | Uint8Array> = FILES): Promise<Harness> {
   const phone = await newPhone()
@@ -50,7 +50,9 @@ async function openSearch(files: Record<string, string | Uint8Array> = FILES): P
 async function openRow(x: Harness, row: RegExp, view: string): Promise<void> {
   for (const folder of [/^git, folder/, /^deep, folder/, /^cards, folder/]) if (x.button(row) === null && x.button(folder) !== null) await x.click(folder)
   await x.click(row)
-  await waitFor(x, () => x.host.querySelector(view) !== null && x.host.querySelector('.page-arrows') !== null)
+  // A page alone in its folder has no arrows (YAZ-5468): wait for the page, then for its data to settle.
+  await waitFor(x, () => x.host.querySelector(view) !== null)
+  await act(async () => void (await new Promise((r) => setTimeout(r, 50))))
 }
 
 const title = (x: Harness) => x.host.querySelector('.topbar__title')?.textContent
@@ -66,29 +68,39 @@ async function step(x: Harness, name: RegExp, to: string): Promise<void> {
   await waitFor(x, () => title(x) === to && x.host.querySelector('.page-arrows') !== null)
 }
 
-describe('YAZ-5449: the page arrows, in the Mac sidebar order', () => {
-  it('pages only, depth-first across folders; the first and the last side is dim; Back returns to where the reading started', async () => {
+describe('YAZ-5449, YAZ-5468: the page arrows, in the Mac sidebar order, within the open folder', () => {
+  it('pages only, of the open page\'s own folder; the folder\'s first and last side is dim; Back returns to where the reading started', async () => {
     h = await openSearch()
-    await openRow(h, /^Rebase, page/, '.reader__body')
-    // Tree order: git/deep/Rebase, git/Git cheat sheet, then the root's pages; the cards folder holds no page.
-    expect(arrows(h)).toEqual({ before: '‹ First page (dim)', place: '1 / 5', after: 'Git cheat sheet ›' })
+    await openRow(h, /^Git cheat sheet, page/, '.reader__body')
+    // git/ holds two pages (Git cheat sheet, Merge); git/deep/Rebase is in a folder under it and is not counted.
+    expect(arrows(h)).toEqual({ before: '‹ First page (dim)', place: '1 / 2', after: 'Merge ›' })
     // YAZ-5451: Back is the arrow only; VoiceOver says "Back".
     expect(h.button('Back')!.textContent).toBe('←')
     expect(h.button('First page')!.disabled).toBe(true)
     await h.click('First page')
-    expect(title(h)).toBe('Rebase')
-    await step(h, /^Next page: Git cheat sheet$/, 'Git cheat sheet')
-    expect(arrows(h)).toEqual({ before: '‹ Rebase', place: '2 / 5', after: 'Café notes ›' })
-    // Out of the folder, to the next page of the level above.
-    await step(h, /^Next page: Café notes$/, 'Café notes')
-    await step(h, /^Next page: Spanish words$/, 'Spanish words')
-    await step(h, /^Next page: Trip plan$/, 'Trip plan')
-    expect(arrows(h)).toEqual({ before: '‹ Spanish words', place: '5 / 5', after: 'Last page › (dim)' })
-    await step(h, /^Previous page: Spanish words$/, 'Spanish words')
+    expect(title(h)).toBe('Git cheat sheet')
+    await step(h, /^Next page: Merge$/, 'Merge')
+    expect(arrows(h)).toEqual({ before: '‹ Git cheat sheet', place: '2 / 2', after: 'Last page › (dim)' })
     // Back: not through each page the arrows went by, but to Search, where the reading started.
     await h.click('Back')
     await waitFor(h, () => h!.host.querySelector('.tree') !== null)
     expect(h.host.querySelector('.reader')).toBeNull()
+  })
+
+  it('the root folder: its three pages only, never a page of a folder under it', async () => {
+    h = await openSearch()
+    await openRow(h, /^Café notes, page/, '.reader__body')
+    expect(arrows(h)).toEqual({ before: '‹ First page (dim)', place: '1 / 3', after: 'Spanish words ›' })
+    await step(h, /^Next page: Spanish words$/, 'Spanish words')
+    await step(h, /^Next page: Trip plan$/, 'Trip plan')
+    expect(arrows(h)).toEqual({ before: '‹ Spanish words', place: '3 / 3', after: 'Last page › (dim)' })
+  })
+
+  it('a page alone in its folder has no arrows', async () => {
+    h = await openSearch()
+    await openRow(h, /^Rebase, page/, '.reader__body')
+    await waitFor(h, () => title(h!) === 'Rebase')
+    expect(h.host.querySelector('.page-arrows')).toBeNull()
   })
 
   it('a link inside a page still opens over it: one Back step to the page, the arrows of each page are its own', async () => {
@@ -128,17 +140,18 @@ describe('YAZ-5449: the page arrows, in the Mac sidebar order', () => {
     await waitFor(h, () => h!.host.querySelector('.tree') !== null)
   })
 
-  it('the card view: the next card in the same order (the cards of each file in page order); a card with no title is named by its ID', async () => {
+  it('the card view: the cards of the files in the same folder, in page order; a card with no title is named by its ID', async () => {
     h = await openSearch()
     await openRow(h, /^Capital of Spain, card/, '.card-view')
-    expect(arrows(h)).toEqual({ before: '‹ First card (dim)', place: '1 / 5', after: 'Two cards in one ›' })
+    await waitFor(h, () => h!.host.querySelector('.page-arrows') !== null)
+    // cards/ holds three cards (DEMO-40, and DEMO-41 and DEMO-42 in one card file); the pages' cards are other folders'.
+    expect(arrows(h)).toEqual({ before: '‹ First card (dim)', place: '1 / 3', after: 'Two cards in one ›' })
     await step(h, /^Next card: Two cards in one$/, 'Two cards in one')
     // The second card of the same card file has no title: its ID names it.
     expect(arrows(h)!.after).toBe('DEMO-42 ›')
     await h.click(/^Next card: DEMO-42$/)
     await waitFor(h, () => h!.host.querySelector('.card-view__id')?.textContent === ' · DEMO-42')
-    // Then the cards of the pages: git's page first (folders first), then the root's.
-    expect(arrows(h)!.after).toBe('git pull ›')
+    expect(arrows(h)).toEqual({ before: '‹ Two cards in one', place: '3 / 3', after: 'Last card › (dim)' })
     await h.click('Back')
     await waitFor(h, () => h!.host.querySelector('.tree') !== null)
   })

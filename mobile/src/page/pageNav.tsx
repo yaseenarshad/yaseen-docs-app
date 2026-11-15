@@ -11,6 +11,10 @@ import './pageNav.css'
  * THE PAGE ARROWS AND THE PAGE ID CHIP (YAZ-5449, YAZ-5450; option A of the approved mockup). In the reader's chunk:
  * the first load does not carry them.
  *
+ * ONE FOLDER (YAZ-5468): the arrows count and step through the open page's own folder only (its direct folder, not
+ * the folders under it): "2 / 5" is the second of the 5 pages in this folder, and each side is dim at the folder's ends.
+ * The card view keeps the same rule: the cards of the files in the open card's folder.
+ *
  * ORDER: the Mac sidebar's tree order, which the phone's Search tree already draws (YAZ-5438, `vaultTree.ts`): each
  * level folders first, then files, by the name the row shows. The walk is depth-first, every folder open:
  *  - the page view steps through PAGES only (a card file is not a page);
@@ -51,6 +55,29 @@ export function vaultOrder(data: VaultData): { pages: Stop[]; cards: Stop[] } {
   return order
 }
 
+/** The folder of a vault path ('' at the root). */
+const folderOfPath = (path: string): string => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+
+const routePath = (route: Route): string => (route.kind === 'page' || route.kind === 'card' ? route.path : '')
+
+const byFolder = new WeakMap<readonly Stop[], Map<string, Stop[]>>()
+
+/** YAZ-5468: the stops of `stops` in the folder `folder` (its direct files only), in the same order; built once per list. */
+export function folderStops(stops: readonly Stop[], folder: string): readonly Stop[] {
+  let map = byFolder.get(stops)
+  if (map === undefined) {
+    map = new Map()
+    for (const stop of stops) {
+      const key = folderOfPath(routePath(stop.route))
+      const list = map.get(key)
+      if (list === undefined) map.set(key, [stop])
+      else list.push(stop)
+    }
+    byFolder.set(stops, map)
+  }
+  return map.get(folder) ?? []
+}
+
 const same = (a: Route, b: Route): boolean =>
   a.kind === 'page' ? b.kind === 'page' && a.path === b.path : a.kind === 'card' && b.kind === 'card' && a.path === b.path && a.id.toLowerCase() === b.id.toLowerCase()
 
@@ -70,7 +97,7 @@ export function stepTo(go: AppModel['go'], route: Route): void {
 /** The thin bar over the tabs: "‹ page before", the place, "page after ›". At the first or the last, that side is dim and does nothing. */
 export function PageArrows({ data, at, go, noun }: { data: VaultData | null; at: Route; go: AppModel['go']; noun: 'page' | 'card' }) {
   if (data === null) return null
-  const near = neighbours(vaultOrder(data)[noun === 'page' ? 'pages' : 'cards'], at)
+  const near = neighbours(folderStops(vaultOrder(data)[noun === 'page' ? 'pages' : 'cards'], folderOfPath(routePath(at))), at)
   if (near === null || near.count < 2) return null
   const side = (stop: Stop | null, after: boolean) => (
     <button
