@@ -73,6 +73,19 @@ describe('YAZ-5455: the vault look and the link door', () => {
     expect(trip.querySelector('.link-pill__id')?.textContent).toBe('DEMO-3')
   })
 
+  it('YAZ-5485: text-formatting.json\'s spacing as the Mac\'s variables on the reader; no spacing: none (the reader\'s defaults)', async () => {
+    h = await openSpanish({ '.yaseendocs/text-formatting.json': JSON.stringify({ version: 2, spacing: { line: 2, blockGap: 8, bulletGap: 14 } }) })
+    const reader = h.host.querySelector<HTMLElement>('.reader')!
+    expect(reader.style.getPropertyValue('--edit-line-height')).toBe('2')
+    expect(reader.style.getPropertyValue('--edit-block-gap')).toBe('8px')
+    expect(reader.style.getPropertyValue('--page-bullet-indent')).toBe('2.15em')
+    expect(reader.style.getPropertyValue('--page-bullet-gap')).toBe('14px')
+    h.unmount()
+    forgetSearch()
+    h = await openSpanish({ '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 } }) })
+    expect(h.host.querySelector<HTMLElement>('.reader')!.style.getPropertyValue('--edit-line-height')).toBe('')
+  })
+
   it('no file, or a file that is not JSON: today\'s look (one link, no ends, no variables)', async () => {
     h = await openSpanish({ '.yaseendocs/link-pills.json': '{ not json' })
     expect(h.host.querySelector<HTMLElement>('.reader')!.getAttribute('style') ?? '').toBe('')

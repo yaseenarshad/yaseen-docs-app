@@ -4,7 +4,7 @@
  * `shared/` (the precedent of `shared/reviews.ts` and `review/reviews.test.ts`).
  */
 import { describe, expect, it } from 'vitest'
-import { isHeadingStyle, sanitizeTextFormatting, textFormattingFile } from '@shared/textFormatting'
+import { TEXT_FORMATTING_KEYS, isHeadingStyle, sanitizeSpacing, sanitizeTextFormatting, spacingVars, textFormattingFile } from '@shared/textFormatting'
 
 describe('sanitizeTextFormatting (YAZ-3066 D10)', () => {
   it('a good file loads as it is, without its version', () => {
@@ -36,8 +36,8 @@ describe('sanitizeTextFormatting (YAZ-3066 D10)', () => {
   it('the version is ignored, whatever it says; the writer always writes version 1 and only the changes', () => {
     expect(sanitizeTextFormatting({ version: 2, h2: { size: 21 } })).toEqual({ h2: { size: 21 } })
     expect(sanitizeTextFormatting({ version: 'x' })).toEqual({})
-    expect(textFormattingFile({ text: { size: 17 }, h2: { size: 21 } })).toEqual({ version: 1, text: { size: 17 }, h2: { size: 21 } })
-    expect(textFormattingFile({})).toEqual({ version: 1 })
+    expect(textFormattingFile({ text: { size: 17 }, h2: { size: 21 } })).toEqual({ version: 2, text: { size: 17 }, h2: { size: 21 } })
+    expect(textFormattingFile({})).toEqual({ version: 2 })
   })
 
   it('isHeadingStyle, moved from store.ts: only the four known fields, each absent or valid', () => {
@@ -63,6 +63,28 @@ describe('the default line (YAZ-3208 D8, S95)', () => {
   })
 
   it('the writer carries the `line` key as it is', () => {
-    expect(textFormattingFile({ line: { thickness: 6 } })).toEqual({ version: 1, line: { thickness: 6 } })
+    expect(textFormattingFile({ line: { thickness: 6 } })).toEqual({ version: 2, line: { thickness: 6 } })
+  })
+})
+
+describe('the page spacing (YAZ-5485, version 2)', () => {
+  it('each field falls back alone; the defaults are not kept; no key is no spacing, an empty one is the defaults', () => {
+    expect(sanitizeTextFormatting({ version: 2, spacing: { line: 2, blockGap: 99, bulletIndent: 20, bulletGap: 10 } })).toEqual({ spacing: { line: 2, bulletIndent: 20 } })
+    expect(sanitizeTextFormatting({ version: 2, spacing: {} })).toEqual({ spacing: {} })
+    expect(sanitizeTextFormatting({ version: 1, h2: { size: 21 } })).toEqual({ h2: { size: 21 } })
+    expect(sanitizeTextFormatting({ spacing: 'wide' })).toEqual({})
+    expect(sanitizeSpacing({ line: 0.5, blockGap: 2.5, bulletIndent: 4, bulletGap: 30 })).toEqual({})
+    expect(sanitizeSpacing(null)).toBeNull()
+  })
+
+  it('the writer writes version 2 and owns `spacing`', () => {
+    expect(textFormattingFile({ spacing: { line: 2 } })).toEqual({ version: 2, spacing: { line: 2 } })
+    expect(TEXT_FORMATTING_KEYS).toContain('spacing')
+  })
+
+  it('the variables: all four with a spacing, the indent default as the page\'s 2.15em; none without', () => {
+    expect(spacingVars({ line: 2, bulletGap: 14 })).toEqual({ '--edit-line-height': '2', '--edit-block-gap': '4px', '--page-bullet-indent': '2.15em', '--page-bullet-gap': '14px' })
+    expect(spacingVars({ bulletIndent: 20 })['--page-bullet-indent']).toBe('20px')
+    expect(spacingVars(undefined)).toEqual({})
   })
 })

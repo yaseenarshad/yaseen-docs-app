@@ -2,7 +2,7 @@ import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
-import type { TextFormatting } from '@shared/textFormatting'
+import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, subheaderRowAttrs, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
@@ -301,7 +301,8 @@ function layerStyleOf(formatting: TextFormatting, pills: LinkPills): CSSProperti
   if (byPills === undefined) layerStyles.set(formatting, (byPills = new WeakMap()))
   let style = byPills.get(pills)
   if (style === undefined) {
-    style = { ...textVars(formatting), ...linkPillVars(pills) } as CSSProperties
+    // YAZ-5485: the vault's page spacing too; a vault with no `spacing` sets none, and its layers read `.app`'s app values.
+    style = { ...textVars(formatting), ...spacingVars(formatting.spacing), ...linkPillVars(pills) } as CSSProperties
     byPills.set(pills, style)
   }
   return style
@@ -646,6 +647,8 @@ export function App() {
    * The window's vaults for the place picker (YAZ-3556 D6): the active tab's first, then the others in the window's order.
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
    */
+  // Settings › Appearance › Spacing's Vault dropdown (YAZ-5485): the vault it shows; null is the active tab's.
+  const [spacingRoot, setSpacingRoot] = useState<string | null>(null)
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
   /**
    * The window's daily pages (YAZ-5491): the vault's `daily-pages.json` is the one source. The first vault, the active
@@ -987,6 +990,24 @@ export function App() {
    * Settings › Text formatting (YAZ-3068 D15): every vault of the window, in its order, and the active
    * tab's vault, where the "Vault" dropdown starts. None in the Welcome window, so the group is not there.
    */
+  /**
+   * Settings' page spacing (YAZ-5485): the picked vault's `spacing` in text-formatting.json; until it has one, the app's
+   * values (what its pages draw, from `.app`), and the first change writes them all into the vault.
+   */
+  const spacingScope = (spacingRoot !== null && roots.includes(spacingRoot) ? vaults[roots.indexOf(spacingRoot)] : null) ?? active
+  const settingsPageSpacing =
+    root === null || spacingScope.root === null
+      ? undefined
+      : {
+          vaults: placeVaults,
+          root: spacingScope.root,
+          choose: setSpacingRoot,
+          value:
+            spacingScope.textFormatting.formatting.spacing !== undefined
+              ? spacingOf(spacingScope.textFormatting.formatting.spacing)
+              : { line: appSettings.lineSpacing, blockGap: appSettings.blockGap, bulletIndent: appSettings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent, bulletGap: appSettings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap },
+          save: (next: Required<PageSpacing>) => spacingScope.textFormatting.save({ ...spacingScope.textFormatting.formatting, spacing: sanitizeSpacing(next) ?? {} }),
+        }
   const settingsTextFormatting =
     root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
 
@@ -1506,6 +1527,10 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
   const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | undefined>(undefined)
+  // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
+  useEffect(() => {
+    if (!settingsOpen) setSpacingRoot(null)
+  }, [settingsOpen])
   const openSettings = useCallback(() => {
     setSettingsPage(undefined)
     setSettingsOpen(true)
@@ -3833,7 +3858,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}

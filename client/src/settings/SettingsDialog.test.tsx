@@ -1419,6 +1419,35 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Journal', dailyPageOpens: 'page' })
   })
 
+  it('YAZ-5485: Spacing and the bullets write the picked vault\'s spacing; the Vault dropdown shows with two vaults; the app value with no vault', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const value = { line: 1.5, blockGap: 4, bulletIndent: 34, bulletGap: 10 }
+    const pageSpacing = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/b', choose, value: { ...value, line: 2 }, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, pageSpacing }} onClose={vi.fn()} />))
+    clickNav(container, 'Appearance')
+    const select = row(container, 'spacingVault')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    expect([...select.options].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+    expect(rowButtons(container, 'lineSpacing').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('2.0')
+    act(() => rowButtons(container!, 'blockGap').find((b) => b.textContent === 'Relaxed')!.click())
+    expect(save).toHaveBeenLastCalledWith({ ...value, line: 2, blockGap: 8 })
+    expect(onChange).not.toHaveBeenCalled()
+    act(() => {
+      select.value = '/a'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(choose).toHaveBeenCalledWith('/a')
+    unmount()
+    const none = mountOn('Appearance')
+    expect(row(none.el, 'spacingVault')).toBeNull()
+    act(() => rowButtons(none.el, 'lineSpacing').find((b) => b.textContent === '2.0')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
+  })
+
   it('YAZ-5491: Daily pages name the vault whose daily-pages.json they show, which can be another than the active tab\'s', () => {
     container = document.createElement('div')
     document.body.appendChild(container)

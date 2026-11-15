@@ -3,7 +3,7 @@ import { linkPillVars } from '@client/editor/wikilink/linkPillLook'
 import { headingVars } from '@client/settings/headingStyles'
 import { DEFAULT_LINK_CLICK, LINK_CLICK_FILE, sanitizeLinkClick, type LinkClick } from '@shared/linkClick'
 import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills, type LinkPills } from '@shared/linkPills'
-import { TEXT_FORMATTING_FILE, sanitizeTextFormatting } from '@shared/textFormatting'
+import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, spacingVars } from '@shared/textFormatting'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
@@ -16,6 +16,9 @@ import './linkPills.css'
  *    No file, or a file that is not JSON: today's look (`NO_LINK_PILLS`), as the Mac.
  *  - the headings' sizes, weight and underline (`text-formatting.json`, `sanitizeTextFormatting`), as the Mac's
  *    `headingVars` (`--h1-size` …), which the reader's CSS reads. The text size and the lines stay the phone's.
+ *  - the page spacing (`text-formatting.json` › `spacing`, YAZ-5485): line spacing, space between blocks, bullet
+ *    indent and gap, as the Mac's `--edit-line-height`, `--edit-block-gap`, `--page-bullet-indent`, `--page-bullet-gap`
+ *    (`spacingVars`), which `reader.css` reads. No `spacing`: the reader's own defaults (the Mac's defaults).
  *  - "Clicking a link" (`link-click.json`), for the link door (`openLink.ts`).
  * Read once for each version of the vault's data (a sync that brings a new file makes a new version).
  */
@@ -47,7 +50,8 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
       const [rawPills, rawText, rawClick] = await Promise.all([readJson(store, data.vault, LINK_PILLS_FILE), readJson(store, data.vault, TEXT_FORMATTING_FILE), readJson(store, data.vault, LINK_CLICK_FILE)])
       const clean = sanitizeLinkPills(rawPills)
       const pills = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
-      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...headingVars(sanitizeTextFormatting(rawText)) } }
+      const text = sanitizeTextFormatting(rawText)
+      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...headingVars(text), ...spacingVars(text.spacing) } }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
   }

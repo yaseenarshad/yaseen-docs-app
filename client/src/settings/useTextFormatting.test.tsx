@@ -96,11 +96,11 @@ describe('useTextFormatting', () => {
     expect(state.formatting).toEqual({ line: { darkness: 70, pattern: 'dashed' } })
   })
 
-  it('save shows the change at once and writes `{ version: 1, ...only the changes }`; a failed write falls back to the file', async () => {
+  it('save shows the change at once and writes `{ version: 2, ...only the changes }` (YAZ-5485: version 2); a failed write falls back to the file', async () => {
     await mount('/vault')
     await act(async () => state.save({ text: { size: 17 }, h2: { size: 21, bold: undefined } }))
     expect(state.formatting).toEqual({ text: { size: 17 }, h2: { size: 21 } })
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 }, h2: { size: 21 } }, TEXT_FORMATTING_KEYS)
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 2, text: { size: 17 }, h2: { size: 21 } }, TEXT_FORMATTING_KEYS)
     write.mockRejectedValue(new Error('read-only'))
     read.mockResolvedValue({ version: 1, text: { size: 17 } })
     await act(async () => state.save({ text: { size: 20 } }))
@@ -125,6 +125,6 @@ describe('useTextFormatting', () => {
     await changed({ root: '/vault', name: TEXT_FORMATTING_FILE })
     expect(state.formatting).toEqual({ h2: { size: 21 } })
     await act(async () => state.save({ h2: { size: 22 } }))
-    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 1, h2: { size: 22 } }, TEXT_FORMATTING_KEYS)
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault', TEXT_FORMATTING_FILE, { version: 2, h2: { size: 22 } }, TEXT_FORMATTING_KEYS)
   })
 })

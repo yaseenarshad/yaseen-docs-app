@@ -1,6 +1,6 @@
 import { isRecord } from './guards'
 import { isLineDefaults, type LineDefaults } from './line'
-import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, type HeadingStyle, type HeadingStyles } from './types'
+import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, type HeadingStyle, type HeadingStyles } from './types'
 
 /**
  * A vault's text formatting (YAZ-3066, decisions D10 and D14 on YAZ-3048): how normal text and each
@@ -15,8 +15,11 @@ import { HEADING_HIGHLIGHTS, HEADING_KEYS, HEADING_SIZE_MAX, HEADING_SIZE_MIN, t
  */
 
 export const TEXT_FORMATTING_FILE = 'text-formatting.json'
-/** The shape of the file. A reader ignores it; a writer always writes it. */
-export const TEXT_FORMATTING_VERSION = 1
+/**
+ * The shape of the file. A reader ignores it; a writer always writes it. 2 (YAZ-5485): the `spacing` key. A v1 writer
+ * (YAZ-5483 on) keeps a key it does not know, so `spacing` survives an older build's save.
+ */
+export const TEXT_FORMATTING_VERSION = 2
 
 /** The Text line (D14): size only, whole px, 12 to 24, 16 when the reader changed nothing. */
 export const TEXT_SIZE_MIN = 12
@@ -28,8 +31,64 @@ export interface TextStyle {
   size?: number
 }
 
+/**
+ * The vault's page spacing (YAZ-5485, scoping B2): Settings › Appearance › Spacing (Line spacing, Space between
+ * blocks) and Editor › Outline (Bullet indent, Bullet gap). A field left out is the app's default. The KEY left out is
+ * different: the vault has not taken the spacing over yet, and the Mac then reads its app values (the fallback; the
+ * phone reads its defaults). So `"spacing": {}` is "the defaults, in this vault".
+ */
+export interface PageSpacing {
+  /** Line height, 1 to 3 (the presets are 1.0, 1.15, 1.5, 2.0); the default 1.5. */
+  line?: number
+  /** Space between blocks, px per side, 0 to 32; the default 4. */
+  blockGap?: number
+  /** Bullet indent, px, `PAGE_BULLET_INDENT_MIN`–`MAX`; the default is the page's own 2.15em. */
+  bulletIndent?: number
+  /** Bullet gap, px, `PAGE_BULLET_GAP_MIN`–`MAX`; the default 10. */
+  bulletGap?: number
+}
+
+export const SPACING_DEFAULTS: Required<PageSpacing> = Object.freeze({ line: 1.5, blockGap: 4, bulletIndent: 34, bulletGap: 10 })
+
 /** Only the levels and the fields the reader changed. "Reset" removes a key; the defaults are never stored. */
-export type TextFormatting = HeadingStyles & { text?: TextStyle; line?: LineDefaults }
+export type TextFormatting = HeadingStyles & { text?: TextStyle; line?: LineDefaults; spacing?: PageSpacing }
+
+const SPACING_FIELD_OK: { [K in keyof Required<PageSpacing>]: (v: unknown) => boolean } = {
+  line: (v) => typeof v === 'number' && Number.isFinite(v) && v >= 1 && v <= 3,
+  blockGap: (v) => wholeIn(v, 0, 32),
+  bulletIndent: (v) => wholeIn(v, PAGE_BULLET_INDENT_MIN, PAGE_BULLET_INDENT_MAX),
+  bulletGap: (v) => wholeIn(v, PAGE_BULLET_GAP_MIN, PAGE_BULLET_GAP_MAX),
+}
+
+/** The spacing's valid fields, each alone; a value equal to the default is left out. Not an object: null (no key). */
+export function sanitizeSpacing(raw: unknown): PageSpacing | null {
+  if (!isRecord(raw)) return null
+  const out: PageSpacing = {}
+  for (const field of Object.keys(SPACING_FIELD_OK) as (keyof PageSpacing)[]) {
+    const v = raw[field]
+    if (SPACING_FIELD_OK[field](v) && v !== SPACING_DEFAULTS[field]) out[field] = v as number
+  }
+  return out
+}
+
+/** The spacing as it draws: every field, the defaults filled in. */
+export const spacingOf = (spacing: PageSpacing): Required<PageSpacing> => ({ ...SPACING_DEFAULTS, ...spacing })
+
+/**
+ * The CSS variables of a vault's spacing, the names the Mac's pages and the phone's reader read (`--edit-line-height`,
+ * `--edit-block-gap`, `--page-bullet-indent`, `--page-bullet-gap`). All four, so a page layer of the vault never takes
+ * the app's values from `.app`; the indent's default is the page's own 2.15em. No spacing (no key): none.
+ */
+export function spacingVars(spacing: PageSpacing | undefined): Record<string, string> {
+  if (spacing === undefined) return {}
+  const s = spacingOf(spacing)
+  return {
+    '--edit-line-height': String(s.line),
+    '--edit-block-gap': `${s.blockGap}px`,
+    '--page-bullet-indent': spacing.bulletIndent === undefined ? '2.15em' : `${s.bulletIndent}px`,
+    '--page-bullet-gap': `${s.bulletGap}px`,
+  }
+}
 
 const wholeIn = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 
@@ -71,6 +130,9 @@ export function sanitizeTextFormatting(raw: unknown): TextFormatting {
     const line = definedFields(r.line)
     if (line !== null) out.line = line
   }
+  // YAZ-5485: the spacing falls back field by field; a `spacing` that is not an object is no key at all.
+  const spacing = sanitizeSpacing(r.spacing)
+  if (spacing !== null) out.spacing = spacing
   for (const key of HEADING_KEYS) {
     const style = r[key]
     if (!isHeadingStyle(style)) continue
@@ -88,4 +150,4 @@ export function sanitizeTextFormatting(raw: unknown): TextFormatting {
 export const textFormattingFile = (formatting: TextFormatting): Record<string, unknown> => ({ version: TEXT_FORMATTING_VERSION, ...formatting })
 
 /** The top-level keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save (`writeConfig`'s `known`). */
-export const TEXT_FORMATTING_KEYS: readonly string[] = ['version', 'text', 'line', ...HEADING_KEYS]
+export const TEXT_FORMATTING_KEYS: readonly string[] = ['version', 'text', 'line', 'spacing', ...HEADING_KEYS]

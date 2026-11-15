@@ -6431,6 +6431,22 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   /** Main says a vault's file changed, to every listener of the push. */
   const push = <T,>(spy: { mock: { calls: unknown[][] } }, payload: T) => (spy.mock.calls as [(p: T) => void][]).forEach(([listener]) => listener(payload))
 
+  it('YAZ-5485: each vault\'s page spacing on its own layers; a vault with no spacing reads the app\'s values from .app', async () => {
+    const files: Record<string, unknown> = { '/v': { version: 2, spacing: { line: 2, blockGap: 8 } } }
+    const { el } = await mount(defaultAppState(), TWO, {}, (b) => {
+      PAGES(b)
+      b.bridge.vaultConfig.read.mockImplementation(async (vault, name) => (name === TEXT_FORMATTING_FILE && vault !== undefined ? (files[vault] ?? null) : null))
+    })
+    show('/w/b.md')
+    await act(async () => {})
+    const layer = (path: string) => el.querySelector(`.tabstack__layer [data-editor][data-path="${path}"]`)?.closest<HTMLElement>('.tabstack__layer') as HTMLElement
+    expect(layer('/v/a.md').style.getPropertyValue('--edit-line-height')).toBe('2')
+    expect(layer('/v/a.md').style.getPropertyValue('--edit-block-gap')).toBe('8px')
+    expect(layer('/v/a.md').style.getPropertyValue('--page-bullet-indent')).toBe('2.15em')
+    expect(layer('/w/b.md').style.getPropertyValue('--edit-line-height')).toBe('')
+    expect(el.querySelector<HTMLElement>('.app')!.style.getPropertyValue('--edit-line-height')).toBe(String(DEFAULT_SETTINGS.lineSpacing))
+  })
+
   it('each page layer carries its own vault\'s text formatting; a change in one vault restyles only its layers, and no editor renders again (YAZ-3067 D12)', async () => {
     const files: Record<string, unknown> = { '/v': { version: 1, text: { size: 18 }, h2: { size: 21 } }, '/w': { version: 1, h2: { size: 30, underline: true } } }
     const { bridge, el } = await mount(defaultAppState(), { ...TWO, rightPanel: { open: true, width: 440, items: ['/w/c.md'], expanded: '/w/c.md' } }, {}, (b) => {
