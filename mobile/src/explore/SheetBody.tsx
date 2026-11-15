@@ -141,11 +141,23 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
     if (!stickyOn || !hasText || el == null || layer === null || scroller == null) return
     return stickHeadings(scroller, el, layer, { title })
   }, [stickyOn, hasText, path, title])
+  // YAZ-5591: the panel draws at once, never waiting for `.yaseendocs/mobile.json` (the last values read, else both on);
+  // when the file's values come, the fold arrows just switch here, on the page as drawn (no redraw, no jump).
+  const foldingRef = useRef(foldingOn)
+  foldingRef.current = foldingOn
+  useEffect(() => {
+    const el = host.current
+    if (el === null || drawn.current === null || (folds.current !== null) === foldingOn) return
+    const kept = folds.current?.folded() ?? []
+    folds.current?.destroy()
+    folds.current = foldingOn ? attachFolds(el, { title, initial: kept }) : null
+    folds.current?.apply()
+  }, [foldingOn, title])
 
   useEffect(() => {
     const el = host.current
-    if (el === null || data === null || typeof content !== 'string' || vaultMobile === undefined) return
-    const key = `${data.version}\n${content}\n${foldingOn}`
+    if (el === null || data === null || typeof content !== 'string') return
+    const key = `${data.version}\n${content}`
     if (drawn.current === key) return
     drawn.current = key
     let live = true
@@ -164,7 +176,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       }
       const kept = folds.current?.folded() ?? []
       folds.current?.destroy()
-      folds.current = foldingOn ? attachFolds(el, { title, initial: kept }) : null
+      folds.current = foldingRef.current ? attachFolds(el, { title, initial: kept }) : null
       folds.current?.apply()
       const head = el.firstElementChild
       // S2 (sweep1): the title hides before the card asked for is landed on (it leaves the flow; the page moves up).
@@ -189,7 +201,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
     }
     // `door` and `onDrawn` are the same doors at each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, data, path, at, heading, title, foldingOn, vaultMobile === undefined])
+  }, [content, data, path, at, heading, title])
 
   return (
     <article className="reader explore-sheet__reader" aria-label={title}>

@@ -26,7 +26,7 @@ import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, folderStops, neighbours, pageIdOf, vaultOrder } from './pageNav'
 import { renderPage, warmRenderer } from './pageRender'
 import { markSections, pageOwnSwitch, pageSwitchAttrs } from './pageSwitches'
-import { effectiveSwitch, useMobileSettings } from './mobileSettings'
+import { effectiveSwitch, primeMobileSettings, useMobileSettings } from './mobileSettings'
 import { usePageSettingRow } from './pageSettingRow'
 import { STICKY_HEADINGS_KEY } from '../comments/settingWrite'
 import { stickHeadings } from './stickyHeadings'
@@ -59,11 +59,12 @@ const loadStrips = () => import('./cardStrip/pageStrips').then((m) => (stripsChu
 
 /**
  * YAZ-5589: what any page needs to draw in the same frame as the tap, read ahead once the app is idle
- * (`explore/openReady.ts`): the vault's data and look, the renderer's warm-up, the strips' chunk (Review on).
+ * (`explore/openReady.ts`): the vault's data and look, its mobile settings, the renderer's warm-up, the strips' chunk
+ * (Review on).
  */
 export async function warmPage(store: VaultStore, vault: string, repoName: string): Promise<VaultData> {
   const data = await vaultDataFor(store, vault, repoName)
-  await loadVaultLook(store, data)
+  await Promise.all([loadVaultLook(store, data), primeMobileSettings(store, vault)])
   await warmRenderer(pageLook(data, ''), uiSlicer())
   if (data.review.enabled) await loadStrips().catch(() => null)
   return data
@@ -235,8 +236,9 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const everDrawn = useRef(false)
   useEffect(() => {
     const el = host.current
-    // YAZ-5592: and for the vault's mobile settings (a few ms, held after the first read), so its folds draw once.
-    if (el === null || data === null || typeof text !== 'string' || look === undefined || vaultMobile === undefined) return
+    // YAZ-5591: never waits for the vault's mobile settings: the last values read (else both on) draw at once, and the
+    // file's values, when read, switch the fold arrows and the stuck headings on the page as drawn (their own effects).
+    if (el === null || data === null || typeof text !== 'string' || look === undefined) return
     if (drawn.current !== null && drawn.current.text === text && drawn.current.version === data.version && drawn.current.look === look) return
     resolveSourceOf(data).setLook(look.pills, vaultName(app.vault?.repo ?? ''))
     let live = true
@@ -321,9 +323,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       live = false
       drawn.current = null
     }
-    // `vaultMobile` only gates the first draw; a change of it draws nothing again (the folds and the stack follow it).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, data, look, path, at, heading, store, app.go, app.vault, title, sectionIndent, vaultMobile === undefined])
+  }, [text, data, look, path, at, heading, store, app.go, app.vault, title, sectionIndent])
 
   // The reading place of this page, kept as the person scrolls.
   useEffect(() => {

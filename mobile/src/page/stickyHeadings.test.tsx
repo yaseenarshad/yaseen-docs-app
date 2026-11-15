@@ -345,6 +345,35 @@ describe('YAZ-5591 / YAZ-5592: the page view, its ⋯ row, the vault\'s mobile s
     expect(await stuckAt(h, BODY_TOP + 400)).toEqual([])
   })
 
+  it('never waits for mobile.json: drawn at once with both on, then the file\'s "off" switches the arrows and the stuck headings on the page as drawn', async () => {
+    const p = await newPhone()
+    await seedReaderVault(p.store, p.tokens, { ...FILES, [MOBILE_SETTINGS_PATH]: '{"version":1,"folding":false,"stickyHeadings":false}' })
+    // The settings file reads only when let go (a slow storage read); every other read goes on.
+    let letGo: () => void = () => {}
+    const held = new Promise<void>((r) => (letGo = r))
+    const read = p.store.read.bind(p.store)
+    p.store.read = (async (vault: string, path: string) => {
+      if (path === MOBILE_SETTINGS_PATH) await held
+      return read(vault, path)
+    }) as typeof p.store.read
+    h = await mount({ phone: p })
+    ;(h.sync as unknown as { review: () => Promise<unknown> }).review = async () => ({ answers: { comments: fakePort() } })
+    await h.click('Search')
+    await waitFor(h, () => h!.button(/^Garden, page/) !== null)
+    await h.click(/^Garden, page/)
+    await waitFor(h, () => h!.host.querySelector('.reader__body h2') !== null)
+    await h.settle()
+    // Drawn before the file is read: with the defaults, the fold arrows and the stuck headings on.
+    const heading = h.host.querySelector('.reader__body h2')
+    expect(h.host.querySelectorAll('.reader__body .fold-btn').length).toBeGreaterThan(0)
+    expect(await stuckAt(h, BODY_TOP + 400)).toEqual(['Beds', 'North bed'])
+    await act(async () => letGo())
+    await waitFor(h, () => h!.host.querySelectorAll('.reader__body .fold-btn').length === 0)
+    // The same page as drawn (not drawn again), its arrows and its stuck headings gone.
+    expect(h.host.querySelector('.reader__body h2')).toBe(heading)
+    expect(await stuckAt(h, BODY_TOP + 410)).toEqual([])
+  })
+
   it('Settings › "This vault on mobile": Folding and Sticky headings, on; a change shows at once and goes the safe path', async () => {
     const port = fakePort()
     h = await open('Garden', port)

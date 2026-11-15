@@ -85,5 +85,15 @@ export function useMobileSettings(data: VaultData | null, port: CommentsPort | n
 
 const sameSettings = (a: MobileSettings, b: MobileSettings) => a.folding === b.folding && a.stickyHeadings === b.stickyHeadings
 
+/**
+ * YAZ-5591: the settings read ahead with the reader (`warmPage`), so the first page or panel of a session draws with the
+ * file's values; a page never waits for them (none read yet: both on, then the arrows and the stuck headings switch).
+ */
+export async function primeMobileSettings(store: VaultStore, vault: string): Promise<void> {
+  if (held.has(vault)) return
+  const value = await readMobileSettings(store, vault, null)
+  if (!held.has(vault)) held.set(vault, value)
+}
+
 /** Forgets the settings read (a test starts clean). */
 export const forgetMobileSettings = (): void => held.clear()
