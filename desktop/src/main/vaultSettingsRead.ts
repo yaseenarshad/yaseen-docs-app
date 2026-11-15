@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { NEW_PLACES_FILE, sanitizeVaultNewPlaces, vaultNewPlacesFields, type NewPlacesFields } from '@shared/newPlaces'
 import { VAULT_CONFIG_DIR } from '@shared/types'
@@ -28,4 +28,12 @@ export async function readVaultSettingsFile(root: string, name: string): Promise
 /** Where new things go in the vault at `root` (YAZ-5486): its `new-places.json` keys over the app's values. */
 export async function vaultNewPlacesSettings<T extends NewPlacesFields>(root: string, app: T): Promise<T> {
   return vaultNewPlacesFields(app, sanitizeVaultNewPlaces(await readVaultSettingsFile(root, NEW_PLACES_FILE)))
+}
+
+/** The vault that holds `dir` for the CLI (YAZ-5490): the nearest folder, `dir` itself first, with a `.yaseendocs` folder; null with none. */
+export async function vaultRootOf(dir: string): Promise<string | null> {
+  for (let at = path.resolve(dir); ; at = path.dirname(at)) {
+    if ((await stat(path.join(at, VAULT_CONFIG_DIR)).catch(() => null))?.isDirectory() === true) return at
+    if (path.dirname(at) === at) return null
+  }
 }

@@ -104,6 +104,16 @@ describe('YAZ-5486: where new things go move once into each vault; a folder only
     await expect(readFile(file(plain), 'utf8')).rejects.toThrow()
   })
 
+  it('YAZ-5490: the comment hint moves only when it is off; each vault', async () => {
+    const a = await makeVault()
+    const b = await makeVault()
+    await run([a, b], { ...DEFAULT_SETTINGS, commentsHint: false })
+    for (const root of [a, b]) expect(await read(root)).toEqual({ version: 1, places: [null, null, null], commentsHint: false })
+    const on = await makeVault()
+    await run([on], DEFAULT_SETTINGS)
+    await expect(readFile(file(on), 'utf8')).rejects.toThrow()
+  })
+
   it('a root that is not a folder now is skipped', async () => {
     const gone = path.join(tmpdir(), `yd-gone-${Date.now()}`)
     await run([gone])

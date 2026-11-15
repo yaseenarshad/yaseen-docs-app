@@ -39,12 +39,13 @@ export function parseNewPlaces(v: unknown): Array<string | null> | null {
 }
 
 /**
- * WHERE NEW THINGS GO, IN THE VAULT (YAZ-5486, scoping B5): the same file, beside the
+ * WHERE NEW THINGS GO, IN THE VAULT (YAZ-5486, scoping B5; the comment hint, YAZ-5490, B7): the same file, beside the
  * shortcuts, under version 1 (an older build reads only `version` and `places`, and keeps these keys on its save):
  *
  *   { "version": 1, "places": [...],
  *     "newPage": { "location": "folder", "folder": "Inbox" },
- *     "newBoard": { "folder": "assets", "pictures": "folder", "picturesFolder": "assets/pictures" } }
+ *     "newBoard": { "folder": "assets", "pictures": "folder", "picturesFolder": "assets/pictures" },
+ *     "commentsHint": false }
  *
  * A field left out of `newPage` or `newBoard` is the app's default. A KEY left out is the app's value (the fallback,
  * before the one-time move), except a vault-relative folder: it is a path of ONE vault, so a vault without the key does
@@ -63,10 +64,12 @@ export interface NewBoardWhere {
 export interface VaultNewPlaces {
   newPage?: NewPageWhere
   newBoard?: NewBoardWhere
+  /** YAZ-5490: each new page of this vault carries the comment hint (`COMMENTS_HINT`, YAZ-4615 D10); it is the vault's content. */
+  commentsHint?: boolean
 }
 
 /** The keys the settings' writer owns: the shortcuts (`places`) are kept on its save, and its keys on theirs. */
-export const NEW_PLACES_SETTINGS_KEYS: readonly string[] = ['version', 'newPage', 'newBoard']
+export const NEW_PLACES_SETTINGS_KEYS: readonly string[] = ['version', 'newPage', 'newBoard', 'commentsHint']
 
 const DEFAULT_PAGE: Required<NewPageWhere> = { location: 'current', folder: '' }
 const DEFAULT_BOARD: Required<NewBoardWhere> = { folder: 'page', pictures: 'inside', picturesFolder: '' }
@@ -92,17 +95,19 @@ export function sanitizeVaultNewPlaces(raw: unknown): VaultNewPlaces {
     if (isValidPicturesFolder(b.picturesFolder)) board.picturesFolder = b.picturesFolder
     out.newBoard = board
   }
+  if (typeof r.commentsHint === 'boolean') out.commentsHint = r.commentsHint
   return out
 }
 
 /** The app's fields that live in this file now. */
-export type NewPlacesFields = Pick<SettingsState, 'newPageLocation' | 'newPageFolder' | 'newBoardFolder' | 'newBoardPictures' | 'newBoardPicturesFolder'>
+export type NewPlacesFields = Pick<SettingsState, 'newPageLocation' | 'newPageFolder' | 'newBoardFolder' | 'newBoardPictures' | 'newBoardPicturesFolder' | 'commentsHint'>
 
 /** The app's values as the file holds them (the seed, and the first save from Settings). */
 export function newPlacesOfSettings(s: NewPlacesFields): Required<VaultNewPlaces> {
   return sanitizeVaultNewPlaces({
     newPage: { location: s.newPageLocation, folder: s.newPageFolder },
     newBoard: { folder: s.newBoardFolder, pictures: s.newBoardPictures, picturesFolder: s.newBoardPicturesFolder },
+    commentsHint: s.commentsHint,
   }) as Required<VaultNewPlaces>
 }
 
@@ -115,15 +120,17 @@ export function vaultNewPlacesFields<T extends NewPlacesFields>(app: T, vault: V
     vault.newBoard !== undefined
       ? { ...DEFAULT_BOARD, ...vault.newBoard }
       : { folder: app.newBoardFolder, ...(app.newBoardPictures === 'folder' && relativeFolder(app.newBoardPicturesFolder) ? { pictures: DEFAULT_BOARD.pictures, picturesFolder: '' } : { pictures: app.newBoardPictures, picturesFolder: app.newBoardPicturesFolder }) }
+  const hint = vault.commentsHint ?? app.commentsHint
   if (
     page.location === app.newPageLocation &&
     page.folder === app.newPageFolder &&
     board.folder === app.newBoardFolder &&
     board.pictures === app.newBoardPictures &&
-    board.picturesFolder === app.newBoardPicturesFolder
+    board.picturesFolder === app.newBoardPicturesFolder &&
+    hint === app.commentsHint
   )
     return app
-  return { ...app, newPageLocation: page.location, newPageFolder: page.folder, newBoardFolder: board.folder, newBoardPictures: board.pictures, newBoardPicturesFolder: board.picturesFolder }
+  return { ...app, newPageLocation: page.location, newPageFolder: page.folder, newBoardFolder: board.folder, newBoardPictures: board.pictures, newBoardPicturesFolder: board.picturesFolder, commentsHint: hint }
 }
 
 /** What the settings' writer puts in the file: version 1, the keys; `places` too when the file has none (an older build needs it). */

@@ -438,6 +438,20 @@ describe('registerFsIpc', () => {
       }
     })
 
+    it('YAZ-5490: the vault\'s new-places.json says it, over the app\'s setting', async () => {
+      const vault = await open(false)
+      try {
+        const at = (...p: string[]) => path.join(vault, ...p)
+        store.setSettings({ ...store.get().settings, commentsHint: true })
+        await mkdir(at('.yaseendocs'), { recursive: true })
+        await writeFile(at('.yaseendocs', 'new-places.json'), JSON.stringify({ version: 1, places: [null, null, null], commentsHint: false }))
+        expect(await call(CONTRACT.createFile, { path: at('Vault says no.md'), content: PAGE })).toMatchObject({ ok: true })
+        expect(await readFile(at('Vault says no.md'), 'utf8')).toBe(PAGE)
+      } finally {
+        await close(vault)
+      }
+    })
+
     it('in a vault that uses IDs, a new page also starts with the hint, above its id (YAZ-4615 D10)', async () => {
       const vault = await open(true)
       try {

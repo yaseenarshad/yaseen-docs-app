@@ -53,6 +53,7 @@ import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { createFile } from '../main/fs/create'
 import { readFile, writeFile } from '../main/fs/file'
 import { dailyPage, vaultDailySettings } from '../main/pages/daily'
+import { vaultNewPlacesSettings, vaultRootOf } from '../main/vaultSettingsRead'
 import { newPage } from '../main/pages/page'
 import { otherMacFiles } from '../main/settingsFiles'
 import { mergeFolderSettings, parseState } from '../main/store'
@@ -567,7 +568,7 @@ async function daily(target: string | undefined, flags: Map<string, string | tru
   const day = dayOf(str(flags, '--date'))
   const root = resolve(target)
   // YAZ-5491: the vault's daily-pages.json; the app's settings only for a vault with none.
-  const settings = await vaultDailySettings(root, await settingsNow())
+  const settings = await vaultDailySettings(root, await vaultNewPlacesSettings(root, await settingsNow()))
   const page = await dailyPage(root, settings, day, !flags.has('--find'))
   if (page === null) throw new Error(`no daily page "${dailyPageName(settings.dailyPageFormat, day).trim()}" in ${root}`)
   report(io, flags, page)
@@ -581,7 +582,10 @@ async function newCommand(target: string | undefined, flags: Map<string, string 
   const title = str(flags, '--title')?.trim()
   if (title === undefined || title === '') throw new Usage('new needs --title')
   const body = flags.has('--body') ? await bodyOf(flags, io) : undefined
-  const page = await newPage(resolve(target), title, body, (await settingsNow()).commentsHint)
+  // YAZ-5490: the comment hint of the folder's vault (its new-places.json), else the app's.
+  const vault = await vaultRootOf(resolve(target))
+  const app = await settingsNow()
+  const page = await newPage(resolve(target), title, body, (vault === null ? app : await vaultNewPlacesSettings(vault, app)).commentsHint)
   if (!page.created && body !== undefined) io.stderr(`warning: --body was not written: ${page.path} was already there\n`)
   report(io, flags, page)
 }

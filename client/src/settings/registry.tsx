@@ -912,7 +912,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-4615 D10: one line at the top of each new page, so an agent knows where comments go.
             id: 'commentsHint',
             label: (ctx) => unit(ctx, 'Add the comment hint to new pages'),
-            hint: 'Each new page gets one hidden line that tells an agent how to add a comment.',
+            // YAZ-5490: the active tab's vault's (`new-places.json`): it writes into the vault's pages.
+            hint: 'Each new page gets one hidden line that tells an agent how to add a comment. Saved in this vault.',
             keywords: ['comment hint', 'agent', 'ai', 'new page', 'yaml'],
             render: (ctx) => (
               <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.commentsHint} onChange={(commentsHint) => ctx.onChange({ ...ctx.settings, commentsHint })} ariaLabel={unit(ctx, 'Add the comment hint to new pages')} />

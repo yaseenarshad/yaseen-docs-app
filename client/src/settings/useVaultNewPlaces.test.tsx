@@ -114,6 +114,15 @@ describe('useVaultNewPlaces', () => {
     expect(notice).toHaveBeenCalledWith(expect.stringContaining('not valid JSON'), 'error')
   })
 
+  it('YAZ-5490: the comment hint is one of its keys', async () => {
+    read.mockResolvedValue({ version: 1, places: [null, null, null], commentsHint: false })
+    await mount('/v')
+    expect(states['/v'].value).toEqual({ commentsHint: false })
+    await act(async () => states['/v'].save({ commentsHint: true }))
+    expect(write).toHaveBeenLastCalledWith('/v', NEW_PLACES_FILE, { version: 1, commentsHint: true }, NEW_PLACES_SETTINGS_KEYS)
+    expect(NEW_PLACES_SETTINGS_KEYS).toContain('commentsHint')
+  })
+
   it('two vaults in one window keep two values', async () => {
     read.mockImplementation(async (r) => (r === '/a' ? PAGE : { version: 1, places: [null, null, null], newPage: { location: 'root' } }))
     await mount('/a', '/b')

@@ -25,6 +25,16 @@ describe('sanitizeVaultNewPlaces', () => {
   })
 })
 
+describe('YAZ-5490: the comment hint', () => {
+  it('a boolean or nothing; the vault\'s over the app\'s; no key is the app\'s', () => {
+    expect(sanitizeVaultNewPlaces({ commentsHint: false })).toEqual({ commentsHint: false })
+    expect(sanitizeVaultNewPlaces({ commentsHint: 'no' })).toEqual({})
+    expect(vaultNewPlacesFields(DEFAULT_SETTINGS, { commentsHint: false }).commentsHint).toBe(false)
+    expect(vaultNewPlacesFields({ ...DEFAULT_SETTINGS, commentsHint: false }, {}).commentsHint).toBe(false)
+    expect(vaultNewPlacesFields(DEFAULT_SETTINGS, { commentsHint: true })).toBe(DEFAULT_SETTINGS)
+  })
+})
+
 describe('vaultNewPlacesFields', () => {
   const APP = { ...DEFAULT_SETTINGS, newPageLocation: 'root' as const, newBoardFolder: 'assets' as const }
 
@@ -49,6 +59,6 @@ describe('vaultNewPlacesFields', () => {
   })
 
   it('the app values as the file holds them', () => {
-    expect(newPlacesOfSettings({ ...DEFAULT_SETTINGS, newPageLocation: 'folder', newPageFolder: 'Inbox' })).toEqual({ newPage: { location: 'folder', folder: 'Inbox' }, newBoard: {} })
+    expect(newPlacesOfSettings({ ...DEFAULT_SETTINGS, newPageLocation: 'folder', newPageFolder: 'Inbox' })).toEqual({ newPage: { location: 'folder', folder: 'Inbox' }, newBoard: {}, commentsHint: true })
   })
 })

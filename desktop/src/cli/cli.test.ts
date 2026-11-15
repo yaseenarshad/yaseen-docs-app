@@ -1230,6 +1230,12 @@ describe('daily and new (YAZ-4269)', () => {
     expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('---\n# comments: - {by: <name>, body: <text>}\n---\nHello')
   })
 
+  it("YAZ-5490: the folder's vault's new-places.json turns the comment hint off over the app's setting", async () => {
+    const plain = await vault('plain', { 'projects/.keep.md': '', '.yaseendocs/new-places.json': JSON.stringify({ version: 1, places: [null, null, null], commentsHint: false }) }, false)
+    await run(['new', path.join(plain, 'projects'), '--title', 'Gym plan', '--body', 'Hello'])
+    expect(await readFile(path.join(plain, 'projects', 'Gym plan.md'), 'utf8')).toBe('Hello')
+  })
+
   it('new again with the same title finds the page and makes nothing; --body is then not written, and says so (D7)', async () => {
     const root = await vault('v', { 'projects/.keep.md': '' })
 

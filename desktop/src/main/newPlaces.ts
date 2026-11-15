@@ -93,6 +93,8 @@ export const NEW_PLACES_MOVE: MoveStep = {
       const parts = await newPlacesParts(root, s)
       await seedVaultPart(root, NEW_PLACES_FILE, parts.newPage, ['newPage'], store, canSeed, `${NEW_PLACES_FILE}#newPage`, EMPTY_FILE)
       await seedVaultPart(root, NEW_PLACES_FILE, parts.newBoard, ['newBoard'], store, canSeed, `${NEW_PLACES_FILE}#newBoard`, EMPTY_FILE)
+      // YAZ-5490: the comment hint, only when it is off (on is the default).
+      await seedVaultPart(root, NEW_PLACES_FILE, s.commentsHint ? null : { commentsHint: false }, ['commentsHint'], store, canSeed, `${NEW_PLACES_FILE}#commentsHint`, EMPTY_FILE)
     }
   },
 }
