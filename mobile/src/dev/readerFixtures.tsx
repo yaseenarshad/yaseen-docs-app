@@ -25,10 +25,13 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
  * YAZ-5458: `page-look` a made-up page with every block and deep nesting (`readingLookFixture.ts`), for the reading look.
  * YAZ-5477: `card-file-comments` a card file's own view, scrolled to its comments under the card (its Comment button).
 
+ * YAZ-5497: `page-headings` the Headings sheet of a page with 60 headings (over the arrows and the tab bar);
+ * `page-headings-few` of a page with none ("no headings to list"); `page-headings-alone` in a vault with Search alone (no
+ * tab bar: Review off).
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -174,8 +177,12 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { shape: 'underline' }, parts: { id: { bold: true } } }),
                 '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 }, h2: { underline: true } }),
               }
-          : name === 'page-headings'
-            ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
+          : name === 'page-headings' || name === 'page-headings-alone'
+            ? {
+                'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n`,
+                // `page-headings-alone`: Review off in the vault's file, and the tabs read from it: Search alone, no tab bar.
+                ...(name === 'page-headings-alone' && { '.yaseendocs/review.json': '{"enabled": false}' }),
+              }
           : name === 'page-folder'
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
           : name === 'card-file-comments'
@@ -200,9 +207,9 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       return file === null ? shown : { ...shown, url: URL.createObjectURL(new Blob([file.content as BlobPart], { type: 'image/svg+xml' })), type: 'image/svg+xml' }
     },
   }
-  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
+  const services: AppServices = { store, tokens, vaultTabs: name === 'page-headings-alone' ? undefined : reviewOnTabs, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
   root.render(<App services={services} />)
-  await until(() => document.querySelector('[role="tab"]') !== null)
+  await until(() => document.querySelector('[role="tab"]') !== null || (name === 'page-headings-alone' && document.querySelector('input[name="search"]') !== null))
   press('Search')
   await until(() => document.querySelector('.search__rows, .tree') !== null)
 
@@ -247,12 +254,17 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       }
       break
     case 'page-headings':
-      await typed('long notes')
-      await open(/^Long notes/, '.reader__body h2')
+    case 'page-headings-alone':
+    case 'page-headings-few':
+      if (name === 'page-headings-few') await open(/^Trip plan/, '.reader__body p')
+      else {
+        await typed('long notes')
+        await open(/^Long notes/, '.reader__body h2')
+      }
       press('Page tools')
       await wait(50)
       press(/Headings/)
-      await until(() => document.querySelector('.headings-sheet__row') !== null)
+      await until(() => document.querySelector('.headings-sheet__row, .headings-sheet__none') !== null)
       break
     case 'page-properties':
       await typed('trip notes')

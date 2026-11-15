@@ -104,6 +104,8 @@
   opacity: 0.5;
 }
 
+/* Drawn in the frame (`.app`), after the arrows and the tab bar: over them, and over the page's masked scroll box
+   (YAZ-5497, `overFrame` in `PageTools.tsx`). */
 .headings-sheet {
   position: fixed;
   inset: 0;
@@ -134,6 +136,8 @@
   font-size: 17px;
 }
 .headings-sheet__list {
+  /* A long list scrolls inside the sheet: a flex child is no shorter than its rows without this. */
+  min-height: 0;
   margin: 0;
   padding: 6px 0;
   list-style: none;

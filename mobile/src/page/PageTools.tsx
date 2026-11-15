@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import './find/pageTools.css'
 
 /**
@@ -11,6 +12,11 @@ import './find/pageTools.css'
  *
  * The find bar shows under the top bar (the frame's line for a notice), so the page's text stays in view; the headings
  * list is a sheet from the bottom, over the page, closed by a tap outside it, ✕ or Escape.
+ *
+ * YAZ-5497: the sheet is drawn in the FRAME (`.app`, `overFrame`), not in the page. The page's scroll box
+ * (`.screen--reader`) has a soft fade at its bottom, a `mask-image`: a masked element clips all it holds, a fixed child
+ * too, and is a stacking context, so a sheet in it was cut off at the box's end and faded, under the page arrows and the
+ * tab bar whatever its `z-index`.
  */
 const FindBar = lazy(() => import('./find/FindBar'))
 const HeadingsSheet = lazy(() => import('./find/HeadingsSheet'))
@@ -63,10 +69,22 @@ export function usePageTools(host: RefObject<HTMLElement | null>): { button: Rea
         <FindBar host={host} onClose={close} />
       </Suspense>
     ),
-    sheet: tool === 'headings' && (
-      <Suspense fallback={null}>
-        <HeadingsSheet host={host} onClose={close} />
-      </Suspense>
-    ),
+    sheet:
+      tool === 'headings' &&
+      overFrame(
+        host.current,
+        <Suspense fallback={null}>
+          <HeadingsSheet host={host} onClose={close} />
+        </Suspense>,
+      ),
   }
+}
+
+/**
+ * YAZ-5497: a sheet or a panel over the whole screen goes in the frame (`.app`: the top bar, the screen, the page
+ * arrows, the tab bar), after them, so that its `position: fixed` and `z-index` are the screen's and nothing at the
+ * bottom paints over it; never inside the page's masked scroll box. The frame is `from`'s (else the document's body).
+ */
+export function overFrame(from: Element | null, sheet: ReactNode): ReactNode {
+  return createPortal(sheet, from?.closest('.app') ?? document.body)
 }
