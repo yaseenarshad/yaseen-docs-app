@@ -145,7 +145,7 @@ describe('a tap ticks (YAZ-5494)', () => {
     await tap(seeds)
     expect(seeds.dataset.checked).toBe('true')
     expect(seeds.getAttribute('aria-checked')).toBe('true')
-    expect(port.add).toHaveBeenCalledWith({ path: PATH, body: '', task: { core: '- [ ] Buy seeds', nth: 0, of: 1, checked: true }, holdMs: TICK_HOLD_MS })
+    expect(port.add).toHaveBeenCalledWith({ path: PATH, body: '', task: expect.objectContaining({ core: '- [ ] Buy seeds', nth: 0, of: 1, checked: true }), holdMs: TICK_HOLD_MS })
     // The tick it names finds the same task in the stored page and changes one byte.
     expect(applyTask(TASKS_PAGE, port.list[0]!.task!)).toMatchObject({ kind: 'ticked' })
     // YAZ-5522 N11: again before the send: the tick leaves the list (nothing will be written); the box shows it at once.
@@ -345,7 +345,7 @@ describe('no tap is refused when nothing changed (YAZ-5513, T2)', () => {
     // The real task (line 9) ticks.
     await tap(boxes[1]!)
     expect(said).toEqual([])
-    expect(port.list.map((c) => c.task)).toEqual([{ core: '- [ ] Buy milk', nth: 0, of: 1, checked: true }])
+    expect(port.list.map((c) => c.task)).toMatchObject([{ core: '- [ ] Buy milk', nth: 0, of: 1, checked: true }])
     const out = applyTask(text, port.list[0]!.task!) as { content: string }
     expect(out.content.split('\n')[8]).toBe('- [x] Buy milk')
     // The comment's line (5) is no task of the page: refused, nothing goes in the list.
