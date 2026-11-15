@@ -15,15 +15,21 @@ export interface RemoteTree extends Map<string, string> {
   readonly bytes: ReadonlyMap<string, number>
 }
 
-/** The phone's whole conversation with GitHub: four calls, no git on the device. */
+/** The phone's whole conversation with GitHub: five calls, no git on the device. */
 export interface GithubRemote {
   /** Branch head; passing the last `etag` makes an unchanged answer free (HTTP 304). */
   head(etag?: string): Promise<{ sha: string; etag: string } | 'unchanged'>
   /** Every path and its blob SHA at `commit`, in one request. Rejects `TREE_TRUNCATED` when GitHub cut it short (F6). */
   tree(commit: string): Promise<RemoteTree>
   blob(sha: string): Promise<Uint8Array>
-  /** One atomic commit; rejects `STALE_HEAD` when GitHub has moved past `parent`. Resolves with the new commit SHA. */
-  commit(parent: string, changes: Change[], message: string): Promise<string>
+  /**
+   * One atomic commit; rejects `STALE_HEAD` when GitHub has moved past `parent`. Resolves with the new commit SHA.
+   * `made` hears the commit's SHA once GitHub made it, BEFORE the branch moves to it (YAZ-5513: so a try whose answer
+   * is lost knows which commit it was).
+   */
+  commit(parent: string, changes: Change[], message: string, made?: (sha: string) => Promise<void>): Promise<string>
+  /** A commit's parents. */
+  parents(commit: string): Promise<string[]>
 }
 
 /** GitHub's answer when the ref `PATCH` (force: false) is refused because the branch moved (proof 1B, YAZ-5063). */
@@ -47,6 +53,7 @@ interface TreeEntry {
  * - head: `GET git/ref/heads/{branch}` with `If-None-Match` (a 304 did not lower the rate count);
  * - tree: `GET git/trees/{commit}?recursive=1` (the commit SHA works, so no `GET git/commits` first);
  * - blob: `GET git/blobs/{sha}` with the raw media type (bytes, not base64);
+ * - parents: `GET git/commits/{commit}` (YAZ-5513: is a try's commit in the branch, after a lost answer);
  * - commit: `GET git/commits/{parent}` for its tree, `POST git/blobs` for bytes only, `POST git/trees` with
  *   `base_tree` (text inline: a Markdown commit is 3 writes, not 5), `POST git/commits`, then `PATCH git/refs/heads/
  *   {branch}` with `force: false`. GitHub refuses a moved branch with 422 "Update is not a fast forward": `STALE_HEAD`.
@@ -83,7 +90,14 @@ export function githubRemote(client: GithubClient, repo: string, branch: string)
       return res.data as Uint8Array
     },
 
-    async commit(parent, changes, message) {
+    async parents(commit) {
+      const res = await client.request(git('commits', commit))
+      const parents = (res.data as { parents?: { sha?: unknown }[] } | null)?.parents
+      if (!Array.isArray(parents)) throw new GithubError('UNEXPECTED', res.status, 'GitHub gave no parents for the commit')
+      return parents.map((p) => p.sha).filter((sha): sha is string => typeof sha === 'string')
+    },
+
+    async commit(parent, changes, message, made) {
       if (changes.length === 0) throw new Error('A commit needs at least one change')
       const base = await client.request(git('commits', parent))
       const baseTree = (base.data as { tree?: { sha?: unknown } } | null)?.tree?.sha
@@ -98,8 +112,9 @@ export function githubRemote(client: GithubClient, repo: string, branch: string)
         }
       }
       const tree = await client.request(git('trees'), { method: 'POST', body: { base_tree: baseTree, tree: entries } })
-      const made = await client.request(git('commits'), { method: 'POST', body: { message, tree: (tree.data as { sha: string }).sha, parents: [parent] } })
-      const sha = (made.data as { sha: string }).sha
+      const commit = await client.request(git('commits'), { method: 'POST', body: { message, tree: (tree.data as { sha: string }).sha, parents: [parent] } })
+      const sha = (commit.data as { sha: string }).sha
+      await made?.(sha)
       const moved = await client.request(git('refs', 'heads', branch), { method: 'PATCH', body: { sha, force: false }, allow: [409, 422] })
       if (moved.status === 422 || moved.status === 409) {
         const said = typeof (moved.data as { message?: unknown } | null)?.message === 'string' ? (moved.data as { message: string }).message : ''

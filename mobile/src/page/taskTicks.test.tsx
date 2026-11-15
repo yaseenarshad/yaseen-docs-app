@@ -9,7 +9,7 @@ import type { WaitingComment } from '../comments/outbox'
 import type { NewCommentInput } from '../comments/sender'
 import { TASK_REFUSED_WORDS, applyTask, taskCore } from '../comments/taskWrite'
 import { TASKS_PAGE } from '../dev/taskFixtures'
-import { renderPage, type PageLook } from './pageRender'
+import { renderPage, renderPiece, type PageLook } from './pageRender'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { useTaskTicks } from './taskTicks'
@@ -218,3 +218,99 @@ describe('a tap ticks (YAZ-5494)', () => {
     expect(box.dataset.checked).toBe('true')
   })
 })
+
+/** YAZ-5513: tap the `k`th box the reader drew; the line of the stored page (1-based) that the tick changes, or the refusal. */
+async function tapAndWrite(text: string, k = 0): Promise<number | string> {
+  const port = fakePort()
+  const p = await page(text, port)
+  const box = p.boxes()[k]
+  if (box === undefined) return 'no box'
+  await tap(box)
+  if (p.said.length > 0) return p.said.join(' ')
+  const out = applyTask(text, port.list[0]!.task!)
+  if (out.kind !== 'ticked') return out.kind
+  const at = [...text].findIndex((c, i) => c !== out.content[i])
+  return text.slice(0, at).split('\n').length
+}
+
+describe('a tap ticks the task the reader drew, found with the reader\'s own parser (YAZ-5513)', () => {
+  it('a tick finds its task as the renderer does: never a line inside a fence, an indented code block or an HTML block', async () => {
+    // T1 (N4): a closing line with an info string does not close the fence; the tap ticks line 7, not the code line 4.
+    expect(await tapAndWrite('```\n- [ ] Buy milk\n```js\n- [ ] Buy milk\n```\n\n- [ ] Buy milk\n')).toBe(7)
+    // N5: a fence opened on a list item line hides the task-looking code line 2.
+    expect(await tapAndWrite('- ```md\n  - [ ] Buy milk\n  ```\n- [ ] Buy milk\n')).toBe(4)
+    // N6: a 4-space indented "```" is code, not a fence: the task is line 2, and line 4 is in the real fence below.
+    expect(await tapAndWrite('    ```\n- [ ] Buy milk\n```\n- [ ] Buy milk\n```\n')).toBe(2)
+    // An indented code block and an HTML block hold task-looking lines; the tap ticks the real task.
+    expect(await tapAndWrite('    - [ ] Buy milk\n\n<div>\n- [ ] Buy milk\n</div>\n\n- [ ] Buy milk\n')).toBe(7)
+    // With CRLF line ends too.
+    expect(await tapAndWrite('```\r\n- [ ] Buy milk\r\n```js\r\n- [ ] Buy milk\r\n```\r\n\r\n- [ ] Buy milk\r\n')).toBe(7)
+  })
+})
+
+describe('no tap is refused when nothing changed (YAZ-5513, T2)', () => {
+  it('a task with a commented-out twin can be ticked', async () => {
+    // The same line in an HTML comment, a <div> and a $$ block: no box, so they are no twins of the task.
+    for (const twin of ['<!--\n- [ ] Buy milk\n-->', '<div>\n- [ ] Buy milk\n</div>', '$$\n- [ ] Buy milk\n$$']) {
+      expect(await tapAndWrite(`# Shop\n\n${twin}\n\n- [ ] Buy milk\n`)).toBe(7)
+      act(() => root?.unmount())
+    }
+  })
+
+  it('a long page drawn in pieces: a box names its own line, so a piece read on its own never shifts which task a tap writes', async () => {
+    // A piece cut inside a comment (`renderPage` cuts long pages at blank lines) draws a box for the comment's line;
+    // the whole page, as the send reads it, has no task there. The real task is still the one its box names.
+    const head = `# Long\n\n<!--\n\n`
+    const tail = `- [ ] Buy milk\n\n-->\n\n- [ ] Buy milk\n`
+    const text = head + tail
+    const port = fakePort()
+    const said: string[] = []
+    function Page() {
+      const host = useRef<HTMLDivElement>(null)
+      useTaskTicks(host, PATH, text, port, (w) => said.push(w))
+      useEffect(() => {
+        host.current!.replaceChildren(renderPiece(head, look, 0), renderPiece(tail, look, head.split('\n').length - 1))
+      }, [])
+      return <div className="reader__body" ref={host} />
+    }
+    const el = document.createElement('div')
+    document.body.append(el)
+    root = createRoot(el)
+    await act(async () => root!.render(<Page />))
+    await act(async () => {})
+    const boxes = [...el.querySelectorAll<HTMLElement>('.page-task[data-task]')]
+    expect(boxes).toHaveLength(2)
+    // The real task (line 9) ticks.
+    await tap(boxes[1]!)
+    expect(said).toEqual([])
+    expect(port.list.map((c) => c.task)).toEqual([{ core: '- [ ] Buy milk', nth: 0, of: 1, checked: true }])
+    const out = applyTask(text, port.list[0]!.task!) as { content: string }
+    expect(out.content.split('\n')[8]).toBe('- [x] Buy milk')
+    // The comment's line (5) is no task of the page: refused, nothing goes in the list.
+    await tap(boxes[0]!)
+    expect(said).toEqual([TASK_REFUSED_WORDS.changed])
+    expect(port.list).toHaveLength(1)
+  })
+})
+
+describe('the boxes are the Mac\'s tasks (YAZ-5513, T3)', () => {
+  it('only tasks the Mac reads as tasks get a tappable box', async () => {
+    // CommonMark: a list that does not start at 1 cannot interrupt a paragraph, so `2) [ ] X` is the paragraph's text.
+    // As the Mac reads it (micromark), not after indented code either. Their brackets stay text, as on the Mac.
+    for (const page of ['- parent\n  2) [ ] Buy milk\n', 'Paragraph\n> 2) [ ] Buy milk\n', '    code\n\n2) [ ] Buy milk\n3) [x] Buy milk\n']) {
+      const p = await page2(page)
+      expect(p.boxes()).toHaveLength(0)
+      expect(p.body.textContent).toContain('[ ] Buy milk')
+      act(() => root?.unmount())
+    }
+    // The Mac's tasks keep theirs: a list at 1, a bullet list, one after a blank line.
+    for (const [page, n] of [['- parent\n  1) [ ] Buy milk\n', 1], ['- parent\n  - [ ] Buy milk\n', 1], ['Paragraph\n\n2) [ ] Buy milk\n', 1], ['﻿- [ ] Buy milk\n', 1]] as const) {
+      const p = await page2(page)
+      expect(p.boxes().filter((b) => b.dataset.task !== undefined)).toHaveLength(n)
+      act(() => root?.unmount())
+    }
+  })
+})
+
+/** A page drawn with the tap on, and no list. */
+const page2 = (text: string) => page(text, fakePort())

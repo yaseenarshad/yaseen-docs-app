@@ -114,6 +114,50 @@ describe('a tick from the phone reaches the page', () => {
     expect(t.port.waiting()).toEqual([])
   })
 
+  it('after a lost reply, a retry whose commit is already in the branch history writes nothing (YAZ-5513, W3)', async () => {
+    // The tick reaches GitHub, its answer is lost; the Mac unticks it (a later change) before the retry.
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    let lose = true
+    t.setHook(async (_url, init, forward) => {
+      const res = await forward()
+      if (isPatch(init) && lose) {
+        lose = false
+        await t.macPush({ [PAGE]: TASKS_PAGE })
+        throw new TypeError('Load failed')
+      }
+      return res
+    })
+    await t.port.add({ path: PAGE, body: '', task: tickFor(TASKS_PAGE, '- [ ] Buy seeds', true) })
+    await t.settle()
+    t.setHook(null)
+    t.answers.online()
+    await t.settle()
+    // The retry finds its own commit under the Mac's: done by someone else after it, so it writes nothing.
+    expect(await t.remote(PAGE)).toBe(TASKS_PAGE)
+    expect(t.patches()).toBe(1)
+    expect(t.port.waiting()).toEqual([])
+  })
+
+  it('a lost answer whose commit never reached the branch (GitHub refused the move): the retry still ticks', async () => {
+    const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
+    let lose = true
+    t.setHook(async (_url, init, forward) => {
+      if (isPatch(init) && lose) {
+        lose = false
+        // The commit object was made; the move never reached GitHub.
+        throw new TypeError('Load failed')
+      }
+      return forward()
+    })
+    await t.port.add({ path: PAGE, body: '', task: tickFor(TASKS_PAGE, '- [ ] Buy seeds', true) })
+    await t.settle()
+    t.setHook(null)
+    t.answers.online()
+    await t.settle()
+    expect(await t.remote(PAGE)).toContain('- [x] Buy seeds')
+    expect(t.port.waiting()).toEqual([])
+  })
+
   it('a tick then an untick before the send: the page ends as it began, and no commit is made', async () => {
     const t = await commentsSetup({ [PAGE]: TASKS_PAGE })
     t.s.github.offline = true
