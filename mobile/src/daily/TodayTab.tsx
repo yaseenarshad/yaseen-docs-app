@@ -1,13 +1,13 @@
 import { useApp } from '../app/AppState'
-// The one door to open a file (YAZ-5472). Q4: the Today button is a tab screen's first open, so ALWAYS a full page.
+// The one door to open a file. Q4: the Today button is a tab screen's first open, so ALWAYS a full page.
 import { openFile } from '../explore/openFile'
 import { Toast, useToast } from '../screens/Toast'
 
 const load = () => import('./today')
 
 /**
- * The "Today" button of the tab bar, right of Search (YAZ-5470): the frame shows it only in a vault with Daily pages on
- * (`.yaseendocs/daily-pages.json`, read with the vault's other tab settings: `app/vaultTabs.ts`, YAZ-5476). A tap opens
+ * The "Today" button of the tab bar, right of Search: the frame shows it only in a vault with Daily pages on
+ * (`.yaseendocs/daily-pages.json`, read with the vault's other tab settings: `app/vaultTabs.ts`). A tap opens
  * today's daily page, else the latest one before it (`today.ts`); with none at all, a short line.
  */
 export function TodayTab() {

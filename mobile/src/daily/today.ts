@@ -7,7 +7,7 @@ import type { PhoneIndex } from '../sync/phoneIndex'
 import { INDEX_STATE_NAME, readJson } from '../search/vaultData'
 
 /**
- * THE TODAY BUTTON'S PAGE (YAZ-5470), a chunk of its own: the first load holds only the button (`TodayTab.tsx`).
+ * THE TODAY BUTTON'S PAGE, a chunk of its own: the first load holds only the button (`TodayTab.tsx`).
  * Read only: the phone never makes a daily page.
  *
  * Today's page by the Mac's own rules (`dailyPageName` on the phone's local day, `findDailyPage`: by its TITLE, flat or
