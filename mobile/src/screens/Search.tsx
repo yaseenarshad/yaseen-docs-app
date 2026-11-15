@@ -95,6 +95,9 @@ export function Search() {
   }, [pool, query, kind, vaultKey])
 
   const empty = query.trim() === ''
+  // N5 (sweep1): a vault with its whole copy on the phone and no page is empty (the Mac's "No pages here."); only before
+  // its first sync do the pages come with the next one.
+  const synced = app.sync.vault === vaultKey && app.sync.ready
   const tree = empty && kind !== 'cards'
   const list = useMemo(() => (pool !== null && empty && kind === 'cards' ? emptyBoxRows(pool, kind) : null), [pool, empty, kind])
   const results = empty ? list : found
@@ -164,7 +167,7 @@ export function Search() {
           {notice}
         </p>
       )}
-      {data !== null && data.records.length === 0 && <p className="muted">{unit('No pages yet. They come with the next sync.')}</p>}
+      {data !== null && data.records.length === 0 && <p className="muted">{unit(synced ? 'No pages here.' : 'No pages yet. They come with the next sync.')}</p>}
       {tree && data !== null && data.records.length > 0 && (
         <Suspense fallback={null}>
           <SearchTree data={data} cards={cards} shown={shown} onMore={more} scope={scope} />
