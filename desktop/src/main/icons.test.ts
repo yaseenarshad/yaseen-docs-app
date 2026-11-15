@@ -104,4 +104,13 @@ describe('mergeIconsFile (sync)', () => {
   it('a side that is no icons file settles nothing', () => {
     expect(mergeIconsFile(text({}), '{ broken', text({}))).toBeNull()
   })
+  it('YAZ-5488: keys a newer build added (version 2: rules, colours) are kept and merge key by key; the higher version stays', () => {
+    const base = JSON.stringify({ version: 2, paths: { a: 'lua' }, rules: [{ match: 'Spanish/', icon: 'flag' }], colors: { folder: 'blue', page: 'grey' } })
+    const theirs = JSON.stringify({ version: 2, paths: { a: 'lua', b: 'go' }, rules: [{ match: 'Spanish/', icon: 'flag' }], colors: { folder: 'red', page: 'grey' } })
+    const mine = JSON.stringify({ version: 1, paths: { a: 'lua' }, rules: [{ match: 'French/', icon: 'flag' }], colors: { folder: 'blue', page: 'green' } })
+    expect(JSON.parse(mergeIconsFile(base, theirs, mine) ?? 'null')).toEqual({ version: 2, paths: { a: 'lua', b: 'go' }, rules: [{ match: 'French/', icon: 'flag' }], colors: { folder: 'red', page: 'green' } })
+    // A version-1 writer (YAZ-5483 on) keeps the keys it does not know: its side has them unchanged, so they stay.
+    const old = JSON.stringify({ version: 1, paths: { a: 'lua', c: 'css' }, rules: [{ match: 'Spanish/', icon: 'flag' }], colors: { folder: 'blue', page: 'grey' } })
+    expect(JSON.parse(mergeIconsFile(base, base, old) ?? 'null')).toEqual({ version: 2, paths: { a: 'lua', c: 'css' }, rules: [{ match: 'Spanish/', icon: 'flag' }], colors: { folder: 'blue', page: 'grey' } })
+  })
 })
