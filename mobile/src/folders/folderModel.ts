@@ -2,7 +2,7 @@ import { alsoIn } from '@shared/alsoIn'
 import { inheritColumnsOf, showOtherFilesOf } from '@shared/folderPage'
 import { exactLinkTarget } from '@shared/linkRewrite'
 import { spellings } from '@shared/propertyKeys'
-import { DEFAULT_FOLDER_PAGES, FOLDER_SETTINGS_FILE, type IndexRecord } from '@shared/types'
+import { DEFAULT_FOLDER_PAGES, FOLDER_SETTINGS_FILE, type FolderPagesSettings, type IndexRecord } from '@shared/types'
 import { columnReservedKeys } from '@client/links/reservedKeys'
 import { directlyIn, folderRows, isFolderRow, rowPage, subfolderRows } from '@client/links/folderRows'
 import { boardOptionGroups } from '@client/views/boardOptionGroups'
@@ -66,6 +66,8 @@ export interface FolderModel {
   subfolders: IndexRecord[]
   /** Every page of the vault (the resolver and the Linked mentions columns read them all). */
   data: VaultData
+  /** The vault's folder page defaults (YAZ-5489: its folder-pages.json, `folderPagesFile.ts`; else the Mac's defaults). */
+  defaults: FolderPagesSettings
   /** Other files: the files directly in the folder that are not pages, then the pages and folders moved there. */
   other: OtherFile[]
 }
@@ -116,13 +118,13 @@ export function resolverOf(data: VaultData) {
 }
 
 /** The folder's page, built once for each snapshot of the vault's data. */
-export function folderModel(data: VaultData, dir: string, vaultName: string): FolderModel {
+export function folderModel(data: VaultData, dir: string, vaultName: string, defaults: FolderPagesSettings = DEFAULT_FOLDER_PAGES): FolderModel {
   const ids = data.ids
   const record = data.folders.find((f) => f.folder === dir)
   const textPath = dir === '' ? FOLDER_SETTINGS_FILE : `${dir}/${FOLDER_SETTINGS_FILE}`
   const own = folderSettings(record, ids)
   const folderMap = byFolder(data.folders)
-  const inheritOn = (record === undefined ? undefined : inheritColumnsOf(record.properties)) ?? DEFAULT_FOLDER_PAGES.inheritColumns
+  const inheritOn = (record === undefined ? undefined : inheritColumnsOf(record.properties)) ?? defaults.inheritColumns
   const columns = pageColumns(own.columns, dir, folderMap, ids, inheritOn)
   const below = definedBelowOf(data.folders, folderMap, dir, ids, vaultName)
   const here = new Set(Object.keys(columns).map(keyFold))
@@ -132,7 +134,7 @@ export function folderModel(data: VaultData, dir: string, vaultName: string): Fo
   const settings: FolderSettings = { ...own, columns: page, ...(fromBelow.length > 0 && { fromBelow }) }
 
   // Other files (YAZ-4597): the pages and folders moved there leave the views, while the tray is on.
-  const trayOn = (record === undefined ? undefined : showOtherFilesOf(record.properties)) ?? DEFAULT_FOLDER_PAGES.showOtherFiles
+  const trayOn = (record === undefined ? undefined : showOtherFilesOf(record.properties)) ?? defaults.showOtherFiles
   const all = folderRows(data.records, data.folders, dir)
   const dirs = vaultDirs(data.files)
   const dirSet = new Set(dirs)
@@ -186,7 +188,7 @@ export function folderModel(data: VaultData, dir: string, vaultName: string): Fo
     ...[...movedPages.keys()].filter((p) => !movedFolders.some((sub) => p.startsWith(`${sub}/`))).map((path) => ({ path, name: data.byPath[path]?.title ?? path, type: 'page' })),
     ...movedFolders.map((sub) => ({ path: sub, name: folderTitleOf(data.folders, sub), type: 'folder' })),
   ]
-  return { dir, title: folderTitleOf(data.folders, dir), record, textPath, settings, def, tabs, start: saved?.index ?? tabs[0]?.index ?? -1, pages, subfolders, data, other }
+  return { dir, title: folderTitleOf(data.folders, dir), record, textPath, settings, def, tabs, start: saved?.index ?? tabs[0]?.index ?? -1, pages, subfolders, data, defaults, other }
 }
 
 /** A view of the folder, run: what its tab shows. */
@@ -217,7 +219,7 @@ export function runFolderView(model: FolderModel, index: number, vaultName: stri
   const stored = model.def.views[index]!
   const lensed = cardsOffered && cardRowsOf(stored)
   const def = lensed ? cardLensOn(model.def, index) : model.def
-  const filled = withDefaults(def.views[index]!, DEFAULT_FOLDER_PAGES)
+  const filled = withDefaults(def.views[index]!, model.defaults)
   const view = filled.rows === 'cards' && !cardsOffered ? { ...filled, rows: undefined } : filled
   const cards = cardRowsOf(view)
   const settings = cards ? { ...model.settings, columns: { ...cardColumnsOf(def.views[index]!) }, fromBelow: undefined } : model.settings
@@ -236,7 +238,7 @@ export function runFolderView(model: FolderModel, index: number, vaultName: stri
   const link = (target: string) => resolve(target)?.record.path ?? null
   const mentions = mentionsColumns(settings.columns, data.records, data.folders, link)
   const byFileName = (key: string) => settings.columns[key.startsWith('note.') ? key.slice(5) : key]?.kind === 'image'
-  const result = runView(def, view, shown, { resolve, declared: pageColumnKeys(settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: DEFAULT_FOLDER_PAGES.weekStartsOn, cardSettings: data.review, ...(now !== undefined && { now }) })
+  const result = runView(def, view, shown, { resolve, declared: pageColumnKeys(settings), page, optionOrder, optionParent, mentions, byFileName, weekStartsOn: model.defaults.weekStartsOn, cardSettings: data.review, ...(now !== undefined && { now }) })
   const groups = boardOptionGroups(result.groups, view, (key) => columnTyping(key, shown, null, settings), optionParent)
   const keys = propertyKeys(def, view, shown, pageColumnKeys(settings))
   const ctx: CellTextContext = { resolve, decls: settings.columns, pageFolder: model.dir, folderTitle: (d) => folderTitleOf(data.folders, d) }

@@ -19,6 +19,7 @@ import { MAX_ICON_MATCH, MAX_ICON_RULES } from '@shared/vaultIcons'
 import type { TextFormatting } from '@shared/textFormatting'
 import { appCardLook } from '@shared/cardLook'
 import { appTableLook } from '@shared/tableLook'
+import { folderPagesVault } from '@shared/folderPages'
 import { DEFAULT_SETTINGS, type GithubSyncStatus, type IdsState, type IndexResponse, type SettingsState } from '@shared/types'
 import { UNIT_WORDS, unitTextOf } from '../vault/unitWord'
 import { idsAskMessage, idsLettersAsk, KEEP_OTHER_ASK, keepIdsAskMessage, lettersAskMessage, lettersLine, NEW_LETTERS_ASK, oldIdsAskMessage, oldIdsLine } from './idsAskMessage'
@@ -1451,6 +1452,35 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
   })
 
+  it('YAZ-5489: the Folder pages view and page rows read and write the picked vault\'s folder-pages.json, with the Vault dropdown; the personal rows stay the app\'s; the app\'s settings with no vault', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const value = folderPagesVault({ rowHeight: 'tall' })
+    const folderPages = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/a', choose, value, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, folderPages }} onClose={vi.fn()} />))
+    clickNav(container, 'Folder pages')
+    expect([...(row(container, 'folderPagesVault')?.querySelector('select')?.options ?? [])].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+    expect(rowButtons(container, 'folderPages.rowHeight').find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent).toBe('Tall')
+    act(() => rowButtons(container!, 'folderPages.rowHeight').find((b) => b.textContent === 'Medium')!.click())
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ rowHeight: 'medium' }))
+    act(() => rowButtons(container!, 'folderPages.showOtherFiles').find((b) => b.textContent === 'Off')!.click())
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ rowHeight: 'tall', showOtherFiles: false }))
+    expect(onChange).not.toHaveBeenCalled()
+    // A personal row (Week starts on) stays this Mac's.
+    act(() => rowButtons(container!, 'folderPages.weekStartsOn').find((b) => b.getAttribute('aria-pressed') !== 'true')!.click())
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledTimes(2)
+    unmount()
+    const none = mountOn('Folder pages')
+    expect(row(none.el, 'folderPagesVault')).toBeNull()
+    act(() => rowButtons(none.el, 'folderPages.rowHeight').find((b) => b.textContent === 'Tall')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, folderPages: { ...DEFAULT_SETTINGS.folderPages, rowHeight: 'tall' } })
+  })
+
   it('YAZ-5487: the Tables rows read and write the picked vault\'s table-look.json (the 21 settings), with the Vault dropdown with two vaults; the habits stay the app\'s; the app\'s settings with no vault', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -2003,7 +2033,7 @@ describe('SettingsDialog search (D6)', () => {
     // And a grouped folder table's Group line style (YAZ-4798), whose hint names the sidebar's thread.
     expect(headings(el)).toEqual(['Sidebar › Level lines', 'Editor › Bullet threading', 'Editor › Section indent', 'Folder pages › View defaults'])
     expect(groupTitles(el)).toEqual([])
-    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them.'])
+    expect([...el.querySelectorAll('.settings-group__hint')].map((h) => h.textContent)).toEqual([THREADING_HINT, SECTION_INDENT_HINT, 'A view with no choice of its own uses these. Its menus then say "from Settings", and Reset goes back to them. Saved in the vault\'s folder-pages.json, with the Page group and Confirm changes: each vault has its own, on this Mac and on the phone.'])
     expect(rowIds(el)).toEqual(['sidebarLineStyle', 'bulletThreading', 'threadWidth', 'threadColor', 'sectionStep', 'sectionLines', 'folderPages.groupLineStyle'])
     // "guide lines" finds the three guide line rows of Outline (YAZ-4094), under the one breadcrumb.
     type(searchInput(el), 'guide lines')

@@ -231,6 +231,8 @@ interface SidebarProps {
    * delete sheet's "Don't ask me again" (GRO-2272).
    */
   settings: SettingsState
+  /** Show folder page files of each vault (YAZ-5489: its folder-pages.json, else the app's); absent, the app's. */
+  pageFilesIn?: (root: string) => boolean
   onChangeSettings: (next: SettingsState) => void
   /** The footer cog: App mounts the settings dialog, so the cog only asks for it (YAZ-1679). */
   onOpenSettings: () => void
@@ -689,6 +691,7 @@ const NO_DIRS: readonly string[] = []
 
 /** Mounted with `key={one vault of the window}` by App (YAZ-2631 D5), so all state below lives while that vault is in the window. */
 export function Sidebar({
+  pageFilesIn,
   vaults,
   lists,
   icons,
@@ -966,7 +969,9 @@ export function Sidebar({
   // The folder page rows (YAZ-4587, D37): one pass over each vault's folder records when a vault's folder records or
   // the switch change; a snapshot that moved no folder record reads nothing, and a set that names the same folders
   // keeps its identity, so a save elsewhere re-renders no tree level.
-  const pagesOn = showFolderPageFiles(settings)
+  // YAZ-5489: each vault's own switch (its folder-pages.json), as one key, so the effect runs only when one changes.
+  const appPagesOn = showFolderPageFiles(settings)
+  const pagesOnKey = roots.map((vault) => (pageFilesIn?.(vault) ?? appPagesOn ? '1' : '0')).join('')
   const [pageRows, setPageRows] = useState<ReadonlySet<string>>(NO_PAGE_ROWS)
   useEffect(() => {
     let seen: (readonly IndexRecord[])[] | null = null
@@ -976,14 +981,14 @@ export function Sidebar({
       seen = folders
       const next = new Set<string>()
       roots.forEach((vault, i) => {
-        for (const dir of folderPageRows(vault, folders[i], pagesOn)) next.add(dir)
+        for (const dir of folderPageRows(vault, folders[i], pagesOnKey[i] === '1')) next.add(dir)
       })
       setPageRows((prev) => (sameSet(prev, next) ? prev : next))
     }
     read()
     const offs = indexes.map((index) => index.subscribe(read))
     return () => offs.forEach((off) => off())
-  }, [roots, indexes, pagesOn])
+  }, [roots, indexes, pagesOnKey])
   // The rows' labels (YAZ-2420 🔒 D15), by the same rule: a snapshot that changed no title keeps its Map.
   const titles = useAllPathTitles(indexes)
   // The rows' IDs (YAZ-4940 "In the files list"), off the indexes of the vaults that chose it alone: none chose it, no map and no read.

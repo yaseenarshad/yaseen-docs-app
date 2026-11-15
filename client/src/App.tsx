@@ -3,7 +3,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type FolderPagesSettings, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -64,6 +64,7 @@ import { setLanguageHelpers } from './code/languageHelpers'
 import { setCellNoteButtonSetting } from './editor/table/timeFormatSetting'
 import { setAppTableLook, setVaultTableLook, tableLookKey, tableLookVars } from './editor/table/tableLook'
 import { appTableLook, tableLookSettings, type TableLookSettings } from '@shared/tableLook'
+import { folderPagesFor as folderPagesOver, type FolderPagesVault } from '@shared/folderPages'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart } from './editor/table/cellNoteCard'
 import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
@@ -333,6 +334,19 @@ function layerStyleOf(formatting: TextFormatting, pills: LinkPills, cardVars: CS
  * its look by it, `tableLookAt`), and with a table-look.json its whole look (`initial` where it sets none); with none,
  * only the name: its tables read `.app`'s, the app's look. Cached on the look object (one per file read).
  */
+/**
+ * A vault's folder page defaults (YAZ-5489): its folder-pages.json's 27 parts over the app's Settings › Folder pages (the
+ * personal parts always the app's), cached on both objects so a folder page's props keep their identity.
+ */
+const folderPagesCache = new WeakMap<FolderPagesSettings, WeakMap<FolderPagesVault, FolderPagesSettings>>()
+function folderPagesOfVault(app: FolderPagesSettings, vault: FolderPagesVault | null): FolderPagesSettings {
+  if (vault === null) return app
+  let byVault = folderPagesCache.get(app)
+  if (byVault === undefined) folderPagesCache.set(app, (byVault = new WeakMap()))
+  let out = byVault.get(vault)
+  if (out === undefined) byVault.set(vault, (out = folderPagesOver(app, vault)))
+  return out
+}
 const tableVarsCache = new WeakMap<TableLookSettings, CSSProperties>()
 const tableKeyVars = new Map<string, CSSProperties>()
 function tableVarsOf(root: string, look: TableLookSettings | null): CSSProperties {
@@ -712,6 +726,8 @@ export function App() {
   const [cardLookRoot, setCardLookRoot] = useState<string | null>(null)
   // Settings › Tables (YAZ-5487): the vault its Vault dropdown shows; null is the active tab's.
   const [tableLookRoot, setTableLookRoot] = useState<string | null>(null)
+  // Settings › Folder pages (YAZ-5489): the vault its Vault dropdown shows; null is the active tab's.
+  const [folderPagesRoot, setFolderPagesRoot] = useState<string | null>(null)
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
   /**
    * The window's daily pages (YAZ-5491): the vault's `daily-pages.json` is the one source. The first vault, the active
@@ -1102,6 +1118,19 @@ export function App() {
     root === null || tableLookScope.root === null
       ? undefined
       : { vaults: placeVaults, root: tableLookScope.root, choose: setTableLookRoot, value: tableLookScope.tableLook.settings ?? appTable, save: tableLookScope.tableLook.save }
+  /** Show folder page files of each vault (YAZ-5489): its folder-pages.json's, else the app's. */
+  // One function while no vault's switch changes (the Sidebar is memoised).
+  const pageFilesKey = roots.map((at, i) => `${at}\n${folderPagesOfVault(settings.folderPages, vaults[i]?.folderPages.vault ?? null).showFolderPageFiles ? 1 : 0}`).join('\n')
+  const pageFilesIn = useMemo(() => {
+    const on = new Map(pageFilesKey.split('\n').reduce<[string, boolean][]>((out, part, i, all) => (i % 2 === 0 ? [...out, [part, all[i + 1] === '1']] : out), []))
+    return (at: string): boolean => on.get(at) ?? false
+  }, [pageFilesKey])
+  /** Settings › Folder pages (YAZ-5489): the picked vault's folder-pages.json, the app's parts until it has one. */
+  const folderPagesScope = (folderPagesRoot !== null && roots.includes(folderPagesRoot) ? vaults[roots.indexOf(folderPagesRoot)] : null) ?? active
+  const settingsFolderPages =
+    root === null || folderPagesScope.root === null
+      ? undefined
+      : { vaults: placeVaults, root: folderPagesScope.root, choose: setFolderPagesRoot, value: folderPagesOfVault(appSettings.folderPages, folderPagesScope.folderPages.vault), save: folderPagesScope.folderPages.save }
   /** Settings' icon colours and rules (YAZ-5488): the picked vault's icons.json `colors` / `rules`, each the app's until it has its own. */
   const iconLookScope = iconLookRoot !== null && roots.includes(iconLookRoot) ? iconLookRoot : active.root
   const iconLookOwn = vaultIcons.lookOf(iconLookScope)
@@ -1635,6 +1664,7 @@ export function App() {
       setIconLookRoot(null)
       setCardLookRoot(null)
       setTableLookRoot(null)
+      setFolderPagesRoot(null)
     }
   }, [settingsOpen])
   const openSettings = useCallback(() => {
@@ -3894,7 +3924,8 @@ export function App() {
       hoverFolderViews: hoverOn(settings, 'folderViews'),
       hoverFolderLinks: hoverOn(settings, 'folderLinks'),
       // YAZ-4585: Settings › Folder pages, one object; each view reads its own key first, then these.
-      folderPages: settings.folderPages,
+      // YAZ-5489: the page's vault's folder-pages.json over the app's (the personal parts stay the app's).
+      folderPages: folderPagesOfVault(settings.folderPages, scope.folderPages.vault),
       previewScope: editorPreviewScope,
       // YAZ-3564: the keys the user changed; a drawing follows them at once (K4).
       hotkeys: settings.hotkeys,
@@ -4123,7 +4154,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, cardLook: settingsCardLook, tableLook: settingsTableLook, folderPages: settingsFolderPages, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
       {courseOpen !== null && (
         <Suspense fallback={null}>
           <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />
@@ -4236,6 +4267,7 @@ export function App() {
           onCreateConsumed={consumeSidebarCreate}
           onLensChange={changeLens}
           settings={settings}
+          pageFilesIn={pageFilesIn}
           onChangeSettings={changeSettings}
           onOpenSettings={openSettings}
           onOpenDailyPage={settings.dailyPages ? openDailyPage : undefined}

@@ -22,6 +22,7 @@ import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
 import { useCardLook, type CardLookState } from '../review/useCardLook'
 import { useTableLook, type TableLookState } from '../settings/useTableLook'
+import { useFolderPagesFile, type FolderPagesFileState } from '../settings/useFolderPagesFile'
 import { useDailyPages, type DailyPagesState } from '../settings/useDailyPages'
 import { useVaultNewPlaces, type VaultNewPlacesState } from '../settings/useVaultNewPlaces'
 import { useProperties } from '../views/useProperties'
@@ -63,6 +64,8 @@ export interface VaultScope {
   cardLook: CardLookState
   /** How this vault's tables look and how its new tables start (YAZ-5487): `.yaseendocs/table-look.json`; no file draws the app's look. */
   tableLook: TableLookState
+  /** This vault's folder page view and page defaults (YAZ-5489): `.yaseendocs/folder-pages.json`; no file reads the app's Settings › Folder pages. */
+  folderPages: FolderPagesFileState
   /** How every link pill of this vault looks (YAZ-4924): `.yaseendocs/link-pills.json`. Each page layer reads its CSS variables; `wikilinks` carries the pieces a pill gains. */
   linkPills: LinkPillsState
   /** This vault's daily pages (YAZ-5491): `.yaseendocs/daily-pages.json`, the one source; App picks the window's (`windowDailyPages`). */
@@ -151,6 +154,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const textFormatting = useTextFormatting(root, notify)
   const cardLook = useCardLook(root, notify)
   const tableLook = useTableLook(root, notify)
+  const folderPages = useFolderPagesFile(root, notify)
   const linkPills = useLinkPills(root, notify)
   const dailyPages = useDailyPages(root, notify)
   const newPlaces = useVaultNewPlaces(root, notify)
@@ -227,6 +231,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     textFormatting,
     cardLook,
     tableLook,
+    folderPages,
     linkPills,
     dailyPages,
     newPlaces,
