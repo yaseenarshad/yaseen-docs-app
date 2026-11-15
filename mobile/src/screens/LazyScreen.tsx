@@ -8,10 +8,32 @@ import { Component, lazy, Suspense, useMemo, useState, type ComponentType, type 
  * answers stay. Every lazy screen of `mobile/src` uses it (Review, the page view, the card view).
  */
 export function lazyScreen<P extends object>(load: () => Promise<{ default: ComponentType<P> }>, options: { waiting?: ReactNode } = {}) {
+  // YAZ-5552: a screen whose chunk has loaded draws at once, with no `lazy`. A `lazy` suspends at its first render even
+  // with the chunk loaded (a new one at each mount did so at every open), and React shows a boundary's content that
+  // suspended about 300 ms later (its reveal throttle): the loud sync dot's sheet opened 0.3 s after the tap.
+  let loaded: ComponentType<P> | null = null
+  let failed = false
+  const get = () =>
+    load().then(
+      (m) => ((loaded = m.default), m),
+      (e: unknown) => {
+        failed = true
+        throw e
+      },
+    )
+  let shared = lazy(get)
+  // React keeps a failed import's error, so "Try again" (and the next mount after a failure) needs a fresh one.
+  const fresh = () => {
+    if (failed) {
+      failed = false
+      shared = lazy(get)
+    }
+    return shared
+  }
   function LazyScreen(props: P & { onBack?: () => void }) {
     const [attempt, setAttempt] = useState(0)
-    // A new `lazy` for each attempt: React keeps a failed import's error, so "Try again" needs a fresh one.
-    const Screen = useMemo(() => lazy(load), [attempt]) // eslint-disable-line react-hooks/exhaustive-deps
+    // Picked once a mount (and at each Try again): a type changed under a drawn screen would draw it anew, its state lost.
+    const Screen = useMemo(() => loaded ?? fresh(), [attempt])
     const { onBack, ...rest } = props
     return (
       <ChunkBoundary key={attempt} onRetry={() => void relinkFailedStyles().then(() => setAttempt((n) => n + 1))} onBack={onBack}>
@@ -21,6 +43,8 @@ export function lazyScreen<P extends object>(load: () => Promise<{ default: Comp
       </ChunkBoundary>
     )
   }
+  /** Loads the chunk ahead (after the first paint): the first open then draws at once too. */
+  LazyScreen.preload = (): Promise<void> => get().then(() => undefined)
   return LazyScreen
 }
 

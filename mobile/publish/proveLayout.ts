@@ -91,8 +91,9 @@ import { freePort } from './freePort'
  *    47 px, and on a small phone on its side (667x375, YAZ-5522 N7, side insets 0 and 47 px): each sheet at the inset +
  *    12 px + 8 px a step (on its side too: ~363 px tall), a strip of the dim above, the top sheet's head whole below the inset.
  *  - every menu with a real finger (YAZ-5552) at 375 px: Page tools ⋯, a page card's ⋯, Search's Type chip, an Explore
- *    sheet's ⋯, Review's deck button and ⋯: a tap opens it, a tap on its button again closes it; a tap outside closes it
- *    and does nothing else.
+ *    sheet's ⋯, Review's deck button and ⋯, the loud sync dot's sheet: a tap opens it, a tap on its button again closes
+ *    it; a tap outside closes it and does nothing else; each tap draws within 100 ms of the lift (the dot's sheet took
+ *    302 ms: a lazy chunk's reveal).
  *  - Settings (`#fixture=settings`, YAZ-5555), light and dark, at 320 and 375 px: the build's line at the top, one line.
  *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
@@ -1402,6 +1403,7 @@ const MENUS: { fixture: string; name: string; button: string; menu: string; outs
   { fixture: 'search-tree', name: 'Search\'s Type chip', button: '.search__type-chip', menu: '.search__menu', outside: '.tree__row--dir', what: `document.querySelector('.tree__row--dir')?.closest('li')?.getAttribute('aria-expanded')` },
   { fixture: 'explore-mentions', name: 'an Explore sheet\'s ⋯', button: '.explore-sheet:last-of-type .explore-sheet__more', menu: '.explore-sheet__menu', outside: '.explore-sheet:last-of-type .linked-mentions__header', what: `[document.querySelectorAll('.explore-sheet').length, document.querySelector('.explore-sheet:last-of-type .linked-mentions__header')?.getAttribute('aria-expanded')].join()` },
   { fixture: 'review-mochi-menus', name: 'Review\'s deck button', button: '.review__count-btn', menu: '.review__sheet', outside: '.review__card', what: `document.querySelector('.review__card')?.textContent` },
+  { fixture: 'page-not-sent', name: 'the sync dot, loud (its sheet)', button: '.sync-status', menu: '.status-sheet', outside: '.reader__body h1', what: `document.querySelector('.topbar__title')?.textContent` },
   { fixture: 'review-mochi-menus', name: 'Review\'s ⋯', button: '.review__more', menu: '.review__menu--more', outside: '.review__card', what: `document.querySelector('.review__card')?.textContent` },
 ]
 if (process.env.LAYOUT_MENUS !== 'no') {
@@ -1421,11 +1423,15 @@ if (process.env.LAYOUT_MENUS !== 'no') {
     let before: unknown = null
     let after: unknown = null
     let closedOutside = false
+    let shown: number[] = []
     if (button !== null) {
+      // How soon each tap shows (ms from the finger's lift to the menu drawn open or shut): a menu answers at once.
+      await evaluate(`(() => { const sel = ${JSON.stringify(m.menu)}; window.__lift = 0; window.__shown = []; let was = document.querySelector(sel) !== null; document.addEventListener('touchend', () => (window.__lift = performance.now()), true); new MutationObserver(() => { const now = document.querySelector(sel) !== null; if (now !== was) { was = now; window.__shown.push(Math.round(performance.now() - window.__lift)) } }).observe(document.body, { childList: true, subtree: true }) })()`)
       for (let i = 0; i < 3; i++) {
         await tap((await evaluate(CENTRE(m.button))) ?? button)
         seen.push(await isOpen())
       }
+      shown = (await evaluate(`window.__shown`)) as number[]
       writeFileSync(file.replace('.png', `-menu-${MENUS.indexOf(m)}.png`), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       before = await evaluate(m.what)
       const out = await evaluate(CENTRE(m.outside))
@@ -1434,9 +1440,9 @@ if (process.env.LAYOUT_MENUS !== 'no') {
       after = await evaluate(m.what)
     }
     await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page)
-    const ok = seen.join() === 'true,false,true' && closedOutside && before === after
+    const ok = seen.join() === 'true,false,true' && closedOutside && before === after && shown.length === 3 && shown.every((ms) => ms < 100)
     if (!ok) failed++
-    console.log(`${ok ? 'PASS' : 'FAIL'}  menu toggle (YAZ-5552): ${m.name} (#fixture=${m.fixture}) at 375x667, real touch: taps on its button -> ${button === null ? 'NO BUTTON' : seen.map((o) => (o ? 'open' : 'closed')).join(', ')}; a tap outside -> ${closedOutside ? 'closed' : 'STILL OPEN'}, ${before === after ? 'nothing else changed' : `CHANGED ${JSON.stringify(before)} -> ${JSON.stringify(after)}`}  ${file}`)
+    console.log(`${ok ? 'PASS' : 'FAIL'}  menu toggle (YAZ-5552): ${m.name} (#fixture=${m.fixture}) at 375x667, real touch: taps on its button -> ${button === null ? 'NO BUTTON' : seen.map((o) => (o ? 'open' : 'closed')).join(', ')} (drawn ${shown.map((ms) => `${ms} ms`).join(', ')} after the lift${shown.every((ms) => ms < 100) ? '' : ', TOO SLOW'}); a tap outside -> ${closedOutside ? 'closed' : 'STILL OPEN'}, ${before === after ? 'nothing else changed' : `CHANGED ${JSON.stringify(before)} -> ${JSON.stringify(after)}`}  ${file}`)
   }
 }
 // YAZ-5555: the build's line at the top of Settings (`#fixture=settings`), light and dark, at 320 and 375 px: it shows
