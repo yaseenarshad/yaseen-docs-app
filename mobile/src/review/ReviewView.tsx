@@ -11,7 +11,7 @@ import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { cardIdOf, isCardFix, pageCards, withCardFix, type CardRating } from '@shared/cardLine'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
-import { cardSides, hiddenCount } from '@shared/cardText'
+import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { ReviewHost } from '@client/review/reviewHost'
 import type { ReviewSettings } from '@shared/reviews'
@@ -141,7 +141,8 @@ type Step = Reveal & { key: string | null }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
-type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
+/** `name` and `rating` (YAZ-5500): the hint line's "Last: Capital of Spain (Forgot)" once the 4-second Undo has gone. */
+type Line = { kind: 'answer'; count: number; id: string; name: string; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
@@ -396,7 +397,9 @@ function SessionScreen({
     const fromDrawing = drawingOf(page)
     const earlier = line
     const answeredBefore = session.answered.length
-    setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id })
+    // The title's words as they read (a hidden-word mark gives its words: the card is answered), else the ID.
+    const name = cardPieces(cardName).map((p) => p.text).join('').trim()
+    setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id, name: name === '' ? card.id : name, rating })
     // YAZ-5266: the guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
     // YAZ-5502: whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
     // the phone React may draw the next card AFTER a 0 ms timer, and the screen then still showed the old count, so a
@@ -489,6 +492,8 @@ function SessionScreen({
     return () => clearTimeout(id)
   }, [lineId])
   const quietLine = shownLine !== null && fresh === lineId ? shownLine : null
+  // YAZ-5500: once the 4-second Undo has gone, the hint line says the last answer, until the next one (or its Undo).
+  const lastAnswer = quietLine === null && line?.kind === 'answer' && line.count === answeredNow && answeredNow > 0 ? line : null
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
@@ -605,7 +610,16 @@ function SessionScreen({
             {revealed}
           </p>
           <div className="review__hint">
-            {(quietLine === null || quietLine.kind === 'answer') && <span className="review__hint-text">{hintText(left)}</span>}
+            {lastAnswer !== null ? (
+              // YAZ-5500 (Yaseen's pick, A, text only): the last answer, in words, until the next one. No ✕ or ✓ and no
+              // colour, so nothing leans on the next answer. Not a tap: a tap on it never steps the card.
+              <span className="review__lastanswer">
+                Last: <span className="review__lastanswer-name">{lastAnswer.name}</span>
+                <span className="review__lastanswer-rating"> ({answerLabel(lastAnswer.rating, review.settings)})</span>
+              </span>
+            ) : (
+              (quietLine === null || quietLine.kind === 'answer') && <span className="review__hint-text">{hintText(left)}</span>
+            )}
             <span className="review__last" role="status" aria-live="polite">
               {quietLine !== null && (
                 <>
@@ -728,7 +742,7 @@ const NO_OP = () => undefined
 const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
 
 /** What a tap on the screen keeps for itself: every control (its own rule), and the open menus. */
-const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu'
+const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__lastanswer'
 
 /**
  * The progress bar in steps (YAZ-5415, round 4; the Mac's YAZ-5020): one step for each card, in the order answered —

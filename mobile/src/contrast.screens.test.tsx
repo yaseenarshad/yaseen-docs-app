@@ -73,6 +73,8 @@ const FIXTURES = [
   'review-due-missed',
   'review-due-done',
   'review-due-clear',
+  // YAZ-5500: the last answer in the hint line.
+  'review-last',
   'review-lost',
   'friends-empty',
   'friends-states',

@@ -86,6 +86,12 @@ const DUE_END = (fresh: boolean): Record<string, string> => ({
   ...(fresh && { 'spanish/places.md': page('Places', ...['la playa', 'el museo', 'la plaza'].map((w, i) => block(`What does "${w}" mean?\n---\n{{place ${i + 1}}}`, `PLC-${i + 1}`))) }),
 })
 
+/** YAZ-5500: `#fixture=review-last`: after one Forgot, past the 4-second Undo, the hint line says the last answer. */
+const LAST: Record<string, string> = {
+  '.yaseendocs/review.json': '{}',
+  'geography/capitals.md': page('Capitals', block('What is the capital of Spain?\n---\n{{Madrid}}', `CAP-1, title "Capital of Spain", ${DUE}`), block('What is the capital of Portugal?\n---\n{{Lisbon}}', `CAP-2, title "Capital of Portugal", ${DUE}`)),
+}
+
 /** A made-up robin: a small picture drawn as a data URL. */
 const ROBIN = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140"><rect width="240" height="140" fill="#e9eef5"/><circle cx="120" cy="78" r="38" fill="#7a5a43"/><circle cx="106" cy="86" r="22" fill="#d8642b"/><circle cx="134" cy="62" r="5" fill="#222"/></svg>')}`
 
@@ -100,7 +106,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   step('setup')
   // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
@@ -244,6 +250,11 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
       }
       // The ring has played (1.4 s): the screenshot shows its end.
       await wait(1600)
+      break
+    case 'review-last':
+      await wait(500) // past the tap guard (YAZ-5226)
+      press('Forgot')
+      await wait(4300) // the 4-second Undo goes
       break
     case 'review-lost':
       press('Remembered')

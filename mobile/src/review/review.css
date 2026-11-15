@@ -555,6 +555,26 @@
   text-align: center;
 }
 
+/* YAZ-5500: "Last: Capital of Spain (Forgot)" — one quiet line; a long title gives way with "…", the answer word stays. */
+.review__lastanswer {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.review__lastanswer-name {
+  min-width: 0;
+  margin-left: 0.3em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review__lastanswer-rating {
+  flex: none;
+  white-space: pre;
+}
+
 .review__last {
   display: inline-flex;
   align-items: center;

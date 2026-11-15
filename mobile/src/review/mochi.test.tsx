@@ -142,7 +142,8 @@ describe('the controls (YAZ-5415): ← → as the Mac, an answer at any time, Un
     await h.click('Remembered')
     await real(4_100)
     expect(q('.review__hint .review__undo')).toBeNull()
-    expect(hint()).toBe('Tap anywhere · 2 left')
+    // YAZ-5500: then the hint line says the last answer, in words.
+    expect(hint()).toBe('Last: AR-1 (Remembered)')
     await h.click('More card actions')
     await h.click('Undo last answer')
     expect(h.head()).toBe('AR-1')
