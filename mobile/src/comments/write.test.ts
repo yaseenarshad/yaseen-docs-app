@@ -155,3 +155,12 @@ describe('numbering, refusals and the second try', () => {
     expect(applyComment(once, C('a1b2c3d4'))).toEqual({ kind: 'already' })
   })
 })
+
+describe('YAZ-5512 S1: an emptied properties block and a later `---` line', () => {
+  it('the comment goes into the empty block; the body (and its `---` line) stays byte for byte', () => {
+    const before = '---\n---\n# A\n\nIntro\n\n---\n\n```card\nQ\n```\n<!-- card: NC-1 -->\n'
+    const out = added(before, C('a1b2c3d4'))
+    expect(out.endsWith('---\n# A\n\nIntro\n\n---\n\n```card\nQ\n```\n<!-- card: NC-1 -->\n')).toBe(true)
+    expect(readComments(out).map((c) => c.id)).toEqual(['a1b2c3d4'])
+  })
+})

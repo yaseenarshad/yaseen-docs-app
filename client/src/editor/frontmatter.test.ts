@@ -47,6 +47,23 @@ describe('frontmatter split/join', () => {
     expect(r.frontmatter).toBe('---\n---\n')
     expect(r.body).toBe('')
   })
+
+  // YAZ-5512 S1: the empty block was tried AFTER the lazy "some lines" form, so a later `---` line (a thematic break,
+  // a card back) closed the block instead, and every card above that line vanished.
+  it('an empty properties block ends at its own second fence (YAZ-5512 S1)', () => {
+    for (const [md, block] of [
+      ['---\n---\nBody\n\n---\n\nMore\n', '---\n---\n'],
+      ['---\r\n---\r\n# A\r\n\r\n---\r\n', '---\r\n---\r\n'],
+      ['---\n...\nBody\n---\n', '---\n...\n'],
+      ['---\n--- \n```card\nQ\n---\nA\n```\n<!-- card: NC-1 -->\n', '---\n--- \n'],
+    ]) {
+      const r = splitFrontmatter(md)
+      expect(r.frontmatter, JSON.stringify(md)).toBe(block)
+      expect(r.frontmatter + r.body).toBe(md)
+    }
+    // A block with keys still ends at its FIRST closing fence.
+    expect(splitFrontmatter('---\na: 1\n---\nBody\n---\n').frontmatter).toBe('---\na: 1\n---\n')
+  })
 })
 
 describe('renameFrontmatterKey (YAZ-4551)', () => {

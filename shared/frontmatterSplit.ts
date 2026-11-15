@@ -17,7 +17,12 @@ export interface SplitMarkdown {
   body: string
 }
 
-const FM_RE = /^(---\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$))/
+/**
+ * The EMPTY block is tried FIRST (YAZ-5512 S1). With the "some lines" form first, `---\n---\n` followed later by any
+ * `---` line (a thematic break, a card's back) was read as one block all the way to that later line, so every card
+ * above it vanished, and a comment was refused or (in the Mac's merge) threw.
+ */
+const FM_RE = /^(---\r?\n(?:(?:---|\.\.\.)[ \t]*(?:\r?\n|$)|[\s\S]*?\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)))/
 
 export function splitFrontmatter(markdown: string): SplitMarkdown {
   const m = FM_RE.exec(markdown)
