@@ -1,6 +1,7 @@
 import { slowedUntil, staleUntil } from '../github/backoff'
 import { GithubError, type GithubErrorCode } from '../github/client'
 import type { VaultStore } from '../store'
+import { isStorageTimeout } from '../store/backend'
 import { SEND_AFTER_MS } from '../sync/cadence'
 import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
@@ -122,6 +123,13 @@ function createAnswerList(options: AnswersOptions): Answers {
   let slowedInRow = 0
   /** Sends in a row that ended in `STALE_HEAD` (the branch kept moving): each one doubles the wait. */
   let staleInRow = 0
+  /**
+   * YAZ-5596 (1): the phone's storage did not answer (iOS after a wake). `loadFailed`: the stored list did not load, so
+   * it loads again at the next sign of life (a pass, the app shown, an answer). `storageStalled`: the last send failed
+   * on storage, so it is sent again then, as after no signal. What waits stays waiting.
+   */
+  let loadFailed = false
+  let storageStalled = false
   let state: AnswersState = { vault: null, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }
   /**
    * The view's mtime of each file whose shown text differs from the stored copy, with that text. The shared
@@ -162,6 +170,8 @@ function createAnswerList(options: AnswersOptions): Answers {
   /** GitHub asked to wait, or the branch kept moving: no send before `retryAt`. */
   const slowed = () => (state.problem === 'RATE_LIMITED' || state.problem === 'STALE_HEAD') && state.retryAt !== null && state.retryAt > clock.now()
   const needsPerson = () => state.problem !== null && NEEDS_PERSON.includes(state.problem)
+  /** A failure that a sign of life ends: no signal, or the storage that did not answer. */
+  const waitsForSignal = () => state.problem !== null && (NO_SIGNAL.includes(state.problem) || storageStalled)
   /** A send at once, unless the person must act first or GitHub asked to wait. */
   const sendSoon = () => {
     if (!waiting() || needsPerson() || slowed()) return
@@ -187,10 +197,21 @@ function createAnswerList(options: AnswersOptions): Answers {
     vault = next
     box = null
     forgetVaultState()
-    const id = next
-    loading = (async () => {
+    loading = load(next)
+  }
+
+  function load(id: string | null): Promise<void> {
+    loadFailed = false
+    return (async () => {
       if (id === null) return setState({})
-      const opened = await openOutbox(store, id)
+      let opened: Outbox
+      try {
+        opened = await openOutbox(store, id)
+      } catch {
+        // The storage did not answer: the list loads again at the next sign of life (`reload`).
+        if (vault === id && !stopped) loadFailed = true
+        return
+      }
       if (vault !== id || stopped) return
       box = opened
       setState({})
@@ -198,12 +219,18 @@ function createAnswerList(options: AnswersOptions): Answers {
       if (waiting()) void sendNow()
     })()
   }
+  /** YAZ-5596 (1): the stored list that did not load, loaded again. */
+  function reload(): Promise<void> {
+    if (loadFailed && box === null && vault !== null && !stopped) loading = load(vault)
+    return loading
+  }
 
   const unsubscribe = engine.subscribe((event) => {
     if (event.type === 'state') {
       follow(event.state.vault)
+      if (loadFailed) void reload()
       // The engine's poll works again after no signal: send what waits.
-      if (event.state.status === 'synced' && !state.sending && running === null && timer === null && state.problem !== null && NO_SIGNAL.includes(state.problem)) sendSoon()
+      if (event.state.status === 'synced' && !state.sending && running === null && timer === null && waitsForSignal()) sendSoon()
     } else if (event.type === 'changed' && event.vault === vault && afterglow.length > 0 && !state.sending) afterglow = []
   })
   follow(engine.state().vault)
@@ -229,6 +256,7 @@ function createAnswerList(options: AnswersOptions): Answers {
         if (report === null) return
         slowedInRow = 0
         staleInRow = 0
+        storageStalled = false
         if (report.result === 'offline') return setState({ problem: 'OFFLINE', retryAt: null })
         if (!report.stored) {
           const still = new Set(own.waiting().map((w) => w.seq))
@@ -238,6 +266,7 @@ function createAnswerList(options: AnswersOptions): Answers {
         setState({ problem: null, retryAt: null, ...(report.sent > 0 && { lastSentAt: clock.now() }) })
       } catch (error) {
         const problem: SendProblem = error instanceof GithubError ? error.code : 'FAILED'
+        storageStalled = isStorageTimeout(error)
         if (problem === 'RATE_LIMITED') {
           slowedInRow++
           const retryAt = slowedUntil(error as GithubError, slowedInRow, clock.now())
@@ -302,8 +331,15 @@ function createAnswerList(options: AnswersOptions): Answers {
     waiting: () => box?.waiting() ?? [],
     async add(entries) {
       await loading
+      if (box === null) await reload()
       if (box === null || vault === null) throw new Error('No vault is open')
-      const group = await box.add(entries, clock.now())
+      const own = box
+      const madeAt = clock.now()
+      // YAZ-5596 (1, 2): a write the storage did not answer was dropped with its connection: once more on a new one.
+      const group = await own.add(entries, madeAt).catch((error: unknown) => {
+        if (!isStorageTimeout(error)) throw error
+        return own.add(entries, madeAt)
+      })
       setState({})
       emit({ type: 'changed', vault, paths: [...new Set(entries.map((e) => e.path))] })
       if (!slowed()) plan(clock.now() + SEND_AFTER_MS)
@@ -355,9 +391,13 @@ function createAnswerList(options: AnswersOptions): Answers {
     sendNow,
     setVisible(visible) {
       if (!visible) sendSoon()
-      else if (timer === null && running === null && state.problem !== null && NO_SIGNAL.includes(state.problem)) sendSoon()
+      else {
+        if (loadFailed) void reload()
+        if (timer === null && running === null && waitsForSignal()) sendSoon()
+      }
     },
     online() {
+      if (loadFailed) void reload()
       sendSoon()
     },
     async idle() {

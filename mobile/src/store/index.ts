@@ -8,6 +8,7 @@ export * from './vaults'
 export { askToKeepStorage, type KeepStorage } from './persist'
 export { memoryBackend, newMemoryDisk } from './memoryBackend'
 export { tokenStoreOn, type TokenStore } from './tokenStore'
+export { StorageTimeoutError, isStorageTimeout } from './backend'
 
 /** The app's store and its tokens (3E), on ONE IndexedDB connection, so "Sign out and erase" clears both. */
 export async function openPhoneStorage(): Promise<{ store: VaultStore; tokens: TokenStore }> {

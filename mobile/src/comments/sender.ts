@@ -2,6 +2,7 @@ import { newCommentId, nowIso } from '@shared/comments'
 import { slowedUntil, staleUntil } from '../github/backoff'
 import { GithubError } from '../github/client'
 import type { VaultStore } from '../store'
+import { isStorageTimeout } from '../store/backend'
 import { browserClock } from '../sync/clock'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { openCommentBox, type CommentBox, type WaitingComment } from './outbox'
@@ -94,6 +95,9 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
   let stopped = false
   let slowedInRow = 0
   let staleInRow = 0
+  /** YAZ-5596 (1): the storage did not answer: the list loads again, or the send goes again, at the next sign of life. */
+  let loadFailed = false
+  let storageStalled = false
   let state: CommentsState = { vault: null, waiting: 0, ticks: 0, refused: 0, refusedTicks: 0, refusedGone: 0, sending: false, problem: null, retryAt: null }
 
   const all = () => box?.waiting() ?? []
@@ -147,15 +151,30 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
     slowedInRow = 0
     staleInRow = 0
     state = { ...state, problem: null, retryAt: null }
-    const id = next
-    loading = (async () => {
+    loading = load(next)
+  }
+
+  function load(id: string | null): Promise<void> {
+    loadFailed = false
+    return (async () => {
       if (id === null) return setState({})
-      const opened = await openCommentBox(store, id)
+      let opened: CommentBox
+      try {
+        opened = await openCommentBox(store, id)
+      } catch {
+        if (vault === id && !stopped) loadFailed = true
+        return
+      }
       if (vault !== id || stopped) return
       box = opened
       setState({})
       planNext()
     })()
+  }
+  /** YAZ-5596 (1): the stored list that did not load (the storage hung), loaded again. */
+  function reload(): Promise<void> {
+    if (loadFailed && box === null && vault !== null && !stopped) loading = load(vault)
+    return loading
   }
 
   /**
@@ -182,9 +201,10 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
   const unsubscribe = engine.subscribe((event) => {
     if (event.type !== 'state') return
     follow(event.state.vault)
+    if (loadFailed) void reload()
     // YAZ-5522 N11: a sync begins: the held ticks go (in the engine's lane, one send at a time).
     if (event.state.status === 'syncing' && sendable().some((c) => c.task !== undefined && c.tried !== true && c.notBefore > clock.now())) void flush()
-    if (event.state.status === 'synced' && running === null && state.problem !== null && NO_SIGNAL.includes(state.problem)) planNext()
+    if (event.state.status === 'synced' && running === null && state.problem !== null && (NO_SIGNAL.includes(state.problem) || storageStalled)) planNext()
   })
   follow(engine.state().vault)
 
@@ -221,11 +241,13 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         if (report === null) return void (elsewhere = true)
         slowedInRow = 0
         staleInRow = 0
+        storageStalled = false
         if (report.result === 'offline') return setState({ problem: 'OFFLINE', retryAt: null })
         const stillUnsigned = own.waiting().some((c) => c.by === undefined && c.refused === undefined && c.task === undefined)
         setState({ problem: stillUnsigned ? 'NO_LOGIN' : null, retryAt: null })
       } catch (error) {
         const problem = error instanceof GithubError ? error.code : 'FAILED'
+        storageStalled = isStorageTimeout(error)
         if (problem === 'RATE_LIMITED') {
           slowedInRow++
           setState({ problem, retryAt: slowedUntil(error as GithubError, slowedInRow, clock.now()) })
@@ -264,6 +286,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
     waiting: (path) => (path === undefined ? all() : all().filter((c) => c.path === path)),
     async add(input) {
       await loading
+      if (box === null) await reload()
       if (box === null || vault === null) throw new Error('No vault is open')
       const madeAt = clock.now()
       const hold = Math.max(0, input.holdMs ?? 0)
@@ -281,7 +304,12 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         ...(input.task === undefined ? {} : { task: input.task }),
         ...(was === undefined ? {} : { was }),
       }
-      await box.add(comment)
+      const own = box
+      // YAZ-5596 (1): a write the storage did not answer was dropped with its connection: once more on a new one.
+      await own.add(comment).catch((error: unknown) => {
+        if (!isStorageTimeout(error)) throw error
+        return own.add(comment)
+      })
       // A new comment from the person: a problem that waited for them is theirs to see again at the send.
       if (needsPerson()) state = { ...state, problem: null }
       setState({})
@@ -313,8 +341,12 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
     flushTicks: flush,
     setVisible(visible) {
       if (!visible) void flush()
+      else if (loadFailed) void reload()
     },
-    online: soon,
+    online() {
+      if (loadFailed) void reload()
+      soon()
+    },
     async idle() {
       await loading
       while (running !== null) await running

@@ -1,8 +1,13 @@
-import { StaleWriteError, TABLES, tableOf, type Backend, type Key, type Op, type Table } from './backend'
+import { StaleWriteError, StorageTimeoutError, TABLES, tableOf, type Backend, type Key, type Op, type Table } from './backend'
 
 /** The database's own schema number (its object stores). It is not the format of the data: that is `STORE_FORMAT`. */
 export const DB_SCHEMA = 1
 export const DB_NAME = 'notecards'
+/**
+ * YAZ-5596 (1): the longest wait for one IndexedDB call (its transaction to its answer) and for the open. A
+ * normal call takes a few ms, a big index read on a slow phone under a second; past this the call has no answer.
+ */
+export const STORAGE_TIMEOUT_MS = 8_000
 
 
 /**
@@ -24,8 +29,13 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
 /**
  * The phone's backend: one IndexedDB database. It opens on the first call. When the connection is lost, the
  * next call opens a new one, and a call that finds it lost is tried one more time on the new one.
+ *
+ * YAZ-5596 (1): no call waits forever. A call with no answer in `timeoutMs` (iOS after a wake: a request that never
+ * fires) fails with `StorageTimeoutError`; its connection is dropped (closed and forgotten), so the next call opens a
+ * new one. A write is aborted first, so it cannot land later. An open with no answer fails the same way.
  */
-export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRange?: typeof IDBKeyRange } = {}): Backend {
+export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRange?: typeof IDBKeyRange; timeoutMs?: number } = {}): Backend {
+  const timeoutMs = options.timeoutMs ?? STORAGE_TIMEOUT_MS
   const name = options.name ?? DB_NAME
   // Both from the same IndexedDB: the browser's, or a test's fake-indexeddb.
   const factory = options.factory ?? indexedDB
@@ -36,6 +46,15 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
   let opening: Promise<IDBDatabase> | null = null
   const forget = (db: IDBDatabase) => {
     if (current === db) current = null
+  }
+  /** A connection that stopped answering: forgotten and closed, so the next call opens a new one. */
+  const drop = (db: IDBDatabase) => {
+    forget(db)
+    try {
+      db.close()
+    } catch {
+      // Already closed.
+    }
   }
 
   function openOnce(): Promise<IDBDatabase> {
@@ -73,33 +92,91 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
 
   function connect(): Promise<IDBDatabase> {
     if (current !== null) return Promise.resolve(current)
-    opening ??= open().then(
-      (db) => {
-        current = db
-        opening = null
-        return db
-      },
-      (error: unknown) => {
-        opening = null
-        throw error
-      },
-    )
-    return opening
+    if (opening !== null) return opening
+    const attempt: Promise<IDBDatabase> = new Promise((resolve, reject) => {
+      // An open with no answer: this attempt fails, and the next call starts a new one. If it answers later, its
+      // connection is closed at once (nobody uses it).
+      let late = false
+      const timer = setTimeout(() => {
+        late = true
+        if (opening === attempt) opening = null
+        reject(new StorageTimeoutError('open'))
+      }, timeoutMs)
+      open().then(
+        (db) => {
+          clearTimeout(timer)
+          if (late) {
+            try {
+              db.close()
+            } catch {
+              // Already closed.
+            }
+            return
+          }
+          current = db
+          if (opening === attempt) opening = null
+          resolve(db)
+        },
+        (error: unknown) => {
+          clearTimeout(timer)
+          if (late) return
+          if (opening === attempt) opening = null
+          reject(error)
+        },
+      )
+    })
+    opening = attempt
+    return attempt
   }
 
-  async function run<T>(work: (db: IDBDatabase) => Promise<T>): Promise<T> {
+  /**
+   * One call on `db`, with the time limit. `onStop` gets what to undo when the limit ends it (a write's abort).
+   * On the limit: the call fails with `StorageTimeoutError` and the connection is dropped.
+   */
+  function timed<T>(db: IDBDatabase, work: (db: IDBDatabase, onStop: (undo: () => void) => void) => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const undos: (() => void)[] = []
+      let done = false
+      const timer = setTimeout(() => {
+        if (done) return
+        done = true
+        for (const undo of undos) {
+          try {
+            undo()
+          } catch {
+            // The transaction already ended.
+          }
+        }
+        drop(db)
+        reject(new StorageTimeoutError())
+      }, timeoutMs)
+      const end = (fn: () => void) => {
+        if (done) return
+        done = true
+        clearTimeout(timer)
+        fn()
+      }
+      let call: Promise<T>
+      try {
+        call = work(db, (undo) => void undos.push(undo))
+      } catch (error) {
+        call = Promise.reject(error)
+      }
+      call.then(
+        (value) => end(() => resolve(value)),
+        (error: unknown) => end(() => reject(error)),
+      )
+    })
+  }
+
+  async function run<T>(work: (db: IDBDatabase, onStop: (undo: () => void) => void) => Promise<T>): Promise<T> {
     const db = await connect()
     try {
-      return await work(db)
+      return await timed(db, work)
     } catch (error) {
       if (!isLostConnection(error)) throw error
-      forget(db)
-      try {
-        db.close()
-      } catch {
-        // Already closed.
-      }
-      return work(await connect())
+      drop(db)
+      return timed(await connect(), work)
     }
   }
 
@@ -115,10 +192,15 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
       const tables = [...new Set(ops.map(tableOf))]
       const checks = ops.filter((op): op is Extract<Op, { check: Table }> => 'check' in op)
       return run(
-        (db) =>
+        (db, onStop) =>
           new Promise<void>((resolve, reject) => {
             // `strict`: committed means written to disk, not only to the OS cache.
             const tx = db.transaction(tables, 'readwrite', { durability: 'strict' })
+            // A write that hit the time limit is aborted, so it never lands after the caller was told it failed.
+            onStop(() => {
+              tx.onabort = null
+              tx.abort()
+            })
             tx.oncomplete = () => resolve()
             tx.onabort = () => reject(tx.error ?? new DOMException('The write was stopped', 'AbortError'))
             const stop = (error: unknown) => {
