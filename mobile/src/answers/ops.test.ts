@@ -110,9 +110,11 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     expect(applyOps(page, [{ kind: 'review', id: 'NC-2', review: R1 }, { kind: 'unreview', id: 'NC-2', at: R1.at, rating: R1.rating }]).content).toBe(page)
   })
 
-  it('a new review goes after the reviews already on the line, as the Mac writes it', () => {
-    const answered = applyOps(page, [{ kind: 'review', id: 'NC-2', review: R2 }]).content
-    expect(lineOf(applyOps(answered, [{ kind: 'review', id: 'NC-2', review: R1 }]).content, 'NC-2')).toBe('<!-- card: NC-2, 2026-11-14T06:02Z again, 2026-11-14T06:01Z good 9s -->')
+  it('a new review goes after the reviews already on the line, as the Mac writes it; an older one at its time (YAZ-5520)', () => {
+    const answered = applyOps(page, [{ kind: 'review', id: 'NC-2', review: R1 }]).content
+    expect(lineOf(applyOps(answered, [{ kind: 'review', id: 'NC-2', review: R2 }]).content, 'NC-2')).toBe('<!-- card: NC-2, 2026-11-14T06:01Z good 9s, 2026-11-14T06:02Z again -->')
+    const late = applyOps(page, [{ kind: 'review', id: 'NC-2', review: R2 }]).content
+    expect(lineOf(applyOps(late, [{ kind: 'review', id: 'NC-2', review: R1 }]).content, 'NC-2')).toBe('<!-- card: NC-2, 2026-11-14T06:01Z good 9s, 2026-11-14T06:02Z again -->')
   })
 
   it('a page with CRLF line ends keeps them; a page with no change comes back as the same string', () => {
@@ -241,5 +243,48 @@ describe('YAZ-5512 S1: an emptied properties block (`---\n---`, the Mac leaves i
     const out = applyOps(before, [{ kind: 'review', id: 'NC-1', review: R1 }])
     expect(out.lost).toEqual([])
     expect(out.content).toBe(before.replace('NC-1 -->', 'NC-1, 2026-11-14T06:01Z good 9s -->'))
+  })
+})
+
+describe('YAZ-5520: a list that holds an unreview and a review of the same review, applied twice, keeps the order of the reviews', () => {
+  const pg = (body: string) => pageText('Page', 'NC-1', ['NC-2']).replace('<!-- card: NC-2 -->', `<!-- card: ${body} -->`)
+  const twice = (before: string, ops: CardOp[]) => {
+    const once = applyOps(before, ops).content
+    return [once, applyOps(once, ops).content]
+  }
+  it('an undo and a redo of a review, then an older review (seed 32795): the reviews go in time order', () => {
+    const at07: CardReview = { at: '2026-11-14T06:07Z', rating: 'good' }
+    const at27: CardReview = { at: '2026-11-14T06:27Z', rating: 'good' }
+    const ops: CardOp[] = [{ kind: 'unreview', id: 'NC-2', ...at27 }, { kind: 'review', id: 'NC-2', review: at27 }, { kind: 'review', id: 'NC-2', review: at07 }]
+    const [once, again] = twice(pg('NC-2, 2026-11-14T06:27Z good'), ops)
+    expect(once).toBe(pg('NC-2, 2026-11-14T06:07Z good, 2026-11-14T06:27Z good'))
+    expect(again).toBe(once)
+  })
+  it('two copies of one minute, one undone, then a later review (seed 17250)', () => {
+    const at19: CardReview = { at: '2026-11-14T06:19Z', rating: 'good' }
+    const at29: CardReview = { at: '2026-11-14T06:29Z', rating: 'easy' }
+    const ops: CardOp[] = [
+      { kind: 'review', id: 'NC-2', review: at19 },
+      { kind: 'review', id: 'NC-2', review: at19, nth: 2 },
+      { kind: 'unreview', id: 'NC-2', ...at19 },
+      { kind: 'review', id: 'NC-2', review: at29 },
+    ]
+    const [once, again] = twice(pg('NC-2, 2026-11-14T06:19Z good, 2026-11-14T06:29Z easy'), ops)
+    expect(once).toBe(pg('NC-2, 2026-11-14T06:19Z good, 2026-11-14T06:29Z easy'))
+    expect(again).toBe(once)
+  })
+  it('a review taken out and put back by one list keeps its place: between marks, and out of time order (seed 10366)', () => {
+    const at16: CardReview = { at: '2026-11-14T06:16Z', rating: 'good' }
+    const at28: CardReview = { at: '2026-11-14T06:28Z', rating: 'hard' }
+    const ops: CardOp[] = [{ kind: 'unreview', id: 'NC-2', ...at16 }, { kind: 'review', id: 'NC-2', review: at16 }, { kind: 'review', id: 'NC-2', review: at28 }, { kind: 'next', id: 'NC-2', on: true, at: 2 }]
+    const held = pg('NC-2, 2026-11-14T06:16Z good, next, 2026-11-14T06:28Z hard')
+    expect(applyOps(held, ops).content).toBe(held)
+    const late = pg('NC-2, 2026-11-14T06:28Z hard, 2026-11-14T06:16Z good')
+    expect(applyOps(late, ops.slice(0, 2)).content).toBe(late)
+  })
+  it('a new answer still goes right after the last review, as the Mac writes it; an older one goes at its time', () => {
+    const before = pg('NC-2, 2026-11-14T06:07Z good, tags "a"')
+    expect(applyOps(before, [{ kind: 'review', id: 'NC-2', review: R2 }]).content).toBe(pg('NC-2, 2026-11-14T06:02Z again, 2026-11-14T06:07Z good, tags "a"'))
+    expect(applyOps(before, [{ kind: 'review', id: 'NC-2', review: { at: '2026-11-14T06:30Z', rating: 'easy' } }]).content).toBe(pg('NC-2, 2026-11-14T06:07Z good, 2026-11-14T06:30Z easy, tags "a"'))
   })
 })

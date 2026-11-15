@@ -15,6 +15,7 @@ import {
   withCardReview,
   withoutCardReview,
   type CardLine,
+  type CardPart,
   type CardRating,
   type CardReview,
 } from '@shared/cardLine'
@@ -56,6 +57,17 @@ export type CardOp =
   | { kind: 'notitle'; id: string; on: boolean }
 
 /**
+ * YAZ-5520: a new review goes at its TIME among the line's reviews: before the first review made later, else right
+ * after the last review. A new answer is the newest, so it goes where the Mac writes it (`withCardReview`); an older
+ * one goes in time order, as the Mac's merge (`withCardReviews`) keeps them. The place depends only on the reviews,
+ * never on the order in which one list added them.
+ */
+function withReviewInTime(line: CardLine, review: CardReview): CardLine {
+  const later = line.parts.findIndex((p) => p.kind === 'review' && p.review.at > review.at)
+  return later === -1 ? withCardReview(line, review) : { parts: [...line.parts.slice(0, later), { kind: 'review', review }, ...line.parts.slice(later)] }
+}
+
+/**
  * One action on one card line, with the shared card logic (`shared/cardLine.ts`). Each kind is IDEMPOTENT: an action
  * that the line already holds changes nothing. So a send that reached GitHub, but whose answer the phone never got,
  * writes the review ONE time when it is sent again (a review is its time and its rating: `cardReviewKey`).
@@ -65,7 +77,7 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
     case 'review': {
       const key = cardReviewKey(op.review)
       const held = cardReviewsOf(line).filter((r) => cardReviewKey(r) === key).length
-      return held >= (op.nth ?? 1) ? line : withCardReview(line, op.review)
+      return held >= (op.nth ?? 1) ? line : withReviewInTime(line, op.review)
     }
     case 'unreview': {
       // YAZ-5181: the review at `at` WITH this rating, the last one (as `withoutCardReview` picks). Gone already: no
@@ -89,6 +101,62 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
   }
 }
 
+type ReviewPart = Extract<CardPart, { kind: 'review' }>
+const sameReview = (a: CardReview, b: CardReview) => a.at === b.at && a.rating === b.rating && a.seconds === b.seconds
+
+/**
+ * One card's actions, in their order (`applyOp` each). YAZ-5520: a review that one list takes out and puts back (an
+ * unreview, then a review of the same time and rating) goes back at ITS place, not at the end: a review taken out
+ * stays in the line as a gap until the end of the list, and a review of its name fills the gap (the last one taken
+ * out) before it takes a new place. So the list applied to its own result changes nothing: before, it took the review
+ * out and wrote it again after the last review (or after a mark the list put after it), and a second run moved it.
+ * The same line when nothing changed.
+ */
+export function applyCardOps(line: CardLine, ops: readonly CardOp[]): CardLine {
+  let parts = line.parts
+  const gone = new Set<CardPart>()
+  const live = (): CardLine => (gone.size === 0 ? { parts } : { parts: parts.filter((p) => !gone.has(p)) })
+  for (const op of ops) {
+    if (op.kind === 'review') {
+      const key = cardReviewKey(op.review)
+      const gap = [...gone].reverse().find((p): p is ReviewPart => p.kind === 'review' && cardReviewKey(p.review) === key)
+      const held = live().parts.filter((p) => p.kind === 'review' && cardReviewKey(p.review) === key).length
+      if (gap === undefined || held >= (op.nth ?? 1)) {
+        const now = live()
+        const after = applyOp(now, op)
+        if (after !== now) parts = withGaps(parts, gone, after.parts)
+        continue
+      }
+      gone.delete(gap)
+      if (!sameReview(gap.review, op.review)) parts = parts.map((p) => (p === gap ? { kind: 'review', review: op.review } : p))
+      continue
+    }
+    const now = live()
+    const after = applyOp(now, op)
+    if (after === now) continue
+    const kept = new Set(after.parts)
+    const removed = now.parts.filter((p) => !kept.has(p))
+    // An unreview takes ONE review out: it stays as a gap. Any other change (a mark) is written around the gaps.
+    if (op.kind === 'unreview' && removed.length === 1 && after.parts.length === now.parts.length - 1) gone.add(removed[0])
+    else parts = withGaps(parts, gone, after.parts)
+  }
+  if (parts === line.parts && gone.size === 0) return line
+  return live()
+}
+
+/** `after` (the live parts, changed) with each gap of `parts` put back right after the part it followed (or first). */
+function withGaps(parts: readonly CardPart[], gone: ReadonlySet<CardPart>, after: CardPart[]): CardPart[] {
+  if (gone.size === 0) return after
+  const kept = new Set(after)
+  const follows = new Map<CardPart | null, CardPart[]>()
+  let anchor: CardPart | null = null
+  for (const p of parts) {
+    if (gone.has(p)) follows.set(anchor, [...(follows.get(anchor) ?? []), p])
+    else if (kept.has(p)) anchor = p
+  }
+  return [...(follows.get(null) ?? []), ...after.flatMap((p) => [p, ...(follows.get(p) ?? [])])]
+}
+
 /**
  * Pure: `ops` applied, in their order, to a page's text (a page, or a card file: its properties stay byte for byte).
  * A card is found as `changeCard` finds it: the first card of the body whose line holds the ID (`pageCards`); the page
@@ -109,7 +177,7 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
   // result changes nothing (a mark taken out and put back would go to the writer's place, which can differ).
   const lastMark = new Map<string, CardOp>()
   for (const op of ops) if (op.kind !== 'review' && op.kind !== 'unreview') lastMark.set(`${op.id.toLowerCase()}\n${op.kind}`, op)
-  const lines = new Map<number, CardLine>()
+  const byCard = new Map<number, CardOp[]>()
   const lost: CardOp[] = []
   for (const op of ops) {
     const n = at.get(op.id.toLowerCase())
@@ -118,8 +186,9 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
       continue
     }
     if (op.kind !== 'review' && op.kind !== 'unreview' && lastMark.get(`${op.id.toLowerCase()}\n${op.kind}`) !== op) continue
-    lines.set(n, applyOp(lines.get(n) ?? cards[n].line, op))
+    byCard.set(n, [...(byCard.get(n) ?? []), op])
   }
+  const lines = new Map<number, CardLine>([...byCard].map(([n, list]) => [n, applyCardOps(cards[n].line, list)]))
   const changed = [...lines].filter(([n, line]) => line !== cards[n].line)
   if (changed.length === 0) return { content, lost }
   // YAZ-5409: each changed line is SPLICED (`spliceCardLine`): the parts the actions kept keep their bytes and places.
