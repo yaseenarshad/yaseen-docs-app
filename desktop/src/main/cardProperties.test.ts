@@ -113,3 +113,15 @@ describe('property parts on the card line (YAZ-5379)', () => {
     expect(b).not.toHaveProperty('properties')
   })
 })
+
+describe('YAZ-5410: a number the writer puts in exponent form reads back as that number', () => {
+  it.each([1e-7, 1e21, 2 ** 70, -3.5e-9, 0.0000001])('%s', (v) => {
+    const text = formatCardLine(withCardProperty(EMPTY_CARD_LINE, 'n', v))!
+    expect(cardPropertiesOf(parseCardLine(text)!)).toEqual({ n: v })
+    expect(formatCardLine(parseCardLine(text)!)).toBe(text)
+  })
+
+  it('a hand-written exponent reads as a number too; a word that only looks like one stays an unknown part', () => {
+    expect(cardPropertiesOf(line('<!-- card: NC-1, a 1E5, b 2e+3, c 1e -->'))).toEqual({ a: 1e5, b: 2e3 })
+  })
+})

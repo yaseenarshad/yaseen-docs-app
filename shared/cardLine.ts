@@ -185,7 +185,7 @@ const unquoteText = (quoted: string): string =>
 /** The card line's own words: never a property's name (YAZ-5379), in any capitals. */
 const CARD_LINE_WORDS: ReadonlySet<string> = new Set(['title', 'off', 'next', 'notitle'])
 const BARE_NAME_RE = /^[\p{L}_][^\s",\\<>]*$/u
-const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/
+const NUMBER_RE = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/
 const TOKEN_RE = /[ \t]*("(?:[^"\\]|\\.)*"|[^\s"]+)/y
 
 /**

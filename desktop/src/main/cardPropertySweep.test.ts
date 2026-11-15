@@ -40,3 +40,10 @@ describe('cardFilePropertiesMoved (YAZ-5384)', () => {
     expect(after).toBe(file('kind: card\n', '<!-- card: GEO-204, title "Rivers of Seville", level "A2" -->').replace(/\n/g, '\r\n'))
   })
 })
+
+describe('YAZ-5410: the sweep keeps a very small or very large number readable', () => {
+  it('ratio 0.0000001 and big 1e21 move onto the line and read back', () => {
+    const after = cardFilePropertiesMoved(file('kind: card\nratio: 0.0000001\nbig: 1e21\n'))!
+    expect(cardPropertiesOf(cardFileCard(after)!.line)).toEqual({ ratio: 0.0000001, big: 1e21 })
+  })
+})
