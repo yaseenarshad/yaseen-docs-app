@@ -1,4 +1,4 @@
-import { getOutlineFoldKey } from '@client/editor/outline/outlineFoldKeys'
+import { getOutlineFoldKey, outlineFoldLabel } from '@client/editor/outline/outlineFoldKeys'
 
 /**
  * FOLDING ON THE PHONE (YAZ-5568, option A): the Mac's fold rules on the drawn page (no editor).
@@ -14,7 +14,8 @@ import { getOutlineFoldKey } from '@client/editor/outline/outlineFoldKeys'
  *  - HIDING: one attribute (`data-fold-hidden`) on each hidden block, so a hidden block leaves the screen and VoiceOver's
  *    reading order. Nothing is written into the page.
  *  - KEYS: the Mac's (`outlineFoldKeys.ts`): `<hash>:<n>` for a bullet, `h:<hash>:<n>` for a heading, the label's
- *    occurrence among the foldable lines of its kind. A line whose words change drops its fold, as on the Mac.
+ *    occurrence among the foldable lines of its kind (a bullet's counted without a leading `1) ` / `2. `, as the Mac
+ *    counts). A line whose words change drops its fold, as on the Mac.
  *
  * A long page draws in slices: `scan()` after each slice gives the new blocks their arrows and their hidden state (only
  * the new blocks are read; a section that runs into the next slice is followed across it), and `apply()` after the
@@ -204,8 +205,10 @@ export function attachFolds(body: HTMLElement, options: FoldOptions = {}): PageF
       if (li.closest(CARD) !== null) continue
       const { label, rest } = itemParts(li)
       if (rest.length === 0 || !foldableItem(rest)) continue
-      const n = bulletCount.get(label) ?? 0
-      bulletCount.set(label, n + 1)
+      // The Mac counts a bullet's occurrence by its key's label: `1) Fruit` and `2) Fruit` are two, never one twice.
+      const keyLabel = outlineFoldLabel(label)
+      const n = bulletCount.get(keyLabel) ?? 0
+      bulletCount.set(keyLabel, n + 1)
       if (itemButton(li) !== null) continue
       const b = button('bullet', getOutlineFoldKey(label, n), label === '' ? 'bullet' : label)
       const folded = isFolded(b.dataset.foldKey!)

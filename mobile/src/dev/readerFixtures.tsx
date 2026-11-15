@@ -13,7 +13,7 @@ import { remember } from '../search/recent'
 import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
-import { CENTRE_FILES, FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
+import { CENTRE_FILES, FOLDS_FILES, NUMBERED_FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
 import { NUMBERED_TASKS_PAGE, TASKS_PAGE } from './taskFixtures'
 import { writeFolds } from '../store/foldPref'
 import { fixtureAnswers } from './fixtureAnswers'
@@ -85,7 +85,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -234,6 +234,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
           ? TEXT_SIZE_FILES
         : name === 'page-sections'
           ? SECTIONS_FILES
+        : name.startsWith('page-folds-numbered')
+          ? NUMBERED_FOLDS_FILES
         : name.startsWith('page-folds')
           ? FOLDS_FILES
         : name === 'page-table-subheads'
@@ -788,6 +790,27 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       await typed('text size')
       await open(/^Text size/, '.reader__body .page-card .card__body *')
       break
+    case 'page-folds-numbered':
+    case 'page-folds-numbered-folded':
+    case 'page-folds-numbered-all': {
+      // YAZ-5568: the reported shape (bullets whose text starts "1) "); folded: the parent with the link folded; all:
+      // Collapse all, then Morning and that parent opened again (the reported state).
+      writeFolds(READER_ID, 'days/Day notes.md', [])
+      await typed('day notes')
+      await open(/^Day notes, page/, '.reader__body li')
+      const arrow = (words: string) => document.querySelector<HTMLElement>(`.reader__body .fold-btn[data-fold-label^="${words}"]`)?.click()
+      if (name === 'page-folds-numbered-folded') arrow('934am')
+      if (name === 'page-folds-numbered-all') {
+        press('Page tools')
+        await until(() => document.querySelector('.page-tools__menu') !== null)
+        press(/Collapse all/)
+        await wait(100)
+        arrow('Morning')
+        arrow('934am')
+      }
+      await wait(200)
+      break
+    }
     case 'page-folds':
     case 'page-folds-folded':
     case 'page-folds-menu':

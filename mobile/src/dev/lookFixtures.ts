@@ -106,3 +106,40 @@ export const FOLDS_FILES: Record<string, string> = {
   'garden/Garden plan.md': `---\ntitle: Garden plan\n---\n\n${FOLDS_PAGE}\n`,
   'garden/Garden plan, no folds.md': `---\ntitle: Garden plan, no folds\nfolding: false\n---\n\n${FOLDS_PAGE.replace('# Garden plan', '# Garden plan, no folds')}\n`,
 }
+
+/**
+ * YAZ-5568 (numbered text): a day page of the reported shape, made-up: `*` bullets two spaces deep, a loose parent (a
+ * blank line under it), a parent with a `[[link]]` whose children start `1) ` to `4) ` (bullet text on the Mac, never a
+ * numbered list), deeper squares, and the other ways a line starts with a number or a letter.
+ */
+export const NUMBERED_FOLDS_PAGE = [
+  '# Day notes',
+  'PLAN',
+  [
+    '* Morning',
+    '  * [[DEMO-40]]',
+    '',
+    '    * What sets the app apart?',
+    '',
+    '      * Ans: it opens fast',
+    '  * 902am',
+    '',
+    '    * gym time now',
+    '    * a little work first',
+    '  * 934am - [[DEMO-40]] Reasons the app over the others',
+    '    * 1) click into bullets (the old app had this but it was not smooth)',
+    '    * 2) use the mouse to see the heading level',
+    '    * 3) highlight colours the way i want',
+    '    * 4) keys to expand and collapse (no toggles)',
+    '  * 933am - quick work session',
+    '    * 1. start with the list',
+    '      * (1) in brackets',
+    '        * a) a letter',
+    '          * i. a roman one',
+    '    * 10) ten and up',
+  ].join('\n'),
+].join('\n\n')
+
+export const NUMBERED_FOLDS_FILES: Record<string, string> = {
+  'days/Day notes.md': `---\ntitle: Day notes\nfolding: true\n---\n\n${NUMBERED_FOLDS_PAGE}\n`,
+}
