@@ -13,7 +13,7 @@ import { renderPage, type PageLook } from './pageRender'
  * stylesheets in the page, the real drawings (the page renderer, the Mac's card drawing), and each place's computed style.
  */
 const sheet = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
-const SHEETS = ['../styles.css', '../../../client/src/editor/card/card.css', '../../../client/src/editor/table/table.css', '../../../client/src/review/cardScreens.css', './reader.css', '../review/review.css']
+const SHEETS = ['../styles.css', '../../../client/src/editor/card/card.css', '../../../client/src/editor/table/cardTable.css', '../../../client/src/review/cardScreens.css', './reader.css', '../review/review.css']
 
 const LONG = 'const answer = someVeryLongFunctionName(firstArgument, secondArgument, thirdArgument, fourthArgument, fifthArgument)'
 const URL_LINE = 'https://example.com/a/very/long/path/that/never/stops/with-no-spaces-at-all-1234567890abcdef1234567890abcdef'

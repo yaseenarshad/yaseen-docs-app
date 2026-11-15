@@ -85,6 +85,8 @@ import {
   type Valign,
 } from './tableComment'
 import { checkedView, type TableViewDef } from './super/viewGrammar'
+// The rules a card's table shares first, then the editor's own: the order of the one file they were.
+import './cardTable.css'
 import './table.css'
 
 export * from './tableComment'

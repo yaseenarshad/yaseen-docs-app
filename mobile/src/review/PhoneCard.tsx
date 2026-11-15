@@ -3,9 +3,10 @@ import { CARD_MEDIA, CARD_OPENS } from '@client/editor/card/cardMedia'
 import { CARD_LINK_ATTR, type CardShow } from '@client/editor/card/cardRender'
 import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 // `cardRender.ts` draws the card but brings no styles (YAZ-5153): the phone loads the Mac's card, table and card-screen
-// styles itself, so a table, a pill, a hidden word and a sound look as on the Mac.
+// styles itself, so a table, a pill, a hidden word and a sound look as on the Mac. Of the Mac's table look, only the
+// part that reaches a table outside its editor (`cardTable.css`): the rest matches only inside the editor.
 import '@client/editor/card/card.css'
-import '@client/editor/table/table.css'
+import '@client/editor/table/cardTable.css'
 // YAZ-5471: the phone's cell look for a card's table (`tables.css`, as in a page).
 import '../page/tables.css'
 import '@client/review/cardScreens.css'

@@ -72,7 +72,8 @@ describe('renderCard: a table (YAZ-5136)', () => {
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
 describe('card.css: a card`s table looks like the page`s (YAZ-5136)', () => {
-  const tableCss = read('../table/table.css')
+  // The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`).
+  const tableCss = read('../table/cardTable.css') + read('../table/table.css')
   const cardCss = read('./card.css')
   const crepeTable = read('../../../../node_modules/@milkdown/crepe/lib/theme/common/table.css')
   const frame = (name: string) => read(`../../../../node_modules/@milkdown/crepe/lib/theme/${name}/style.css`).match(/--crepe-color-outline:\s*(#[0-9a-f]+)/i)?.[1]
