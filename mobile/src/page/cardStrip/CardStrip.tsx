@@ -18,7 +18,8 @@ import './cardStrip.css'
  * THE CARD'S STRIP ON THE PHONE (YAZ-5508): the Mac's strip under a card (`client/src/review/cardParts.tsx`,
  * `CardStrip`; its look `cardScreens.css`, whose classes this wears), made for a phone. A slim band tucked under the
  * card; its bar holds the card's parts as toggles, in the Mac's order and words:
- *  - "✓ 4 Reviews" (the count is in the words), "Properties 3", "Linked mentions 2", and on a card file "Embedded in 1".
+ *  - "✓ 4 Reviews" (the count is in the words), "Properties 3", "Mentions 2", and on a card file "Embeds 1". The Mac says
+ *    "Linked mentions" and "Embedded in"; the phone's shorter words keep the bar near one row (YAZ-5522 N2).
  *    A part with 0 is dimmed, and still opens (YAZ-5380).
  *  - CLOSED by default. A tap opens that part's drawer; a tap on the open one, or on another part, closes it (one open
  *    at a time, YAZ-5349). The drawer slides open by its height; with Reduce Motion it opens at once.
@@ -75,8 +76,8 @@ export function CardStrip({ reviews, settings, properties, data, door, pages, no
       <div className="card-reviews__bar">
         <Toggle part="reviews" open={open} label={reviewsTitle(reviews.length)} empty={reviews.length === 0} icon={<ReviewsIcon />} onToggle={toggle} />
         <Toggle part="properties" open={open} label="Properties" count={propertyCount} onToggle={toggle} />
-        {lists !== null && <Toggle part="links" open={open} label="Linked mentions" count={lists.links.length} onToggle={toggle} />}
-        {lists?.embeds != null && <Toggle part="embeds" open={open} label="Embedded in" count={lists.embeds.length} onToggle={toggle} />}
+        {lists !== null && <Toggle part="links" open={open} label="Mentions" count={lists.links.length} onToggle={toggle} />}
+        {lists?.embeds != null && <Toggle part="embeds" open={open} label="Embeds" count={lists.embeds.length} onToggle={toggle} />}
       </div>
       <div className="phone-strip__drawer" data-open={open !== null || undefined} data-part={part ?? undefined} inert={open === null} aria-hidden={open === null || undefined}>
         <div className="phone-strip__inner">
