@@ -33,6 +33,7 @@ import { claimDeepLinkScheme } from './deepLinkScheme'
 import { DRAW_APP_NAME, shouldImportDrawAppData, startDrawImport } from './drawImport'
 import { createLinkQueue } from './linkQueue'
 import { openLink } from './fs/openLink'
+import { watchDailyPages } from './dailyPagesVaultFile'
 import { buildContextMenuTemplate, buildMenuTemplate, createMenuHandlers, gateOnBoardKind, menuKeyedVaults, menuKindsInFront, pickMenuTargetWindow, subscribeMenuRebuild, subscribeMenuRebuildOnActiveFile } from './menu'
 import { revealItem } from './fs/reveal'
 import { revealVaultImage, serveVaultImage } from './vaultProtocol'
@@ -395,18 +396,31 @@ app.whenReady().then(() => {
   }
   const activeFileKind = (): FileKind | null => kindsInFront().activeKind
   const frontKind = (): FileKind | null => kindsInFront().frontKind
+  // File › Open Today's Daily Page (YAZ-5491): shown while Daily pages are on for the window a menu action targets, by
+  // its vaults' daily-pages.json (the one source), else the app value. A file that changes rebuilds the menu.
+  let dailyMoved: () => void = () => undefined
+  const dailyFiles = watchDailyPages(store, () => dailyMoved())
+  const dailyInFront = (): boolean => {
+    const wc = menuTarget()
+    const id = wc === undefined ? undefined : manager.idFor(wc)
+    const state = store.get()
+    const win = id === undefined ? undefined : state.windows.find((w) => w.id === id)
+    return win === undefined ? state.settings.dailyPages : dailyFiles.on(placeVaults(state.folders, win.roots), state.settings)
+  }
   const { apply: applyMenu, applyIfMoved } = gateOnBoardKind(activeFileKind, () =>
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
         buildMenuTemplate(
           // The user's keys (YAZ-3397 D2), and none at all while a key recorder listens (D6).
-          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyPages: store.get().settings.dailyPages },
+          { recents: store.get().recents, keyedVaults: menuKeyedVaults(store.get()), isDev: !app.isPackaged, activeKind: activeFileKind(), frontKind: frontKind(), hotkeys: store.get().settings.hotkeys, hotkeysAside: store.get().settings.hotkeysAside, suspendKeys: hotkeyRecording.active(), dailyPages: dailyInFront() },
           handlers,
         ),
       ),
     ),
     frontKind,
+    () => String(dailyInFront()),
   )
+  dailyMoved = applyMenu
   applyMenu()
   subscribeMenuRebuild(store, applyMenu)
   hotkeyRecording.onChange(applyMenu)

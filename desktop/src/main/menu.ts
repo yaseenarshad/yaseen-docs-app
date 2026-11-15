@@ -650,11 +650,12 @@ export function subscribeMenuRebuild(store: Store, rebuild: () => void): () => v
  * asked window going between a drawing, a diagram, code and anything else. A focus change or a tab switch
  * from page to page then costs one `fileKind`, not a whole new menu.
  */
-export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void, frontNow: () => FileKind | null = kindNow): { apply: () => void; applyIfMoved: () => void } {
+export function gateOnBoardKind(kindNow: () => FileKind | null, apply: () => void, frontNow: () => FileKind | null = kindNow, extraNow: () => string = () => ''): { apply: () => void; applyIfMoved: () => void } {
   // A code tab is a bucket of its own (YAZ-3556): the App keys that step aside in code (YAZ-3564 K9) change with it.
   const of = (kind: FileKind | null): 'drawing' | 'diagram' | 'code' | 'other' => (kind === 'drawing' || kind === 'diagram' ? kind : kind === 'text' ? 'code' : 'other')
   // The tab's kind gates the board items; what is in front (a drawing over a page, YAZ-3564 K9) gates the keys.
-  const bucket = (): string => `${of(kindNow())}|${of(frontNow())}`
+  // `extraNow`: more the menu follows in that window (YAZ-5491: whether its vaults have Daily pages on).
+  const bucket = (): string => `${of(kindNow())}|${of(frontNow())}|${extraNow()}`
   let last: ReturnType<typeof bucket> | null = null
   const always = (): void => {
     last = bucket()

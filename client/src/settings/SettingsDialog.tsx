@@ -153,12 +153,12 @@ export function SettingsDialog({ ctx: given, onClose, initialPage }: SettingsDia
     </SettingRow>
   )
   /** A per-vault page says which vault it acts on (YAZ-2602 R10), where App names one: a window with two or more. */
-  const vaultLine = (className: string) => ctx.vaultName !== undefined && <p className={className}>Vault: {ctx.vaultName}</p>
+  const vaultLine = (className: string, of?: (ctx: SettingsCtx) => string | undefined) => ctx.vaultName !== undefined && <p className={className}>Vault: {of?.(ctx) ?? ctx.vaultName}</p>
   /** `titled` is false under a search breadcrumb, which already names the group. A group with no row to show is not there. */
   const group = (g: SettingsGroup, items: readonly SettingDef[], key: number | string, titled = true, index?: number) => items.length > 0 && (
     <div key={key} className="settings-group" {...(g.anchor === undefined ? {} : { id: g.anchor })} data-group-index={index} data-group-title={resolveGroupTitle(g, ctx)}>
       {g.header !== undefined ? g.header(ctx) : titled && g.title !== undefined && <h3 className="settings-group__title">{resolveGroupTitle(g, ctx)}</h3>}
-      {g.vault === true && vaultLine('settings-group__hint')}
+      {g.vault === true && vaultLine('settings-group__hint', g.vaultOf)}
       {g.hint !== undefined && <p className="settings-group__hint">{g.hint}</p>}
       <div className={`settings-group__card${g.cardClass === undefined ? '' : ` ${g.cardClass}`}`}>{items.map(row)}</div>
     </div>

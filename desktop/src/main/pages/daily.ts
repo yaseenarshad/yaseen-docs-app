@@ -4,12 +4,13 @@
  * (`onlyOne`), and the daily pages folder is read again INSIDE that turn. A page another process made a moment ago is
  * found, never made again.
  */
-import { readdir, realpath, stat } from 'node:fs/promises'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { dailyPageName } from '@shared/dailyPage'
+import { DAILY_PAGES_FILE, readDailyPagesFile, withDailyPages } from '@shared/dailyPagesFile'
 import { isMarkdown } from '@shared/fileKind'
 import { dailyPages, dailyPagesFolder, makeDailyPage, type FoundPage } from '@shared/pageBirth'
-import type { IndexRecord, SettingsState } from '@shared/types'
+import { VAULT_CONFIG_DIR, type IndexRecord, type SettingsState } from '@shared/types'
 import { appDataDir, vaultIds } from '../vaultIndex/mint'
 import { scanAll } from '../vaultIndex/reconcile'
 import { fileTitle } from '@shared/indexRecord'
@@ -42,8 +43,32 @@ async function pagesIn(root: string, folder: string, ids: boolean): Promise<Inde
  * and `make`, else null. Refused when Daily pages is off or the daily pages folder is not there. The vault's own answer
  * about IDs decides, as the app's index and its door take it (YAZ-2523 V5).
  */
+/**
+ * The daily pages of the vault at `root` (YAZ-5491): its `.yaseendocs/daily-pages.json`, the one source; the app value
+ * (`app`) only when the vault has no file. A file that is not valid JSON is refused.
+ */
+export async function vaultDailySettings<T extends DailySettings>(root: string, app: T): Promise<T> {
+  // Read here, not through `vaultConfig.ts`: the CLI shares this file and has no watcher.
+  const file = path.join(root, VAULT_CONFIG_DIR, DAILY_PAGES_FILE)
+  let text: string
+  try {
+    text = await readFile(file, 'utf8')
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT' || code === 'ENOTDIR') return app
+    throw err
+  }
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    throw new Error(`${file} is not valid JSON`)
+  }
+  return withDailyPages(app, readDailyPagesFile(raw))
+}
+
 export async function dailyPage(root: string, settings: DailySettings, day: Date, make: boolean): Promise<FoundPage | null> {
-  if (!settings.dailyPages) throw new Error('Daily pages are off. Turn them on in Settings › Files & Links › Daily pages')
+  if (!settings.dailyPages) throw new Error('Daily pages are off in this vault. Turn them on in Settings › Files & Links › Daily pages')
   if (!(await stat(root).catch(() => null))?.isDirectory()) throw new Error(`no vault folder ${root}`)
   const folder = dailyPagesFolder(root, settings.dailyPageFolder)
   // The real path: a symlink and its target are one lock, for the app and the command alike.

@@ -388,6 +388,10 @@ export interface SettingsCtx {
   vaultRoot?: string
   /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
+  /** Daily pages › Change… (YAZ-5491): App writes the folder to the file of the vault it was picked in. Absent with no vault. */
+  pickDailyFolder?: (folder: string, vault: string) => void
+  /** The vault whose `daily-pages.json` Settings › Daily pages shows (YAZ-5491); named only where the window has two or more. */
+  dailyPagesVault?: string
 }
 
 export interface SettingDef {
@@ -420,6 +424,8 @@ export interface SettingsGroup {
   hint?: string
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
   vault?: true
+  /** The vault the group acts on, when it is not the active tab's (Daily pages, YAZ-5491); undefined names the active one. */
+  vaultOf?: (ctx: SettingsCtx) => string | undefined
   items: readonly SettingDef[]
   /** Drawn above the rows in place of the plain title (Settings › Hotkeys' key cards, YAZ-3564); the title still names the group in search. */
   header?: (ctx: SettingsCtx) => ReactNode
@@ -1735,7 +1741,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3607 D8: today's page, for the footer button, File › Open Today's Daily Page and ⌘D on "Today's daily page".
         // One switch (`dailyPages`); the other rows show while it is on.
+        // YAZ-5491: the vault's `.yaseendocs/daily-pages.json`, the one source (the phone reads it too). App writes the
+        // file of the vault that holds the daily pages (`saveDaily`); the line under the title names it.
         title: 'Daily pages',
+        vault: true,
+        vaultOf: (ctx) => ctx.dailyPagesVault,
         items: [
           {
             id: 'dailyPages',
@@ -1754,7 +1764,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['daily', 'folder', 'template', 'journal'],
             available: ({ settings }) => settings.dailyPages,
             wide: () => true,
-            render: ({ settings, onChange, places, openDailyTemplate }) => <DailyPageFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} />,
+            render: ({ settings, onChange, places, openDailyTemplate, pickDailyFolder }) => <DailyPageFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} onPickFolder={pickDailyFolder} />,
           },
           {
             id: 'dailyPageFormat',

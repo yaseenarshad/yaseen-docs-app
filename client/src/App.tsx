@@ -87,6 +87,7 @@ import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './s
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyPageName } from '@shared/dailyPage'
+import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
@@ -450,10 +451,12 @@ export function App() {
   }, [previewPath])
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
-  const [settings, setSettings] = useState(storage.getSettings)
+  // The app's settings as stored. `settings` (below, once the vaults are known) is this with the window's daily pages
+  // over it (YAZ-5491): those four fields come from the vault's `daily-pages.json`, the one source.
+  const [appSettings, setSettings] = useState(storage.getSettings)
   /** The user's keys (YAZ-3397 D2) for the window listeners below, read at key time so a change needs no new listener. */
-  const hotkeysRef = useRef(settings.hotkeys)
-  hotkeysRef.current = settings.hotkeys
+  const hotkeysRef = useRef(appSettings.hotkeys)
+  hotkeysRef.current = appSettings.hotkeys
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the PREVIEW tab (YAZ-2648 D1);
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
@@ -467,7 +470,7 @@ export function App() {
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
+  const lists = useVaultListsHere(roots, notify, appSettings.workspaceLists)
   // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
   // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
   const favoriteFolders = lists.favoritesTab.folders
@@ -477,7 +480,7 @@ export function App() {
   )
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
-  const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
+  const vaultIcons = useVaultIcons(roots, appSettings.sidebarIconRules, appSettings.sidebarFolderIcons === 'named', notify)
   // The toast's clock is the toast's own (`NoticeToast`, YAZ-3303 D9): App only says how long and closes it.
   const closeNotice = useCallback(() => setNotice(null), [])
   // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
@@ -644,8 +647,18 @@ export function App() {
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
    */
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
-  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings })
-  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings }
+  /**
+   * The window's daily pages (YAZ-5491): the vault's `daily-pages.json` is the one source. The first vault, the active
+   * tab's first, whose file says on; else off when any vault has a file; else the app value (no file yet: the one-time
+   * move has not reached this window). Every reader below (the footer button, ⌘D, Go to, the hotkeys row, Settings)
+   * reads it through `settings`; `dailyRoot` is the vault of the file, null for the app value.
+   */
+  const dailyHere = windowDailyPages(placeVaults.map((v) => ({ root: v.root, file: vaults[roots.indexOf(v.root)]?.dailyPages.file ?? null })), dailyPagesOfSettings(appSettings), active.root)
+  const dailyKey = JSON.stringify(dailyHere.settings)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `dailyKey` is the value of `dailyHere.settings`
+  const settings = useMemo(() => withDailyPages(appSettings, dailyHere.settings), [appSettings, dailyKey])
+  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings })
+  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings }
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the page editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
@@ -752,9 +765,16 @@ export function App() {
     [sidebarWidth, toggleSidebar],
   )
 
+  // YAZ-5491: a change of the four daily pages fields goes to the vault's file (`saveDaily`), never to the app value,
+  // which stays as it was: the fallback. A window with no vault has no file to write, so there it is the app value.
+  const saveDailyRef = useRef<(next: DailyPagesSettings) => void>(() => undefined)
   const changeSettings = useCallback((next: SettingsState) => {
-    storage.setSettings(next)
-    setSettings(next)
+    const { vaults: here, settings: shown, appSettings: stored } = placeInputs.current
+    const app = here.length === 0 ? next : withDailyPages(next, dailyPagesOfSettings(stored))
+    const daily = dailyPagesOfSettings(next)
+    if (here.length > 0 && !sameDailyPages(daily, dailyPagesOfSettings(shown))) saveDailyRef.current(daily)
+    storage.setSettings(app)
+    setSettings(app)
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
@@ -1373,10 +1393,11 @@ export function App() {
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
   const openDailyPage = useCallback((background = false) => {
-    const { vaults, settings: now } = placeInputs.current
+    const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     const title = dailyPageName(now.dailyPageFormat, new Date()).trim()
-    void dailyVault(vaults, now.dailyPageFolder)
+    // YAZ-5491: the vault of the file that says on; with no file yet, the first that holds the folder (D2).
+    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(async ({ vault, tree }): Promise<string | null> => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
@@ -1418,6 +1439,36 @@ export function App() {
         (err: unknown) => notify(`Can't open today's daily page: ${err instanceof Error ? err.message : String(err)}`, 'error'),
       )
   }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify, allowFileAction])
+
+  /**
+   * Settings › Daily pages writes the vault's file (YAZ-5491). The vault: `picked` (a folder chosen in another vault moves
+   * the daily pages there, and the old vault's file says off); else the vault of the window's file; else, with no file
+   * yet, the vault that holds the app's folder (the one the button opened), else the active tab's.
+   */
+  const saveDaily = useCallback(
+    (next: DailyPagesSettings, picked?: string) => {
+      const { vaults: here, vault: activeRoot, dailyRoot, settings: now } = placeInputs.current
+      if (here.length === 0) return
+      const fallback = activeRoot ?? here[0]
+      const holderOf = (vault: string) => live.current.vaults[live.current.roots.indexOf(vault)]?.dailyPages
+      const target: Promise<string> =
+        picked !== undefined
+          ? Promise.resolve(picked)
+          : dailyRoot !== null
+            ? Promise.resolve(dailyRoot)
+            : now.dailyPages
+              ? dailyVault(here, now.dailyPageFolder).then(({ vault }) => vault, () => fallback)
+              : Promise.resolve(fallback)
+      void target.then((vault) => {
+        if (dailyRoot !== null && dailyRoot !== vault && now.dailyPages) holderOf(dailyRoot)?.save({ ...dailyPagesOfSettings(now), enabled: false })
+        holderOf(vault)?.save(next)
+      })
+    },
+    [dailyVault],
+  )
+  saveDailyRef.current = saveDaily
+  /** The folder row's picker (YAZ-5491): the folder is of the vault it was picked in, and Daily pages are on there. */
+  const pickDailyFolder = useCallback((folder: string, vault: string) => saveDaily({ ...dailyPagesOfSettings(placeInputs.current.settings), enabled: true, folder }, vault), [saveDaily])
 
   // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
   // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
@@ -1476,10 +1527,10 @@ export function App() {
   // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
   // The folder is the one the daily page uses: in the first vault of the window that holds it (`dailyPageVault`).
   const openDailyTemplate = useCallback(() => {
-    const { vaults, settings: now } = placeInputs.current
+    const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     let path = ''
-    void dailyVault(vaults, now.dailyPageFolder)
+    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(({ vault }) => {
         path = `${placePath(vault, now.dailyPageFolder)}/.template.md`
         return api.readFile(path)
@@ -3782,7 +3833,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
       {/* ⌘N (YAZ-3556 D5): unmounted when closed, so it always opens on Page (D7). */}
       {newItem !== null && root !== null && <NewItemBox vaults={placeVaults} dir={newItem.dir} missing={newItem.missing} onMake={makeNewItem} onClose={closeNewItem} />}
       {keySheetOpen && <KeySheet place={placeOverTab() ?? keyPlaceOf(file)} overrides={settings.hotkeys} aside={settings.hotkeysAside} onChangeKeys={changeKeys} onClose={closeKeySheet} />}

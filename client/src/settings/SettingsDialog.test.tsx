@@ -493,7 +493,14 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Code', []],
       ['Drawings and diagrams', []],
       ['Images', []],
-      ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
+      // YAZ-5491: Daily pages are the vault's daily-pages.json.
+      [
+        'Files & Links',
+        [
+          { text: 'Vault: Work', under: 'Daily pages', className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' },
+        ],
+      ],
       ['Folder pages', []],
       // YAZ-5483: Cards names the vault on each group saved in review.json, not on the page (Card look is the app's).
       [
@@ -1410,6 +1417,16 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(rowButtons(on.el, 'dailyPageOpens').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['The page', 'false'], ['The page at now', 'true']])
     act(() => rowButtons(on.el, 'dailyPageOpens')[0].click())
     expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, dailyPages: true, dailyPageFolder: 'Journal', dailyPageOpens: 'page' })
+  })
+
+  it('YAZ-5491: Daily pages name the vault whose daily-pages.json they show, which can be another than the active tab\'s', () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS, dailyPages: true }, onChange: vi.fn(), vaultName: 'Work', dailyPagesVault: 'Journal' }} onClose={vi.fn()} />))
+    clickNav(container, 'Files & Links')
+    const hints = [...container.querySelectorAll('.settings-group__hint')].filter((n) => n.textContent?.startsWith('Vault: ')).map((n) => [n.previousElementSibling?.textContent, n.textContent])
+    expect(hints).toEqual([['Daily pages', 'Vault: Journal']])
   })
 
   it('Daily pages › Name style › Custom… (D4): the field sits beside the dropdown; a style with no day keeps the stored one and says why; a good one is written', () => {

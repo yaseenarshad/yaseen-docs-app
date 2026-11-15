@@ -52,7 +52,7 @@ import { mentionsOf } from '@shared/mentions'
 import { BridgeFailure, fsCall, requireMarkdownFile } from '../main/fs/fsUtils'
 import { createFile } from '../main/fs/create'
 import { readFile, writeFile } from '../main/fs/file'
-import { dailyPage } from '../main/pages/daily'
+import { dailyPage, vaultDailySettings } from '../main/pages/daily'
 import { newPage } from '../main/pages/page'
 import { otherMacFiles } from '../main/settingsFiles'
 import { mergeFolderSettings, parseState } from '../main/store'
@@ -565,8 +565,9 @@ async function daily(target: string | undefined, flags: Map<string, string | tru
   onlyFlags('daily', flags, ['--date', '--find', '--open', '--json'])
   if (target === undefined) throw new Usage('daily needs a vault')
   const day = dayOf(str(flags, '--date'))
-  const settings = await settingsNow()
   const root = resolve(target)
+  // YAZ-5491: the vault's daily-pages.json; the app's settings only for a vault with none.
+  const settings = await vaultDailySettings(root, await settingsNow())
   const page = await dailyPage(root, settings, day, !flags.has('--find'))
   if (page === null) throw new Error(`no daily page "${dailyPageName(settings.dailyPageFormat, day).trim()}" in ${root}`)
   report(io, flags, page)

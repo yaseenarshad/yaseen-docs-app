@@ -36,7 +36,7 @@ import { changeLetters, checkDuplicates, getColdStartDiff, getIndex, giveIdsNow,
 import { givesIds } from '../vaultIndex/idSweep'
 import { doorOf, type IdDoor } from '../vaultIndex/mint'
 import { idsHome } from '../vaultIndex/scan'
-import { dailyPage } from '../pages/daily'
+import { dailyPage, vaultDailySettings } from '../pages/daily'
 import type { WindowManager } from '../windows'
 import { broadcastAll, loggedSave, rootsOf, senderRoots } from './broadcast'
 import { handle, handleWithEvent } from './envelope'
@@ -97,7 +97,7 @@ export function registerFsIpc(store: Store, windows: Pick<WindowManager, 'idFor'
   handleWithEvent(CONTRACT.makeDailyPage, async (e, raw: unknown) => {
     const vault = requireAbsPath(raw, 'path')
     if (!rootsOfSender(e).includes(vault)) throw new BridgeFailure('BAD_REQUEST', 'not a vault of this window', { path: vault })
-    return (await dailyPage(vault, store.get().settings, new Date(), true))!
+    return (await dailyPage(vault, await vaultDailySettings(vault, store.get().settings), new Date(), true))!
   })
   handle(CONTRACT.index, getIndex)
   // The cold-start reconcile diff (Links E1c, GRO-2242): the client's rename detector reads it
