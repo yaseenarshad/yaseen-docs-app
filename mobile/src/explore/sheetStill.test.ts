@@ -20,4 +20,12 @@ describe('the sheet under the top one stays still (YAZ-5540)', () => {
     const sheet = rules.find((r) => r.sel === '.explore-sheet')!
     expect(sheet.body).toMatch(/top:\s*calc\([^;]*var\(--sheet-step, 0\) \* 8px\)/)
   })
+
+  it('the first sheet rests just under the status bar: the safe-area inset, then a 12 px strip of the dimmed screen', () => {
+    // YAZ-5540 (taller): from 52 px under the inset to 12 px. The inset keeps the head and its grab handle out from
+    // under the notch in the Home Screen app; in a Safari tab (inset 0) the 12 px still shows the dim above the sheet.
+    const sheet = rules.find((r) => r.sel === '.explore-sheet')!
+    const top = /top:\s*calc\(([^;]*)\);/.exec(sheet.body)?.[1]
+    expect(top).toBe('env(safe-area-inset-top, 0px) + 12px + var(--sheet-step, 0) * 8px')
+  })
 })

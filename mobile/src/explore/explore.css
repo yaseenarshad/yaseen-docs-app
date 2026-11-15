@@ -19,13 +19,15 @@
   pointer-events: auto;
 }
 
-/* The sheet's place: under the status bar and a little under the top bar, so the screen under it shows at the top.
+/* The sheet's place: just under the status bar (the safe-area inset: the notch in the Home Screen app, 0 in a Safari
+   tab), with a 12 px strip of the dimmed screen above it, so it still reads as a panel (YAZ-5540: taller, from 52 px).
+   The same on a short screen (YAZ-5522 N7: a small phone on its side, 667x375, ~363 px tall, not ~268).
    YAZ-5540: a sheet stays STILL when a sheet opens over it or closes off it: no transform, no transition here (only
    the top sheet's box slides, `sheetMotion.ts`). Each sheet sits 8 px lower than the one under it (`--sheet-step`, its
    place in the stack, set once), so the one under shows its top edge above it, still. */
 .explore-sheet {
   position: absolute;
-  top: calc(env(safe-area-inset-top, 0px) + 52px + var(--sheet-step, 0) * 8px);
+  top: calc(env(safe-area-inset-top, 0px) + 12px + var(--sheet-step, 0) * 8px);
   left: calc(env(safe-area-inset-left, 0px) + 8px);
   right: calc(env(safe-area-inset-right, 0px) + 8px);
   bottom: 0;
