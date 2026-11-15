@@ -6,6 +6,7 @@ import { vaultName } from './Frame'
 import { lazyScreen } from './LazyScreen'
 // YAZ-5363: the waiting state below and the Review tab's place are drawn before the Review chunk comes.
 import './reviewSlot.css'
+import { openFile } from '../explore/openFile'
 
 const waiting = (
   <div className="review review--waiting" aria-busy="true">
@@ -52,7 +53,7 @@ export function Review({ shown = true }: { shown?: boolean }) {
       vaultName={vaultName(app.vault.repo)}
       unit={app.unit}
       // YAZ-5225: the page opens AT the card (`at`), as 4C's page view reads it.
-      open={(to) => app.go({ type: 'open', route: to.kind === 'card' ? { kind: 'card', path: to.path, id: to.id } : { kind: 'page', path: to.path, ...(to.at !== undefined && { at: to.at }) } })}
+      open={(to) => openFile(app, to.kind === 'card' ? { kind: 'card', path: to.path, id: to.id } : { kind: 'page', path: to.path, ...(to.at !== undefined && { at: to.at }) })}
     />
   )
 }

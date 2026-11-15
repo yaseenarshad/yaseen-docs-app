@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { backlinksFor, mentionSnippets, type MentionSnippet } from '@client/links/backlinks'
+import { mentionSnippets, type MentionSnippet } from '@client/links/backlinks'
 import { pathTitles } from '@client/lib/pathTitles'
 import type { IndexRecord } from '@shared/types'
 import { openLink, type LinkDoor } from './openLink'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
+import { linkedFromOf } from './linkedFromOf'
 import { resolveSourceOf } from './pageLook'
 import './linkedFrom.css'
 
@@ -24,9 +25,7 @@ import './linkedFrom.css'
  */
 export function LinkedFrom({ path, data, store, door }: { path: string; data: VaultData; store: VaultStore; door: LinkDoor }) {
   const [open, setOpen] = useState(false)
-  const source = resolveSourceOf(data)
-  const resolve = source.resolve
-  const entries = resolve === null ? [] : backlinksFor(path, data.records, resolve, data.folders).filter((r) => data.byPath[r.path] !== undefined)
+  const entries = linkedFromOf(path, data)
   if (entries.length === 0) return null
   return (
     <section className="linked-from" aria-label="Linked from">
@@ -109,8 +108,5 @@ function runs(line: MentionSnippet): React.ReactNode[] {
 }
 
 /** For the speed test: the reverse map of `data`, built once (the first page that asks pays for it). */
-export const linkedFromCount = (data: VaultData, path: string): number => {
-  const resolve = resolveSourceOf(data).resolve
-  return resolve === null ? 0 : backlinksFor(path, data.records, resolve, data.folders).length
-}
+export const linkedFromCount = (data: VaultData, path: string): number => linkedFromOf(path, data).length
 

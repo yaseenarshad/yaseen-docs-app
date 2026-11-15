@@ -60,7 +60,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
 
   // YAZ-5455: the vault's own look (link pills, heading sizes) and its "Clicking a link", for the link door.
   const look = useVaultLook(store, data)
-  const door: LinkDoor = { go: app.go, click: look?.click ?? 'open' }
+  const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: look?.click }
   const doorRef = useRef(door)
   doorRef.current = door
   // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk).

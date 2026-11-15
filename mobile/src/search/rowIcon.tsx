@@ -1,7 +1,7 @@
 import type { TreeKind } from './vaultTree'
 
 /** The Mac's `data-kind` of each icon (`app.css`): a page is `markdown`. */
-export const ICON_KIND: Record<TreeKind, string> = { folder: 'folder', page: 'markdown', card: 'card' }
+export const ICON_KIND: Record<TreeKind, string> = { folder: 'folder', page: 'markdown', card: 'card', drawing: 'drawing', diagram: 'diagram' }
 
 /** A row's icon: the Mac's glyph (`search.css`), drawn by its kind. VoiceOver reads the row's kind in its label. */
 export function RowIcon({ kind, open = false }: { kind: TreeKind; open?: boolean }) {

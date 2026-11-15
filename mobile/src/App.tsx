@@ -2,6 +2,7 @@ import { AppProvider, type AppServices } from './app/AppState'
 import { Shell } from './screens/Shell'
 import type { Updates } from './pwa/updates'
 import { UpdateLine } from './pwa/UpdateLine'
+import { ExploreHost } from './explore/ExploreHost'
 
 /**
  * Notecard: the app state (`AppProvider`) around the shell. `main.tsx` passes the real services; tests pass fakes.
@@ -11,6 +12,7 @@ export function App({ services, updates }: { services: AppServices; updates?: Up
   return (
     <AppProvider services={services}>
       <Shell />
+      <ExploreHost />
       {updates && <UpdateLine updates={updates} />}
     </AppProvider>
   )

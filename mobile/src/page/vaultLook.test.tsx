@@ -11,12 +11,14 @@ import { mount, newPhone, type Harness } from '../screens/testing'
  * (`link-click.json`), which every link tap hands to the ONE door (`openLink.ts`). Made-up vault only.
  */
 const opened = vi.hoisted(() => [] as { click: string; target: unknown }[])
+import { closeAll, dropTop } from '../explore/sheets'
+
 vi.mock('./openLink', async (actual) => {
   const real = await actual<typeof import('./openLink')>()
   return {
     ...real,
     openLink: (door: Parameters<typeof real.openLink>[0], target: Parameters<typeof real.openLink>[1]) => {
-      opened.push({ click: door.click, target })
+      opened.push({ click: door.click ?? '(not read)', target })
       real.openLink(door, target)
     },
   }
@@ -29,6 +31,7 @@ beforeEach(() => {
   opened.length = 0
 })
 afterEach(() => {
+  act(() => closeAll())
   h?.unmount()
   h = null
   forgetSearch()
@@ -77,20 +80,46 @@ describe('YAZ-5455: the vault look and the link door', () => {
     expect([...h.host.querySelectorAll('.reader__body a.wikilink')].some((a) => a.textContent === 'Trip plan')).toBe(true)
   })
 
-  it('every link tap goes through the one door, which carries link-click.json ("explore")', async () => {
-    h = await openSpanish({ '.yaseendocs/link-click.json': '{"click": "explore"}' })
+  it('every link tap goes through the one door, which carries link-click.json ("explore") and opens a sheet', async () => {
+    // YAZ-5472: with "explore", Search's row opens the page in a SHEET over Search (the one door, `openFile`).
+    const phone = await newPhone()
+    await seedReaderVault(phone.store, phone.tokens, { ...READER_FILES, '.yaseendocs/link-click.json': '{"click": "explore"}' })
+    h = await mount({ phone })
+    await h.click('Search')
+    await waitFor(h, () => h!.button(/^Spanish words, page/) !== null)
+    const top = () => [...document.querySelectorAll<HTMLElement>('.explore-sheet')].at(-1) ?? null
+    const topTitle = () => top()?.querySelector('.reader__title')?.textContent ?? null
+    // The app reads the vault's link-click.json when the vault opens.
+    await h.settle()
+    await h.click(/^Spanish words, page/)
+    await waitFor(h, () => document.querySelectorAll('.explore-sheet').length === 1)
+    await waitFor(h, () => topTitle() === 'Spanish words' && top()!.querySelector('.card-embed .card__body *') !== null)
+    expect(h.host.querySelector('.screen .reader')).toBeNull() // no page under it: Search stays
+    // A link in the sheet: through the reader's door (a sheet's door says "explore"), ANOTHER sheet on top.
+    const trip = [...top()!.querySelectorAll<HTMLElement>('.reader__body a')].find((a) => a.textContent === 'Trip plan')!
+    await act(async () => trip.click())
+    expect(opened).toEqual([{ click: 'explore', target: { kind: 'page', path: 'Trip plan.md' } }])
+    await waitFor(h, () => topTitle() === 'Trip plan')
+    expect(document.querySelectorAll('.explore-sheet')).toHaveLength(2)
+    await act(async () => dropTop())
+    await waitFor(h, () => topTitle() === 'Spanish words')
+    // An embed's "Embedded from".
+    await act(async () => top()!.querySelector<HTMLElement>('.card-embed__from')!.click())
+    expect(opened[1]).toMatchObject({ click: 'explore', target: { kind: 'card', id: 'DEMO-40' } })
+    await waitFor(h, () => document.querySelectorAll('.explore-sheet').length === 2)
+  })
+
+  it('with no link-click.json a link opens full screen (the Mac\'s default), through the same door', async () => {
+    h = await openSpanish({})
     const trip = [...h.host.querySelectorAll<HTMLElement>('.reader__body a')].find((a) => a.textContent === 'Trip plan')!
     await act(async () => trip.click())
+    expect(opened).toEqual([{ click: 'open', target: { kind: 'page', path: 'Trip plan.md' } }])
     await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Trip plan')
-    expect(opened).toEqual([{ click: 'explore', target: { kind: 'page', path: 'Trip plan.md' } }])
+    expect(document.querySelector('.explore-sheet')).toBeNull()
     // "Linked from" goes through it too.
     await h.click(/^Linked from/)
     await waitFor(h, () => h!.host.querySelector('.linked-from__page') !== null)
     await h.click('Spanish words')
-    expect(opened[1]).toEqual({ click: 'explore', target: { kind: 'page', path: 'Spanish words.md' } })
-    await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Spanish words' && h!.host.querySelector('.card-embed__from') !== null)
-    // An embed's "Embedded from".
-    await act(async () => h!.host.querySelector<HTMLElement>('.card-embed__from')!.click())
-    expect(opened[2]).toMatchObject({ click: 'explore', target: { kind: 'card', id: 'DEMO-40' } })
+    expect(opened[1]).toEqual({ click: 'open', target: { kind: 'page', path: 'Spanish words.md' } })
   })
 })

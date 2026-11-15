@@ -35,6 +35,8 @@ export type Route =
   | { kind: 'page'; path: string; at?: string; heading?: string }
   /** 4C (round 12, item 10): a card alone, read only: the card, its review history, "Open page" for a card in a page. */
   | { kind: 'card'; path: string; id: string }
+  /** YAZ-5473: a drawing file on its own (`.excalidraw`, `.drawio.svg`; a `.drawio` says "Open it on the Mac"), read only. */
+  | { kind: 'drawing'; path: string }
   /** 4E4 (decision 23): "You vs <friend>". `theirs`: the friend's pointer; or `group` and `pointer`: a member of a group. */
   | { kind: 'friend'; theirs: string; group?: undefined; pointer?: undefined }
   | { kind: 'friend'; group: string; pointer: string; theirs?: undefined }

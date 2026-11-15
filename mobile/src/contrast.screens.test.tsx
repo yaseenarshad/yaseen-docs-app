@@ -104,6 +104,9 @@ const FIXTURES = [
   'page-headings',
   'page-properties',
   'page-jump',
+  // YAZ-5472: Explore's sheets.
+  'explore-one',
+  'explore-stack',
   // Last: it makes this page's navigator say iPhone.
   'sign-in-iphone',
 ]

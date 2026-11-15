@@ -6,6 +6,7 @@ import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 import { headMarks, titleBand } from '../media/ui/cardHead'
 import { cardOf, drawCard, embedName, resolveSourceOf } from './pageLook'
+import { boardKindOf } from '../drawing/boardFiles'
 
 /**
  * What a drawn page or card does once it is on screen (YAZ-5079): its pictures and sounds get their bytes
@@ -95,7 +96,8 @@ export function tapOf(target: EventTarget | null, data: VaultData): Tap {
   if (open === 'heading') return heading === undefined ? { kind: 'none' } : { kind: 'heading', heading }
   if (open === 'page' && path !== undefined) return { kind: 'go', target: { kind: 'page', path, ...(heading !== undefined && { heading }) } }
   if (open === 'card' && path !== undefined) return { kind: 'go', target: { kind: 'card', path, id: (el as HTMLElement).dataset.card ?? '' } }
-  if (open === 'file' && path !== undefined) return { kind: 'file', path }
+  // YAZ-5473: a link to a drawing file opens the drawing (its own view, or a sheet), through the one door.
+  if (open === 'file' && path !== undefined) return boardKindOf(path) !== null ? { kind: 'go', target: { kind: 'drawing', path } } : { kind: 'file', path }
   if (el.classList.contains('wikilink--unresolved') || el.classList.contains('page-pill--missing')) return { kind: 'none' }
   // A pill in a card (`renderCard`): its link, as the card's page reads it.
   const inner = el.getAttribute(CARD_LINK_ATTR)

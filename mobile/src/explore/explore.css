@@ -1,0 +1,166 @@
+/* EXPLORE ON THE PHONE (YAZ-5472): the stacked sheets, as Mochi's. Every motion is `transform` or `opacity`: the
+   compositor draws it, with no layout and no paint. */
+
+.explore-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+
+/* The dim under a sheet: each sheet has its own, so a sheet further down the stack is darker. Only the top one takes a tap. */
+.explore-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.32);
+  will-change: opacity;
+}
+.explore-dim--top {
+  pointer-events: auto;
+}
+
+/* The sheet's place: under the status bar and a little under the top bar, so the screen under it shows at the top. The
+   one under the top sheet steps back: a little smaller, its top a little up (iOS). */
+.explore-sheet {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  left: calc(env(safe-area-inset-left, 0px) + 8px);
+  right: calc(env(safe-area-inset-right, 0px) + 8px);
+  bottom: 0;
+  transform-origin: 50% 0;
+  transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.explore-sheet--under {
+  transform: translate3d(0, -10px, 0) scale(0.94);
+}
+/* Two or more down: covered by the sheets over it; not drawn at all. */
+.explore-sheet--deep {
+  visibility: hidden;
+}
+
+/* The box that moves with the finger. */
+.explore-sheet__box {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--bg);
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  pointer-events: auto;
+  will-change: transform;
+  outline: none;
+}
+
+/* The head: a drag from it at any scroll place (`touch-action: none`: the finger is the sheet's). */
+.explore-sheet__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 6px 6px 0 16px;
+  border-bottom: 1px solid var(--border);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.explore-sheet__grab {
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 36px;
+  height: 5px;
+  margin-left: -18px;
+  border-radius: 3px;
+  background: var(--control-border);
+  opacity: 0.6;
+}
+
+.explore-sheet__where {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.explore-sheet__more {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  background: none;
+  font-size: 20px;
+  color: var(--fg-muted);
+}
+
+.explore-sheet__menu {
+  position: absolute;
+  top: 46px;
+  right: 8px;
+  z-index: 2;
+  display: grid;
+  min-width: 190px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-side);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+.explore-sheet__menu button {
+  min-height: var(--tap);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  font-size: 16px;
+  color: var(--fg);
+}
+
+/* The body: its own scroll, with its momentum; at its top a drag down moves the sheet (`sheetMotion.ts`). No bounce of
+   its own (`none`): the sheet is what moves. */
+.explore-sheet__body {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding: 0 16px 24px;
+}
+
+/* The 1 px mark that says the body is at its top. */
+.explore-sheet__top {
+  height: 1px;
+}
+
+.explore-sheet__reader .reader__title {
+  margin-top: 10px;
+}
+
+/* "N Backlinks · N References" (Mochi's foot). */
+.explore-sheet__foot {
+  margin: 0;
+  padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+
+.explore-sheet__toast {
+  z-index: 3;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-sheet {
+    transition: none;
+  }
+}

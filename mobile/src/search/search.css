@@ -120,7 +120,7 @@
  * phone's tap size. A row's indent is the Mac's: 8 + depth × 14 px, then the chevron (14 px), the icon, the name.
  * The icons are the Mac's default set (Material, file icons "Colour", folder icons "Plain"): a folder is Material's
  * folder (its open twin while open); a page is the grey page glyph; a card file and a card are the card glyph in the
- * card colour (`--kind-card`). The glyphs are the Mac's own SVGs, inline.
+ * card colour (`--kind-card`); a drawing and a diagram (YAZ-5473) the Mac's pen and boxes, in their colours. The glyphs are the Mac's own SVGs, inline.
  */
 /* The kind colours and the card glyph are app-wide (`styles.css`, YAZ-5475): the top bar and the page arrows draw them too. */
 .tree {

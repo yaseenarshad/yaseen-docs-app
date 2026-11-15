@@ -103,7 +103,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
     if (tap === null) return void guardLink(event)
     event.preventDefault()
-    if (tap.kind === 'go') openLink({ go: app.go, click: look?.click ?? 'open' }, tap.target)
+    if (tap.kind === 'go') openLink({ go: app.go, vaultKey: app.vaultKey, click: look?.click }, tap.target)
     // A missing page's link, or a heading of a page (a card has none), does nothing (YAZ-5455).
     else if (tap.kind === 'none' || tap.kind === 'heading') return
     else setNotice(await openFile(media, tap.path))

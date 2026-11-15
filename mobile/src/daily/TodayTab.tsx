@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useApp } from '../app/AppState'
+// The one door to open a file (YAZ-5472): the daily note opens as a link does (a sheet when the vault says "explore").
+import { openFile } from '../explore/openFile'
 import { Toast, useToast } from '../screens/Toast'
 
 /** The vault file that turns the button on (`@shared/dailyPagesFile`), written out: the first load skips its parser. */
@@ -51,7 +53,7 @@ export function TodayTab() {
   const tap = () =>
     void load()
       .then((m) => m.findToday(store, vault, new Date((app.services.now ?? Date.now)())))
-      .then((found) => (found === null ? say('No daily notes yet') : app.go({ type: 'open', route: { kind: 'page', path: found.path } })))
+      .then((found) => (found === null ? say('No daily notes yet') : openFile(app, { kind: 'page', path: found.path })))
       .catch(() => say('Could not open the daily note'))
   return (
     <>

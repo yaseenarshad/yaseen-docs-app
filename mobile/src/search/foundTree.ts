@@ -5,6 +5,7 @@ import type { IndexRecord, TreeNode } from '@shared/types'
 import { typeTest, type PhoneType } from './searchRun'
 import type { VaultData } from './vaultData'
 import { buildTree, fileKind, levelOf, type TreeFolder, type TreeKind } from './vaultTree'
+import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
 
 /**
  * THE RESULTS AS A TREE (YAZ-5447): the Mac's Search tab (`client/src/sidebar/hooks/useSidebarSearch.ts`, YAZ-2620) on
@@ -46,11 +47,11 @@ export function vaultNodes(data: VaultData): VaultNodes {
     }
     for (const { record, label } of level.files) {
       records.set(record.path, record)
-      nodes.push({ type: 'file', name: label, path: record.path, size: 0, mtime: record.mtime, kind: 'markdown' })
+      nodes.push({ type: 'file', name: label, path: record.path, size: 0, mtime: record.mtime, kind: boardKindOf(record.path) ?? 'markdown' })
     }
     return nodes
   }
-  out = { nodes: walk(buildTree(data.records, data.folders)), dirs, records }
+  out = { nodes: walk(buildTree(recordsWithBoards(data), data.folders)), dirs, records }
   held.set(data, out)
   return out
 }
@@ -164,7 +165,7 @@ export function foundRows(vault: VaultNodes, found: Found, flipped: ReadonlySet<
       const record = vault.records.get(node.path)
       if (record === undefined) continue
       // A match is drawn as the search found it (a card file is a page with Review off); a row that is no match by its record.
-      const kind: TreeKind = hit !== undefined ? (hit.card === true ? 'card' : 'page') : fileKind(record)
+      const kind: TreeKind = hit !== undefined ? (hit.card === true ? 'card' : (boardKindOf(record.path) ?? 'page')) : fileKind(record)
       if (hit === undefined && kind === 'card' && !cardFiles) continue
       const id = kind === 'card' && hit === undefined ? (record.cards?.find((c) => c.id !== null)?.id ?? undefined) : undefined
       rows.push({ kind, path: node.path, label: node.name, depth, ...(hit !== undefined && { hit }), ...(id != null && { id }) })

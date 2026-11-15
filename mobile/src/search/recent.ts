@@ -34,11 +34,11 @@ export async function readRecent(store: VaultStore, vault: string): Promise<Rece
 const chains = new Map<string, Promise<void>>()
 
 /**
- * A page or a card was opened (`go` of the app state, YAZ-5457): it goes to the top of the vault's list, once.
+ * A page, a card or a drawing (YAZ-5473) was opened (`go` of the app state, YAZ-5457): it goes to the top of the vault's list, once.
  * Any other screen is not recorded. Never throws: a list that cannot be written only misses this entry.
  */
 export function remember(store: VaultStore, vault: string | null, route: Route, now = Date.now()): Promise<void> {
-  if (vault === null || (route.kind !== 'page' && route.kind !== 'card')) return Promise.resolve()
+  if (vault === null || (route.kind !== 'page' && route.kind !== 'card' && route.kind !== 'drawing')) return Promise.resolve()
   const entry: RecentEntry = { path: route.path, ...(route.kind === 'card' && { id: route.id }), at: now }
   const next = (chains.get(vault) ?? Promise.resolve())
     .then(async () => {

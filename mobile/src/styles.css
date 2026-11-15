@@ -762,11 +762,16 @@ body:has(.app--swiping) {
    arrows. A page is the grey page glyph; a card and a card file are the card glyph in the card colour. ---- */
 :root {
   --kind-card: #8a63c9;
+  /* YAZ-5473: the Mac's drawing (Excalidraw) and diagram (draw.io) colours. */
+  --kind-drawing: #c08410;
+  --kind-diagram: #e0682c;
   --card-link-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='1.75' y='5.25' width='10' height='8' rx='1.25'/%3E%3Cpath d='M4.5 3h8.25a1.25 1.25 0 0 1 1.25 1.25v6.25'/%3E%3C/svg%3E");
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --kind-card: #b394e6;
+    --kind-drawing: #e0aa3e;
+    --kind-diagram: #f08d5a;
   }
 }
 .file-icon[data-kind='markdown'] {
@@ -776,6 +781,14 @@ body:has(.app--swiping) {
 .file-icon[data-kind='card'] {
   background: var(--kind-card);
   mask: var(--card-link-icon) center / 16px 16px no-repeat;
+}
+.file-icon[data-kind='drawing'] {
+  background: var(--kind-drawing);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 13l.8-3.2L11 2.6l2.4 2.4-7.2 7.2zM9.5 4l2.5 2.5'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+.file-icon[data-kind='diagram'] {
+  background: var(--kind-diagram);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 2.5h5v4H2zM9 9.5h5v4H9zM4.5 6.5v3a1 1 0 0 0 1 1H9'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
 }
 .file-icon[data-kind='folder'] {
   background: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6.922 3.768-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232' fill='%2390a4ae'/%3E%3C/svg%3E") center / 16px 16px no-repeat;

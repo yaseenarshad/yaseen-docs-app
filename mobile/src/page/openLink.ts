@@ -1,31 +1,42 @@
 import type { LinkClick } from '@shared/linkClick'
-import type { NavAction } from '../app/nav'
+import type { NavAction, Route } from '../app/nav'
+import { openFile } from '../explore/openFile'
 
 /**
- * THE ONE DOOR OF A LINK TAP IN THE READER (YAZ-5455). Every tap that opens a page or a card from the reader comes here:
- * a `[[link]]` or a Markdown link in a page, a pill in a card (the page's own cards, an embedded card, the card view),
- * an embed's "Embedded from", a "Linked from" row. Today it opens the page or the card over the open one (one Back
- * step). The Explore sheets (YAZ-5472) switch it here, in one place.
+ * THE ONE DOOR OF A LINK TAP IN THE READER (YAZ-5455). Every tap that opens a page, a card or a drawing from the reader
+ * comes here: a `[[link]]` or a Markdown link in a page, a pill in a card (the page's own cards, an embedded card, the
+ * card view), an embed's "Embedded from", a "Linked from" row, a properties link, a link in an Explore sheet.
  *
- * `click` is the vault's "Clicking a link" (`.yaseendocs/link-click.json`, the Mac's YAZ-4936; `vaultLook.ts` reads it):
- * `explore` in a vault that opens links in Explore. The door hands it on; it does not draw a sheet yet.
+ * It hands the route to the app's ONE door to open a file, `openFile` (YAZ-5472): the vault's "Clicking a link"
+ * (`.yaseendocs/link-click.json`, the Mac's YAZ-4936) says how. `explore`: the file opens in a sheet over where you are;
+ * `open` (the Mac's default, and with no file): it opens over the open one, full screen (one Back step).
  */
-export type LinkTarget = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string }
+export type LinkTarget = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'drawing'; path: string }
 
 export interface LinkDoor {
   go: (action: NavAction) => void
-  /** The vault's "Clicking a link"; `open` until the vault's file is read, or with no file. */
-  click: LinkClick
+  /** The open vault: `openFile` reads its "Clicking a link" when `click` is not given. */
+  vaultKey: string | null
+  /**
+   * The vault's "Clicking a link" as the reader read it (`vaultLook.ts`); undefined until the file is read, and then the
+   * app's own copy (`ExploreHost`) decides. A sheet's door says `explore`: a link in a sheet opens another sheet.
+   */
+  click?: LinkClick
 }
 
-/** What a tap on a link opens: the action the app takes for `target` (the tests read it). */
+/** The route a link opens. */
+export function linkRoute(target: LinkTarget): Route {
+  if (target.kind === 'card') return { kind: 'card', path: target.path, id: target.id }
+  if (target.kind === 'drawing') return { kind: 'drawing', path: target.path }
+  return { kind: 'page', path: target.path, ...(target.heading !== undefined && target.heading !== '' && { heading: target.heading }) }
+}
+
+/** What a tap on a link opens full screen: the action the app takes for `target` with "Clicking a link" `open` (the tests read it). */
 export function linkAction(target: LinkTarget): NavAction {
-  return target.kind === 'card'
-    ? { type: 'open', route: { kind: 'card', path: target.path, id: target.id } }
-    : { type: 'open', route: { kind: 'page', path: target.path, ...(target.heading !== undefined && target.heading !== '' && { heading: target.heading }) } }
+  return { type: 'open', route: linkRoute(target) }
 }
 
-/** Opens `target`. The one place a link tap opens anything (the Explore sheet will be chosen here by `door.click`). */
+/** Opens `target`. The one place a link tap opens anything: through `openFile`, which picks a sheet or full screen. */
 export function openLink(door: LinkDoor, target: LinkTarget): void {
-  door.go(linkAction(target))
+  openFile(door, linkRoute(target), door.click)
 }
