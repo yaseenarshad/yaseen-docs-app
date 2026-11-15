@@ -79,7 +79,7 @@ function Unreadable({ board, refresh, service }: { board: Unavailable; refresh: 
   const app = useApp()
   switch (board.kind) {
     case 'home-gone':
-      return <HomeGone message={homeGoneMessage(board.home)} vaults={board.vaults} service={service} refresh={refresh} />
+      return <HomeGone message={homeGoneMessage(board.home, board.fileGone === true)} vaults={board.vaults} service={service} refresh={refresh} />
     case 'list-cut':
       return <HomeGone message={LIST_CUT} vaults={board.vaults} service={service} refresh={refresh} />
     case 'needs-repair':
@@ -124,8 +124,8 @@ function Unreadable({ board, refresh, service }: { board: Unavailable; refresh: 
 }
 
 /**
- * YAZ-5399: the vault that held the friends list is gone on GitHub (or, YAZ-5400, an old list has more than 300 files
- * and cannot be read whole). The tab says what happened, and offers the way out
+ * YAZ-5399: the vault that held the friends list is gone on GitHub (or, YAZ-5444, its list file is gone; or, YAZ-5400,
+ * an old list has more than 300 files and cannot be read whole). The tab says what happened, and offers the way out
  * for each other vault of this phone: "Start the friends list again in <vault>", after a confirm that says its effect.
  */
 function HomeGone({ message, vaults, service, refresh }: { message: string; vaults: readonly string[]; service: FriendsService; refresh: () => Promise<void> }) {
@@ -137,7 +137,7 @@ function HomeGone({ message, vaults, service, refresh }: { message: string; vaul
     setBusy(true)
     try {
       const r = await service.restart(asking)
-      setSaid(r.kind === 'done' ? null : r.kind === 'home-is-there' ? 'Your friends list vault answers again. Nothing was changed.' : (UNAVAILABLE_WORDS[r.kind as Unavailable['kind']] ?? 'Something went wrong. Try again.'))
+      setSaid(r.kind === 'done' ? null : r.kind === 'home-is-there' ? 'Your friends list can be read again. Nothing was changed.' : (UNAVAILABLE_WORDS[r.kind as Unavailable['kind']] ?? 'Something went wrong. Try again.'))
     } finally {
       setBusy(false)
       setAsking(null)

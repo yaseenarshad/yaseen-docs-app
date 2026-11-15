@@ -83,8 +83,10 @@ export type Unavailable =
    * YAZ-5399: GitHub does not have the vault `home` of my friends list for this account any more (deleted, or no access).
    * Show `homeGoneMessage(home)` and, for each of `vaults` (this phone's other vaults on the friends account), the way
    * out: `restartAction(vault)`, which runs `restart(vault)` after `restartWarning(vault)`.
+   * YAZ-5444 `fileGone`: the vault answers but the list FILE is gone from it (`homeGoneMessage(home, true)`); then
+   * `vaults` holds the home vault too (the list can start again there).
    */
-  | { kind: 'home-gone'; home: string; vaults: string[] }
+  | { kind: 'home-gone'; home: string; vaults: string[]; fileGone?: true }
   /**
    * YAZ-5400: my OLD friends list (a gist from before the move) has more than 300 files, and GitHub gives only 300: it
    * cannot be read whole, so nothing is moved or written (and no new list starts). Show `LIST_CUT`, and the same way
@@ -122,7 +124,8 @@ export interface FriendsList {
   groups: FriendsGroups
   /**
    * YAZ-5399, the way out when the home vault is gone: ends ALL sharing (every pointer and numbers gist of mine is
-   * deleted) and starts a new, empty list in `vault` (`restartList`). Refused while the home vault answers.
+   * deleted) and starts a new, empty list in `vault` (`restartList`). Refused while the home vault answers with its list
+   * file (YAZ-5444: a home that lost only its list file gets the same way out).
    */
   restart(vault: string): Promise<{ kind: 'done'; vault: string } | { kind: 'home-is-there' } | { kind: 'bad-target' } | Unavailable>
   /** One paste box for each kind of link: a friend link (`paste`), a group link (`groups.join`), a join request (`groups.request`). */
@@ -242,7 +245,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     } catch (err) {
       handle = null
       if (err instanceof NewerList) return { kind: 'newer-app' }
-      if (err instanceof BrokenList) return { kind: 'needs-repair' }
+      // YAZ-5444: a missing file goes to `withApi`, which opens the list again by its note (the way out, if it is gone).
+      if (err instanceof BrokenList && !err.missing) return { kind: 'needs-repair' }
       throw err
     }
   }
@@ -280,15 +284,19 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       case 'elsewhere':
         return { kind: 'list-elsewhere', home: found.home }
       case 'home-gone':
-        return homeGone(api, found.home)
+        return homeGone(api, found.home, found.fileGone === true)
       default:
         return { kind: 'no-list-access' }
     }
   }
-  /** YAZ-5399: the home is gone; the vaults where the list can start again (this phone's, on the friends account). */
-  async function homeGone(api: GistsApi, home: string): Promise<Unavailable> {
+  /**
+   * YAZ-5399: the home is gone; the vaults where the list can start again (this phone's, on the friends account).
+   * YAZ-5444: only the list FILE is gone: the home vault is one of them (first).
+   */
+  async function homeGone(api: GistsApi, home: string, fileGone = false): Promise<Unavailable> {
     handle = null
     const vaults = ((await api.repos?.()) ?? []).map((p) => p.repo).filter((r) => r !== home)
+    if (fileGone) return { kind: 'home-gone', home, vaults: [...new Set([home, ...vaults])], fileGone: true }
     return { kind: 'home-gone', home, vaults: [...new Set(vaults)] }
   }
   const isHandle = (x: IndexHandle | Unavailable | null): x is IndexHandle => x !== null && 'index' in x
@@ -319,9 +327,18 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (err instanceof VaultClosedError) return { kind: 'no-account' as const }
         // YAZ-5083: the list in the vault repo.
         if (err instanceof NewerList) return { kind: 'newer-app' as const }
-        if (err instanceof BrokenList) return { kind: 'needs-repair' as const }
+        if (err instanceof BrokenList) {
+          handle = null
+          // YAZ-5444: this session's list FILE is not in its vault any more: open the list again by its note, which
+          // tells a file gone for good (`home-gone` with the way out) from a lag (still "needs repair", nothing offered).
+          if (err.missing) {
+            const again = await list(friends.api, friends.account.login, false).catch(() => null)
+            if (again !== null && !isHandle(again) && again.kind === 'home-gone') return again
+          }
+          return { kind: 'needs-repair' as const }
+        }
         if (err instanceof Elsewhere) return { kind: 'list-elsewhere' as const, home: err.home }
-        if (err instanceof HomeGone) return homeGone(friends.api, err.home)
+        if (err instanceof HomeGone) return homeGone(friends.api, err.home, err.fileGone)
         if (listErrorCode(err) === 'NO_LIST_ACCESS') {
           handle = null
           // YAZ-5399: GitHub answered 404 for the repo of this session's list: open the list again by its note, which

@@ -93,8 +93,16 @@ export const listErrorCode = (err: unknown): ListErrorCode | null => {
 
 /** The list was written by a newer app: this app writes nothing to it. */
 export class NewerList extends Error {}
-/** The list cannot be read (YAZ-5191): the app writes nothing to it ("needs repair"). */
-export class BrokenList extends Error {}
+/**
+ * The list cannot be read (YAZ-5191): the app writes nothing to it ("needs repair"). `missing` (YAZ-5444): the list
+ * FILE is not at the branch head at all (a read that the stale rule took); the phone then opens the list again by its
+ * note, which tells a file gone for good (`home-gone` with `fileGone`: the way out) from one that is not.
+ */
+export class BrokenList extends Error {
+  constructor(readonly missing = false) {
+    super(missing ? 'The friends list file is not in its vault' : 'The friends list cannot be read')
+  }
+}
 
 // ---------------------------------------------------------------------------------------------------------------------
 // The file: records ↔ the version 2 file names that `readListFiles` reads.
@@ -300,7 +308,9 @@ export async function readGuarded(
     const fresh = (at: number | undefined) => at === undefined || Math.abs(now - at) < STALE_WINDOW_MS
     const need = Math.max(have.min !== undefined && fresh(have.minAt) ? have.min : 0, floor !== null && fresh(floor.at) ? floor.rev : 0)
     if (read !== null && (rev === null || rev >= need)) {
-      if (rev !== null) g.memory?.saw(key, rev, now, floor !== null && rev < floor.rev)
+      // YAZ-5444: a missing file is no list: it leaves the memory as it is (a list that starts again in this repo then
+      // gets a rev above the old one, so no device takes it for a stale read).
+      if (rev !== null && read.kind !== 'missing') g.memory?.saw(key, rev, now, floor !== null && rev < floor.rev)
       return { kind: 'read', read, stale: false }
     }
     if (read !== null) last = read

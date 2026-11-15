@@ -639,8 +639,12 @@ export type IndexFind =
   | { kind: 'ok'; handle: IndexHandle }
   | { kind: 'elsewhere'; home: string }
   | { kind: 'no-vault' }
-  /** YAZ-5399: GitHub answers 404 for the home vault repo (deleted, or no access at all). The way out: `restartList`. */
-  | { kind: 'home-gone'; home: string }
+  /**
+   * YAZ-5399: GitHub answers 404 for the home vault repo (deleted, or no access at all). The way out: `restartList`.
+   * YAZ-5444 `fileGone`: the vault answers, but the list FILE is gone from it (deleted by hand, or the vault was made
+   * again under the same name), past the stale window. The same way out, also in the home vault itself.
+   */
+  | { kind: 'home-gone'; home: string; fileGone?: true }
 
 /** How a write is labelled and spaced. `describe` gives the gist's description (the live test starts it "notecards-test"). */
 export interface WriteOptions {
