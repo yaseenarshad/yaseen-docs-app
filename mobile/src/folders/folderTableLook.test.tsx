@@ -88,7 +88,7 @@ describe("the folder table wears the vault's folder page defaults (YAZ-5549)", (
 
   it('the Name cell keeps a 44 px tap: the larger of the tap and the row height; the other cells take the row height', () => {
     const css = readFileSync(resolve(import.meta.dirname, 'folders.css'), 'utf8')
-    expect(css).toMatch(/\.folder-table tbody td\[data-name\] \{\s*height: max\(var\(--tap\), var\(--folder-row-h, 28px\)\);/)
+    expect(css).toMatch(/\.folder-table tbody tr:not\(\.folder-table__group\) > td\[data-name\] \{\s*height: max\(var\(--tap\), var\(--folder-row-h, 28px\)\);/)
     expect(css).toMatch(/\.folder-table tbody tr:not\(\.folder-table__group\) > td \{\s*height: var\(--folder-row-h, 28px\);/)
   })
 })

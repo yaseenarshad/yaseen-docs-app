@@ -175,7 +175,7 @@
 .folder-table tbody tr:not(.folder-table__group) > td {
   height: var(--folder-row-h, 28px);
 }
-.folder-table tbody td[data-name] {
+.folder-table tbody tr:not(.folder-table__group) > td[data-name] {
   height: max(var(--tap), var(--folder-row-h, 28px));
   cursor: pointer;
   font-weight: 500;
