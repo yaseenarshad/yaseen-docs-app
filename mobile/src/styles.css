@@ -67,11 +67,22 @@ html {
   touch-action: manipulation;
 }
 
+/* YAZ-5436: THE DOCUMENT NEVER SCROLLS. The page, the html and the body are a fixed frame the size of the screen; only a
+   screen's own content area scrolls (`.screen`). Before, the body could scroll: on iOS a finger at the end of a page (or
+   after the keyboard of Search pushed the document up) moved the WHOLE app, the tab bar with it, and the page's own
+   scroll waited until that move ended ("it hangs"). */
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
 }
 
 body {
@@ -125,11 +136,28 @@ a {
 /* ---- The frame: top bar, the screen, the tab bar. The bars keep out of the notch and the home bar. ---- */
 
 .app {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  overflow: hidden;
   padding-left: env(safe-area-inset-left, 0px);
   padding-right: env(safe-area-inset-right, 0px);
+  background: var(--bg);
+}
+
+/* The bars and a notice keep their size; the screen takes the rest. */
+.app > :not(.screen) {
+  flex-shrink: 0;
+}
+
+/* YAZ-5435: the screen follows the finger of a back swipe; a shadow at its left edge, the grey of the side behind it. */
+.app--swiping {
+  box-shadow: -10px 0 28px rgba(0, 0, 0, 0.18);
+}
+body:has(.app--swiping) {
+  background: var(--bg-side);
 }
 
 .topbar {
@@ -152,11 +180,30 @@ a {
   text-overflow: ellipsis;
 }
 
+/* The ONLY thing that scrolls (YAZ-5436): `min-height: 0` lets it be shorter than its content; `contain` keeps its scroll
+   from passing to the frame at its top and its end; `relative` keeps a hidden (VoiceOver) element in it, not in the
+   document's overflow. */
 .screen {
-  flex: 1;
-  overflow: auto;
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 12px 16px 24px;
+}
+
+/* A page or a card (YAZ-5436): no scroll bar, as the Review card; a soft fade at the bottom, over the bottom padding,
+   so the last line is clear at the end. */
+.screen--reader {
+  padding-bottom: 40px;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
+}
+.screen--reader::-webkit-scrollbar {
+  display: none;
 }
 
 .tabbar {

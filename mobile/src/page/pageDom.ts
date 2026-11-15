@@ -4,7 +4,8 @@ import { cardInContent } from '@client/review/cardRead'
 import type { NavAction } from '../app/nav'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
-import { cardOf, drawCard, embedHead, resolveSourceOf } from './pageLook'
+import { headMarks, titleBand } from '../media/ui/cardHead'
+import { cardOf, drawCard, embedName, resolveSourceOf } from './pageLook'
 
 /**
  * What a drawn page or card does once it is on screen (YAZ-5079): its pictures and sounds get their bytes
@@ -14,8 +15,10 @@ import { cardOf, drawCard, embedHead, resolveSourceOf } from './pageLook'
  */
 
 /**
- * Each `![[ID]]` box of `root` with its card, read from the stored file (round 15, item 1): the head "Embedded from
- * "<title>" · ID" opens the card alone; the card is drawn by `renderCard`. No Edit card and no ⋯ in stage one.
+ * Each `![[ID]]` box of `root` with its card, read from the stored file (round 15, item 1), drawn as the Mac's embed
+ * (`cardEmbed.ts`, YAZ-5437): the head `↗ Embedded from "<name>" · ID` (· "Archived"), whose first part opens the card
+ * alone; under it the card's title band (off its card line; none for a card with no title); then the card, drawn by
+ * `renderCard`. No Edit card and no ⋯ in stage one.
  */
 export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: VaultStore, go: (action: NavAction) => void, live: () => boolean = () => true): Promise<void> {
   const jobs: Promise<void>[] = []
@@ -26,15 +29,29 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
       box.textContent = `Missing card · ${box.dataset.cardEmbed}`
       continue
     }
-    const head = document.createElement('button')
-    head.type = 'button'
-    head.className = 'card-embed__from'
-    head.textContent = embedHead(data, card, card.title)
-    head.addEventListener('click', () => go({ type: 'open', route: { kind: 'card', path: card.path, id: card.id } }))
+    const from = document.createElement('button')
+    from.type = 'button'
+    from.className = 'card-embed__from'
+    from.setAttribute('aria-label', `Embedded from "${embedName(data, card)}"`)
+    const arrow = document.createElement('span')
+    arrow.className = 'card-embed__arrow'
+    arrow.setAttribute('aria-hidden', 'true')
+    arrow.textContent = '↗'
+    from.append(arrow, `Embedded from "${embedName(data, card)}"`)
+    from.addEventListener('click', () => go({ type: 'open', route: { kind: 'card', path: card.path, id: card.id } }))
+    const head = document.createElement('div')
+    head.className = 'card__head card-embed__head'
+    const dot = document.createElement('span')
+    dot.className = 'card-embed__dot'
+    dot.textContent = '·'
+    const drawHead = (off: boolean) => head.replaceChildren(from, dot, ...headMarks({ id: card.id, title: '', off }))
+    drawHead(data.byPath[card.path]?.cards?.[card.index]?.off === true)
     const body = document.createElement('div')
     body.className = 'card__body card-embed__body'
+    // From the index until the file is read (the Mac's `drawTitle`), then off the card line.
+    let band = titleBand(card.title)
     box.className = 'card card-embed'
-    box.replaceChildren(head, body)
+    box.replaceChildren(...[head, band, body].filter((el): el is HTMLElement => el !== null))
     jobs.push(
       store.read(data.vault, card.path).then((file) => {
         if (!live()) return
@@ -46,13 +63,14 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
           return
         }
         // The file holds the card's title now (the index may be a pass behind).
-        if (read.title !== card.title) head.textContent = embedHead(data, card, read.title)
-        if (read.off) {
-          const state = document.createElement('span')
-          state.className = 'card-embed__state'
-          state.textContent = 'Archived'
-          head.append(' ', state)
+        if (read.title !== card.title) {
+          const next = titleBand(read.title)
+          if (band !== null) band.replaceWith(...(next === null ? [] : [next]))
+          else if (next !== null) head.after(next)
+          band = next
         }
+        drawHead(read.off)
+        box.classList.toggle('card--off', read.off)
         body.replaceChildren(drawCard(data, card.path, read.text))
       }),
     )

@@ -4,7 +4,7 @@ import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync } from './fakes'
-import { READER_FILES, READER_NOT_STORED, seedReaderVault } from './readerVault'
+import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 
@@ -12,7 +12,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-drawing'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -54,15 +54,28 @@ const TRICKS = [
   '<!--',
 ].join('\n\n')
 
+/** YAZ-5437: a page with three cards: a title, no title, a title hidden in review on an archived card. */
+const THREE_CARDS = [
+  '# Rivers of Europe',
+  'Three cards for the trip.',
+  cardBlock('DEMO-51', 'Which river runs through Madrid?\n---\nThe Manzanares', ['title "River of Madrid"']),
+  cardBlock('DEMO-52', 'Which river runs through Paris?\n---\nThe Seine'),
+  cardBlock('DEMO-53', 'Which river runs through Vienna?\n---\nThe Danube', ['title "River of Vienna"', 'notitle', 'off']),
+].join('\n\n')
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
-  await seedReaderVault(
-    store,
-    tokens,
-    name === 'page-tricks' ? { ...READER_FILES, 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` } : name === 'page-drawing' ? { ...READER_FILES, ...DRAWING_FILES } : READER_FILES,
-  )
+  const extra: Record<string, string | Uint8Array> =
+    name === 'page-tricks'
+      ? { 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` }
+      : name === 'page-cards' || name === 'search-tree'
+        ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
+        : name === 'page-drawing'
+          ? DRAWING_FILES
+          : {}
+  await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
   const online: VaultMedia = {
@@ -85,11 +98,13 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   root.render(<App services={services} />)
   await until(() => document.querySelector('[role="tab"]') !== null)
   press('Search')
-  await until(() => document.querySelector('.search__rows') !== null)
+  await until(() => document.querySelector('.search__rows, .tree') !== null)
 
   const typed = async (q: string) => {
     typeSearch(q)
     await wait(150)
+    // The result rows are a lazy chunk (YAZ-5438): the first one waits for it.
+    await until(() => document.querySelector('.search__rows') !== null || /Nothing matches/.test(document.body.textContent ?? ''))
   }
   const open = async (row: RegExp, ready: string) => {
     press(row)
@@ -131,6 +146,20 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'card':
       await typed('la bib')
       await open(/^la biblioteca/, '.card-view__card .card__sides, .card-view__card *')
+      break
+    case 'page-cards':
+      await typed('rivers')
+      await open(/^Rivers of Europe/, '.reader__body .page-card')
+      break
+    case 'search-tree':
+      for (const folder of [/^travel, folder/, /^2026, folder/, /^cards, folder/]) {
+        press(folder)
+        await wait(80)
+      }
+      break
+    case 'search-clear':
+      document.querySelector<HTMLInputElement>('input[name="search"]')?.focus()
+      await typed('spa')
       break
     case 'page-tricks':
       await typed('parser')

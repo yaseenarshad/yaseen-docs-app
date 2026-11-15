@@ -1,9 +1,10 @@
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useApp } from '../app/AppState'
 import { FORWARD_LABEL, type Forward } from '../app/help'
 import { TABS } from '../app/nav'
 import { setReviewTop } from './reviewTop'
 import { SyncStatus } from './SyncStatus'
+import { useEdgeBack } from './useEdgeBack'
 
 /**
  * The frame of every screen: the top bar, the screen, and (when a vault is open) the tab bar. The bars keep clear of
@@ -16,6 +17,7 @@ export function Frame({
   tabs = false,
   notice,
   review = false,
+  reader = false,
   children,
 }: {
   title: string
@@ -31,12 +33,17 @@ export function Frame({
    * "▣ All cards ▾ 3 / 12" in the middle (`reviewTop.ts`), the gear. The screen fills the space between the bars.
    */
   review?: boolean
+  /** A page or a card (YAZ-5436): no scroll bar; a soft fade at the bottom, as the Review card. */
+  reader?: boolean
   children: ReactNode
 }) {
   const app = useApp()
   const route = app.nav.stack.at(-1)
+  const frame = useRef<HTMLDivElement>(null)
+  // YAZ-5435: a screen with Back also goes back on a swipe from the left edge (the Home Screen app only).
+  useEdgeBack(frame, back)
   return (
-    <div className="app">
+    <div className="app" ref={frame}>
       <header className={review ? 'topbar topbar--review' : 'topbar'}>
         {back && (
           <button type="button" className="link-btn back" onClick={back}>
@@ -53,7 +60,7 @@ export function Frame({
         )}
       </header>
       {notice}
-      <main className={review ? 'screen screen--review' : 'screen'}>{children}</main>
+      <main className={review ? 'screen screen--review' : reader ? 'screen screen--reader' : 'screen'}>{children}</main>
       {tabs && (
         <nav className="tabbar" role="tablist" aria-label="Tabs">
           {TABS.map((t) => (

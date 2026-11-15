@@ -43,11 +43,17 @@ async function openSearch(): Promise<Harness> {
   await seedReaderVault(phone.store, phone.tokens, FILES)
   const x = await mount({ phone })
   await x.click('Search')
-  await waitFor(x, () => x.host.querySelector('.search__rows') !== null)
+  await waitFor(x, () => x.host.querySelector('.search__rows, .tree') !== null)
   return x
 }
 const box = (x: Harness) => x.host.querySelector<HTMLInputElement>('input[type="search"]')!
-const rows = (x: Harness) => [...x.host.querySelectorAll('.search__rows .row')].map((r) => `${r.querySelector('.row__main')?.textContent} | ${r.querySelector('.row__side')?.textContent}`)
+/** A row as the person sees it (YAZ-5438): its name, then its icon's kind (a card's ID beside it). Tree rows and result rows. */
+const rows = (x: Harness) =>
+  [...x.host.querySelectorAll('.search__rows .row, .tree .tree__row')].map((r) => {
+    const kind = { folder: 'folder', markdown: 'page', card: 'card' }[r.querySelector('.file-icon')?.getAttribute('data-kind') ?? ''] ?? '?'
+    const side = r.querySelector('.row__side')?.textContent
+    return `${r.querySelector('.row__main, .tree__label')?.textContent} | ${kind}${side ? ` · ${side}` : ''}`
+  })
 async function typeQuery(x: Harness, value: string): Promise<void> {
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box(x), value)
@@ -78,17 +84,28 @@ describe('Search finds a card by the title on its card line (point 3)', () => {
 })
 
 describe('a card alone ("Open card") and an embedded card', () => {
+  it('YAZ-5437: the page Geo shows each card\'s title band under its head; a card with no title has none', async () => {
+    h = await openSearch()
+    await openPage(h, 'Geo')
+    await waitFor(h, () => h!.host.querySelectorAll('.page-card').length === 2)
+    const cards = [...h.host.querySelectorAll('.page-card')]
+    expect(cards.map((c) => c.querySelector('.card__head')?.textContent)).toEqual(['GEO-1', 'GEO-2'])
+    expect(cards.map((c) => c.querySelector('.card-band')?.textContent ?? null)).toEqual(['Longest river', null])
+  })
+
   async function openPage(x: Harness, name: string) {
     await typeQuery(x, name)
     await x.click(new RegExp(`^${name}`))
     await waitFor(x, () => x.host.querySelector('.reader__title') !== null)
   }
 
-  it('the embeds: a card in a page shows its title first; a card file is named in "Embedded from"; no title: "Untitled card", and the ID', async () => {
+  it('the embeds (YAZ-5437, the Mac\'s `cardEmbed.ts`): the head "↗ Embedded from <name> · ID", then the title band; no title: no band', async () => {
     h = await openSearch()
     await openPage(h, 'Links')
     await waitFor(h, () => h!.host.querySelectorAll('.card-embed__from').length === 3 && [...h!.host.querySelectorAll('.card-embed__body')].every((b) => b.textContent !== ''))
-    expect([...h.host.querySelectorAll('.card-embed__from')].map((e) => e.textContent)).toEqual(['Longest river · Embedded from "Geo" · GEO-1', 'Embedded from "Capital of France" · GEO-3', 'Embedded from "GEO-4" · GEO-4'])
+    const embeds = [...h.host.querySelectorAll('.card-embed')]
+    expect(embeds.map((e) => e.querySelector('.card__head')?.textContent)).toEqual(['↗Embedded from "Geo"·GEO-1', '↗Embedded from "Capital of France"·GEO-3', '↗Embedded from "GEO-4"·GEO-4'])
+    expect(embeds.map((e) => e.querySelector('.card-band')?.textContent ?? null)).toEqual(['Longest river', 'Capital of France', null])
     // The links show the title, else the ID (as the Mac's pills).
     expect(h.text()).toContain('See Capital of France and GEO-4.')
   })
@@ -101,12 +118,18 @@ describe('a card alone ("Open card") and an embedded card', () => {
     expect(h.host.querySelector('.reader__title')?.textContent).toBe('Capital of France · GEO-3')
     expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Capital of France')
     expect(h.host.querySelector('.card-view__card')?.textContent).toContain('The capital is')
+    // YAZ-5437: the card's box as the Mac's card window: the head (ID), then the title band.
+    expect(h.host.querySelector('.card-view__card .card__head')?.textContent).toBe('GEO-3')
+    expect(h.host.querySelector('.card-view__card .card-band')?.textContent).toBe('Capital of France')
     await h.click('‹ Back')
     await typeQuery(h, 'GEO-4')
     await h.click(/^geo-4|^GEO-4/)
     await waitFor(h, () => h!.host.querySelector('.card-view') !== null && h!.host.querySelector('.card-view__card .card__body') !== null)
     expect(h.host.querySelector('.reader__title')?.textContent).toBe('Untitled card · GEO-4')
     expect(h.host.querySelector('.card-view')?.getAttribute('aria-label')).toBe('GEO-4')
+    // No title: no band; the ID in the head names it (the Mac's rule).
+    expect(h.host.querySelector('.card-view__card .card-band')).toBeNull()
+    expect(h.host.querySelector('.card-view__card .card__head')?.textContent).toBe('GEO-4')
     // The question is the card's text, never its title.
     expect(h.host.querySelector('.card-view__card')?.textContent).toContain('What is the highest peak?')
   })

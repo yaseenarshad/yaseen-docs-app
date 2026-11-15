@@ -56,6 +56,17 @@ export function Shell() {
   useEffect(() => {
     if (tabsReady && route === null && app.nav.tab === 'review') setReviewKept(true)
   }, [tabsReady, route, app.nav.tab])
+  // YAZ-5436: the keyboard of a field (Search's box) can push the whole document up on iOS, and it stayed up: the next
+  // screen's finger then moved the frame. When a field lets go of the keyboard, and on each new screen, the document
+  // goes back to its place (it never scrolls on its own: `styles.css`).
+  useEffect(() => {
+    const home = () => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0)
+    }
+    home()
+    document.addEventListener('focusout', home)
+    return () => document.removeEventListener('focusout', home)
+  }, [route])
   const reviewShown = route === null && app.nav.tab === 'review'
   // The kept Review, always the SECOND child of what the shell returns once the tabs are ready, so it never remounts.
   const kept = tabsReady && (reviewKept || reviewShown) ? createPortal(<Review shown={reviewShown} />, reviewHost) : null

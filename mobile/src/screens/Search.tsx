@@ -1,12 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SearchCandidate } from '@client/search/searchCandidates'
 import { useApp } from '../app/AppState'
-import type { Route } from '../app/nav'
 import { buildRows, emptyBoxRows, findRows, type PhoneType } from '../search/searchRun'
 import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import '../search/search.css'
+
+/** The tree (YAZ-5438): its own chunk, loaded when the box is empty. */
+const SearchTree = lazy(() => import('../search/SearchTree'))
+/** The result rows with their icons: the same chunk (the first load stays under its ceiling, YAZ-5377). */
+const ResultList = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultList })))
 
 /** Rows drawn at first, and added at each "Show more" (5,000 pages are not drawn at once). */
 const STEP = 100
@@ -14,9 +18,15 @@ const STEP = 100
 /**
  * THE SEARCH TAB (YAZ-5079, 4C; decisions 10 and 21, round 15 item 2). One box: cards and pages in one list, by title,
  * alias and ID, as the Mac's search finds them (`searchRun.ts`). The list changes with each letter, from the phone's own
- * index, so it works with no signal. The box empty: the list of pages (there is no Pages tab). The Type filter: All
- * types, Pages, Cards (Cards only while the vault's Review is on). A tap on a page opens it read only; a tap on a card
- * opens the card alone (round 12, item 10). The words follow the vault's word for "page" (`unit`).
+ * index, so it works with no signal. The Type filter: All types, Pages, Cards (Cards only while the vault's Review is
+ * on). A tap on a page opens it read only; a tap on a card opens the card alone (round 12, item 10). The words follow
+ * the vault's word for "page" (`unit`).
+ *
+ * YAZ-5438: the box empty shows the Mac's sidebar tree (`SearchTree`): folders that open and close, pages and card
+ * files, with the Mac's icons and order (Cards: the cards, each with the card icon). A result row has the same icons
+ * (a page, a card file, a card in a page) in place of the word "page".
+ * YAZ-5439: the ✕ at the right of the box (and Escape) clears the text and leaves the search: the keyboard goes away
+ * and the tree shows again.
  */
 export function Search() {
   const app = useApp()
@@ -32,6 +42,12 @@ export function Search() {
   /** The query and Type the rows shown are for: a new one starts the list again at its top (YAZ-5211). */
   const listOf = useRef(`${held.query}\n${held.type}`)
   const section = useRef<HTMLElement>(null)
+  const input = useRef<HTMLInputElement>(null)
+  /** YAZ-5439: clear the box and leave the search (the keyboard goes away). */
+  const leave = () => {
+    setQuery('')
+    input.current?.blur()
+  }
   const [notice] = useState(() => takeSearchNotice())
   const cards = data?.review.enabled ?? false
   // Cards is a choice only while Review is on, as on the Mac.
@@ -68,7 +84,8 @@ export function Search() {
   }, [rows, query, kind, vaultKey])
 
   const empty = query.trim() === ''
-  const list = useMemo(() => (rows !== null && empty ? emptyBoxRows(rows, kind) : null), [rows, empty, kind])
+  const tree = empty && kind !== 'cards'
+  const list = useMemo(() => (rows !== null && empty && kind === 'cards' ? emptyBoxRows(rows, kind) : null), [rows, empty, kind])
   const results = empty ? list : found
 
   // YAZ-5211: the list's scroll place is kept as the person scrolls, and given back when the tab shows again.
@@ -76,10 +93,10 @@ export function Search() {
   const placed = useRef(false)
   useLayoutEffect(() => {
     const scroller = section.current?.closest('.screen')
-    if (scroller == null || placed.current || results === null) return
+    if (scroller == null || placed.current || (results === null && !(tree && data !== null))) return
     placed.current = true
     scroller.scrollTop = held.scroll
-  }, [results, held.scroll])
+  }, [results, held.scroll, tree, data])
   useEffect(() => {
     const scroller = section.current?.closest('.screen')
     if (scroller == null) return
@@ -96,7 +113,9 @@ export function Search() {
 
   return (
     <section className="search" aria-label="Search" ref={section}>
+      <div className="search__field">
       <input
+        ref={input}
         type="search"
         name="search"
         className="search__box"
@@ -109,7 +128,19 @@ export function Search() {
         spellCheck={false}
         enterKeyHint="search"
         onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            leave()
+          }
+        }}
       />
+      {query !== '' && (
+        <button type="button" className="search__clear" aria-label="Clear search" onClick={leave}>
+          <span aria-hidden>✕</span>
+        </button>
+      )}
+      </div>
       <div className="search__bar">
         <button type="button" className="pill" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
           {TYPES.find(([value]) => value === kind)?.[1]} ▾
@@ -142,37 +173,20 @@ export function Search() {
       )}
       {data !== null && data.records.length === 0 && <p className="muted">{unit('No pages yet. They come with the next sync.')}</p>}
       {results !== null && !empty && results.length === 0 && <p className="muted">{`Nothing matches "${query.trim()}".`}</p>}
-      {results !== null && results.length > 0 && (
+      {tree && data !== null && data.records.length > 0 && (
+        <Suspense fallback={null}>
+          <SearchTree data={data} cards={cards} shown={shown} more={<ShowMore onMore={() => setShown((n) => n + STEP * 2)} />} />
+        </Suspense>
+      )}
+      {!tree && results !== null && results.length > 0 && (
         <>
-          {empty && <h2 className="section">{kind === 'cards' ? 'Cards' : unit('Pages')}</h2>}
-          <ul className="rows search__rows" aria-label={empty ? (kind === 'cards' ? 'Cards' : unit('Pages')) : 'Results'}>
-            {results.slice(0, shown).map((row) => (
-              <li key={`${row.path}\n${row.label}`}>
-                <ResultRow row={row} />
-              </li>
-            ))}
-          </ul>
+          <Suspense fallback={null}>
+            <ResultList rows={results.slice(0, shown)} cards={empty} />
+          </Suspense>
           {results.length > shown && <ShowMore onMore={() => setShown((n) => n + STEP * 2)} />}
         </>
       )}
     </section>
-  )
-}
-
-/** Where a row opens: a page read only; a card alone (a card file's card, or a card in its page). */
-function routeOf(row: SearchCandidate): Route {
-  if (row.card === true) return { kind: 'card', path: row.page ?? row.path, id: row.id ?? '' }
-  return { kind: 'page', path: row.path }
-}
-
-function ResultRow({ row }: { row: SearchCandidate }) {
-  const app = useApp()
-  const side = row.card === true ? (row.id === undefined ? 'card' : `card · ${row.id}`) : app.unit('page')
-  return (
-    <button type="button" className="row row__button" onClick={() => app.go({ type: 'open', route: routeOf(row) })}>
-      <span className="row__main">{row.label}</span>
-      <span className="row__side">{side}</span>
-    </button>
   )
 }
 
