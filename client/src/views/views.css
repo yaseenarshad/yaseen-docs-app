@@ -2282,9 +2282,10 @@
   background: var(--bg);
 }
 
-/* A month's 1st says its month ("Dec 1", YAZ-5608: in every scale), the month in the accent colour. */
+/* A month's 1st says its month ("Dec 1", YAZ-5608: in every scale): the month and its 1 in the accent colour. */
 .view-cal__date--first {
   font-weight: 600;
+  color: var(--accent);
 }
 
 .view-cal__date-month {
