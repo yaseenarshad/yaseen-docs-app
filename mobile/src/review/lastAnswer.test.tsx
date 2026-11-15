@@ -5,10 +5,12 @@ import { UNDO_SHOWN_MS } from './words'
 import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
- * YAZ-5500 (Yaseen's pick: A, text only): after an answer, the hint line under the card says "Last: <title> (Forgot)"
- * or "(Remembered)"; the ID when the card has no title. No ✕ or ✓ and no colour cue. It shows once the 4-second
- * "↶ Undo" has gone (YAZ-5415 round 5, YAZ-5502), stays until the next answer, is one line cut with "…", and a tap on it
- * never steps the card. The real engine and answer list (`testing.ts`). Made-up data only.
+ * YAZ-5500 (reopened; Yaseen's pick: A, text only): right after ✕ or ✓, the hint line under the card says "Last:
+ * <title> (Forgot) · ↶ Undo" (or "(Remembered)"; the ID when the card has no title), in place of the hint. One thing:
+ * the separate 4-second "↶ Undo" is folded into it. No timer: it stays until the first action on the next card — a tap
+ * that shows a part, ← or →, or the deck drawer — and then the plain hint is back. Undo stays in ⋯. No ✕ or ✓ and no
+ * colour cue; one line cut with "…"; a tap on its words never steps the card. The real engine and answer list
+ * (`testing.ts`). Made-up data only.
  */
 const OLD = '2026-10-02T09:00Z good, 2026-10-12T09:00Z good'
 const FILES = {
@@ -35,55 +37,104 @@ afterEach(() => {
 const q = (sel: string) => h!.host.querySelector<HTMLElement>(sel)
 const hint = () => (q('.review__hint')?.textContent ?? '').replace(/\s+/g, ' ').trim()
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
+const plain = /^(Tap anywhere · \d+ left|Did you remember it\?)$/
 
-describe('YAZ-5500: the last answer in the hint line', () => {
-  it('first the 4-second Undo; then "Last: <title> (Forgot)" until the next answer; the ID with no title', async () => {
+describe('YAZ-5500: the last answer in the hint line, right after answering', () => {
+  it('"Last: <title> (Forgot) · ↶ Undo" at once, in place of the hint; no timer; the ID with no title', async () => {
     h = await reviewSetup(FILES)
+    expect(hint()).toMatch(plain)
     await h.click('Forgot')
-    // The 4-second Undo first (YAZ-5502), no Last line yet.
-    expect(q('.review__hint .review__undo')).not.toBeNull()
-    expect(q('.review__lastanswer')).toBeNull()
-    await real(UNDO_SHOWN_MS + 150)
-    expect(q('.review__hint .review__undo')).toBeNull()
-    expect(hint()).toBe('Last: Capital of Spain (Forgot)')
+    expect(hint()).toBe('Last: Capital of Spain (Forgot) · ↶ Undo')
+    // One Undo, in the line: no second "↶ Undo" of its own beside it.
+    expect(h.host.querySelectorAll('.review__hint .review__undo')).toHaveLength(1)
+    expect(q('.review__hint-text')).toBeNull()
     // Text only: no marks, no colour of its own.
-    expect(hint()).not.toMatch(/[✕✓]/)
+    expect(q('.review__lastanswer')?.textContent).not.toMatch(/[✕✓]/)
     expect(q('.review__lastanswer')?.getAttribute('style')).toBeNull()
     expect(q('.review__lastanswer [data-rating]')).toBeNull()
-    // It stays.
-    await real(1000)
-    expect(hint()).toBe('Last: Capital of Spain (Forgot)')
-    // The next answer: its own Undo, then its own line, by ID (the card has no title).
+    // No timer: past the old 4 seconds, it stays.
+    await real(UNDO_SHOWN_MS + 300)
+    expect(hint()).toBe('Last: Capital of Spain (Forgot) · ↶ Undo')
+    // The next answer: its own line, by ID (the card has no title).
     expect(h.head()).toBe('CAP-2')
     await h.click('Remembered')
-    expect(q('.review__lastanswer')).toBeNull()
-    await real(UNDO_SHOWN_MS + 150)
-    expect(hint()).toBe('Last: CAP-2 (Remembered)')
+    expect(hint()).toBe('Last: CAP-2 (Remembered) · ↶ Undo')
   })
 
-  it('a tap on the line never steps the card; the card\'s own tap still does', async () => {
+  it('the first tap on the next card (a part shows) puts it away: the plain hint again', async () => {
     h = await reviewSetup(FILES)
     await h.click('Remembered')
-    await real(UNDO_SHOWN_MS + 150)
     expect(h.head()).toBe('CAP-2')
-    // What shows of the card: its sides, and its hidden words shown.
+    const shown = () => h!.host.querySelectorAll('.phone-card__body .card__side').length * 100 + h!.host.querySelectorAll('.phone-card__body .card__hidden').length
+    const before = shown()
+    await h.tap()
+    expect(shown()).toBeGreaterThan(before)
+    expect(q('.review__lastanswer')).toBeNull()
+    expect(q('.review__hint .review__undo')).toBeNull()
+    expect(hint()).toMatch(plain)
+    // Undo stays in ⋯.
+    await h.click('More card actions')
+    expect(h.button('Undo last answer')?.disabled).toBe(false)
+  })
+
+  it('a tap on the line\'s words never steps the card, and keeps the line', async () => {
+    h = await reviewSetup(FILES)
+    await h.click('Remembered')
     const shown = () => h!.host.querySelectorAll('.phone-card__body .card__side').length * 100 + h!.host.querySelectorAll('.phone-card__body .card__hidden').length
     const before = shown()
     await h.seen()
     await act(async () => q('.review__lastanswer-name')!.click())
     await h.settle()
     expect(shown()).toBe(before)
-    await h.tap()
-    expect(shown()).toBeGreaterThan(before)
-    // A tap shows a part: the line stays.
-    expect(hint()).toBe('Last: Capital of Spain (Remembered)')
+    expect(hint()).toBe('Last: Capital of Spain (Remembered) · ↶ Undo')
   })
 
-  it('Undo of the answer (in ⋯ after the 4 s) takes the line away with it', async () => {
+  it('a tap in the 400 ms after the answer (the second tap of a double tap) does not put it away', async () => {
+    h = await reviewSetup(FILES)
+    await h.click('Remembered')
+    expect(q('[data-guard]')).not.toBeNull()
+    await act(async () => q('.review__card')!.click())
+    await h.settle()
+    expect(hint()).toBe('Last: Capital of Spain (Remembered) · ↶ Undo')
+  })
+
+  it('→ puts it away (← too: after an answer it has nothing to go back to, as the Mac)', async () => {
+    h = await reviewSetup(FILES)
+    await h.click('Remembered')
+    expect(h.head()).toBe('CAP-2')
+    expect(h.button('Previous card')?.disabled).toBe(true)
+    await h.click('Next card')
+    expect(h.head()).toBe('CAP-3')
+    expect(hint()).toMatch(plain)
+  })
+
+  it('opening the deck drawer puts it away', async () => {
     h = await reviewSetup(FILES)
     await h.click('Forgot')
-    await real(UNDO_SHOWN_MS + 150)
     expect(hint()).toContain('Last: Capital of Spain')
+    await h.click(/Choose what to review/)
+    expect(q('.review__sheet')).not.toBeNull()
+    expect(q('.review__lastanswer')).toBeNull()
+    expect(hint()).toMatch(plain)
+  })
+
+  it('opening ⋯ keeps it; its Undo takes the answer back, and the line with it', async () => {
+    h = await reviewSetup(FILES)
+    await h.click('Forgot')
+    await h.click('More card actions')
+    await h.click('More card actions')
+    expect(hint()).toBe('Last: Capital of Spain (Forgot) · ↶ Undo')
+    await h.click('Undo')
+    expect(h.head()).toContain('CAP-1')
+    expect(q('.review__lastanswer')).toBeNull()
+    expect(h.answers.waiting()).toHaveLength(0)
+  })
+
+  it('Undo of the answer in ⋯, after the line went, still works', async () => {
+    h = await reviewSetup(FILES)
+    await h.click('Forgot')
+    await h.tap()
+    expect(q('.review__lastanswer')).toBeNull()
     await h.click('More card actions')
     await h.click('Undo last answer')
     expect(h.head()).toContain('CAP-1')
@@ -98,6 +149,8 @@ describe('YAZ-5500: the last answer in the hint line', () => {
     expect(css).toMatch(/\.review__lastanswer \{[^}]*white-space: nowrap;/)
     expect(css).toMatch(/\.review__lastanswer-name \{[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;/)
     expect(css).toMatch(/\.review__lastanswer-rating \{[^}]*flex: none;/)
-    expect(css).not.toMatch(/\.review__lastanswer[^{]*\{[^}]*color:/)
+    // The status box it sits in may shrink to the screen, so the title (not the Undo) gives way.
+    expect(css).toMatch(/\.review__last \{[^}]*min-width: 0;[^}]*max-width: 100%;/)
+    expect(css).not.toMatch(/\.review__lastanswer[^{+]*\{[^}]*color:/)
   })
 })

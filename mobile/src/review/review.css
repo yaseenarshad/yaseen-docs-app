@@ -330,17 +330,14 @@
   overflow-wrap: anywhere;
   -webkit-user-select: none;
   user-select: none;
-  transition: background-color 0.12s;
 }
 
 .review__card::-webkit-scrollbar {
   display: none;
 }
 
-/* The press look on a tap (touch): the card darkens a touch, then lets go. */
-.review__stage:active .review__card {
-  background: color-mix(in srgb, var(--bg-side) 92%, var(--accent));
-}
+/* YAZ-5538: no press look on the card. A tap shows the next part (or rings ✕ and ✓), and that is all it does: the
+   accent tint that flashed on each tap is gone, as the Mac's card has none. */
 
 .review__cardtop {
   display: flex;
@@ -501,20 +498,7 @@
   }
 }
 
-.review__card .card__blank:active {
-  background: var(--review-hide-on);
-}
-
-/* The part that just showed flashes once. */
-.review__flash {
-  animation: review-flash 0.5s ease;
-}
-
-@keyframes review-flash {
-  from {
-    box-shadow: inset 0 0 0 3px var(--accent);
-  }
-}
+/* YAZ-5538: a part that shows simply shows: no press tint on the hidden word, no flash once it is shown. */
 
 /* More of the card below: a soft fade at its foot and a small "↓ more"; both go at the end. */
 .review__fade {
@@ -555,7 +539,7 @@
   visibility: visible;
 }
 
-/* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?", and "↶ Undo" for a few seconds ---- */
+/* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?"; after an answer, "Last: … · ↶ Undo" ---- */
 
 .review__hint {
   display: flex;
@@ -591,10 +575,24 @@
   white-space: pre;
 }
 
+/* YAZ-5500: "· ↶ Undo" after the answer word: the button sits close, its 44 pt box still reaches the finger. */
+.review__lastanswer-sep {
+  flex: none;
+  white-space: pre;
+}
+
+.review__lastanswer + .review__undo {
+  flex: none;
+  margin-left: -6px;
+  padding: 0 6px 0 2px;
+}
+
 .review__last {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .review__last:empty {
@@ -765,10 +763,6 @@
   .review__answers[data-nudge='b'] .review__answer {
     animation: review-ring-b 0.7s ease-out;
   }
-  .review__flash {
-    animation: none;
-  }
-  .review__card,
   .review__fade,
   .review__more-cue {
     transition: none;

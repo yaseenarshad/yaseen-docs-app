@@ -86,7 +86,7 @@ const DUE_END = (fresh: boolean): Record<string, string> => ({
   ...(fresh && { 'spanish/places.md': page('Places', ...['la playa', 'el museo', 'la plaza'].map((w, i) => block(`What does "${w}" mean?\n---\n{{place ${i + 1}}}`, `PLC-${i + 1}`))) }),
 })
 
-/** YAZ-5500: `#fixture=review-last`: after one Forgot, past the 4-second Undo, the hint line says the last answer. */
+/** YAZ-5500: `#fixture=review-last`: right after one Forgot, the hint line says it: "Last: … (Forgot) · ↶ Undo". */
 const LAST: Record<string, string> = {
   '.yaseendocs/review.json': '{}',
   'geography/capitals.md': page('Capitals', block('What is the capital of Spain?\n---\n{{Madrid}}', `CAP-1, title "Capital of Spain", ${DUE}`), block('What is the capital of Portugal?\n---\n{{Lisbon}}', `CAP-2, title "Capital of Portugal", ${DUE}`)),
@@ -254,7 +254,7 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
     case 'review-last':
       await wait(500) // past the tap guard (YAZ-5226)
       press('Forgot')
-      await wait(4300) // the 4-second Undo goes
+      await wait(4300) // no timer: the line stays until the next card's first action
       break
     case 'review-lost':
       press('Remembered')

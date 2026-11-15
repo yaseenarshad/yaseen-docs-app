@@ -143,7 +143,7 @@ type Step = Reveal & { key: string | null }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
-/** `name` and `rating` (YAZ-5500): the hint line's "Last: Capital of Spain (Forgot)" once the 4-second Undo has gone. */
+/** `name` and `rating` (YAZ-5500): the hint line's "Last: Capital of Spain (Forgot) · ↶ Undo", right after the answer. */
 type Line = { kind: 'answer'; count: number; id: string; name: string; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
@@ -296,10 +296,11 @@ function SessionScreen({
   // The end of the card (YAZ-5415; the Mac's end cue, YAZ-5049 round 3): one more tap when every part shows makes ✕
   // and ✓ bounce once with a soft ring. Two names, so each new tap plays it again.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
-  // The part a step just showed: it flashes once, and VoiceOver hears it.
+  // The part a step just showed: VoiceOver hears it (YAZ-5538: no flash; it simply shows).
   const lastShown = useRef<number | null>(null)
   const advance = () => {
     if (page === null || guarded) return
+    firstAction()
     const target: TapTarget = mark !== null ? mark : step.sides < counts.length ? 'side' : 'end'
     // The Mac's reading scroll (YAZ-5049 round 6): a part out of view first comes into view; that tap shows nothing.
     const view = cardBox.current
@@ -316,6 +317,7 @@ function SessionScreen({
   /** A tap on a hidden part (the Mac's click on a blank): THAT part shows. */
   const showPart = (word: number) => {
     if (page === null || guarded || step.open.includes(word) || word >= upTo(step.sides)) return
+    firstAction()
     lastShown.current = word
     setStep({ ...reveal(step, word, upTo(step.sides)), key: step.key })
   }
@@ -328,9 +330,7 @@ function SessionScreen({
     lastStep.current = step
     if (before.key !== step.key || (step.open.length === 0 && step.sides === 1)) return setRevealed('')
     const body = cardBox.current?.querySelector('.phone-card__body')
-    // The part that shows flashes once (the drawing is in: the card draws in its own effect, before this one).
     const word = step.open.length > before.open.length ? lastShown.current : null
-    if (word !== null) body?.querySelector(`[data-hidden="${word}"]`)?.classList.add('review__flash')
     const id = setTimeout(() => {
       if (body == null) return
       if (step.sides > before.sides) {
@@ -397,6 +397,10 @@ function SessionScreen({
   // YAZ-5518: an open menu is an overlay of the app's one stack: a Back closes it, and Review stays.
   useOverlay(menu !== null, () => setMenu(null))
   const [line, setLine] = useState<Line | null>(null)
+  // YAZ-5500 (reopened): the answer's "Last: … · ↶ Undo" stays until the first thing done on the next card (a tap that
+  // shows a part, ← or →, the deck drawer); then the hint line is the plain hint again. No timer. Undo stays in ⋯.
+  const [putAway, setPutAway] = useState<Line | null>(null)
+  const firstAction = () => void (line?.kind === 'answer' && putAway !== line && setPutAway(line))
   const ratings = answerRatings(review.settings)
 
   // An open menu closes on a tap outside it, and that tap does nothing else (as the mockup).
@@ -404,7 +408,7 @@ function SessionScreen({
   useEffect(() => {
     if (menu === null) return
     const down = (e: Event) => {
-      if (e.target instanceof Element && e.target.closest('.review__sheet, .review__menu, .review__count-btn, .review__more, .due-end__from') !== null) return
+      if (e.target instanceof Element && e.target.closest(MENU_OWN_TAPS) !== null) return
       closedByTap.current = true
       // A press that never becomes a click on this screen (the tab bar, a scroll) leaves no flag behind.
       setTimeout(() => void (closedByTap.current = false), 600)
@@ -513,7 +517,8 @@ function SessionScreen({
             : line?.kind === 'mark' && line.text === 'Answer removed'
               ? { kind: 'mark', text: line.text, undo: false }
               : null
-  // YAZ-5415 (round 5): the line sits IN the hint line for about 4 seconds, then goes; Undo stays in ⋯.
+  // YAZ-5415 (round 5): an add, a mark or Archive card sits IN the hint line for about 4 seconds, then goes; Undo stays
+  // in ⋯. An answer has no timer (YAZ-5500): its "Last: … · ↶ Undo" (below) goes at the first action on the next card.
   const [fresh, setFresh] = useState<object | null>(null)
   const lineId = session.lastAdd ?? line
   useEffect(() => {
@@ -522,9 +527,10 @@ function SessionScreen({
     const id = setTimeout(() => setFresh((f) => (f === lineId ? null : f)), UNDO_SHOWN_MS)
     return () => clearTimeout(id)
   }, [lineId])
-  const quietLine = shownLine !== null && fresh === lineId ? shownLine : null
-  // YAZ-5500: once the 4-second Undo has gone, the hint line says the last answer, until the next one (or its Undo).
-  const lastAnswer = quietLine === null && line?.kind === 'answer' && line.count === answeredNow && answeredNow > 0 ? line : null
+  const quietLine = shownLine !== null && shownLine.kind !== 'answer' && fresh === lineId ? shownLine : null
+  // YAZ-5500: right after an answer, the hint line says it, with its Undo: "Last: Capital of Spain (Forgot) · ↶ Undo".
+  const lastAnswer = shownLine?.kind === 'answer' && line?.kind === 'answer' && putAway !== line ? { ...line, undo: shownLine.undo } : null
+  const lastLine = <LastLine last={lastAnswer} quiet={quietLine} undo={undo} settings={review.settings} />
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
@@ -544,7 +550,10 @@ function SessionScreen({
       return
     }
     if (target === null || card === null) return
-    if (menu !== null) return void (target.closest('.review__sheet, .review__menu') === null && setMenu(null))
+    // YAZ-5539: a tap on the button that opened the menu is left to that button (its second tap closes it). On a real
+    // tap the browser lets React draw between this capture handler and the button's own click: had this closed the
+    // menu, the button's click would read "closed" and open it again.
+    if (menu !== null) return void (target.closest(MENU_OWN_TAPS) === null && setMenu(null))
     if (target.closest(SCREEN_OWN_TAPS) !== null || target.closest(CARD_OWN_TAPS) !== null) return
     // The bar's own listener (the Mac's seek) never runs on the phone: the tap is a step (YAZ-5333).
     if (target.closest('.card__audio-bar') !== null) e.stopPropagation()
@@ -561,7 +570,10 @@ function SessionScreen({
       aria-haspopup="dialog"
       aria-expanded={menu === 'filter'}
       aria-label={`${filterLabel(session.filter)}${card !== null ? `, card ${session.position} of ${session.total}` : ''}. Choose what to review`}
-      onClick={() => setMenu(menu === 'filter' ? null : 'filter')}
+      onClick={() => {
+        if (menu !== 'filter') firstAction()
+        setMenu(menu === 'filter' ? null : 'filter')
+      }}
     >
       <span className="review__mode">
         {FILTER_ICON[filter]} {filterLabel(session.filter)} ▾
@@ -639,28 +651,8 @@ function SessionScreen({
             {revealed}
           </p>
           <div className="review__hint">
-            {lastAnswer !== null ? (
-              // YAZ-5500 (Yaseen's pick, A, text only): the last answer, in words, until the next one. No ✕ or ✓ and no
-              // colour, so nothing leans on the next answer. Not a tap: a tap on it never steps the card.
-              <span className="review__lastanswer">
-                Last: <span className="review__lastanswer-name">{lastAnswer.name}</span>
-                <span className="review__lastanswer-rating"> ({answerLabel(lastAnswer.rating, review.settings)})</span>
-              </span>
-            ) : (
-              (quietLine === null || quietLine.kind === 'answer') && <span className="review__hint-text">{hintText(left)}</span>
-            )}
-            <span className="review__last" role="status" aria-live="polite">
-              {quietLine !== null && (
-                <>
-                  <span className={quietLine.kind === 'answer' ? 'sr-only' : 'review__line'}>{quietLine.text}</span>
-                  {quietLine.undo && (
-                    <button type="button" className="review__undo" aria-label="Undo" onClick={undo}>
-                      ↶ Undo
-                    </button>
-                  )}
-                </>
-              )}
-            </span>
+            {lastAnswer === null && quietLine === null && <span className="review__hint-text">{hintText(left)}</span>}
+            {lastLine}
           </div>
         </>
       ) : (
@@ -686,16 +678,7 @@ function SessionScreen({
               <DoneBody review={review} session={session} addKinds={addKinds} today={today} title />
             </div>
           )}
-          {quietLine !== null && (
-            <p className="review__hint review__last" role="status" aria-live="polite">
-              <span className="review__line">{quietLine.text}</span>
-              {quietLine.undo && (
-                <button type="button" className="review__undo" aria-label="Undo" onClick={undo}>
-                  ↶ Undo
-                </button>
-              )}
-            </p>
-          )}
+          {(lastAnswer !== null || quietLine !== null) && <div className="review__hint">{lastLine}</div>}
         </DoneStage>
       )}
 
@@ -703,10 +686,28 @@ function SessionScreen({
         <div className="review__dock">
           <div className="review__ctrl">
             <div className="review__arrows">
-              <button type="button" className="review__arrow" aria-label="Previous card" disabled={!session.canBack} onClick={() => review.move(-1)}>
+              <button
+                type="button"
+                className="review__arrow"
+                aria-label="Previous card"
+                disabled={!session.canBack}
+                onClick={() => {
+                  firstAction()
+                  review.move(-1)
+                }}
+              >
                 ←
               </button>
-              <button type="button" className="review__arrow" aria-label="Next card" disabled={!session.canNext} onClick={() => review.move(1)}>
+              <button
+                type="button"
+                className="review__arrow"
+                aria-label="Next card"
+                disabled={!session.canNext}
+                onClick={() => {
+                  firstAction()
+                  review.move(1)
+                }}
+              >
                 →
               </button>
             </div>
@@ -761,8 +762,50 @@ function SessionScreen({
 
 const NO_OP = () => undefined
 
+/**
+ * The status part of the hint line. After an answer (YAZ-5500, Yaseen's pick A, text only): "Last: Capital of Spain
+ * (Forgot) · ↶ Undo" — the answer in words, no ✕ or ✓ and no colour, so nothing leans on the next answer; one line, a
+ * long title gives way with "…". Its words are not a tap (a tap on them never steps the card); its Undo takes the answer
+ * back. Else an add, a mark or Archive card, with its Undo, for its few seconds.
+ */
+function LastLine({ last, quiet, undo, settings }: { last: { name: string; rating: CardRating; undo: boolean } | null; quiet: { text: string; undo: boolean } | null; undo: () => void; settings: ReviewSettings }) {
+  const undoButton = (
+    <button type="button" className="review__undo" aria-label="Undo" onClick={undo}>
+      ↶ Undo
+    </button>
+  )
+  return (
+    <span className="review__last" role="status" aria-live="polite">
+      {last !== null ? (
+        <>
+          <span className="review__lastanswer">
+            Last: <span className="review__lastanswer-name">{last.name}</span>
+            <span className="review__lastanswer-rating"> ({answerLabel(last.rating, settings)})</span>
+            {last.undo && (
+              <span className="review__lastanswer-sep" aria-hidden="true">
+                {' · '}
+              </span>
+            )}
+          </span>
+          {last.undo && undoButton}
+        </>
+      ) : (
+        quiet !== null && (
+          <>
+            <span className="review__line">{quiet.text}</span>
+            {quiet.undo && undoButton}
+          </>
+        )
+      )}
+    </span>
+  )
+}
+
 /** The answer buttons' glyphs (as Mochi): ✕ Forgot, ✓ Remembered; with four buttons, Hard and Easy too. */
 const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
+
+/** What an open menu keeps for itself: the menus, and the buttons that open them (a second tap there closes it: YAZ-5539). */
+const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__count-btn, .review__more, .due-end__from'
 
 /** What a tap on the screen keeps for itself: every control (its own rule), and the open menus. */
 const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__lastanswer'
