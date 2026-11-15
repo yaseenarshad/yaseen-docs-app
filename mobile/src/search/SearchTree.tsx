@@ -15,6 +15,7 @@ import type { Scope } from './lists'
 import { ListTree } from './ListTree'
 import { bumpFolds, useFolds } from './folds'
 import { rowId, useIdsForm } from './showIds'
+// YAZ-5472 Q4: a row of this tab screen is a first open, so ALWAYS a full page (`from: 'tab'`), whatever link-click.json says.
 import { openFile } from '../explore/openFile'
 import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
 import { useFolderHold } from './holdFolder'
@@ -83,7 +84,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
               data-kind={ICON_KIND[row.kind]}
               style={{ '--tree-depth': row.depth } as CSSProperties}
               aria-label={`${row.label}, ${kindWord(row.kind, app.unit('page'))}`}
-              onClick={() => (row.kind === 'folder' ? toggle(row.path) : openFile(app, treeRoute(row)))}
+              onClick={() => (row.kind === 'folder' ? toggle(row.path) : openFile(app, treeRoute(row), { from: 'tab' }))}
               {...(row.kind === 'folder' && hold(row.path, row.label))}
             >
               <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
@@ -114,7 +115,7 @@ function ResultRow({ row }: { row: SearchCandidate }) {
   const side = card ? (row.id ?? '') : ''
   const board = card ? null : boardKindOf(row.path)
   return (
-    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : (board ?? app.unit('page'))}`} onClick={() => openFile(app, routeOf(row))}>
+    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : (board ?? app.unit('page'))}`} onClick={() => openFile(app, routeOf(row), { from: 'tab' })}>
       <RowIcon kind={card ? 'card' : (board ?? 'page')} />
       <span className="row__main">{row.label}</span>
       {side !== '' && <span className="row__side">{side}</span>}
@@ -183,7 +184,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   const open = (row: FoundRow) => {
     if (row.kind === 'folder') return toggle(row.path)
     const route: Route = row.hit !== undefined ? routeOf(row.hit) : treeRoute({ kind: row.kind, path: row.path, label: row.label, depth: row.depth, ...(row.id !== undefined && { id: row.id }) })
-    openFile(app, route)
+    openFile(app, route, { from: 'tab' })
   }
   return (
     <>

@@ -7,6 +7,7 @@ import { columnAlignOf } from '@client/views/view/columnAlign'
 import { columnFillOf } from '@client/views/view/columnFill'
 import { canonicalKey } from '@client/views/view/keys'
 import { useApp } from '../app/AppState'
+// YAZ-5472 Q4: a folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
 import { openFile } from '../explore/openFile'
 import { layoutTables } from '../page/tableLayout'
 import { useTables } from '../page/useTables'
@@ -42,7 +43,7 @@ export function FolderTable({ run }: { run: ViewRun }) {
     const tr = (e.target as Element).closest<HTMLElement>('tr[data-row]')
     if (tr === null) return
     const row = rows.current[Number(tr.dataset.row)]
-    if (row !== undefined) openFile(app, rowTarget(row))
+    if (row !== undefined) openFile(app, rowTarget(row), { from: 'inside' })
   }
   return <div className="folder-table" ref={host} onClick={onClick} />
 }

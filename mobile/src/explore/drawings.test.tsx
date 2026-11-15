@@ -122,9 +122,18 @@ describe('drawings first class (YAZ-5473)', () => {
     expect(h.text()).not.toContain('Open it on the Mac')
   })
 
-  it('"explore": a drawing opens in a sheet; a link in a sheet to a drawing opens it on top', async () => {
+  it('"explore": a drawing from Search opens full screen (Q4); a link to a drawing in a page opens it in a sheet', async () => {
     h = await openSearch({ ...FILES, '.yaseendocs/link-click.json': '{"click":"explore"}', 'Links.md': '---\ntitle: Links\n---\n\nSee [[garden.excalidraw]].\n' })
+    // YAZ-5472 Q4: a tab screen's first open is always a full page.
     await h.click('garden, drawing')
+    await waitFor(h, () => h!.button('Back') !== null && h!.host.querySelector('[data-vault-drawing="garden.excalidraw"], .page-drawing, .page-media--board') !== null)
+    expect(document.querySelectorAll('.explore-sheet')).toHaveLength(0)
+    await h.click('Back')
+    await h.click('Links, page')
+    await waitFor(h, () => (h!.host.querySelector('.reader__body')?.textContent ?? '').includes('See'))
+    expect(document.querySelectorAll('.explore-sheet')).toHaveLength(0)
+    const link = [...h.host.querySelectorAll<HTMLElement>('.reader__body a, .reader__body [data-open]')].find((a) => /garden/.test(a.textContent ?? ''))!
+    await act(async () => link.click())
     await waitFor(h, () => document.querySelectorAll('.explore-sheet').length === 1)
     const sheet = () => [...document.querySelectorAll('.explore-sheet')].at(-1)!
     await waitFor(h, () => sheet().querySelector('[data-vault-drawing="garden.excalidraw"], .page-drawing, .page-media--board') !== null)
@@ -132,12 +141,6 @@ describe('drawings first class (YAZ-5473)', () => {
     // "Garden plan" embeds it; "Links" links to it.
     await waitFor(h, () => /^2 Backlinks · 0 References$/.test(sheet().querySelector('.explore-sheet__foot')?.textContent ?? ''))
     await act(async () => closeAll())
-    await h.click('Links, page')
-    await waitFor(h, () => (sheet()?.querySelector('.reader__body')?.textContent ?? '').includes('See'))
-    const link = [...sheet().querySelectorAll<HTMLElement>('.reader__body a, .reader__body [data-open]')].find((a) => /garden/.test(a.textContent ?? ''))!
-    await act(async () => link.click())
-    await waitFor(h, () => document.querySelectorAll('.explore-sheet').length === 2)
-    expect(sheet().querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('garden')
   })
 
   it('Favorites holds a drawing as the Mac lists it', async () => {

@@ -13,6 +13,7 @@ import { ShowMore, TreeId, kindWord, treeRoute } from './SearchTree'
 import { rowId, useIdsForm } from './showIds'
 import type { VaultData } from './vaultData'
 import { fileKind, fileLabel, type TreeKind } from './vaultTree'
+// YAZ-5472 Q4: a row of this tab screen is a first open, so ALWAYS a full page (`from: 'tab'`), whatever link-click.json says.
 import { openFile } from '../explore/openFile'
 import { fileRecord } from '../drawing/boardFiles'
 import { useFolderHold } from './holdFolder'
@@ -156,7 +157,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
               data-kind={row.kind === 'group' ? 'group' : ICON_KIND[row.kind]}
               style={{ '--tree-depth': row.depth } as CSSProperties}
               aria-label={`${row.label}, ${row.kind === 'group' ? `${words.title.toLowerCase()} folder` : kindWord(row.kind, app.unit('page'))}`}
-              onClick={() => (row.kind === 'folder' || row.kind === 'group' ? toggle(row.key) : openFile(app, treeRoute({ ...row, kind: row.kind })))}
+              onClick={() => (row.kind === 'folder' || row.kind === 'group' ? toggle(row.key) : openFile(app, treeRoute({ ...row, kind: row.kind }), { from: 'tab' }))}
               {...(row.kind === 'folder' && hold(row.path, row.label))}
             >
               <span className={row.kind === 'folder' || row.kind === 'group' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />

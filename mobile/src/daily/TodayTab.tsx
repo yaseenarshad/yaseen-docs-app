@@ -1,5 +1,5 @@
 import { useApp } from '../app/AppState'
-// The one door to open a file (YAZ-5472): the daily note opens as a link does (a sheet when the vault says "explore").
+// The one door to open a file (YAZ-5472). Q4: the Today button is a tab screen's first open, so ALWAYS a full page.
 import { openFile } from '../explore/openFile'
 import { Toast, useToast } from '../screens/Toast'
 
@@ -19,7 +19,7 @@ export function TodayTab() {
   const tap = () =>
     void load()
       .then((m) => m.findToday(store, vault, new Date((app.services.now ?? Date.now)())))
-      .then((found) => (found === null ? say('No daily notes yet') : openFile(app, { kind: 'page', path: found.path })))
+      .then((found) => (found === null ? say('No daily notes yet') : openFile(app, { kind: 'page', path: found.path }, { from: 'tab' })))
       .catch(() => say('Could not open the daily note'))
   return (
     <>

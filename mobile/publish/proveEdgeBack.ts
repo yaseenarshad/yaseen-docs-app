@@ -16,8 +16,10 @@ import { freePort } from './freePort'
  *    app; before YAZ-5499 the app wrote no history entry, and that Back left the app.
  *
  * YAZ-5518, the ONE overlay stack (sheets, panels, menus, full-screen views):
- *  - A SAFARI TAB, an Explore sheet over each tab screen (Search with 3 sheets, Review, Today): each `history.back()`
- *    (Safari's swipe) closes ONE sheet, and the tab stays in the app (before, sheets wrote no entry and Back left the app).
+ *  - A SAFARI TAB, Explore sheets (Search: a full page with 3 sheets over it; Review: a sheet; Today: the daily page full
+ *    screen with a sheet over it): each `history.back()` (Safari's swipe) closes ONE sheet, and the tab stays in the app
+ *    (before, sheets wrote no entry and Back left the app). YAZ-5472 Q4: a tab screen's first open is a full page, so
+ *    under Search's and Today's sheets is that page; one more Back goes to the tab screen.
  *  - THE HOME SCREEN APP: a real touch swipe from x = 2 (the sheet sits 8 px in: the finger lands on its dim) closes the top sheet.
  *  - A page's overlays (the ⋯ menu, Find, Headings, Properties, a table full screen): Back closes ONLY the overlay and
  *    the page stays: `history.back()` in a tab, the edge swipe in the Home Screen app.
@@ -183,11 +185,15 @@ async function sheetsBack(fixture: 'explore-stack' | 'explore-review' | 'explore
     await s.back()
     counts.push(Number(await s.evaluate(SHEETS)))
   }
+  // YAZ-5472 Q4: Search's and Today's first open is a full page, under the sheets; its own Back goes to the tab screen.
+  const pageUnder = fixture !== 'explore-review'
+  const under = String(await s.evaluate(SCREEN))
+  if (pageUnder && (await s.stayed())) await s.back()
   const stayed = await s.stayed()
   const screen = String(await s.evaluate(SCREEN))
   await s.close()
-  const ok = counts[0] > 0 && stayed && counts.every((c, i) => i === 0 || c === counts[i - 1] - 1) && counts.at(-1) === 0 && !screen.endsWith('[Back]')
-  return { name: `safari-tab, Back with sheets over ${fixture.replace('explore-', '').replace('stack', 'search')}`, ok, note: `sheets ${counts.join(' -> ')}; in the app: ${stayed}; under: "${screen}"` }
+  const ok = counts[0] > 0 && stayed && counts.every((c, i) => i === 0 || c === counts[i - 1] - 1) && counts.at(-1) === 0 && under.endsWith('[Back]') === pageUnder && !screen.endsWith('[Back]')
+  return { name: `safari-tab, Back with sheets over ${fixture.replace('explore-', '').replace('stack', 'search')}`, ok, note: `sheets ${counts.join(' -> ')}; under: "${under}"; in the app: ${stayed}; then: "${screen}"` }
 }
 
 /** The Home Screen app: a swipe from x = 2 (on the dim beside the sheet) closes the top sheet. */

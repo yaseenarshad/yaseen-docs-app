@@ -73,15 +73,20 @@ function touch(el: Element, type: string, x: number, y: number, t: number): Even
 }
 
 describe('Explore on the phone (YAZ-5472)', () => {
-  it('"explore": a Search row opens a sheet OVER Search; a link in it opens another on top; each closes back to where it was', async () => {
+  it('"explore": a Search row opens a FULL PAGE (Q4); a link in it opens a sheet over it; a link in that one another on top; each closes back to where it was', async () => {
     h = await openSearch()
-    const tree = h.host.querySelector('.tree')
-    await h.click(/^Trip plan/)
+    // YAZ-5472 Q4: a tab screen's first open is always a full page.
+    await h.click(/^Spanish words/)
+    await waitFor(h, () => h!.host.querySelector('.topbar__title')?.textContent === 'Spanish words' && h!.host.querySelector('.reader__body a, .reader__body [data-open]') !== null)
+    expect(sheets()).toEqual([])
+    const page = h.host.querySelector('.reader__body')
+    const link = [...h.host.querySelectorAll<HTMLElement>('.reader__body a, .reader__body [data-open]')].find((a) => a.textContent?.trim() === 'Trip plan')!
+    await tap(link)
     await waitFor(h, () => sheets().length === 1)
     await drawn(h, 'Madrid, May 3 to 10')
-    // Search is still there, the same element: nothing under the sheet was replaced.
-    expect(h.host.querySelector('.tree')).toBe(tree)
-    expect(h.host.querySelector('.topbar__title')?.textContent).not.toBe('Trip plan')
+    // The page is still there, the same element: nothing under the sheet was replaced.
+    expect(h.host.querySelector('.reader__body')).toBe(page)
+    expect(h.host.querySelector('.topbar__title')?.textContent).toBe('Spanish words')
     // The head (the page's name: it has no folder), ⋯, and the foot.
     expect(topSheet()?.querySelector('.explore-sheet__where')?.textContent).toBe('Trip plan')
     await waitFor(h, () => /Backlinks? · \d+ References?/.test(topSheet()?.querySelector('.explore-sheet__foot')?.textContent ?? ''))
@@ -101,7 +106,7 @@ describe('Explore on the phone (YAZ-5472)', () => {
     expect(sheets()[0].classList.contains('explore-sheet--under')).toBe(false)
     await act(async () => void document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
     await waitFor(h, () => sheets().length === 0)
-    expect(h.host.querySelector('.tree')).toBe(tree)
+    expect(h.host.querySelector('.reader__body')).toBe(page)
   })
 
   it('closing returns to the exact scroll place: the page under the sheets is never remounted', async () => {
@@ -125,7 +130,7 @@ describe('Explore on the phone (YAZ-5472)', () => {
     expect(screen.scrollTop).toBe(431)
   })
 
-  it('with no link-click file (the Mac’s default, "open"), a row opens full screen, as before', async () => {
+  it('with no link-click file (the Mac’s default, "open"), a row opens full screen, as before (and as with "explore": Q4)', async () => {
     h = await openSearch(READER_FILES)
     await h.click(/^Trip plan/)
     await waitFor(h, () => h!.host.querySelector('.topbar__title')?.textContent === 'Trip plan')
