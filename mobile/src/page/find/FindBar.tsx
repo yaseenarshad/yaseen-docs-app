@@ -14,7 +14,7 @@ import { landingTop } from '../headings'
  *
  * A Safari older than 17.2 has no highlights: the count and the steps work, the match is not painted.
  */
-const SKIP = '.card__head, .card-embed__head, .linked-from, .scroll-jump'
+const SKIP = '.card__head, .card-embed__head, .linked-from'
 const TYPE_MS = 80
 const REDRAW_MS = 150
 /** Each match lands this far down the screen (a share of its height). */

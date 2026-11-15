@@ -95,8 +95,8 @@ const FIXTURES = [
   'card-next',
   'page-tables',
   'page-table-full',
-  // YAZ-5455, YAZ-5456, YAZ-5459, YAZ-5467: links and "Linked from", the vault's pills, the ⋯ tools, find, the headings,
-  // the properties panel, the jump pill.
+  // YAZ-5455, YAZ-5456, YAZ-5459: links and "Linked from", the vault's pills, the ⋯ tools, find, the headings,
+  // the properties panel.
   'page-links',
   'page-linked-from',
   'page-pills',
@@ -104,7 +104,6 @@ const FIXTURES = [
   'page-find',
   'page-headings',
   'page-properties',
-  'page-jump',
   // YAZ-5458: the reading look, every block.
   'page-look',
   // YAZ-5472: Explore's sheets.

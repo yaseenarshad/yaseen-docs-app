@@ -17,7 +17,7 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
  * YAZ-5449 to YAZ-5451: `page` has the ID chip, the dot alone and the page arrows; `page-copied` the toast after a tap
  * on the chip; `page-copy-by-hand` the path to copy by hand (the clipboard says no); `page-last` the last page (its
  * "next" side dim); `card-next` a card after one step of its arrows. YAZ-5468: `page-folder` the arrows of a page in a folder of
- * two pages ("1 / 2": the folder's pages only). YAZ-5467: `page-jump` a long page just scrolled, the ⤒ ⤓ pill at the right edge. The clipboard is a fake: nothing reaches the
+ * two pages ("1 / 2": the folder's pages only). The clipboard is a fake: nothing reaches the
  * phone's real one.
  * YAZ-5474: `search-collapsed` the tree after "Collapse all folders" in the box, its Expand all icon at the right end.
  * YAZ-5471: `page-tables` a page of made-up tables in the real shapes (`tableFixtures.ts`), at its six-column table;
@@ -28,7 +28,7 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -174,7 +174,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { shape: 'underline' }, parts: { id: { bold: true } } }),
                 '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 }, h2: { underline: true } }),
               }
-          : name === 'page-jump' || name === 'page-headings'
+          : name === 'page-headings'
             ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
           : name === 'page-folder'
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
@@ -231,14 +231,6 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       press(/Copy the path$/)
       await until(() => document.querySelector('.page-toast') !== null)
       break
-    case 'page-jump': {
-      await typed('long notes')
-      await open(/^Long notes/, '.reader__body h2')
-      const screen = document.querySelector<HTMLElement>('.screen--reader')
-      if (screen !== null) screen.scrollTop = 600
-      await until(() => document.querySelector('.scroll-jump[data-on]') !== null)
-      break
-    }
     case 'page-tools':
     case 'page-find':
       await open(/^Spanish words/, '.reader__body h1')

@@ -23,7 +23,6 @@ import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
 import { useTables } from './useTables'
-import { ScrollJump } from './ScrollJump'
 
 /**
  * A PAGE, READ ONLY (YAZ-5079, 4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
@@ -205,7 +204,6 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
         {/* YAZ-5461: the page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
-        <ScrollJump scroller={host} closest=".screen" />
         {tools.sheet}
         <PropertiesTab record={record} data={data} door={door} />
         {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
