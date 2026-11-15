@@ -13,7 +13,7 @@ const KN: Knobs = { pStale: Number(process.env.C5_STALE ?? 0.35), p502: Number(p
 it(`check5 orders ${FROM}..${FROM + COUNT - 1}`, async () => {
   const count: Record<string, number> = Object.fromEntries(KEYS5.map((k) => [k, 0]))
   const bad: string[] = []
-  const tot = { doneEarly: 0, runs: 0, events: 0, crashes: 0, stale: 0, r502: 0, secondary: 0, c404: 0, pushes: 0, removesStarted: 0, removesFinished: 0, listWrites: 0, sendsSent: 0, oldRuns: 0 }
+  const tot = { doneEarly: 0, runs: 0, events: 0, crashes: 0, stale: 0, r502: 0, secondary: 0, c404: 0, pushes: 0, removesStarted: 0, removesFinished: 0, listWrites: 0, sendsSent: 0 }
   for (let s = FROM; s < FROM + COUNT; s++) {
     let m
     try {
@@ -35,7 +35,6 @@ it(`check5 orders ${FROM}..${FROM + COUNT - 1}`, async () => {
     tot.removesFinished += m.st.removesFinished
     tot.listWrites += m.st.listWrites
     tot.sendsSent += m.st4.sendsSent
-    if (m.oldDev) tot.oldRuns++
     const v = violations5(m)
     for (const k of KEYS5) {
       if ((v[k] ?? []).length === 0) continue

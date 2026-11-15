@@ -11,6 +11,7 @@ import {
   INDEX_FILE,
   NUMBERS_FILE,
   emptyNumbers,
+  listFile,
   makePointer,
   type GistsApi,
   type WriteOptions,
@@ -598,7 +599,9 @@ describe('the home time zone of the numbers (YAZ-5251, pick B3)', () => {
 describe('the Mac changes nothing but its numbers (YAZ-5086: "The Mac only sends")', () => {
   it('a remove that waits in the list: the Mac sends nothing and writes nothing; the phone finishes it', async () => {
     const handle = await withFriends(rig, 1)
-    await rig.phone.update(handle.id, { [INDEX_FILE]: JSON.stringify({ ...handle.raw, rekey: { old: handle.index.stats, drop: [], next: null, at: new Date(START).toISOString() } }) })
+    // The phone's remove of the friend began (its tombstone is in the list) and waits for a new numbers generation.
+    const mine = handle.index.friends[0].mine
+    await writeFriendsIndex(rig.phone, handle, handle.index, { [listFile.tomb(mine, 'fr1')]: JSON.stringify({ v: 1, kinds: ['friend'], rekey: true, at: new Date(START).toISOString() }) })
     expect((await rig.sender.attempt('pass')).status).toBe('phone-first')
     expect(macWrites(rig)).toBe(0)
   })

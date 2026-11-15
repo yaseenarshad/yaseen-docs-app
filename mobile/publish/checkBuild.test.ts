@@ -37,7 +37,7 @@ describe('checkDist', () => {
     const never = (m: string) => NEVER_BUNDLED.some((r) => r.test(m))
     for (const m of ['mobile/src/dev/cssAudit.ts', 'mobile/src/dev/fakes.ts', 'mobile/src/page/rawText.test.tsx', 'mobile/src/dev/readerFixtures.tsx', 'mobile/src/friends/check3/run.ts']) expect(never(m), m).toBe(true)
     // YAZ-5092 C3: the test helpers, the research tools, and the checker folders 4 to 6.
-    for (const m of ['mobile/src/github/testing.ts', 'mobile/src/friends/check4/model4.testing.ts', 'mobile/src/friends/researchOut.testing.ts', 'mobile/src/friends/check5/run5.research.ts', 'mobile/src/friends/check4/old/friendsList.ts', 'mobile/src/friends/check5/hand.ts', 'mobile/src/friends/check6/run6.ts']) expect(never(m), m).toBe(true)
+    for (const m of ['mobile/src/github/testing.ts', 'mobile/src/friends/check4/model4.testing.ts', 'mobile/src/friends/researchOut.testing.ts', 'mobile/src/friends/check5/run5.research.ts', 'mobile/src/friends/check5/hand.ts', 'mobile/src/friends/check6/run6.ts']) expect(never(m), m).toBe(true)
     for (const m of ['mobile/src/screens/Settings.tsx', 'mobile/src/main.tsx', 'shared/cardLine.ts', 'node_modules/react/index.js', 'mobile/src/friends/checkName.ts', 'mobile/src/settings/testingWords.ts']) expect(never(m), m).toBe(false)
     const lazyOnly = (m: string) => NOT_FIRST_LOAD.some((r) => r.test(m))
     for (const m of ['shared/friendsList.ts', 'shared/friendStats.ts', 'mobile/src/friends/removeQueue.ts', 'node_modules/yaml/browser/index.js', 'node_modules/ts-fsrs/dist/index.mjs', 'node_modules/marked/lib/marked.esm.js']) expect(lazyOnly(m), m).toBe(true)

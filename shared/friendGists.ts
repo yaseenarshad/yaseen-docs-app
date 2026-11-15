@@ -12,7 +12,8 @@ import type { ListMemory, RepoPort } from './friendListStore'
  *   ID. It holds the ID of the numbers gist (`stats`), and `reads` and `mark` for that one friend.
  * - YAZ-5083: the person's own friends LIST is in one of their vault repos (`.yaseendocs/friends.json`, written with
  *   compare-and-swap: `friendListStore.ts`, `friendListHome.ts`). The gist `notecards-friends.json` of decision 15 is
- *   now a small note that names that vault. An old list (version 1 or 2, in that gist) is read here and moved once.
+ *   now a small note that names that vault. An old list (version 1 or 2, in that gist; never shipped) is `broken`:
+ *   it is not read, and nothing is written to it.
  * Two devices that make a note at the same time each look again after `SETTLE_MS`: every device keeps the oldest.
  */
 
@@ -524,15 +525,6 @@ export function readListFiles(input: Record<string, string | null | undefined>):
     }),
   }
   return { kind: 'ok', value, raw, files, list: { tombs, gens, legacyStats, pending, intents } }
-}
-
-/** The list from a gist answer (its files; a file cut short reads as missing). */
-export function readListGist(gist: GistDoc): ListRead {
-  // YAZ-5350: GitHub gave only the first 300 files: the list is not whole, so it is not read (and never written).
-  if (gist.truncated === true) return { kind: 'unreadable', why: 'GitHub gave only part of the list (more than 300 files)' }
-  const files: Record<string, string | null> = {}
-  for (const [name, f] of Object.entries(gist.files)) files[name] = f.truncated ? null : f.content
-  return readListFiles(files)
 }
 
 /** The text of an entry file: the known fields over the fields of the file as read (an older app's extra fields stay). */

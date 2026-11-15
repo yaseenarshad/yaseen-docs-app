@@ -10,7 +10,7 @@ import { Model4 } from './model4.testing'
 // note, and that no gist holds a record of the list. The dump is written only with OUT.
 it('check4 privacy dump', async () => {
   const m = new Model4(42)
-  await m.setup4(2, 1, 1, true, true, false) // A (2 devices) + B + C, a group of A with B and C, a group of B with A
+  await m.setup4(2, 1, 1, true, true) // A (2 devices) + B + C, a group of A with B and C, a group of B with A
   const evs = [
     { t: 'zone', who: 'A', dev: 0 },
     { t: 'send', who: 'A', dev: 0 },

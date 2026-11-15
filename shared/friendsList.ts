@@ -6,12 +6,12 @@ import {
   gistErrorCode,
   gistErrorResetAt,
   isGistId,
+  isOurNumbersGist,
   listFile,
   listPatch,
   PARKED,
   makeParkedPointer,
   pointersOf,
-  readListGist,
   tombTag,
   tombText,
   readFriend,
@@ -138,8 +138,8 @@ async function removeQuietly(api: GistsApi, id: string): Promise<void> {
 }
 
 /**
- * The list as it is on GitHub now (an ETag read of the vault's branch). An old gist list (not moved yet) is moved into
- * the vault first: every write goes to the vault.
+ * The list as it is on GitHub now (an ETag read of the vault's branch). A handle with no vault is found again: every
+ * write goes to the vault.
  */
 async function latest(api: GistsApi, handle: IndexHandle, opts: WriteOptions): Promise<IndexHandle> {
   if (handle.store !== undefined) return latestList(handle)
@@ -1125,17 +1125,7 @@ async function allNamed(api: GistsApi, base: IndexHandle, target: string): Promi
 
 /** YAZ-5276: deletes a numbers gist only when it holds exactly our one file in our format (never another tool's gist). */
 async function removeIfOurNumbers(api: GistsApi, id: string): Promise<void> {
-  let gist: GistDoc | 'unchanged'
-  try {
-    gist = await api.read(id)
-  } catch (err) {
-    if (gistErrorCode(err) === 'NOT_FOUND') return
-    throw err
-  }
-  if (gist === 'unchanged') return
-  const names = Object.keys(gist.files)
-  if (names.length !== 1 || names[0] !== NUMBERS_FILE || readStatsFile(fileText(gist, NUMBERS_FILE)).kind !== 'ok') return
-  await removeQuietly(api, id)
+  if (await isOurNumbersGist(api, id)) await removeQuietly(api, id)
 }
 
 /**

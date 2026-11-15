@@ -10,5 +10,5 @@
   "include": ["src"],
   // Test helpers (`testing.ts`, `*.testing.ts`, the old friends code the round 4 checker runs) are Node-side; the test
   // config checks them.
-  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/testing.ts", "src/**/*.testing.ts", "src/**/*.research.ts", "src/friends/check4/old"]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/testing.ts", "src/**/*.testing.ts", "src/**/*.research.ts"]
 }

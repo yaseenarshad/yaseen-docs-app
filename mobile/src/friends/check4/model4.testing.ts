@@ -5,7 +5,6 @@
  * - 409 on a PATCH of a gist that another PATCH is writing at that moment (and 2 % at random);
  * - crash points up to call 60; unexpected throws are recorded, not fatal;
  * - zone changes (Settings), a re-share after a 'stopped' or 'gone' row, a group run by B with A in it;
- * - an OLD app (the v1 code from before fb1ff8ac9) on one more A phone, which made the list (v1) at the start.
  * Invariants: I1..I4 (the builder's), I2 strict at the end, I4 strict (GET-only "read"), I5 (no two live entries for
  * one friend), I6 (after a successful send, every kept paired friend reads the numbers just sent).
  *
@@ -16,25 +15,18 @@
  *   are GitHub's own now (this file's extra 2 % of 409 stays, on GIST paths only: a ref move of the repo is not a gist);
  * - `maxListFiles` counts the records of the list file.
  */
-import { INDEX_FILE, POINTER_FILE, readListFiles, type GistsApi } from '@shared/friendGists'
+import { INDEX_FILE, POINTER_FILE, readListFiles } from '@shared/friendGists'
 import { friendLink } from '@shared/friendsList'
-import { emptyBudget, recordUpdate, numbersFor, type GistBudget } from '@shared/friendSend'
-import { friendStats } from '@shared/friendStats'
-import { githubClient, type FetchLike } from '../../github/client'
+import type { FetchLike } from '../../github/client'
 import { PHONE, vaultId } from '../../store'
 import { INDEX_STATE } from '../../sync/phoneIndex'
 import type { SyncEvent } from '../../sync/engine'
 import { Model, mulberry, type Ev } from '../check3/model.testing'
-import { gistsApi } from '../gistsApi'
 import { createFriendsList, type FriendsList } from '../list'
 import { createFriendsSender, type FriendsSender } from '../sender'
-import * as oldGists from './old/friendGists'
-import * as oldList from './old/friendsList'
-import * as oldSend from './old/friendSend'
 
 type Actor = 'A' | 'B' | 'C'
 const LOGIN = { A: 'ali', B: 'bea', C: 'cem' } as const
-const tok = (a: Actor) => `github_pat_11CHECK3_${LOGIN[a].padEnd(70, '0')}`
 const ZONES = ['America/Los_Angeles', 'America/New_York', 'Europe/London', 'Asia/Tokyo']
 
 type Lock = <T>(name: string, fn: () => Promise<T>) => Promise<T>
@@ -80,10 +72,6 @@ export interface Stats4 {
   c422: number
   sends: number
   sendsSent: number
-  oldOps: number
-  oldWrites: number
-  oldBlocked: number
-  oldHeadOverV2: number
   zoneLost: string[]
   maxListFiles: number
   maxTombs: number
@@ -91,7 +79,7 @@ export interface Stats4 {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export class Model4 extends Model {
-  st4: Stats4 = { i2strict: [], i4strict: [], i4strictOldGist: [], i5: [], i6: [], i6parked: 0, throws: [], c409: 0, c422: 0, sends: 0, sendsSent: 0, oldOps: 0, oldWrites: 0, oldBlocked: 0, oldHeadOverV2: 0, zoneLost: [], maxListFiles: 0, maxTombs: 0 }
+  st4: Stats4 = { i2strict: [], i4strict: [], i4strictOldGist: [], i5: [], i6: [], i6parked: 0, throws: [], c409: 0, c422: 0, sends: 0, sendsSent: 0, zoneLost: [], maxListFiles: 0, maxTombs: 0 }
   inflight = new Map<string, number>()
   inflightBy = new Map<string, Set<{ d: any }>>()
   /** A crashed app's request is over (it landed or not): it no longer counts as a write at this moment. */
@@ -104,9 +92,6 @@ export class Model4 extends Model {
   p409 = 0.02
   parallel = 0
   cards: Record<string, number> = {}
-  oldDev: any = null
-  oldBudget: GistBudget = emptyBudget()
-  oldCache = oldList.newListCache()
   lastGet = new Map<any, Record<string, string> | null>()
   zoneSet: string | null = null
   events: Ev[] = []
@@ -225,7 +210,7 @@ export class Model4 extends Model {
     const read = keys(this.lastGet.get(d))
     const next = keys(after)
     const lost = [...before].filter((k) => !read.has(k) && !next.has(k))
-    if (lost.length > 0) (moved ? this.st4.i4strictOldGist : this.st4.i4strict).push(`seed ${this.seed} step ${this.step}: ${d.old ? 'OLD ' : ''}${d.actor}${d.n} write drops ${lost.join(',')} that it never GET-read`)
+    if (lost.length > 0) (moved ? this.st4.i4strictOldGist : this.st4.i4strict).push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n} write drops ${lost.join(',')} that it never GET-read`)
     // The zone: a write that drops the home zone that another write set.
     const z = (files: Record<string, string>) => {
       try {
@@ -234,61 +219,28 @@ export class Model4 extends Model {
         return null
       }
     }
-    if (z(g.files) !== null && z(after) === null) this.st4.zoneLost.push(`seed ${this.seed} step ${this.step}: ${d.old ? 'OLD ' : ''}${d.actor}${d.n} head write drops zone ${z(g.files)}`)
-    if (d.old) {
-      this.st4.oldWrites++
-      try {
-        const v = (JSON.parse(g.files[INDEX_FILE]) as { v?: number }).v
-        if (v === 2 && body.files?.[INDEX_FILE] !== undefined) {
-          this.st4.oldHeadOverV2++
-          this.log.push(`  OLD head write over a v2 head (step ${this.step})`)
-        }
-      } catch {
-        /* */
-      }
-    }
+    if (z(g.files) !== null && z(after) === null) this.st4.zoneLost.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n} head write drops zone ${z(g.files)}`)
   }
 
   // ---- setup ----
-  async setup4(nA: number, nB: number, nC: number, withGroup: boolean, withBGroup: boolean, withOld: boolean) {
+  async setup4(nA: number, nB: number, nC: number, withGroup: boolean, withBGroup: boolean) {
     for (let i = 0; i < nA; i++) this.devs.A.push(await this.device('A', i))
     for (let i = 0; i < nB; i++) this.devs.B.push(await this.device('B', i))
     for (let i = 0; i < nC; i++) this.devs.C.push(await this.device('C', i))
     const c = this.devs.C[0].list
-    if (withOld) {
-      // The old app made the list (v1) and paired with C.
-      const d: any = await this.device('A', 9)
-      d.old = true
-      this.oldDev = d
-      const api = this.oldApi()
-      const made = await oldGists.ensureFriendsFiles(api, { vaults: ['ali/vault'], nickname: null }, this.oldOpts())
-      if (made.kind !== 'ok') throw new Error('old list ' + made.kind)
-      const s = await oldList.shareLink(api, made.handle, this.oldOpts())
-      this.give('A', 'C', s.pointer)
-      const p = await c.paste(s.link)
-      if (p.kind !== 'added' || p.sendBack === null) throw new Error('setup paste ' + p.kind)
-      this.give('C', 'A', p.sendBack.split('#')[1])
-      const h = await this.oldHandle()
-      // YAZ-5092 D1: the new app's link opens `preview.docs.yaseenarshad.com`, a site the frozen old app does not know
-      // ("a link of another app"); its paste box reads the bare code, as a person copies it from the landing page.
-      const q = await oldList.pasteLink(api, h!, p.sendBack.split('#')[1], this.oldOpts())
-      if (q.kind !== 'added') throw new Error('old paste back ' + q.kind)
-      await c.rows()
-    } else {
-      const a = this.devs.A[0].list
-      const s = await a.share()
-      if (s.kind !== 'ok') throw new Error('setup share ' + s.kind)
-      this.give('A', 'C', s.link.split('#')[1])
-      const p = await c.paste(s.link)
-      if (p.kind !== 'added' || p.sendBack === null) throw new Error('setup paste ' + p.kind)
-      this.give('C', 'A', p.sendBack.split('#')[1])
-      const q = await a.paste(p.sendBack)
-      if (q.kind !== 'added') throw new Error('setup paste back ' + q.kind)
-      await a.rows()
-      await c.rows()
-    }
+    const a = this.devs.A[0].list
+    const s = await a.share()
+    if (s.kind !== 'ok') throw new Error('setup share ' + s.kind)
+    this.give('A', 'C', s.link.split('#')[1])
+    const p = await c.paste(s.link)
+    if (p.kind !== 'added' || p.sendBack === null) throw new Error('setup paste ' + p.kind)
+    this.give('C', 'A', p.sendBack.split('#')[1])
+    const q = await a.paste(p.sendBack)
+    if (q.kind !== 'added') throw new Error('setup paste back ' + q.kind)
+    await a.rows()
+    await c.rows()
     const a0 = this.devs.A[0].list
-    if (withGroup && !withOld) {
+    if (withGroup) {
       this.groupCtx = true
       const g = await a0.groups.create('Club')
       if (g.kind !== 'ok') throw new Error('group ' + g.kind)
@@ -302,7 +254,7 @@ export class Model4 extends Model {
       }
       this.groupCtx = false
     }
-    if (withBGroup && !withOld) {
+    if (withBGroup) {
       // B runs a group; A and C are in it: B reads A's group pointer (the recorded limit), never a violation.
       this.groupCtx = true
       const b0 = this.devs.B[0].list
@@ -315,125 +267,12 @@ export class Model4 extends Model {
       await a0.groups.read(g.group)
       this.groupCtx = false
     }
-    this.log.push(`setup A${nA}${withOld ? '+old' : ''} B${nB} C${nC}${withGroup ? ' +group' : ''}${withBGroup ? ' +bgroup' : ''}`)
-  }
-
-  // ---- the old app (v1 code) on A's extra phone ----
-  oldOpts() {
-    return { describe: (k: string) => `notecards-test ${k}`, sleep: async () => {}, now: this.clock.now } as any
-  }
-  oldApi(): GistsApi {
-    return gistsApi(githubClient(tok('A'), { fetch: this.fetchFor(this.oldDev), now: this.clock.now })) as unknown as GistsApi
-  }
-  async oldHandle(): Promise<any | null> {
-    const f = await oldGists.findFriendsIndex(this.oldApi() as any, this.oldOpts())
-    if (f.kind !== 'ok') {
-      this.st4.oldBlocked++
-      return null
-    }
-    return f.handle
-  }
-  async oldOp(op: string): Promise<string> {
-    const d = this.oldDev
-    this.st4.oldOps++
-    const body = async (): Promise<string> => {
-      const api = this.oldApi() as any
-      const o = this.oldOpts()
-      const h = await this.oldHandle()
-      if (h === null) return 'blocked (newer list)'
-      switch (op) {
-        case 'share': {
-          const s = await oldList.shareLink(api, h, o)
-          const to: Actor = this.rng() < 0.75 ? 'B' : 'C'
-          this.give('A', to, s.pointer)
-          if (to === 'B') this.reAdd('OLD A shared a link to B')
-          return `-> ${s.pointer.slice(0, 6)} to ${to}`
-        }
-        case 'paste': {
-          const box = this.inbox.A
-          if (box.length === 0) return 'empty'
-          const it = box[Math.floor(this.rng() * box.length)]
-          const r = await oldList.pasteLink(api, h, friendLink(it.id), o)
-          if (r.kind === 'added') {
-            if (it.from === 'B') this.reAdd('OLD A pasted a B link')
-            if (r.sendBack !== null && this.rng() < 0.8) {
-              this.give('A', it.from as Actor, r.sendBack.split('#')[1])
-              if (it.from === 'B') this.reAdd('OLD A sent back to B')
-            }
-          }
-          return `${it.id.slice(0, 6)} -> ${r.kind}`
-        }
-        case 'removeB': {
-          const ents = (h.index.friends as { mine: string; theirs: string }[]).filter((f) => this.gist(f.theirs)?.owner === 'bea' || this.revisionsOwner(f.theirs) === 'bea')
-          if (ents.length === 0) return 'none'
-          this.cut = true
-          this.cutDone = false
-          this.st.removesStarted++
-          let out = ''
-          for (const e of ents) {
-            this.bMinesTargeted.add(e.mine)
-            const r = await oldList.removeFriend(api, (await this.oldHandle()) ?? h, e.mine, this.oldBudget, o)
-            this.oldBudget = r.budget
-            out += `${e.mine.slice(0, 6)}:${r.kind} `
-          }
-          return out
-        }
-        case 'rows': {
-          let hh = h
-          if (oldList.pendingRemove(hh) !== null) {
-            const r = await oldList.finishRemove(api, hh, this.oldBudget, o)
-            this.oldBudget = r.budget
-            hh = r.handle
-          }
-          const rows = await oldList.readFriends(api, hh, this.oldCache, this.clock.now())
-          if (rows.newlyPaired.length > 0) hh = await oldList.markPaired(api, hh, rows.newlyPaired, o)
-          if (rows.held.length > 0) hh = await oldList.dropHeldShares(api, hh, rows.held, o)
-          if (rows.repairs.length > 0) hh = await oldList.repairPairs(api, hh, rows.repairs, o)
-          return rows.rows.map((x: any) => `${x.name}:${x.state}`).join(',')
-        }
-        case 'send': {
-          if (oldList.pendingRemove(h) !== null) {
-            const r = await oldList.finishRemove(api, h, this.oldBudget, o)
-            this.oldBudget = r.budget
-            return `finish ${r.kind}`
-          }
-          if (h.index.stats === null) return 'no stats'
-          const fresh = numbersFor(friendStats([], this.clock.now()), { login: 'ali', name: 'ALI', avatar: '', nickname: null } as any, this.clock.now())
-          const r = await oldSend.sendNumbers(api, { statsId: h.index.stats, fresh, budget: this.oldBudget, reserve: 0, now: this.clock.now() } as any)
-          this.oldBudget = r.budget
-          if (r.outcome.kind === 'numbers-gone') {
-            const x = await oldGists.replaceNumbersGist(api, h, JSON.stringify(fresh), o)
-            for (let i = 0; i < x.pointers.updated.length + 1; i++) this.oldBudget = recordUpdate(this.oldBudget, this.clock.now(), null)
-            return 'remade'
-          }
-          return r.outcome.kind
-        }
-      }
-      return '?'
-    }
-    try {
-      const r = await Promise.race([body(), d.crashed])
-      if (r === 'crash') {
-        d.dead = false
-        d.crashAt = null
-        d.calls = 0
-        this.clearInflight(d)
-        this.arm(d)
-        this.oldCache = oldList.newListCache()
-        return 'crash'
-      }
-      return r as string
-    } catch (err) {
-      const msg = (err as Error)?.message ?? String(err)
-      // The old app's own refusals are fine (a newer list): only record other throws.
-      if (!/newer|NewerList/i.test(msg) && !(err as any)?.code) this.st4.throws.push(`seed ${this.seed} step ${this.step}: OLD ${op} threw ${msg}`.slice(0, 300))
-      return `threw ${(err as any)?.code ?? msg.slice(0, 40)}`
-    }
+    this.log.push(`setup A${nA} B${nB} C${nC}${withGroup ? ' +group' : ''}${withBGroup ? ' +bgroup' : ''}`)
   }
 
   // ---- events ----
   override async run(ev: Ev): Promise<void> {
-    if (ev.par === undefined && !['send', 'zone', 'reshare', 'old', 'bothOld', 'bothSend'].includes(ev.t)) return super.run(ev)
+    if (ev.par === undefined && !['send', 'zone', 'reshare', 'bothSend'].includes(ev.t)) return super.run(ev)
     if (ev.par !== undefined) return super.run(ev)
     this.step++
     this.st.steps++
@@ -502,30 +341,6 @@ export class Model4 extends Model {
             out += `; ${x} paste back ${q === 'crash' ? 'crash' : q.kind}`
           }
         }
-        break
-      }
-      case 'old': {
-        if (this.oldDev === null) break
-        const op = this.pick(['share', 'paste', 'removeB', 'rows', 'send', 'rows'])
-        out = `OLD ${op}: ${await this.oldOp(op)}`
-        break
-      }
-      case 'bothOld': {
-        if (this.oldDev === null) break
-        const op = this.pick(['share', 'paste', 'removeB', 'rows', 'send'])
-        const o2 = this.pick(['rows', 'share', 'removeB', 'cancel', 'paste', 'zone'] as const)
-        this.parallel++
-        this.step--
-        this.st.steps--
-        let r1 = ''
-        await Promise.all([
-          (async () => {
-            r1 = await this.oldOp(op)
-          })(),
-          this.run({ t: o2, who: 'A', dev: this.rng() < 0.5 ? 0 : 1 }),
-        ])
-        this.parallel--
-        out = `OLD ${op}: ${r1} || ${o2}`
         break
       }
     }
@@ -617,7 +432,6 @@ export class Model4 extends Model {
   /** At the end: every app restarted (new session), online, an hour later; rows twice, then each A device sends. */
   async endPhase() {
     for (const a of ['A', 'B', 'C'] as Actor[]) for (const d of this.devs[a] as any[]) d.offlineUntil = -1
-    if (this.oldDev) this.oldDev.offlineUntil = -1
     this.rateBlock = {}
     this.p409 = 0
     this.clock.advance(61 * 60_000)
@@ -674,13 +488,8 @@ const TABLE: [string, number][] = [
   ['zone', 2],
   ['reshare', 3],
 ]
-const OLD: [string, number][] = [
-  ['old', 10],
-  ['bothOld', 8],
-]
-
-export function randomEvent4(m: Model4, g: () => number): Ev {
-  const table = m.oldDev ? [...TABLE, ...OLD] : TABLE
+export function randomEvent4(g: () => number): Ev {
+  const table = TABLE
   const total = table.reduce((s, [, w]) => s + w, 0)
   let x = g() * total
   let t = table[0][0]
@@ -688,7 +497,7 @@ export function randomEvent4(m: Model4, g: () => number): Ev {
     t = name
     break
   }
-  const who: Actor = ['removeB', 'cancel', 'budget', 'zone', 'bothSend', 'old', 'bothOld'].includes(t) ? 'A' : t === 'removeA' ? 'B' : t === 'send' ? (g() < 0.7 ? 'A' : g() < 0.5 ? 'B' : 'C') : g() < 0.15 ? 'C' : g() < 0.55 ? 'A' : 'B'
+  const who: Actor = ['removeB', 'cancel', 'budget', 'zone', 'bothSend'].includes(t) ? 'A' : t === 'removeA' ? 'B' : t === 'send' ? (g() < 0.7 ? 'A' : g() < 0.5 ? 'B' : 'C') : g() < 0.15 ? 'C' : g() < 0.55 ? 'A' : 'B'
   const ev: Ev = { t, who, dev: Math.floor(g() * 3) }
   if (t === 'paste') ev.arg = g() < 0.6 ? 0 : g() < 0.85 ? 1 : 3
   if (t === 'budget') ev.arg = Math.floor(g() * 9)
@@ -700,18 +509,18 @@ export function randomEvent4(m: Model4, g: () => number): Ev {
 
 export interface Plan {
   seed: number
-  setup: [number, number, number, boolean, boolean, boolean]
+  setup: [number, number, number, boolean, boolean]
   events: Ev[]
 }
 
 export function plan(seed: number): Plan {
   const g = mulberry(seed)
-  const withOld = g() < 0.3
-  const nA = withOld ? 1 + Math.floor(g() * 2) : 1 + Math.floor(g() * 3)
-  const setup: Plan['setup'] = [nA, 1 + Math.floor(g() * 3), 1 + Math.floor(g() * 3), !withOld && g() < 0.35, !withOld && g() < 0.25, withOld]
+  // YAZ-5092 C2: this draw chose the old (v1) app; it stays, so every other seed keeps its order.
+  g()
+  const nA = 1 + Math.floor(g() * 3)
+  const setup: Plan['setup'] = [nA, 1 + Math.floor(g() * 3), 1 + Math.floor(g() * 3), g() < 0.35, g() < 0.25]
   const n = 40 + Math.floor(g() * 41)
-  const probe = { oldDev: withOld ? {} : null } as unknown as Model4
-  const events = Array.from({ length: n }, () => randomEvent4(probe, g))
+  const events = Array.from({ length: n }, () => randomEvent4(g))
   return { seed, setup, events }
 }
 

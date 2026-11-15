@@ -6,6 +6,6 @@ it('msgs', async () => {
   for (const s of (process.env.SEEDS ?? '').split(',').map(Number)) {
     const m = await runPlan(plan(s))
     const v = violations(m)[process.env.KEY ?? 'I2strict']
-    console.log(`SEED ${s} old=${!!m.oldDev} :: ${[...new Set(v.map((x) => x.replace(/seed \d+ (step \d+|end): /, '').replace(/[0-9a-f]{6}/g, 'X')))].join(' | ')}`)
+    console.log(`SEED ${s} :: ${[...new Set(v.map((x) => x.replace(/seed \d+ (step \d+|end): /, '').replace(/[0-9a-f]{6}/g, 'X')))].join(' | ')}`)
   }
 }, 600_000)

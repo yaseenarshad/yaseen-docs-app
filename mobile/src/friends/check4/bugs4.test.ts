@@ -5,7 +5,7 @@ import { Model4, runPlan } from './model4.testing'
 // Shrunk from seed 7100293 of my attack (check4).
 it('check4: a link that a kept friend just pasted, cancelled while a remove waits for the hour: the phone queues it, and the next rows remove that friend', async () => {
   const m = new Model4(1)
-  await m.setup4(1, 1, 1, false, false, false) // Ali and Cem are paired
+  await m.setup4(1, 1, 1, false, false) // Ali and Cem are paired
   for (const e of [
     { t: 'budget', who: 'A', arg: 1 }, // 1 gist update left in Ali's hour
     { t: 'share', who: 'A', arg: 2 }, // a link for Bea, not used yet
@@ -26,7 +26,7 @@ it('check4: a link that a kept friend just pasted, cancelled while a remove wait
 it('check4: two of my devices end the same unused link at the same moment: both say done, and a kept friend reads a deleted numbers gist after every send', async () => {
   const m = await runPlan({
     seed: 7209526,
-    setup: [3, 1, 2, false, false, false],
+    setup: [3, 1, 2, false, false],
     events: [{ t: 'rows', who: 'B', dev: 2 }, { t: 'share', who: 'A', dev: 0 }, { t: 'crash', who: 'A', dev: 2, arg: 12 }, { t: 'crash', who: 'C', dev: 2, arg: 60 }, { t: 'both', who: 'A', dev: 1 }],
   })
   console.log(m.log.join('\n'))

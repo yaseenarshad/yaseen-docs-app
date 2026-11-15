@@ -13,7 +13,7 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
-import { INDEX_FILE, listFile, readListGist, type IndexHandle } from '@shared/friendGists'
+import { INDEX_FILE, listFile, type IndexHandle } from '@shared/friendGists'
 import { handleOf, updateList } from '@shared/friendListHome'
 import { LIST_PATH, createRepoList, listErrorCode, noteText, readNote, readRepoList, type RepoPort } from '@shared/friendListStore'
 import { githubClient, repoPath } from '../../github/client'
@@ -120,9 +120,8 @@ it.runIf(live)('YAZ-5083 live: two list commits at once compose (one 422), the f
     made.push(cut.id)
     const cutBack = await api.read(cut.id)
     if (cutBack === 'unchanged') throw new Error('cut')
-    say(`a gist of 306 files: GitHub gave ${Object.keys(cutBack.files).length} files, truncated ${cutBack.truncated === true}; the app reads it as ${readListGist(cutBack).kind}`)
+    say(`a gist of 306 files: GitHub gave ${Object.keys(cutBack.files).length} files, truncated ${cutBack.truncated === true}`)
     expect(cutBack.truncated).toBe(true)
-    expect(readListGist(cutBack).kind).toBe('unreadable')
   } finally {
     for (const g of made) {
       await api.remove(g)
