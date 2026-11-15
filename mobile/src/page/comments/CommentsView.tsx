@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { threadsOf, type CommentsShape as CommentShape, type PageComment } from '@shared/comments'
 import type { CommentsPort } from '../../comments/bridge'
 import type { WaitingComment } from '../../comments/outbox'
@@ -33,6 +33,23 @@ export interface CommentsViewProps {
   noun?: string
 }
 
+/**
+ * S10: `words` put in `draft` at `at` (the cursor), spaced from the words around it; an empty box is the words alone.
+ * A box that already says them (a second tap) stays as it is. Nothing typed is ever taken away.
+ */
+export function withWords(draft: string, words: string, at: number): { text: string; caret: number } {
+  if (draft.trim() === '') return { text: words, caret: words.length }
+  const said = new RegExp(`(^|\\s)${words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[\\s.,;:!?])`)
+  if (said.test(draft)) return { text: draft, caret: Math.min(Math.max(at, 0), draft.length) }
+  const cut = Math.min(Math.max(at, 0), draft.length)
+  const before = draft.slice(0, cut)
+  const after = draft.slice(cut)
+  const lead = before === '' || /\s$/.test(before) ? '' : ' '
+  const tail = after === '' || /^\s/.test(after) ? '' : ' '
+  const text = `${before}${lead}${words}${tail}${after}`
+  return { text, caret: before.length + lead.length + words.length }
+}
+
 /** The words of a refusal, with the file called by its noun (YAZ-5477: "This card file is no longer in the vault"). */
 const named = (words: string, noun: string): string => (noun === 'page' ? words : words.replace(/\bpage\b/g, noun))
 
@@ -57,7 +74,8 @@ export const openCount = (comments: readonly PageComment[]): number =>
  *
  * YAZ-5478: the one write is INLINE, at the end of the comments (the end of the page or card file), always there: a
  * quiet one-line field, "Add a comment…", that grows when it takes the focus, so the comments stay in view above it
- * while the person types. "Approved" beside it is a PRE-FILL: a tap puts the word in the box and focuses it; Comment
+ * while the person types. "Approved" beside it is a PRE-FILL: a tap puts the word in the box (at the cursor, after
+ * words already typed: S10) and focuses it; Comment
  * sends, and is off while the box is empty. No floating button, no one-tap send. The comment shows at once, "Waiting
  * to send" until GitHub holds it.
  */
@@ -80,10 +98,22 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
     void port?.ready().catch(() => {})
   }
 
+  // S10 (sweep1): "Approved" over words already typed wiped them (`setDraft(words)`), with no Undo. Now an empty box
+  // takes the word; a box with words keeps them and takes it at the cursor (`withWords`), the cursor after it.
+  const caret = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    if (caret.current === null || box.current === null) return
+    box.current.setSelectionRange(caret.current, caret.current)
+    caret.current = null
+  })
   const prefill = (words: string) => {
-    setDraft(words)
+    const el = box.current
+    const at = el !== null && document.activeElement === el ? el.selectionEnd : draft.length
+    const next = withWords(draft, words, at)
+    setDraft(next.text)
+    caret.current = next.caret
     setProblem(null)
-    box.current?.focus()
+    el?.focus()
   }
 
   const post = async () => {
