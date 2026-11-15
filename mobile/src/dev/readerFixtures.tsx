@@ -91,6 +91,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const typed = async (q: string) => {
     typeSearch(q)
     await wait(150)
+    // The result rows are a lazy chunk (YAZ-5438): the first one waits for it.
+    await until(() => document.querySelector('.search__rows') !== null || /Nothing matches/.test(document.body.textContent ?? ''))
   }
   const open = async (row: RegExp, ready: string) => {
     press(row)
