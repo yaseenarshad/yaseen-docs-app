@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { readNeedle } from '@client/links/completion'
 import { idNeedle, marked } from '@client/search/marked'
 import { SEARCH_CAP, type SearchCandidate } from '@client/search/searchCandidates'
@@ -10,6 +10,11 @@ import type { VaultData } from './vaultData'
 import { openFoldersOf } from './searchState'
 import { ICON_KIND, RowIcon } from './rowIcon'
 import { buildTree, visibleRows, type TreeRow } from './vaultTree'
+import type { Scope } from './lists'
+import { ListTree } from './ListTree'
+import { rowId, useIdsForm } from './showIds'
+
+export { SearchBar } from './SearchBar'
 
 /** Where a tree row opens: a page in the reader; a card file in the card view. */
 export function treeRoute(row: TreeRow): Route {
@@ -21,8 +26,17 @@ export function treeRoute(row: TreeRow): Route {
  * folder opens and closes with a tap, to any depth; the open folders stay open while the app runs. A page opens in the
  * reader, a card file in the card view. Only the rows of open folders are drawn, `shown` at a time (the tab's "Show more", kept while a page is open).
  */
-export default function SearchTree({ data, cards, shown, more }: { data: VaultData; cards: boolean; shown: number; more: React.ReactNode }) {
+export default function SearchTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope | null }) {
+  // YAZ-5452: a list filter on (Favorites): that list, as the Mac's tab of it draws it.
+  if (scope !== null) return <ListTree data={data} cards={cards} shown={shown} onMore={onMore} scope={scope} />
+  return <FullTree data={data} cards={cards} shown={shown} onMore={onMore} />
+}
+
+/** The whole vault's tree (YAZ-5438). */
+function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: boolean; shown: number; onMore: () => void }) {
   const app = useApp()
+  // YAZ-5454: the vault's "Show IDs in the files list", as the Mac's Files tree.
+  const ids = useIdsForm(data)
   useEffect(forgetFlips, [])
   const open = openFoldersOf(app.vaultKey)
   const [turn, setTurn] = useState(0)
@@ -54,11 +68,12 @@ export default function SearchTree({ data, cards, shown, more }: { data: VaultDa
               <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               <RowIcon kind={row.kind} open={row.open === true} />
               <span className="tree__label">{row.label}</span>
+              <TreeId id={row.kind === 'folder' ? null : rowId(data, row.path, ids)} />
             </button>
           </li>
         ))}
       </ul>
-      {rows.length > shown && more}
+      {rows.length > shown && <ShowMore onMore={onMore} />}
     </>
   )
 }
@@ -84,18 +99,20 @@ function ResultRow({ row }: { row: SearchCandidate }) {
 }
 
 /** The cards of Cards with an empty box, under their heading. */
-export function ResultList({ rows }: { rows: readonly SearchCandidate[] }) {
+export function ResultList({ rows, shown, onMore }: { rows: readonly SearchCandidate[]; shown: number; onMore: () => void }) {
   useEffect(forgetFlips, [])
+  if (rows.length === 0) return null
   return (
     <>
       <h2 className="section">Cards</h2>
       <ul className="rows search__rows" aria-label="Cards">
-        {rows.map((row) => (
+        {rows.slice(0, shown).map((row) => (
           <li key={`${row.path}\n${row.label}`}>
             <ResultRow row={row} />
           </li>
         ))}
       </ul>
+      {rows.length > shown && <ShowMore onMore={onMore} />}
     </>
   )
 }
@@ -116,15 +133,16 @@ function forgetFlips(): void {
  * matched folder) is dim. A row found by its ID reads `ID — name`, the matched digits marked; a card's ID stands at the
  * right, as in the phone's rows before. "No matches" as the Mac says it, "with these filters" with a Type on.
  */
-export function ResultTree({ data, rows, query, type, shown, more }: { data: VaultData; rows: readonly SearchCandidate[]; query: string; type: PhoneType; shown: number; more: React.ReactNode }) {
+export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { data: VaultData; rows: readonly SearchCandidate[]; query: string; type: PhoneType; shown: number; onMore: () => void; scope: Scope | null }) {
   const app = useApp()
-  const key = `${app.vaultKey}\n${type}\n${query}`
+  const key = `${app.vaultKey}\n${type}\n${scope?.kind}\n${query}`
   const [, setTurn] = useState(0)
   if (flips.key !== key) flips = { key, open: new Set() }
   const flipped = flips.open
   const vault = vaultNodes(data)
   const folderRows = useMemo(() => folderRowsOf(data), [data])
-  const folders = useMemo(() => folderHits(folderRows, query, type), [folderRows, query, type])
+  // YAZ-5452: with a list on, the folders of that list only (`rows` came already cut to it, `Search.tsx`).
+  const folders = useMemo(() => folderHits(scope === null ? folderRows : folderRows.filter((r) => scope.has(r.path)), query, type), [folderRows, query, type, scope])
   const found = useMemo(() => foundTree(vault, rows, folders, query), [vault, rows, folders, query])
   const drawn = useMemo(() => foundRows(vault, found, flipped, data.review.enabled), [vault, found, flipped, data])
   const needle = readNeedle(query)
@@ -132,7 +150,7 @@ export function ResultTree({ data, rows, query, type, shown, more }: { data: Vau
     flips = { key, open: new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]) }
     setTurn((n) => n + 1)
   }
-  if (drawn.length === 0) return <p className="muted">{type === 'all' ? 'No matches' : 'No matches with these filters.'}</p>
+  if (drawn.length === 0) return <p className="muted">{type === 'all' && scope === null ? 'No matches' : 'No matches with these filters.'}</p>
   const open = (row: FoundRow) => {
     if (row.kind === 'folder') return toggle(row.path)
     const route: Route = row.hit !== undefined ? routeOf(row.hit) : treeRoute({ kind: row.kind, path: row.path, label: row.label, depth: row.depth, ...(row.id !== undefined && { id: row.id }) })
@@ -169,9 +187,31 @@ export function ResultTree({ data, rows, query, type, shown, more }: { data: Vau
           )
         })}
       </ul>
-      {drawn.length > shown && more}
+      {drawn.length > shown && <ShowMore onMore={onMore} />}
       {/* The Mac's limit line (🔒 D6): the ranking keeps the best SEARCH_CAP rows. */}
       {(rows.length === SEARCH_CAP || folders.length === SEARCH_CAP) && <p className="muted">Showing {SEARCH_CAP} matches. Type more to narrow.</p>}
     </>
   )
+}
+
+/** "Show more": a tap, or the end of the list coming into view. */
+export function ShowMore({ onMore }: { onMore: () => void }) {
+  const el = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const button = el.current
+    if (button === null || typeof IntersectionObserver === 'undefined') return
+    const seen = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && onMore(), { rootMargin: '400px 0px' })
+    seen.observe(button)
+    return () => seen.disconnect()
+  }, [onMore])
+  return (
+    <button type="button" ref={el} className="btn btn--wide search__more" onClick={onMore}>
+      Show more
+    </button>
+  )
+}
+
+/** A row's ID at its right end (YAZ-5454, the Mac's `tree__id`): "In the files list" on, a page with an ID. */
+export function TreeId({ id }: { id: string | null }) {
+  return id === null ? null : <span className="tree__id">{id}</span>
 }

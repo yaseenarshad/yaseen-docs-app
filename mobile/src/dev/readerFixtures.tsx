@@ -7,6 +7,7 @@ import { fakeFriends, fakeScanner, fakeSync } from './fakes'
 import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
+import { remember } from '../search/recent'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
@@ -16,7 +17,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * "next" side dim); `card-next` a card after one step of its arrows. The clipboard is a fake: nothing reaches the
  * phone's real one.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -89,9 +90,25 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-code'
           ? { 'Code notes.md': `---\ntitle: Code notes\n---\n\n${CODE_PAGE}\n` }
-          : name === 'page-drawing'
-            ? DRAWING_FILES
-            : {}
+        : name === 'page-drawing'
+          ? DRAWING_FILES
+          : name === 'search-favorites'
+            ? {
+                'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`,
+                'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n',
+                // YAZ-5452: the Mac's Favorites, in its order: a page, a folder, a card file, and a path that is gone (no row).
+                '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['Trip plan.md', 'travel', 'cards/capital-of-spain-demo-40.md', 'Gone.md'] }),
+              }
+            : name === 'search-focus'
+              ? {
+                  // YAZ-5453: two Macs' focus files (the newer is the list) and a folder of the Focus tab.
+                  '.yaseendocs/focus.aaaaaaaaaaaa.json': JSON.stringify({ version: 1, at: '2026-11-01T10:00:00Z', focus: ['Café notes.md'] }),
+                  '.yaseendocs/focus.bbbbbbbbbbbb.json': JSON.stringify({ version: 1, at: '2026-11-02T10:00:00Z', focus: ['Trip plan.md', 'git'] }),
+                  '.yaseendocs/focus-folders.bbbbbbbbbbbb.json': JSON.stringify({ version: 1, at: '2026-11-02T10:00:00Z', self: 'vault', folders: [{ id: 'f1', name: 'Spanish study', created: 1, at: 1, items: [{ vault: 'vault', path: 'Spanish words.md' }, { vault: 'vault', path: 'cards' }] }] }),
+                }
+              : name === 'search-ids'
+                ? { '.yaseendocs/show-ids.json': JSON.stringify({ search: 'always', title: true, files: 'number' }) } // YAZ-5454: "#12" at each page row's end
+                : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -203,6 +220,29 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'search-found':
       // YAZ-5447: the matches in the tree: a page two folders down, a card under its page, the typed text marked.
       await typed('madrid')
+      break
+    case 'search-favorites':
+      // YAZ-5452: the Favorites chip on, the folder favorite open.
+      press('Favorites')
+      await until(() => document.querySelector('[role="tree"][aria-label="Favorites"]') !== null)
+      press(/^travel, folder/)
+      await wait(80)
+      break
+    case 'search-focus':
+      press('Focus')
+      await until(() => document.querySelector('[role="tree"][aria-label="Focus"]') !== null)
+      press(/^cards, folder/)
+      await wait(80)
+      break
+    case 'search-ids':
+      press(/^git, folder/)
+      await until(() => document.querySelector('.tree__id') !== null)
+      break
+    case 'search-recent':
+      // YAZ-5457: what this phone opened, newest first (a card in a page, a card file, a page), the Recent chip on.
+      for (const route of [{ kind: 'page', path: 'Trip plan.md' }, { kind: 'card', path: 'cards/capital-of-spain-demo-40.md', id: 'DEMO-40' }, { kind: 'card', path: 'Spanish words.md', id: 'DEMO-12' }] as const) await remember(store, 'yaseen/vault@main', route)
+      press('Recent')
+      await until(() => document.querySelector('[role="tree"][aria-label="Recent"]') !== null)
       break
     case 'search-clear':
       document.querySelector<HTMLInputElement>('input[name="search"]')?.focus()

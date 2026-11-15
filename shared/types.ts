@@ -4200,10 +4200,7 @@ export interface FocusConfig {
   focus: string[]
 }
 
-/** A vault keeps this many focus folders of a scope at most, tombstones included (YAZ-4460). */
-export const MAX_FOCUS_FOLDERS = 100
-/** The items of one focus or favorite folder at most (YAZ-4479): as many as a vault's top level of Focus holds. */
-export const MAX_FOLDER_ITEMS = 500
+/* MAX_FOCUS_FOLDERS, MAX_FOLDER_ITEMS and isFocusFolder live in `vaultLists.ts` (YAZ-5453): the phone reads them from its lazy chunk, and this module is in its first load. */
 
 /**
  * One focus folder (YAZ-4460 F1, F2): a named group of focus items, in the user's order, that moves nothing on disk.
@@ -4222,11 +4219,6 @@ export interface FocusFolder {
   pos?: number
 }
 
-export const isFocusFolder = (v: unknown): v is FocusFolder => {
-  if (typeof v !== 'object' || v === null) return false
-  const f = v as Record<string, unknown>
-  return typeof f.id === 'string' && f.id !== '' && typeof f.name === 'string' && typeof f.created === 'number' && typeof f.at === 'number' && (f.deleted === undefined || f.deleted === true) && (f.pos === undefined || (typeof f.pos === 'number' && Number.isFinite(f.pos))) && Array.isArray(f.items) && f.items.every((i) => typeof i === 'object' && i !== null && typeof (i as Record<string, unknown>).vault === 'string' && typeof (i as Record<string, unknown>).path === 'string')
-}
 
 /** One Mac's focus folders file of a vault (YAZ-4460 F1), by `FocusConfig`'s rule: the latest `at` is the set. */
 export interface FocusFoldersConfig {
