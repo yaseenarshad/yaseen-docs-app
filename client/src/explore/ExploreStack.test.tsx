@@ -477,7 +477,7 @@ describe('the explore stack', () => {
     expect(under.comments.at(-1)).toMatchObject({ path: '/v/alpha.md', order: 'oldest' })
     expect(under.comments.at(-1)?.content).toContain('# /v/alpha.md')
     expect(under.backlinks).toContain('/v/alpha.md')
-    expect(top().querySelector('.explore__under .comments')).not.toBeNull()
+    expect(top().querySelector('.explore__body--read .comments')).not.toBeNull()
     // The fold-all button, the page tab's own, in the head: its command runs on this layer's view.
     const fold = top().querySelector<HTMLButtonElement>('.explore__head .fold-all__trigger')
     expect(fold).not.toBeNull()
@@ -2982,20 +2982,27 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
         )
     })
 
+    /** The layer edits: its head says Done (YAZ-5164: a card file shows its own view in read and in edit, one card frame). */
+    const layerEdits = () => [...top().querySelectorAll('.explore__head .explore__button')].some((b) => b.textContent?.startsWith('Done'))
+
     it.each([false, true])('Explore on a card file (read only %s): E is editing the card, in Edit card, with no second E', async (readOnly) => {
       if (readOnly) props.vaultOf = lockedVault
       props.requestLayer = { kind: 'page', path: CARD_FILE }
       await mount()
       await settle()
+      // One card frame (YAZ-5164 Option A): reading, the layer shows the card file's own view, no reading render.
+      expect(top().querySelector(`.explore__body--card-file [data-editor="${CARD_FILE}"]`)).not.toBeNull()
+      expect(top().querySelector('.explore__body--read')).toBeNull()
       pressE()
       await flush()
       if (readOnly) {
-        expect(top().querySelector('.explore__body--edit')).toBeNull()
+        expect(layerEdits()).toBe(false)
         expect(fileEditCard).not.toHaveBeenCalled()
         allow()
       }
       await settle()
-      expect(top().querySelector(`.explore__body--edit [data-editor="${CARD_FILE}"]`)).not.toBeNull()
+      expect(layerEdits()).toBe(true)
+      expect(top().querySelector(`.explore__body--card-file [data-editor="${CARD_FILE}"]`)).not.toBeNull()
       expect(fileEditCard).toHaveBeenCalledOnce()
     })
 
@@ -3008,7 +3015,7 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
       await flush()
       act(() => [...top().querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === 'Cancel')!.click())
       await settle()
-      expect(top().querySelector('.explore__body--edit')).toBeNull()
+      expect(layerEdits()).toBe(false)
       expect(fileEditCard).not.toHaveBeenCalled()
     })
 
@@ -3049,13 +3056,15 @@ describe('YAZ-5145: the Inbox\'s O and E open Explore\'s own page layer', () => 
       // The index does not know the new file yet: the layer goes by the text it read.
       moveToOwnFile()
       await settle()
-      expect(top().querySelector('.explore__body--edit')).toBeNull()
-      expect(crepes[crepes.length - 1].opts.defaultValue).toContain('Be impeccable')
+      expect(layerEdits()).toBe(false)
+      // One card frame (YAZ-5164): the new card file reads in its own view.
+      expect(top().querySelector(`.explore__body--card-file [data-editor="${CARD_FILE}"]`)).not.toBeNull()
       pressE()
       await flush()
       allow()
       await settle()
-      expect(top().querySelector(`.explore__body--edit [data-editor="${CARD_FILE}"]`)).not.toBeNull()
+      expect(layerEdits()).toBe(true)
+      expect(top().querySelector(`.explore__body--card-file [data-editor="${CARD_FILE}"]`)).not.toBeNull()
       expect(fileEditCard).toHaveBeenCalledOnce()
       expect(pageCardEdit).not.toHaveBeenCalled()
     })
@@ -3120,7 +3129,7 @@ describe('YAZ-4990: Explore follows a page that changes', () => {
       props = { ...props, vaultOf: () => ({ root: '/v', wikilinks: source, wikilinkCandidates: candidates, viewOnlyLinks: viewOnly }), requestLayer: { kind: 'page', path: '/v/alpha.md' } }
     })
     const body = () => top().querySelector<HTMLElement>('.explore__body') as HTMLElement
-    const shown = () => [...top().querySelectorAll('.explore__mount .ProseMirror')].map((e) => e.textContent)
+    const shown = () => [...top().querySelectorAll('.explore__body--read .editor-mount .ProseMirror')].map((e) => e.textContent)
 
     it('reads its page again when the index says it changed: the new text, the scroll place and the folds stay; another page\'s change reads nothing', async () => {
       await mount()

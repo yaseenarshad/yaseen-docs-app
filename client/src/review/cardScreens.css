@@ -3,10 +3,14 @@
  * table, and the Inbox's calm panel in the Explore window's look (`explore.css`). Light and dark from the app's tokens.
  */
 
-/* The card, read-only, outside the page: the page's card frame, no head. */
+/* The card, read-only, outside the page: the page's card frame, no head. Its text at the page's size, as Edit card's
+   editor has it (YAZ-5164: one card frame in read and in Edit card), or Card text size's Custom px. */
 .card-screen {
   margin: 0;
   width: 100%;
+}
+.card.card-screen {
+  font-size: var(--card-text-size, var(--text-size, 16px));
 }
 
 /* The strip (D13; YAZ-5032, Yaseen's pick, round 2's words): the page's name, then one calm line of words — "Due in
@@ -379,6 +383,16 @@
 }
 .explore-card__edit .milkdown .card {
   margin: 0;
+}
+/* ONE CARD FRAME (YAZ-5164 Option A, Yaseen: "the size of the card changes left to right"): Edit card's editor adds no
+   sides and no room above or below the card, so the card stands where the read card stood, as wide, in the card file
+   tab, Explore's card file and the card window alike. */
+.explore-card__edit > .editor-instance {
+  max-width: none;
+  padding: 0;
+}
+.explore-card__edit > .editor-instance > .milkdown > .ProseMirror {
+  padding: 0;
 }
 
 /* ---------- the Inbox ---------- */
