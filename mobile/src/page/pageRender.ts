@@ -39,8 +39,11 @@ import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
  * it, a definition in another piece is not found, and an ordered list cut between items starts again at its number.
  */
 
-/** What a `[[link]]` opens. */
-export type LinkOpen = { kind: 'page'; path: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string }
+/**
+ * What a `[[link]]` or a Markdown link opens (YAZ-5455): a page (at a heading, when the link names one), a card, a file
+ * of the vault, or a heading of this same page (`[[#Heading]]`, `[x](#heading)`).
+ */
+export type LinkOpen = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string }
 
 export interface LinkShow {
   /** The text the link shows (the Mac's `linksAsShown`: a title for an ID, the words after `|`). */
@@ -268,10 +271,18 @@ function sound(path: string): HTMLElement {
 
 /** Marks an `<a>` as one the page view opens: no address the browser follows. */
 function opens(a: HTMLAnchorElement, open: LinkOpen): void {
-  a.setAttribute('href', '#')
+  // A `#part` of this page keeps its address as written (no host, no path); the page view lands on it.
+  if (open.kind !== 'heading' || !(a.getAttribute('href') ?? '').trim().startsWith('#')) a.setAttribute('href', '#')
   a.dataset.open = open.kind
-  a.dataset.path = open.path
+  if (open.kind !== 'heading') a.dataset.path = open.path
   if (open.kind === 'card') a.dataset.card = open.id
+  if ((open.kind === 'page' || open.kind === 'heading') && open.heading !== undefined && open.heading !== '') a.dataset.heading = open.heading
+}
+
+/** A link's `#part` as written, decoded once (`#Getting%20started` is "Getting started"). */
+function partOf(href: string): string {
+  const at = href.indexOf('#')
+  return at < 0 ? '' : decoded(href.slice(at + 1))
 }
 
 function drawLinks(root: DocumentFragment, look: PageLook): void {
@@ -282,11 +293,11 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       const show = look.link(inner)
       a.textContent = show.label
       a.className = show.open === null ? 'wikilink wikilink--unresolved' : show.open.kind === 'card' ? 'wikilink wikilink--card' : 'wikilink'
+      // YAZ-5455: a missing page's link is plain and dim, and no link: a tap on it does nothing.
       if (show.open !== null) opens(a, show.open)
       else {
         a.removeAttribute('href')
-        a.setAttribute('role', 'link')
-        a.tabIndex = 0
+        a.setAttribute('aria-disabled', 'true')
         if (show.missing !== undefined) a.setAttribute('aria-label', show.missing)
       }
       continue
@@ -305,10 +316,18 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       a.rel = 'noopener noreferrer'
       continue
     }
-    if (kind === 'mail' || (kind === 'path' && href.trim().startsWith('#'))) continue
-    const path = kind === 'path' ? look.asset(href.split('#')[0]) : null
+    if (kind === 'mail') continue
+    // YAZ-5455: a `#part` of this page lands on its heading (or a footnote); the window's address never changes.
+    if (kind === 'path' && href.trim().startsWith('#')) {
+      opens(a, { kind: 'heading', heading: partOf(href.trim()) })
+      continue
+    }
+    // A relative link to a page of the vault (`../Notes/Plan.md#Goals`): that page, at its heading. With no extension, a
+    // page of that name (`[Plan](Plan)`), as a `[[link]]` reads it.
+    const bare = href.split('#')[0]
+    const path = kind !== 'path' ? null : (look.asset(bare) ?? (/\.[a-z0-9]+$/i.test(bare) || bare === '' ? null : look.asset(`${bare}.md`)))
     if (path === null) a.removeAttribute('href')
-    else opens(a, /\.(md|markdown)$/i.test(path) ? { kind: 'page', path } : { kind: 'file', path })
+    else opens(a, /\.(md|markdown)$/i.test(path) ? { kind: 'page', path, heading: partOf(href) } : { kind: 'file', path })
   }
 }
 

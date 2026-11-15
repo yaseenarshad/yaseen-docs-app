@@ -1,0 +1,81 @@
+/* "Linked from" (YAZ-5455): the Mac's "Linked mentions" (`backlinks.css`) on the phone's tokens, at the end of the page. */
+.linked-from {
+  margin: 28px 0 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.linked-from__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: var(--tap, 44px);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.linked-from__chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+.linked-from__header[aria-expanded='false'] .linked-from__chevron {
+  transform: rotate(-90deg);
+}
+.linked-from__title {
+  font-weight: 600;
+}
+.linked-from__count {
+  font-weight: 400;
+}
+.linked-from__list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 4px 0 0 20px;
+  list-style: none;
+}
+.linked-from__entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.linked-from__page {
+  min-height: 36px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.linked-from__line {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.linked-from__match {
+  background: var(--accent-soft);
+  color: var(--fg);
+  border-radius: 3px;
+}
+.linked-from__wait {
+  width: 60%;
+  height: 12px;
+  margin: 4px 0;
+  border-radius: 4px;
+  background: var(--bg-side);
+}

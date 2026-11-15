@@ -1,6 +1,6 @@
 import { isAudioRef, isBoardRef } from '@client/editor/card/cardMedia'
 import { onlyLocalMedia } from '@client/editor/card/cardSafety'
-import { cardLinkTitle, createWikilinkResolveSource, linkCard, linkPageName, linkPath, linksAsShown, missingId, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
+import { cardLinkTitle, createWikilinkResolveSource, linkCard, linkPageName, linkPath, linkSplit, linksAsShown, missingId, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 import { makeAssetResolver } from '@shared/assetLookup'
 import type { CardLink } from '@shared/cardLinks'
 import { fileKind } from '@shared/fileKind'
@@ -111,12 +111,15 @@ export function pageLook(data: VaultData, holder: string): PageLook {
       const card = inner.includes('|') ? null : linkCard(inner, source)
       if (card !== null) return { label: cardLinkTitle(card), open: { kind: 'card', path: card.path, id: card.id } }
       const label = linksAsShown(`[[${inner}]]`, source)
-      const path = linkPath(inner, source, undefined)
-      if (path !== null) return { label, open: { kind: 'page', path } }
+      // YAZ-5455: a `#heading` goes with the page (`[[Page#Goals]]`); alone (`[[#Goals]]`) it is this page's heading.
+      const heading = linkSplit(inner, source).hash.replace(/^#/, '')
       const page = linkPageName(inner, source)
+      if (page === '' && heading !== '') return { label, open: { kind: 'heading', heading } }
+      const path = linkPath(inner, source, undefined)
+      if (path !== null) return { label, open: { kind: 'page', path, ...(heading !== '' && { heading }) } }
       // A link to a file of the vault that is no page (a PDF, a picture): by the asset rule.
       const file = page === '' ? null : assetsOf(data)(page, folderOf(holder))
-      if (file !== null) return { label, open: fileKind(file) === 'markdown' ? { kind: 'page', path: file } : { kind: 'file', path: file } }
+      if (file !== null) return { label, open: fileKind(file) === 'markdown' ? { kind: 'page', path: file, ...(heading !== '' && { heading }) } : { kind: 'file', path: file } }
       const id = missingId(inner, source)
       return { label, open: null, missing: id === undefined ? `Missing page · ${page}` : `Missing page · ${id}` }
     },

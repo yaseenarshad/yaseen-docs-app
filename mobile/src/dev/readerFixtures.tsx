@@ -17,7 +17,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * two pages ("1 / 2": the folder's pages only). YAZ-5467: `page-jump` a long page just scrolled, the ⤒ ⤓ pill at the right edge. The clipboard is a fake: nothing reaches the
  * phone's real one.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump', 'page-links', 'page-linked-from'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -90,6 +90,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-code'
           ? { 'Code notes.md': `---\ntitle: Code notes\n---\n\n${CODE_PAGE}\n` }
+          : name === 'page-links' || name === 'page-linked-from'
+            ? {
+                'Links.md': `---\ntitle: Links\nid: DEMO-7\n---\n\n# Links\n\nBy words: [[Trip plan|the trip]]. By ID: [[DEMO-4]]. To a heading: [[Spanish words#Places]].\n\nA card: [[DEMO-40]]. Missing: [[No such page]]. Web: [a site](https://example.com/x).\n\nRelative: [the guide](notes/Folder%20guide.md#step-two).\n`,
+                'notes/Folder guide.md': '---\ntitle: Folder guide\n---\n\n# Folder guide\n\n## Step one\n\nOne.\n\n## Step two\n\nDone.\n',
+              }
           : name === 'page-jump'
             ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
           : name === 'page-folder'
@@ -155,6 +160,17 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await until(() => document.querySelector('.scroll-jump[data-on]') !== null)
       break
     }
+    case 'page-links':
+      await typed('links')
+      await open(/^Links/, '.reader__body h1')
+      break
+    case 'page-linked-from':
+      await typed('trip plan')
+      await open(/^Trip plan/, '.linked-from')
+      press(/^Linked from/)
+      await until(() => document.querySelectorAll('.linked-from__line').length >= 2)
+      document.querySelector('.linked-from')?.scrollIntoView({ block: 'start' })
+      break
     case 'page-folder':
       if (!/Git cheat sheet/.test(document.querySelector('.tree')?.textContent ?? '')) {
         press(/^git, folder/)

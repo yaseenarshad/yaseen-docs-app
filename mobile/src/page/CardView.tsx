@@ -97,7 +97,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     if (tap === null) return void guardLink(event)
     event.preventDefault()
     if (tap.kind === 'go') app.go(tap.action)
-    else if (tap.kind === 'missing') setNotice(tap.text)
+    // A missing page's link, or a heading of a page (a card has none), does nothing (YAZ-5455).
+    else if (tap.kind === 'none' || tap.kind === 'heading') return
     else setNotice(await openFile(media, tap.path))
   }
 

@@ -22,8 +22,9 @@
  */
 import { isViewOnly } from '@shared/fileKind'
 import type { IndexRecord } from '@shared/types'
-import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/wikilinkPlugin'
-import type { PathTitles } from '../lib/pageLabel'
+// The pure link reads (`linkResolve.ts`, which the editor's plugin gives out too): the phone's "Linked from" reads this file (YAZ-5455).
+import { WIKILINK_RE, idLinkTitle, linkDisplayText, linkPageName, type ResolveLink } from '../editor/wikilink/linkResolve'
+import type { PathTitles } from '../lib/pathTitles'
 import { maskCode } from '@shared/linkRewrite'
 import { mentionsOf } from '@shared/mentions'
 

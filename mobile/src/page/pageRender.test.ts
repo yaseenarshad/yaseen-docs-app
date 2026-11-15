@@ -206,7 +206,7 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect(el.querySelector('img[src^="http"]')).toBeNull()
   })
 
-  it('links: a page link opens the page, a card link the card, a broken link says so, a web link opens Safari', async () => {
+  it('links: a page link opens the page, a card link the card, a broken link is plain, a web link opens Safari, a #part lands here (YAZ-5455)', async () => {
     const el = await draw('[[Trip plan]] [[Trip plan|the plan]] [[Nowhere]] [[DEMO-40]] [[DEMO-99]] [[Guide.pdf]] [web](https://example.com/a?b=1) [file](Guide.pdf) [md](Trip%20plan.md) [mail](mailto:a@b.c) [top](#x)')
     const links = [...el.querySelectorAll('a')].map((a) => [a.textContent, a.dataset.open ?? null, a.dataset.path ?? null, a.getAttribute('target'), a.className])
     expect(links).toEqual([
@@ -221,8 +221,10 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
       ['md', 'page', 'Trip plan.md', null, ''],
       // Mail: no new browsing context in the DOM; a tap goes through `guardLink` (YAZ-5243).
       ['mail', null, null, null, ''],
-      ['top', null, null, null, ''],
+      // YAZ-5455: a `#part` of this page: the page view lands on it.
+      ['top', 'heading', null, null, ''],
     ])
+    expect(el.querySelector<HTMLAnchorElement>('a[data-open="heading"]')?.dataset.heading).toBe('x')
     expect(el.querySelector('a[target="_blank"]')?.getAttribute('rel')).toBe('noopener noreferrer')
     expect(el.querySelector('.wikilink--unresolved')?.getAttribute('title')).toBeNull()
     expect([...el.querySelectorAll('.wikilink--unresolved')][1].getAttribute('aria-label')).toBe('Missing page · DEMO-99')

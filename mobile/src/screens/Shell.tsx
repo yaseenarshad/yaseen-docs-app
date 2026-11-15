@@ -126,7 +126,7 @@ function RouteScreen({ route }: { route: Route }) {
     case 'scan':
       return <ScanCode vault={route.vault} />
     case 'page':
-      return <PageView key={route.path} path={route.path} at={route.at} onBack={back} />
+      return <PageView key={route.path} path={route.path} at={route.at} heading={route.heading} onBack={back} />
     case 'friend':
       return <VsScreen route={route} onBack={back} />
     case 'card':

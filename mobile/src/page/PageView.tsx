@@ -9,6 +9,8 @@ import { useDrawings } from '../drawing/useDrawings'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
+import { headingTarget, landOn } from './headings'
+import { LinkedFrom } from './LinkedFrom'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
@@ -28,7 +30,7 @@ import { ScrollJump } from './ScrollJump'
 /** YAZ-5211: where each page was read last (phone memory only), so Back shows a page at its place. */
 const readingPlace = new Map<string, number>()
 
-export default function PageView({ path: opened, at }: { path: string; at?: string }) {
+export default function PageView({ path: opened, at, heading }: { path: string; at?: string; heading?: string }) {
   const app = useApp()
   const { store, sync } = app.services
   const vault = app.vaultKey!
@@ -110,7 +112,13 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
       if (scroller !== null && !first) scroller.scrollTop = top
       // YAZ-5211: back on a page read before, at its reading place (a card asked for by `at` comes first).
-      if (scroller !== null && first && at === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
+      if (scroller !== null && first && at === undefined && heading === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
+      // YAZ-5455: a link that named a heading (`[[Page#Goals]]`) lands on it; one the page lacks opens it at its top.
+      if (first && heading !== undefined) {
+        const target = headingTarget(el, heading)
+        if (target !== null) landOn(target)
+        else if (scroller !== null) scroller.scrollTop = 0
+      }
       if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
       if (first) await fillCardEmbeds(el, data, store, app.go, () => live)
     })()
@@ -118,7 +126,7 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       live = false
       drawn.current = null
     }
-  }, [text, data, path, at, store, app.go, title])
+  }, [text, data, path, at, heading, store, app.go, title])
 
   // YAZ-5211: the reading place of this page, kept as the person scrolls.
   useEffect(() => {
@@ -135,8 +143,18 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
     // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
     if (tap === null) return void guardLink(event)
     event.preventDefault()
-    if (tap.kind === 'go') app.go(tap.action)
-    else if (tap.kind === 'missing') setNotice(tap.text)
+    // A link to this same page (`[[This page#Goals]]`) lands here: it opens no second copy of the page.
+    const self = tap.kind === 'go' && tap.action.type === 'open' && tap.action.route.kind === 'page' && tap.action.route.path === path ? tap.action.route : null
+    if (self !== null) {
+      const target = self.heading === undefined || host.current === null ? null : headingTarget(host.current, self.heading)
+      if (target !== null) landOn(target)
+      else host.current?.closest('.screen')?.scrollTo?.({ top: 0 })
+    } else if (tap.kind === 'go') app.go(tap.action)
+    // YAZ-5455: a heading of this page lands there; a missing page's link does nothing.
+    else if (tap.kind === 'heading') {
+      const target = host.current === null ? null : headingTarget(host.current, tap.heading)
+      if (target !== null) landOn(target)
+    } else if (tap.kind === 'none') return
     else setNotice(await openFile(media, tap.path))
   }
 
@@ -163,6 +181,7 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
         <ScrollJump scroller={host} closest=".screen" />
+        {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} go={app.go} />}
       </article>
     </Frame>
   )

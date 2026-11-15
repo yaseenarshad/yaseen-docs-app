@@ -1,5 +1,5 @@
 import { CARD_LINK_ATTR } from '@client/editor/card/cardRender'
-import { linkPath } from '@client/editor/wikilink/linkResolve'
+import { linkPath, linkSplit } from '@client/editor/wikilink/linkResolve'
 import { cardInContent } from '@client/review/cardRead'
 import type { NavAction } from '../app/nav'
 import type { VaultStore } from '../store'
@@ -78,8 +78,11 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
   await Promise.all(jobs)
 }
 
-/** What a tap on the page asks for. */
-export type Tap = { kind: 'go'; action: NavAction } | { kind: 'file'; path: string } | { kind: 'missing'; text: string } | null
+/**
+ * What a tap on the page asks for (YAZ-5455): open a page (at a heading) or a card; a file; land on a heading of this
+ * page; `none`: a link to a missing page, which does nothing (it shows plain and dim). null: not the app's (a web link).
+ */
+export type Tap = { kind: 'go'; action: NavAction } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'none' } | null
 
 /** What a tap at `target` (in a drawn page or card) opens. A web link: null (the browser opens Safari). */
 export function tapOf(target: EventTarget | null, data: VaultData): Tap {
@@ -88,18 +91,22 @@ export function tapOf(target: EventTarget | null, data: VaultData): Tap {
   if (el instanceof HTMLAnchorElement && el.target === '_blank') return null
   const open = (el as HTMLElement).dataset.open
   const path = (el as HTMLElement).dataset.path
-  if (open === 'page' && path !== undefined) return { kind: 'go', action: { type: 'open', route: { kind: 'page', path } } }
+  const heading = (el as HTMLElement).dataset.heading
+  if (open === 'heading') return heading === undefined ? { kind: 'none' } : { kind: 'heading', heading }
+  if (open === 'page' && path !== undefined) return { kind: 'go', action: { type: 'open', route: { kind: 'page', path, ...(heading !== undefined && { heading }) } } }
   if (open === 'card' && path !== undefined) return { kind: 'go', action: { type: 'open', route: { kind: 'card', path, id: (el as HTMLElement).dataset.card ?? '' } } }
   if (open === 'file' && path !== undefined) return { kind: 'file', path }
-  if (el.classList.contains('wikilink--unresolved')) return { kind: 'missing', text: `${el.getAttribute('aria-label') ?? el.textContent ?? ''}. It is not in the vault.` }
+  if (el.classList.contains('wikilink--unresolved')) return { kind: 'none' }
   // A pill in a card (`renderCard`): its link, as the card's page reads it.
   const inner = el.getAttribute(CARD_LINK_ATTR)
   if (inner !== null) {
     const card = cardOf(data, inner)
     if (card !== null) return { kind: 'go', action: { type: 'open', route: { kind: 'card', path: card.path, id: card.id } } }
-    const page = linkPath(inner, resolveSourceOf(data), undefined)
-    if (page !== null) return { kind: 'go', action: { type: 'open', route: { kind: 'page', path: page } } }
-    return { kind: 'missing', text: `${el.textContent ?? inner}. It is not in the vault.` }
+    const source = resolveSourceOf(data)
+    const part = linkSplit(inner, source).hash.replace(/^#/, '')
+    const page = linkPath(inner, source, undefined)
+    if (page !== null) return { kind: 'go', action: { type: 'open', route: { kind: 'page', path: page, ...(part !== '' && { heading: part }) } } }
+    return { kind: 'none' }
   }
   return null
 }
