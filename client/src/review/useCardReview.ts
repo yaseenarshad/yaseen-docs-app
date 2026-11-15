@@ -117,6 +117,8 @@ export interface CardReviewResume {
 export interface ShownCard extends DueCard {
   /** The card as its page holds it now; null while the page is read. */
   page: CardOnPage | null
+  /** Put back by an answer that left it in its steps (YAZ-5020): a Forgot, a new card's first Remembered. */
+  repeat?: boolean
 }
 
 export interface CardReviewSession {

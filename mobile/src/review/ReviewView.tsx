@@ -144,7 +144,7 @@ type Step = Reveal & { key: string | null }
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
 /** `name` and `rating`: the hint line's "Last: Capital of Spain (Forgot) · ↶ Undo", right after the answer. */
-type Line = { kind: 'answer'; count: number; id: string; name: string; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
+type Line = { kind: 'answer'; count: number; path: string; id: string; name: string; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
@@ -414,7 +414,7 @@ function SessionScreen({
     const answeredBefore = session.answered.length
     // The title's words as they read (a hidden-word mark gives its words: the card is answered), else the ID.
     const name = cardPieces(cardName).map((p) => p.text).join('').trim()
-    setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id, name: name === '' ? card.id : name, rating })
+    setLine({ kind: 'answer', count: answeredBefore + 1, path: card.path, id: card.id, name: name === '' ? card.id : name, rating })
     // The guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
     // Whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
     // the phone React may draw the next card AFTER a 0 ms timer, and the screen then still showed the old count, so a
@@ -512,7 +512,11 @@ function SessionScreen({
   const quietLine = shownLine !== null && shownLine.kind !== 'answer' && fresh === lineId ? shownLine : null
   // Right after an answer, the hint line says it, with its Undo: "Last: Capital of Spain (Forgot) · ↶ Undo".
   const lastAnswer = shownLine?.kind === 'answer' && line?.kind === 'answer' && putAway !== line ? { ...line, undo: shownLine.undo } : null
-  const lastLine = <LastLine last={lastAnswer} quiet={quietLine} undo={undo} settings={review.settings} />
+  // YAZ-5594: a Forgot keeps the card in its steps (YAZ-5020, the Mac's rule), and with no other card before the new
+  // cards (the last missed card, the last new card) it is the NEXT card: the same card, at once. It must not look stuck:
+  // the line says why it is back, and the card comes in again (a fresh front, the "Again" chip).
+  const back = lastAnswer !== null && lastAnswer.rating === 'again' && card !== null && card.path === lastAnswer.path && card.id === lastAnswer.id && lastAnswer.count === answeredNow
+  const lastLine = <LastLine last={lastAnswer} back={back} quiet={quietLine} undo={undo} settings={review.settings} />
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
@@ -583,12 +587,17 @@ function SessionScreen({
           <div className="review__stage">
             {/* The card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
                 shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. */}
-            <div ref={cardBox} className="review__card card card-screen" style={cardLook}>
+            <div ref={cardBox} className="review__card card card-screen" style={cardLook} data-back={back ? (answeredNow % 2 === 0 ? 'a' : 'b') : undefined}>
               <div className="review__cardtop">
                 <span className="review__chip" data-new={card.isNew || undefined} title={cardStateText(card, Date.now())}>
                   <i aria-hidden="true" />
                   {card.isNew ? 'New' : 'Due'}
                 </span>
+                {card.repeat === true && (
+                  <span className="review__again" title="You forgot it: it comes back until you remember it">
+                    Again
+                  </span>
+                )}
                 {crumb.length > 0 && (
                   <span className="review__crumb" title={crumb.join(' / ')}>
                     {crumb.slice(0, -1).map((c) => (
@@ -740,13 +749,16 @@ function SessionScreen({
 
 const NO_OP = () => undefined
 
+/** YAZ-5594: the hint line when a Forgot brings its card straight back (the last missed card, the last new card). */
+export const BACK_LINE = 'Forgot: back until you remember it'
+
 /**
  * The status part of the hint line. After an answer (Yaseen's pick A, text only): "Last: Capital of Spain
  * (Forgot) · ↶ Undo" — the answer in words, no ✕ or ✓ and no colour, so nothing leans on the next answer; one line, a
  * long title gives way with "…". Its words are not a tap (a tap on them never steps the card); its Undo takes the answer
  * back. Else an add, a mark or Archive card, with its Undo, for its few seconds.
  */
-function LastLine({ last, quiet, undo, settings }: { last: { name: string; rating: CardRating; undo: boolean } | null; quiet: { text: string; undo: boolean } | null; undo: () => void; settings: ReviewSettings }) {
+function LastLine({ last, back, quiet, undo, settings }: { last: { name: string; rating: CardRating; undo: boolean } | null; back: boolean; quiet: { text: string; undo: boolean } | null; undo: () => void; settings: ReviewSettings }) {
   const undoButton = (
     <button type="button" className="review__undo" aria-label="Undo" onClick={undo}>
       ↶ Undo
@@ -754,7 +766,19 @@ function LastLine({ last, quiet, undo, settings }: { last: { name: string; ratin
   )
   return (
     <span className="review__last" role="status" aria-live="polite">
-      {last !== null ? (
+      {last !== null && back ? (
+        <>
+          <span className="review__lastanswer review__lastanswer--back">
+            {BACK_LINE}
+            {last.undo && (
+              <span className="review__lastanswer-sep" aria-hidden="true">
+                {' · '}
+              </span>
+            )}
+          </span>
+          {last.undo && undoButton}
+        </>
+      ) : last !== null ? (
         <>
           <span className="review__lastanswer">
             Last: <span className="review__lastanswer-name">{last.name}</span>

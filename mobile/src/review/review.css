@@ -944,3 +944,47 @@
     padding-right: 2px;
   }
 }
+
+/* ---- YAZ-5594: a Forgot that brings its card straight back (the last missed card, the last new card) ---- */
+
+/* "Again" beside Due / New: a card put back by a Forgot (it comes back until you remember it). */
+.review__again {
+  flex: none;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The same card comes in again, so the screen visibly moves on. Two names: each new Forgot plays it again. */
+.review__card[data-back='a'] {
+  animation: review-back-a 260ms ease-out;
+}
+
+.review__card[data-back='b'] {
+  animation: review-back-b 260ms ease-out;
+}
+
+@keyframes review-back-a {
+  from {
+    opacity: 0.35;
+    transform: translateX(28px);
+  }
+}
+
+@keyframes review-back-b {
+  from {
+    opacity: 0.35;
+    transform: translateX(28px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review__card[data-back] {
+    animation: none;
+  }
+}
