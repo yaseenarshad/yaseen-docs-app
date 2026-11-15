@@ -5,12 +5,12 @@ import { isFolderRow } from '@client/links/folderRows'
 import { bucketByDay, calendarDateKey, calendarEndKey, dateColumns, todayKey, type DayKey } from '@client/views/calendar'
 import { canonicalKey } from '@client/views/view/keys'
 import { useApp } from '../app/AppState'
-// YAZ-5472 Q4: a folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
+// A folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
 import { openFile } from '../explore/openFile'
 import { rowTarget, type ViewRun } from './folderModel'
 
 /**
- * A FOLDER'S CARDS, BOARD AND CALENDAR ON THE PHONE (YAZ-5460), read only. The Mac's engine ran the view (its rows,
+ * A FOLDER'S CARDS, BOARD AND CALENDAR ON THE PHONE, read only. The Mac's engine ran the view (its rows,
  * filter, sort, groups, the fields each card shows); the phone draws each one for a narrow screen:
  *  - CARDS: one card under another (the Mac's grid of cards is a column on a phone), the title, then each field
  *    with its label (the view's `cardStyle`: a hidden label, a bold value), an empty field left out.

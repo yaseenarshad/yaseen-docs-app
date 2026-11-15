@@ -23,7 +23,7 @@ import type { VaultData } from '../search/vaultData'
 import { folderTitleOf } from './folderTitle'
 
 /**
- * A FOLDER'S PAGE AS THE MAC BUILDS IT (YAZ-5460), pure, for the phone's read-only folder page. Every rule is the Mac's
+ * A FOLDER'S PAGE AS THE MAC BUILDS IT, pure, for the phone's read-only folder page. Every rule is the Mac's
  * own code, imported (`@client`, in this lazy chunk only), in the order the Mac's `FolderView` and `ViewsPane` run it:
  *
  *  - the settings: the folder's `.folder.md` (`folderSettings`), its columns with its parent folders' (`pageColumns`,
@@ -66,7 +66,7 @@ export interface FolderModel {
   subfolders: IndexRecord[]
   /** Every page of the vault (the resolver and the Linked mentions columns read them all). */
   data: VaultData
-  /** The vault's folder page defaults (YAZ-5489: its folder-pages.json, `folderPagesFile.ts`; else the Mac's defaults). */
+  /** The vault's folder page defaults (its folder-pages.json, `folderPagesFile.ts`; else the Mac's defaults). */
   defaults: FolderPagesSettings
   /** Other files: the files directly in the folder that are not pages, then the pages and folders moved there. */
   other: OtherFile[]
@@ -133,7 +133,7 @@ export function folderModel(data: VaultData, dir: string, vaultName: string, def
   for (const key of fromBelow) page[key] = below[key].decl!
   const settings: FolderSettings = { ...own, columns: page, ...(fromBelow.length > 0 && { fromBelow }) }
 
-  // Other files (YAZ-4597): the pages and folders moved there leave the views, while the tray is on.
+  // Other files: the pages and folders moved there leave the views, while the tray is on.
   const trayOn = (record === undefined ? undefined : showOtherFilesOf(record.properties)) ?? defaults.showOtherFiles
   const all = folderRows(data.records, data.folders, dir)
   const dirs = vaultDirs(data.files)
@@ -156,7 +156,7 @@ export function folderModel(data: VaultData, dir: string, vaultName: string, def
     for (const sub of movedFolders) if (!keep.has(sub)) for (const r of all) if (r.path.startsWith(`${sub}/`)) movedPages.set(r.path, true)
   }
 
-  // The values as the views read them (C1/C3, YAZ-4769), as the Mac's `shown` and `shownSubfolders`.
+  // The values as the views read them (C1/C3), as the Mac's `shown` and `shownSubfolders`.
   const reserved = columnReservedKeys(ids)
   const separate = new Set(ids ? Object.keys(own.columns).filter((key) => own.columns[key].separate === true) : [])
   const spell = spellings([...Object.keys(columns).filter((key) => columns[key].decl.kind !== 'mentions'), ...Object.keys(below).filter((key) => !here.has(keyFold(key)) && below[key].decl?.kind !== 'mentions')])

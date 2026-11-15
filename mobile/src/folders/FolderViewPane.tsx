@@ -5,7 +5,7 @@ import { FolderTable } from './FolderTable'
 import { FolderBoard, FolderCalendar, FolderCards } from './FolderCards'
 
 /**
- * THE OPEN VIEW OF A FOLDER'S PAGE (YAZ-5460): the Mac's engine runs the view (`runFolderView`), and the phone draws it,
+ * THE OPEN VIEW OF A FOLDER'S PAGE: the Mac's engine runs the view (`runFolderView`), and the phone draws it,
  * read only, made for a narrow screen. Above it, what the Mac's toolbar counts: the pages (and the folders) it shows.
  */
 export function FolderViewPane({ model, index, vault }: { model: FolderModel; index: number; vault: string }) {
