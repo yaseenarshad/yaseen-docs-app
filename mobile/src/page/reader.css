@@ -30,41 +30,194 @@
   overflow-wrap: anywhere;
 }
 
+/* THE READING LOOK (YAZ-5458): the Mac's page on a small screen. Each value is the Mac's DEFAULT, under the Mac's own
+   variable name, so that one setting moves the same thing on both:
+    - `--edit-line-height` (1.5) and `--edit-block-gap` (4px): Settings › Editor › Line spacing and Space between
+      blocks (`app.css`). A paragraph is `gap` above and below (Crepe's padding), so two paragraphs are 2 × gap apart;
+      a heading has 3 × gap above and 1 × gap below (YAZ-3794), so it sits nearer the text it starts.
+    - `--page-bullet-indent` (2.15em) and `--page-bullet-gap` (10px): Settings › Editor › Outline (`bullets.css`).
+    - `--guide-line-darkness` (15%): the guide line under a parent's dot (`guideLines.css`).
+    - `--text-size` (16px) and `--hN-size` … : the vault's text formatting (`text-formatting.json`, `headingStyles.ts`).
+   YAZ-5485 (page spacing as a vault setting): set these on `.reader` from the vault's file, as `vaultLook.ts` sets the
+   `--hN-*` today (`VaultLook.style`, the `style` of `<article class="reader">`); nothing here changes. */
+.reader__body {
+  --page-line: var(--edit-line-height, 1.5);
+  --page-gap: var(--edit-block-gap, 4px);
+  /* The list's geometry, as `bullets.css`: the dot's column (`--list-gutter`, fixed), the gap to the text, the step of
+     a level. A line's text starts gutter + gap in; a child list starts one indent in from its parent's dot. */
+  --list-label-gap: var(--page-bullet-gap, 10px);
+  --list-indent: var(--page-bullet-indent, 2.15em);
+  --list-gutter: calc(2.15em - 10px);
+  --list-bullet-size: 0.42em;
+  --list-ring-border: max(1px, 0.094em);
+  --list-marker-color: color-mix(in srgb, currentColor 78%, transparent);
+  /* Inline code: Crepe's frame theme (`--crepe-color-inline-code` on `--crepe-color-inline-area` at 60%). */
+  --page-code-fg: #ba1a1a;
+  --page-code-bg: #dfdfdf;
+  /* The quote's bar (`--crepe-color-selected`) and the rule (`--crepe-color-outline` at 20%). */
+  --page-quote-bar: #d5d5d5;
+  --page-rule: color-mix(in srgb, #a8a8a8 20%, transparent);
+  font-size: var(--text-size, 16px);
+  line-height: var(--page-line);
+}
+@media (prefers-color-scheme: dark) {
+  .reader__body {
+    --page-code-fg: #ff6666;
+    --page-code-bg: #303030;
+    --page-quote-bar: #3a3a3a;
+    --page-rule: color-mix(in srgb, #757575 30%, transparent);
+  }
+}
+
+/* The blocks: no margins of their own but the Mac's; a paragraph's room is its padding (Crepe's), so it never
+   collapses into its neighbour's, and two paragraphs are always 2 × gap apart, in a list, a quote or a callout too. */
+.reader__body :is(p, ul, ol, li, blockquote, pre, figure) {
+  margin: 0;
+}
+.reader__body p {
+  padding: var(--page-gap) 0;
+}
+
+/* Headings: the Mac's sizes and weights (`app.css`), or the vault's (`--hN-*`); 3 × gap above, 1 × gap below, and
+   Crepe's 2px in them. The first block of the page sits at the top. */
 .reader__body :is(h1, h2, h3, h4, h5, h6) {
-  margin: 1.2em 0 0.4em;
+  margin: calc(var(--page-gap) * 3) 0 var(--page-gap);
+  padding: 2px 0;
   line-height: 1.3;
 }
 .reader__body h1 {
-  font-size: 1.5em;
+  font-size: var(--h1-size, 1.802em);
+  font-weight: var(--h1-weight, 700);
+  text-decoration: var(--h1-decoration, none);
 }
 .reader__body h2 {
-  font-size: 1.3em;
+  font-size: var(--h2-size, 1.602em);
+  font-weight: var(--h2-weight, 600);
+  text-decoration: var(--h2-decoration, none);
 }
 .reader__body h3 {
-  font-size: 1.12em;
+  font-size: var(--h3-size, 1.424em);
+  font-weight: var(--h3-weight, 600);
+  text-decoration: var(--h3-decoration, none);
 }
-.reader__body :is(h4, h5, h6) {
-  font-size: 1em;
+.reader__body h4 {
+  font-size: var(--h4-size, 1.266em);
+  font-weight: var(--h4-weight, 600);
+  text-decoration: var(--h4-decoration, none);
+}
+.reader__body h5 {
+  font-size: var(--h5-size, 1.125em);
+  font-weight: var(--h5-weight, 600);
+  text-decoration: var(--h5-decoration, none);
+}
+.reader__body h6 {
+  font-size: var(--h6-size, 1em);
+  font-weight: var(--h6-weight, 600);
+  text-decoration: var(--h6-decoration, none);
+}
+/* In a bullet a heading is a row (the Mac's Roam rule): a paragraph's room, no section margins. */
+.reader__body li :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  padding: var(--page-gap) 0;
 }
 .reader__body > :first-child {
   margin-top: 0;
 }
-.reader__body p {
-  margin: 0.5em 0;
-}
-.reader__body :is(ul, ol) {
-  margin: 0.4em 0;
-  padding-left: 1.4em;
-}
-.reader__body li {
-  margin: 0.15em 0;
-}
-.reader__body li:has(> .page-task, > p:first-child > .page-task) {
-  list-style: none;
-  margin-left: -1.4em;
+.reader__body > :last-child {
+  margin-bottom: 0;
 }
 
-/* A task box: a mark, not a control (nothing is ticked in stage one). */
+/* An empty line of the Mac (an empty paragraph is `<br />` in the file) or an empty paragraph: no second gap. */
+.reader__body > br,
+.reader__body p:empty {
+  display: none;
+}
+
+/* LISTS (`bullets.css`, `guideLines.css`): the text of each level starts gutter + gap in, so a wrapped line hangs under
+   its first word; a child level starts one indent in from its parent's dot. Each row is a paragraph's room (gap above
+   and below); a child list adds its own. */
+.reader__body :is(ul, ol) {
+  padding: 0 0 0 calc(var(--list-gutter) + var(--list-label-gap));
+}
+.reader__body li :is(ul, ol) {
+  position: relative;
+  margin: var(--page-gap) 0 calc(var(--page-gap) * -1) calc(var(--list-indent) - var(--list-gutter) - var(--list-label-gap));
+}
+.reader__body li {
+  position: relative;
+  padding: var(--page-gap) 0;
+}
+/* A loose item: its paragraphs have the room already. An empty item keeps one line, with its dot. */
+.reader__body li:has(> p:first-child) {
+  padding: 0;
+}
+.reader__body li:empty {
+  min-height: calc(var(--page-line) * 1em + var(--page-gap) * 2);
+}
+/* The guide line: 1px under the parent's dot, the length of its children (the Mac's default: on, at 15%). */
+.reader__body li > :is(ul, ol)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--list-gutter) / 2 - var(--list-indent) - 0.5px);
+  border-left: 1px solid color-mix(in srgb, currentColor var(--guide-line-darkness, 15%), transparent);
+  pointer-events: none;
+}
+
+/* Bullets: ● solid circle, ○ ring, ■ square, again from level 4; an ordered level counts as a level (the Mac's
+   rule). Centred in the dot's column on the first line, 78% of the text's colour. */
+.reader__body ul {
+  list-style: none;
+}
+.reader__body ul > li::before {
+  content: '';
+  position: absolute;
+  top: calc(var(--page-gap) + (var(--page-line) * 1em - var(--list-bullet-size)) / 2);
+  left: calc(var(--list-gutter) / -2 - var(--list-label-gap) - var(--list-bullet-size) / 2);
+  box-sizing: border-box;
+  width: var(--list-bullet-size);
+  height: var(--list-bullet-size);
+  border-radius: 50%;
+  background: var(--list-marker-color);
+}
+.reader__body :is(ul, ol) ul > li::before,
+.reader__body :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  border: var(--list-ring-border) solid var(--list-marker-color);
+  border-radius: 50%;
+  background: transparent;
+}
+.reader__body :is(ul, ol) :is(ul, ol) ul > li::before,
+.reader__body :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  --list-bullet-size: 0.38em;
+  border: 0;
+  border-radius: 0.04em;
+  background: var(--list-marker-color);
+}
+.reader__body :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li::before {
+  border: 0;
+  border-radius: 50%;
+  background: var(--list-marker-color);
+}
+
+/* Numbers: the bullets' colour, lined up at their dots (a long "10." runs out to the left, never into its text), with
+   the Mac's gap to the text. */
+.reader__body ol {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) - 0.3em);
+}
+.reader__body ol > li {
+  padding-left: 0.3em;
+}
+.reader__body ol > li::marker {
+  color: var(--list-marker-color);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A task: the box in the dot's column (no dot), level with the first line; the text where a bullet's text is. Read
+   only: a mark, not a control. The box is Crepe's (18 of 24 px, the Mac's checkbox), in the muted grey. */
+.reader__body li:has(> .page-task:first-child, > p:first-child > .page-task:first-child)::before {
+  content: none;
+}
 .page-task {
   display: inline-block;
   width: 1em;
@@ -74,29 +227,62 @@
   border: 1.5px solid var(--fg-muted);
   border-radius: 4px;
 }
-.page-task[data-checked='true'] {
-  border-color: var(--accent);
-  background: var(--accent)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E")
-    center / 100% no-repeat;
+.reader__body li > .page-task:first-child,
+.reader__body li > p:first-child > .page-task:first-child {
+  position: absolute;
+  top: calc(var(--page-gap) + (var(--page-line) * 1em - 1.125em) / 2);
+  left: calc((var(--list-gutter) + 1.125em) / -2 - var(--list-label-gap));
+  width: 1.125em;
+  height: 1.125em;
+  margin: 0;
+  border-width: 0.125em;
+  border-radius: 0.15em;
 }
-li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-checked='true']) {
+.page-task[data-checked='true'] {
+  border-color: var(--fg-muted);
+  background: var(--fg-muted);
+}
+.page-task[data-checked='true']::after {
+  content: '';
+  display: block;
+  width: 30%;
+  height: 58%;
+  margin: 2% auto 0;
+  border: solid var(--bg);
+  border-width: 0 0.12em 0.12em 0;
+  transform: rotate(45deg);
+}
+/* A done task reads as done (the Mac: its own line struck and dimmed; its children keep their own state). The strike
+   is drawn only on an item with no child list: a strike reaches every line under it, and the children are not done. */
+.reader__body li:has(> .page-task[data-checked='true']:first-child, > p:first-child > .page-task[data-checked='true']:first-child) {
   color: var(--fg-muted);
 }
+.reader__body li:has(> .page-task[data-checked='true']:first-child):not(:has(> ul, > ol)),
+.reader__body li > p:first-child:has(> .page-task[data-checked='true']:first-child) {
+  text-decoration: line-through;
+}
+.reader__body li:has(> .page-task[data-checked='true']:first-child, > p:first-child > .page-task[data-checked='true']:first-child) > :is(ul, ol) {
+  color: var(--fg);
+}
 
+/* Inline code: the Mac's (Crepe's) red on grey, 87.5%; it wraps (YAZ-5448) with its box on each line. */
 .reader__body code {
-  padding: 0.1em 0.35em;
+  padding: 0.05em 0.25em;
   border-radius: 4px;
-  background: var(--bg-side);
+  background: var(--page-code-bg);
+  color: var(--page-code-fg);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.88em;
+  font-size: 0.875em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 .reader__body pre {
-  margin: 0.6em 0;
+  margin: calc(var(--page-gap) * 2) 0;
   padding: 10px 12px;
   overflow-x: auto;
   border-radius: 8px;
   background: var(--bg-side);
+  line-height: 1.5;
 }
 /* YAZ-5448: a code block wraps its long lines, as the Mac's page does (YAZ-2270): no side scroll. `pre-wrap` keeps the
    indents and the line breaks; a long word (a URL, a hash) breaks anywhere. The page, a card in it, and the card view;
@@ -111,23 +297,37 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
 .reader__body pre code {
   padding: 0;
   background: none;
+  color: inherit;
   font-size: 13px;
 }
 
+/* A quote (Crepe's): a 4px round bar at its left, inset by a gap, its text in the page's colour, one bullet's step in
+   (the Mac: 40px), so a quote's text lines up with a list's. A gap above and below. */
 .reader__body blockquote {
-  margin: 0.6em 0;
-  padding: 2px 0 2px 12px;
-  border-left: 3px solid var(--border);
-  color: var(--fg-muted);
+  position: relative;
+  margin: var(--page-gap) 0;
+  padding: 0 0 0 calc(var(--list-gutter) + var(--list-label-gap));
+}
+.reader__body blockquote:not(.page-callout)::before {
+  content: '';
+  position: absolute;
+  top: var(--page-gap);
+  bottom: var(--page-gap);
+  left: 0;
+  width: 4px;
+  border-radius: 100px;
+  background: var(--page-quote-bar);
 }
 .reader__body .page-callout {
-  padding: 8px 12px;
+  margin: calc(var(--page-gap) * 2) 0;
+  padding: 6px 12px;
   border-left: 3px solid var(--accent);
   border-radius: 0 8px 8px 0;
   background: var(--accent-soft);
   color: var(--fg);
 }
 .page-callout__title {
+  padding: var(--page-gap) 0 0;
   font-weight: 600;
 }
 .page-callout[data-callout='warning'],
@@ -139,10 +339,13 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   border-left-color: var(--danger);
 }
 
+/* A rule (Crepe's): a 1px line in a 13px band. */
 .reader__body hr {
-  margin: 1.2em 0;
+  height: 13px;
+  margin: 0;
+  padding: 6px 0;
   border: 0;
-  border-top: 1px solid var(--border);
+  background: var(--page-rule) content-box;
 }
 .reader__body mark {
   border-radius: 3px;
@@ -155,14 +358,18 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   }
 }
 
-/* Tables (YAZ-5471): `tables.css`, with `tableLayout.ts`. */
+/* Tables (YAZ-5471): `tables.css`, with `tableLayout.ts`. Here only the room around the box (YAZ-5458): a code
+   block's. */
+.reader__body > .page-table-box {
+  margin: calc(var(--page-gap) * 2) 0;
+}
 
 .reader__body img,
 .card-view__card img {
   display: block;
   max-width: 100%;
   height: auto;
-  margin: 0.6em 0;
+  margin: calc(var(--page-gap, 4px) * 2) 0;
   border-radius: 8px;
 }
 .reader__body audio {
@@ -303,7 +510,8 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   font-size: 0.8em;
 }
 .page-footnote {
-  margin: 0.4em 0;
+  margin: 0;
+  padding: var(--page-gap, 4px) 0;
   color: var(--fg-muted);
   font-size: 14px;
 }

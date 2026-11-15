@@ -45,28 +45,4 @@
   text-decoration: none;
 }
 
-/* The vault's heading sizes, weight and underline (`text-formatting.json`, the Mac's `--hN-*`); else the phone's own. */
-.reader__body h1 {
-  font-size: var(--h1-size, 1.5em);
-}
-.reader__body h2 {
-  font-size: var(--h2-size, 1.3em);
-}
-.reader__body h3 {
-  font-size: var(--h3-size, 1.12em);
-}
-.reader__body h4 {
-  font-size: var(--h4-size, 1em);
-}
-.reader__body h5 {
-  font-size: var(--h5-size, 1em);
-}
-.reader__body h6 {
-  font-size: var(--h6-size, 1em);
-}
-.reader__body h1 { font-weight: var(--h1-weight, 700); text-decoration: var(--h1-decoration, none); }
-.reader__body h2 { font-weight: var(--h2-weight, 700); text-decoration: var(--h2-decoration, none); }
-.reader__body h3 { font-weight: var(--h3-weight, 700); text-decoration: var(--h3-decoration, none); }
-.reader__body h4 { font-weight: var(--h4-weight, 700); text-decoration: var(--h4-decoration, none); }
-.reader__body h5 { font-weight: var(--h5-weight, 700); text-decoration: var(--h5-decoration, none); }
-.reader__body h6 { font-weight: var(--h6-weight, 700); text-decoration: var(--h6-decoration, none); }
+/* The vault's heading sizes, weight and underline (`text-formatting.json`, the Mac's `--hN-*`): `reader.css`. */
