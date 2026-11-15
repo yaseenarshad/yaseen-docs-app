@@ -26,7 +26,7 @@ export interface NewCommentInput {
   path: string
   body: string
   by?: string
-  /** The one-tap "Approved": the comment waits this long (its Undo) before any send. */
+  /** A hold before any send, with its Undo (the one-tap "Approved" of YAZ-5461; since YAZ-5478 the page sends at once, 0). */
   holdMs?: number
 }
 

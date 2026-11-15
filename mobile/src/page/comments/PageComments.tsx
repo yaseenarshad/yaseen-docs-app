@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { own, type PeopleRead } from '@shared/people'
-import { readCommentsAndShape } from '@shared/comments'
+import { readComments, readCommentsAndShape } from '@shared/comments'
 import { useApp } from '../../app/AppState'
 import { githubClient } from '../../github/client'
 import type { CommentsPort } from '../../comments/bridge'
 import { commentSigner, readPeople } from '../../comments/signer'
-import { CommentsView } from './CommentsView'
+import { CommentsCount, CommentsView } from './CommentsView'
 
 /**
  * YAZ-5461: the comments of the open PAGE, at the end of the page view. The page view mounts it once (`PageView.tsx`)
@@ -52,6 +52,12 @@ export function PageComments({ path, text, noun = 'page' }: { path: string; text
     return (people === null ? undefined : own(people.people, handle)?.name) ?? handle
   }
   return <CommentsView path={path} comments={comments} shape={shape} port={port} signer={signer} nameOf={nameOf} version={version} noun={noun} />
+}
+
+/** YAZ-5478: the small count near the title of a page or card file; a tap goes to its comments. */
+export function PageCommentsCount({ text }: { text: string }) {
+  const comments = useMemo(() => readComments(text), [text])
+  return <CommentsCount comments={comments} />
 }
 
 /** The open vault's comment list, once the engine has loaded (`review()` gives the one answer list). */

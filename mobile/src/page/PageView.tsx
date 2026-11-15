@@ -13,7 +13,7 @@ import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
-import { PageComments } from './comments/PageComments'
+import { PageComments, PageCommentsCount } from './comments/PageComments'
 import { useTables } from './useTables'
 
 /**
@@ -156,6 +156,8 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
       foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
     >
       <article className="reader" aria-label={title}>
+        {/* YAZ-5478: the comment count, at the top right of the column; a tap goes to the comments at the end. */}
+        {typeof text === 'string' && <PageCommentsCount text={text} />}
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
         {notice !== null && (
           <p className="reader__notice" role="status">

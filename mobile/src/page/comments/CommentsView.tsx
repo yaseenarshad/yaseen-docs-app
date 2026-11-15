@@ -1,14 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
-import { flushSync } from 'react-dom'
+import { useRef, useState } from 'react'
 import { threadsOf, type CommentsShape as CommentShape, type PageComment } from '@shared/comments'
 import type { CommentsPort } from '../../comments/bridge'
 import type { WaitingComment } from '../../comments/outbox'
 import { REFUSED_WORDS } from '../../comments/write'
 import './comments.css'
 
-/** How long the one-tap "Approved" waits, with its Undo, before it is sent (as Review's Undo line, about 4 s). */
-export const APPROVED_UNDO_MS = 4000
-/** The quick replies above the box. Yaseen: "just that one for right now". */
+/** The pre-fills beside the box (YAZ-5478: a tap fills the box; Comment sends). Yaseen: "just that one for right now". */
 export const QUICK_REPLIES = ['Approved'] as const
 
 const NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
@@ -22,7 +19,7 @@ export interface CommentsViewProps {
   /** The page's comments, as its stored text holds them. */
   comments: readonly PageComment[]
   shape: CommentShape
-  /** The comment list of the open vault; null while the engine loads (the button waits). */
+  /** The comment list of the open vault; null while the engine loads (Comment waits). */
   port: CommentsPort | null
   /** The `by` of a new comment (the vault's GitHub login, through the people file). */
   signer: () => Promise<string | undefined>
@@ -44,64 +41,59 @@ const when = (at: string): string => {
   return `${d.toLocaleDateString([], { day: 'numeric', month: 'short' })}, ${d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
 }
 
+/** The open comments of a list: each open thread, and each of its open replies (the count beside "Comments"). */
+export const openCount = (comments: readonly PageComment[]): number =>
+  threadsOf(comments)
+    .filter((t) => t.comment.resolved === undefined)
+    .reduce((n, t) => n + 1 + t.replies.filter((r) => r.resolved === undefined).length, 0)
+
 /**
  * YAZ-5461: a page's comments on the phone, read only, as the Mac's comment block shows them (`client/src/comments/
  * CommentsSection.tsx`): each thread in time order with its number (`#3`), who, when and the words; its replies one
  * level in (`#3.1`); a resolved thread folded into "N resolved" at the bottom (the Mac's default place), a resolved
  * reply dimmed. Reply, Edit and Resolve stay on the Mac for now.
  *
- * And the one write: "Comment" floats at the bottom right of the page's scroll area (so it never covers the bar under
- * the page, the page arrows of YAZ-5449, nor the tab bar). One tap opens the box with the keyboard up; "Approved" above
- * it posts at once with a 4-second Undo (one tap: Yaseen's "boom"); a typed comment goes with Send, which waits for a
- * word. The comment shows at once, "Waiting to send" until GitHub holds it.
+ * YAZ-5478: the one write is INLINE, at the end of the comments (the end of the page or card file), always there: a
+ * quiet one-line field, "Add a comment…", that grows when it takes the focus, so the comments stay in view above it
+ * while the person types. "Approved" beside it is a PRE-FILL: a tap puts the word in the box and focuses it; Comment
+ * sends, and is off while the box is empty. No floating button, no one-tap send. The comment shows at once, "Waiting
+ * to send" until GitHub holds it.
  */
 export function CommentsView({ path, comments, shape, port, signer, nameOf, version, noun = 'page' }: CommentsViewProps) {
-  const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
+  const [focused, setFocused] = useState(false)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  /** The comment that the one-tap reply posted, while its Undo runs. */
-  const [undoable, setUndoable] = useState<WaitingComment | null>(null)
   const box = useRef<HTMLTextAreaElement>(null)
-
-  useEffect(() => {
-    if (undoable === null) return
-    const left = Math.max(0, undoable.notBefore - Date.now())
-    const id = setTimeout(() => {
-      setUndoable((u) => (u?.id === undoable.id ? null : u))
-      setOpen(false)
-    }, left)
-    return () => clearTimeout(id)
-  }, [undoable])
 
   const refused = shape === 'foreign' || shape === 'invalid' ? named(REFUSED_WORDS[shape], noun) : null
   void version
   const held = new Set(comments.map((c) => c.id))
   const pending = (port?.waiting(path) ?? []).filter((c) => !held.has(c.id))
 
-  const openBox = () => {
-    // iOS raises the keyboard only for a focus in the tap itself: draw the box now, then focus it.
-    flushSync(() => {
-      setOpen(true)
-      setProblem(null)
-    })
-    box.current?.focus()
+  const onFocus = () => {
+    setFocused(true)
     // The writer's chunk loads now, while the person types (first use).
     void port?.ready().catch(() => {})
   }
 
-  const post = async (body: string, holdMs: number) => {
+  const prefill = (words: string) => {
+    setDraft(words)
+    setProblem(null)
+    box.current?.focus()
+  }
+
+  const post = async () => {
+    const body = draft
     if (port === null || body.trim() === '' || busy) return
     if (refused !== null) return setProblem(refused)
     setBusy(true)
     try {
       const by = await signer()
-      const made = await port.add({ path, body, by, holdMs })
-      if (holdMs > 0) setUndoable(made)
-      else {
-        setDraft('')
-        setOpen(false)
-      }
+      await port.add({ path, body, by, holdMs: 0 })
+      setDraft('')
+      setProblem(null)
+      box.current?.blur()
     } catch {
       setProblem('The phone could not keep your comment. Try again.')
     } finally {
@@ -109,99 +101,94 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
     }
   }
 
-  const undo = async () => {
-    if (undoable === null || port === null) return
-    const gone = await port.undo(undoable.id)
-    setUndoable(null)
-    if (!gone) setProblem('Already sent.')
-    else box.current?.focus()
-  }
-
   const threads = threadsOf(comments)
   const openThreads = threads.filter((t) => t.comment.resolved === undefined)
   const done = threads.filter((t) => t.comment.resolved !== undefined)
-  const count = openThreads.reduce((n, t) => n + 1 + t.replies.filter((r) => r.resolved === undefined).length, 0) + pending.filter((c) => c.refused === undefined).length
+  const count = openCount(comments) + pending.filter((c) => c.refused === undefined).length
+  const grown = focused || draft !== ''
 
   return (
-    <>
-      {(threads.length > 0 || pending.length > 0) && (
-        <section className="page-comments" aria-label="Comments">
-          <h3 className="page-comments__head">
-            Comments{count > 0 ? ` · ${count}` : ''}
-            {done.length > 0 && <span className="page-comments__muted"> · {done.length} resolved</span>}
-          </h3>
-          {openThreads.map((t) => (
-            <Thread key={t.comment.id} comment={t.comment} replies={t.replies} nameOf={nameOf} />
-          ))}
-          {pending.map((c) => (
-            <article key={c.id} className={c.refused === undefined ? 'page-comments__item page-comments__item--pending' : 'page-comments__item page-comments__item--refused'}>
-              <p className="page-comments__meta">
-                <span className="page-comments__who">{nameOf(c.by)}</span>
-                <span className="page-comments__muted"> · {c.refused === undefined ? 'Waiting to send' : 'Not sent'}</span>
-              </p>
-              <p className="page-comments__body">{c.body}</p>
-              {c.refused !== undefined && (
-                <p className="page-comments__problem" role="alert">
-                  {named(NOT_SENT[c.refused], noun)}{' '}
-                  <button type="button" className="link-btn" onClick={() => void port?.discard(c.id)}>
-                    Discard
-                  </button>
-                </p>
-              )}
-            </article>
-          ))}
-          {done.length > 0 && <Resolved threads={done} nameOf={nameOf} />}
-        </section>
-      )}
-      <div className="page-comments__dock">
-        {open ? (
-          <div className="page-comments__composer" role="group" aria-label="New comment">
-            {undoable !== null ? (
-              <p className="page-comments__undo" role="status">
-                <span>{undoable.body} · posting</span>
-                <button type="button" className="link-btn" onClick={() => void undo()}>
-                  ↶ Undo
-                </button>
-              </p>
-            ) : (
-              <div className="page-comments__chips">
-                {QUICK_REPLIES.map((reply) => (
-                  <button key={reply} type="button" className="page-comments__chip" disabled={port === null || busy} onClick={() => void post(reply, APPROVED_UNDO_MS)}>
-                    {reply}
-                  </button>
-                ))}
-              </div>
-            )}
-            <textarea
-              ref={box}
-              className="page-comments__box"
-              aria-label="Comment"
-              placeholder="Write a comment"
-              rows={3}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-            {problem !== null && (
-              <p className="page-comments__problem" role="alert">
-                {problem}
-              </p>
-            )}
-            <div className="page-comments__actions">
-              <button type="button" className="link-btn" onClick={() => setOpen(false)}>
-                Cancel
+    <section className="page-comments" aria-label="Comments">
+      <h3 className="page-comments__head">
+        Comments{count > 0 ? ` · ${count}` : ''}
+        {done.length > 0 && <span className="page-comments__muted"> · {done.length} resolved</span>}
+      </h3>
+      {openThreads.map((t) => (
+        <Thread key={t.comment.id} comment={t.comment} replies={t.replies} nameOf={nameOf} />
+      ))}
+      {pending.map((c) => (
+        <article key={c.id} className={c.refused === undefined ? 'page-comments__item page-comments__item--pending' : 'page-comments__item page-comments__item--refused'}>
+          <p className="page-comments__meta">
+            <span className="page-comments__who">{nameOf(c.by)}</span>
+            <span className="page-comments__muted"> · {c.refused === undefined ? 'Waiting to send' : 'Not sent'}</span>
+          </p>
+          <p className="page-comments__body">{c.body}</p>
+          {c.refused !== undefined && (
+            <p className="page-comments__problem" role="alert">
+              {named(NOT_SENT[c.refused], noun)}{' '}
+              <button type="button" className="link-btn" onClick={() => void port?.discard(c.id)}>
+                Discard
               </button>
-              <button type="button" className="btn" disabled={draft.trim() === '' || port === null || busy || undoable !== null} onClick={() => void post(draft, 0)}>
-                Send
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" className="page-comments__fab" disabled={port === null} onClick={openBox}>
+            </p>
+          )}
+        </article>
+      ))}
+      {done.length > 0 && <Resolved threads={done} nameOf={nameOf} />}
+      <div className={grown ? 'page-comments__new page-comments__new--open' : 'page-comments__new'} role="group" aria-label="New comment">
+        <textarea
+          ref={box}
+          className="page-comments__box"
+          aria-label="Add a comment"
+          placeholder="Add a comment…"
+          rows={grown ? 3 : 1}
+          value={draft}
+          onFocus={onFocus}
+          onBlur={() => setFocused(false)}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+        {problem !== null && (
+          <p className="page-comments__problem" role="alert">
+            {problem}
+          </p>
+        )}
+        <div className="page-comments__actions">
+          {QUICK_REPLIES.map((reply) => (
+            // A pre-fill: the mouse-down does not take the focus from the box, so the box stays open.
+            <button key={reply} type="button" className="page-comments__chip" aria-label={`Fill in "${reply}"`} onMouseDown={(e) => e.preventDefault()} onClick={() => prefill(reply)}>
+              {reply}
+            </button>
+          ))}
+          <button type="button" className="btn page-comments__send" disabled={draft.trim() === '' || port === null || busy} onMouseDown={(e) => e.preventDefault()} onClick={() => void post()}>
             Comment
           </button>
-        )}
+        </div>
       </div>
-    </>
+    </section>
+  )
+}
+
+/**
+ * YAZ-5478: the small comment count near the title (a speech bubble and the number of open comments). A tap glides to
+ * the comments at the end of the page (at once with Reduce Motion). None while the file has no comment: the box at
+ * the end is there anyway, and none when every comment is resolved. It sits in the column, never floats.
+ */
+export function CommentsCount({ comments }: { comments: readonly PageComment[] }) {
+  const n = openCount(comments)
+  if (n === 0) return null
+  const go = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const section = e.currentTarget.closest('article')?.querySelector<HTMLElement>('.page-comments')
+    if (section == null) return
+    const reduced = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (typeof section.scrollIntoView === 'function') section.scrollIntoView({ block: 'start', behavior: reduced ? 'auto' : 'smooth' })
+  }
+  const words = `${n} ${n === 1 ? 'comment' : 'comments'}`
+  return (
+    <button type="button" className="comments-count" aria-label={`${words}. Go to the comments`} onClick={go}>
+      <svg className="comments-count__icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="M3 2.5h10a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 13 11.5H7l-3.2 2.6a.4.4 0 0 1-.65-.3V11.5H3A1.5 1.5 0 0 1 1.5 10V4A1.5 1.5 0 0 1 3 2.5Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      </svg>
+      <span>{n}</span>
+    </button>
   )
 }
 

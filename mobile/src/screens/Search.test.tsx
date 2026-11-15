@@ -167,7 +167,11 @@ describe('a page, read only (YAZ-5079)', () => {
     expect(body.querySelector('.card-embed .card-band')?.textContent).toBe('Capital of Spain')
     expect(body.querySelector('.card-embed__body')?.textContent).toContain('Madrid')
     expect(body.querySelector('.card-embed--missing')?.textContent).toBe('Missing card · DEMO-77')
-    expect(h.host.querySelectorAll('input, textarea, [contenteditable="true"]')).toHaveLength(0)
+    // No editor: the page's text takes no keyboard. The one field is the comment box at the end (YAZ-5478), which
+    // writes only the comment list, never the page's text, and does not take the focus on its own.
+    expect([...h.host.querySelectorAll('input, textarea, [contenteditable="true"]')].map((f) => f.getAttribute('aria-label'))).toEqual(['Add a comment'])
+    expect(body.querySelectorAll('input, textarea, [contenteditable="true"]')).toHaveLength(0)
+    expect(document.activeElement?.tagName).not.toBe('TEXTAREA')
   })
 
   it('a page is untrusted: its <script> and onerror= never run', async () => {

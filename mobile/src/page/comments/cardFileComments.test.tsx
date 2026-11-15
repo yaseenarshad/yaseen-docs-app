@@ -50,7 +50,7 @@ async function typeQuery(x: Harness, value: string): Promise<void> {
   await x.settle()
   await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
 }
-const fab = (x: Harness) => [...x.host.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Comment')
+const send = (x: Harness) => [...x.host.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Comment')
 
 describe('comments on a card file, on the phone (YAZ-5477)', () => {
   it('the card file view: its comments under the card and its Comment button; a card in a page: none', async () => {
@@ -69,7 +69,10 @@ describe('comments on a card file, on the phone (YAZ-5477)', () => {
     expect(section.textContent).toContain('Comments · 2')
     expect([...section.querySelectorAll('.page-comments__item')].map((i) => i.querySelector('.page-comments__body')?.textContent)).toEqual(['Is the date right?', 'Yes.'])
     expect(section.textContent).toContain('1 resolved')
-    expect(fab(h)).toBeDefined()
+    // YAZ-5478: the inline box at the end of the comments, its Comment button, and the count near the title.
+    expect(section.querySelector('textarea')?.getAttribute('placeholder')).toBe('Add a comment…')
+    expect(send(h)).toBeDefined()
+    expect(view.querySelector('.comments-count')?.textContent).toBe('2')
     // The card's own words never carry the comments.
     expect(view.querySelector('.card-view__card')!.textContent).not.toMatch(/Is the date right|demo0001/)
 
@@ -78,7 +81,8 @@ describe('comments on a card file, on the phone (YAZ-5477)', () => {
     await h.click(/^Islands/)
     await waitFor(h, () => h!.host.querySelector('.card-view__card .card__body') !== null)
     expect(h.host.querySelector('.page-comments')).toBeNull()
-    expect(fab(h)).toBeUndefined()
+    expect(send(h)).toBeUndefined()
+    expect(h.host.querySelector('.comments-count')).toBeNull()
     expect(h.text()).not.toContain('A page comment')
   })
 
