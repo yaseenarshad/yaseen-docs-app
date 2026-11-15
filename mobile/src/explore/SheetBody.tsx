@@ -20,7 +20,7 @@ import { boardKindOf, boardLabel } from '../drawing/boardFiles'
 import type { SheetRoute } from './sheets'
 
 /**
- * WHAT A SHEET SHOWS (YAZ-5472): a page or a card, read only, drawn by THE READER'S OWN CODE (`renderPage`, `drawCard`,
+ * WHAT A SHEET SHOWS: a page or a card, read only, drawn by THE READER'S OWN CODE (`renderPage`, `drawCard`,
  * the card embeds, the pictures, the drawings), so a sheet looks as the page view does. A link in it opens ANOTHER
  * sheet on top (`openSheet`); a file (a PDF, a picture) opens as in the reader.
  */
@@ -53,13 +53,13 @@ export function useFileText(path: string): string | null | undefined {
 
 /**
  * A tap in a sheet's text, through the reader's ONE link door (`openLink`) with `click: 'explore'`: a page, a card or a
- * drawing (YAZ-5473: the reader's `tapOf` names a drawing file a drawing) opens in ANOTHER sheet on top; a heading of
+ * drawing (the reader's `tapOf` names a drawing file a drawing) opens in ANOTHER sheet on top; a heading of
  * this page lands there in the sheet; a file opens as in the reader; a missing page's link does nothing, as in the reader.
  */
 export function useSheetTap(data: VaultData | null, say: (words: string) => void, click: LinkDoor['click'] | null = 'explore') {
   const app = useApp()
   const media = useVaultMedia()
-  // `null` (a folder page full screen, YAZ-5460): the vault's own "Clicking a link" decides.
+  // `null` (a folder page full screen): the vault's own "Clicking a link" decides.
   const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, ...(click !== null && { click }) }
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
@@ -113,7 +113,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       if (!live) return
       await fillCardEmbeds(into, data, app.services.store, door, () => live)
       if (!live) return
-      // YAZ-5523: a sheet reads only. A page card's ⋯ (the card actions, YAZ-5504) has no menu here and no style.
+      // A sheet reads only. A page card's ⋯ (the card actions) has no menu here and no style.
       for (const more of into.querySelectorAll('.card__more-box')) more.remove()
       el.replaceChildren(...into.childNodes)
       const head = el.firstElementChild
@@ -121,7 +121,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       flushSync(() => setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase()))
       if (at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
       onDrawn()
-      // YAZ-5518: a link that named a heading (`[[Long notes#Part 40]]`) lands on it in the sheet, as full screen (YAZ-5455).
+      // A link that named a heading (`[[Long notes#Part 40]]`) lands on it in the sheet, as full screen.
       // Only the first drawing, at the top (not a sheet drawn again at its kept place): a new version keeps the place.
       const scroller = el.closest<HTMLElement>('.explore-sheet__body')
       const target = heading === undefined || landed.current || (scroller?.scrollTop ?? 0) > 0 ? null : headingTarget(el, heading)
@@ -146,7 +146,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       )}
       {content === null && <p className="muted">{app.unit('This page is not on the phone.')}</p>}
       <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
-      {/* YAZ-5535: the end of the page, the full page's own component; a row opens another panel (the sheet's door). */}
+      {/* The end of the page, the full page's own component; a row opens another panel (the sheet's door). */}
       {data !== null && content !== undefined && <LinkedMentions path={path} data={data} store={app.services.store} door={door} />}
     </article>
   )
@@ -207,10 +207,10 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
 }
 
 /**
- * A DRAWING FILE ON ITS OWN (YAZ-5473), in a sheet or full screen: drawn by THE SAME CODE as a drawing in a page
- * (YAZ-5440): the reader draws `![[its name]]` from its own folder, so an Excalidraw drawing is drawn on the phone (it
+ * A DRAWING FILE ON ITS OWN, in a sheet or full screen: drawn by THE SAME CODE as a drawing in a page
+ *: the reader draws `![[its name]]` from its own folder, so an Excalidraw drawing is drawn on the phone (it
  * fits the width; a tap opens it full screen, with pinch zoom), a `.drawio.svg` shows as the picture it is, and a plain
- * `.drawio` is drawn by draw.io's own viewer (YAZ-5533), with a page picker for several pages. Nothing is saved: the picture lives in memory while it shows.
+ * `.drawio` is drawn by draw.io's own viewer, with a page picker for several pages. Nothing is saved: the picture lives in memory while it shows.
  */
 export function DrawingBody({ path, onDrawn }: { path: string; onDrawn(): void }) {
   const app = useApp()
@@ -251,7 +251,7 @@ export function DrawingBody({ path, onDrawn }: { path: string; onDrawn(): void }
 /** A drawing file's name, as its tree row says it. */
 export const drawingTitle = (path: string): string => boardLabel(path.slice(path.lastIndexOf('/') + 1))
 
-/** A folder's page (YAZ-5460): its own chunk, with the Mac's view engine, loaded when one opens. */
+/** A folder's page: its own chunk, with the Mac's view engine, loaded when one opens. */
 const FolderBody = lazy(() => import('../folders/FolderBody'))
 
 /** The sheet's body for its route. */

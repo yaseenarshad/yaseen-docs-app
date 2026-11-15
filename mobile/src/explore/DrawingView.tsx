@@ -5,9 +5,9 @@ import { Frame } from '../screens/Frame'
 import { DrawingBody, drawingTitle } from './SheetBody'
 
 /**
- * A DRAWING FILE FULL SCREEN (YAZ-5473): a tree row's drawing in a vault that opens files full screen, or "Open full
+ * A DRAWING FILE FULL SCREEN: a tree row's drawing in a vault that opens files full screen, or "Open full
  * page" of a drawing's sheet. The same drawing as in a page (YAZ-5440's code, `DrawingBody`), read only; Back returns.
- * Its ⋯ (YAZ-5498): "Copy path", and the full title at the top when the top bar cuts it.
+ * Its ⋯: "Copy path", and the full title at the top when the top bar cuts it.
  */
 export default function DrawingView({ path }: { path: string }) {
   const app = useApp()

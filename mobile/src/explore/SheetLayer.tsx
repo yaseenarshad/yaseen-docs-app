@@ -15,7 +15,7 @@ import './explore.css'
 import '../page/pageNav.css'
 
 /**
- * THE SHEETS ON THE SCREEN (YAZ-5472), a chunk of its own: loaded on the first open, or when the app is idle.
+ * THE SHEETS ON THE SCREEN, a chunk of its own: loaded on the first open, or when the app is idle.
  *
  * Over the whole app (the tabs too), in `document.body`: the screen under them stays as it is, mounted, at its scroll
  * place. Each sheet has its dim under it, so each sheet down the stack is a little darker. YAZ-5540: a sheet never moves
@@ -35,7 +35,7 @@ export default function SheetLayer() {
   const below = stack.length - mounted.length
   const top = stack.at(-1)
 
-  // Each sheet opened goes to this phone's Recent (YAZ-5457), as `go` records a page opened full screen.
+  // Each sheet opened goes to this phone's Recent, as `go` records a page opened full screen.
   const recorded = useRef(new Set<number>())
   useEffect(() => {
     if (top === undefined || recorded.current.has(top.id)) return
@@ -48,7 +48,7 @@ export default function SheetLayer() {
     if (top === undefined) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeTop()
     document.addEventListener('keydown', onKey)
-    // YAZ-5518: Safari's own Back in a tab closes the top sheet through its history entry (`sheets.ts`, `openOverlay`).
+    // Safari's own Back in a tab closes the top sheet through its history entry (`sheets.ts`, `openOverlay`).
     return () => document.removeEventListener('keydown', onKey)
   }, [top])
 
@@ -63,15 +63,15 @@ export default function SheetLayer() {
   )
 }
 
-/** A card's text is not needed by the sheet (its old foot counted the card's links, YAZ-5535). */
+/** A card's text is not needed by the sheet (its old foot counted the card's links). */
 const noText = () => {}
 
-/** A folder's name (YAZ-5460): its `.folder.md`'s title, else its last part (the tree's row says the same). */
+/** A folder's name: its `.folder.md`'s title, else its last part (the tree's row says the same). */
 const folderName = (data: VaultData | null, dir: string): string => data?.folders.find((f) => f.folder === dir)?.title.trim() || dir.slice(dir.lastIndexOf('/') + 1)
 
 /** The sheet's head: the page's folder (as Mochi shows the deck), else its name. */
 export function headWords(data: VaultData | null, route: SheetRoute): string {
-  // A folder's page (YAZ-5460): the folders it is in, else "Folder".
+  // A folder's page: the folders it is in, else "Folder".
   if (route.kind === 'folder') return route.path.includes('/') ? folderOf(route.path).split('/').join(' / ') : 'Folder'
   const folder = folderOf(route.path)
   if (route.kind === 'card' && data?.byPath[route.path]?.kind !== 'card') return titleOf(data, route.path)
@@ -91,7 +91,7 @@ function SheetView({ sheet, level, depth, step }: { sheet: Sheet; level: number;
   const [cut, setCut] = useState(false)
   const isTop = depth === 0
   const isNew = useRef(sheet.scroll === 0)
-  // YAZ-5518: the ⋯ menu is an overlay of its own: a Back closes it, and the sheet stays.
+  // The ⋯ menu is an overlay of its own: a Back closes it, and the sheet stays.
   useOverlay(menu, () => setMenu(false))
 
   // The top sheet's motion; the one under it gets it when the top one goes.
@@ -147,7 +147,7 @@ function SheetView({ sheet, level, depth, step }: { sheet: Sheet; level: number;
             <span className="explore-sheet__where">{headWords(data, sheet.route)}</span>
             <button type="button" className="explore-sheet__more" aria-label="More" aria-expanded={menu}
               onClick={() => {
-                // YAZ-5498: measured once, as the menu opens: is the head's line cut ("…")?
+                // Measured once, as the menu opens: is the head's line cut ("…")?
                 if (!menu) setCut(isCut(head.current?.querySelector('.explore-sheet__where')))
                 setMenu(!menu)
               }}
@@ -171,7 +171,7 @@ function SheetView({ sheet, level, depth, step }: { sheet: Sheet; level: number;
           </div>
           <div ref={body} className="explore-sheet__body">
             <div ref={mark} className="explore-sheet__top" aria-hidden="true" />
-            {/* YAZ-5535: no sticky foot; a page's "Linked mentions" is at the end of its text (`SheetPage`), and scrolls. */}
+            {/* No sticky foot; a page's "Linked mentions" is at the end of its text (`SheetPage`), and scrolls. */}
             <SheetContent route={sheet.route} onDrawn={restore} onText={noText} />
           </div>
           {layer}
