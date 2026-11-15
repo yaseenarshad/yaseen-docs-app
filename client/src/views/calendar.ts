@@ -3,7 +3,7 @@
  * goes on, the value a move writes, and the month grid. No date library: `expr/dates.ts` and the
  * native `Date` (D4).
  */
-import { type ColorStrengthValue, type FolderPagesSettings, type IndexRecord, type PropertiesResponse, readColorStrength } from '@shared/types'
+import { type ColorStrengthValue, type FolderPagesSettings, type IndexRecord, type PropertiesResponse, calLine, readColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { columnTyping } from './editorType'
 import { formatDate, parseIsoDate, renderDate } from './expr/dates'
@@ -206,6 +206,52 @@ export const addDays = (day: DayKey, days: number): DayKey => formatDate(localDa
 
 /** The 1st of the month `months` after the month of `day`: the month grid's ‹ › (YAZ-4558 D22). */
 export const monthStart = (day: DayKey, months: number): DayKey => formatDate(localDay(`${day.slice(0, 8)}01`, 0, months).getTime(), 'YYYY-MM-DD')
+
+/** The same day `months` later (earlier when negative); a day the month does not have is its last day (Nov 30 for "Aug 31 + 3"). */
+export function addMonths(day: DayKey, months: number): DayKey {
+  const first = localDay(`${day.slice(0, 8)}01`, 0, months)
+  const last = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  return formatDate(new Date(first.getFullYear(), first.getMonth(), Math.min(Number(day.slice(8, 10)), last)).getTime(), 'YYYY-MM-DD')
+}
+
+/** Months a Rolling calendar goes past its earliest and its latest dated card (YAZ-5609), and around today with none. */
+export const ROLL_MARGIN_MONTHS = 3
+export const ROLL_EMPTY_MONTHS = 12
+
+/**
+ * Rolling's ends (YAZ-5609): the first day of its first and of its last week. From the earliest dated day less
+ * `ROLL_MARGIN_MONTHS` to the latest plus as many, or `ROLL_EMPTY_MONTHS` either side of today with no dated card;
+ * today is always in.
+ */
+export function rollingEnds(dated: Iterable<DayKey>, today: DayKey, sundayFirst = false): { first: DayKey; last: DayKey } {
+  let lo: DayKey | null = null
+  let hi: DayKey | null = null
+  for (const day of dated) {
+    if (lo === null || day < lo) lo = day
+    if (hi === null || day > hi) hi = day
+  }
+  const from = lo === null ? addMonths(today, -ROLL_EMPTY_MONTHS) : addMonths(lo, -ROLL_MARGIN_MONTHS)
+  const to = hi === null ? addMonths(today, ROLL_EMPTY_MONTHS) : addMonths(hi, ROLL_MARGIN_MONTHS)
+  return { first: weekDays(from < today ? from : today, sundayFirst)[0], last: weekDays(to > today ? to : today, sundayFirst)[0] }
+}
+
+/** A calendar's "Between months" width (YAZ-5608): its whole px 1–`MAX_CAL_LINE`, else 0 (Off, the default). */
+export const monthLineOf = (view: Pick<ViewDef, 'monthLine'>): number => (view.monthLine === undefined ? 0 : calLine(view.monthLine) === view.monthLine ? view.monthLine : 0)
+/** Its colour: the stored `blue light`, else Blue, Medium. */
+export const monthLineColorOf = (view: Pick<ViewDef, 'monthLineColor'>): ColorStrengthValue => readColorStrength(view.monthLineColor) ?? { color: 'blue', strength: 'medium' }
+
+/** Rolling's "Shade every other month" (YAZ-5608): every second month by its count from year 0, so the shade never moves as you scroll. */
+export const shadedMonth = (day: DayKey): boolean => (Number(day.slice(0, 4)) * 12 + Number(day.slice(5, 7)) - 1) % 2 === 1
+
+/**
+ * Where "Between months" draws (YAZ-5608): a stepped line round each month's first days. A day whose day above (a week
+ * earlier) is in another month has the line on its top; a day whose shown neighbour on the left is in another month
+ * has it on its left. `left` is null in the first column.
+ */
+export function monthEdges(day: DayKey, left: DayKey | null): { top: boolean; left: boolean } {
+  const month = day.slice(0, 7)
+  return { top: addDays(day, -7).slice(0, 7) !== month, left: left !== null && left.slice(0, 7) !== month }
+}
 
 /** The 7 days, Monday first unless `sundayFirst` (YAZ-4585), of the week that holds `day` (YAZ-4558 D22). */
 export function weekDays(day: DayKey, sundayFirst = false): DayKey[] {

@@ -4,7 +4,7 @@ import { holdFrames } from '../../lib/colResize'
 import { edgeScroller } from '../../lib/edgeScroll'
 import { type CardClick, openByKey, openCardByClick } from '../../lib/openGesture'
 import {
-  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanDays, spanOf, timeFirst, timeOf,
+  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthEdges, monthLineColorOf, monthLineOf, monthStart, monthWeeks, rollingEnds, shadedMonth, spanDays, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
 import { type ColorStrengthValue, type IndexRecord, calLine, headerRowAttrs } from '@shared/types'
@@ -158,11 +158,13 @@ function viewOf(scroller: HTMLElement): { top: number; bottom: number } {
 }
 /** Rolling's day names, the grid's first row: sticky under the sticky month bar (views.css). */
 const headOf = (grid: HTMLElement): HTMLElement | null => grid.querySelector<HTMLElement>('.view-cal__week')
-/** Where the day names stick, in screen px: a row put at the top (a jump) has its top here, under the bar and the day names. */
-function stuckLine(grid: HTMLElement, scroller: HTMLElement): number {
+/** Where the day names stick, in screen px: a row put at the top (a jump) has its top here, under the view's toolbar (`top`, YAZ-5609), the bar and the day names. */
+function stuckLine(grid: HTMLElement, scroller: HTMLElement, top: number): number {
   const nav = grid.parentElement?.querySelector('.view-cal__nav')?.getBoundingClientRect().height ?? 0
-  return viewOf(scroller).top + nav + (headOf(grid)?.getBoundingClientRect().height ?? 0)
+  return viewOf(scroller).top + top + nav + (headOf(grid)?.getBoundingClientRect().height ?? 0)
 }
+/** The view's toolbar (view tabs, sort, filter, settings, + New): the calendar's sibling in the views pane. */
+const toolbarOf = (root: HTMLElement): HTMLElement | null => root.parentElement?.querySelector<HTMLElement>(':scope > .view-toolbar') ?? null
 
 /** A bar over a weekend alone (YAZ-4858): with the weekends hidden it has no day on the grid, so it is a one-day card on its start's home day. */
 const weekendOnly = (span: Span): boolean => daysBetween(span.start, span.end) <= 1 && weekendOf(span.start) !== null && weekendOf(span.end) !== null
@@ -203,19 +205,23 @@ const stretched = (span: { start: DayKey; end: DayKey }, edge: 'start' | 'end', 
  * reads. The look of before (1 px, Gray, Medium) sets nothing; a Gray, Medium line wider than 1 px is a little darker
  * (`calLineCss`), so the step shows in light and dark mode.
  */
-function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
-  const week = calLine(view?.weekLine)
-  const day = calLine(view?.dayLine)
-  const weekColor = calLineColor(view?.weekLineColor)
-  const dayColor = calLineColor(view?.dayLineColor)
+function gridLines(view: ViewDef): CSSProperties | undefined {
+  const week = calLine(view.weekLine)
+  const day = calLine(view.dayLine)
+  const weekColor = calLineColor(view.weekLineColor)
+  const dayColor = calLineColor(view.dayLineColor)
+  // "Between months" (YAZ-5608): its width and colour, for the days' month edges (views.css); Off sets nothing.
+  const month = monthLineOf(view)
+  const monthVars: Record<string, string> = month === 0 ? {} : { '--cal-month-line': `${month}px`, '--cal-month-line-color': calLineCss(monthLineColorOf(view), month) }
   const plain = (c: ColorStrengthValue) => c.color === 'gray' && c.strength === 'medium'
-  if (week === 1 && day === 1 && plain(weekColor) && plain(dayColor)) return undefined
+  if (week === 1 && day === 1 && plain(weekColor) && plain(dayColor)) return month === 0 ? undefined : (monthVars as unknown as CSSProperties)
   return {
     '--cal-week-line': `${week}px`,
     '--cal-day-line': `${day}px`,
     ...(week > 1 || !plain(weekColor) ? { '--cal-week-line-color': calLineCss(weekColor, week) } : {}),
     ...(day > 1 || !plain(dayColor) ? { '--cal-day-line-color': calLineCss(dayColor, day) } : {}),
-  } as CSSProperties
+    ...monthVars,
+  } as unknown as CSSProperties
 }
 
 export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, clickOpens = 'background', windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, pageDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false, foldDays = true }: CalendarViewProps) {
@@ -251,11 +257,6 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   const [anchor, setAnchor] = useState<DayKey>(todayKey)
   const month = { y: Number(anchor.slice(0, 4)), m: Number(anchor.slice(5, 7)) - 1 }
   const rolling = scale === 'rolling'
-  /** Rolling's window around `day`: its week at the top, `ROLL_LEAD` weeks above it drawn too. */
-  const rollAround = (day: DayKey, count = ROLL_WEEKS): Roll => {
-    const week = weekDays(day, sundayFirst)[0]
-    return { first: addDays(week, -7 * ROLL_LEAD), count, pin: week }
-  }
   const [roll, setRoll] = useState<Roll | null>(null)
   // The switch to Rolling keeps the place and leaves the page where it is: the window starts on the week of `anchor`
   // (the month's 1st, Month's first row, or the shown week); the weeks above load once the page scrolls into it.
@@ -299,6 +300,21 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     for (const span of multi) if (weekendOnly(span)) singles.set(span.start, [...(singles.get(span.start) ?? []), span.row])
     return { singles, bars: multi.filter((span) => !weekendOnly(span)) }
   }, [days, multi, hideWeekends])
+  // Rolling's ends (YAZ-5609): a few months before the first dated card and after the last, today always in.
+  const ends = useMemo(() => {
+    const dated: DayKey[] = [...days.keys()]
+    for (const span of multi) dated.push(span.start, span.end)
+    return rollingEnds(dated, today, sundayFirst)
+  }, [days, multi, today, sundayFirst])
+  const totalWeeks = daysBetween(ends.first, ends.last) / 7 + 1
+  /** Rolling's window inside its ends: no more weeks than they hold, its first week between them. */
+  const fit = (r: Roll): Roll => {
+    const count = Math.min(r.count, totalWeeks)
+    const latest = addDays(ends.last, -7 * (count - 1))
+    const first = r.first < ends.first ? ends.first : r.first > latest ? latest : r.first
+    return first === r.first && count === r.count ? r : { ...r, first, count }
+  }
+  const live = roll === null ? null : fit(roll)
   // The card's lines (YAZ-4857): the view's shown columns in the board's layout (`cardLines`), less the date columns the
   // card sits on; the name's line holds the time and the weekend mark. Once per view or records change.
   const lines = useMemo(() => {
@@ -308,8 +324,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     return all.some((line) => line.some((k) => canonicalKey(k) === 'file.name')) ? all : [['file.name'], ...all]
   }, [def, view, records, settings, dateKey, endKey])
   // The grid with its weekends; `weeks` is what shows.
-  const rollFirst = roll?.first ?? null
-  const rollCount = roll?.count ?? ROLL_WEEKS
+  const rollFirst = live?.first ?? null
+  const rollCount = live?.count ?? ROLL_WEEKS
   const allWeeks = useMemo(
     () =>
       scale === 'week'
@@ -407,7 +423,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const rowTop = (week: DayKey) => grid.querySelector<HTMLElement>(`[data-week="${week}"]`)?.getBoundingClientRect().top
     if (roll.pin !== null) {
       const at = rowTop(roll.pin)
-      if (at !== undefined) scroller.scrollTop += at - stuckLine(grid, scroller)
+      if (at !== undefined) scroller.scrollTop += at - stuckLine(grid, scroller, toolbarHeight.current)
       hold.current = null
       return
     }
@@ -429,6 +445,28 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     return () => {
       target.removeEventListener('scroll', onScroll)
       scrollerRef.current = null
+    }
+  }, [rolling, noDate])
+  /**
+   * The view's toolbar sticks at the page's top while Rolling shows (YAZ-5609, views.css), so sort, filter and the
+   * settings stay in reach deep in it: the month bar sticks under it, at its height (`--cal-top`), and the day names under that.
+   */
+  const toolbarHeight = useRef(0)
+  useEffect(() => {
+    const root = rootRef.current
+    const bar = root === null ? null : toolbarOf(root)
+    if (!rolling || root === null || bar === null) return
+    const measure = () => {
+      toolbarHeight.current = bar.getBoundingClientRect().height
+      root.style.setProperty('--cal-top', `${toolbarHeight.current}px`)
+    }
+    measure()
+    const watch = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure)
+    watch?.observe(bar)
+    return () => {
+      watch?.disconnect()
+      toolbarHeight.current = 0
+      root.style.removeProperty('--cal-top')
     }
   }, [rolling, noDate])
   /**
@@ -506,14 +544,21 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   const isWeek = scale === 'week'
   /** Rolling's jump (YAZ-5588): a new window with `day`'s week at the top; the title names that week's month (its 4th day's, as the scroll's). */
   const rollTo = (day: DayKey) => {
-    setAnchor(addDays(weekDays(day, sundayFirst)[0], 3))
-    setRoll(rollAround(day, roll?.count))
+    // Never past its ends (YAZ-5609): ‹ › at the first or the last week stay there.
+    const week = weekDays(day, sundayFirst)[0]
+    const pin = week < ends.first ? ends.first : week > ends.last ? ends.last : week
+    setAnchor(addDays(pin, 3))
+    // `ROLL_LEAD` weeks above it drawn too.
+    setRoll(fit({ first: addDays(pin, -7 * ROLL_LEAD), count: live?.count ?? ROLL_WEEKS, pin }))
   }
   // Rolling's ‹ › step a week from the week at the top.
   const step = (by: number) => (rolling ? rollTo(addDays(topWeek() ?? anchor, 7 * by)) : setAnchor((a) => (isWeek ? addDays(a, 7 * by) : monthStart(a, by))))
   const goToday = () => (rolling ? rollTo(todayKey()) : setAnchor(todayKey()))
   stepRef.current = step
   const unit = isWeek || rolling ? 'week' : 'month'
+  // Tell months apart (YAZ-5608): Rolling's shade (On unless the view says Off) and the "Between months" line (Off unless set).
+  const monthShade = view.monthShade !== false
+  const monthLine = monthLineOf(view) > 0
   const title = isWeek ? weekLabel(weeks[0]) : `${MONTHS[month.m]} ${month.y}`
   // The "No date" tray shows every card by its "+N more", or while the mini window is on a hidden one (13J).
   const trayOpen = trayAll || revealed === NO_DATE
@@ -542,24 +587,34 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   const onRollScroll = () => {
     const grid = gridRef.current
     const scroller = scrollerRef.current
-    if (!rolling || grid === null || scroller === null || roll === null) return
+    if (!rolling || grid === null || scroller === null || live === null) return
     const view = viewOf(scroller)
     const line = headLine(grid)
     const rows = rollRows()
     const seen = rows.filter((r) => r.box.bottom > line && r.box.top < view.bottom)
     if (seen.length === 0) return
-    const mid = addDays(seen[0].week, 3)
-    if (mid.slice(0, 7) !== anchor.slice(0, 7)) setAnchor(mid)
+    // The title names the month that fills most of what shows (YAZ-5608): each shown day counts its row's height on
+    // screen. The anchor is that month's first day in view, so Month opens on that month and Week on that week (YAZ-5609).
+    const share = new Map<string, number>()
+    for (const r of seen) {
+      const part = Math.min(r.box.bottom, view.bottom) - Math.max(r.box.top, line)
+      for (const d of weekDays(r.week, sundayFirst)) if (!hideWeekends || weekendOf(d) === null) share.set(d.slice(0, 7), (share.get(d.slice(0, 7)) ?? 0) + part)
+    }
+    let most = ''
+    for (const [m, part] of share) if (most === '' || part > share.get(most)!) most = m
+    if (most !== anchor.slice(0, 7)) setAnchor(seen.flatMap((r) => weekDays(r.week, sundayFirst)).find((d) => d.startsWith(most))!)
     const firstSeen = rows.indexOf(seen[0])
     const lastSeen = rows.indexOf(seen[seen.length - 1])
     const above = firstSeen <= 1 && rows[0].box.top < line - 0.5
     const below = lastSeen >= rows.length - 2 && rows[rows.length - 1].box.bottom > view.bottom + 0.5
     // Room for every row in view and a step at each end, so a load at one end never shows the other.
-    const count = Math.max(roll.count, seen.length + 2 * ROLL_STEP)
+    const count = Math.max(live.count, seen.length + 2 * ROLL_STEP)
     const by = above ? -ROLL_STEP : below ? ROLL_STEP : 0
-    if (by === 0 && count === roll.count) return
+    // At an end (YAZ-5609) nothing more loads: the page scrolls on to the title above or the tray below.
+    const next = fit({ first: addDays(live.first, 7 * by), count, pin: null })
+    if (next.first === live.first && next.count === live.count) return
     hold.current = { week: seen[0].week, at: seen[0].box.top - view.top }
-    setRoll({ first: addDays(roll.first, 7 * by), count, pin: null })
+    setRoll(next)
   }
   onScrollRef.current = onRollScroll
 
@@ -913,21 +968,27 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
                 const shown = isWeek || all ? list : list.slice(0, budget.cards)
                 const folded = list.length - Math.min(list.length, budget.cards) + budget.hiddenBars
                 const more = all ? 0 : folded - (lanes > barCap ? budget.hiddenBars : 0)
-                // Rolling has no other month (YAZ-5588): every day is plain, and a month's 1st says its month.
+                // Rolling has no other month (YAZ-5588): every day is plain; it shades every other month instead (YAZ-5608).
                 const inMonth = isWeek || rolling || Number(day.slice(5, 7)) === month.m + 1
-                const first = rolling && day.endsWith('-01')
+                // A month's 1st says its month, the month in the accent colour, in every scale (YAZ-5608).
+                const first = day.endsWith('-01')
+                // "Between months" (YAZ-5608) in Month and Rolling: a stepped line round each month; Month's first row
+                // has no week above it on the grid, so no top line there.
+                const edge = monthLine && !isWeek ? monthEdges(day, c > 0 ? week[c - 1] : null) : null
+                const edgeClass = `${edge?.top === true && (rolling || w > 0) ? ' view-cal__day--month-top' : ''}${edge?.left === true ? ' view-cal__day--month-left' : ''}`
+                const shade = rolling && monthShade && shadedMonth(day)
                 return (
                   <div
                     key={day}
                     role="gridcell"
                     data-day={day}
                     aria-current={day === today ? 'date' : undefined}
-                    className={`view-cal__day${inMonth ? '' : ' view-cal__day--other'}${day === today ? ' view-cal__day--today' : ''}${over === day ? ' view-cal__day--drop' : ''}`}
+                    className={`view-cal__day${inMonth ? '' : ' view-cal__day--other'}${shade ? ' view-cal__day--shade' : ''}${edgeClass}${day === today ? ' view-cal__day--today' : ''}${over === day ? ' view-cal__day--drop' : ''}`}
                     style={{ gridColumn: c + 1 }}
                     {...target(day)}
                   >
                     <div className="view-cal__day-head">
-                      <span className={`view-cal__date${first ? ' view-cal__date--first' : ''}`}>{first ? `${MONTHS_SHORT[Number(day.slice(5, 7)) - 1]} 1` : Number(day.slice(8))}</span>
+                      <span className={`view-cal__date${first ? ' view-cal__date--first' : ''}`}>{first ? <><span className="view-cal__date-month">{MONTHS_SHORT[Number(day.slice(5, 7)) - 1]}</span> 1</> : Number(day.slice(8))}</span>
                       {onNewOnDay !== undefined && (
                         <button type="button" className="view-cal__add" aria-label={unitText(`New page on ${day}`)} title={unitText('New page on this day')} onClick={() => onNewOnDay(day)}>
                           +

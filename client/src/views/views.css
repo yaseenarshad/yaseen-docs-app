@@ -2250,7 +2250,7 @@
 
 .view-cal--rolling > .view-cal__nav {
   position: sticky;
-  top: 0;
+  top: var(--cal-top, 0px);
   z-index: 3;
   height: var(--cal-bar-height);
   background: var(--bg);
@@ -2263,7 +2263,7 @@
 
 .view-cal__grid--rolling > .view-cal__week:first-child {
   position: sticky;
-  top: var(--cal-bar-height);
+  top: calc(var(--cal-top, 0px) + var(--cal-bar-height));
   z-index: 2;
   background: var(--bg);
 }
@@ -2272,9 +2272,65 @@
   overflow-anchor: none;
 }
 
-/* A month's 1st in Rolling says its month ("Dec 1"), the only mark where one month meets the next. */
+/* YAZ-5609: while Rolling shows, the view's toolbar (view tabs, sort, filter, settings, + New) sticks at the page's
+   top too, so it stays in reach deep in the weeks. The month bar sticks right under it (`--cal-top`, its height, which
+   CalendarView measures) and the day names under the bar: one sticky header. */
+.views-pane:has(> .view-cal--rolling) > .view-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: var(--bg);
+}
+
+/* A month's 1st says its month ("Dec 1", YAZ-5608: in every scale), the month in the accent colour. */
 .view-cal__date--first {
   font-weight: 600;
+}
+
+.view-cal__date-month {
+  /* The date is a flex box, which drops the space before the day: this is that space. */
+  margin-right: 0.25em;
+  color: var(--accent);
+}
+
+/* "Shade every other month" (YAZ-5608): Rolling's every second month a little darker than the page, in light and dark
+   mode alike; the cards and bars draw over it with their own background. A drop's highlight comes later and wins. */
+.view-cal {
+  --cal-month-shade: color-mix(in srgb, var(--fg) 4%, var(--bg));
+}
+
+.view-cal__day--shade {
+  background: var(--cal-month-shade);
+}
+
+/* "Between months" (YAZ-5608): a stepped line round each month, the view's width and colour (`--cal-month-line`),
+   drawn over the week and day lines it follows, so nothing moves. A day whose day above is in another month has it
+   on top (reaching one line's width on into the next day, which closes the step's corner); a day whose left
+   neighbour is in another month has it on its left. */
+.view-cal__day--month-top,
+.view-cal__day--month-left {
+  position: relative;
+}
+
+.view-cal__day--month-top::before,
+.view-cal__day--month-left::after {
+  position: absolute;
+  z-index: 1;
+  top: calc(-1 * var(--cal-week-line, 1px));
+  left: calc(-1 * var(--cal-day-line, 1px));
+  content: '';
+  background: var(--cal-month-line-color);
+  pointer-events: none;
+}
+
+.view-cal__day--month-top::before {
+  right: calc(-1 * var(--cal-month-line));
+  height: var(--cal-month-line);
+}
+
+.view-cal__day--month-left::after {
+  bottom: 0;
+  width: var(--cal-month-line);
 }
 
 /* Week (YAZ-4558 D22): 7 tall days, each with every card. */
