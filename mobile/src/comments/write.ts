@@ -3,10 +3,10 @@ import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { isMap, isScalar, parseDocument } from 'yaml'
 
 /**
- * YAZ-5461: THE PHONE'S ONE WRITE TO A PAGE: it adds one top-level comment to the page's `comments` list, and changes no
+ * THE PHONE'S ONE WRITE TO A PAGE: it adds one top-level comment to the page's `comments` list, and changes no
  * other byte of the page.
  *
- * The comment itself is the Mac's: `addComment` (`shared/comments.ts`, YAZ-1472 / YAZ-4615), the same pure code that the
+ * The comment itself is the Mac's: `addComment` (`shared/comments.ts`), the same pure code that the
  * Mac's comment block and the `yaseendocs comment --by` command write through `transformFile`. It numbers the comment
  * (one past the highest top-level number), gives a hand-written entry its id and number (D10), keeps unknown keys on
  * every entry, and refuses a `comments` value that is not a comment list (`foreign`) or a block that does not parse
@@ -29,7 +29,7 @@ export interface NewComment {
   id: string
   /** ISO UTC, seconds (`nowIso`): when the person wrote it. */
   at: string
-  /** The writer's handle (YAZ-4615 D2). */
+  /** The writer's handle. */
   by?: string
   body: string
 }
@@ -70,10 +70,10 @@ export function applyComment(content: string, comment: NewComment): ApplyResult 
   return spliced === null ? { kind: 'refused', why: 'layout' } : { kind: 'added', content: spliced }
 }
 
-/** The first fence line; a byte order mark before it is the block's (YAZ-5512 C1, as `splitFrontmatter` reads it). */
+/** The first fence line; a byte order mark before it is the block's (as `splitFrontmatter` reads it). */
 const OPEN_FENCE_RE = /^\uFEFF?---[ \t]*\r?\n/
 
-/** The body as the page reads without a block: a BOM is no body text (it goes in front of a new block, YAZ-5512 C1). */
+/** The body as the page reads without a block: a BOM is no body text (it goes in front of a new block). */
 const bodyOf = (text: string): string => {
   const { frontmatter, body } = splitFrontmatter(text)
   return frontmatter === '' ? body.replace(/^\uFEFF/, '') : body

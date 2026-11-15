@@ -4,7 +4,7 @@ import type { WaitingComment } from './outbox'
 import { keptComments } from './outbox'
 
 /**
- * What a page needs from the comment list (YAZ-5461): the comments of the open vault that GitHub does not hold yet,
+ * What a page needs from the comment list: the comments of the open vault that GitHub does not hold yet,
  * a new one, its Undo, the Discard of a refused one. Each call loads the sender first (its own chunk).
  */
 export interface CommentsPort {
@@ -22,7 +22,7 @@ type SenderModule = typeof import('./sender')
 const loadSender = (): Promise<SenderModule> => import('./sender')
 
 /**
- * YAZ-5461: the answer list WITH the comment list. ONE object for the dot, the Review tab and the page, as the shell
+ * The answer list WITH the comment list. ONE object for the dot, the Review tab and the page, as the shell
  * makes one answer list (`app/lazySync.ts`, which this file does not change: it is in the first load). The comments add
  * to the answer list's state (`comments`: the dot counts them as waiting; `sending`; a `problem` of the person's, such
  * as "Sign in again"), and every trigger of the answer list ("Try now", hidden, online) sends both.

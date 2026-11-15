@@ -4,7 +4,7 @@ import { loadAccount } from '../auth/account'
 import type { VaultStore } from '../store'
 
 /**
- * YAZ-5461: who a phone comment is signed with (`by`, YAZ-4615 D2).
+ * Who a phone comment is signed with (`by`).
  *
  * The phone has no comment profile; it has the vault token's GitHub account (`GET /user` at sign-in, kept as the vault's
  * `account`, `auth/account.ts`). The Mac signs with its profile's HANDLE (lowercase letters, digits and `-`, made from
