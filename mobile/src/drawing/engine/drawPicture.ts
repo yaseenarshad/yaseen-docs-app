@@ -6,7 +6,7 @@ import { isRecord } from '@shared/guards'
 import { inlineFonts } from './fonts'
 
 /**
- * THE DRAWING CHUNK (YAZ-5440, Yaseen's decision on the issue: "use the same system that we use on the computer"). The
+ * THE DRAWING CHUNK (Yaseen's decision on the issue: "use the same system that we use on the computer"). The
  * ONE module of the phone that names the drawing engine (`@excalidraw/excalidraw`), so the engine is in this chunk and
  * nowhere else: a page with no drawing never loads it (`phoneImportGuard` lets only `mobile/src/drawing/engine/`
  * import it; `drawingWall.test.ts` proves it in the build).

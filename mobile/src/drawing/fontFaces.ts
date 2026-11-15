@@ -1,5 +1,5 @@
 /**
- * WHICH FONT FILES A DRAWING'S PICTURE NEEDS (YAZ-5440). A picture shows in an `<img>`, which draws only the fonts that
+ * WHICH FONT FILES A DRAWING'S PICTURE NEEDS. A picture shows in an `<img>`, which draws only the fonts that
  * are inside the SVG. On the Mac the engine puts them in itself (`boardPictures.ts`: "The engine inlines the fonts it
  * draws with"): it fetches each file and cuts it to the letters used, with a WebAssembly tool in a worker. The phone's
  * CSP allows none of that (no `fetch` of its own files, no WebAssembly, no `blob:` worker), so the phone asks the engine

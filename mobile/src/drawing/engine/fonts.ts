@@ -2,7 +2,7 @@ import { facesFor, fontFaceCss, textUse } from '../fontFaces'
 import { FONT_FILES } from './fontFiles'
 
 /**
- * The engine's font files as chunks of this app (YAZ-5440): each file is a small chunk of its own whose one value is
+ * The engine's font files as chunks of this app: each file is a small chunk of its own whose one value is
  * the file as a `data:` URL, loaded only when a picture's text needs it. A chunk is a script of this site
  * (`script-src 'self'`), so no font is fetched and no other host is asked; the service worker keeps them as it keeps
  * every chunk. The CJK fallback is not here (`fontFiles.ts`).

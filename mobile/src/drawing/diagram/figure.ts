@@ -2,7 +2,7 @@ import './diagram.css'
 import type { DiagramDrawn } from './drawDiagram'
 
 /**
- * WHAT A DIAGRAM'S BOX SHOWS (YAZ-5533), in the diagram chunk (none of it is in the install): a page picker for a diagram
+ * WHAT A DIAGRAM'S BOX SHOWS, in the diagram chunk (none of it is in the install): a page picker for a diagram
  * of several pages (the Mac's "Page ▸"), the picture (a tap opens it full screen, with pinch zoom), and a line when some
  * of its shapes drew as placeholders (their library downloads the first time the phone is online).
  */

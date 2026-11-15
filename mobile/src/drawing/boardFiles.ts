@@ -2,12 +2,12 @@ import type { IndexRecord } from '@shared/types'
 import type { VaultData } from '../search/vaultData'
 
 /**
- * DRAWINGS FIRST CLASS (YAZ-5473): the vault's drawings are files of their own, as pages and cards are. The index holds
+ * DRAWINGS FIRST CLASS: the vault's drawings are files of their own, as pages and cards are. The index holds
  * Markdown only, so the phone makes a small record for each drawing file the vault holds (`VaultData.files`, the
  * checkpoint's list), and Search's tree, its typed search, Favorites, Focus and Recent take them beside the pages:
  *  - an Excalidraw drawing (`.excalidraw`): the Mac's drawing icon; the phone draws it (YAZ-5440's code);
  *  - a draw.io diagram (`.drawio.svg`, `.drawio.png`): the Mac's diagram icon; a picture already, shown as one;
- *  - a plain draw.io file (`.drawio`): the diagram icon; draw.io's own viewer draws it, as on the Mac (YAZ-5533).
+ *  - a plain draw.io file (`.drawio`): the diagram icon; draw.io's own viewer draws it, as on the Mac.
  * The name is the Mac's (`pathTitles.ts` `fileLabel`): the file name without its board extension. Nothing is written.
  */
 

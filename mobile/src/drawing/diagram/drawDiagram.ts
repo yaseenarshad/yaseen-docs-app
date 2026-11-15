@@ -1,5 +1,5 @@
 /**
- * A PLAIN DRAW.IO DIAGRAM'S PICTURE ON THE PHONE (YAZ-5533): the Mac's renderer (`client/src/diagrams/renderDiagram.ts`)
+ * A PLAIN DRAW.IO DIAGRAM'S PICTURE ON THE PHONE: the Mac's renderer (`client/src/diagrams/renderDiagram.ts`)
  * ported to the phone. ONE hidden frame of the app, same origin, loads the phone's renderer page
  * (`/drawio/<hash>/render`: draw.io's own read-only viewer `viewer-static.min.js`, the Mac's v31.5.2, and the Mac's
  * `yaseen-render.js`, unchanged) under its own strict CSP (`public/_headers`, `/drawio/*`). Each request is the Mac's:
