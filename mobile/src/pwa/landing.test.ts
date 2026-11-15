@@ -56,3 +56,12 @@ describe('the landing page reads the code from the fragment only', () => {
     expect(document.querySelector('img[src=x]')).toBeNull()
   })
 })
+
+describe('the Home Screen steps come from the app (one source)', () => {
+  it("the /friend page shows homeScreen.ts's Safari steps, iOS 26 first", async () => {
+    const { HOME_SCREEN, safariLine } = await import('./homeScreen')
+    await open(`/friend#${ID}`)
+    expect(document.getElementById('add-steps')!.textContent).toBe(`${safariLine()} ${HOME_SCREEN.olderSafari}`)
+    expect(document.getElementById('add-steps')!.textContent).toContain('tap ☰ at the left of the address bar, then Share, then View More, then Add to Home Screen')
+  })
+})

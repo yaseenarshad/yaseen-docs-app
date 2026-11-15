@@ -245,7 +245,7 @@ try {
   // 1. Online, the first open.
   await host(v1)
   await open(`${ORIGIN}/`)
-  record('1a the app shows (sign-in)', (await until(`document.body.innerText.includes('Connect vault')`)), '')
+  record('1a the app shows (sign-in)', (await until(`!!document.querySelector('input[name="token"]')`)), '')
   const h = docHeaders.at(-1) ?? {}
   record('1b the page has the CSP, no-referrer, nosniff, the camera rule', Boolean(h['content-security-policy']?.includes('connect-src https://api.github.com') && h['referrer-policy'] === 'no-referrer' && h['x-content-type-options'] === 'nosniff' && h['permissions-policy']?.includes('camera=(self)')))
   const active = await until(`navigator.serviceWorker.ready.then(r => r.active && r.active.state === 'activated')`)
@@ -289,14 +289,14 @@ try {
   // 3. The host is gone: a second open.
   await host(null)
   await open(`${ORIGIN}/`)
-  record('3a offline: the app opens from the worker', await until(`document.body.innerText.includes('Connect vault')`))
+  record('3a offline: the app opens from the worker', await until(`!!document.querySelector('input[name="token"]')`))
   const chunk = await evaluate(`import('/assets/${engine}').then(() => 'loaded', e => String(e))`)
   record('3b offline: the lazy sync engine chunk loads', chunk === 'loaded', String(chunk))
   await open(`${ORIGIN}/friend#aa5a315d61ae9438b18d`)
   record('3c offline: the friend page opens and shows the code', await until(`document.getElementById('code')?.value === 'aa5a315d61ae9438b18d' && document.body.innerText.includes('Copy this code. Open the app. Tap Paste.')`))
   await shot('3-friend-offline')
   await open(`${ORIGIN}/some/route`)
-  record('3d offline: any other address opens the app (single-page)', await until(`document.body.innerText.includes('Connect vault')`))
+  record('3d offline: any other address opens the app (single-page)', await until(`!!document.querySelector('input[name="token"]')`))
   await shot('3-offline-app')
 
   if (process.env.PROOF_TRACE) console.log('versions so far:', versions.slice(-6).join(' '))
@@ -318,7 +318,7 @@ try {
   const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && r.active.state === 'activated')`, 60_000)
   const tookMs = Date.now() - t0
   await open(`${ORIGIN}/`)
-  const swapped = await until(`!!document.querySelector('meta[name=proof]') && document.body.innerText.includes('Connect vault')`, 10_000)
+  const swapped = await until(`!!document.querySelector('meta[name=proof]') && !!document.querySelector('input[name="token"]')`, 10_000)
   record('4b the new version takes over by itself, and the next open runs it', took && swapped, `took over ${(tookMs / 1000).toFixed(1)} s after the open`)
   // 4c (YAZ-5303): no page of the old version is left now: the new page's "page ready" removes the old cache.
   await until(`caches.keys().then(ks => ks.filter(k => k.startsWith('notecards-shell-')).length === 1)`, 10_000)
@@ -333,10 +333,10 @@ try {
   const v3cache = (await evaluate(shellCaches)).some((k: string) => k.includes('v3'))
   record('5a a deploy with a missing chunk never installs; nothing of it is kept', !reg.waiting && !reg.installing && !v3cache, JSON.stringify(reg))
   await open(`${ORIGIN}/`)
-  record('5b the last good version keeps running', await until(`!!document.querySelector('meta[name=proof]') && document.body.innerText.includes('Connect vault')`))
+  record('5b the last good version keeps running', await until(`!!document.querySelector('meta[name=proof]') && !!document.querySelector('input[name="token"]')`))
   await host(null)
   await open(`${ORIGIN}/`)
-  record('5c and offline too', await until(`!!document.querySelector('meta[name=proof]') && document.body.innerText.includes('Connect vault')`))
+  record('5c and offline too', await until(`!!document.querySelector('meta[name=proof]') && !!document.querySelector('input[name="token"]')`))
 
   }
   // 6. Dark mode.
@@ -382,7 +382,7 @@ try {
     const cleared = await until(`caches.keys().then(ks => !ks.some(k => k.startsWith('notecards-')))`, 60_000)
     const unregistered = await until(`navigator.serviceWorker.getRegistrations().then(rs => rs.length === 0)`, 20_000)
     const data = await evaluate(`new Promise(ok => { const r = indexedDB.open('proof-kill', 1); r.onsuccess = () => { const g = r.result.transaction('s').objectStore('s').get('waiting'); g.onsuccess = () => { ok(g.result); r.result.close() } } })`)
-    const shows = await until(`document.body.innerText.includes('Connect vault')`)
+    const shows = await until(`!!document.querySelector('input[name="token"]')`)
     record('9 the kill switch clears the shell caches, unregisters, and keeps IndexedDB; the app still opens', shellBefore > 0 && cleared && unregistered && data === 'answer' && shows, `${shellBefore} shell caches before; cleared ${cleared}; unregistered ${unregistered}; IndexedDB "${data}"`)
     await host(null)
   }

@@ -1,4 +1,5 @@
 import { useApp } from '../app/AppState'
+import { HOME_SCREEN, safariLine } from '../pwa/homeScreen'
 import { Frame } from './Frame'
 
 /** GitHub's page that makes a fine-grained token. */
@@ -33,15 +34,15 @@ export function SetupGuide() {
         <li>Repository access: Only select repositories, then your vault repo.</li>
         <li>Repository permissions › Contents: Read and write.</li>
         <li>Account permissions › Gists: Read and write. Friends needs it. Review works without it.</li>
-        <li>Generate the token and copy it. Paste it in Notecard with the repo name.</li>
+        <li>Generate the token and copy it. Paste it in Notecard, then choose your vault repo.</li>
       </ol>
       <p className="muted">Or, on your Mac, open Settings › Cards › Connect your phone, and tap Scan a code here.</p>
 
       <h2 className="section">3. The Home Screen</h2>
       <ol className="guide-steps">
-        <li>Open Notecard in Safari.</li>
-        <li>Tap Share, then Add to Home Screen.</li>
-        <li>Open Notecard from the Home Screen, and connect your vault there. Safari and the Home Screen app do not share what they keep.</li>
+        <li>{safariLine()}</li>
+        <li>{HOME_SCREEN.olderSafari}</li>
+        <li>Open Notecard from the Home Screen, and connect your vault there. {HOME_SCREEN.apart.split('. ')[0]}.</li>
       </ol>
     </Frame>
   )

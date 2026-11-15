@@ -122,7 +122,7 @@ export function ScanCode({ vault }: { vault?: string }) {
       )}
       {hint !== null && <Problem message={hint} quiet />}
       {help !== null && (
-        <Problem message={help.message} action={help.forward === 'edit-repo' ? 'Type the repo and token' : FORWARD_LABEL[help.forward]} onAction={forward} />
+        <Problem message={help.message} action={help.forward === 'edit-repo' ? 'Paste a token' : FORWARD_LABEL[help.forward]} onAction={forward} />
       )}
       {state === 'stopped' && help !== null && help.forward !== 'edit-repo' && (
         <button

@@ -7,6 +7,7 @@ import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
 import { Frame, Problem } from './Frame'
+import { InstallHint } from './InstallHint'
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19): the vaults (switch, add, replace the token, reset the
@@ -40,6 +41,7 @@ export function Settings() {
 
   return (
     <Frame title="Settings" back={() => app.go({ type: 'back' })} tabs={app.phase === 'ready'}>
+      <InstallHint />
       <h2 className="section">Vaults</h2>
       <ul className="rows" aria-label="Vaults">
         {app.list.vaults.map((v) => (

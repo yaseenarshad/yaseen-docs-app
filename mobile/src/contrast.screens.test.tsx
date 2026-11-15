@@ -47,6 +47,10 @@ const loadedBy = new Map<string, string[]>()
 const FIXTURES = [
   'sign-in',
   'sign-in-error',
+  'sign-in-typed',
+  'repo-pick',
+  'repo-pick-many',
+  'repo-none',
   'guide',
   'scan',
   'download',
@@ -83,6 +87,8 @@ const FIXTURES = [
   'card-file',
   'card-invalid',
   'page-offline',
+  // Last: it makes this page's navigator say iPhone.
+  'sign-in-iphone',
 ]
 
 const results: { name: string; ok: boolean; elements: number; findings: Finding[]; unresolved: string[]; unstyled: string[] }[] = []

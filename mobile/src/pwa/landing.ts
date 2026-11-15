@@ -1,4 +1,5 @@
 import { landingCodeFrom, landingCopy, type LandingKind } from './friendLink'
+import { HOME_SCREEN, safariLine } from './homeScreen'
 
 /**
  * The landing page of a shared link (`/friend#…`, `/group#…`, `/join#…`; round 10, item 7; YAZ-5087, YAZ-5290). A link
@@ -41,6 +42,8 @@ byId('title').textContent = words.title
 byId('lead').textContent = words.lead
 byId('label').textContent = words.label
 for (const el of document.querySelectorAll('.paste-name')) el.textContent = words.paste
+// The Home Screen steps: the app's own words (`homeScreen.ts`, one source).
+byId('add-steps').textContent = `${safariLine()} ${HOME_SCREEN.olderSafari}`
 
 if (landing.code === null) {
   byId('no-code-text').textContent = words.missing
