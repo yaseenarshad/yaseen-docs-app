@@ -8,6 +8,7 @@ import { INDEX_STATE, type PhoneIndex } from '../sync/phoneIndex'
 import type { CommentBox, WaitingComment } from './outbox'
 import { applyTask } from './taskWrite'
 import { applySetting } from './settingWrite'
+import { applyVaultSetting, isVaultSetting } from './mobileWrite'
 import { applyComment } from './write'
 
 export interface CommentSendOptions {
@@ -206,6 +207,25 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
   }
   for (const [path, comments] of byPath) {
     const file = checkpoint.shas[path] === undefined ? null : await store.read(vault, path)
+    // YAZ-5592: a vault settings file (`.yaseendocs/mobile.json`): no file yet is made; its bytes are text.
+    if (comments.every((c) => isVaultSetting(c.setting))) {
+      if (file === null && checkpoint.shas[path] !== undefined) {
+        for (const c of comments) plan.refused.push({ id: c.id, why: 'too-large' })
+        continue
+      }
+      const was = file === null ? null : typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content)
+      let next = was
+      for (const c of comments) {
+        const out = applyVaultSetting(next, c.setting as Parameters<typeof applyVaultSetting>[1])
+        if (out.kind === 'set') {
+          next = out.content
+          plan.added.push(c)
+        } else if (out.kind === 'already') plan.already.push(c)
+        else plan.refused.push({ id: c.id, why: out.why })
+      }
+      if (next !== null && next !== was) plan.changes.push({ path, content: next })
+      continue
+    }
     if (file === null || typeof file.content !== 'string') {
       // Gone from the vault (deleted or renamed on the Mac), or over the phone's size limit (F7): the words stay here.
       const why = checkpoint.shas[path] === undefined ? 'gone' : 'too-large'
@@ -220,7 +240,7 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
       }
       // A tick finds its task on the page as it is NOW, and sets its box; a task that changed is refused.
       // YAZ-5568: a page setting becomes what it says on the page as it is now (the Mac's writer, spliced).
-      const out = c.task !== undefined ? applyTask(content, c.task) : c.setting !== undefined ? applySetting(content, c.setting) : applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
+      const out = c.task !== undefined ? applyTask(content, c.task) : c.setting !== undefined && !isVaultSetting(c.setting) ? applySetting(content, c.setting) : applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
       if (out.kind === 'added' || out.kind === 'ticked' || out.kind === 'set') {
         content = out.content
         plan.added.push(c)

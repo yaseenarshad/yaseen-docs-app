@@ -23,6 +23,7 @@ import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
 import { markSections, pageOwnSwitch, pageSwitchAttrs } from './pageSwitches'
+import { effectiveSwitch, useMobileSettings } from './mobileSettings'
 import { usePageSettingRow } from './pageSettingRow'
 import { STICKY_HEADINGS_KEY } from '../comments/settingWrite'
 import { stickHeadings } from './stickyHeadings'
@@ -91,13 +92,15 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   // The page's own Guide lines and Section indent, from its frontmatter (`pageSwitches.ts`).
   const switches = useMemo(() => (typeof text === 'string' ? pageSwitchAttrs(text) : {}), [text])
   const sectionIndent = switches['data-section-indent'] === 'true'
-  // YAZ-5568: the Mac's folding: the page's own `folding: true | false`, else on; the folds kept
+  // YAZ-5592: the vault's mobile settings (`.yaseendocs/mobile.json`, with this phone's changes not sent yet).
+  const vaultMobile = useMobileSettings(data, commentsPort).settings
+  // YAZ-5568: the Mac's folding: the page's own `folding: true | false`, else the vault's (on by default); the folds kept
   // on this phone, by vault and path. "Folding on this page" (⋯) writes the page's own key (`pageSettingRow.ts`).
   const own = (key: 'folding' | 'sticky-headings') => (typeof text === 'string' ? pageOwnSwitch(text, key) : undefined)
-  const folding = usePageSettingRow(commentsPort, path, 'folding', own('folding') ?? true, 'Folding', setNotice)
+  const folding = usePageSettingRow(commentsPort, path, 'folding', effectiveSwitch(own('folding'), vaultMobile?.folding ?? true), 'Folding', setNotice)
   const foldingOn = folding.on
-  // YAZ-5591: sticky headings, the page's own `sticky-headings: true | false` (the phone's own key), else on.
-  const sticky = usePageSettingRow(commentsPort, path, STICKY_HEADINGS_KEY, own('sticky-headings') ?? true, 'Sticky headings', setNotice)
+  // YAZ-5591: sticky headings, the page's own `sticky-headings: true | false` (the phone's own key), else the vault's.
+  const sticky = usePageSettingRow(commentsPort, path, STICKY_HEADINGS_KEY, effectiveSwitch(own('sticky-headings'), vaultMobile?.stickyHeadings ?? true), 'Sticky headings', setNotice)
   const stickyOn = sticky.on
   const folds = useRef<PageFolds | null>(null)
   const [foldsNow, setFoldsNow] = useState<PageFolds | null>(null)
@@ -190,7 +193,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const everDrawn = useRef(false)
   useEffect(() => {
     const el = host.current
-    if (el === null || data === null || typeof text !== 'string' || look === undefined) return
+    // YAZ-5592: and for the vault's mobile settings (a few ms, held after the first read), so its folds draw once.
+    if (el === null || data === null || typeof text !== 'string' || look === undefined || vaultMobile === undefined) return
     if (drawn.current !== null && drawn.current.text === text && drawn.current.version === data.version && drawn.current.look === look) return
     resolveSourceOf(data).setLook(look.pills, vaultName(app.vault?.repo ?? ''))
     let live = true
@@ -268,7 +272,9 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       live = false
       drawn.current = null
     }
-  }, [text, data, look, path, at, heading, store, app.go, app.vault, title, sectionIndent])
+    // `vaultMobile` only gates the first draw; a change of it draws nothing again (the folds and the stack follow it).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, data, look, path, at, heading, store, app.go, app.vault, title, sectionIndent, vaultMobile === undefined])
 
   // The reading place of this page, kept as the person scrolls.
   useEffect(() => {

@@ -7,6 +7,7 @@ import type { Clock, SyncEngine } from '../sync/engine'
 import { openCommentBox, type CommentBox, type WaitingComment } from './outbox'
 import type { TaskTick } from './taskWrite'
 import type { PageSetting } from './settingWrite'
+import { isVaultSetting, type VaultSetting } from './mobileWrite'
 import { pageMark, sendComments } from './send'
 import { commentSigner } from './signer'
 
@@ -42,8 +43,8 @@ export interface NewCommentInput {
   holdMs?: number
   /** A tick of a task check box, not a comment (`body` is then empty). */
   task?: TaskTick
-  /** YAZ-5568: a page setting (`folding`), not a comment (`body` is then empty). */
-  setting?: PageSetting
+  /** YAZ-5568: a page setting (`folding`), not a comment (`body` is then empty). YAZ-5592: or a vault mobile setting. */
+  setting?: PageSetting | VaultSetting
 }
 
 export interface CommentSender {
@@ -272,7 +273,8 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
       const hold = Math.max(0, input.holdMs ?? 0)
       // YAZ-5522 N11: a held tick joins the ticks held already: they are due together, when the first one's hold ends.
       const joined = input.task === undefined || hold === 0 ? [] : all().filter((c) => c.task !== undefined && c.refused === undefined && c.tried !== true && c.notBefore > madeAt).map((c) => c.notBefore)
-      const was = await pageMark(store, vault, input.path)
+      // A vault settings file is found by its path alone (it never moves); a page by its bytes and its `id`.
+      const was = isVaultSetting(input.setting) ? undefined : await pageMark(store, vault, input.path)
       const comment: WaitingComment = {
         id: newCommentId(),
         path: input.path,

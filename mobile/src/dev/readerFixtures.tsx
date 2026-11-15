@@ -13,7 +13,7 @@ import { remember } from '../search/recent'
 import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
-import { STICKY_HEADINGS_FILES, CENTRE_FILES, FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
+import { MOBILE_SETTINGS_FILES, STICKY_HEADINGS_FILES, CENTRE_FILES, FOLDS_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
 import { NUMBERED_TASKS_PAGE, TASKS_PAGE } from './taskFixtures'
 import { writeFolds } from '../store/foldPref'
 import { fixtureAnswers } from './fixtureAnswers'
@@ -87,7 +87,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-sticky', 'page-sticky-off', 'sheet-sticky'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre', 'page-folds', 'page-folds-folded', 'page-folds-menu', 'page-folds-all', 'page-folds-off', 'page-sticky', 'page-sticky-off', 'sheet-sticky', 'settings-mobile'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -240,7 +240,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
           ? FOLDS_FILES
         : name === 'page-sticky' || name === 'page-sticky-off' || name === 'sheet-sticky'
           ? STICKY_HEADINGS_FILES
-
+        : name === 'settings-mobile'
+          ? MOBILE_SETTINGS_FILES
         : name === 'page-table-subheads'
           ? SUBHEADS_FILES
         : name === 'page-table-centre'
@@ -341,11 +342,11 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
   }
   const sync = fakeSync()
   // YAZ-5504: the card menu's fixtures get a made-up answer list (in memory; nothing is sent).
-  // YAZ-5591: the sticky headings' ⋯ rows write through it too.
-  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name === 'page-sticky') {
+  // YAZ-5591/5592: the sticky headings' ⋯ rows and Settings › This vault on mobile write through it too.
+  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu' || name === 'settings-mobile' || name === 'page-sticky') {
     const answers = fixtureAnswers(store, READER_ID)
     // A comment list in memory (nothing is sent), so the rows that write show as they do with a sign-in.
-    if (name === 'page-sticky') {
+    if (name === 'settings-mobile' || name === 'page-sticky') {
       const list: WaitingComment[] = []
       const heard = new Set<() => void>()
       ;(answers as { comments?: CommentsPort }).comments = {
@@ -860,6 +861,14 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       await wait(300)
       break
     }
+    case 'settings-mobile':
+      // YAZ-5592: Settings › "This vault on mobile" (the vault's mobile.json says Folding off).
+      press('Settings')
+      await until(() => document.querySelector('.settings-mobile') !== null)
+      await wait(200)
+      document.querySelector('.settings-mobile')?.scrollIntoView({ block: 'start' })
+      await wait(100)
+      break
     case 'page-sections':
       await typed('garden year')
       await open(/^Garden year/, '.reader__body [data-sd]')

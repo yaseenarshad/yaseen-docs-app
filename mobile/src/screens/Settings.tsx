@@ -16,6 +16,8 @@ import { lazyScreen } from './LazyScreen'
 const WhatsNewList = lazyScreen(() => import('../settings/WhatsNewList'), { waiting: <p className="muted" aria-busy="true">Loading…</p> })
 /** YAZ-5559: Vault health, read only, its own chunk (with the shared list of the vault's settings files). */
 const VaultHealth = lazyScreen(() => import('../settings/VaultHealth'), { waiting: <p className="muted" aria-busy="true">Vault health…</p> })
+/** YAZ-5592: "This vault on mobile" (Folding, Sticky headings), the vault's `.yaseendocs/mobile.json`, its own chunk. */
+const MobileVaultPart = lazyScreen(() => import('../settings/MobileVaultPart'))
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19): the vaults (switch, add, replace the token, reset the
@@ -62,6 +64,7 @@ export function Settings() {
         Add vault
       </button>
       {app.vaultKey !== null && <VaultHealth />}
+      {app.vaultKey !== null && app.phase === 'ready' && <MobileVaultPart />}
 
       <FriendsPart />
 

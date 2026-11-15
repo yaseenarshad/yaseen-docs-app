@@ -110,6 +110,7 @@ export const FOLDS_FILES: Record<string, string> = {
 /**
  * YAZ-5591: the sticky headings fixtures (`page-sticky*`, `sheet-sticky`), made-up: a long "Lisbon trip" page with
  * headings three deep, long enough to scroll well past a section, and the same page with `sticky-headings: false`.
+ * YAZ-5592 (`settings-mobile`): the vault's `mobile.json` says Folding off.
  */
 const para = (words: string, n: number) => Array.from({ length: n }, (_, i) => `${words} Line ${i + 1} of the notes for this part, so the page is long enough to scroll on a phone.`).join(' ')
 export const STICKY_PAGE = [
@@ -137,4 +138,9 @@ export const STICKY_PAGE = [
 export const STICKY_HEADINGS_FILES: Record<string, string> = {
   'travel/Lisbon trip.md': `---\ntitle: Lisbon trip\n---\n\n${STICKY_PAGE}\n`,
   'travel/Lisbon trip, still.md': `---\ntitle: Lisbon trip, still\nsticky-headings: false\n---\n\n${STICKY_PAGE.replace('# Lisbon trip', '# Lisbon trip, still')}\n`,
+}
+
+export const MOBILE_SETTINGS_FILES: Record<string, string> = {
+  ...STICKY_HEADINGS_FILES,
+  '.yaseendocs/mobile.json': `${JSON.stringify({ version: 1, folding: false }, null, 2)}\n`,
 }

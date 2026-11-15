@@ -55,6 +55,7 @@ import { freePort } from './freePort'
  *    box to the tick; folded lines turned and their children gone; `folding: false` none; never sideways.
  *  - sticky headings (`#fixture=page-sticky`, `sheet-sticky`, `page-sticky-off`, YAZ-5591), light and dark, at 375 and
  *    320 px: under the top bar, each under its parent, as its heading, full width, at most 40%, each a tap; a tap lands it.
+ *  - Settings › This vault on mobile (`#fixture=settings-mobile`, YAZ-5592), light and dark, at 375 and 320 px.
  *  - a link to a heading (`#fixture=page-links`, YAZ-5519 S2) at 320 and 375 px: the heading lands whole under the top
  *    bar, a small gap between.
  *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
@@ -1487,7 +1488,7 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const shot = file.replace('.png', `-${scheme}.png`)
       writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       const m = await evaluate(HEALTH_CHECK)
-      const ok = !m.error && m.line === 'Using defaults: link clicks, table look, icons' && m.tap >= 44 && m.inside && m.rows === 11 && m.rowsInside && !m.pageWide
+      const ok = !m.error && m.line === 'Using defaults: link clicks, table look, icons' && m.tap >= 44 && m.inside && m.rows === 12 && m.rowsInside && !m.pageWide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings-health at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.line}", a ${m.tap}px tap ${m.inside ? 'inside' : 'OUTSIDE'}; ${m.rows} rows ${m.rowsInside ? 'inside' : 'OUTSIDE'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
@@ -1720,6 +1721,37 @@ if (process.env.LAYOUT_STICKY_HEADINGS !== 'no') {
           console.log(`${tapOk ? 'PASS' : 'FAIL'}  page-sticky tap on the stuck "Day 2: Belém": its heading at ${t.landed}px (under "Days in the city": ${t.parent}px), stuck now: ${t.left.join(' / ')}; the stuck H2's arrow ${t.folded ? 'folded it' : 'DID NOT FOLD'}, its section ${t.hidden ? 'hidden' : 'SHOWN'}, it landed at ${t.at}px`)
         }
       }
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5592: Settings › "This vault on mobile" (`settings-mobile`: the vault's mobile.json says Folding off), light and
+// dark, at 375 and 320 px: its heading, Folding (off) and Sticky headings (on), each a 44 px row that can be changed,
+// inside the screen; never sideways.
+const MOBILE_PART = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const part = document.querySelector('.settings-mobile')
+  if (part === null) return { error: 'no section' }
+  const rows = [...part.querySelectorAll('label.row')]
+  return {
+    title: part.querySelector('h2')?.textContent,
+    rows: rows.map((l) => ({ label: l.textContent, on: l.querySelector('input').checked, enabled: !l.querySelector('input').disabled, h: Math.round(r(l).height), inside: r(l).left >= 0 && r(l).right <= innerWidth + 0.5 })),
+    wide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_SETTINGS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, hgt] of [[375, 667], [320, 568]] as const) {
+      const file = await open('settings-mobile', w, hgt)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(MOBILE_PART)
+      type Row = { label: string; on: boolean; enabled: boolean; h: number; inside: boolean }
+      const rows = (m.rows ?? []) as Row[]
+      const ok = m.title === 'This vault on mobile' && rows.length === 2 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  settings-mobile ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.title}": ${rows.map((x) => `${x.label} ${x.on ? 'on' : 'off'}${x.enabled ? '' : ' DISABLED'} ${x.h}px${x.inside ? '' : ' OUTSIDE'}`).join(', ')}; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

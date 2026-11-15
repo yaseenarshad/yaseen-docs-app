@@ -16,7 +16,9 @@ import { renderPage } from '../page/pageRender'
 import { headingTarget, landOn } from '../page/headings'
 import { attachFolds, revealFolds, type PageFolds } from '../page/folds'
 import { pageOwnSwitch } from '../page/pageSwitches'
+import { effectiveSwitch, useMobileSettings } from '../page/mobileSettings'
 import { stickHeadings } from '../page/stickyHeadings'
+import { useCommentsPort } from '../page/comments/PageComments'
 import { openLink, type LinkDoor } from '../page/openLink'
 import { LinkedMentions } from '../page/LinkedMentions'
 import { boardKindOf, boardLabel } from '../drawing/boardFiles'
@@ -118,10 +120,11 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
   // YAZ-5568: a panel folds as the page does (the page's `folding: false` too); its folds last while it is open.
   const folds = useRef<PageFolds | null>(null)
   useEffect(() => () => folds.current?.destroy(), [])
-  // The page's own `folding` / `sticky-headings` (YAZ-5591), else on.
+  // YAZ-5592: the vault's mobile settings; a page's own `folding` / `sticky-headings` wins.
+  const vaultMobile = useMobileSettings(data, useCommentsPort()).settings
   const own = (key: 'folding' | 'sticky-headings') => (typeof content === 'string' ? pageOwnSwitch(content, key) : undefined)
-  const foldingOn = own('folding') ?? true
-  const stickyOn = own('sticky-headings') ?? true
+  const foldingOn = effectiveSwitch(own('folding'), vaultMobile?.folding ?? true)
+  const stickyOn = effectiveSwitch(own('sticky-headings'), vaultMobile?.stickyHeadings ?? true)
   // YAZ-5591: the stuck headings of the panel, in its own scroller.
   const stuckLayer = useRef<HTMLDivElement>(null)
   const hasText = typeof content === 'string'
@@ -135,7 +138,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
 
   useEffect(() => {
     const el = host.current
-    if (el === null || data === null || typeof content !== 'string') return
+    if (el === null || data === null || typeof content !== 'string' || vaultMobile === undefined) return
     const key = `${data.version}\n${content}\n${foldingOn}`
     if (drawn.current === key) return
     drawn.current = key
@@ -174,7 +177,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
     }
     // `door` and `onDrawn` are the same doors at each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, data, path, at, heading, title, foldingOn])
+  }, [content, data, path, at, heading, title, foldingOn, vaultMobile === undefined])
 
   return (
     <article className="reader explore-sheet__reader" aria-label={title}>

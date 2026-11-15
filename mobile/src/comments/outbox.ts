@@ -2,6 +2,7 @@ import type { VaultStore } from '../store'
 import { openStoredList } from '../answers/outbox'
 import type { TaskTick } from './taskWrite'
 import type { PageSetting } from './settingWrite'
+import type { VaultSetting } from './mobileWrite'
 
 /**
  * THE COMMENT LIST, the comments written on the phone that GitHub does not hold yet. It is the vault's
@@ -47,9 +48,10 @@ export interface WaitingComment {
   task?: TaskTick
   /**
    * YAZ-5568: not a comment but one of the page cog's on/off rows (`settingWrite.ts`: `folding`), from the page's ⋯:
-   * what it becomes. It goes the tick's way (no `by`, the same safe send); its `body` is empty.
+   * what it becomes. It goes the tick's way (no `by`, the same safe send); its `body` is empty. YAZ-5592: or one of the
+   * vault's mobile settings (`mobileWrite.ts`, `file: 'mobile'`), whose `path` is `.yaseendocs/mobile.json`.
    */
-  setting?: PageSetting
+  setting?: PageSetting | VaultSetting
   /**
    * How to find the page again when the Mac moves it before the send: its file's blob SHA when no other file
    * of the vault had the same bytes, and its page `id`. Taken when the comment goes in (from the stored copy).

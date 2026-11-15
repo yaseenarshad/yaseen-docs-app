@@ -10,6 +10,8 @@ import { writeFolds } from '../store/foldPref'
 import type { CommentsPort } from '../comments/bridge'
 import type { WaitingComment } from '../comments/outbox'
 import type { NewCommentInput } from '../comments/sender'
+import { MOBILE_SETTINGS_PATH } from '../comments/mobileWrite'
+import { forgetMobileSettings } from './mobileSettings'
 import { attachFolds, HIDDEN_ATTR } from './folds'
 import { landOn } from './headings'
 import { coverAbove, headingShape, stickHeadings, stuckHeadings } from './stickyHeadings'
@@ -17,7 +19,8 @@ import { coverAbove, headingShape, stickHeadings, stuckHeadings } from './sticky
 /**
  * YAZ-5591: sticky headings on the phone (Search's sticky folders' rules, `stickyFolders.ts`): the heading of the
  * section being read sticks under the top bar, with the headings that hold it above it, at most 40% of the scroller; a
- * tap on one lands on it, its fold arrow folds it; the page's ⋯ row writes `sticky-headings: true | false`. jsdom has no layout, so the page's is made up
+ * tap on one lands on it, its fold arrow folds it; the page's ⋯ row writes `sticky-headings: true | false`; the vault's
+ * `mobile.json` (YAZ-5592) decides when the page has no key of its own. jsdom has no layout, so the page's is made up
  * here: each heading 40 px tall, each other block 100 px, the page's body 100 px under the scroller's top. Real Chrome
  * checks the real layout (`publish/proveLayout.ts`, `sticky-headings`). Made-up pages only.
  */
@@ -261,7 +264,7 @@ function fakePort() {
   return port
 }
 
-describe('YAZ-5591: the page view and its ⋯ row', () => {
+describe('YAZ-5591 / YAZ-5592: the page view, its ⋯ row, the vault\'s mobile settings', () => {
   let h: Harness | null = null
   beforeEach(() => {
     URL.createObjectURL = vi.fn(() => 'blob:phone/1')
@@ -269,11 +272,13 @@ describe('YAZ-5591: the page view and its ⋯ row', () => {
     window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as unknown as typeof matchMedia
     HTMLElement.prototype.animate = (() => ({}) as Animation) as unknown as typeof HTMLElement.prototype.animate
     for (const path of Object.keys(FILES)) writeFolds(READER_ID, path, [])
+    forgetMobileSettings()
   })
   afterEach(() => {
     h?.unmount()
     h = null
     forgetSearch()
+    forgetMobileSettings()
   })
   async function waitFor(x: Harness, done: () => boolean, ms = 5000): Promise<void> {
     const until = Date.now() + ms
@@ -282,9 +287,9 @@ describe('YAZ-5591: the page view and its ⋯ row', () => {
       await act(async () => void (await new Promise((r) => setTimeout(r, 10))))
     }
   }
-  async function open(name: string, port: CommentsPort): Promise<Harness> {
+  async function open(name: string, port: CommentsPort, mobile?: string): Promise<Harness> {
     const p = await newPhone()
-    await seedReaderVault(p.store, p.tokens, FILES)
+    await seedReaderVault(p.store, p.tokens, mobile === undefined ? FILES : { ...FILES, [MOBILE_SETTINGS_PATH]: mobile })
     const x = await mount({ phone: p })
     ;(x.sync as unknown as { review: () => Promise<unknown> }).review = async () => ({ answers: { comments: port } })
     await x.click('Search')
@@ -323,4 +328,35 @@ describe('YAZ-5591: the page view and its ⋯ row', () => {
     expect(await stuckAt(h, BODY_TOP + 400)).toEqual(['Beds', 'North bed'])
   })
 
+  it('the vault says off (mobile.json): no sticky headings, no fold arrows; the rows say so', async () => {
+    h = await open('Garden', fakePort(), '{"version":1,"folding":false,"stickyHeadings":false}')
+    expect(h.host.querySelectorAll('.reader__body .fold-btn')).toHaveLength(0)
+    expect(await stuckAt(h, BODY_TOP + 400)).toEqual([])
+    await h.click('Page tools')
+    expect(row(h)?.getAttribute('aria-checked')).toBe('false')
+  })
+
+  it("a page's own setting wins over the vault's, both ways", async () => {
+    h = await open('Own on', fakePort(), '{"version":1,"folding":false,"stickyHeadings":false}')
+    expect(h.host.querySelectorAll('.reader__body .fold-btn').length).toBeGreaterThan(0)
+    expect(await stuckAt(h, BODY_TOP + 400)).toEqual(['Beds', 'North bed'])
+    h.unmount()
+    h = await open('Own off', fakePort())
+    expect(await stuckAt(h, BODY_TOP + 400)).toEqual([])
+  })
+
+  it('Settings › "This vault on mobile": Folding and Sticky headings, on; a change shows at once and goes the safe path', async () => {
+    const port = fakePort()
+    h = await open('Garden', port)
+    await h.click('Settings')
+    await waitFor(h, () => /This vault on mobile/.test(h!.text()) && h!.host.querySelector('input[type="checkbox"]:not([disabled])') !== null)
+    const box = (label: string) => [...h!.host.querySelectorAll('label.row')].find((l) => l.textContent === label)!.querySelector<HTMLInputElement>('input')!
+    expect(box('Folding').checked).toBe(true)
+    expect(box('Sticky headings').checked).toBe(true)
+    await act(async () => box('Sticky headings').click())
+    await h.settle()
+    expect(port.add).toHaveBeenCalledWith({ path: MOBILE_SETTINGS_PATH, body: '', setting: { file: 'mobile', key: 'stickyHeadings', on: false } })
+    expect(box('Sticky headings').checked).toBe(false)
+    expect(box('Folding').checked).toBe(true)
+  })
 })
