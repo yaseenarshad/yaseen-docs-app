@@ -71,3 +71,50 @@ export const FOLDER_FILES: Record<string, string | Uint8Array> = {
   'Projects/Trips/Lisbon weekend.md': project('Lisbon weekend', 'DEMO-97', 'Doing', '2026-11-14', 640, 'Lee', 'Three days by the sea.'),
   'Projects/Budget sheet.pdf': new TextEncoder().encode('%PDF-1.4 made up'),
 }
+
+/**
+ * YAZ-5597: a made-up `Events` folder for the calendar's Week / Month / Rolling: a calendar on Start with an End date,
+ * pages around `today` (a few months back and on), one over several days across a week's start, two with no date.
+ */
+export function calendarFiles(today: string): Record<string, string | Uint8Array> {
+  const day = (offset: number) => {
+    const d = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, Number(today.slice(8, 10)) + offset)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  const event = (title: string, start: number | null, place: string, end?: number) =>
+    page(`title: ${title}\n${start === null ? '' : `Start: ${day(start)}\n`}${end === undefined ? '' : `End: ${day(end)}\n`}Place: ${place}\n`, `${title}.`)
+  return {
+    ...FOLDER_FILES,
+    'Events/.folder.md': page(`title: Events\nfolder_settings:
+  columns:
+    Start:
+      kind: date
+      format: { style: medium }
+    End:
+      kind: date
+      format: { style: medium }
+    Place:
+      kind: text
+  views:
+    - type: calendar
+      name: Calendar
+      dateProperty: note.Start
+      endDateProperty: note.End
+      order: [file.name, note.Place]
+`, '# Events'),
+    'Events/Winter fair.md': event('Winter fair', -70, 'Town hall'),
+    'Events/Book club.md': event('Book club', -40, 'Library'),
+    'Events/Choir night.md': event('Choir night', -12, 'Church hall'),
+    'Events/Dentist.md': event('Dentist', -3, 'Main street'),
+    'Events/Ski trip.md': event('Ski trip', -2, 'Alps', 3),
+    'Events/Team lunch.md': event('Team lunch', 0, 'Cafe Nero'),
+    'Events/Yoga class.md': event('Yoga class', 1, 'Studio 4'),
+    'Events/Piano lesson.md': event('Piano lesson', 4, 'Music school'),
+    'Events/Car service.md': event('Car service', 9, 'Garage'),
+    'Events/Family dinner.md': event('Family dinner', 20, 'Home'),
+    'Events/Concert.md': event('Concert', 33, 'Arena'),
+    'Events/New year party.md': event('New year party', 47, 'Rooftop'),
+    'Events/Gift ideas.md': event('Gift ideas', null, 'Anywhere'),
+    'Events/Reading list.md': event('Reading list', null, 'Home'),
+  }
+}

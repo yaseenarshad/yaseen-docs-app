@@ -38,7 +38,8 @@ import { freePort } from './freePort'
  *  - the folder page (`#fixture=folder-*`, YAZ-5460), light and dark, at 375 px: a held folder's menu, the page with
  *    its text and tabs, its table (in its box, the header row and the Name column marked to stay), the grouped table,
  *    the board (its columns scroll sideways in their row), the cards, the calendar's agenda, the page in a sheet; the
- *    page never scrolls sideways.
+ *    page never scrolls sideways. YAZ-5597 (`folder-calendar-month`, `-week`, `-rolling`): the calendar's header (title,
+ *    ‹ › Today, Week / Month / Rolling) with 44 px controls inside the screen, today ringed, Rolling opened at today.
  *  - sticky folders in Search's tree (`#fixture=search-sticky`, YAZ-5506), light and dark, at 375 px: the open
  *    folders stuck at the top, flush, one row apart, the shallower on top, opaque, the open chevron, at most the cap;
  *    a tap on a stuck folder scrolls back to it, landing under the rows stuck above it.
@@ -601,6 +602,31 @@ const FOLDER_CHECK = `(() => {
     board: board ? { columns: board.children.length, scrolls: board.scrollWidth > board.clientWidth + 1 } : null,
     cards: document.querySelectorAll('.folder-card').length,
     agenda: document.querySelectorAll('.folder-agenda__day').length,
+    // YAZ-5597: the calendar's header: its title, the pressed mode, each control's size (44 px), all inside the screen,
+    // the title's row and the arrows' row; today's day ringed; where today's day sits under the stuck header.
+    cal: (() => {
+      const nav = document.querySelector('.folder-cal__nav')
+      if (!nav) return null
+      const controls = [...nav.querySelectorAll('button')]
+      const title = nav.querySelector('.folder-cal__title')
+      const steps = nav.querySelector('.folder-cal__steps')
+      const ring = document.querySelector('.folder-agenda__day--today .folder-agenda__day-name')
+      const todayDay = document.querySelector('.folder-agenda__day--today')
+      return {
+        title: title?.textContent,
+        mode: nav.querySelector('[aria-pressed=true]')?.textContent,
+        order: [...nav.querySelectorAll('.folder-cal__modes button')].map((b) => b.textContent).join(),
+        small: controls.filter((b) => r(b).height < 44 || r(b).width < 44).map((b) => b.textContent),
+        inside: controls.every((b) => r(b).left >= 0 && r(b).right <= innerWidth + 0.5),
+        oneRow: title && steps ? Math.abs(r(title).top + r(title).height / 2 - (r(steps).top + r(steps).height / 2)) < 12 : false,
+        height: Math.round(r(nav).height),
+        ringed: ring ? getComputedStyle(ring).borderTopStyle === 'solid' : null,
+        todayTop: todayDay ? Math.round(r(todayDay).top - r(nav).bottom) : null,
+        days: document.querySelectorAll('.folder-agenda__day').length,
+        months: [...document.querySelectorAll('.folder-agenda__month')].map((m) => m.textContent),
+        count: document.querySelector('.folder-agenda .folder-view__count')?.textContent,
+      }
+    })(),
     // YAZ-5531: the page in an Explore sheet: the sheet up (its box near the top), its title, text, tabs and table drawn in it.
     sheet: (() => {
       const box = [...document.querySelectorAll('.explore-sheet__box')].at(-1)
@@ -622,7 +648,13 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
     'folder-grouped': (m) => m.table && m.pinned && m.narrow.length === 0,
     'folder-board': (m) => m.board !== null && m.board.columns === 3 && m.board.scrolls && m.cards === 5,
     'folder-cards': (m) => m.cards === 5,
-    'folder-calendar': (m) => m.agenda === 5,
+    'folder-calendar': (m) => m.cal !== null && m.cal.mode === 'Month' && m.cal.small.length === 0 && m.cal.inside,
+    // YAZ-5597: the Events calendar (pages around today) in each mode: the header's controls 44 px and inside the
+    // screen, the title beside the arrows, today ringed, the switch Week, Month, Rolling; Rolling scrolled so today's day
+    // sits just under the header.
+    'folder-calendar-month': (m) => m.cal !== null && m.cal.order === 'Week,Month,Rolling' && m.cal.mode === 'Month' && m.cal.small.length === 0 && m.cal.inside && m.cal.oneRow && m.cal.ringed === true && m.cal.days >= 3,
+    'folder-calendar-week': (m) => m.cal !== null && m.cal.order === 'Week,Month,Rolling' && m.cal.mode === 'Week' && m.cal.small.length === 0 && m.cal.inside && m.cal.ringed === true && m.cal.days >= 2,
+    'folder-calendar-rolling': (m) => m.cal !== null && m.cal.order === 'Week,Month,Rolling' && m.cal.mode === 'Rolling' && m.cal.small.length === 0 && m.cal.inside && m.cal.ringed === true && m.cal.todayTop !== null && m.cal.todayTop >= 0 && m.cal.todayTop < 80 && m.cal.months.length >= 5,
     'folder-sheet': (m) => m.sheet !== null && m.sheet.up && m.sheet.title === 'Projects' && m.sheet.text && m.sheet.tabs === 5 && m.sheet.table,
   }
   for (const scheme of ['light', 'dark'] as const) {
