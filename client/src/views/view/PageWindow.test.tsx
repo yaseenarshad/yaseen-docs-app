@@ -15,6 +15,7 @@ import { type ParsedViews, parseViews } from '../viewSchema'
 import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { setCellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
+import { DocumentZoom, useKeptZoom } from '../../editor/DocumentZoom'
 import { MAX_OPEN_WINDOWS, dropAllPageWindows, dropPageWindowsAt, keepPageWindow, pageWindowKey, pageWindowMemory, openPageWindow, renamePageWindows } from './PageWindow'
 
 vi.mock('../../lib/storage', () => ({ storage: { getViewGroups: () => [], setViewGroups: () => undefined, getSettings: () => undefined, getRoots: () => ['/vault'] } }))
@@ -762,3 +763,63 @@ ${grouped('board').split('\n').slice(1).join('\n').replace('name: V', 'name: B')
     })
   })
 })
+
+/** A stand-in editor with the page zoom pill on the same hook the real editors use (`Editor`, `CardFileView`). */
+function ZoomEditor({ p }: { p: string }) {
+  const [zoom, setZoom] = useKeptZoom(100)
+  return (
+    <>
+      <div className="stub-editor" data-zoom={zoom}>
+        {p}
+      </div>
+      <DocumentZoom value={zoom} onChange={setZoom} />
+    </>
+  )
+}
+const zoomHost = () => testFolderHost({ renderPageEditor: (p) => <ZoomEditor p={p} /> })
+const shownZoom = () => card()?.querySelector<HTMLElement>('.stub-editor')?.dataset.zoom ?? null
+
+describe('the mini window keeps the page zoom (YAZ-5607)', () => {
+  it('75% on one page stays 75% over ‹ › steps, and the next card after × starts there too (as Properties)', () => {
+    mount(SORTED, {}, zoomHost())
+    openOn('B')
+    expect(shownZoom()).toBe('100')
+    click(q('.page-window [aria-label="Zoom out"]'))
+    click(q('.page-window [aria-label="Zoom out"]'))
+    expect(shownZoom()).toBe('75')
+    click(button('Next row'))
+    expect(shownPath()).toBe(path('D'))
+    expect(shownZoom()).toBe('75')
+    click(button('Next row'))
+    click(button('Previous row'))
+    expect(shownPath()).toBe(path('D'))
+    expect(shownZoom()).toBe('75')
+    // Back to 100% on a page: the next one follows that too.
+    click(q('.page-window [aria-label="Zoom in"]'))
+    click(q('.page-window [aria-label="Zoom in"]'))
+    click(button('Previous row'))
+    expect(shownZoom()).toBe('100')
+    click(q('.page-window [aria-label="Zoom in"]'))
+    expect(shownZoom()).toBe('125')
+    // As the Properties panel's state: × and the next card on this folder page starts where the last one was left.
+    click(button('Close mini window'))
+    expect(card()).toBeNull()
+    openOn('A')
+    expect(shownPath()).toBe(path('A'))
+    expect(shownZoom()).toBe('125')
+  })
+
+  it('a page outside the mini window keeps its own zoom: no memory, so it starts at its own start', () => {
+    let seen: number | null = null
+    function Probe() {
+      seen = useKeptZoom(125)[0]
+      return null
+    }
+    const el = document.createElement('div')
+    const r = createRoot(el)
+    act(() => r.render(<Probe />))
+    expect(seen).toBe(125)
+    act(() => r.unmount())
+  })
+})
+

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useId, useRef, useState } from 'react'
 import type { ZoomStep } from '@shared/types'
 
 const PRESETS = [50, 75, 90, 100, 125, 150, 200, 300, 400]
@@ -45,6 +45,28 @@ export function saveZoom(key: string, zoom: number): void {
   } catch {
     // No storage: the zoom lasts the run.
   }
+}
+
+/**
+ * The mini window's memory of the page zoom (YAZ-5607), the same shape as its Properties memory (YAZ-3746 13Q):
+ * `PageWindow` provides one `{ current }` per window, so each page it shows (a ‹ › step, a card click that swaps the
+ * page in, YAZ-5582) starts at the zoom last set there, and each change writes it. Null (a tab, the right panel): the
+ * page's own zoom, as before.
+ */
+export const PageZoomMemory = createContext<{ current: number | null } | null>(null)
+
+/** A page's zoom state: it starts from the mini window's memory when there is one (else `start`), and each change writes it back. */
+export function useKeptZoom(start: number): [number, (next: number) => void] {
+  const memory = useContext(PageZoomMemory)
+  const [zoom, setZoom] = useState(() => memory?.current ?? start)
+  const change = useCallback(
+    (next: number) => {
+      if (memory !== null) memory.current = next
+      setZoom(next)
+    },
+    [memory],
+  )
+  return [zoom, change]
 }
 
 const parseZoom = (draft: string): number | null => {

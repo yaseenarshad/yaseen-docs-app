@@ -14,6 +14,7 @@ import { ViewsPane, type ViewsPaneProps } from '../ViewsPane'
 import { testFolderHost } from '../testFolderHost'
 import { setCellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
 import { PropertiesOpenMemory } from '../../editor/FrontmatterPanel'
+import { DocumentZoom, useKeptZoom } from '../../editor/DocumentZoom'
 import { dropAllPageWindows } from './PageWindow'
 import { type CardClick, openCardByClick } from '../../lib/openGesture'
 import { cardClickOf } from '../viewDefaults'
@@ -62,8 +63,11 @@ const withChoice = (text: string, choice: CardClick) => `${text}    clickOpens: 
 function StubEditor({ p }: { p: string }) {
   const memory = useContext(PropertiesOpenMemory)
   const [open, setOpen] = useState(memory?.current ?? false)
+  // The page zoom on the hook the real editors use (YAZ-5607).
+  const [zoom, setZoom] = useKeptZoom(100)
   return (
-    <div className="stub-editor" data-path={p} data-properties={open ? 'open' : 'closed'}>
+    <div className="stub-editor" data-path={p} data-properties={open ? 'open' : 'closed'} data-zoom={zoom}>
+      <DocumentZoom value={zoom} onChange={setZoom} />
       <button
         type="button"
         className="stub-properties"
@@ -250,6 +254,24 @@ describe.each(KINDS)('%s: Clicking a card opens', (kind) => {
     expect(shownPath()).toBe(path('A'))
     expect(propertiesShown()).toBe('closed')
     expect(openBackground).not.toHaveBeenCalled()
+  })
+
+  it('Mini window: a click on another card swaps the page in at the same page zoom (YAZ-5607)', () => {
+    mount(kind, { settings: { cardClickOpens: 'window' } })
+    const zoomShown = () => document.querySelector<HTMLElement>('.page-window .stub-editor')?.dataset.zoom ?? null
+    const zoomOut = () => act(() => document.querySelector<HTMLElement>('.page-window [aria-label="Zoom out"]')!.click())
+    userClick(cardOf(kind, 'A'))
+    expect(zoomShown()).toBe('100')
+    zoomOut()
+    zoomOut()
+    expect(zoomShown()).toBe('75')
+    userClick(cardOf(kind, 'B'))
+    expect(shownPath()).toBe(path('B'))
+    expect(zoomShown()).toBe('75')
+    // The Properties panel's memory is its own: still closed.
+    expect(propertiesShown()).toBe('closed')
+    userClick(cardOf(kind, 'C'))
+    expect(zoomShown()).toBe('75')
   })
 
   it('Read only pages open the same way (a click reads, it writes nothing)', () => {

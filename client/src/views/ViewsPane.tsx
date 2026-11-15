@@ -508,8 +508,8 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           const { pinned } = last ?? pageWindowMemory(path, defaults.keepWindowPinned)
           // The place and size: the open card's, else the page's last (YAZ-3746 13H, also from before a restart), else the default.
           const { placed, width, height } = open ?? savedPageWindowBox(folderPath) ?? lastWindow.current ?? pageWindowMemory(path)
-          // The Properties panel stays open or closed over the swap (YAZ-3746 13Q).
-          keepPageWindow(windowKey, { path, placed, width, height, pinned, properties: last?.properties })
+          // The Properties panel stays open or closed over the swap (YAZ-3746 13Q), and the page zoom stays (YAZ-5607).
+          keepPageWindow(windowKey, { path, placed, width, height, pinned, properties: last?.properties, zoom: last?.zoom })
           setOpens((n) => n + 1)
         }
   const closeWindow = useCallback(() => {

@@ -2,6 +2,7 @@ import { type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouse
 import { createPortal } from 'react-dom'
 import type { Group, Row } from '../engine'
 import { PropertiesOpenMemory } from '../../editor/FrontmatterPanel'
+import { PageZoomMemory } from '../../editor/DocumentZoom'
 import { cellNotePinnedAtStart } from '../../editor/table/cellNoteCard'
 import { isPageKey } from '../../editor/pageKeys'
 import { cssZoom } from '../../lib/cssZoom'
@@ -99,6 +100,8 @@ export interface PageWindowMemory {
    * ‹ › steps, and over a click on another card that swaps the page in this same card (YAZ-5582). Absent: closed.
    */
   properties?: { current: boolean | null }
+  /** The page zoom, the same way (YAZ-5607): each page starts at the last zoom set in this card. Absent: the page's own (100%). */
+  zoom?: { current: number | null }
 }
 
 /**
@@ -263,6 +266,8 @@ export function PageWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
   closeRef.current = onClose
   /** The Properties panel's open state across the card's steps and swaps (YAZ-3746 13Q, YAZ-5582): on the memory, so a swap keeps it. */
   const propertiesOpen = (memory.properties ??= { current: null })
+  /** The page zoom, the same way (YAZ-5607). */
+  const pageZoom = (memory.zoom ??= { current: null })
 
   useLayoutEffect(() => {
     const anchor = anchorRef.current
@@ -483,7 +488,9 @@ export function PageWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
         </button>
       </div>
       <div key={path} className="page-window__body">
-        <PropertiesOpenMemory.Provider value={propertiesOpen}>{renderEditor(path)}</PropertiesOpenMemory.Provider>
+        <PropertiesOpenMemory.Provider value={propertiesOpen}>
+          <PageZoomMemory.Provider value={pageZoom}>{renderEditor(path)}</PageZoomMemory.Provider>
+        </PropertiesOpenMemory.Provider>
       </div>
       {GRIPS.map((grip) => (
         <span key={grip.name} className="page-window__grip" data-grip={grip.name} onMouseDown={onGripDown(grip)} />

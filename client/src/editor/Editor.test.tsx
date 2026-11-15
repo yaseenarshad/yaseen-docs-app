@@ -10,6 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { ZOOM_EVENT } from './zoomRequest'
+import { PageZoomMemory } from './DocumentZoom'
 import { createRoot, type Root } from 'react-dom/client'
 import type { FileResponse, IndexRecord, PageView, TableOfContents, TocSource, TreeNode, WatchEvent } from '@shared/types'
 import { resolverFor } from '../views/engine'
@@ -1280,6 +1281,30 @@ describe('CrepeHost frontmatter-only external changes (GRO-2186)', () => {
  * window, opens with its source's drill-in, live folds, scroll spot and text size. And each editor
  * answers `readPageView` for its tab with its own page view now.
  */
+describe('in the mini window the page zoom is the window\'s (YAZ-5607)', () => {
+  it('a page starts at the window\'s zoom, over its own start, and its zoom pill writes the window\'s memory', async () => {
+    const memory = { current: 75 as number | null }
+    readFile.mockResolvedValueOnce({ path: PATH, content: FM + BODY, mtime: 1, size: 1 })
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    act(() =>
+      root?.render(
+        <PageZoomMemory.Provider value={memory}>
+          <Editor root="/vault" path={PATH} watch={watch} onOpenFile={openFile} commentsOrder="oldest" onChangeCommentsOrder={noop} wikilinks={createWikilinkResolveSource()} onRetitle={noop} startView={{ scrollTop: 0, zoomKey: null, folds: [], magnification: 125 }} />
+        </PageZoomMemory.Provider>,
+      ),
+    )
+    await settle()
+    await settle()
+    expect(container.querySelector('.document-zoom__value')!.textContent).toBe('75%')
+    expect(container.querySelector<HTMLElement>('.editor-host')!.style.getPropertyValue('--document-zoom')).toBe('0.75')
+    act(() => container!.querySelector<HTMLElement>('[aria-label="Zoom in"]')!.click())
+    expect(container.querySelector('.document-zoom__value')!.textContent).toBe('90%')
+    expect(memory.current).toBe(90)
+  })
+})
+
 describe('a page starts from a page view, and tells its own (YAZ-2951)', () => {
   const VIEW: PageView = { scrollTop: 420, zoomKey: 'l2 a:1', folds: ['abc:0', 'h:def:0'], magnification: 125 }
   /** The caret grab moves the scroller to 5, as a real focus can. */

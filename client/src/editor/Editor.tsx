@@ -56,7 +56,7 @@ import { undo } from '@milkdown/kit/prose/history'
 import { CODE_WIDTH_DRAGGED, codeBlockCount, codeWidthsToPage, type CodeWidthDragged } from './code/codeWidth'
 import { VIEW_ONLY_CHANGE } from './readOnlyEdit'
 import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
-import { stepZoomByKey } from './DocumentZoom'
+import { stepZoomByKey, useKeptZoom } from './DocumentZoom'
 import { FoldAllButton } from './FoldAllButton'
 import { FOLDS_CHANGED_EVENT, nextDocumentFold, setAllDocumentFolds } from './outline/foldAllHotkeys'
 import { FOLDING_OFF_NOTICE, showFolding } from './outline/foldingSwitch'
@@ -595,8 +595,9 @@ function CrepeHost({
   onReread?: () => void
 }) {
   const unit = useUnit()
-  // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own.
-  const [documentZoom, setDocumentZoom] = useState(startView?.magnification ?? 100)
+  // A copied page starts at its source's text size (YAZ-2951 S5); after that it changes on its own. In the mini window
+  // each page starts at the window's last zoom, and a change is the window's (YAZ-5607).
+  const [documentZoom, setDocumentZoom] = useKeptZoom(startView?.magnification ?? 100)
   // Mirror for the ⌘ listener below, which is registered once (`[]`) and must read the live value.
   const documentZoomRef = useRef(documentZoom)
   documentZoomRef.current = documentZoom

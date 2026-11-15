@@ -67,7 +67,7 @@ import { ContextMenu } from '../sidebar/ContextMenu'
 import type { MenuSection } from '../sidebar/menuSections'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { CardFileNotice } from './CardFileNotice'
-import { stepZoomByKey } from './DocumentZoom'
+import { stepZoomByKey, useKeptZoom } from './DocumentZoom'
 import { cardBlockViewOfDom } from './card/cardBlockView'
 import { PageSettings } from './PageSettings'
 import { PageTitle } from './PageTitle'
@@ -218,8 +218,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   const writes = cardWrites(path, card, read, onNotice, vault.review)
   /** The top bar's save chip (YAZ-5102): Edit card's Done is the card file's one save; ⋯'s writes land at once. */
   const [save, setSave] = useState<SaveStatus>('saved')
-  /** This tab's text size (YAZ-5102), as a page's: per tab, never stored. ⌘+ / ⌘− / ⌘0 with the focus in the tab. */
-  const [zoom, setZoom] = useState(100)
+  /** This tab's text size (YAZ-5102), as a page's: per tab, never stored; in the mini window, the window's (YAZ-5607). ⌘+ / ⌘− / ⌘0 with the focus in the tab. */
+  const [zoom, setZoom] = useKeptZoom(100)
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
   const present = content !== null
