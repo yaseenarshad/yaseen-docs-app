@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
 import { Frame } from '../screens/Frame'
@@ -9,7 +10,7 @@ import { useDrawings } from '../drawing/useDrawings'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
-import { headingTarget, landOn } from './headings'
+import { headingTarget, landingTop, landOn } from './headings'
 import { LinkedFrom } from './LinkedFrom'
 import { openLink, type LinkDoor } from './openLink'
 import { resolveSourceOf } from './pageLook'
@@ -120,7 +121,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     if (drawn.current !== null && drawn.current.text === text && drawn.current.version === data.version && drawn.current.look === look) return
     resolveSourceOf(data).setLook(look.pills, vaultName(app.vault?.repo ?? ''))
     let live = true
-    const scroller = el.closest('.screen')
+    const scroller = el.closest<HTMLElement>('.screen')
     const top = scroller?.scrollTop ?? 0
     // The first draw of this view (a redraw after R3 keeps the place it had).
     const first = !everDrawn.current
@@ -140,19 +141,27 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       }
       ticksRef.current.paint()
       const head = el.firstElementChild
-      setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
+      // S2 (sweep1): the reader's own title hides NOW when the page's H1 says it (`--same` takes it out of the flow, and
+      // the page moves up by its height). A landing measured before React drew that put the heading under the top bar.
+      flushSync(() => setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase()))
       if (scroller !== null && !first) scroller.scrollTop = top
       // YAZ-5211: back on a page read before, at its reading place (a card asked for by `at` comes first).
       if (scroller !== null && first && at === undefined && heading === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
       // YAZ-5455: a link that named a heading (`[[Page#Goals]]`) lands on it; one the page lacks opens it at its top.
+      const target = !first ? null : heading !== undefined ? headingTarget(el, heading) : at !== undefined ? el.querySelector<HTMLElement>(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`) : null
       if (first && heading !== undefined) {
-        const target = headingTarget(el, heading)
         if (target !== null) landOn(target)
         else if (scroller !== null) scroller.scrollTop = 0
       }
-      if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
+      if (first && at !== undefined) target?.scrollIntoView?.({ block: 'start' })
+      const landed = scroller?.scrollTop
       if (first) await fillCardEmbeds(el, data, store, doorRef.current, () => live)
       if (!live) return
+      // S2: the cards above it are drawn now and pushed it down: the same landing again, unless the person scrolled.
+      if (target !== null && scroller !== null && scroller.scrollTop === landed) {
+        if (heading !== undefined) scroller.scrollTop = landingTop(scroller, target)
+        else target.scrollIntoView?.({ block: 'start' })
+      }
       // YAZ-5508: under each card and card embed, the Mac's strip (Reviews, Properties), closed; Review off: none.
       strips.current?.()
       strips.current = null

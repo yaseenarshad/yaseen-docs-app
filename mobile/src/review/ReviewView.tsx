@@ -25,7 +25,7 @@ import { PhoneCard, type CardLinkOpen } from './PhoneCard'
 import { readCardLook } from '../media/ui/cardDraw'
 import { createReviewSource, type ReviewSource } from './source'
 import { setReviewInProgress } from './inProgress'
-import { useTapGuard } from './tapGuard'
+import { SEEN_MS, useTapGuard } from './tapGuard'
 import { useWakeLock } from './wakeLock'
 import { FILTER_ICON, NEEDS_FIX, UNDO_SHOWN_MS, filterDone, filterLabel, hintText, lostTitle } from './words'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
@@ -653,7 +653,7 @@ function SessionScreen({
           </div>
         </>
       ) : (
-        <div className="review__stage review__stage--done">
+        <DoneStage>
           {session.end !== null ? (
             // YAZ-5495: Due today stopped (its % after the first pass, or done): its own screen, the rest after it.
             <div className="review__done" role="status">
@@ -685,7 +685,7 @@ function SessionScreen({
               )}
             </p>
           )}
-        </div>
+        </DoneStage>
       )}
 
       {card !== null && (
@@ -832,6 +832,30 @@ function TodayLine({ session, mode: setting }: { session: CardReviewSession; mod
         </>
       )}
     </span>
+  )
+}
+
+/**
+ * S5 (sweep1): the screen after the last card, which takes no tap for `SEEN_MS` after it appears, as a new card (the tap
+ * guard, YAZ-5226). Its "↶ Undo" sits where ✓ was: the second tap of a quick double tap on ✓ hit it and took the
+ * answer back, with no word. A tap under 400 ms is that second tap: it is dropped, before any button sees it.
+ */
+function DoneStage({ children }: { children: React.ReactNode }) {
+  const [settling, setSettling] = useState(true)
+  useEffect(() => {
+    const timer = setTimeout(() => setSettling(false), SEEN_MS)
+    return () => clearTimeout(timer)
+  }, [])
+  const drop = (e: React.MouseEvent) => {
+    if (!settling) return
+    e.preventDefault()
+    e.stopPropagation()
+  }
+  // `data-settling` while it takes no tap (a test's person waits for it to go, as for the answer buttons' `data-guard`).
+  return (
+    <div className="review__stage review__stage--done" data-settling={settling ? '' : undefined} onClickCapture={drop}>
+      {children}
+    </div>
   )
 }
 

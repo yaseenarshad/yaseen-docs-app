@@ -138,6 +138,8 @@ describe('checker round 3: the guard, cell by cell, on the screen', () => {
     expect(s.text()).toContain('Due today is done.')
     expect(s.guarded()).toBe(false)
     expect(reviewInProgress()).toBe(true) // Undo remains
+    // YAZ-5519 S5: the screen after the last card takes no tap for SEEN_MS (a double tap's second tap); then Undo.
+    await real(SEEN_MS + 50)
     await s.press('Undo')
     await s.settle()
     expect(s.head()).toContain('KC-1')

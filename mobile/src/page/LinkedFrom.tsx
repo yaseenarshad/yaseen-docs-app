@@ -25,11 +25,17 @@ import './linkedFrom.css'
  */
 export function LinkedFrom({ path, data, store, door }: { path: string; data: VaultData; store: VaultStore; door: LinkDoor }) {
   const [open, setOpen] = useState(false)
+  const [shown, setShown] = useState(LINKED_FROM_PAGE)
   const entries = linkedFromOf(path, data)
   if (entries.length === 0) return null
+  const next = Math.min(LINKED_FROM_PAGE, entries.length - shown)
+  const toggle = () => {
+    setShown(LINKED_FROM_PAGE)
+    setOpen((o) => !o)
+  }
   return (
     <section className="linked-from" aria-label="Linked from">
-      <button type="button" className="linked-from__header" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="linked-from__header" aria-expanded={open} onClick={toggle}>
         <svg className="linked-from__chevron" width={14} height={14} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
           <path d="m4 6 4 4 4-4" />
         </svg>
@@ -39,14 +45,25 @@ export function LinkedFrom({ path, data, store, door }: { path: string; data: Va
       </button>
       {open && (
         <ul className="linked-from__list">
-          {entries.map((record) => (
+          {entries.slice(0, shown).map((record) => (
             <Entry key={record.path} record={record} target={path} data={data} store={store} door={door} />
           ))}
         </ul>
       )}
+      {open && next > 0 && (
+        <button type="button" className="linked-from__more" onClick={() => setShown((n) => n + LINKED_FROM_PAGE)}>
+          Show {next} more
+        </button>
+      )}
     </section>
   )
 }
+
+/**
+ * S4 (sweep1): a page 1,301 pages link to drew 3,904 elements, and read 1,301 files, in one go when the section
+ * opened. It draws this many pages, then "Show N more" draws the next as many (each reads its file only when drawn).
+ */
+export const LINKED_FROM_PAGE = 20
 
 function Entry({ record, target, data, store, door }: { record: IndexRecord; target: string; data: VaultData; store: VaultStore; door: LinkDoor }) {
   /** null: the read runs; []: none to show (or the file is not on the phone). */

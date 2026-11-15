@@ -34,7 +34,7 @@
 }
 
 /* A page card's ⋯ (YAZ-5504): at the right of the card's head, 44 pt to tap, a quiet grey glyph (drawn here, so the
-   head's words stay the card's own). Its menu opens under it, in the card's box. */
+   head's words stay the card's own). Its menu opens under it, in the card's box (over it, low on the screen: S6). */
 .card__head .card__more-box {
   position: relative;
   flex: none;
@@ -80,6 +80,12 @@
   font-size: 16px;
   font-weight: 400;
   text-align: left;
+}
+
+/* S6: a card low on the screen opens its menu upward, over its ⋯ (`placeMenu`). */
+.card-menu[data-place='up'] {
+  top: auto;
+  bottom: calc(100% + 2px);
 }
 
 /* The card view's ⋯ (YAZ-5504): the card actions, a line, then Find in card. */

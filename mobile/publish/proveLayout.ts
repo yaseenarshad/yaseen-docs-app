@@ -43,9 +43,15 @@ import { join } from 'node:path'
  *    each); a page's card and a card embed with theirs; the page never scrolls sideways.
  *  - the comment count of a card file (`#fixture=card-strip`, YAZ-5511), light and dark, at 375 px: on the screen above
  *    the card, a 44 px tap, its centre the count's own; a tap brings the comments under the card up.
+ *  - a link to a heading (`#fixture=page-links`, YAZ-5519 S2) at 320 and 375 px: the heading lands whole under the top
+ *    bar, a small gap between.
+ *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
+ *    control inside the screen, the dot clear of the ⚙; the title cut first, then the ID's letters; its number shows.
+ *  - a page card's ⋯ menu low on the screen (`#fixture=page-card-menu`, YAZ-5519 S6) at 375 and 430 px: inside the
+ *    screen, above the page arrows and the tab bar; its first row on top.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -679,6 +685,83 @@ if (process.env.LAYOUT_COUNT !== 'no') {
     console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip count ${scheme} at 375x667: "${m.text}" at ${m.rect?.join(',')}; ${m.onScreen ? 'on screen' : 'OFF SCREEN'}; ${m.tap ? '44px tap' : 'TAP TOO SMALL'}; its centre ${m.hit ? 'is the count' : 'IS COVERED'}; ${m.overCard ? 'OVER THE CARD' : 'above the card'}; a tap: the comments ${went}px under the top bar  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5519 S2: a link to a heading of another page (`[[Spanish words#Places]]`, `#fixture=page-links`) lands with the
+// heading whole under the top bar, a small gap between (the page's H1 repeats its title, so the reader's title hides).
+const HEADING_LANDED = `(() => {
+  const bar = document.querySelector('.topbar').getBoundingClientRect().bottom
+  const h = [...document.querySelectorAll('.reader__body h2')].find((x) => x.textContent.trim() === 'Places')
+  return h ? { top: Math.round(h.getBoundingClientRect().top), bar: Math.round(bar) } : { error: 'no heading' }
+})()`
+if (process.env.LAYOUT_HEADING !== 'no') {
+  for (const [w, h] of [[320, 568], [375, 667]] as const) {
+    const file = await open('page-links', w, h)
+    await evaluate(`[...document.querySelectorAll('.reader__body a')].find((a) => a.textContent === 'Spanish words > Places').click()`)
+    for (let i = 0; i < 40 && (await evaluate(`document.querySelector('.topbar__title')?.textContent`)) !== 'Spanish words'; i++) await wait(100)
+    await wait(1200)
+    const m = await evaluate(HEADING_LANDED)
+    const shot = file.replace('.png', '-heading.png')
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.error === undefined && m.top >= m.bar + 8 && m.top <= m.bar + 48
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-links heading at ${w}x${h}: "Places" top at ${m.top}, the top bar ends at ${m.bar} (${m.top - m.bar}px under it)  ${shot}`)
+  }
+}
+// YAZ-5519 S3: the top bar of a page with an ID chip at 320, 375 and 430 px (`#fixture=page` "Spanish words" DEMO-1;
+// `page-long-id`: a long title, the ID GARDN-1234567): every control inside the screen, the dot clear of the ⚙, the ⚙
+// whole; the title gives room first (cut with "…"), then the chip's letters; the chip's number always shows.
+const TOPBAR_FITS = `(() => {
+  const bar = document.querySelector('.topbar')
+  const box = (el) => el ? el.getBoundingClientRect() : null
+  const parts = { back: '.back', kind: '.topbar__kind', title: '.topbar__title', chip: '.page-id', tools: '.page-tools', dot: '.sync-status', gear: '.topbar__gear' }
+  const at = {}
+  for (const [k, s] of Object.entries(parts)) { const b = box(bar.querySelector(s)); at[k] = b ? [Math.round(b.left), Math.round(b.right)] : null }
+  const inside = Object.values(at).every((v) => v !== null && v[0] >= -0.5 && v[1] <= innerWidth + 0.5)
+  const range = document.createRange()
+  range.selectNodeContents(bar.querySelector('.topbar__gear'))
+  const gear = range.getBoundingClientRect()
+  const dot = box(bar.querySelector('.sync-dot'))
+  const pill = box(bar.querySelector('.page-id__pill'))
+  const numberEl = bar.querySelector('.page-id__number')
+  const number = numberEl && numberEl.scrollWidth <= numberEl.clientWidth ? box(numberEl) : null
+  const title = bar.querySelector('.topbar__title')
+  return { at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5, titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
+})()`
+if (process.env.LAYOUT_TOPBAR !== 'no') {
+  for (const [w, h] of [[320, 568], [375, 667], [430, 932]] as const) {
+    for (const name of ['page', 'page-long-id']) {
+      const file = await open(name, w, h)
+      const m = await evaluate(TOPBAR_FITS)
+      const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}  ${file}`)
+    }
+  }
+}
+// YAZ-5519 S6: a page card's ⋯ low on the screen (`#fixture=page-card-menu`, the third card, unscrolled) opens its menu
+// inside the screen, above the page arrows and the tab bar (upward); its first row is on top where a finger taps it.
+const CARD_MENU_PLACE = `(() => {
+  const m = document.querySelector('.card-menu')
+  if (!m) return { error: 'no menu' }
+  const r = m.getBoundingClientRect()
+  const s = document.querySelector('.screen').getBoundingClientRect()
+  const row = m.querySelector('[role=menuitem]').getBoundingClientRect()
+  const hit = document.elementFromPoint(row.left + 20, row.top + row.height / 2)
+  return { top: Math.round(r.top), bottom: Math.round(r.bottom), screenTop: Math.round(s.top), screenBottom: Math.round(s.bottom), place: m.dataset.place ?? 'down', hit: hit !== null && hit.closest('.card-menu') === m }
+})()`
+if (process.env.LAYOUT_CARD_MENU !== 'no') {
+  for (const [w, h] of [[375, 667], [430, 932]] as const) {
+    const file = await open('page-card-menu', w, h)
+    await evaluate(`document.querySelector('[aria-label="Card actions: River of Vienna"]').click()`)
+    for (let i = 0; i < 30 && (await evaluate(`document.querySelector('.card-menu [data-action="off"]:not(:disabled)') !== null`)) !== true; i++) await wait(100)
+    await wait(300)
+    const m = await evaluate(CARD_MENU_PLACE)
+    const shot = file.replace('.png', '-low-card.png')
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.error === undefined && m.top >= m.screenTop - 0.5 && m.bottom <= m.screenBottom + 0.5 && m.hit
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-card-menu third card at ${w}x${h}: menu ${m.top}-${m.bottom} (${m.place}), the screen ${m.screenTop}-${m.screenBottom}; its first row ${m.hit ? 'is on top' : 'IS COVERED'}  ${shot}`)
+  }
 }
 chrome.kill()
 server.close()

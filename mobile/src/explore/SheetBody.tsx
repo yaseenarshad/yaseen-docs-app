@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { cardInContent, type CardAtPage } from '@client/review/cardRead'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
@@ -113,7 +114,8 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       if (!live) return
       el.replaceChildren(...into.childNodes)
       const head = el.firstElementChild
-      setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
+      // S2 (sweep1): the title hides before the card asked for is landed on (it leaves the flow; the page moves up).
+      flushSync(() => setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase()))
       if (at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
       onDrawn()
       // YAZ-5518: a link that named a heading (`[[Long notes#Part 40]]`) lands on it in the sheet, as full screen (YAZ-5455).

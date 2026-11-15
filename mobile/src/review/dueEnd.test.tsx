@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DueTodayEnd } from '@client/review/useCardReview'
 import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 import { DueEnd, ringTurns } from './DueEnd'
+import { SEEN_MS } from './tapGuard'
 
 /**
  * YAZ-5495: the end of Due today on the phone, as the Mac's Inbox (YAZ-5043; the Mac's walk-through is
@@ -141,6 +142,8 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     for (const r of ['Remembered', 'Remembered', 'Remembered', 'Remembered', 'Forgot'] as const) await answer(r)
     expect(q('.due-end')?.dataset.kind).toBe('missed')
     expect(h.last()).toContain('Undo')
+    // S5: the end screen takes no tap in its first 400 ms (a double tap's second tap); this Undo is a later one.
+    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
     await h.click('Undo')
     expect(q('.due-end')).toBeNull()
     expect(showing()).toBe('VRB-5')
@@ -148,6 +151,26 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     expect(q('.due-end')?.dataset.kind).toBe('done')
     expect(endText()).toContain('You remembered 100% of 5 cards.')
     expect(listed()).toEqual(DUE)
+  })
+
+  it('endScreen_ignoresTapsUnder400ms_afterLastAnswer: the second tap of a double tap on ✓ never hits the end screen\'s Undo (S5)', async () => {
+    h = await reviewSetup(FILES)
+    await pick('Due today')
+    for (let i = 0; i < 4; i++) await answer('Remembered')
+    await answer('Remembered')
+    expect(q('.due-end')?.dataset.kind).toBe('done')
+    // The second tap, ~120 ms later, where ✓ was: "↶ Undo" is there now. It does nothing.
+    const undo = q('.review__stage--done .review__undo')
+    expect(undo).not.toBeNull()
+    await act(async () => undo!.click())
+    expect(q('.due-end')?.dataset.kind).toBe('done')
+    expect(showing()).toBeNull()
+    expect(listed()).toEqual(DUE)
+    // A tap after the 400 ms is a choice: Undo takes the answer back.
+    await act(async () => void (await new Promise((r) => setTimeout(r, SEEN_MS + 50))))
+    await h.click('Undo')
+    expect(q('.due-end')).toBeNull()
+    expect(showing()).toBe('VRB-5')
   })
 
   it('6. "from All folders ›" opens the sheet at its folder page; its ‹ closes it', async () => {

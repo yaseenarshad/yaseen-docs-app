@@ -99,6 +99,37 @@ describe('hold a folder (YAZ-5460)', () => {
     expect(menu()).toBeNull()
   })
 
+  it('holdFolderMenu_survivesFingerLift: the click after the lift lands on the dim and does not close the menu (M4)', async () => {
+    h = await openSearch()
+    const projects = row(h, 'Projects')!
+    await hold(h, projects)
+    expect(menu()).not.toBeNull()
+    // A real lift, as WebKit and Chromium send it: pointerup and touchend on the row (the finger's target), then the
+    // click, hit-tested where the finger was: the dim that now covers the row.
+    await act(async () => void pointer(projects, 'pointerup'))
+    await act(async () => void projects.dispatchEvent(new Event('touchend', { bubbles: true, cancelable: true })))
+    const dim = document.querySelector<HTMLElement>('.hold-menu__dim')!
+    await act(async () => dim.click())
+    expect(menu()).not.toBeNull()
+    expect(row(h, 'Projects')!.parentElement?.getAttribute('aria-expanded')).toBe('false')
+    // A later, real tap on the dim still closes it.
+    await act(async () => void (await new Promise((r) => setTimeout(r, 450))))
+    await act(async () => document.querySelector<HTMLElement>('.hold-menu__dim')!.click())
+    expect(menu()).toBeNull()
+  })
+
+  it('holdFolderMenu_survivesFingerLift: the lift click is no choice either; a later tap on Cancel is (M4)', async () => {
+    h = await openSearch()
+    const projects = row(h, 'Projects')!
+    await hold(h, projects)
+    await act(async () => void pointer(projects, 'pointerup'))
+    await act(async () => item('Cancel')!.click())
+    expect(menu()).not.toBeNull()
+    await act(async () => void (await new Promise((r) => setTimeout(r, 450))))
+    await act(async () => item('Cancel')!.click())
+    expect(menu()).toBeNull()
+  })
+
   it('"explore": the folder page opens in a sheet over Search', async () => {
     h = await openSearch({ ...FOLDER_FILES, '.yaseendocs/link-click.json': '{"click":"explore"}' })
     await hold(h, row(h, 'Projects')!)

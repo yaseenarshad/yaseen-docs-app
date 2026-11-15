@@ -177,6 +177,36 @@ describe('the inline box at the end of the comments (YAZ-5478)', () => {
     expect(f.added).toEqual([{ path: 'notes/plan.md', body: 'Approved, with one note', by: 'yaseen-a', holdMs: 0 }])
   })
 
+  it('approvedChip_keepsTypedDraft: with words in the box, "Approved" goes in at the cursor; the words stay (S10)', async () => {
+    const f = fakePort()
+    await mount(f.port, 'Body')
+    const box = host.querySelector('textarea')!
+    await type('Looks good to me, ship it')
+    // The cursor at the end (the person typed there): " Approved" after the words.
+    act(() => box.focus())
+    box.setSelectionRange(box.value.length, box.value.length)
+    await click('Approved')
+    expect(box.value).toBe('Looks good to me, ship it Approved')
+    expect(document.activeElement).toBe(box)
+    expect(box.selectionStart).toBe(box.value.length)
+    // A second tap does not add it again.
+    await click('Approved')
+    expect(box.value).toBe('Looks good to me, ship it Approved')
+    // The cursor in the middle (after "me,"): the word goes in there, spaced, with the cursor after it.
+    await type('Looks good to me, ship it')
+    box.setSelectionRange(17, 17)
+    await click('Approved')
+    expect(box.value).toBe('Looks good to me, Approved ship it')
+    expect(box.selectionStart).toBe('Looks good to me, Approved'.length)
+    // Not focused (the person tapped away): after the words.
+    await type('Fine')
+    act(() => box.blur())
+    box.setSelectionRange(0, 0)
+    await click('Approved')
+    expect(box.value).toBe('Fine Approved')
+    expect(f.added).toEqual([])
+  })
+
   it('a page whose comments is not a comment list: Comment says so and nothing is added', async () => {
     const f = fakePort()
     await mount(f.port, '---\ncomments: see the doc\n---\nBody')
