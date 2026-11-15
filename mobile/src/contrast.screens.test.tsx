@@ -259,9 +259,11 @@ describe('the contrast of every screen the phone draws (YAZ-5179, YAZ-5338 … Y
     const used = new Set([...loadedBy.values()].flat())
     expect(phoneStylesheets().filter((f) => !used.has(f)).map((f) => relative(REPO, f))).toEqual([])
     expect(FIRST.map((f) => relative(REPO, f))).toContain('mobile/src/styles.css')
-    // The link pills' sheet comes with the reader and Review (cardPill.ts), not in the first load; Review does not load reader.css.
+    // The link pills' sheet comes with the reader and Review (cardPill.ts), not in the first load. YAZ-5589: reader.css is
+    // not in the first load either; it comes with the reader's chunk, which every screen reads ahead once the app is idle
+    // (`explore/openReady.ts`), so a page opens drawn at once: Review may have it too (its rules are the reader's own).
     expect(loadedBy.get('page')!.map((f) => relative(REPO, f))).toContain('client/src/editor/wikilink/wikilink.css')
-    expect(loadedBy.get('review-shown')!.map((f) => relative(REPO, f))).not.toContain('mobile/src/page/reader.css')
+    expect(FIRST.map((f) => relative(REPO, f))).not.toContain('mobile/src/page/reader.css')
     expect(loadedBy.get('settings')!.map((f) => relative(REPO, f))).not.toContain('mobile/src/pwa/landing.css')
   })
 

@@ -12,6 +12,7 @@ import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { openLink, type LinkDoor } from './openLink'
+import { heldText, holdText } from './heldText'
 import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
@@ -61,7 +62,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   // The vault's link pills (their CSS variables) and its "Clicking a link".
   const look = useVaultLook(app.services.store, data)
   const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: look?.click }
-  const [text, setText] = useState<string | null | undefined>(undefined)
+  // YAZ-5589: the text read ahead (`heldText.ts`): the card draws in the tap's frame; the stored file is read again at once.
+  const [text, setText] = useState<string | null | undefined>(() => heldText(vault, path))
   const [reads, setReads] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   const host = useRef<HTMLDivElement>(null)
@@ -85,7 +87,9 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   useEffect(() => {
     let live = true
     void shownText(store, vault, path, answers).then((content) => {
-      if (live) setText(content)
+      if (!live) return
+      setText(content)
+      if (typeof content === 'string') holdText(vault, path, content)
     })
     return () => {
       live = false

@@ -5,7 +5,9 @@ import { useApp } from '../app/AppState'
 import type { VaultStore } from '../store'
 import { Frame } from '../screens/Frame'
 import { setSearchNotice } from '../search/searchState'
-import { useVaultData, vaultDataFor } from '../search/vaultData'
+import { useVaultData, vaultDataFor, type VaultData } from '../search/vaultData'
+import { readAheadPaths } from '../explore/openReady'
+import { heldText, holdText } from './heldText'
 import { uiSlicer } from '../sync/yieldToUi'
 import { useDrawings } from '../drawing/useDrawings'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
@@ -21,7 +23,7 @@ import { usePageProperties } from './PageProperties'
 import { vaultName } from '../screens/Frame'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
-import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
+import { PageArrows, PageIdChip, folderStops, neighbours, pageIdOf, vaultOrder } from './pageNav'
 import { renderPage, warmRenderer } from './pageRender'
 import { markSections, pageSwitchAttrs } from './pageSwitches'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
@@ -45,28 +47,42 @@ import { usePageCardMenu } from '../cardMenu/pageCardMenu'
 /** Where each page was read last (phone memory only), so Back shows a page at its place. */
 const readingPlace = new Map<string, number>()
 
+/** YAZ-5589: the strips' chunk once loaded (read ahead with the reader): a page's strips then mount in its first frame. */
+let stripsChunk: typeof import('./cardStrip/pageStrips') | null = null
+const loadStrips = () => import('./cardStrip/pageStrips').then((m) => (stripsChunk = m))
+
 /**
- * YAZ-5589: the text of the pages read last (phone memory only, a few), so a page opened again (Today's, read ahead
- * by `primePage`) draws in the same frame as the tap. The stored file is read again at once; a change draws again.
+ * YAZ-5589: what any page needs to draw in the same frame as the tap, read ahead once the app is idle
+ * (`explore/openReady.ts`): the vault's data and look, the renderer's warm-up, the strips' chunk (Review on).
  */
-const heldTexts = new Map<string, string>()
-const HELD_TEXTS = 8
-function holdText(vault: string, path: string, text: string): void {
-  const key = `${vault}\n${path}`
-  heldTexts.delete(key)
-  heldTexts.set(key, text)
-  if (heldTexts.size > HELD_TEXTS) heldTexts.delete(heldTexts.keys().next().value!)
+export async function warmPage(store: VaultStore, vault: string, repoName: string): Promise<VaultData> {
+  const data = await vaultDataFor(store, vault, repoName)
+  await loadVaultLook(store, data)
+  await warmRenderer(pageLook(data, ''), uiSlicer())
+  if (data.review.enabled) await loadStrips().catch(() => null)
+  return data
 }
 
 /**
- * YAZ-5589: everything a page needs to draw in the same frame as the tap, read ahead (the Today button, once the app
- * is idle): the vault's data and look, the page's stored text, and the renderer's warm-up.
+ * YAZ-5589: everything a page (or a card file, or a panel) needs to draw in the same frame as the tap, read ahead
+ * (`openReady.ts`, the Today button): the reader warm (`warmPage`) and the page's stored text (`heldText.ts`).
  */
 export async function primePage(store: VaultStore, vault: string, repoName: string, path: string): Promise<void> {
-  const data = await vaultDataFor(store, vault, repoName)
-  const [text] = await Promise.all([shownText(store, vault, path, null), loadVaultLook(store, data)])
+  const [, text] = await Promise.all([warmPage(store, vault, repoName), shownText(store, vault, path, null)])
   if (typeof text === 'string') holdText(vault, path, text)
-  await warmRenderer(pageLook(data, path), uiSlicer())
+}
+
+/** The pages a tap on this page opens next: its arrows' pages, then its first links (read ahead once it is drawn). */
+const AHEAD_LINKS = 12
+function nextPaths(el: HTMLElement, data: VaultData, path: string): string[] {
+  const near = neighbours(folderStops(vaultOrder(data).pages, path.slice(0, Math.max(0, path.lastIndexOf('/')))), { kind: 'page', path })
+  const out = new Set<string>()
+  for (const stop of [near?.after, near?.before]) if (stop != null && (stop.route.kind === 'page' || stop.route.kind === 'card')) out.add(stop.route.path)
+  for (const a of el.querySelectorAll<HTMLElement>('[data-open="page"][data-path], [data-open="card"][data-path]')) {
+    if (out.size >= AHEAD_LINKS + 2) break
+    if (a.dataset.path !== path) out.add(a.dataset.path!)
+  }
+  return [...out]
 }
 
 export default function PageView({ path: opened, at, heading }: { path: string; at?: string; heading?: string }) {
@@ -75,7 +91,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const vault = app.vaultKey!
   const data = useVaultData()
   const [path, setPath] = useState(opened)
-  const [text, setText] = useState<string | null | undefined>(() => heldTexts.get(`${vault}\n${opened}`))
+  const [text, setText] = useState<string | null | undefined>(() => heldText(vault, opened))
   const [reads, setReads] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   /** The page's first block is a heading with its title: the reader's own title is not drawn a second time. */
@@ -243,9 +259,16 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       strips.current?.()
       strips.current = null
       if (data.review.enabled && el.querySelector('.card.page-card, .card.card-embed') !== null) {
-        const { mountPageStrips } = await import('./cardStrip/pageStrips')
+        // YAZ-5589: with the chunk read ahead, the strips mount now, in the page's first frame (no jump under the cards).
+        const { mountPageStrips } = stripsChunk ?? (await loadStrips())
         if (!live) return
-        strips.current = mountPageStrips(el, data, doorRef.current, { path, text })
+        flushSync(() => void (strips.current = mountPageStrips(el, data, doorRef.current, { path, text })))
+      }
+      // YAZ-5589: what a tap here opens next (the arrows' pages, the first links) is read ahead once the app is idle.
+      if (first) {
+        const ahead = () => live && void readAheadPaths(vault, nextPaths(el, data, path))
+        if (typeof requestIdleCallback === 'function') requestIdleCallback(ahead, { timeout: 1500 })
+        else setTimeout(ahead, 300)
       }
     })()
     return () => {

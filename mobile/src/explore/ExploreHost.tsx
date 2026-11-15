@@ -3,10 +3,12 @@ import { useApp } from '../app/AppState'
 import { lazyScreen } from '../screens/LazyScreen'
 import { readJson } from '../search/vaultData'
 import { LINK_CLICK_PATH, sanitizeLinkClick, setLinkClick } from './openFile'
-import { closeAll, loadSheetLayer, openSheet, preloadSheets, sheetStack, subscribeSheets } from './sheets'
+import { closeAll, loadSheetLayer, openSheet, preloadSheets, setSheetsPreload, sheetStack, subscribeSheets } from './sheets'
 
 /** The sheets' own chunk: not in the first load. */
 const SheetLayer = lazyScreen(loadSheetLayer, { waiting: <></> })
+// YAZ-5589: the preload goes through the screen, so a panel opened after it draws with no empty waiting frame.
+setSheetsPreload(SheetLayer.preload)
 
 /**
  * The sheets' place in the app, next to the shell: it draws the stack (its chunk) while a sheet is open,
@@ -28,7 +30,7 @@ export function ExploreHost() {
     const off = sync.subscribe((event) => event.type === 'changed' && event.vault === vault && read())
     // The first link opens with no wait: the chunk loads once the app is idle.
     const idle = typeof requestIdleCallback === 'function'
-    const later = idle ? requestIdleCallback(preloadSheets, { timeout: 5000 }) : setTimeout(preloadSheets, 3000)
+    const later = idle ? requestIdleCallback(() => void preloadSheets(), { timeout: 5000 }) : setTimeout(() => void preloadSheets(), 3000)
     return () => {
       live = false
       off()

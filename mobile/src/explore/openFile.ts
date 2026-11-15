@@ -2,6 +2,7 @@ import { DEFAULT_LINK_CLICK as MAC_DEFAULT, LINK_CLICK_FILE, sanitizeLinkClick a
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { AppModel } from '../app/AppState'
 import type { Route } from '../app/nav'
+import { whenReady } from './openReady'
 import { isSheetRoute, openSheet } from './sheets'
 
 /**
@@ -47,6 +48,7 @@ export interface OpenHow {
 /** Opens `route`: full screen from a tab screen; from inside, in an Explore panel when the vault says "explore", else full screen. */
 export function openFile(app: Pick<AppModel, 'go' | 'vaultKey'>, route: Route, how: OpenHow): void {
   const click = how.click ?? linkClickOf(app.vaultKey)
-  if (how.from === 'inside' && isSheetRoute(route) && click === 'explore') openSheet(route)
-  else app.go({ type: 'open', route })
+  // YAZ-5589: drawn at once (read ahead), else once its text is read, the screen under staying until then.
+  if (how.from === 'inside' && isSheetRoute(route) && click === 'explore') whenReady(app.vaultKey, route, () => openSheet(route))
+  else whenReady(app.vaultKey, route, () => app.go({ type: 'open', route }))
 }
