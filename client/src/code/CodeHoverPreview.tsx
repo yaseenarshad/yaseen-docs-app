@@ -17,7 +17,8 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { TEXT_HEAD_LINES } from '@shared/types'
 import { api } from '../api'
-import { boardFolder } from '../lib/paths'
+import { boardFolder, dirname } from '../lib/paths'
+import { PlaceName } from '../sidebar/PlaceName'
 import { useAppliedTheme } from '../lib/theme'
 import { portalTarget, usePlacement, type PreviewAnchor } from '../sidebar/previewPlacement'
 import { languageForPath } from './languageForPath'
@@ -81,7 +82,7 @@ export default function CodeHoverPreview({ root, path, name, anchor }: CodeHover
     <div className="board-preview page-preview code-hover" role="group" aria-label={`Preview of ${name}`} style={placement}>
       <div className="board-preview__header" role="status">
         <span className="board-preview__name">{name}</span>
-        <span className="board-preview__folder">{boardFolder(root, path)}</span>
+        <PlaceName className="board-preview__folder" path={dirname(path)} kind="folder" label={boardFolder(root, path)} />
       </div>
       {card.kind === 'ready' && !card.empty && <pre className="code-hover__body" dangerouslySetInnerHTML={{ __html: card.html }} />}
       {card.kind === 'ready' && card.empty && (

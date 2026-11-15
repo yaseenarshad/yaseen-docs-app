@@ -74,6 +74,8 @@ import type { WikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './wikilink/viewOnlyLinkSource'
 import './cardFileView.css'
 import { useUnit } from '../vault/unitWord'
+import { PlaceName } from '../sidebar/PlaceName'
+import { dirname } from '../lib/paths'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createCardFinder } from './find/cardFind'
@@ -358,8 +360,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       {notice !== null && <CardFileNotice text={notice}>{fixes}</CardFileNotice>}
       <div ref={bodyRef} className="card-file" tabIndex={-1} data-card-file data-card-file-body onKeyDown={onKeyDown} style={{ '--document-zoom': zoom / 100 } as CSSProperties}>
         <div className="card-file__page">
-          {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. */}
-          <div className="card-file__path">{folderOf(root, path)}</div>
+          {/* YAZ-5392: above the card, the folder path only. The title lives in the card's band, as in a page. YAZ-5402: the folder icon says it is a folder. */}
+          <PlaceName className="card-file__path" path={dirname(path)} kind="folder" label={folderOf(root, path)} />
           {outside.length > 0 && (
             <div className="card-file__outside">
               {outside.map((text, i) => (

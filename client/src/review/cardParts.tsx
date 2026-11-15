@@ -29,6 +29,8 @@ import { landOnCard, openCardWindow } from '../editor/card/cardOpen'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { storage } from '../lib/storage'
 import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
+import { PlaceName } from '../sidebar/PlaceName'
+import { dirname } from '../lib/paths'
 import { answerIcon } from './cardInboxChip'
 import { reviewDuration } from './reviewTime'
 import { ReviewsIcon, TrashIcon } from './cardInboxIcons'
@@ -451,7 +453,8 @@ function StripPageList({ which, lists }: { which: keyof typeof PAGE_PARTS; lists
         <li key={page.path}>
           <button type="button" className="card-strip__page card-backlinks__page" onMouseDown={(e) => e.preventDefault()} onClick={() => lists.onOpen(page.path)}>
             <span className="card-backlinks__name">{pageLabel(page.path, false, lists.titles)}</span>
-            {page.folder !== '' && <span className="card-backlinks__folder">{page.folder.slice(page.folder.lastIndexOf('/') + 1)}</span>}
+            {/* YAZ-5402: the folder's last name with the folder icon; the whole path in its tooltip. */}
+            {page.folder !== '' && <PlaceName className="card-backlinks__folder" path={dirname(page.path)} kind="folder" label={page.folder.slice(page.folder.lastIndexOf('/') + 1)} full={page.folder} />}
           </button>
         </li>
       ))}
