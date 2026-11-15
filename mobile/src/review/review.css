@@ -444,6 +444,16 @@
   user-select: text;
 }
 
+/* YAZ-5448: a code block wraps its long lines (front, back and the hidden parts): `pre-wrap` keeps the indents, a long
+   word breaks anywhere. Inline code too. */
+.review__card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.review__card code {
+  overflow-wrap: anywhere;
+}
+
 .review__card img {
   max-width: 100%;
   height: auto;

@@ -25,6 +25,10 @@
 .reader__body {
   overflow-wrap: anywhere;
 }
+/* YAZ-5448: nothing in the reader (the card view's lines too: its page, its facts) makes the screen wider. */
+.reader {
+  overflow-wrap: anywhere;
+}
 
 .reader__body :is(h1, h2, h3, h4, h5, h6) {
   margin: 1.2em 0 0.4em;
@@ -93,6 +97,16 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   overflow-x: auto;
   border-radius: 8px;
   background: var(--bg-side);
+}
+/* YAZ-5448: a code block wraps its long lines, as the Mac's page does (YAZ-2270): no side scroll. `pre-wrap` keeps the
+   indents and the line breaks; a long word (a URL, a hash) breaks anywhere. The page, a card in it, and the card view;
+   Review has its own (`review.css`). Inline code too: a long one breaks, where a table cell keeps its words whole. */
+:is(.reader__body, .card-view__card) pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:is(.reader__body, .card-view__card) code {
+  overflow-wrap: anywhere;
 }
 .reader__body pre code {
   padding: 0;
