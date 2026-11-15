@@ -1,7 +1,5 @@
-import { ASSETS_DIR, fileIdOfAssetName, mimeForAssetExt } from '@shared/drawingAssets'
-import { yieldToUi } from '../sync/yieldToUi'
 import { onMacWords } from './drawingBox'
-import type { DrawInput, Drawn, PictureFile } from './engine/drawPicture'
+import type { DrawInput, Drawn } from './engine/drawPicture'
 
 /**
  * THE DRAWINGS OF AN OPEN PAGE (YAZ-5440). Each `drawingBox` of the page gets its picture when it comes near the screen:
@@ -43,22 +41,8 @@ export interface DrawingWatch {
 
 const NEAR = '600px 0px'
 const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1)
-const dirOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
-
-/** The vault path of picture `id` of a drawing: in the board's own `folder` first, then `assets/` (the Mac's `storesOf`). */
-export function picturePath(files: readonly string[], id: string, folder: string | null): string | null {
-  for (const dir of folder === null ? [ASSETS_DIR] : [folder, ASSETS_DIR]) {
-    const found = files.find((f) => dirOf(f) === dir && fileIdOfAssetName(nameOf(f)) === id && mimeForAssetExt(f.slice(f.lastIndexOf('.') + 1)) !== null)
-    if (found !== undefined) return found
-  }
-  return null
-}
-
-function dataUrl(bytes: Uint8Array, mimeType: string): string {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-  return `data:${mimeType};base64,${btoa(binary)}`
-}
+/** The screen's turn before a drawing: the drawing chunk is all that runs after. */
+const nextTurn = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 /** The calm line in a box, in place of its picture. */
 function line(box: HTMLElement, words: string): void {
@@ -81,14 +65,6 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
   const release = (held: { url: string | null }) => {
     if (held.url !== null) URL.revokeObjectURL(held.url)
     held.url = null
-  }
-
-  const picture = async (id: string, folder: string | null): Promise<PictureFile | null> => {
-    const path = picturePath(deps.files(), id, folder)
-    if (path === null) return null
-    const mimeType = mimeForAssetExt(path.slice(path.lastIndexOf('.') + 1))
-    const got = await deps.read(path)
-    return mimeType === null || !('bytes' in got) ? null : { mimeType, dataURL: dataUrl(got.bytes, mimeType) }
   }
 
   const draw = async (box: HTMLElement) => {
@@ -118,8 +94,8 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
       let drawn: Drawn
       try {
         // One drawing at a time, each after the screen had its turn: two big boards never draw in one go.
-        const input = { text: new TextDecoder().decode(got.bytes), theme: dark?.matches ? ('dark' as const) : ('light' as const), picture }
-        const turn = queue.then(() => yieldToUi()).then(() => chunk.drawPicture(input))
+        const input: DrawInput = { text: new TextDecoder().decode(got.bytes), theme: dark?.matches ? 'dark' : 'light', files: deps.files(), read: deps.read }
+        const turn = queue.then(nextTurn).then(() => chunk.drawPicture(input))
         queue = turn.then(
           () => undefined,
           () => undefined,

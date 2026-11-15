@@ -1,7 +1,7 @@
 import { exportToSvg, getCommonBounds, restoreElements } from '@excalidraw/excalidraw'
 import { drawingSvg, restoreForPicture } from '@client/drawings/drawingPicture'
 import { parseSceneText } from '@client/drawings/sceneText'
-import { BOARD_META_KEY, picturesFolderOf, referencedFileIds } from '@shared/drawingAssets'
+import { ASSETS_DIR, BOARD_META_KEY, fileIdOfAssetName, mimeForAssetExt, picturesFolderOf, referencedFileIds } from '@shared/drawingAssets'
 import { isRecord } from '@shared/guards'
 import { inlineFonts } from './fonts'
 
@@ -34,8 +34,37 @@ export interface DrawInput {
   /** The `.excalidraw` file's text. */
   text: string
   theme: 'light' | 'dark'
-  /** The bytes of picture `id` from the board's own folder (`folder`, vault-relative, or null) or `assets/`; null: none. */
-  picture(id: string, folder: string | null): Promise<PictureFile | null>
+  /** Every file of the vault: where a picture inside the drawing is found (`picturePath`). */
+  files: readonly string[]
+  /** A vault file's bytes: the store first, then GitHub (`useDrawings`'s `storeFirst`). */
+  read(path: string): Promise<{ bytes: Uint8Array } | { why: string }>
+}
+
+const nameOf = (path: string) => path.slice(path.lastIndexOf('/') + 1)
+const dirOf = (path: string) => path.slice(0, Math.max(0, path.lastIndexOf('/')))
+
+/** The vault path of picture `id` of a drawing: in the board's own `folder` first, then `assets/` (the Mac's `storesOf`). */
+export function picturePath(files: readonly string[], id: string, folder: string | null): string | null {
+  for (const dir of folder === null ? [ASSETS_DIR] : [folder, ASSETS_DIR]) {
+    const found = files.find((f) => dirOf(f) === dir && fileIdOfAssetName(nameOf(f)) === id && mimeForAssetExt(f.slice(f.lastIndexOf('.') + 1)) !== null)
+    if (found !== undefined) return found
+  }
+  return null
+}
+
+function dataUrl(bytes: Uint8Array, mimeType: string): string {
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return `data:${mimeType};base64,${btoa(binary)}`
+}
+
+/** Picture `id`'s bytes as the engine takes them, or null. */
+async function pictureOf(input: DrawInput, id: string, folder: string | null): Promise<PictureFile | null> {
+  const path = picturePath(input.files, id, folder)
+  const mimeType = path === null ? null : mimeForAssetExt(path.slice(path.lastIndexOf('.') + 1))
+  if (path === null || mimeType === null) return null
+  const got = await input.read(path)
+  return 'bytes' in got ? { mimeType, dataURL: dataUrl(got.bytes, mimeType) } : null
 }
 
 export type Drawn = { svg: string; width: number; height: number; ms: number } | 'empty'
@@ -52,7 +81,7 @@ export async function drawPicture(input: DrawInput): Promise<Drawn> {
   const created = Date.now()
   for (const id of referencedFileIds(elements)) {
     // An outside folder (an absolute path on the Mac) is not in the vault: `assets/` only.
-    const stored = await input.picture(id, folder !== null && !folder.startsWith('/') ? folder : null)
+    const stored = await pictureOf(input, id, folder !== null && !folder.startsWith('/') ? folder : null)
     const own = embedded[id]
     if (stored !== null) files[id] = { id, mimeType: stored.mimeType, dataURL: stored.dataURL, created }
     else if (isRecord(own) && typeof own.dataURL === 'string') files[id] = own

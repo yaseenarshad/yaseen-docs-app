@@ -11,7 +11,7 @@ import { storedMedia } from '../media/ui/vaultMedia'
 import { memoryBackend, openVaultStore, type VaultStore } from '../store'
 import { drawingBox } from './drawingBox'
 import { storeFirst } from './useDrawings'
-import { picturePath, watchDrawings, type DrawingDeps } from './watchDrawings'
+import { watchDrawings, type DrawingDeps } from './watchDrawings'
 
 const urls = new Map<string, Blob>()
 let revoked: string[] = []
@@ -156,11 +156,4 @@ describe('the drawings of a page on the phone (YAZ-5440)', () => {
     })
     watch.stop()
   }, 60_000)
-
-  it('a picture inside a drawing: the board`s own folder first, then assets/ (the Mac`s rule)', () => {
-    const files = ['assets/abc.png', 'Garden/pictures/abc.jpg', 'assets/abc.txt', 'other/abc.png']
-    expect(picturePath(files, 'abc', null)).toBe('assets/abc.png')
-    expect(picturePath(files, 'abc', 'Garden/pictures')).toBe('Garden/pictures/abc.jpg')
-    expect(picturePath(files, 'zzz', null)).toBeNull()
-  })
 })

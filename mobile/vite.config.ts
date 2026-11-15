@@ -79,6 +79,14 @@ export function drawingChunkTrim(): Plugin {
     load(id) {
       return id === OFF ? `throw new Error('Not on the phone: the drawing engine draws pictures only')` : null
     },
+    // The engine's packages take React as a namespace (`import * as React from "react"`), which builds a merged copy of
+    // React's exports in the first load. React's default export is the same object (`defaultIsModuleExports` below), so
+    // a package of the drawing chunk takes that instead and the first load stays as it was.
+    transform(code, id) {
+      if (!/\/node_modules\/|(^|\/)engine\/packages\//.test(id) || !/\.m?js$/.test(id.split('?')[0])) return null
+      const next = code.replace(/import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s+from\s*(["'])(react|react-dom)\2/g, 'import $1 from $2$3$2')
+      return next === code ? null : { code: next, map: null }
+    },
   }
 }
 
@@ -123,6 +131,9 @@ export default defineConfig({
     // No modulepreload polyfill: Safari has `modulepreload` since 17, and the polyfill FETCHES the chunks, which the CSP's
     // `connect-src` (GitHub only) refuses. Without it the chunks load as scripts (`script-src 'self'`).
     modulePreload: { polyfill: false },
+    // YAZ-5440: React's default export IS its `module.exports` (React sets no `__esModule`). Said so, the shared React of
+    // the first load needs no CommonJS default helper for the drawing engine, which imports React's default export.
+    commonjsOptions: { defaultIsModuleExports: (id: string) => (/node_modules\/(react|react-dom)\//.test(id) ? true : 'auto') },
     // Two pages: the app, and the friend landing page (`/friend`, round 10 item 7).
     rollupOptions: { input: { index: `${here}index.html`, friend: `${here}friend.html` } },
   },
