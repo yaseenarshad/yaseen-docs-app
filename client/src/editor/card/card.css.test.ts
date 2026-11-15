@@ -248,6 +248,11 @@ it('YAZ-5103: the line between two sides carries a quiet "Side 2", "Side 3" in t
   expect(rules(screens, '.card-inbox__card .card__rule::before').some((r) => /content:\s*none/.test(r.body))).toBe(true)
 })
 
+it('YAZ-5164 round 2: Edit card`s side break has the read rule`s room, so Done draws side 2 where Edit card had it', () => {
+  const margin = (sel: string) => rules(cardCss, sel).find((r) => r.selector === sel && /margin:/.test(r.body))!.body.match(/margin:\s*([^;]+);/)![1].trim()
+  expect(margin('.card .card__side-break')).toBe(margin('.card .card__rule'))
+})
+
 it('YAZ-5105 round 4: ONE Reviews strip — card.css holds none of its rules; cardScreens.css draws it a step darker than the side colour, in the page too (over Crepe`s reset)', () => {
   const screens = read('../../review/cardScreens.css')
   expect(rules(cardCss, '.card-reviews')).toEqual([])

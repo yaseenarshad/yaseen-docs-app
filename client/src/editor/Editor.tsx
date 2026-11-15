@@ -86,7 +86,7 @@ import { namingTab } from '../lib/focusHandoff'
 import { flushRenamedPath, takeRenameBuffer } from '../lib/renameContinuity'
 import { isAnnouncedWrite, onTwinSave } from '../lib/twinEditors'
 import { registerPageView } from '../lib/pageView'
-import { holdPagePlace, readPagePlace, showPagePlace } from './pagePlace'
+import { holdPagePlace, keepPlace, readPagePlace, showPagePlace } from './pagePlace'
 import { appliedTheme } from '../lib/theme'
 import { storage } from '../lib/storage'
 import { transformFile } from '../views/writeProperty'
@@ -1141,6 +1141,8 @@ function CrepeHost({
     let controller: ReturnType<typeof attach> | null = null
     let cancelled = false
     let offPageView: (() => void) | null = null
+    /** The stop of the start place kept while the page draws (YAZ-5164 round 2). */
+    let stopKeeping: (() => void) | null = null
     const ready = crepe.create().then(() => {
       if (cancelled) return
       controller = attach(() => getMarkdownForSave(crepe), file.mtime, frontmatter, body)
@@ -1181,10 +1183,8 @@ function CrepeHost({
       // more a frame later, when the blocks above have drawn (a card, a picture).
       const top = start?.top
       if (start !== undefined && scroller && (top === undefined || !showPagePlace(editorViewOf(crepe), scroller, top))) scroller.scrollTop = start.scrollTop
-      if (top !== undefined && scroller)
-        requestAnimationFrame(() => {
-          if (!cancelled) showPagePlace(editorViewOf(crepe), scroller, top)
-        })
+      // Again while the blocks above still draw, until the person scrolls or types (round 2).
+      if (top !== undefined && scroller) stopKeeping = keepPlace(scroller, () => !cancelled && showPagePlace(editorViewOf(crepe), scroller, top))
       startViewRef.current = undefined
       // This tab's page view, read only when a copy action asks (YAZ-2951 D4): nothing runs per keystroke. The folder
       // page's scroller is the folder tab's, not the Page tab's (YAZ-4584 D38).
@@ -1276,6 +1276,7 @@ function CrepeHost({
 
     return () => {
       cancelled = true
+      stopKeeping?.()
       crepeRef.current = null
       offPageView?.()
       unsubscribe()

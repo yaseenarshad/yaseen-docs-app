@@ -10,7 +10,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { clickMenuItemQuietly, appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, seededState } from './helpers'
+import { clickMenuItemQuietly, appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, lensTab, seededState } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(90_000)
@@ -68,9 +68,17 @@ async function sample(w: Page, text: string, act: () => Promise<void>, ms = 1500
         const r = el?.getBoundingClientRect()
         const tEl = Array.from((Array.from(document.querySelectorAll('.explore:not([hidden])')).at(-1) ?? document).querySelectorAll('.page-title__text, .page-title__input, .explore__title')).filter((e) => e.closest('.explore__body--incoming, .tabstack__layer--hidden, .card') === null && e.getBoundingClientRect().height > 0).at(-1)
         out.push({ t: Math.round(performance.now() - start), top: r ? Math.round(r.top) : null, left: r ? Math.round(r.left) : null, width: r ? Math.round(r.width) : null, title: titleBox() ? Math.round(titleBox()!.top) : null, titleKind: tEl?.className.split(' ')[0] ?? null, head: headBox() })
-        if (performance.now() - start < ms) requestAnimationFrame(tick)
       }
-      requestAnimationFrame(tick)
+      // Read what each frame PAINTED: a task posted from the frame's rAF runs once its rendering is done (its
+      // ResizeObservers included), so a size change put right before the paint is not counted as a frame that moved.
+      const painted = new MessageChannel()
+      painted.port1.onmessage = () => tick()
+      const frame = () => {
+        if (performance.now() - start >= ms) return
+        painted.port2.postMessage(null)
+        requestAnimationFrame(frame)
+      }
+      requestAnimationFrame(frame)
     },
     { text, ms, card },
   )
@@ -80,8 +88,11 @@ async function sample(w: Page, text: string, act: () => Promise<void>, ms = 1500
   const frames = (await w.evaluate(() => (window as unknown as { __nojump: unknown }).__nojump)) as Array<{ t: number; top: number | null; left: number | null; width: number | null; title: number | null; titleKind: string | null; head: number | null }>
   const first = frames.find((f) => f.top !== null)!
   const last = Array.from(frames).reverse().find((f) => f.top !== null)!
+  // A reading the very next one takes back is a layout between two paints (a swap posted after the paint, put right
+  // by the ResizeObserver before the next one): not a frame on screen. A title above the view cannot jump in it.
+  const held = (k: 'top' | 'left' | 'width' | 'title' | 'head') => frames.filter((f, i) => f[k] !== null && (i === frames.length - 1 || frames[i + 1][k] === f[k] || i === 0))
   const dev = (k: 'top' | 'left' | 'width' | 'title' | 'head') => {
-    const seen = frames.filter((f) => f[k] !== null)
+    const seen = held(k).filter((f) => k !== 'title' || (f.title as number) >= 0)
     return seen.length === 0 ? 0 : Math.max(...seen.map((f) => Math.abs((f[k] as number) - (seen[0][k] as number))))
   }
   const missing = frames.filter((f) => f.top === null).length
@@ -94,6 +105,8 @@ async function sample(w: Page, text: string, act: () => Promise<void>, ms = 1500
     titleAfter: frames.at(-1)!.title,
     titleKinds: [frames[0].titleKind, frames.at(-1)!.titleKind],
     framesWithoutTarget: missing,
+    /** Each frame where the line's top changed: when, and to what (for a table of what moved when). */
+    trace: frames.filter((f, i) => i > 0 && f.top !== frames[i - 1].top).map((f) => `${f.t}:${f.top}`).join(' '),
   }
 }
 
@@ -120,6 +133,10 @@ test.beforeAll(async () => {
   await writeFile(path.join(vault, 'Long page.md'), PAGE)
   await writeFile(path.join(vault, 'Locked long page.md'), LOCKED)
   await writeFile(path.join(vault, 'long-card-file-wiki-11.md'), CARD_FILE)
+  // Round 2: Yaseen's "Card files on a page" (DEMO-207, in a Read only vault): two card files embedded, a card of its own, a line under them.
+  await writeFile(path.join(vault, 'small-card-wiki-12.md'), '---\nkind: card\n---\n```card\nnojump-small-12 the capital is Paris\n---\nParis\n```\n<!-- card: WIKI-12, title "Capital of France" -->\n')
+  await writeFile(path.join(vault, 'small-card-wiki-13.md'), '---\nkind: card\n---\n```card\nnojump-small-13 test\n---\nThe capital is Canberra, not Sydney.\n```\n<!-- card: WIKI-13, title "test" -->\n')
+  await writeFile(path.join(vault, 'Card embeds.md'), `${lines(101, 102)}\n\n![[WIKI-12]]\n\n![[WIKI-13]]\n\n${lines(103, 104)}\n\n${CARD.replace('WIKI-9', 'WIKI-14').replace('nojump-card-question', 'nojump-own-card')}\n${lines(105, 106)}\n`)
   await writeFile(path.join(vault, 'Embeds.md'), `${lines(76, 80)}\n\n![[WIKI-9]]\n\n${lines(81, 100)}\n`)
   await mkdir(path.join(vault, '.yaseendocs'), { recursive: true })
   await writeFile(path.join(vault, '.yaseendocs', 'review.json'), JSON.stringify({ enabled: true }))
@@ -127,7 +144,7 @@ test.beforeAll(async () => {
 })
 
 test.afterAll(async () => {
-  for (const [k, v] of Object.entries(report)) { const r = v as Awaited<ReturnType<typeof sample>>; console.log(`NJ ${k} before=${JSON.stringify(r.before)} end=${JSON.stringify(r.endShift)} max=${JSON.stringify(r.maxShift)} title=${r.titleBefore}->${r.titleAfter} ${r.titleKinds.join('->')} missing=${r.framesWithoutTarget}`) }
+  for (const [k, v] of Object.entries(report)) { const r = v as Awaited<ReturnType<typeof sample>>; console.log(`NJ ${k} before=${JSON.stringify(r.before)} end=${JSON.stringify(r.endShift)} max=${JSON.stringify(r.maxShift)} title=${r.titleBefore}->${r.titleAfter} ${r.titleKinds.join('->')} missing=${r.framesWithoutTarget} trace=${r.trace}`) }
   await app?.close().catch(() => undefined)
   await Promise.all([userData, vaultSrc, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -280,6 +297,177 @@ test('explore page: Edit and Done, E, Esc and ⌘↵, at the top and halfway', a
 
 test('explore card file: Edit and Done, E, Esc and ⌘↵, at the top and halfway', async () => {
   await exploreCardFilePaths('')
+})
+
+/**
+ * ROUND 2 (YAZ-5164, Yaseen: "at the bottom I add a test … as soon as I hit done, it jumps up a bit"; "after I hit
+ * command enter … I can't scroll up as easy, there's like a hang on the scroll up"). New text typed into a page or a
+ * card, at the bottom, the top or halfway, then Done by its button, Esc or ⌘↵: the line typed stays at its px. Then a
+ * wheel up right after: the scroller moves by it at once and does not come back.
+ */
+const scrollerOfLine = (w: Page, text: string) =>
+  w.evaluate((text) => {
+    const ok = (e: Element) => e.closest('.explore__body--incoming, .tabstack__layer--hidden, [hidden], .card-pane__incoming') === null && e.getBoundingClientRect().height > 0
+    const root = Array.from(document.querySelectorAll('.explore:not([hidden])')).at(-1) ?? document.querySelector('.tabstack__layer:not(.tabstack__layer--hidden)')!
+    const el = Array.from(root.querySelectorAll('p')).filter(ok).filter((p) => (p.textContent ?? '').startsWith(text)).at(-1)!
+    for (let sc = el.parentElement; sc; sc = sc.parentElement) {
+      const o = getComputedStyle(sc).overflowY
+      if ((o === 'auto' || o === 'scroll') && sc.scrollHeight > sc.clientHeight) {
+        sc.setAttribute('data-nj-scroller', '')
+        return true
+      }
+    }
+    return false
+  }, text)
+
+/** Scrolls the page in view to its very bottom. */
+async function scrollToBottom(w: Page, last: string): Promise<void> {
+  await w.evaluate(() => document.querySelectorAll('[data-nj-scroller]').forEach((e) => e.removeAttribute('data-nj-scroller')))
+  await scrollerOfLine(w, last)
+  await w.evaluate(() => {
+    const sc = document.querySelector('[data-nj-scroller]')!
+    sc.scrollTop = sc.scrollHeight
+  })
+  await w.waitForTimeout(300)
+}
+
+/** In the editor on show: a click at the end of the line starting `after`, then a new line with `typed`. */
+async function typeAfter(w: Page, after: string, typed: string, inTab = false): Promise<void> {
+  const where = inTab ? layer(w) : w.locator('.explore:not([hidden]) .explore__layer').last()
+  const line = where.locator('.ProseMirror[contenteditable="true"] p', { hasText: after }).last()
+  await line.click()
+  await w.keyboard.press('Meta+ArrowRight')
+  await w.keyboard.press('Enter')
+  await w.keyboard.type(typed, { delay: 5 })
+  await w.waitForTimeout(400)
+}
+
+/** Wheels up over the scroller in view and reads its scrollTop every frame for `ms`: how far it went at once, and back. */
+async function wheelUp(w: Page, by = 300, ms = 1500) {
+  const box = (await w.locator('[data-nj-scroller]').last().boundingBox())!
+  await w.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await w.evaluate((ms) => {
+    const sc = document.querySelector('[data-nj-scroller]')!
+    const out: number[] = []
+    ;(window as unknown as { __njWheel: number[] }).__njWheel = out
+    const start = performance.now()
+    const tick = () => {
+      out.push(sc.scrollTop)
+      if (performance.now() - start < ms) requestAnimationFrame(tick)
+    }
+    tick()
+  }, ms)
+  await w.mouse.wheel(0, -by)
+  await w.waitForTimeout(ms + 200)
+  const tops = (await w.evaluate(() => (window as unknown as { __njWheel: number[] }).__njWheel)) as number[]
+  const from = tops[0]
+  const least = Math.min(...tops)
+  return { from, moved: from - least, end: tops.at(-1)!, back: tops.at(-1)! - least }
+}
+
+const wheels: Record<string, Awaited<ReturnType<typeof wheelUp>>> = {}
+
+/** An Explore layer: Edit by E, a new line typed after `after`, then Done by `how`; the typed line keeps its px. */
+async function typeThenDone(pre: string, kind: 'page' | 'cardFile', name: string, first: string, after: string, last: string, where: 'bottom' | 'mid' | 'top'): Promise<void> {
+  await openInExplore(name, first)
+  for (const how of ['button', 'Escape', 'Meta+Enter'] as const) {
+    if (where === 'bottom') await scrollToBottom(win, last)
+    else await scrollTo(win, '', after.slice(0, 18), where === 'top' ? 400 : 200)
+    await win.keyboard.press('e')
+    // Read only: E asks "Allow edits?" first; Done then locks again.
+    const allow = win.locator('.explore:not([hidden]) .read-only-chip__allow').first()
+    if (await allow.waitFor({ timeout: 1000 }).then(() => true, () => false)) await allow.click()
+    if (kind === 'page') await expect(editing()).toHaveCount(1)
+    else await expect(cardEditing()).toHaveCount(1)
+    await win.waitForTimeout(400)
+    const typed = `nojump-typed-${where}-${how === 'Meta+Enter' ? 'cmdenter' : how.toLowerCase()} just testing`
+    await typeAfter(win, after, typed)
+    if (where === 'bottom') {
+      await win.evaluate(() => document.querySelectorAll('[data-nj-scroller]').forEach((e) => e.removeAttribute('data-nj-scroller')))
+      await scrollerOfLine(win, typed.slice(0, 20))
+      await win.evaluate(() => {
+        const sc = document.querySelector('[data-nj-scroller]')!
+        sc.scrollTop = sc.scrollHeight
+      })
+      await win.waitForTimeout(300)
+    }
+    const key = `${pre}${kind}.typed.${where}.${how}`
+    soft(key, await sample(win, typed.slice(0, 24), () => (how === 'button' ? doneBtn().click() : win.keyboard.press(how))))
+    if (kind === 'page') await expect(win.locator('.explore__body--edit')).toHaveCount(0)
+    else await expect(cardEditing()).toHaveCount(0)
+    await win.evaluate(() => document.querySelectorAll('[data-nj-scroller]').forEach((e) => e.removeAttribute('data-nj-scroller')))
+    await scrollerOfLine(win, typed.slice(0, 20))
+    wheels[key] = await wheelUp(win)
+    after = typed
+  }
+  await win.keyboard.press('Escape')
+  await win.keyboard.press('Escape')
+}
+
+// Each a test of its own: three ways out (Done, Esc, ⌘↵) per case.
+const READ_ONLY_VAULT = () => path.join(vault, '.yaseendocs', 'read-only.json')
+for (const [pre, where, name, first, after, last] of [
+  // Yaseen's: a Read only vault (E asks "Allow edits?", Done locks again), card files embedded, typing at the bottom.
+  ['readOnlyVault.', 'bottom', 'Card embeds', 'nojump-line-101', 106, 106],
+  ['readOnlyVault.', 'top', 'Card embeds', 'nojump-line-101', 101, 106],
+  ['', 'bottom', 'Embeds', 'nojump-line-76', 100, 100],
+  ['', 'top', 'Long page', 'nojump-line-01', 2, 60],
+  ['', 'mid', 'Long page', 'nojump-line-01', 40, 60],
+] as const) {
+  test(`round 2: explore page ${name}${pre === '' ? '' : ' (Read only vault)'}, a new line typed at the ${where}, then Done, Esc or ⌘↵`, async () => {
+    if (pre !== '') {
+      await writeFile(READ_ONLY_VAULT(), JSON.stringify({ on: true }))
+      await win.waitForTimeout(800)
+    }
+    await typeThenDone(pre, 'page', name, first, MARK(after).slice(0, 18), MARK(last).slice(0, 18), where)
+    if (pre !== '') {
+      await rm(READ_ONLY_VAULT())
+      await win.waitForTimeout(800)
+    }
+  })
+}
+
+for (const [where, after] of [['bottom', 75], ['mid', 68]] as const) {
+  test(`round 2: explore card file, a new line typed at the ${where}, then Done, Esc or ⌘↵`, async () => {
+    await typeThenDone('', 'cardFile', 'Long card file', 'nojump-line-61', MARK(after).slice(0, 18), MARK(75).slice(0, 18), where)
+  })
+}
+
+test('round 2: card file tab, a new line typed at the bottom, then Done by Esc and ⌘↵', async () => {
+  await expect(win.locator('.explore:not([hidden])')).toHaveCount(0)
+  // The Escapes that closed Explore can fold the sidebar away: open it for the file row.
+  const show = win.locator('.tabbar-nav__btn[aria-label="Show sidebar"]')
+  if ((await show.count()) > 0) await show.click()
+  await lensTab(win, 'Files').click()
+  await fileRow(win, 'Long card file').click()
+  await expect(layer(win).getByText('nojump-cardfile-q').first()).toBeVisible()
+  await win.waitForTimeout(600)
+  for (const how of ['Escape', 'Meta+Enter'] as const) {
+    await scrollToBottom(win, MARK(75).slice(0, 18))
+    // Edit card's button stands at the card's top, out of view down here: its click, as E would.
+    await layer(win).locator('.card__edit').first().dispatchEvent('click')
+    await expect(layer(win).locator('.card--editing')).toHaveCount(1)
+    await win.waitForTimeout(400)
+    const typed = `nojump-tab-${how === 'Escape' ? 'esc' : 'cmdenter'} just testing`
+    await typeAfter(win, MARK(75).slice(0, 18), typed, true)
+    const key = `cardFileTab.typed.bottom.${how}`
+    soft(key, await sample(win, typed.slice(0, 20), () => win.keyboard.press(how)))
+    await expect(layer(win).locator('.card--editing')).toHaveCount(0)
+    await win.evaluate(() => document.querySelectorAll('[data-nj-scroller]').forEach((e) => e.removeAttribute('data-nj-scroller')))
+    await scrollerOfLine(win, typed.slice(0, 20))
+    wheels[key] = await wheelUp(win)
+  }
+})
+
+// A wheel right after a switch: the scroller follows it at once (most of the 300 px within the time) and nothing pulls it back.
+test('round 2: a wheel up after Done scrolls at once, nothing pulls it back', () => {
+  for (const [k, v] of Object.entries(wheels)) console.log(`NJW ${k} ${JSON.stringify(v)}`)
+  test.skip(process.env.NJ_PROBE === '1', 'probe: record only')
+  for (const [name, r] of Object.entries(wheels)) {
+    // 300 wheel px at 150% app zoom are 200 page px; at the top there is nothing to scroll up to.
+    expect.soft(r.moved, `${name} moved`).toBeGreaterThanOrEqual(Math.min(r.from, 150))
+    expect.soft(r.back, `${name} pulled back`).toBe(0)
+  }
 })
 
 // Q50: the head's title shows only once the page's own title (a card file's band) is out of view; the head keeps its height.
