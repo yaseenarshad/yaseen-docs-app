@@ -65,9 +65,10 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     expect(h.head()).toBe('DU-1')
     expect(h.text()).toContain('1 / 1')
     await h.click('Remembered')
-    expect(h.text()).toContain('No due cards left.')
-    await h.click('2 more in All cards')
-    expect(h.text()).toContain('All cards ▾')
+    // YAZ-5495 (the Mac's YAZ-5043): "Due today is done." with "Learn new cards 2" in place of "No due cards left.".
+    expect(h.text()).toContain('Due today is done.')
+    await h.click('Learn new cards 2')
+    expect(h.text()).toContain('New cards ▾')
     expect(h.button('Remembered')).not.toBeNull()
   })
 

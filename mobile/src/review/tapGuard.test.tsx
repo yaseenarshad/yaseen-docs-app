@@ -125,7 +125,9 @@ describe('the guard on the screen (YAZ-5266)', () => {
     expect(guarded(h)).toBe(false)
     await press(h, 'Remembered')
     expect(reviews(h)).toEqual(['GD-1', 'GD-2'])
-    expect(h.text()).toContain('Inbox complete')
+    // YAZ-5495 (the Mac's YAZ-5043): the last due card answered: "Due today is done.".
+    expect(h.text()).toContain('Due today is done.')
+    expect(guarded(h)).toBe(false)
   })
 
   it('YAZ-5316: a failed save keeps the line of the answer before: its Undo stays and works', async () => {

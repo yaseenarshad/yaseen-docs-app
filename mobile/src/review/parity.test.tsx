@@ -176,7 +176,8 @@ async function script(run: Run): Promise<string[]> {
   await step(6, () => run.review().turnOff())
   await step(7, () => run.review().answer('again', 9))
   await step(7, () => run.review().answer('good', 4)) // the same minute: a second review (YAZ-5078)
-  for (let m = 8; m < 20 && run.review().session?.card != null; m++) await step(m, () => run.review().answer('good', 3))
+  // YAZ-5495 (the Mac's YAZ-5043): a stop at the end of Due today is passed with its one button, as a person does.
+  for (let m = 8; m < 20 && (run.review().session?.card != null || run.review().session?.end != null); m++) await step(m, () => (run.review().session?.end != null ? run.review().goOn() : run.review().answer('good', 3)))
   await step(21, () => run.review().addCards('new'))
   return seen
 }

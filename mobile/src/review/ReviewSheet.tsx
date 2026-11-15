@@ -16,8 +16,22 @@ import { FILTERS, FILTER_ICON } from './words'
  *    may be ticked, a folder takes its subfolders (`toggledPick`). A change saves at once (`setNewFrom`).
  *  - Today's work ("Today: 31 cards · 9 min") sits at the foot.
  */
-export function ReviewSheet({ session, review, today, onClose }: { session: CardReviewSession; review: Pick<CardReviewApi, 'setFilter' | 'resetCards' | 'setNewFrom' | 'newCardFolders'>; today: ReactNode; onClose: () => void }) {
-  const [folders, setFolders] = useState<ReturnType<CardReviewApi['newCardFolders']> | null>(null)
+export function ReviewSheet({
+  session,
+  review,
+  today,
+  onClose,
+  folders: atFolders = false,
+}: {
+  session: CardReviewSession
+  review: Pick<CardReviewApi, 'setFilter' | 'resetCards' | 'setNewFrom' | 'newCardFolders'>
+  today: ReactNode
+  onClose: () => void
+  /** Open at the folder page (YAZ-5495: "Learn new cards" … "from All folders ›"); its ‹ closes the sheet. */
+  folders?: boolean
+}) {
+  const [folders, setFolders] = useState<ReturnType<CardReviewApi['newCardFolders']> | null>(() => (atFolders ? review.newCardFolders() : null))
+  if (folders !== null && atFolders) return <FolderPage rows={folders} session={session} onPick={review.setNewFrom} onBack={onClose} />
   if (folders !== null) return <FolderPage rows={folders} session={session} onPick={review.setNewFrom} onBack={() => setFolders(null)} />
   const from = newCardsFrom(session)
   return (

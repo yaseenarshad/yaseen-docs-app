@@ -214,7 +214,8 @@ export interface CardReviewApi {
    * `seconds` (YAZ-5033): how long the answer took, by the Inbox's timer; the review part ends with ` <n>s`. Absent:
    * none is written.
    */
-  answer: (rating: CardRating, seconds?: number) => Promise<void>
+  /** True when the answer was written (YAZ-5502: the caller learns it here, never from a later draw of the screen). */
+  answer: (rating: CardRating, seconds?: number) => Promise<boolean>
   /** Removes the last answer's review and shows that card again. */
   undo: () => Promise<void>
   close: () => void
@@ -865,7 +866,7 @@ export function useCardReview(
       const s0 = live.current.session
       const card = s0?.queue[s0.at]
       const fixedAnswer = fixAnswers()?.find((a) => a.review.rating === rating)
-      if (card === undefined || fixedAnswer === undefined || busy.current || s0?.pause !== null) return
+      if (card === undefined || fixedAnswer === undefined || busy.current || s0?.pause !== null) return false
       // The hover's review, with how long the answer took (YAZ-5033) when the Inbox timed it.
       const chosen = isCardSeconds(seconds) ? { ...fixedAnswer, review: { ...fixedAnswer.review, seconds } } : fixedAnswer
       busy.current = true
@@ -880,7 +881,7 @@ export function useCardReview(
       )
       busy.current = false
       forget(card.path) // also a read begun while it wrote
-      if (written === 'failed') return
+      if (written === 'failed') return false
       tourEvent('inbox-answered', card.path)
       // YAZ-5028: the answer took the mark off a card of today's Up next: one of the day's places is used. A marked
       // card past the day's places (`card.next` false) loses its mark too, but it held no place.
@@ -908,6 +909,7 @@ export function useCardReview(
         const next = fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, total: s.total + (repeat ? 1 : 0), totals, turn: s.turn + 1, undo, answered })
         return written === 'gone' ? next : { ...next, ...dueStop(next, card) }
       })
+      return written !== 'gone'
     },
     [fixAnswers, onNotice, settle, forget, root, host],
   )

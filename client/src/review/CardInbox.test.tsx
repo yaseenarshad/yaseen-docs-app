@@ -85,7 +85,7 @@ function mount(text: string | null, settings: ReviewSettings = DEFAULT_REVIEW_SE
       queueMicrotask(render)
       return session.answers
     }),
-    answer: vi.fn(async () => {}),
+    answer: vi.fn(async () => true),
     undo: vi.fn(async () => {}),
     close: vi.fn(),
     deleteReview: vi.fn(async () => {}),

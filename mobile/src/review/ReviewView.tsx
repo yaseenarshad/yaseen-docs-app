@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useAnswerTimer } from '@client/review/answerTimer'
 import { cardStateText } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
+import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine, waitingLine } from '@client/review/cardWords'
 import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
@@ -10,7 +11,7 @@ import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { cardIdOf, isCardFix, pageCards, withCardFix, type CardRating } from '@shared/cardLine'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
-import { cardSides, hiddenCount } from '@shared/cardText'
+import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
 import type { ReviewHost } from '@client/review/reviewHost'
 import type { ReviewSettings } from '@shared/reviews'
@@ -30,6 +31,7 @@ import { useReviewTop } from '../screens/reviewTop'
 import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
+import { DueEnd } from './DueEnd'
 import './review.css'
 
 /**
@@ -50,6 +52,9 @@ import './review.css'
  *    Up next, Fix later, Open page (a card file: Open card). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: "Inbox complete", today's work, and "Add more for today" (round 10, addition 2) when cards wait.
+ *  - The end of Due today (YAZ-5495, the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
+ *    remembered 93% of 73 cards." with "Review missed cards 5"; then "Due today is done." with "Learn new cards 11"
+ *    and its "from All folders ›" (the sheet's folder page). The ring and the confetti: `DueEnd.tsx`.
  *  - The amber line (round 12, item 9): an answer whose card is gone, with Discard.
  *  - The screen stays on while a card shows (round 10, addition 4). The answer timer stops in the background
  *    (addition 5: the Mac's `useAnswerTimer` pauses on `visibilitychange`).
@@ -135,7 +140,8 @@ type Step = Reveal & { key: string | null }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
-type Line = { kind: 'answer'; count: number; id: string } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
+/** `name` and `rating` (YAZ-5500): the hint line's "Last: Capital of Spain (Forgot)" once the 4-second Undo has gone. */
+type Line = { kind: 'answer'; count: number; id: string; name: string; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
@@ -213,15 +219,7 @@ function SessionScreen({
   setNotice: (text: string | null) => void
   shown: boolean
 }) {
-  // YAZ-5465 (practice merge): the Mac's Inbox stops after the due cards' first pass (YAZ-5043, `session.end`, the
-  // ring and "Learn new cards"). The phone has no such screen yet: it goes on at once, as before the merge, except at the
-  // end of Due today, where its own "No due cards left." shows (a goOn there would switch to New cards). Yaseen decides
-  // whether the phone gets the ring too.
-  const { goOn } = review
-  const ended = session.end !== null && !(session.end.kind === 'done' && session.filter === 'due')
-  useEffect(() => {
-    if (ended) goOn()
-  }, [ended, goOn])
+  // YAZ-5495: the end of Due today has its own screen (`DueEnd`); the YAZ-5465 shim that went on at once is gone.
   const card = session.card
   const page = card?.page ?? null
   const pageText = page?.text ?? null
@@ -253,8 +251,6 @@ function SessionScreen({
   const guarded = !guard.taps
   const liveKey = useRef(cardKey)
   liveKey.current = cardKey
-  const liveAnswered = useRef(session.answered.length)
-  liveAnswered.current = session.answered.length
   // YAZ-5315: the guard's 400 ms start when the NEXT card is drawn on the screen (a new key, with its text).
   const { shown: cardShown } = guard
   // A DRAWING is one read of a card (its page object): the hook keeps the old card's object on the screen while the
@@ -369,7 +365,8 @@ function SessionScreen({
   }, [card, page, cardFile, link])
   const fixed = card !== null && fixOn?.key === `${card.path}\n${card.id}` && fixOn.on
 
-  const [menu, setMenu] = useState<'filter' | 'more' | null>(null)
+  // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards", YAZ-5495).
+  const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
   const [line, setLine] = useState<Line | null>(null)
   const ratings = answerRatings(review.settings)
 
@@ -378,7 +375,7 @@ function SessionScreen({
   useEffect(() => {
     if (menu === null) return
     const down = (e: Event) => {
-      if (e.target instanceof Element && e.target.closest('.review__sheet, .review__menu, .review__count-btn, .review__more') !== null) return
+      if (e.target instanceof Element && e.target.closest('.review__sheet, .review__menu, .review__count-btn, .review__more, .due-end__from') !== null) return
       closedByTap.current = true
       // A press that never becomes a click on this screen (the tab bar, a scroll) leaves no flag behind.
       setTimeout(() => void (closedByTap.current = false), 600)
@@ -400,18 +397,24 @@ function SessionScreen({
     const fromDrawing = drawingOf(page)
     const earlier = line
     const answeredBefore = session.answered.length
-    setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id })
+    // The title's words as they read (a hidden-word mark gives its words: the card is answered), else the ID.
+    const name = cardPieces(cardName).map((p) => p.text).join('').trim()
+    setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id, name: name === '' ? card.id : name, rating })
     // YAZ-5266: the guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
+    // YAZ-5502: whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
+    // the phone React may draw the next card AFTER a 0 ms timer, and the screen then still showed the old count, so a
+    // saved answer looked failed and its line (with the 4-second Undo) was put back to the one before.
+    let counted = false
     void guard.answer(
       async () => {
-        await review.answer(rating, seconds())
+        counted = await review.answer(rating, seconds())
         // Let the next card draw before the guard reads the screen.
         await new Promise((r) => setTimeout(r, 0))
         // YAZ-5316: a save that failed counts no answer; the line goes back to what it said (the earlier Undo stays).
-        if (liveAnswered.current === answeredBefore) setLine(earlier)
+        if (!counted) setLine(earlier)
       },
       // `sameCard`: the save failed (no answer counted; the card stays). The next card's drawing starts the 400 ms.
-      () => ({ sameCard: liveAnswered.current === answeredBefore, cardOnScreen: liveKey.current !== null }),
+      () => ({ sameCard: !counted, cardOnScreen: liveKey.current !== null }),
       fromDrawing,
     )
   }
@@ -489,6 +492,8 @@ function SessionScreen({
     return () => clearTimeout(id)
   }, [lineId])
   const quietLine = shownLine !== null && fresh === lineId ? shownLine : null
+  // YAZ-5500: once the 4-second Undo has gone, the hint line says the last answer, until the next one (or its Undo).
+  const lastAnswer = quietLine === null && line?.kind === 'answer' && line.count === answeredNow && answeredNow > 0 ? line : null
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
   const canUndo = shownLine?.undo === true || session.canUndo
 
@@ -550,7 +555,7 @@ function SessionScreen({
           {notice}
         </p>
       )}
-      {menu === 'filter' && <ReviewSheet session={session} review={review} today={<p className="review__sheet-today">{today}</p>} onClose={() => setMenu(null)} />}
+      {(menu === 'filter' || menu === 'from') && <ReviewSheet key={menu} session={session} review={review} today={<p className="review__sheet-today">{today}</p>} onClose={() => setMenu(null)} folders={menu === 'from'} />}
 
       {card !== null ? (
         <>
@@ -603,7 +608,16 @@ function SessionScreen({
             {revealed}
           </p>
           <div className="review__hint">
-            {(quietLine === null || quietLine.kind === 'answer') && <span className="review__hint-text">{hintText(left)}</span>}
+            {lastAnswer !== null ? (
+              // YAZ-5500 (Yaseen's pick, A, text only): the last answer, in words, until the next one. No ✕ or ✓ and no
+              // colour, so nothing leans on the next answer. Not a tap: a tap on it never steps the card.
+              <span className="review__lastanswer">
+                Last: <span className="review__lastanswer-name">{lastAnswer.name}</span>
+                <span className="review__lastanswer-rating"> ({answerLabel(lastAnswer.rating, review.settings)})</span>
+              </span>
+            ) : (
+              (quietLine === null || quietLine.kind === 'answer') && <span className="review__hint-text">{hintText(left)}</span>
+            )}
             <span className="review__last" role="status" aria-live="polite">
               {quietLine !== null && (
                 <>
@@ -620,7 +634,27 @@ function SessionScreen({
         </>
       ) : (
         <div className="review__stage review__stage--done">
-          <DoneScreen review={review} session={session} addKinds={addKinds} today={today} />
+          {session.end !== null ? (
+            // YAZ-5495: Due today stopped (its % after the first pass, or done): its own screen, the rest after it.
+            <div className="review__done" role="status">
+              <DueEnd
+                end={session.end}
+                shown={shown}
+                onGoOn={review.goOn}
+                from={
+                  <button type="button" className="due-end__from" aria-haspopup="dialog" aria-expanded={menu === 'from'} aria-label={`New cards from ${newCardsFrom(session)}. Choose folders`} onClick={() => setMenu(menu === 'from' ? null : 'from')}>
+                    from {newCardsFrom(session)} ›
+                  </button>
+                }
+              >
+                <DoneBody review={review} session={session} addKinds={addKinds} today={today} title={false} />
+              </DueEnd>
+            </div>
+          ) : (
+            <div className="review__done" role="status">
+              <DoneBody review={review} session={session} addKinds={addKinds} today={today} title />
+            </div>
+          )}
           {quietLine !== null && (
             <p className="review__hint review__last" role="status" aria-live="polite">
               <span className="review__line">{quietLine.text}</span>
@@ -706,11 +740,12 @@ const NO_OP = () => undefined
 const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good: '✓', easy: '⇈' }
 
 /** What a tap on the screen keeps for itself: every control (its own rule), and the open menus. */
-const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu'
+const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__lastanswer'
 
 /**
- * The progress bar in steps (YAZ-5415, round 4; the Mac's YAZ-5020): one step for each card of the session, in the
- * order answered — grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs.
+ * The progress bar in steps (YAZ-5415, round 4; the Mac's YAZ-5020): one step for each card, in the order answered —
+ * grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs. It counts ONLY the list
+ * on show (the Mac's YAZ-5432, `session.progress`, the same answers as the end ring's %): Due today done fills it.
  */
 function Progress({ session }: { session: CardReviewSession }) {
   // The Mac's bar (YAZ-5432): the filter on show only, `session.progress` (one rule for both apps).
@@ -786,7 +821,8 @@ function TodayLine({ session, mode: setting }: { session: CardReviewSession; mod
   )
 }
 
-function DoneScreen({ review, session, addKinds, today }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode }) {
+/** What the done screen says; `title` false under the end of Due today (YAZ-5495), which has its own. */
+function DoneBody({ review, session, addKinds, today, title }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode; title: boolean }) {
   const adds = addKinds.map((k) => (
     <button key={k} type="button" className="btn review__add" onClick={() => review.addCards(k)}>
       {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
@@ -794,17 +830,17 @@ function DoneScreen({ review, session, addKinds, today }: { review: CardReviewAp
   ))
   if (session.filter !== 'all' && session.counts.all > 0)
     return (
-      <div className="review__done" role="status">
-        <p className="review__done-title">{filterDone(session.filter)}</p>
+      <>
+        {title && <p className="review__done-title">{filterDone(session.filter)}</p>}
         {adds}
         <button type="button" className="link-btn" onClick={() => review.setFilter('all')}>
           {session.counts.all} more in All cards
         </button>
-      </div>
+      </>
     )
   return (
-    <div className="review__done" role="status">
-      <p className="review__done-title">Inbox complete</p>
+    <>
+      {title && <p className="review__done-title">Inbox complete</p>}
       <p className="muted review__done-today">{today}</p>
       {addKinds.length > 0 ? (
         <>
@@ -819,7 +855,7 @@ function DoneScreen({ review, session, addKinds, today }: { review: CardReviewAp
       ) : (
         <p className="muted">Nothing else is due today.</p>
       )}
-    </div>
+    </>
   )
 }
 
