@@ -14,6 +14,7 @@ import type { VaultData } from './vaultData'
 import { fileKind, fileLabel, type TreeKind } from './vaultTree'
 import { openFile } from '../explore/openFile'
 import { fileRecord } from '../drawing/boardFiles'
+import { useFolderHold } from './holdFolder'
 
 /** What a list is called, and its line when it holds nothing the phone can show. */
 const WORDS: Record<ListKind, { title: string; none: string }> = {
@@ -123,6 +124,8 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
   useFolds()
   // YAZ-5454: the vault's "Show IDs in the files list": the Mac's Favorites and Focus rows show it too.
   const ids = useIdsForm(data)
+  // YAZ-5460: hold a folder for its page (a folder of the tab, the stack glyph, is no folder on disk).
+  const { hold, layer } = useFolderHold()
   if (scope.loading === true) return null
   const words = WORDS[scope.kind]
   const open = foldsOf(app.vaultKey, scope.kind)
@@ -146,6 +149,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
               style={{ '--tree-depth': row.depth } as CSSProperties}
               aria-label={`${row.label}, ${row.kind === 'group' ? `${words.title.toLowerCase()} folder` : kindWord(row.kind, app.unit('page'))}`}
               onClick={() => (row.kind === 'folder' || row.kind === 'group' ? toggle(row.key) : openFile(app, treeRoute({ ...row, kind: row.kind })))}
+              {...(row.kind === 'folder' && hold(row.path, row.label))}
             >
               <span className={row.kind === 'folder' || row.kind === 'group' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               {row.kind === 'group' ? <StackIcon /> : <RowIcon kind={row.kind} open={row.open === true} />}
@@ -156,6 +160,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
         ))}
       </ul>
       {rows.length > shown && <ShowMore onMore={onMore} />}
+      {layer}
     </>
   )
 }

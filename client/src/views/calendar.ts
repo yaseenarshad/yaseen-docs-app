@@ -7,7 +7,7 @@ import { type ColorStrengthValue, type FolderPagesSettings, type IndexRecord, ty
 import type { Row } from './engine'
 import { columnTyping } from './editorType'
 import { formatDate, parseIsoDate, renderDate } from './expr/dates'
-import type { FolderSettings } from './folderSettings'
+import type { FolderSettings } from './folderSettingsRead'
 import { writableKey } from './readOnlyRows'
 import { allPropertyKeys } from './view/properties'
 import type { ViewDef, ViewSet } from './viewSchema'

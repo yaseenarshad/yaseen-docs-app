@@ -62,8 +62,13 @@ export default function SheetLayer() {
   )
 }
 
+/** A folder's name (YAZ-5460): its `.folder.md`'s title, else its last part (the tree's row says the same). */
+const folderName = (data: VaultData | null, dir: string): string => data?.folders.find((f) => f.folder === dir)?.title.trim() || dir.slice(dir.lastIndexOf('/') + 1)
+
 /** The sheet's head: the page's folder (as Mochi shows the deck), else its name. */
 export function headWords(data: VaultData | null, route: SheetRoute): string {
+  // A folder's page (YAZ-5460): the folders it is in, else "Folder".
+  if (route.kind === 'folder') return route.path.includes('/') ? folderOf(route.path).split('/').join(' / ') : 'Folder'
   const folder = folderOf(route.path)
   if (route.kind === 'card' && data?.byPath[route.path]?.kind !== 'card') return titleOf(data, route.path)
   return folder === '' ? titleOf(data, route.path) : folder.split('/').join(' / ')
@@ -115,7 +120,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
 
   // The counts after the slide up (the map of every link is built once for the vault's data).
   useEffect(() => {
-    if (data === null) return
+    if (data === null || sheet.route.kind === 'folder') return
     const timer = setTimeout(() => setCounts(linkCounts(data, sheet.route, cardText)), isTop ? SHEET_MS : 0)
     return () => clearTimeout(timer)
   }, [data, sheet.route, cardText, isTop])
@@ -144,7 +149,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
     }
   }
   const route = sheet.route
-  const title = route.kind === 'card' ? (data?.byPath[route.path]?.cards?.find((c) => c.id?.toLowerCase() === route.id.toLowerCase())?.title ?? '') || route.id : titleOf(data, route.path)
+  const title = route.kind === 'folder' ? folderName(data, route.path) : route.kind === 'card' ? (data?.byPath[route.path]?.cards?.find((c) => c.id?.toLowerCase() === route.id.toLowerCase())?.title ?? '') || route.id : titleOf(data, route.path)
   const place = depth === 0 ? '' : depth === 1 ? ' explore-sheet--under' : ' explore-sheet--under explore-sheet--deep'
   return (
     <>

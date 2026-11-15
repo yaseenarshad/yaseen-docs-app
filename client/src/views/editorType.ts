@@ -1,6 +1,6 @@
 import type { IndexRecord, PropertiesResponse, PropertyKind } from '@shared/types'
 import { orderedPropertyOptions } from '@shared/propertyOptions'
-import type { FolderSettings } from './folderSettings'
+import type { FolderSettings } from './folderSettingsRead'
 import { canonicalKey } from './view/keys'
 import { CARD_FIX_STATUSES, CARD_STATUSES } from './cardRows'
 

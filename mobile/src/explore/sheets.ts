@@ -11,8 +11,8 @@ import type { Route } from '../app/nav'
  * It is a plain store, not React state, so a caller with no React (the reader's `openLink`) can push a sheet.
  */
 
-/** What a sheet can show: a page, a card (in a page, or a card file), or a drawing file (YAZ-5473). */
-export type SheetRoute = Extract<Route, { kind: 'page' | 'card' | 'drawing' }>
+/** What a sheet can show: a page, a card (in a page, or a card file), a drawing file (YAZ-5473), or a folder's page (YAZ-5460). */
+export type SheetRoute = Extract<Route, { kind: 'page' | 'card' | 'drawing' | 'folder' }>
 
 export interface Sheet {
   /** The sheet's own number: React's key, and how the layer knows a sheet it has drawn. */
@@ -27,7 +27,7 @@ export const MAX_MOUNTED = 10
 /** The stack's length: past it the oldest sheet is forgotten (a reader who follows 50 links does not come back down to the first). */
 export const MAX_SHEETS = 50
 
-export const isSheetRoute = (route: Route): route is SheetRoute => route.kind === 'page' || route.kind === 'card' || route.kind === 'drawing'
+export const isSheetRoute = (route: Route): route is SheetRoute => route.kind === 'page' || route.kind === 'card' || route.kind === 'drawing' || route.kind === 'folder'
 
 let sheets: readonly Sheet[] = []
 let nextId = 1

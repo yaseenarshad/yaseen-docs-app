@@ -109,6 +109,14 @@ const FIXTURES = [
   // YAZ-5472: Explore's sheets.
   'explore-one',
   'explore-stack',
+  // YAZ-5460: a held folder's menu, the folder page and its views, in a sheet too.
+  'folder-hold',
+  'folder-page',
+  'folder-grouped',
+  'folder-board',
+  'folder-cards',
+  'folder-calendar',
+  'folder-sheet',
   // Last: it makes this page's navigator say iPhone.
   'sign-in-iphone',
 ]
