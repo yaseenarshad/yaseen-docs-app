@@ -324,10 +324,9 @@ describe('the marker in table.css (D2, D6, D14)', () => {
     expect(css).toMatch(/@container style\(--table-dim-past: shade\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-past-row > :is\(th, td\) \{\s*--table-past:/)
     // No attribute on an ancestor decides it any more (two vaults side by side would clash).
     expect(css).not.toMatch(/\[data-table-(now|dim-past)=/)
-    // Each cell rule (a cell, a frozen cell, a sticky subheader cell, YAZ-4899: the table's own and Settings', YAZ-5487)
-    // paints the shade as a layer, under the band and over a fill.
+    // Each cell rule (a cell, a frozen cell, a sticky subheader cell, YAZ-4899) paints the shade as a layer, under the band and over a fill.
     const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-page-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
-    expect(paint.length).toBe(4)
+    expect(paint.length).toBe(3)
     for (const { body } of paint) expect(body).toMatch(/var\(--table-band, none\), var\(--table-past, none\)/)
   })
 })
