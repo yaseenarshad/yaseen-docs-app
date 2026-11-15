@@ -6,6 +6,8 @@ import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/w
 // styles itself, so a table, a pill, a hidden word and a sound look as on the Mac.
 import '@client/editor/card/card.css'
 import '@client/editor/table/table.css'
+// YAZ-5471: the phone's cell look for a card's table (`tables.css`, as in a page).
+import '../page/tables.css'
 import '@client/review/cardScreens.css'
 // YAZ-5363: the media line ("Picture · … · Needs a connection") on a card, as on a page.
 import '../media/mediaLine.css'

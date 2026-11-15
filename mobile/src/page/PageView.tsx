@@ -14,6 +14,7 @@ import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
 import { PageComments } from './comments/PageComments'
+import { useTables } from './useTables'
 
 /**
  * A PAGE, READ ONLY (YAZ-5079, 4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
@@ -45,6 +46,8 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
   useMediaWatch(host, media)
   // YAZ-5440: its drawings, drawn on the phone when they near the screen; nothing is saved.
   useDrawings(host, media)
+  // YAZ-5471: its wide tables: the shadows at their sides, and ⤢ to open one full screen.
+  useTables(host)
 
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')

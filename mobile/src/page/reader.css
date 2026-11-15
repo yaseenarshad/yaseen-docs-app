@@ -155,24 +155,7 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   }
 }
 
-/* A table scrolls sideways in its box; the screen does not. */
-.page-table {
-  margin: 0.6em 0;
-  overflow-x: auto;
-}
-.page-table table {
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.page-table :is(th, td) {
-  padding: 6px 10px;
-  border: 1px solid var(--border);
-  text-align: left;
-  vertical-align: top;
-}
-.page-table th {
-  background: var(--bg-side);
-}
+/* Tables (YAZ-5471): `tables.css`, with `tableLayout.ts`. */
 
 .reader__body img,
 .card-view__card img {

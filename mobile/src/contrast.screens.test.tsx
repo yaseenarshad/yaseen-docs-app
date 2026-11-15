@@ -92,6 +92,8 @@ const FIXTURES = [
   'page-copy-by-hand',
   'page-last',
   'card-next',
+  'page-tables',
+  'page-table-full',
   // Last: it makes this page's navigator say iPhone.
   'sign-in-iphone',
 ]

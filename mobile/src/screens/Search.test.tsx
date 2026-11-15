@@ -307,7 +307,9 @@ describe('nothing loads from another host (YAZ-5208, YAZ-5209)', () => {
     const body = h.host.querySelector('.reader__body')!
     await waitFor(h, () => body.querySelector('.card-embed__body')?.childNodes.length !== 0 && body.querySelector('.card-embed__body') !== null)
     expect(remoteAttributes(h.host)).toEqual([])
-    expect(body.querySelector('video, audio, source, [background], [style]:not(.card__audio *)')).toBeNull()
+    // YAZ-5471: a table's column widths are the phone's own custom properties, nothing else.
+    const ownTable = (n: Element) => n.matches('.page-table table[data-cols], .page-table colgroup > col') && [...(n as HTMLElement).style].every((p) => /^--(table|col)-/.test(p))
+    expect([...body.querySelectorAll('video, audio, source, [background], [style]:not(.card__audio *)')].filter((n) => !ownTable(n))).toEqual([])
     expect(body.querySelectorAll('a.page-media--web').length).toBeGreaterThanOrEqual(12)
     await h.click(/^Embedded from "Attack card"/)
     await waitFor(h, () => h!.host.querySelector('.card-view__card .card__sides') !== null)

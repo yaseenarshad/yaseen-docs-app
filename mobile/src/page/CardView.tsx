@@ -14,6 +14,7 @@ import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
 import { PageArrows } from './pageNav'
 import { UNTITLED_CARD, drawCard } from './pageLook'
+import { useTables } from './useTables'
 
 /** The words of a card file that is not valid (round 15, item 3). */
 export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
@@ -43,6 +44,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const host = useRef<HTMLDivElement>(null)
   const media = useVaultMedia()
   useMediaWatch(host, media)
+  // YAZ-5471: its tables get their widths and frame; a wide one opens full screen (⤢).
+  useTables(host)
   const now = app.services.now?.() ?? Date.now()
 
   // Read again when a pass brings a new version of the file.

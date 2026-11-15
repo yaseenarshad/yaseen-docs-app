@@ -8,6 +8,7 @@ import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './r
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
+import { TABLE_PAGE } from './tableFixtures'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
@@ -17,8 +18,10 @@ import { remember } from '../search/recent'
  * "next" side dim); `card-next` a card after one step of its arrows. The clipboard is a fake: nothing reaches the
  * phone's real one.
  * YAZ-5474: `search-collapsed` the tree after "Collapse all folders" in the box, its Expand all icon at the right end.
+ * YAZ-5471: `page-tables` a page of made-up tables in the real shapes (`tableFixtures.ts`), at its six-column table;
+ * `page-table-full` that table full screen (its ⤢).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -107,6 +110,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-code'
           ? { 'Code notes.md': `---\ntitle: Code notes\n---\n\n${CODE_PAGE}\n` }
+        : name === 'page-tables' || name === 'page-table-full'
+          ? { 'Table shapes.md': `---\ntitle: Table shapes\n---\n\n${TABLE_PAGE}\n` }
         : name === 'page-drawing'
           ? DRAWING_FILES
           : name === 'search-favorites'
@@ -285,6 +290,19 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await open(/^Review notes/, '.page-comments')
       document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
       break
+    case 'page-tables':
+    case 'page-table-full': {
+      await typed('table shapes')
+      await open(/^Table shapes/, '.reader__body .page-table-box')
+      const wide = document.querySelectorAll<HTMLElement>('.reader__body .page-table-box')[2]
+      wide?.previousElementSibling?.scrollIntoView({ block: 'start' })
+      if (name === 'page-table-full') {
+        wide?.querySelector<HTMLElement>('[data-table-open]')?.click()
+        await until(() => document.querySelector('.table-view') !== null)
+      }
+      await wait(200)
+      break
+    }
     case 'page-tricks':
       await typed('parser')
       await open(/^Parser tricks/, '.reader__body h1')
