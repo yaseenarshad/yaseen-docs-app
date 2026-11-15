@@ -1,6 +1,6 @@
 import { CARD_LINK_ATTR } from '@client/editor/card/cardRender'
 import { linkPath, linkSplit } from '@client/editor/wikilink/linkResolve'
-import { cardInContent } from '@client/review/cardRead'
+import { cardInContent, type CardAtPage } from '@client/review/cardRead'
 import { openLink, type LinkDoor, type LinkTarget } from './openLink'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
@@ -21,6 +21,9 @@ import { boardKindOf } from '../drawing/boardFiles'
  * alone; under it the card's title band (off its card line; none for a card with no title); then the card, drawn by
  * `renderCard`. No Edit card and no ⋯ in stage one.
  */
+/** Each filled embed's card as its file reads it (YAZ-5508: its strip's reviews and properties, `cardStrip/pageStrips.tsx`). */
+export const embedReads = new WeakMap<HTMLElement, CardAtPage>()
+
 export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: VaultStore, door: LinkDoor, live: () => boolean = () => true): Promise<void> {
   const jobs: Promise<void>[] = []
   for (const box of root.querySelectorAll<HTMLElement>('[data-card-embed]')) {
@@ -70,6 +73,7 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
           else if (next !== null) head.after(next)
           band = next
         }
+        embedReads.set(box, read)
         drawHead(read.off)
         box.classList.toggle('card--off', read.off)
         body.replaceChildren(drawCard(data, card.path, read.text))

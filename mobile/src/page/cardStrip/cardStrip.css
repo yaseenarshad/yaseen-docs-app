@@ -1,0 +1,114 @@
+/*
+ * The card's strip on the phone (YAZ-5508): the Mac's strip (`client/src/review/cardScreens.css`, `.card-reviews--strip`:
+ * its fill a step darker than the page, its hairline edge, tucked under the card) made for a phone: each toggle a
+ * 44px tap, the bar wrapping on a narrow screen, and the drawer sliding open by its height. Light and dark from the
+ * app's tokens, as the Mac's.
+ */
+.phone-strip .card-reviews__bar {
+  gap: 0 2px;
+  min-height: var(--tap);
+  padding: 0 0 0 2px;
+}
+.card-reviews.phone-strip .card-reviews__toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  -webkit-tap-highlight-color: transparent;
+}
+.phone-strip .card-reviews__toggle .backlinks__title {
+  font-weight: 500;
+}
+/* The phone's contrast rule (4.5:1, YAZ-5179): the Mac's muted words and its 0.6 dim read too faint on the strip's fill.
+   Here a part reads near the text colour, and a part with 0 a step quieter (still 4.5:1), with no dim. */
+.card-reviews.phone-strip .card-reviews__toggle {
+  color: color-mix(in srgb, var(--fg) 75%, var(--fg-muted));
+}
+.card-reviews.phone-strip .card-reviews__toggle[data-empty] {
+  opacity: 1;
+  color: color-mix(in srgb, var(--fg-muted) 80%, var(--fg));
+}
+.card-reviews.phone-strip .card-reviews__toggle[aria-expanded='true'] {
+  color: var(--fg);
+}
+.phone-strip .card-strip__count {
+  color: inherit;
+}
+.phone-strip .card-reviews__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The drawer: closed is no height at all; open, its content's. The slide is the rows' height (none with Reduce Motion). */
+.phone-strip__drawer {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+.phone-strip__drawer[data-open] {
+  grid-template-rows: 1fr;
+}
+.phone-strip__inner {
+  min-height: 0;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .phone-strip__drawer {
+    transition: none;
+  }
+}
+.phone-strip__scroll {
+  overflow-x: auto;
+  padding: 0 6px 10px;
+}
+.phone-strip .card-view__table :is(th, td) {
+  white-space: nowrap;
+}
+.phone-strip .card-strip__none {
+  margin: 4px 8px 12px;
+  font-size: 14px;
+}
+/* The card's properties in the page panel's rows (YAZ-5459), inside the strip. */
+.phone-strip .phone-strip__props {
+  padding: 0 6px 4px;
+  overflow: visible;
+}
+.phone-strip .phone-strip__props .props__row:last-child {
+  border-bottom: 0;
+}
+/* Linked mentions and Embedded in: one page a row, a full 44px tap. */
+.phone-strip .card-backlinks__list {
+  font-size: 15px;
+}
+.phone-strip .card-backlinks__list .card-backlinks__page {
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0 8px;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+.phone-strip .card-backlinks__folder {
+  font-size: 13px;
+}
+
+/* The card view: the strip tucks under the card box, as the Mac's card file tab and card window. */
+.card-view__card:has(+ .card-reviews--strip) {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 0;
+}
+.card-view .phone-strip {
+  margin-bottom: 4px;
+}
+.card-view .phone-strip + .card-view__facts {
+  margin-top: 10px;
+}
+
+/* The drawer's quiet words on the strip's fill, at 4.5:1 too (the app's muted colour reads 4.4:1 there in light). */
+.phone-strip :is(.card-strip__none, .card-view__table th, .card-backlinks__folder, .props__key) {
+  color: color-mix(in srgb, var(--fg-muted) 80%, var(--fg));
+}

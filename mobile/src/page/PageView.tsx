@@ -100,6 +100,9 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
 
   // Draw it, in slices; again when the text or the vault's index changes, at the same reading place (R3).
   const drawn = useRef<{ text: string; version: number; look: object } | null>(null)
+  // YAZ-5508: the strips under the page's cards (each its own React root), unmounted when the page draws again or closes.
+  const strips = useRef<(() => void) | null>(null)
+  useEffect(() => () => strips.current?.(), [])
   const everDrawn = useRef(false)
   useEffect(() => {
     const el = host.current
@@ -138,6 +141,15 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       }
       if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
       if (first) await fillCardEmbeds(el, data, store, doorRef.current, () => live)
+      if (!live) return
+      // YAZ-5508: under each card and card embed, the Mac's strip (Reviews, Properties), closed; Review off: none.
+      strips.current?.()
+      strips.current = null
+      if (data.review.enabled && el.querySelector('.card.page-card, .card.card-embed') !== null) {
+        const { mountPageStrips } = await import('./cardStrip/pageStrips')
+        if (!live) return
+        strips.current = mountPageStrips(el, data, doorRef.current, { path, text })
+      }
     })()
     return () => {
       live = false

@@ -24,11 +24,13 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
  * `page-table-full` that table full screen (its ⤢, at the top right of the table: YAZ-5479).
  * YAZ-5458: `page-look` a made-up page with every block and deep nesting (`readingLookFixture.ts`), for the reading look.
  * YAZ-5477: `card-file-comments` a card file's own view, scrolled to its comments under the card (its Comment button).
+ * YAZ-5508: `card-strip` a card file's view with the Mac's strip under the card, closed (properties, a page linking it,
+ * comments); `page-card-strip` a page's own card and a card embed, each with its strip.
 
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'card-strip', 'page-card-strip', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -120,6 +122,12 @@ const COMMENTED_CARD = [
   '',
 ].join('\n')
 
+/** YAZ-5508: the commented card with its own properties and four reviews, for `card-strip`. */
+const STRIP_CARD = COMMENTED_CARD.replace(
+  /<!-- card: DEMO-45, [^>]*-->/,
+  '<!-- card: DEMO-45, title "River of Seville", tags "spain" "rivers", level "B1", 2026-09-08T08:00Z good, 2026-09-12T08:00Z good, 2026-09-25T08:00Z good, 2026-11-13T08:00Z good -->',
+)
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
@@ -180,6 +188,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
           : name === 'card-file-comments'
             ? { 'cards/river-of-seville-demo-45.md': COMMENTED_CARD }
+          : name === 'card-strip'
+            ? { 'cards/river-of-seville-demo-45.md': STRIP_CARD, 'trips/Seville.md': '---\ntitle: Seville\nid: DEMO-46\n---\n\nThe river card: [[DEMO-45]].\n' }
             : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
@@ -397,6 +407,14 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await typed('seville')
       await open(/^River of Seville/, '.card-view .page-comments')
       document.querySelector('.card-view .page-comments')?.scrollIntoView({ block: 'start' })
+      break
+    case 'card-strip':
+      await typed('seville')
+      await open(/^River of Seville/, '.card-view .phone-strip')
+      break
+    case 'page-card-strip':
+      await open(/^Spanish words/, '.reader__body .card-embed .phone-strip')
+      document.querySelector('.reader__body .page-card')?.scrollIntoView({ block: 'start' })
       break
     case 'page-tables':
     case 'page-table-full': {
