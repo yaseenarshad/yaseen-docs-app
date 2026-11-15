@@ -38,10 +38,10 @@ export function checkDist(files: DistFile[]): string[] {
 
 /**
  * YAZ-5377: the ceiling of the first load's JavaScript (`index.html`'s scripts and the chunks they import), in bytes.
- * The measured build after the fix (290,297 bytes at `d9248de99` + the fix) plus 3%. `npm run mobile:build` fails over it, and so does `src/firstLoad.test.ts`.
+ * The measured build plus 3%: 298,222 bytes at `bb8a4aa30` (Yaseen raised it, YAZ-5414: "its ok increase the limit on that one no problem"); before, 290,297 at `d9248de99` + 3%. `npm run mobile:build` fails over it, and so does `src/firstLoad.test.ts`.
  * A change that shrinks the first load lowers it in the same commit; raising it needs Yaseen's OK.
  */
-export const FIRST_LOAD_JS_MAX = 299_006
+export const FIRST_LOAD_JS_MAX = 307_169
 
 /** YAZ-5377: modules that only a lazy screen needs. `src/firstLoad.test.ts` names each one in the first load, with its import chain. */
 export const NOT_FIRST_LOAD: RegExp[] = [
