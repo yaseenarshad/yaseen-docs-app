@@ -134,7 +134,8 @@ describe('checker round 3: the guard, cell by cell, on the screen', () => {
     expect(reviewInProgress()).toBe(true)
     await s.press('Remembered')
     await s.settle()
-    expect(s.text()).toContain('Inbox complete')
+    // YAZ-5495 (the Mac's YAZ-5043): the last due card answered: "Due today is done." in place of "Inbox complete".
+    expect(s.text()).toContain('Due today is done.')
     expect(s.guarded()).toBe(false)
     expect(reviewInProgress()).toBe(true) // Undo remains
     await s.press('Undo')

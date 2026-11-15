@@ -75,6 +75,17 @@ const MOCHI: Record<string, string> = {
   'trip/plan.md': page('Plan', block('Which line goes to the old town?\n---\nLine {{12}}.', 'TRP-1'), block('When does the museum open?\n---\nAt {{ten}}.', 'TRP-2')),
 }
 
+/**
+ * YAZ-5495 (the Mac's YAZ-5043): the end of Due today. Five made-up due cards and three new ones; `-clear` has no new
+ * card. `#fixture=review-due-missed` (the % screen after one Forgot), `-done` (Due today is done, Learn new cards),
+ * `-clear` (done, nothing new left).
+ */
+const DUE_END = (fresh: boolean): Record<string, string> => ({
+  '.yaseendocs/review.json': '{"newPerDay": 3}',
+  'spanish/verbs.md': page('Verbs', ...['ser', 'estar', 'tener', 'ir', 'hacer'].map((v, i) => block(`What does "${v}" mean?\n---\n{{answer ${i + 1}}}`, `VRB-${i + 1}, ${DUE}`))),
+  ...(fresh && { 'spanish/places.md': page('Places', ...['la playa', 'el museo', 'la plaza'].map((w, i) => block(`What does "${w}" mean?\n---\n{{place ${i + 1}}}`, `PLC-${i + 1}`))) }),
+})
+
 /** A made-up robin: a small picture drawn as a data URL. */
 const ROBIN = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140"><rect width="240" height="140" fill="#e9eef5"/><circle cx="120" cy="78" r="38" fill="#7a5a43"/><circle cx="106" cy="86" r="22" fill="#d8642b"/><circle cx="134" cy="62" r="5" fill="#222"/></svg>')}`
 
@@ -89,7 +100,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   step('setup')
   // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
@@ -214,6 +225,25 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
         await wait(500) // past the tap guard (YAZ-5226)
         press('Remembered')
       }
+      break
+    case 'review-due-missed':
+    case 'review-due-done':
+    case 'review-due-clear':
+      press(/Choose what to review/)
+      await wait(60)
+      press('Due today')
+      for (const answer of ['Remembered', 'Forgot', 'Remembered', 'Remembered', 'Remembered']) {
+        await wait(500) // past the tap guard (YAZ-5226)
+        press(answer)
+      }
+      if (name !== 'review-due-missed') {
+        await wait(300)
+        press(/^Review missed cards/)
+        await wait(500)
+        press('Remembered')
+      }
+      // The ring has played (1.4 s): the screenshot shows its end.
+      await wait(1600)
       break
     case 'review-lost':
       press('Remembered')

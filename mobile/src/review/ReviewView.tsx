@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { useAnswerTimer } from '@client/review/answerTimer'
 import { cardStateText } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
-import { progressRuns } from '@client/review/inboxMenu'
+import { newCardsFrom } from '@client/review/inboxMenu'
 import { addedLine, resetLine, waitingLine } from '@client/review/cardWords'
 import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
@@ -32,6 +32,7 @@ import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
 import { ScrollJump } from '../page/ScrollJump'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
+import { DueEnd } from './DueEnd'
 import './review.css'
 
 /**
@@ -52,6 +53,9 @@ import './review.css'
  *    Up next, Fix later, Open page (a card file: Open card). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: "Inbox complete", today's work, and "Add more for today" (round 10, addition 2) when cards wait.
+ *  - The end of Due today (YAZ-5495, the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
+ *    remembered 93% of 73 cards." with "Review missed cards 5"; then "Due today is done." with "Learn new cards 11"
+ *    and its "from All folders ›" (the sheet's folder page). The ring and the confetti: `DueEnd.tsx`.
  *  - The amber line (round 12, item 9): an answer whose card is gone, with Discard.
  *  - The screen stays on while a card shows (round 10, addition 4). The answer timer stops in the background
  *    (addition 5: the Mac's `useAnswerTimer` pauses on `visibilitychange`).
@@ -362,7 +366,8 @@ function SessionScreen({
   }, [card, page, cardFile, link])
   const fixed = card !== null && fixOn?.key === `${card.path}\n${card.id}` && fixOn.on
 
-  const [menu, setMenu] = useState<'filter' | 'more' | null>(null)
+  // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards", YAZ-5495).
+  const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
   const [line, setLine] = useState<Line | null>(null)
   const ratings = answerRatings(review.settings)
 
@@ -371,7 +376,7 @@ function SessionScreen({
   useEffect(() => {
     if (menu === null) return
     const down = (e: Event) => {
-      if (e.target instanceof Element && e.target.closest('.review__sheet, .review__menu, .review__count-btn, .review__more') !== null) return
+      if (e.target instanceof Element && e.target.closest('.review__sheet, .review__menu, .review__count-btn, .review__more, .due-end__from') !== null) return
       closedByTap.current = true
       // A press that never becomes a click on this screen (the tab bar, a scroll) leaves no flag behind.
       setTimeout(() => void (closedByTap.current = false), 600)
@@ -543,7 +548,7 @@ function SessionScreen({
           {notice}
         </p>
       )}
-      {menu === 'filter' && <ReviewSheet session={session} review={review} today={<p className="review__sheet-today">{today}</p>} onClose={() => setMenu(null)} />}
+      {(menu === 'filter' || menu === 'from') && <ReviewSheet key={menu} session={session} review={review} today={<p className="review__sheet-today">{today}</p>} onClose={() => setMenu(null)} folders={menu === 'from'} />}
 
       {card !== null ? (
         <>
@@ -615,7 +620,27 @@ function SessionScreen({
         </>
       ) : (
         <div className="review__stage review__stage--done">
-          <DoneScreen review={review} session={session} addKinds={addKinds} today={today} />
+          {session.end !== null ? (
+            // YAZ-5495: Due today stopped (its % after the first pass, or done): its own screen, the rest after it.
+            <div className="review__done" role="status">
+              <DueEnd
+                end={session.end}
+                shown={shown}
+                onGoOn={review.goOn}
+                from={
+                  <button type="button" className="due-end__from" aria-haspopup="dialog" aria-expanded={menu === 'from'} aria-label={`New cards from ${newCardsFrom(session)}. Choose folders`} onClick={() => setMenu(menu === 'from' ? null : 'from')}>
+                    from {newCardsFrom(session)} ›
+                  </button>
+                }
+              >
+                <DoneBody review={review} session={session} addKinds={addKinds} today={today} title={false} />
+              </DueEnd>
+            </div>
+          ) : (
+            <div className="review__done" role="status">
+              <DoneBody review={review} session={session} addKinds={addKinds} today={today} title />
+            </div>
+          )}
           {quietLine !== null && (
             <p className="review__hint review__last" role="status" aria-live="polite">
               <span className="review__line">{quietLine.text}</span>
@@ -704,20 +729,23 @@ const ANSWER_GLYPH: Record<CardRating, string> = { again: '✕', hard: '~', good
 const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu'
 
 /**
- * The progress bar in steps (YAZ-5415, round 4; the Mac's YAZ-5020): one step for each card of the session, in the
- * order answered — grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs.
+ * The progress bar in steps (YAZ-5415, round 4; the Mac's YAZ-5020): one step for each card, in the order answered —
+ * grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs. It counts ONLY the list
+ * on show (the Mac's YAZ-5432, `session.progress`, the same answers as the end ring's %): Due today done fills it.
  */
 function Progress({ session }: { session: CardReviewSession }) {
-  const size = Math.max(1, session.size)
+  const { runs, done, size: whole } = session.progress
+  const size = Math.max(1, whole)
   const steps = size <= 80
+  const answers = runs.flatMap((run) => Array.from({ length: run.count }, () => run.missed))
   return (
-    <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={session.answered.length} data-steps={steps || undefined}>
+    <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={whole} aria-valuenow={done} data-steps={steps || undefined}>
       {steps
         ? Array.from({ length: size }, (_, i) => {
-            const r = session.answered[i]
-            return <span key={i} className="review__step" data-answer={r === undefined ? undefined : r === 'again' ? 'forgot' : 'remembered'} />
+            const missed = answers[i]
+            return <span key={i} className="review__step" data-answer={missed === undefined ? undefined : missed ? 'forgot' : 'remembered'} />
           })
-        : progressRuns(session.answered).map((run, i) => <span key={i} className="review__step" data-answer={run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
+        : runs.map((run, i) => <span key={i} className="review__step" data-answer={run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
     </div>
   )
 }
@@ -778,7 +806,8 @@ function TodayLine({ session, mode: setting }: { session: CardReviewSession; mod
   )
 }
 
-function DoneScreen({ review, session, addKinds, today }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode }) {
+/** What the done screen says; `title` false under the end of Due today (YAZ-5495), which has its own. */
+function DoneBody({ review, session, addKinds, today, title }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode; title: boolean }) {
   const adds = addKinds.map((k) => (
     <button key={k} type="button" className="btn review__add" onClick={() => review.addCards(k)}>
       {k === 'new' ? `Add ${session.adds.new} new card${session.adds.new === 1 ? '' : 's'}` : `Add ${session.adds.next} Up next`}
@@ -786,17 +815,17 @@ function DoneScreen({ review, session, addKinds, today }: { review: CardReviewAp
   ))
   if (session.filter !== 'all' && session.counts.all > 0)
     return (
-      <div className="review__done" role="status">
-        <p className="review__done-title">{filterDone(session.filter)}</p>
+      <>
+        {title && <p className="review__done-title">{filterDone(session.filter)}</p>}
         {adds}
         <button type="button" className="link-btn" onClick={() => review.setFilter('all')}>
           {session.counts.all} more in All cards
         </button>
-      </div>
+      </>
     )
   return (
-    <div className="review__done" role="status">
-      <p className="review__done-title">Inbox complete</p>
+    <>
+      {title && <p className="review__done-title">Inbox complete</p>}
       <p className="muted review__done-today">{today}</p>
       {addKinds.length > 0 ? (
         <>
@@ -811,7 +840,7 @@ function DoneScreen({ review, session, addKinds, today }: { review: CardReviewAp
       ) : (
         <p className="muted">Nothing else is due today.</p>
       )}
-    </div>
+    </>
   )
 }
 

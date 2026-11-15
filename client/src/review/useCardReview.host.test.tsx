@@ -110,18 +110,21 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
     const before = host.files.get(`${ROOT}/K.md`)
     await answer('WIKI-5', 'again')
     expect(reviewsOn('K.md', 'WIKI-5').map((r) => r.rating)).toEqual(['good', 'good', 'again'])
-    await shown('WIKI-6')
-    expect([review.session?.position, review.session?.total]).toEqual([2, 3])
+    // YAZ-5043: the missed due card waits before the new card, after the % screen.
+    expect(review.session?.end).toMatchObject({ kind: 'missed', percent: 0, count: 1, missed: 1, fresh: 1 })
+    expect(review.session?.total).toBe(3)
     // Undo: the review out, the file the same bytes, the card back at its place.
     await step(() => review.undo())
     expect(host.files.get(`${ROOT}/K.md`)).toBe(before)
     await shown('WIKI-5')
     expect([review.session?.position, review.session?.total, review.session?.canUndo]).toEqual([1, 2, false])
-    // Forgot, then the new card twice Remembered; the forgotten card comes back last.
+    // Forgot; the missed card again before the new card; then the new card twice Remembered.
     await answer('WIKI-5', 'again')
-    await answer('WIKI-6', 'good')
-    await shown('WIKI-5')
+    await step(() => review.goOn())
     await answer('WIKI-5', 'good')
+    expect(review.session?.end).toMatchObject({ kind: 'done', fresh: 1 })
+    await step(() => review.goOn())
+    await answer('WIKI-6', 'good')
     await answer('WIKI-6', 'good')
     expect(review.session?.card).toBeNull()
     expect(review.dueCount).toBe(0)

@@ -69,6 +69,10 @@ const FIXTURES = [
   'review-picture',
   'review-offline',
   'review-done',
+  // YAZ-5495: the end of Due today.
+  'review-due-missed',
+  'review-due-done',
+  'review-due-clear',
   'review-lost',
   'friends-empty',
   'friends-states',

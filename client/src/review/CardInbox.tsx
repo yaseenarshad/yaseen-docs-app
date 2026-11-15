@@ -125,6 +125,7 @@ import { newCardsFrom, pickLabel, useNewCardsPicker } from './NewCardsPicker'
 import { ChevronIcon } from './cardInboxIcons'
 import { useAnswerTimer } from './answerTimer'
 import { TodayWork } from './TodayWork'
+import { DueTodayEnd } from './DueTodayEnd'
 import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
@@ -449,6 +450,36 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   )
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
+  /** What the done screen says (YAZ-5017, YAZ-5042); `title` false under the Due today end (YAZ-5043), which has its own. */
+  const doneRest = (withTitle: boolean) =>
+                session.filter !== 'all' && session.counts.all > 0 ? (
+                  // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
+                  <>
+                    {withTitle && <p className="card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : session.filter === 'next' ? 'No Up next cards left.' : 'No new cards left.'}</p>}
+                    {addButtons}
+                    <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.setFilter('all')}>
+                      {session.counts.all} more in {CARD_FILTERS[0].label}
+                    </button>
+                  </>
+                ) : session.scope === 'vault' ? (
+                  <>
+                    {withTitle && <p className="card-inbox__done-title">Inbox complete.</p>}
+                    {addButtons === null ? <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p> : [waits, addButtons]}
+                  </>
+                ) : (
+                  <>
+                    {withTitle && <p className="card-inbox__done-title">{session.scope === 'page' ? unit('This page is done.') : 'This folder is done.'}</p>}
+                    {waits}
+                    {addButtons}
+                    {more > 0 ? (
+                      <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
+                        {more} more in the Inbox
+                      </button>
+                    ) : (
+                      addButtons === null && <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                    )}
+                  </>
+                )
   // The band's title: once the card is fully shown where it waits (`notitle`).
   const headTitle = title.waits && !done ? '' : title.text
   /** The band's rename (YAZ-5164 part 3): the title on the card's line (YAZ-5308), one write; the Inbox reads the card again. */
@@ -546,34 +577,23 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
               <CardList cards={session.toFix} label="Cards to fix" empty="No cards to fix." open={(c) => editCard(c.path, recordAt(vaultOf(c.path).wikilinks.records, c.path)?.kind === 'card' ? null : { id: c.id, index: c.index })} action={{ text: 'Fixed', label: 'Fixed: remove Fix later', run: (path, id) => void review.setFix(path, id, false) }} session={session} nameOf={nameOf} backToAll={() => review.setFilter('all')} />
             ) : card === null ? (
               <div className="card-inbox__done" role="status">
-                {/* YAZ-5033: today's work across the vault, under whatever the screen says. */}
-                {session.filter !== 'all' && session.counts.all > 0 ? (
-                  // The filter's cards are done, others are left (YAZ-5017): the way back to All cards.
-                  <>
-                    <p className="card-inbox__done-title">{session.filter === 'due' ? 'No due cards left.' : session.filter === 'next' ? 'No Up next cards left.' : 'No new cards left.'}</p>
-                    {addButtons}
-                    <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.setFilter('all')}>
-                      {session.counts.all} more in {CARD_FILTERS[0].label}
-                    </button>
-                  </>
-                ) : session.scope === 'vault' ? (
-                  <>
-                    <p className="card-inbox__done-title">Inbox complete.</p>
-                    {addButtons === null ? <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p> : [waits, addButtons]}
-                  </>
+                {/* YAZ-5043: Due today stopped (its % after the first pass, or done): its own screen, the rest after it. */}
+                {session.end !== null ? (
+                  <DueTodayEnd
+                    end={session.end}
+                    shown={shown}
+                    onGoOn={review.goOn}
+                    from={
+                      <>
+                        {fromButton}
+                        {picker.picker}
+                      </>
+                    }
+                  >
+                    {doneRest(false)}
+                  </DueTodayEnd>
                 ) : (
-                  <>
-                    <p className="card-inbox__done-title">{session.scope === 'page' ? unit('This page is done.') : 'This folder is done.'}</p>
-                    {waits}
-                    {addButtons}
-                    {more > 0 ? (
-                      <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
-                        {more} more in the Inbox
-                      </button>
-                    ) : (
-                      addButtons === null && <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
-                    )}
-                  </>
+                  doneRest(true)
                 )}
                 {todayCards(session.today) !== '' && (
                   <p className="card-inbox__done-today">
