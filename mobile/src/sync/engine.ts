@@ -120,10 +120,24 @@ export interface SyncEngine {
 }
 
 
+/**
+ * YAZ-5596 (3): a pass with no step for this long is stuck (a storage call or a lock that never answers, as on iOS after
+ * a wake). A new request (a return to the app, pull to refresh, the poll) drops it and starts a new pass, instead of
+ * joining it. A step: an answer or a part of one from GitHub, a store call ended, a yield of the pass, its progress.
+ */
+export const STALL_MS = 30_000
+
 /** The lock name of a vault: two tabs of the app share it, so only one of them runs a pass of that vault at a time. */
 export const lockName = (vault: string) => `notecards-sync:${vault}`
 
 const ATTENTION: readonly SyncProblem[] = ['UNAUTHORIZED', 'NOT_FOUND', 'NO_ACCESS', 'READ_ONLY', 'TREE_TRUNCATED', 'NO_TOKEN', 'STORAGE_FULL']
+
+/** A pass of the engine: its vault's generation, and `dropped` when a new pass took the place of a stuck one. */
+interface Pass {
+  gen: number
+  promise: Promise<void>
+  dropped: boolean
+}
 
 /**
  * The sync engine of the open vault (October 2E; decisions 4, 6, 7; round 10 items 8 and 20). It decides WHEN a pass
@@ -147,7 +161,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
    * The pass of the open vault. A pass of a vault that was open before goes on to its end in `passes`, but nobody
    * waits for it: opening another vault never waits for a download.
    */
-  let running: { gen: number; promise: Promise<void> } | null = null
+  let running: Pass | null = null
   const passes = new Set<Promise<void>>()
   let timer: unknown = null
   /**
@@ -198,9 +212,15 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
    */
   const outstanding = new Set<(error: GithubError) => void>()
   let lastAnswer = clock.now()
+  /** YAZ-5596 (3): the last step of the running pass (see `STALL_MS`). */
+  let lastStep = clock.now()
+  const step = () => {
+    lastStep = clock.now()
+  }
   const tooLate = () => new GithubError('OFFLINE', null, 'GitHub did not answer in time')
   const heard = () => {
     lastAnswer = clock.now()
+    step()
   }
   const remoteOf = (open: PhoneVault, token: string) => timed(makeRemote(open, token, heard))
   function timed(remote: GithubRemote): GithubRemote {
@@ -211,6 +231,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
           outstanding.delete(fail)
           if (timer !== null) clock.clearTimeout(timer)
           lastAnswer = clock.now()
+          step()
         }
         const fail = (error: GithubError) => {
           done()
@@ -288,39 +309,59 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
 
   // `session`: the store bound to the vault's generation at the start of the work: after a clear of the
   // vault (in any tab), every write of this pass is refused, so it can never mark a file done for the next open.
-  const passOptions = (open: PhoneVault, id: string, token: string, gen: number, session: VaultStore) => ({
+  const yieldToUi = options.yieldToUi ?? defaultYield
+  const passOptions = (open: PhoneVault, id: string, token: string, gen: number, session: VaultStore, me?: Pass) => ({
     remote: remoteOf(open, token),
     store: session,
     vault: id,
     now: clock.now,
-    yieldToUi: options.yieldToUi ?? defaultYield,
+    // Each yield of the pass is a step: a long pass that works is never taken for a stuck one.
+    yieldToUi: () => {
+      step()
+      return yieldToUi()
+    },
     onProgress: (progress: PassProgress) => {
-      if (gen === generation) setState({ progress })
+      step()
+      if (gen === generation && me?.dropped !== true) setState({ progress })
     },
   })
 
-  async function runPass(gen: number) {
+  async function runPass(me: Pass) {
+    const { gen } = me
     const open = vault!
     const id = vaultId(open)
     lastAnswer = clock.now()
+    step()
+    /** This pass no longer speaks: another vault opened, or it was stuck and a new pass took its place. */
+    const gone = () => gen !== generation || me.dropped
     try {
+      // YAZ-5596 (3): `syncing` first, before any store read: a pass that hangs there shows blue, never a green
+      // that is not true.
+      setState({ status: 'syncing', progress: null })
       // Inside the `try`: a failed read of the token store (iOS: "connection lost") is a status, not a stop.
       const session = await store.session(id)
+      step()
       const token = await tokens.read(id)
-      if (gen !== generation) return
+      step()
+      if (gone()) return
       if (token === null) {
         setState({ status: 'attention', problem: 'NO_TOKEN', retryAt: null, progress: null })
         return
       }
-      setState({ status: 'syncing', progress: null })
-      const result = await exclusive(id, () => lock(lockName(id), () => syncPass(passOptions(open, id, token, gen, session))))
-      if (gen !== generation) return
+      const result = await exclusive(id, () =>
+        lock(lockName(id), () => {
+          step()
+          return syncPass(passOptions(open, id, token, gen, session, me))
+        }),
+      )
+      if (gone()) return
       await adopt(id, gen, result)
+      if (me.dropped) return
       slowedInRow = 0
       setState({ status: 'synced', problem: null, retryAt: null, progress: null, lastSyncedAt: clock.now() })
       plan()
     } catch (error) {
-      if (gen !== generation) return
+      if (gone()) return
       const problem: SyncProblem = error instanceof GithubError ? error.code : error instanceof StorageFullError ? 'STORAGE_FULL' : 'FAILED'
       if (problem === 'RATE_LIMITED') {
         // GitHub's time (the client holds it between 1 minute and 1 hour), or more: each "slow down" in a row doubles
@@ -347,17 +388,23 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         for (const fail of [...outstanding]) fail(tooLate())
         return running.promise.then(() => syncNow())
       }
-      return running.promise
+      // YAZ-5596 (3): no step for STALL_MS (a store call or a lock that never answered): the pass is dropped (it
+      // tells nobody anything, and nobody waits for it) and a new one starts. Else the request joins the running pass.
+      if (clock.now() - lastStep < STALL_MS) return running.promise
+      running.dropped = true
+      passes.delete(running.promise)
+      running = null
     }
     if (vault === null) return Promise.resolve()
     clearTimer()
-    const gen = generation
-    const promise = runPass(gen).finally(() => {
+    const me: Pass = { gen: generation, promise: Promise.resolve(), dropped: false }
+    const promise = runPass(me).finally(() => {
       passes.delete(promise)
       if (running?.promise === promise) running = null
     })
+    me.promise = promise
     passes.add(promise)
-    running = { gen, promise }
+    running = me
     return promise
   }
 

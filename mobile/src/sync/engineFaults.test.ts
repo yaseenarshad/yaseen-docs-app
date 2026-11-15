@@ -4,7 +4,7 @@ import { githubClient, type FetchLike } from '../github/client'
 import { fakeGit, fakeGithub } from '../github/testing'
 import { memoryBackend, openVaultStore, tokenStoreOn, type PhoneVault, type TokenStore } from '../store'
 import { POLL_MS } from './cadence'
-import { createSyncEngine, type SyncEngineOptions } from './engine'
+import { STALL_MS, createSyncEngine, type SyncEngineOptions } from './engine'
 import { githubRemote } from './githubRemote'
 import { INDEX_STATE, type PhoneIndex } from './phoneIndex'
 import { syncPass } from './pass'
@@ -316,4 +316,36 @@ describe('edge cases that pass', () => {
     expect(bigCpu).toBeLessThan(budgetMs(200))
     // A loaded machine (the whole suite at once) can take over 5 s of wall time for the six passes: no time-out then.
   }, 60_000)
+})
+
+describe('YAZ-5596 item 3: a pass stuck on the phone storage (iOS after a wake)', () => {
+  it('shows syncing at once; a request within STALL_MS joins it; after STALL_MS with no step, a return drops it and a new pass syncs', async () => {
+    const t = await setup()
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    expect(t.engine.state().status).toBe('synced')
+    const session = t.s.store.session.bind(t.s.store)
+    let hang = true
+    t.s.store.session = (id) => (hang ? new Promise(() => {}) : session(id))
+    t.clock.advance(POLL_MS) // the poll's pass hangs on its first store read
+    await new Promise((r) => setTimeout(r, 0))
+    // The dot tells the truth: blue, not green.
+    expect(t.engine.state().status).toBe('syncing')
+    hang = false
+    const refs = t.refs()
+    t.clock.advance(STALL_MS - 1_000)
+    t.engine.setVisible(false)
+    t.engine.setVisible(true) // within the limit: joins the running pass, no new pass
+    await new Promise((r) => setTimeout(r, 0))
+    expect(t.refs()).toBe(refs)
+    t.clock.advance(1_000)
+    t.engine.setVisible(false)
+    t.engine.setVisible(true) // the return: the stuck pass is dropped, a new one starts
+    await t.engine.idle()
+    expect(t.refs()).toBe(refs + 1)
+    expect(t.engine.state().status).toBe('synced')
+    // The poll goes on.
+    await t.tick(POLL_MS)
+    expect(t.refs()).toBe(refs + 2)
+  })
 })
