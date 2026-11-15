@@ -35,8 +35,9 @@ export function Frame({
   /** A problem line under the top bar. */
   notice?: ReactNode
   /**
-   * The Review tab (YAZ-5415, as Mochi): ONE line — the sync dot (its words in its sheet), the Review screen's
-   * "▣ All cards ▾ 3 / 12" in the middle (`reviewTop.ts`), the gear. The screen fills the space between the bars.
+   * The Review tab (YAZ-5415, as Mochi): ONE line — the Review screen's "▣ All cards ▾ 3 / 12" first (`reviewTop.ts`),
+   * then the sync dot (its words in its sheet) and the gear on the right, as on every other screen (YAZ-5501). The
+   * screen fills the space between the bars.
    */
   review?: boolean
   /** A page or a card (YAZ-5436): no scroll bar; a soft fade at the bottom, as the Review card. */
@@ -68,8 +69,8 @@ export function Frame({
         <h1 className={review ? 'topbar__title sr-only' : 'topbar__title'}>{title}</h1>
         {chip}
         {tools}
-        {gear && <SyncStatus />}
         {review && <div ref={setReviewTop} className="topbar__review" />}
+        {gear && <SyncStatus />}
         {gear && (
           <button type="button" className="icon-btn topbar__gear" aria-label="Settings" onClick={() => app.go({ type: 'open', route: { kind: 'settings' } })}>
             ⚙

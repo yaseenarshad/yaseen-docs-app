@@ -227,15 +227,13 @@ body:has(.app--swiping) {
 /* ---- The Review tab's frame (YAZ-5415, as Mochi): one line at the top, the screen fills the rest, no page scroll ---- */
 
 .topbar--review {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
   gap: 4px;
   padding: calc(env(safe-area-inset-top, 0px) + 2px) 4px 2px 6px;
   border-bottom: 0;
 }
 
+/* YAZ-5501: the dot on the right, next to the ⚙, as on every other screen (the shared end below, YAZ-5475). */
 .topbar--review .sync-status {
-  justify-self: start;
   min-width: var(--tap);
   justify-content: center;
 }
@@ -245,13 +243,10 @@ body:has(.app--swiping) {
   display: none !important;
 }
 
-.topbar--review .icon-btn {
-  justify-self: end;
-}
-
 .topbar__review {
   display: flex;
-  justify-content: center;
+  flex: 1;
+  justify-content: flex-start;
   min-width: 0;
 }
 
@@ -806,8 +801,6 @@ body:has(.app--swiping) {
 }
 .topbar__gear {
   font-size: var(--topbar-gear-size);
-}
-.topbar:not(.topbar--review) .topbar__gear {
   margin-left: var(--topbar-end-pull);
 }
 /* The kind of the open file, just before its title. */
