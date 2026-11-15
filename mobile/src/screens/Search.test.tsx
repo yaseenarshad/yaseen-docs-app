@@ -384,6 +384,9 @@ describe('a card alone (YAZ-5079; round 12 item 10)', () => {
     expect(h.text()).toContain('in Spanish words')
     expect(h.host.querySelector('.card-view__card')?.textContent).toContain('the library')
     expect(h.text()).toContain('2 Reviews')
+    // YAZ-5508: the history is behind the strip's Reviews part, closed until tapped.
+    expect(h.host.querySelector('.card-view__table')).toBeNull()
+    await h.click('2 Reviews')
     expect([...h.host.querySelectorAll('.card-view__table tbody tr')]).toHaveLength(2)
     expect(h.host.querySelector('.card-view__facts')?.textContent).toMatch(/^Due /)
     await h.click('Open page')

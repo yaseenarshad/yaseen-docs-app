@@ -9,8 +9,8 @@ import { mount, newPhone, type Harness } from './testing'
 /**
  * YAZ-5349 (card properties on the card line) on the phone, stage one. The phone READS a card's properties with the
  * shared parser (`cardInContent` → `CardAtPage.properties`, the index's `CardRecord.properties`), as the Mac does. It
- * SHOWS none: YAZ-5349 puts them in the Mac's card strip (its Properties part), and the phone's card screens have no
- * strip (they show no page properties either). A title with `&#44;` (YAZ-5393) reads and shows as its comma.
+ * SHOWS none until asked: YAZ-5349 puts them in the Mac's card strip (its Properties part), which the phone's card
+ * view has, closed, since YAZ-5508 (`page/cardStrip/cardStrip.test.tsx` opens it). A title with `&#44;` (YAZ-5393) reads and shows as its comma.
  */
 const block = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->`
 const FILES: Record<string, string> = {

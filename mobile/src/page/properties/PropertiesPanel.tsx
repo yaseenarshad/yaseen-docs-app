@@ -27,7 +27,7 @@ import './properties.css'
  * Slides in from the right; a tap outside it, a swipe to the right, ✕ or Escape closes it. Nothing is written.
  */
 
-interface Row {
+export interface Row {
   key: string
   raw: unknown
   chip: 'reserved' | 'yaml' | null
@@ -68,13 +68,6 @@ export default function PropertiesPanel({ record, data, door, onClose }: { recor
     }
   }, [onClose])
 
-  const source = resolveSourceOf(data)
-  const resolve: Resolver = (target) => {
-    const path = source.resolve?.(target) ?? null
-    const found = path === null ? undefined : data.byPath[path]
-    return found === undefined ? null : new FileValue(found)
-  }
-  const folderName = (entry: unknown): unknown => (typeof entry === 'string' ? data.folders.find((f) => f.id !== undefined && f.id.toLowerCase() === entry.toLowerCase())?.title ?? entry : entry)
   const open = (path: string) => {
     onClose()
     openLink(door, { kind: 'page', path })
@@ -108,25 +101,45 @@ export default function PropertiesPanel({ record, data, door, onClose }: { recor
             ✕
           </button>
         </div>
-        <dl className="props__rows">
-          {rows.map((row) => (
-            <div key={row.key} className="props__row" data-key={row.key}>
-              <dt className="props__key">{row.key}</dt>
-              <dd className="props__value">
-                <ValueView v={fromYaml(row.key === ALSO_IN_KEY ? (Array.isArray(row.raw) ? row.raw.map(folderName) : folderName(row.raw)) : row.raw)} resolve={resolve} open={open} />
-                {row.chip !== null && (
-                  <span className="props__chip" title={row.chip === 'reserved' ? reservedKeyText(row.key) : 'No typed editor can hold this value'}>
-                    {row.chip === 'reserved' ? 'Reserved' : 'YAML'}
-                  </span>
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <PropertyRows rows={rows} data={data} open={open} />
       </aside>
     </div>
   )
 }
+
+/**
+ * The panel's rows (YAZ-5459), alone: a key and its value each, read only. The card strip's Properties part
+ * (`cardStrip/CardStrip.tsx`, YAZ-5508) shows a card's own properties with them, the same rows and look as a page's.
+ */
+export function PropertyRows({ rows, data, open, className = 'props__rows' }: { rows: readonly Row[]; data: VaultData; open: (path: string) => void; className?: string }) {
+  const source = resolveSourceOf(data)
+  const resolve: Resolver = (target) => {
+    const path = source.resolve?.(target) ?? null
+    const found = path === null ? undefined : data.byPath[path]
+    return found === undefined ? null : new FileValue(found)
+  }
+  const folderName = (entry: unknown): unknown => (typeof entry === 'string' ? data.folders.find((f) => f.id !== undefined && f.id.toLowerCase() === entry.toLowerCase())?.title ?? entry : entry)
+  return (
+    <dl className={className}>
+      {rows.map((row) => (
+        <div key={row.key} className="props__row" data-key={row.key}>
+          <dt className="props__key">{row.key}</dt>
+          <dd className="props__value">
+            <ValueView v={fromYaml(row.key === ALSO_IN_KEY ? (Array.isArray(row.raw) ? row.raw.map(folderName) : folderName(row.raw)) : row.raw)} resolve={resolve} open={open} />
+            {row.chip !== null && (
+              <span className="props__chip" title={row.chip === 'reserved' ? reservedKeyText(row.key) : 'No typed editor can hold this value'}>
+                {row.chip === 'reserved' ? 'Reserved' : 'YAML'}
+              </span>
+            )}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** A card's own properties (off its card line, YAZ-5379) as rows, in the line's order: no app keys, no YAML chips. */
+export const cardPropertyRows = (values: Readonly<Record<string, unknown>>): Row[] => Object.entries(values).map(([key, raw]) => ({ key, raw, chip: null }))
 
 /** One value, as the Mac's read-only cell (`cellContent`): a check box, chips, link pills, or its text. */
 function ValueView({ v, resolve, open }: { v: Value; resolve: Resolver; open: (path: string) => void }): ReactNode {

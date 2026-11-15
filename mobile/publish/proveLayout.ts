@@ -36,9 +36,12 @@ import { join } from 'node:path'
  *    a tap on a stuck folder scrolls back to it, landing under the rows stuck above it.
  *  - the guide lines of Search's tree (`#fixture=search-lines`, YAZ-5507), light and dark, at 375 px: with a finger on
  *    the list they show, each at the centre of the chevron of the folder above; the stuck rows cover them.
+ *  - the card strip (`#fixture=card-strip`, `page-card-strip`, YAZ-5508), light and dark, at 375 px: closed under the
+ *    card, each toggle a 44px tap, the bar inside the screen; a tap opens Reviews' drawer to its table (a picture of
+ *    each); a page's card and a card embed with theirs; the page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -564,6 +567,51 @@ if (process.env.LAYOUT_LINES !== 'no') {
     const ok = m.shown && m.centred && m.covered
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  search-lines ${scheme} at 375x667: lines ${m.shown ? 'show' : 'HIDDEN'} with a finger on the list; at x ${m.lines.join(',')}, the chevrons at ${m.chevrons.join(',')} (${m.centred ? 'centred' : 'OFF CENTRE'}); ${m.stuck} stuck rows ${m.covered ? 'cover them' : 'DO NOT COVER them'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5508: the card strip, light and dark, at 375 px: closed, then Reviews open; a page's card and embed with theirs.
+const STRIP_CHECK = `(() => {
+  const s = document.querySelector('.card-view .phone-strip, .reader__body .phone-strip')
+  if (!s) return { error: 'no strip' }
+  const screen = document.querySelector('.screen--reader')
+  const r = (el) => el.getBoundingClientRect()
+  const toggles = [...s.querySelectorAll('.card-reviews__toggle')]
+  const drawer = s.querySelector('.phone-strip__drawer')
+  return {
+    tabs: toggles.map((b) => b.textContent),
+    short: toggles.filter((b) => r(b).height < 44 || r(b).width < 44).map((b) => b.textContent),
+    outside: toggles.filter((b) => r(b).right > innerWidth + 0.5 || r(b).left < -0.5).map((b) => b.textContent),
+    drawer: Math.round(r(drawer).height),
+    rows: s.querySelectorAll('.card-view__table tbody tr').length,
+    wide: screen ? screen.scrollWidth > screen.clientWidth + 1 : true,
+  }
+})()`
+if (process.env.LAYOUT_STRIP !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('card-strip', 375, 667)
+    await evaluate(`document.querySelector('.card-view .phone-strip').scrollIntoView({ block: 'center' })`)
+    await wait(200)
+    const closed = await evaluate(STRIP_CHECK)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    await evaluate(`document.querySelector('.card-view .card-reviews__toggle[data-part="reviews"]').click()`)
+    await wait(500)
+    await evaluate(`document.querySelector('.card-view .phone-strip').scrollIntoView({ block: 'center' })`)
+    await wait(200)
+    const opened = await evaluate(STRIP_CHECK)
+    writeFileSync(shot.replace('.png', '-open.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = closed.error === undefined && closed.drawer === 0 && closed.rows === 0 && closed.short.length === 0 && closed.outside.length === 0 && !closed.wide && opened.drawer > 100 && opened.rows === 4 && !opened.wide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip ${scheme} at 375x667: ${JSON.stringify(closed.tabs)}; closed drawer ${closed.drawer}px; short taps ${closed.short.length === 0 ? 'none' : closed.short.join(',')}; off screen ${closed.outside.length === 0 ? 'none' : closed.outside.join(',')}; open: ${opened.rows} rows, ${opened.drawer}px; ${closed.wide || opened.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+    const pageFile = await open('page-card-strip', 375, 667)
+    const inPage = await evaluate(STRIP_CHECK)
+    const pageShot = pageFile.replace('.png', `-${scheme}.png`)
+    writeFileSync(pageShot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const pageOk = inPage.error === undefined && inPage.drawer === 0 && inPage.short.length === 0 && !inPage.wide
+    if (!pageOk) failed++
+    console.log(`${pageOk ? 'PASS' : 'FAIL'}  page-card-strip ${scheme} at 375x667: ${JSON.stringify(inPage.tabs)}; closed drawer ${inPage.drawer}px; ${inPage.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${pageShot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

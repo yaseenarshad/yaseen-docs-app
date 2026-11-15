@@ -28,6 +28,8 @@ import { fixtureAnswers } from './fixtureAnswers'
  * `page-table-full` that table full screen (its ⤢, at the top right of the table: YAZ-5479).
  * YAZ-5458: `page-look` a made-up page with every block and deep nesting (`readingLookFixture.ts`), for the reading look.
  * YAZ-5477: `card-file-comments` a card file's own view, scrolled to its comments under the card (its Comment button).
+ * YAZ-5508: `card-strip` a card file's view with the Mac's strip under the card, closed (properties, a page linking it,
+ * comments); `page-card-strip` a page's own card and a card embed, each with its strip.
 
  * YAZ-5497: `page-headings` the Headings sheet of a page with 60 headings (over the arrows and the tab bar);
  * `page-headings-few` of a page with none ("no headings to list"); `page-headings-alone` in a vault with Search alone (no
@@ -50,7 +52,7 @@ import { fixtureAnswers } from './fixtureAnswers'
  * folders stuck at the top (`STICKY_FILES`).
  * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -150,6 +152,11 @@ const MENU_CARDS = [
   cardBlock('DEMO-52', 'Which river runs through Paris?\n---\nThe Seine'),
   cardBlock('DEMO-53', 'Which river runs through Vienna?\n---\nThe Danube', ['title "River of Vienna"', 'notitle', 'fix']),
 ].join('\n\n')
+/** YAZ-5508: the commented card with its own properties and four reviews, for `card-strip`. */
+const STRIP_CARD = COMMENTED_CARD.replace(
+  /<!-- card: DEMO-45, [^>]*-->/,
+  '<!-- card: DEMO-45, title "River of Seville", tags "spain" "rivers", level "B1", 2026-09-08T08:00Z good, 2026-09-12T08:00Z good, 2026-09-25T08:00Z good, 2026-11-13T08:00Z good -->',
+)
 
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
@@ -227,6 +234,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
             ? { 'cards/river-of-seville-demo-45.md': COMMENTED_CARD }
           : name.startsWith('folder-')
             ? { ...FOLDER_FILES, ...(name === 'folder-sheet' && { '.yaseendocs/link-click.json': '{"click":"explore"}' }) }
+          : name === 'card-strip'
+            ? { 'cards/river-of-seville-demo-45.md': STRIP_CARD, 'trips/Seville.md': '---\ntitle: Seville\nid: DEMO-46\n---\n\nThe river card: [[DEMO-45]].\n' }
             : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
@@ -542,6 +551,14 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await typed('seville')
       await open(/^River of Seville/, '.card-view .page-comments')
       document.querySelector('.card-view .page-comments')?.scrollIntoView({ block: 'start' })
+      break
+    case 'card-strip':
+      await typed('seville')
+      await open(/^River of Seville/, '.card-view .phone-strip')
+      break
+    case 'page-card-strip':
+      await open(/^Spanish words/, '.reader__body .card-embed .phone-strip')
+      document.querySelector('.reader__body .page-card')?.scrollIntoView({ block: 'start' })
       break
     case 'page-tables':
     case 'page-table-full': {

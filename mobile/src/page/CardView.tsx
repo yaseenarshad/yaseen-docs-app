@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { cardInContent, type CardAtPage } from '@client/review/cardRead'
-import { cardDueWords, cardFacts, cardFullDate, cardNextReview, reviewsTitle } from '@client/review/cardWords'
+import { cardDueWords, cardFacts, cardNextReview } from '@client/review/cardWords'
 import { cardFileShape } from '@shared/cardFileFormat'
-import { answerLabel, cardHistory } from '@shared/cardSchedule'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
 import { Frame } from '../screens/Frame'
@@ -13,13 +12,16 @@ import { openFile } from '../media/ui/vaultMedia'
 import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
 import { PageArrows } from './pageNav'
-import { openLink } from './openLink'
+import { openLink, type LinkDoor } from './openLink'
 import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
 import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
 import { useCardViewMenu } from '../cardMenu/cardViewMenu'
+
+/** YAZ-5508: the strip is its own lazy chunk (with the properties rows): the first load's list of chunks stays as it was. */
+const CardStrip = lazy(() => import('./cardStrip/CardStrip').then((m) => ({ default: m.CardStrip })))
 
 /** The words of a card file that is not valid (round 15, item 3). */
 export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
@@ -40,7 +42,9 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  * 4B (Review) opens this view for "Open card" (`{ kind: 'card', path, id }`), and the page view for "Open page"
  * (`{ kind: 'page', path, at: id }`).
  *
- * YAZ-5477: a card file shows its comments under the card and its history, with the page's Comment button and box
+ * YAZ-5508: under the card, the Mac's strip (`cardStrip/CardStrip.tsx`), closed; then the due line.
+ *
+ * YAZ-5477: a card file shows its comments under the card and its strip, with the page's Comment button and box
  * (`comments/PageComments.tsx`, the same block, no copy). A card in a page shows none: they are the page's.
  */
 export default function CardView({ path, id }: { path: string; id: string }) {
@@ -50,6 +54,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const data = useVaultData()
   // YAZ-5455: the vault's link pills (their CSS variables) and its "Clicking a link".
   const look = useVaultLook(app.services.store, data)
+  const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: look?.click }
   const [text, setText] = useState<string | null | undefined>(undefined)
   const [reads, setReads] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
@@ -147,8 +152,15 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
         {card !== null && data !== null && (
           <>
+            {/* YAZ-5508: the Mac's strip, tucked under the card and closed: Reviews, Properties, Linked mentions (and a card
+                file's Embedded in), each opening its drawer. Review off: none, as the Mac. */}
+            {reviewOn && (
+              <Suspense fallback={null}>
+                <CardStrip key={`${path}\n${card.id ?? id}`} reviews={card.reviews} settings={data.review} properties={card.properties ?? {}} data={data} door={door} pages={card.id === null ? undefined : { id: card.id, embeds: isFile }} />
+              </Suspense>
+            )}
+            {/* The due line under the strip, as the Mac's card window says it under its strip. */}
             <p className="card-view__facts">{facts === null ? 'New card' : `${cardDueWords(cardNextReview(facts.due, facts.inSteps, now))}${facts.recall === null ? '' : ` · ${Math.round(facts.recall * 100)}% chance you remember it`}`}</p>
-            <History card={card} data={data} />
           </>
         )}
         {!isFile && record !== undefined && (
@@ -161,38 +173,5 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         {tools.toast}
       </article>
     </Frame>
-  )
-}
-
-/** The card's review history: one row for each answer (the Mac's table, read only; the review to come is the line above it). */
-function History({ card, data }: { card: CardAtPage; data: NonNullable<ReturnType<typeof useVaultData>> }) {
-  const settings = data.review
-  const rows = cardHistory(card.reviews, settings)
-  // A new card has no history: nothing to say (the line above says "New card").
-  if (rows.length === 0) return null
-  return (
-    <section className="card-view__history" aria-label="Review history">
-      <h3 className="section">{reviewsTitle(card.reviews.length)}</h3>
-      {rows.length > 0 && (
-        <table className="card-view__table">
-          <thead>
-            <tr>
-              <th>Reviewed on</th>
-              <th>Answer</th>
-              <th>Next due</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i}>
-                <td>{cardFullDate(Date.parse(row.review.at))}</td>
-                <td>{answerLabel(row.review.rating, settings)}</td>
-                <td>{cardFullDate(row.due)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </section>
   )
 }
