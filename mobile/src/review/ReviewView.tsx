@@ -94,6 +94,8 @@ export function ReviewView(props: ReviewViewProps) {
   const { link, vault, vaultName } = props
   const given = props.media ?? link.media
   const [setup, setSetup] = useState<Setup | null>(null)
+  // The ⋯'s card actions are a chunk of their own: loaded now, the first ⋯ shows every row at once (Mac order).
+  useEffect(() => void CardActions.preload().catch(() => {}), [])
   useEffect(() => {
     let live = true
     const source = createReviewSource(link, vault, vaultName)
