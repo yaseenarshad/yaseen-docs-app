@@ -103,6 +103,8 @@ export interface ViewDef {
   clickOpens?: 'window' | 'background'
   /** A calendar's "Hide weekends" (YAZ-4595 S33): Monday to Friday only. Absent = the Settings › Folder pages default. */
   hideWeekends?: boolean
+  /** A calendar's "Fold long days" (YAZ-5586): `false` = Month shows every card and bar of each day, no "+N more". Absent = On. */
+  foldDays?: boolean
   /** A calendar's line between weeks (YAZ-4878): whole px, 1–12. Absent = the Settings › Folder pages default. */
   weekLine?: number
   /** A calendar's line between days (YAZ-4878): whole px, 1–12. Absent = the Settings › Folder pages default. */

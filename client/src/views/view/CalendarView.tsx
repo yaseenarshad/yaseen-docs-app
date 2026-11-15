@@ -92,6 +92,8 @@ export interface CalendarViewProps {
   sundayFirst?: boolean
   /** "Hide weekends" (YAZ-4595 S33): Monday to Friday only; a weekend page shows on the Friday before (the Monday after when that Friday is off the grid, YAZ-4635 P3), marked Sat or Sun. */
   hideWeekends?: boolean
+  /** "Fold long days" (YAZ-5586): Month folds a busy day to `DAY_CARDS` and "+N more"; off, every day shows all its cards and bars and its row grows. */
+  foldDays?: boolean
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
@@ -161,8 +163,10 @@ function gridLines(view: ViewDef | undefined): CSSProperties | undefined {
   } as CSSProperties
 }
 
-export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, clickOpens = 'background', windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, pageDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false }: CalendarViewProps) {
+export function CalendarView({ hover, def, view, records, settings, resolve, rows, dateKey, endKey = null, dateColumns = NO_COLUMNS, readOnly = NO_READ_ONLY, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, clickOpens = 'background', windowLink, onNotice, onMoveToDay, onMoveSpan, onChooseEnd, onAddEndColumn, moveError, onNewOnDay, pageDoors, onStyle, history, onHeaderRow, scale, onScale, wrap = false, sundayFirst = false, hideWeekends = false, foldDays = true }: CalendarViewProps) {
   const unitText = useUnit()
+  // Month's cards and bar lanes per day before "+N more" (D11); with "Fold long days" off (YAZ-5586), no limit, so nothing folds.
+  const dayCap = foldDays ? DAY_CARDS : Infinity
   // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
   const folderIcons = useContext(FolderPages)?.folderIcons ?? true
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
@@ -222,22 +226,22 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     return new Map(weeks.flat().map((day) => [day, homes === null ? of(day) : [...of(day), ...(homes.get(day) ?? []).flatMap(of)]]))
   }, [allWeeks, weeks, singles, dateKey, hideWeekends])
   /**
-   * Month's budget per day (D11, YAZ-4858): a week row shows at most `DAY_CARDS` lanes of bars; a day then shows its
+   * Month's budget per day (D11, YAZ-4858): a week row shows at most `dayCap` lanes of bars; a day then shows its
    * one-day cards in the room its shown bars leave, and "+N more" counts the rest, hidden bars too.
    */
   const budgets = useMemo(() => {
     const out = new Map<DayKey, { cards: number; hiddenBars: number }>()
     weeks.forEach((week, w) => {
-      const cap = Math.min(layouts[w].lanes, DAY_CARDS)
+      const cap = Math.min(layouts[w].lanes, dayCap)
       week.forEach((day, c) => {
         let shownBars = 0
         let hiddenBars = 0
         for (const bar of layouts[w].bars) if (bar.col <= c && c < bar.col + bar.cols) bar.lane < cap ? shownBars++ : hiddenBars++
-        out.set(day, { cards: Math.max(0, DAY_CARDS - shownBars), hiddenBars })
+        out.set(day, { cards: Math.max(0, dayCap - shownBars), hiddenBars })
       })
     })
     return out
-  }, [weeks, layouts])
+  }, [weeks, layouts, dayCap])
   // The page window (YAZ-4547 D24): day by day across the days on screen, a day's bars first (a bar once, on its first
   // day there), then its timed cards (every card, also those behind "+N more"), then "No date". Once per rows or page change.
   const windowOrder = useMemo(() => {
@@ -265,12 +269,12 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   const hiddenHome = (current: string | null): string | null => {
     if (current === null) return null
     if (scale !== 'week') {
-      for (const [day, list] of dayCards) if (list.findIndex((r) => r.record.path === current) >= (budgets.get(day)?.cards ?? DAY_CARDS)) return day
+      for (const [day, list] of dayCards) if (list.findIndex((r) => r.record.path === current) >= (budgets.get(day)?.cards ?? dayCap)) return day
       let hidden: DayKey | null = null
       for (const [w, layout] of layouts.entries())
         for (const bar of layout.bars) {
           if (bar.span.row.record.path !== current) continue
-          if (bar.lane < DAY_CARDS) return null
+          if (bar.lane < dayCap) return null
           hidden ??= weeks[w][bar.col]
         }
       if (hidden !== null) return hidden
@@ -611,20 +615,20 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         </div>
         {weeks.map((week, w) => {
           const layout = layouts[w]
-          // Week shows every lane; Month at most DAY_CARDS, and every lane while one of its days is open (YAZ-4858).
+          // Week shows every lane; Month at most `dayCap`, and every lane while one of its days is open (YAZ-4858).
           const open = week.some((day) => expanded === day || revealed === day)
-          const lanes = isWeek || open ? layout.lanes : Math.min(layout.lanes, DAY_CARDS)
+          const lanes = isWeek || open ? layout.lanes : Math.min(layout.lanes, dayCap)
           return (
             <div key={week[0]} className="view-cal__week view-cal__week--days" role="row" style={{ gridTemplateRows: `auto${lanes > 0 ? ` repeat(${lanes}, auto)` : ''} 1fr` }}>
               {week.map((day, c) => {
                 const list = dayCards.get(day) ?? []
                 // Open by its "+N more", or while the mini window is on one of its hidden cards (13J).
                 const all = expanded === day || revealed === day
-                const budget = budgets.get(day) ?? { cards: DAY_CARDS, hiddenBars: 0 }
-                // Week shows every card (D22); Month shows the room the day's bars leave of DAY_CARDS, and "+N more".
+                const budget = budgets.get(day) ?? { cards: dayCap, hiddenBars: 0 }
+                // Week shows every card (D22); Month shows the room the day's bars leave of `dayCap`, and "+N more".
                 const shown = isWeek || all ? list : list.slice(0, budget.cards)
                 const folded = list.length - Math.min(list.length, budget.cards) + budget.hiddenBars
-                const more = all ? 0 : folded - (lanes > DAY_CARDS ? budget.hiddenBars : 0)
+                const more = all ? 0 : folded - (lanes > dayCap ? budget.hiddenBars : 0)
                 const inMonth = isWeek || Number(day.slice(5, 7)) === month.m + 1
                 return (
                   <div

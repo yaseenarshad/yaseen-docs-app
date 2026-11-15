@@ -1409,6 +1409,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
           sundayFirst={defaults.weekStartsOn === 'sunday'}
           wrap={view.cardTitles === 'wrap'}
           hideWeekends={hidesWeekends(view, hideWeekendsDefault(defaults))}
+          foldDays={view.foldDays !== false}
         />
       ) : view.type === 'cards' ? (
         <CardsView

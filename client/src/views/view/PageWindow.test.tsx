@@ -731,6 +731,28 @@ ${grouped('board').split('\n').slice(1).join('\n').replace('name: V', 'name: B')
       expect(walk()).toEqual(['B', 'A', 'C', 'D', 'E'].map(path))
     })
 
+    it('13J: on a hidden card the day opens while the window is there; with "Fold long days" Off nothing is hidden (YAZ-5586)', () => {
+      const busy = ['P', 'Q', 'R', 'S', 'T'].map((n) => dated(n, '2026-12-15'))
+      const more = () => document.querySelector('[data-day="2026-12-15"] .view-cal__more')?.textContent ?? null
+      const { setRecords } = mount(CALENDAR, {}, host())
+      setRecords(busy)
+      expect(more()).toBe('+2 more')
+      openItem('calendar', path('R'))
+      click(button('Next row'))
+      expect(shownPath()).toBe(path('S'))
+      expect(more()).toBe('Show less')
+      expect(marked()).toEqual([path('S')])
+      act(() => root?.unmount())
+      container?.remove()
+      dropAllPageWindows()
+      const off = mount(`${CALENDAR}    foldDays: false\n`, {}, host())
+      off.setRecords(busy)
+      expect(more()).toBeNull()
+      openItem('calendar', path('T'))
+      expect(marked()).toEqual([path('T')])
+      expect(more()).toBeNull()
+    })
+
     it('in Week, ‹ › go through the week on screen', () => {
       const { setRecords } = mount(`${CALENDAR}    calendarScale: week\n`, {}, host())
       setRecords(CAL)
