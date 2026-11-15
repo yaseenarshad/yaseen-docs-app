@@ -10,7 +10,13 @@
  * - A new version installs into a cache of its own, and only when it is WHOLE: each file answered 200 with the right
  *   type, and the page names this build's entry (the version check). A broken or mixed deploy fails the install; the
  *   old version keeps working, untouched.
- * - It never takes over by itself. The page sends `SKIP_WAITING` at a safe moment (`safeMoment.ts`).
+ * - It never takes over by itself. The page sends `SKIP_WAITING` only when the person taps Restart (`safeMoment.ts`).
+ * - YAZ-5555, NO SILENT SWITCH: the browser itself activates a waiting version once no page of the old one is open (a
+ *   cold start). So the worker keeps THE CHOSEN VERSION (`CHOSEN_KEY`): a page open gets the chosen version's page,
+ *   even from a newer worker, until the person taps Restart; that load (`UPDATE_MARK` in its address) chooses the
+ *   newest. The page asks with `STATE_ASK` (a message: the CSP lets the page fetch only GitHub) for { active, chosen } to show "A new version is ready" when they differ. The
+ *   chosen version's cache is never pruned. With no choice stored yet (the first install, or the first worker with
+ *   this rule), the active version is the chosen one.
  * - After a takeover it keeps the version before too, so a page that still runs the old version can load its lazy
  *   chunks, even when the host no longer has them. Older versions are deleted.
  * - DRAW.IO (YAZ-5533) is NOT in the shell: nothing about it downloads at install. Its files (`/drawio/<hash>/…`: the
@@ -48,12 +54,22 @@ const ACTIVE_KEY = '/__notecards/active'
 const PAGES_KEY = '/__notecards/pages'
 /** YAZ-5303: every version that was ever the active one: only such a version's cache may go (never a newer one). */
 const RETIRED_KEY = '/__notecards/were-active'
+/** YAZ-5555: the version the person runs: page opens get its page until a Restart chooses a newer one. */
+const CHOSEN_KEY = '/__notecards/chosen'
+/** YAZ-5555: the page's message (with a port for the answer): which version is active and which is chosen. */
+export const STATE_ASK = 'notecards:state'
+/** YAZ-5555: a page open with this in its query is the Restart: it chooses the active version. */
+export const UPDATE_MARK = 'notecards-update'
+export interface WorkerState {
+  active: string
+  chosen: string
+}
 export const cacheName = (version: string) => `${CACHE_PREFIX}${version}`
 /** YAZ-5533: the draw.io files a diagram fetched, one cache per draw.io folder (`/drawio/<hash>/`). */
 export const DRAWIO_CACHE_PREFIX = 'notecards-drawio-'
 export const drawioCacheName = (base: string) => `${DRAWIO_CACHE_PREFIX}${base.split('/').filter(Boolean).pop() ?? ''}`
 const isDrawio = (path: string) => path.startsWith('/drawio/')
-/** The message from the page: "take over now" (the page decided it is a safe moment). */
+/** The message from the page: "take over now" (the person tapped Restart: `safeMoment.ts`). */
 export const SKIP_WAITING = 'notecards:skip-waiting'
 /**
  * YAZ-5303: the message of a page that has started: the page it replaced (in the same tab) is gone now, so a version
@@ -87,6 +103,8 @@ interface FetchEventLike extends ExtendableEventLike {
 }
 interface MessageEventLike extends ExtendableEventLike {
   data: unknown
+  /** YAZ-5555: the port a `STATE_ASK` is answered on. */
+  ports?: readonly { postMessage(message: unknown): void }[]
 }
 export interface SwScope {
   location: { origin: string }
@@ -104,7 +122,7 @@ export interface SwScope {
 /** A hashed build file: its name changes with its bytes, so a copy of it is right forever. */
 const isHashed = (path: string) => path.startsWith('/assets/')
 
-export type Route = { kind: 'pass' } | { kind: 'shell'; key: string } | { kind: 'drawio'; key: string }
+export type Route = { kind: 'pass' } | { kind: 'shell'; key: string; navigate?: true; choose?: true } | { kind: 'drawio'; key: string }
 const PASS: Route = { kind: 'pass' }
 
 /** What the worker does with a request: `pass` (it does not touch it: the network answers) or `shell` (its kept copy). */
@@ -124,9 +142,10 @@ export function route(request: RequestLike, origin: string, build: ShellBuild): 
   if (request.mode === 'navigate') {
     // The landing pages of the three shared links (YAZ-5290).
     const landing = /^\/(friend|group|join)(\/|\.html)?$/.exec(path)
-    if (landing) return { kind: 'shell', key: `/${landing[1]}` }
+    if (landing) return { kind: 'shell', key: `/${landing[1]}`, navigate: true }
     // Any other address of the site is the app (single-page), as the host's fallback does. A file name is not.
-    return /\.[a-z0-9]+$/i.test(path) && path !== '/index.html' ? PASS : { kind: 'shell', key: '/' }
+    if (/\.[a-z0-9]+$/i.test(path) && path !== '/index.html') return PASS
+    return url.searchParams.has(UPDATE_MARK) ? { kind: 'shell', key: '/', navigate: true, choose: true } : { kind: 'shell', key: '/', navigate: true }
   }
   if (build.files.includes(path) || isHashed(path)) return { kind: 'shell', key: path }
   return PASS
@@ -289,7 +308,8 @@ export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: S
   const wereActive = new Set<string>(JSON.parse((await (await meta.match(RETIRED_KEY))?.text()) ?? '[]') as string[])
   const open = scope.clients.matchAll ? await scope.clients.matchAll({ type: 'window', includeUncontrolled: true }) : []
   const pages = await readPages(scope.caches)
-  const keep = new Set([cacheName(build.version)])
+  // YAZ-5555: the chosen version stays too: page opens still get its page.
+  const keep = new Set([cacheName(build.version), cacheName(await chosenOf(scope.caches, build))])
   const alive: Record<string, string> = {}
   for (const page of open) {
     // YAZ-5533: the hidden draw.io frame of a page is no page of its own.
@@ -321,6 +341,34 @@ const pathOf = (url: string): string => {
   }
 }
 
+async function chosenOf(caches: CacheStorageLike, build: ShellBuild): Promise<string> {
+  try {
+    return (await (await (await caches.open(META_CACHE)).match(CHOSEN_KEY))?.text()) || build.version
+  } catch {
+    return build.version
+  }
+}
+
+/** YAZ-5555: the person chose `version` (the Restart): page opens get its page from now on. */
+export async function chooseVersion(caches: CacheStorageLike, version: string): Promise<void> {
+  await (await caches.open(META_CACHE)).put(CHOSEN_KEY, new Response(version))
+}
+
+/** YAZ-5555: what the page asks: this (active) version, and the chosen one. */
+export async function workerState(caches: CacheStorageLike, build: ShellBuild): Promise<WorkerState> {
+  return { active: build.version, chosen: await chosenOf(caches, build) }
+}
+
+/**
+ * YAZ-5555: the version whose page a page open gets: the chosen one while its cache holds that page (never a silent
+ * switch); else this version (the chosen cache is gone: nothing older to run).
+ */
+export async function pageVersion(caches: CacheStorageLike, build: ShellBuild, key: string): Promise<string> {
+  const chosen = await chosenOf(caches, build)
+  if (chosen === build.version || !(await caches.has(cacheName(chosen)))) return build.version
+  return (await (await caches.open(cacheName(chosen))).match(key)) ? chosen : build.version
+}
+
 /** Activate: notes this version as the active one. No cache goes here: `prune` removes a version when no page runs it. */
 export async function activate(caches: CacheStorageLike, build: ShellBuild): Promise<void> {
   const meta = await caches.open(META_CACHE)
@@ -333,6 +381,8 @@ export async function activate(caches: CacheStorageLike, build: ShellBuild): Pro
   wereActive.add(build.version)
   await meta.put(RETIRED_KEY, new Response(JSON.stringify([...wereActive])))
   await meta.put(ACTIVE_KEY, new Response(build.version))
+  // YAZ-5555: with no choice yet (the first install, or the first worker of this rule), this version is the chosen one.
+  if ((await meta.match(CHOSEN_KEY)) === undefined) await meta.put(CHOSEN_KEY, new Response(build.version))
 }
 
 /** The worker: its four events. */
@@ -349,13 +399,22 @@ export function wire(scope: SwScope, build: ShellBuild): void {
     const r = route(event.request, scope.location.origin, build)
     if (r.kind === 'pass') return // not ours: the browser does the request as if there were no worker
     if (r.kind === 'drawio') return void event.respondWith(respondDrawio(scope, build, r.key, event.request))
-    event.respondWith(respond(scope, build, r.key, event.request))
-    // A page open: the new page runs this version; then a version with no page left can go.
-    if (event.request.mode === 'navigate' && event.resultingClientId) event.waitUntil(notePage(scope.caches, event.resultingClientId, build.version).then(() => prune(scope, build)))
+    if (!r.navigate) return void event.respondWith(respond(scope, build, r.key, event.request))
+    // A page open (YAZ-5555): the chosen version's page; the Restart's open chooses this version first.
+    const served = (async () => {
+      if (r.choose) await chooseVersion(scope.caches, build.version)
+      const version = r.choose ? build.version : await pageVersion(scope.caches, build, r.key)
+      return { version, response: await respond(scope, { ...build, version }, r.key, event.request) }
+    })()
+    event.respondWith(served.then((s) => s.response))
+    // The new page runs the version it got; then a version with no page left can go.
+    if (event.resultingClientId) event.waitUntil(served.then((s) => notePage(scope.caches, event.resultingClientId!, s.version)).then(() => prune(scope, build)))
+    else if (r.choose) event.waitUntil(served)
   })
   scope.addEventListener('message', (event) => {
     const type = typeof event.data === 'object' && event.data !== null ? (event.data as { type?: unknown }).type : undefined
     if (type === SKIP_WAITING) event.waitUntil(scope.skipWaiting())
     if (type === PAGE_READY) event.waitUntil(prune(scope, build))
+    if (type === STATE_ASK) event.waitUntil(workerState(scope.caches, build).then((state) => event.ports?.[0]?.postMessage(state)))
   })
 }

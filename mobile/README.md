@@ -162,15 +162,17 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
   fetched yet draws as placeholder boxes until the phone is online.
   A version's cache stays while any open page runs that version (each page open notes its version; YAZ-5303), so an
   open page of an old version still loads its lazy chunks; with no page of it left, the next open removes it.
-* **Updates** (`src/pwa/updates.ts`, `safeMoment.ts`, `UpdateLine.tsx`): a new version downloads in the background.
-  It takes over at the next open, before the app runs (`main.tsx`), or after "A new version is ready." → Restart, or
-  by itself when the app is idle (YAZ-5555): the first time it comes back to the foreground after 30 s or more hidden,
-  once the new version took over, and only when nothing is unsaved. The rule is written once, at the top of
-  `safeMoment.ts`; keep this paragraph in step with it. Held (no restart by itself; it waits for the next return):
-  answers, comments, ticks or friends removes that wait to be written; words in a comment box not sent; the Review
-  tab or a review in progress; a screen or form over the tabs; the first download. Restart (the active case) still
-  works on the Review tab, over waiting comments; never while answers wait, a comment box holds words, or the first
-  download runs. Settings shows the running build at its top ("Build 8432fd9 · 15 Nov, 14:02").
+* **Updates** (`src/pwa/updates.ts`, `safeMoment.ts`, `UpdateLine.tsx`, `swCore.ts`): a new version downloads in the
+  background. It runs ONLY after the person taps Restart (YAZ-5555, Yaseen's decision): never by itself, not at a cold
+  start, not when the app comes back, not after a while. Whenever a new version is there, "A new version is ready."
+  shows over the tabs with Restart; the update state is read at the start and at each return, so it shows on a cold
+  start and on return. The browser activates a waiting worker by itself once no page of the old one is open, so the
+  worker keeps THE CHOSEN VERSION: page opens get its page until the Restart's load (`?notecards-update=1`, removed
+  from the address at the start) chooses the newest; the page asks the worker by a message ({ active, chosen }; the CSP lets the page fetch only GitHub). Restart
+  works on any tab and over waiting comments; it never runs while answers wait, a comment box holds words, or the
+  first download runs: the line then says why ("Restart after your answers are sent."). The rule is written once, at
+  the top of `safeMoment.ts`; keep this paragraph in step with it. Settings shows the running build at its top
+  ("Build 8432fd9 · 15 Nov, 14:02").
   **Keep this.** It is how an installed home-screen app gets each new build: a person never has to delete and add the
   app again. Every publish must keep `UpdateLine.tsx` ("A new version is ready." → Restart), the `no-cache` rule on
   `sw.js`, and `updateViaCache: "none"`. To test it: publish, close the app, open it again; the line shows, then Restart.

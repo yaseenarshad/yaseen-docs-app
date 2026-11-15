@@ -4,7 +4,6 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { UpdateLineView } from '../pwa/UpdateLine'
 import type { AppMoment } from '../pwa/safeMoment'
-import { RESUME_AFTER_MS } from '../pwa/safeMoment'
 import type { Updates } from '../pwa/updates'
 import { reviewInProgress } from './inProgress'
 import { SEEN_MS } from './tapGuard'
@@ -148,19 +147,18 @@ describe('checker round 3: "a review is in progress" (YAZ-5269)', () => {
 })
 
 function fakeUpdates() {
-  return { applied: 0, ready: () => true, tookOver: () => true, prepare: () => {}, start: async () => {}, subscribe: () => () => {}, apply(this: { applied: number }) { this.applied++ }, check: async () => {} } as unknown as Updates & { applied: number }
+  return { applied: 0, ready: () => true, tookOver: () => true, start: async () => {}, subscribe: () => () => {}, apply(this: { applied: number }) { this.applied++ }, check: async () => {} } as unknown as Updates & { applied: number }
 }
 
 describe('checker round 3: the update line while a review is in progress on Friends', () => {
-  it('U1: Restart is offered and works; a resume after 10 min does not swap; answers sent later: is Restart offered again without a tab change?', async () => {
+  it('U1: Restart is offered and works; a resume never swaps; answers sent later: is Restart offered again without a tab change?', async () => {
     const updates = fakeUpdates()
     const moment: AppMoment = { phase: 'ready', routeOpen: false, tab: 'friends', downloading: false, answersWaiting: 0, reviewInProgress: true }
     let waiting = 2
-    let t = 0
     const host = document.createElement('div')
     document.body.append(host)
     const root = createRoot(host)
-    const draw = () => act(async () => root.render(<UpdateLineView updates={updates} moment={moment} readWaiting={async () => waiting} now={() => t} />))
+    const draw = () => act(async () => root.render(<UpdateLineView updates={updates} moment={moment} readWaiting={async () => waiting} />))
     await draw()
     await act(async () => {})
     console.log('[U1] with 2 answers waiting:', JSON.stringify(host.textContent))
@@ -169,10 +167,9 @@ describe('checker round 3: the update line while a review is in progress on Frie
     await act(async () => {})
     const stale = host.textContent
     console.log('[U1] answers sent, no tab change:', JSON.stringify(stale), '| Restart:', host.querySelector('button') !== null)
-    // A resume after 10 minutes: no swap (the review holds), and the count is read again.
+    // A resume: no swap (YAZ-5555: never by itself), and the count is read again.
     Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
     await act(async () => void document.dispatchEvent(new Event('visibilitychange')))
-    t += 2 * RESUME_AFTER_MS
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
     await act(async () => void document.dispatchEvent(new Event('visibilitychange')))
     await act(async () => {})

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CACHE_PREFIX, SKIP_WAITING, cacheName, route, wire, type ShellBuild } from './swCore'
+import { CACHE_PREFIX, SKIP_WAITING, cacheName, chooseVersion, route, wire, type ShellBuild } from './swCore'
 import { fakeCaches, fakeScope, fakeServer, type FakeFile } from './testing'
 
 /**
@@ -38,6 +38,8 @@ async function installed(v: string, caches = fakeCaches()) {
   const sw = fakeScope(server, caches)
   wire(sw.scope, build)
   await sw.install()
+  // The person tapped Restart for it (YAZ-5555: else page opens keep the version chosen before).
+  await chooseVersion(caches, v)
   await sw.activate()
   return { sw, server, build, caches }
 }
@@ -74,13 +76,13 @@ describe('which requests the worker takes', () => {
   })
 
   it('a page open: the app (single-page), or the friend landing page', () => {
-    expect(at(`${ORIGIN}/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/' })
-    expect(at(`${ORIGIN}/some/route`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/' })
-    expect(at(`${ORIGIN}/friend`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/friend' })
-    expect(at(`${ORIGIN}/friend/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/friend' })
+    expect(at(`${ORIGIN}/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/', navigate: true })
+    expect(at(`${ORIGIN}/some/route`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/', navigate: true })
+    expect(at(`${ORIGIN}/friend`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/friend', navigate: true })
+    expect(at(`${ORIGIN}/friend/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/friend', navigate: true })
     // YAZ-5290: the group and join links have their landing page too.
-    expect(at(`${ORIGIN}/group`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/group' })
-    expect(at(`${ORIGIN}/join/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/join' })
+    expect(at(`${ORIGIN}/group`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/group', navigate: true })
+    expect(at(`${ORIGIN}/join/`, 'GET', 'navigate')).toEqual({ kind: 'shell', key: '/join', navigate: true })
   })
 
   it('other same-origin files that are not the shell go to the network untouched (the splash pictures)', () => {
@@ -111,7 +113,7 @@ describe('the worker in its events', () => {
     expect(await (await sw.request(`${ORIGIN}/friend`, { mode: 'navigate' }))!.text()).toContain('Friend')
   })
 
-  it('install does not take over by itself: only the message from the page does (the safe moment is the page\'s)', async () => {
+  it('install does not take over by itself: only the message from the page does (a tap on Restart)', async () => {
     const { sw } = await installed('v1')
     expect(sw.log).not.toContain('skipWaiting')
     await sw.message({ type: 'other' })

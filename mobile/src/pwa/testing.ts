@@ -107,7 +107,7 @@ export function fakeScope(server: Pick<ReturnType<typeof fakeServer>, 'fetch' | 
     windows,
     install: () => run('install', {}),
     activate: () => run('activate', {}),
-    message: (data: unknown) => run('message', { data }),
+    message: (data: unknown, ports?: { postMessage(message: unknown): void }[]) => run('message', { data, ports }),
     /** The worker's answer to a request, or `null` when it let the request go to the network untouched. */
     async request(url: string, init: { method?: string; mode?: string; clientId?: string; resultingClientId?: string } = {}): Promise<Response | null> {
       const request = { url: new URL(url, server.origin).href, method: init.method ?? 'GET', mode: init.mode ?? 'cors' }

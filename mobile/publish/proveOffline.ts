@@ -11,7 +11,9 @@ import { join } from 'node:path'
  *  1. the app loads with zero CSP violations and zero errors, and the service worker installs and keeps the shell;
  *  2. the CSP is live (a call to another origin is refused);
  *  3. with the host gone, a second open still shows the app, a lazy chunk still loads, the friend page still opens;
- *  4. a new deploy installs in the background and takes over at the next open (before the app runs);
+ *  4. a new deploy installs in the background; it NEVER runs by itself (YAZ-5555): after the browser activated it, a
+ *     cold open still runs the old version and the worker's state says a new one is ready; the Restart's load
+ *     (`?notecards-update=1`) runs it, and from then on every open does;
  *  5. a broken deploy (a chunk missing) never installs; the last good version keeps working, also offline;
  *  6. dark mode paints the dark background.
  * Run after `npm run mobile:build`: `npx vite-node mobile/publish/proveOffline.ts`. Pictures go to $PROOF_DIR (or a temp folder).
@@ -232,12 +234,14 @@ try {
     // The old app asks for a new version at its start; the new one installs and waits (the open page stays old).
     const waits = await until(`navigator.serviceWorker.getRegistration().then(r => !!r.waiting && r.waiting.state === 'installed')`, 30_000)
     record('0b the new build installs in the background and waits', waits)
-    // The next open: the old app asks the waiting version to take over (Chrome does it once the old worker is idle).
+    // The next open: Chrome activates the waiting version once no page of the old one is open.
     const t0 = Date.now()
+    await open('about:blank')
     await open(`${ORIGIN}/`)
     const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && !r.installing && r.active.state === 'activated')`, 60_000)
-    record('0c it takes over at the next open (the old build stays kept)', took, `${((Date.now() - t0) / 1000).toFixed(1)} s`)
-    await open(`${ORIGIN}/`)
+    record('0c it activates at the next open (the old build stays kept)', took, `${((Date.now() - t0) / 1000).toFixed(1)} s`)
+    // YAZ-5555: the Restart's load (from a worker of an older rule, the activation itself chose it).
+    await open(`${ORIGIN}/?notecards-update=1`)
     const after = await evaluate(`document.querySelector('script[src*="/assets/index-"]').getAttribute('src')`)
     record('0d the open after that runs the new build', after === liveEntry, after)
   }
@@ -309,21 +313,36 @@ try {
   const stillOld = !(await evaluate(`!!document.querySelector('meta[name=proof]')`))
   if (process.env.PROOF_TRACE) console.log('versions:', [...new Set(versions)].slice(-10).join(' '))
   record('4a the new version installs in the background; the open page stays on the old one', waits && stillOld)
-  // The next open: the app asks the waiting version to take over before it starts. Chrome activates a new worker only
-  // when the old one is idle (1 to 34 s in these runs); the app waits 3 s, then starts the old version, and the new one
-  // takes over in the background. The open after that runs it. (An old page that stays open during a takeover keeps its
-  // chunks: `src/pwa/update.test.ts`, and the slow swap of YAZ-5303 with two real builds.)
+  // YAZ-5555: nothing asks the waiting version to take over. Chrome activates it by itself once no page of the old one
+  // is open (a cold start: the tab leaves the site, then opens it again). The open still runs the OLD version: the
+  // worker keeps the chosen one; its state says a new one is ready (the app shows "A new version is ready" + Restart).
   const t0 = Date.now()
-  await open(`${ORIGIN}/`)
-  const took = await until(`navigator.serviceWorker.getRegistration().then(r => !r.waiting && r.active.state === 'activated')`, 60_000)
+  let took = false
+  for (let i = 0; i < 12 && !took; i++) {
+    await open('about:blank')
+    await wait(1000)
+    await open(`${ORIGIN}/`)
+    took = await until(`navigator.serviceWorker.getRegistration().then(r => !!r && !r.waiting && r.active.state === 'activated' && r.active.scriptURL.endsWith('/sw.js'))`, 5_000)
+    if (took) took = (await evaluate(`new Promise((ok) => { const c = new MessageChannel(); c.port1.onmessage = (e) => ok(e.data); navigator.serviceWorker.controller.postMessage({ type: 'notecards:state' }, [c.port2]); setTimeout(() => ok(null), 2000) }).then(s => !!s && s.active.endsWith('v2-proof'))`).catch(() => false)) === true
+  }
   const tookMs = Date.now() - t0
+  await open('about:blank')
   await open(`${ORIGIN}/`)
-  const swapped = await until(`!!document.querySelector('meta[name=proof]') && !!document.querySelector('input[name="token"]')`, 10_000)
-  record('4b the new version takes over by itself, and the next open runs it', took && swapped, `took over ${(tookMs / 1000).toFixed(1)} s after the open`)
-  // 4c (YAZ-5303): no page of the old version is left now: the new page's "page ready" removes the old cache.
+  const stillV1 = (await until(`!!document.querySelector('input[name="token"]')`, 10_000)) && !(await evaluate(`!!document.querySelector('meta[name=proof]')`))
+  const state = await evaluate(`new Promise((ok) => { const c = new MessageChannel(); c.port1.onmessage = (e) => ok(e.data); navigator.serviceWorker.controller.postMessage({ type: 'notecards:state' }, [c.port2]); setTimeout(() => ok(null), 2000) })`).catch(() => null)
+  const told = state !== null && state.active !== state.chosen && String(state.active).endsWith('v2-proof')
+  record('4b the browser activates the new version, yet a cold open still runs the old one; the state says a new one is ready', took && stillV1 && told, `activated ${(tookMs / 1000).toFixed(1)} s after the first open; state ${JSON.stringify(state)}`)
+  // The tap on Restart loads the address with the update mark: the worker chooses the new version; the app drops the mark.
+  await open(`${ORIGIN}/?notecards-update=1`)
+  const restarted = (await until(`!!document.querySelector('meta[name=proof]') && !!document.querySelector('input[name="token"]')`, 10_000)) && (await evaluate(`location.search`)) === ''
+  await open('about:blank')
+  await open(`${ORIGIN}/`)
+  const stays = await until(`!!document.querySelector('meta[name=proof]') && !!document.querySelector('input[name="token"]')`, 10_000)
+  record('4c the Restart runs the new version (the mark leaves the address), and every later open does', restarted && stays)
+  // 4d (YAZ-5303): no page of the old version is left now: the new page's "page ready" removes the old cache.
   await until(`caches.keys().then(ks => ks.filter(k => k.startsWith('notecards-shell-')).length === 1)`, 10_000)
   const left = await evaluate(shellCaches)
-  record('4c with no page of the old version left, only the new version stays', left.length === 1 && left[0].endsWith('v2-proof'), JSON.stringify(left))
+  record('4d with no page of the old version left, only the new version stays', left.length === 1 && left[0].endsWith('v2-proof'), JSON.stringify(left))
 
   // 5. A broken deploy.
   await host(v3)

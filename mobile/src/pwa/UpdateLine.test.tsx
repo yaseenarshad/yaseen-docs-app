@@ -2,23 +2,21 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it } from 'vitest'
-import { RESUME_AFTER_MS, type AppMoment } from './safeMoment'
+import type { AppMoment } from './safeMoment'
 import { UpdateLineView } from './UpdateLine'
 import type { Updates } from './updates'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-/** The "A new version is ready" line (YAZ-5087) and its safe moment, with a fake update and a fake answer list. */
+/** The "A new version is ready" line (YAZ-5087) and its rule (YAZ-5555: only a tap), with a fake update and a fake answer list. */
 
 function fakeUpdates(ready: boolean) {
   const fns = new Set<() => void>()
   let took = false
-  const u: Updates & { applied: number; checks: number; prepared: number; set(r: boolean): void; takeOver(): void } = {
+  const u: Updates & { applied: number; checks: number; set(r: boolean): void; takeOver(): void } = {
     applied: 0,
     checks: 0,
-    prepared: 0,
     tookOver: () => took,
-    prepare: () => void u.prepared++,
     takeOver: () => void (took = true),
     start: async () => {},
     ready: () => ready,
@@ -40,11 +38,11 @@ afterEach(() => {
   cleanup = null
 })
 
-async function draw(updates: Updates, moment: Partial<AppMoment> = {}, waiting = 0, now = { t: 0 }) {
+async function draw(updates: Updates, moment: Partial<AppMoment> = {}, waiting = 0) {
   const host = document.createElement('div')
   document.body.append(host)
   const root = createRoot(host)
-  const props = { updates, moment: { ...calm, ...moment }, readWaiting: async () => waiting, now: () => now.t }
+  const props = { updates, moment: { ...calm, ...moment }, readWaiting: async () => waiting }
   await act(async () => root.render(<UpdateLineView {...props} />))
   await act(async () => {})
   cleanup = () => {
@@ -83,10 +81,10 @@ describe('the update line', () => {
     expect(d.text()).toContain('A new version is ready.')
   })
 
-  it('answers wait: it says it starts after they are sent, with no button, and nothing takes over', async () => {
+  it('answers wait: it says to restart after they are sent, with no button, and nothing takes over', async () => {
     const u = fakeUpdates(true)
     const d = await draw(u, {}, 2)
-    expect(d.text()).toBe('A new version is ready. It starts after your answers are sent.')
+    expect(d.text()).toBe('A new version is ready. Restart after your answers are sent.')
     expect(d.button()).toBeNull()
     expect(u.applied).toBe(0)
   })
@@ -95,72 +93,25 @@ describe('the update line', () => {
     expect((await draw(fakeUpdates(true), { routeOpen: true })).text()).toBe('')
   })
 
-  it('to the background: the waiting version is told to take over (no reload: the open page keeps its files)', async () => {
-    const u = fakeUpdates(true)
-    await draw(u, { tab: 'review' }, 3)
-    await visibility('hidden')
-    expect(u.prepared).toBe(1)
-    expect(u.applied).toBe(0)
+  it('YAZ-5555: to the background and back, after any time, on any tab: nothing takes over; it asks for a newer version', async () => {
+    for (const tab of ['friends', 'review', 'search'] as const) {
+      const u = fakeUpdates(true)
+      const d = await draw(u, { tab })
+      u.takeOver()
+      await visibility('hidden')
+      await visibility('visible')
+      expect([tab, u.applied, u.checks]).toEqual([tab, 0, 1])
+      expect(d.text()).toBe('A new version is ready.Restart')
+      cleanup!()
+      cleanup = null
+    }
   })
 
-  it(`back from the background after ${RESUME_AFTER_MS / 1000} s on a calm tab, once the new version took over: the page loads it; it asks for a newer version`, async () => {
+  it('YAZ-5269: a review in progress behind another tab: Restart still works (the person chose it)', async () => {
     const u = fakeUpdates(true)
-    const now = { t: 0 }
-    await draw(u, {}, 0, now)
-    await visibility('hidden')
-    u.takeOver()
-    now.t = RESUME_AFTER_MS
-    await visibility('visible')
-    expect(u.checks).toBe(1)
+    const d = await draw(u, { tab: 'friends', reviewInProgress: true })
+    await act(async () => d.button()!.click())
+    await act(async () => {})
     expect(u.applied).toBe(1)
-  })
-
-  it('back from the background, but the new version did not take over yet: no reload (it could come in the middle of what the person starts)', async () => {
-    const u = fakeUpdates(true)
-    const now = { t: 0 }
-    await draw(u, {}, 0, now)
-    await visibility('hidden')
-    now.t = RESUME_AFTER_MS * 2
-    await visibility('visible')
-    expect(u.applied).toBe(0)
-  })
-
-  it('back from the background on the Review tab, or after a short time: no takeover', async () => {
-    const u = fakeUpdates(true)
-    const now = { t: 0 }
-    await draw(u, { tab: 'review' }, 0, now)
-    await visibility('hidden')
-    u.takeOver()
-    now.t = RESUME_AFTER_MS * 3
-    await visibility('visible')
-    expect(u.applied).toBe(0)
-    cleanup!()
-    const v = fakeUpdates(true)
-    await draw(v, {}, 0, now)
-    await visibility('hidden')
-    v.takeOver()
-    now.t += 1000
-    await visibility('visible')
-    expect(v.applied).toBe(0)
-  })
-
-  it('YAZ-5269: a review in progress behind another tab holds the takeover at a resume; once it ends, the next resume takes it', async () => {
-    const u = fakeUpdates(true)
-    const now = { t: 0 }
-    const d = await draw(u, { tab: 'friends', reviewInProgress: true }, 0, now)
-    expect(d.text()).toContain('A new version is ready.')
-    await visibility('hidden')
-    u.takeOver()
-    now.t = RESUME_AFTER_MS * 2
-    await visibility('visible')
-    expect(u.applied).toBe(0)
-    cleanup!()
-    const v = fakeUpdates(true)
-    await draw(v, { tab: 'friends', reviewInProgress: false }, 0, now)
-    await visibility('hidden')
-    v.takeOver()
-    now.t += RESUME_AFTER_MS
-    await visibility('visible')
-    expect(v.applied).toBe(1)
   })
 })
