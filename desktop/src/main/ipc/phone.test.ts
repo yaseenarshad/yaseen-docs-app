@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ipcMain } from 'electron'
 import { CONTRACT } from '@shared/ipc'
 import type { PhoneCodeAnswer } from '@shared/types'
-import { registerPhoneIpc } from './phone'
+import { GESTURE_MS, phoneConfirmOptions, registerPhoneIpc } from './phone'
 import { registered } from './ipcFixture'
 
 vi.mock('electron', () => ({ ipcMain: { handle: vi.fn(), on: vi.fn() } }))
@@ -24,7 +24,7 @@ let now: number
 let lastInput: number | null
 let answer: boolean
 const build = vi.fn(async (_root: string): Promise<PhoneCodeAnswer> => ({ ok: true, repo: 'yaseen/vault', branch: 'main', grid: GRID }))
-const confirm = vi.fn(async () => answer)
+const confirm = vi.fn(async (_sender: unknown, _repo: string) => answer)
 
 beforeEach(() => {
   vi.mocked(ipcMain.handle).mockClear()
@@ -101,11 +101,40 @@ describe('phone:code needs a real action that MAIN saw, and a confirm in main (Y
     expect(build).not.toHaveBeenCalled()
   })
 
-  it('the person cancels the confirm of main: no grid, no build', async () => {
+  it('the person cancels the confirm of main: no grid', async () => {
     answer = false
     expect(await code(event, '/vaults/a')).toEqual({ ok: true, value: { ok: false, problem: 'cancelled' } })
     expect(confirm).toHaveBeenCalledOnce()
-    expect(build).not.toHaveBeenCalled()
+  })
+
+  it('the confirm names the vault it is for (YAZ-5248)', async () => {
+    await code(event, '/vaults/a')
+    expect(confirm).toHaveBeenCalledWith(sender, 'yaseen/vault')
+  })
+
+  it('exactly at the edge: 5 seconds counts, a millisecond more does not (YAZ-5247)', async () => {
+    expect(GESTURE_MS).toBe(5_000)
+    lastInput = now - 5_000
+    expect(await code(event, '/vaults/a')).toMatchObject({ ok: true, value: { ok: true } })
+    await hide(event)
+    lastInput = now - 5_001
+    expect(await code(event, '/vaults/a')).toEqual(bad)
+  })
+})
+
+describe("main's confirm (YAZ-5247, YAZ-5248)", () => {
+  const o = phoneConfirmOptions('yaseen/notes.v2')
+  it('Cancel is the default button and the cancel button (Enter and Escape give Cancel)', () => {
+    expect(o.buttons).toEqual(['Show code', 'Cancel'])
+    expect(o.defaultId).toBe(1)
+    expect(o.cancelId).toBe(1)
+    expect(o.buttons[o.defaultId]).toBe('Cancel')
+  })
+  it('names the vault, says what the code lets a person do, and to continue only if you asked', () => {
+    expect(o.message).toContain('yaseen/notes.v2')
+    expect(o.detail).toContain('change')
+    expect(o.detail).toContain('Continue only if you asked for this code.')
+    expect(o.detail).toContain('60 seconds')
   })
 
   it('a second request while a code is shown gets nothing, until the dialog hides it', async () => {
