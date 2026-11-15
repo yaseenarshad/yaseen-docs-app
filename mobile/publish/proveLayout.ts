@@ -16,6 +16,10 @@ import { join } from 'node:path'
  *  - the table look (`#fixture=page-table-look`, YAZ-5482), light and dark: the merged cells span their rows and
  *    columns, the fills and text colours paint (a custom dark ink made readable in dark mode), a clipped cell is one
  *    line, no column is too narrow to read, the page never scrolls sideways.
+ *  - the calendar table (`#fixture=page-calendar`, `page-calendar-chip`, `page-calendar-full`, YAZ-5493), light and dark at
+ *    375 px, the clock frozen at 9:40 am: the now line a third down the 9:30 row, red, across the row; the rows before
+ *    it dimmed, the kept to-do row not; scrolled past the row, the Now pill at the bottom of the screen pointing up;
+ *    full screen, the copy marked too.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
@@ -259,6 +263,55 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     await wait(200)
     writeFileSync(shot.replace('.png', '-clip.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-look at 375x667, ${scheme}: merged ${m.rowspan ? 'rows' : 'ROWS NOT'} and ${m.colspan ? 'columns' : 'COLUMNS NOT'}; fills ${m.fills.map((f: boolean) => (f ? 'Y' : 'n')).join('')}; custom ink ${m.ink}; clip ${m.clipCut && m.clipOneLine ? 'one line, cut' : 'NOT CUT ' + JSON.stringify(m.clipInfo)}; narrow columns ${m.narrow.length === 0 ? 'none' : m.narrow.join(',')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5493: the calendar table, light and dark, at 375 px (`src/dev/tableFixtures.ts`: CALENDAR, the clock at 9:40 am).
+const CALENDAR_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const table = document.querySelector('.reader__body table[data-calendar], .table-view table[data-calendar]')
+  if (!table) return { none: true }
+  const rows = [...table.rows]
+  const now = rows.findIndex((row) => row.classList.contains('table-now-row'))
+  const past = rows.flatMap((row, i) => (row.classList.contains('table-past-row') ? [i] : []))
+  const cell = rows[now].cells[1]
+  const after = getComputedStyle(cell, '::after')
+  const dot = getComputedStyle(rows[now].cells[0], '::before')
+  const ty = new DOMMatrix(after.transform).m42
+  // The line's middle: the pseudo starts 1px above the cell's top and its 2px border is the line.
+  const lineAt = Math.round(ty / r(rows[now]).height * 1000) / 1000
+  const colour = (el) => getComputedStyle(el).color
+  const chip = document.querySelector('.reader__body [data-table-now]')
+  const tab = document.querySelector('.tabbar')
+  const c = chip && !chip.hidden ? r(chip) : null
+  return {
+    now, past, lineAt, line: after.borderTopColor + ' ' + after.borderTopWidth, dot: dot.backgroundImage.includes('radial-gradient'),
+    pastInk: colour(rows[2].cells[1]), keptInk: colour(rows[1].cells[1]), nowInk: colour(rows[now].cells[1]),
+    shade: getComputedStyle(rows[2].cells[1]).backgroundImage.includes('color-mix') || getComputedStyle(rows[2].cells[1]).backgroundImage.includes('rgba'),
+    chip: c && { top: Math.round(c.top), bottom: Math.round(c.bottom), dir: chip.dataset.dir, tab: tab ? Math.round(r(tab).top) : innerHeight },
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['page-calendar', 'page-calendar-chip', 'page-calendar-full']) {
+      const file = await open(name, 375, 667)
+      if (name === 'page-calendar-chip') {
+        // Down the page until the now row is above the screen and the table's end is in view.
+        await evaluate(`(() => { const s = document.querySelector('.screen--reader'), row = document.querySelector('.reader__body table tbody tr:last-child'); s.scrollTop += row.getBoundingClientRect().bottom - s.getBoundingClientRect().bottom + 40 })()`)
+        await wait(400)
+      }
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(CALENDAR_CHECK)
+      const red = scheme === 'dark' ? 'rgb(255, 123, 114)' : 'rgb(192, 57, 43)'
+      const marks = !m.none && m.now === 7 && m.past.join() === '2,3,4,5,6' && Math.abs(m.lineAt - 0.333) < 0.02 && m.line === `${red} 2px` && m.dot && m.pastInk !== m.keptInk && m.keptInk === m.nowInk && m.shade && !m.pageWide
+      const chipOk = name !== 'page-calendar-chip' ? true : m.chip !== null && m.chip.dir === 'up' && m.chip.top > 0 && m.chip.bottom <= m.chip.tab
+      const ok = marks && chipOk
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${m.none ? 'NO CALENDAR' : `now row ${m.now}, the line ${m.lineAt} down it (${m.line}), dot ${m.dot}; past rows ${m.past.join(',')} (${m.pastInk}, shade ${m.shade}), the kept row ${m.keptInk}; Now pill ${m.chip ? `${m.chip.top}-${m.chip.bottom} above the tab bar at ${m.chip.tab}, arrow ${m.chip.dir}` : 'hidden'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
