@@ -48,9 +48,10 @@ import { BLOCK_MATH, markTasks, pageMarked, withoutBom, type PageLinkToken, type
 
 /**
  * What a `[[link]]` or a Markdown link opens (YAZ-5455): a page (at a heading, when the link names one), a card, a file
- * of the vault, or a heading of this same page (`[[#Heading]]`, `[x](#heading)`).
+ * of the vault, a heading of this same page (`[[#Heading]]`, `[x](#heading)`), or a folder's page (YAZ-5550: a link
+ * that names a folder and no page, `folderLink.ts`).
  */
-export type LinkOpen = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string }
+export type LinkOpen = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'folder'; path: string }
 
 export interface LinkShow {
   /** The text the link shows (the Mac's `linksAsShown`: a title for an ID, the words after `|`). */

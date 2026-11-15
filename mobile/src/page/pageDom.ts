@@ -100,6 +100,8 @@ export function tapOf(target: EventTarget | null, data: VaultData): Tap {
   if (open === 'heading') return heading === undefined ? { kind: 'none' } : { kind: 'heading', heading }
   if (open === 'page' && path !== undefined) return { kind: 'go', target: { kind: 'page', path, ...(heading !== undefined && { heading }) } }
   if (open === 'card' && path !== undefined) return { kind: 'go', target: { kind: 'card', path, id: (el as HTMLElement).dataset.card ?? '' } }
+  // YAZ-5550: a link to a folder opens its folder's page, through the one door.
+  if (open === 'folder' && path !== undefined) return { kind: 'go', target: { kind: 'folder', path } }
   // YAZ-5473: a link to a drawing file opens the drawing (its own view, or a sheet), through the one door.
   if (open === 'file' && path !== undefined) return boardKindOf(path) !== null ? { kind: 'go', target: { kind: 'drawing', path } } : { kind: 'file', path }
   if (el.classList.contains('wikilink--unresolved') || el.classList.contains('page-pill--missing')) return { kind: 'none' }
