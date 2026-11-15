@@ -151,8 +151,51 @@
 .page-table-box .page-table-frame .page-table table :is(th, td) {
   background-image: linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
 }
-/* Stripes: every second body row, as the Mac's. */
-.page-table-box .page-table-frame .page-table table[data-stripes] tbody tr:nth-child(even) > td {
+/* SUBHEADER ROWS (YAZ-5567, `tableSubheads.ts`; the Mac's `table.css`): the table's own parts (`data-subheader-*`, from
+   its comment), else the vault's (`table-look.json`, set on the table by `tableLook.ts`), else the Mac's defaults:
+   grey at Medium (12% of the text colour), bold, the text's full colour, the column's alignment. The same scale as the
+   header's: a colour is its fill at 2.5 times the strength, Black 5 times. Before the stripes and the fills: a cell's
+   own fill and text colour still win. */
+.page-table-box table[data-subheader-color='gray'] { --sub-hue: var(--fg); --sub-scale: 1; }
+.page-table-box table[data-subheader-color='red'] { --sub-hue: var(--table-fill-solid-red); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='orange'] { --sub-hue: var(--table-fill-solid-orange); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='yellow'] { --sub-hue: var(--table-fill-solid-yellow); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='green'] { --sub-hue: var(--table-fill-solid-green); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='teal'] { --sub-hue: var(--table-fill-solid-teal); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='blue'] { --sub-hue: var(--table-fill-solid-blue); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='purple'] { --sub-hue: var(--table-fill-solid-purple); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='pink'] { --sub-hue: var(--table-fill-solid-pink); --sub-scale: 2.5; }
+.page-table-box table[data-subheader-color='black'] { --sub-hue: var(--table-fill-solid-black); --sub-scale: 5; }
+.page-table-box table[data-subheader-strength='off'] { --sub-strength: 0; }
+.page-table-box table[data-subheader-strength='light'] { --sub-strength: 6; }
+.page-table-box table[data-subheader-strength='medium'] { --sub-strength: 12; }
+.page-table-box table[data-subheader-strength='strong'] { --sub-strength: 20; }
+.page-table-box .page-table-frame .page-table table td[data-subhead] {
+  --cell-tint: color-mix(in srgb, var(--sub-hue, var(--fg)) calc(min(100, var(--sub-strength, 12) * var(--sub-scale, 1)) * 1%), transparent);
+  font-weight: 700;
+}
+/* White text on a coloured subheader: the colour deepened toward black, as the header's (4.5:1 under white). */
+.page-table-box .page-table-frame .page-table table[data-subheader-text='white'][data-subheader-color] td[data-subhead] {
+  --cell-tint: color-mix(in srgb, var(--sub-hue) 55%, #000);
+}
+.page-table-box .page-table-frame .page-table table[data-subheader-weight='regular'] td[data-subhead] { font-weight: 400; }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='muted'] td[data-subhead] { color: var(--fg-muted); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='white'] td[data-subhead] { color: #fff; }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='red'] td[data-subhead] { color: var(--table-text-red); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='orange'] td[data-subhead] { color: var(--table-text-orange); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='yellow'] td[data-subhead] { color: var(--table-text-yellow); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='green'] td[data-subhead] { color: var(--table-text-green); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='teal'] td[data-subhead] { color: var(--table-text-teal); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='blue'] td[data-subhead] { color: var(--table-text-blue); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='purple'] td[data-subhead] { color: var(--table-text-purple); }
+.page-table-box .page-table-frame .page-table table[data-subheader-text='pink'] td[data-subhead] { color: var(--table-text-pink); }
+.page-table-box .page-table-frame .page-table table[data-subheader-align='left'] td[data-subhead] { text-align: left !important; }
+.page-table-box .page-table-frame .page-table table[data-subheader-align='center'] td[data-subhead] { text-align: center !important; }
+.page-table-box .page-table-frame .page-table table[data-subheader-align='right'] td[data-subhead] { text-align: right !important; }
+/* Stripes: every second body row, as the Mac's. With subheader rows they start again after each one (`data-stripe`,
+   YAZ-5567, `tableSubheads.ts`). */
+.page-table-box .page-table-frame .page-table table[data-stripes]:not([data-subheads]) tbody tr:nth-child(even) > td,
+.page-table-box .page-table-frame .page-table table[data-stripes][data-subheads] tr[data-stripe] > td {
   --cell-tint: color-mix(in srgb, var(--fg) 4%, transparent);
 }
 .page-table-box .page-table-frame .page-table table :is(th, td)[data-fill='red'] { --cell-tint: var(--table-fill-red); }
@@ -355,6 +398,51 @@
     animation-timeline: --page-table-y;
     animation-range: cover 0px cover var(--pin-run, 0px);
   }
+}
+/* A sticky subheader row (YAZ-5567; the Mac's `tableSubhead.ts`): while its section is at the top of the screen it moves
+   down under the frozen rows, and the next subheader row (or the table's end) pushes it up. The same scroll-driven
+   animation as the frozen rows, on the frame's timeline, from `--sub-from` (its place less the frozen rows' height) for
+   `--pin-run` (to the next subheader row): `useTables` measures both, only for a sticky one (`data-sub-pin`). Its cells
+   paint their tint over the page's colour, as a frozen row does, under the frozen rows (z-index 2). The table's own
+   choice, else the vault's (`data-sticky-subheaders`), else the Mac's default: on. */
+.page-table-box .page-table-frame .page-table table td[data-subhead] {
+  position: relative;
+  z-index: 1;
+}
+.page-table-box .page-table-frame .page-table table:not([data-sticky-subheaders='off']) td[data-subhead] {
+  background-color: var(--bg);
+}
+.page-table-box .page-table-frame .page-table table:not([data-pin-cols-off]) td[data-subhead][data-pin-col] {
+  z-index: 2;
+}
+@supports (animation-timeline: view()) {
+  .page-table-box .page-table-frame .page-table table:not([data-sticky-subheaders='off']) tr[data-sub-pin] > td {
+    animation: page-table-pin linear both;
+    animation-timeline: --page-table-y;
+    animation-range: cover var(--sub-from, 0px) cover calc(var(--sub-from, 0px) + var(--pin-run, 0px));
+  }
+  /* The full-screen copy has no page to scroll down: its subheader rows stay in place. */
+  .table-view .page-table-box .page-table-frame .page-table table tr[data-sub-pin] > td {
+    animation: none;
+  }
+}
+/* Bullets in a cell (YAZ-5567; the Mac's `table.css`): compact, a level's step the vault's Bullet indent in cells
+   (`--cell-bullet-indent`, 20px) and the dot's gap its Bullet gap in cells (`--cell-bullet-gap`, 4px), the dot's column
+   a fixed 16px, so the dots, the guide lines and the text move together (`reader.css` reads the three). A card's read
+   table keeps the card's own, as on the Mac. */
+.reader .page-table-box:not(.card .page-table-box) table :is(th, td) {
+  --list-label-gap: var(--cell-bullet-gap, 4px);
+  --list-indent: var(--cell-bullet-indent, 20px);
+  --list-gutter: 16px;
+}
+.reader .page-table-box:not(.card .page-table-box) table li :is(ul, ol) {
+  margin-left: calc(var(--list-indent) - var(--list-gutter) - var(--list-label-gap));
+}
+/* Table position (YAZ-5567; the Mac's one rule from one variable): Centre is `--page-table-inline: auto` (the vault's,
+   `tableLookVars`); a card reads its own Card tables first (`card.css`: `--table-inline`). Left is 0. A table wider than
+   the column fills it, so it gets no margin and scrolls in its box as before. */
+.reader :is(.reader__body, .card-view__card) .page-table-frame {
+  margin-inline: var(--table-inline, var(--page-table-inline, 0));
 }
 /* The soft shadows at a side with more to see. */
 .page-table-frame::before,

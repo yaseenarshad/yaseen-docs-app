@@ -13,7 +13,7 @@ import { remember } from '../search/recent'
 import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
-import { SECTIONS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
+import { CENTRE_FILES, SECTIONS_FILES, SUBHEADS_FILES, TEXT_SIZE_FILES } from './lookFixtures'
 import { NUMBERED_TASKS_PAGE, TASKS_PAGE } from './taskFixtures'
 import { fixtureAnswers } from './fixtureAnswers'
 import { openSheet } from '../explore/sheets'
@@ -68,7 +68,8 @@ import { openSheet } from '../explore/sheets'
  * stays), scrolled sideways so the frozen column shows over the rest; `page-table-band-full` it full screen (the copy
  * keeps the band); `folder-table-band` the folder's table with the band on its second row.
  * YAZ-5566: `page-text-size` the vault's Text size and default line; `page-sections` a page with Section indent on and
- * Guide lines off (`lookFixtures.ts`).
+ * Guide lines off (`lookFixtures.ts`). YAZ-5567: `page-table-subheads` a table with subheader rows and bullets in its
+ * cells; `page-table-centre` a vault with Table position Centre.
  */
 /** YAZ-5534: drawings and diagrams in folders beside the reader vault's pages and cards (made up). */
 const TYPES_FILES: Record<string, string | Uint8Array> = {
@@ -79,7 +80,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'page-text-size', 'page-sections'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -228,6 +229,10 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
           ? TEXT_SIZE_FILES
         : name === 'page-sections'
           ? SECTIONS_FILES
+        : name === 'page-table-subheads'
+          ? SUBHEADS_FILES
+        : name === 'page-table-centre'
+          ? CENTRE_FILES
         : name === 'search-sticky' || name === 'search-lines'
           ? STICKY_FILES
         : name === 'search-types' || name === 'search-types-menu' || name === 'search-types-favorites'
@@ -762,6 +767,16 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     case 'page-sections':
       await typed('garden year')
       await open(/^Garden year/, '.reader__body [data-sd]')
+      await wait(200)
+      break
+    case 'page-table-subheads':
+      await typed('trip table')
+      await open(/^Trip table/, '.reader__body tr[data-sub-pin]')
+      await wait(200)
+      break
+    case 'page-table-centre':
+      await typed('centred table')
+      await open(/^Centred table/, '.reader__body .page-table-box')
       await wait(200)
       break
     case 'page-tricks':
