@@ -6,6 +6,7 @@ import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { swipeIsOurs } from '../app/edgeSwipe'
 import { useVaultData, type VaultData } from '../search/vaultData'
 import { folderOf } from '../page/pageLook'
+import { MenuTitle, isCut } from '../page/menuTitle'
 import { countWords, linkCounts, type LinkCounts } from './linkCounts'
 import { SheetContent, titleOf } from './SheetBody'
 import { SHEET_MS } from './sheetDrag'
@@ -78,6 +79,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
   const dim = useRef<HTMLDivElement>(null)
   const motion = useRef<SheetMotion | null>(null)
   const [menu, setMenu] = useState(false)
+  const [cut, setCut] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [cardText, setCardText] = useState<string | undefined>(undefined)
   const [counts, setCounts] = useState<LinkCounts | null>(null)
@@ -152,11 +154,18 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
           <div ref={head} className="explore-sheet__head">
             <span className="explore-sheet__grab" aria-hidden="true" />
             <span className="explore-sheet__where">{headWords(data, sheet.route)}</span>
-            <button type="button" className="explore-sheet__more" aria-label="More" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+            <button type="button" className="explore-sheet__more" aria-label="More" aria-expanded={menu}
+              onClick={() => {
+                // YAZ-5498: measured once, as the menu opens: is the head's line cut ("…")?
+                if (!menu) setCut(isCut(head.current?.querySelector('.explore-sheet__where')))
+                setMenu(!menu)
+              }}
+            >
               ⋯
             </button>
             {menu && (
-              <div className="explore-sheet__menu" role="menu">
+              <div className={cut ? 'explore-sheet__menu explore-sheet__menu--titled' : 'explore-sheet__menu'} role="menu">
+                {cut && <MenuTitle title={title} path={route.path} />}
                 <button type="button" role="menuitem" onClick={full}>
                   {app.unit('Open full page')}
                 </button>

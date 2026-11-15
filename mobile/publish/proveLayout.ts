@@ -24,9 +24,12 @@ import { join } from 'node:path'
  *    area, a done task struck through.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
+ *  - the Headings sheet (`#fixture=page-headings`, `page-headings-few`, `page-headings-alone`, YAZ-5497) and the properties
+ *    panel (`page-properties`) at 375×667 and 390×844: the box inside the screen, and on top: `elementFromPoint` at its
+ *    list's centre, its head and its bottom finds the sheet itself, and at the page arrows' and the tab bar's place too.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -342,6 +345,64 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks at 375x667, ${scheme}: ${m.own} of ${m.all} boxes are the page's check boxes; ${m.hits} answer a tap 18 px to each side and 9 px up and down${m.misses.length ? ' (MISSED ' + m.misses.join(' | ') + ')' : ''}; a box is ${m.size}px; a done task ${m.struck}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5497: a sheet over the page is whole and on top. Its box is inside the screen; the point at its list's centre (the
+// words of a page with no headings), at its head and just above its bottom edge is the sheet's own; so is the point at
+// the page arrows' and the tab bar's centre (the sheet covers them: nothing at the bottom paints over it).
+const ON_TOP = (sheet: string, panel: string, list: string, head: string) => `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const s = document.querySelector(${JSON.stringify(sheet)}), p = s && s.querySelector(${JSON.stringify(panel)})
+  if (!p) return { none: true }
+  const box = r(p)
+  const inside = box.top >= -0.5 && box.left >= -0.5 && box.bottom <= innerHeight + 0.5 && box.right <= innerWidth + 0.5 && box.height > 40
+  const own = (x, y, el) => { const hit = document.elementFromPoint(x, y); return { ok: !!hit && el.contains(hit), at: Math.round(y), hit: hit ? (hit.className || hit.tagName).toString().slice(0, 40) : 'nothing' } }
+  const l = p.querySelector(${JSON.stringify(list)}), lb = l && r(l)
+  const h = p.querySelector(${JSON.stringify(head)}), hb = h && r(h)
+  const points = {
+    list: lb ? own(lb.left + lb.width / 2, lb.top + Math.min(lb.height, box.bottom - lb.top) / 2, p) : { ok: false, hit: 'no list' },
+    head: hb ? own(hb.left + hb.width / 2, hb.top + hb.height / 2, p) : { ok: false, hit: 'no head' },
+    bottom: own(box.left + box.width / 2, box.bottom - 8, p),
+  }
+  for (const bar of document.querySelectorAll('.page-arrows, .tabbar')) {
+    const b = r(bar)
+    points[bar.className.split(' ')[0]] = own(b.left + b.width / 2, b.top + b.height / 2, s)
+  }
+  const list2 = l ? { rows: l.children.length, scrolls: l.scrollHeight > l.clientHeight + 1 } : null
+  return { box: [Math.round(box.top), Math.round(box.bottom), Math.round(box.width)], inside, points, list: list2, tabbar: !!document.querySelector('.tabbar'), arrows: !!document.querySelector('.page-arrows') }
+})()`
+if (process.env.LAYOUT_SHEETS !== 'no') {
+  const CASES = [
+    ['page-headings', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list', '.headings-sheet__title')],
+    ['page-headings-few', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__none', '.headings-sheet__title')],
+    ['page-headings-alone', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list', '.headings-sheet__title')],
+    ['page-properties', ON_TOP('.props', '.props__panel', '.props__rows', '.props__title')],
+    ...(process.env.LAYOUT_CARD_SHEETS === 'no' ? [] : [['card-headings', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list, .headings-sheet__none', '.headings-sheet__title')]]),
+  ] as const
+  for (const [w, h] of SIZES.slice(1)) {
+    for (const [name, check] of CASES) {
+      const file = await open(name, w, h)
+      const m = await evaluate(check)
+      const pts = m.none ? [] : Object.entries(m.points as Record<string, { ok: boolean; at: number; hit: string }>)
+      const ok = !m.none && m.inside && pts.length >= 3 && pts.every(([, p]) => p.ok) && (name !== 'page-headings-alone' || !m.tabbar) && (name.startsWith('page-headings') ? m.arrows : true) && (name === 'page-headings' ? m.list?.scrolls === true : true)
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${h}: ${m.none ? 'NO SHEET' : `box ${m.box.join('..')} ${m.inside ? 'inside' : 'OUTSIDE'} the screen; ${m.tabbar ? 'tab bar' : 'no tab bar'}, ${m.arrows ? 'arrows' : 'no arrows'}; on top at ${pts.map(([k, p]) => `${k} ${p.ok ? 'yes' : `NO (${p.hit} at ${p.at})`}`).join(', ')}${m.list ? `; list ${m.list.rows} rows, ${m.list.scrolls ? 'scrolls' : 'fits'}` : ''}`}  ${file}`)
+    }
+  }
+}
+// YAZ-5498: the top bar cuts a long title; its ⋯ menu shows it whole (wrapped, never cut) and the folder, inside the screen.
+if (process.env.LAYOUT_SHEETS !== 'no') {
+  for (const [w, h] of SIZES.slice(1)) {
+    const file = await open('page-menu-title', w, h)
+    const m = await evaluate(`(() => {
+      const t = document.querySelector('.topbar__title'), menu = document.querySelector('.page-tools__menu'), top = menu && menu.querySelector('.menu-title')
+      if (!top) return { none: true, barCut: t.scrollWidth > t.clientWidth }
+      const name = top.querySelector('.menu-title__name'), r = menu.getBoundingClientRect()
+      return { barCut: t.scrollWidth > t.clientWidth, whole: name.scrollWidth <= name.clientWidth && name.textContent.length > 60, lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)), folder: top.querySelector('.menu-title__path')?.textContent, inside: r.left >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight, box: [Math.round(r.left), Math.round(r.right)] }
+    })()`)
+    const ok = !m.none && m.barCut && m.whole && m.lines >= 2 && m.folder === 'travel / 2026' && m.inside
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-menu-title at ${w}x${h}: ${m.none ? `NO TITLE in the menu (bar cut: ${m.barCut})` : `bar cut ${m.barCut}; the full title ${m.whole ? 'whole' : 'CUT'} on ${m.lines} lines; folder "${m.folder}"; menu ${m.box.join('..')} ${m.inside ? 'inside' : 'OUTSIDE'}`}  ${file}`)
+  }
 }
 // YAZ-5458: the reading look, light and dark, at 375 px: a picture of each screen down the page.
 if (process.env.LAYOUT_LOOK !== 'no') {

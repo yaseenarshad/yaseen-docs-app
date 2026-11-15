@@ -67,10 +67,10 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const ticks = useTaskTicks(host, path, text, useCommentsPort(), setNotice)
   const ticksRef = useRef(ticks)
   ticksRef.current = ticks
-  // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk).
-  const tools = usePageTools(host)
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
+  // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
+  const tools = usePageTools(host, { title, path })
 
   // R3, R5, R6 from the sync's diff of the open vault.
   useEffect(
