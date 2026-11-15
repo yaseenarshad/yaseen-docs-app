@@ -81,7 +81,7 @@ import { SettingsFolderControl } from './SettingsFolderControl'
 import { STORAGE_SECTION } from './storageSection'
 import { TextFormattingControl, type TextFormattingVault } from './TextFormattingControl'
 import { ToolbarArrange } from './ToolbarArrange'
-import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
+import { ALL_NOTES_OPENS_AT_OPTIONS, BLOCK_GAP_PRESETS, BULLET_SPACE_PRESETS, cardSpacingOptions, cardPagesOrCustomOptions, CARD_TITLE_SIZE_OPTIONS, cardTablePositionOptions, BLOCK_WIDTH_OPTIONS, COMMENTS_ORDER_OPTIONS, CONTENT_WIDTH_OPTIONS, DEFAULT_THREAD_SWATCH, NEXT_HIDDEN_SWATCH, GUIDE_LINE_DARKNESS_PRESETS, GUIDE_LINES_SHOW_OPTIONS, LINE_SPACING_PRESETS, ON_OFF_OPTIONS, SHOW_HIDE_OPTIONS, FIND_FOLDS_OPTIONS, OUTSIDE_CHANGE_GLOW_OPTIONS, TABLE_BAND_ROWS_OPTIONS, TABLE_DIM_PAST_OPTIONS, TABLE_NOW_MARK_OPTIONS, TABLE_ROW_BAND_OPTIONS, TABLE_SLOT_TIME_OPTIONS, TABLE_NEW_STYLE_OPTIONS, TABLE_TEXT_IN_CELLS_OPTIONS, TABLE_POSITION_OPTIONS, DAILY_PAGE_OPENS_OPTIONS, repoHint, SECTION_LINES_OPTIONS, SECTION_STEP_OPTIONS, SHOWN_HIDDEN_WORDS_OPTIONS, SIDEBAR_ARROW_MOTION_OPTIONS, SIDEBAR_FILE_ICONS_OPTIONS, SIDEBAR_FOLDER_ICONS_OPTIONS, sidebarIconKindLabel, SIDEBAR_ICON_SET_OPTIONS, SIDEBAR_LINE_STYLE_OPTIONS, SIDEBAR_STICKY_LEVELS_OPTIONS, STARTUP_WINDOWS_OPTIONS, vaultOpensOnOptions, TABLE_OF_CONTENTS_OPTIONS, THEME_OPTIONS, THREAD_WIDTH_OPTIONS, TOC_LINES_OPTIONS, COMMENTS_RESOLVED_OPTIONS } from './options'
 
 /** A cell bullet's px setting (the YAZ-3818 demo): the stepper, and Reset when it is not the default. */
 function CellBulletStepper({ settings, onChange, field, name, min, max, step }: { settings: SettingsState; onChange: (next: SettingsState) => void; field: 'tableCellBulletIndent' | 'tableCellBulletGap'; name: string; min: number; max: number; step: number }) {
@@ -642,7 +642,8 @@ const TABLE_LOOK_ROWS: ReadonlySet<string> = new Set([
 function tableLookCtx(ctx: SettingsCtx): SettingsCtx {
   const look = ctx.tableLook
   if (look === undefined) return ctx
-  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appTableLook(next)) }
+  // `next` carries the look's own keys too (YAZ-5602's Time in slot has no app setting), so a row keeps them.
+  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appTableLook({ ...look.value, ...next })) }
 }
 function tableLookItems(items: readonly SettingDef[], vault = false): SettingDef[] {
   const vaultRow: SettingDef = {
@@ -1748,6 +1749,27 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             render: ({ settings, onChange }) => (
               <Segmented options={TABLE_NOW_MARK_OPTIONS} value={settings.tableNowMark} onChange={(tableNowMark) => onChange({ ...settings, tableNowMark })} ariaLabel="Mark the current time" />
             ),
+          },
+          {
+            // YAZ-5602 (Option A): a pill at the right end of the now line, and on the Now button. The vault's only (round 2:
+            // `look.slotTime` in table-look.json, no app setting): no row in a window with no vault.
+            id: 'tableSlotTime',
+            label: 'Time in slot',
+            hint: 'In a calendar table, a pill on the red line says how long is left in the current time slot, or how long since it started.',
+            keywords: ['calendar', 'now', 'slot', 'time left', 'countdown', 'count down', 'count up', 'timer', 'remaining', 'elapsed', 'table'],
+            available: ({ tableLook }) => tableLook !== undefined,
+            render: ({ tableLook }) =>
+              tableLook && <Segmented options={TABLE_SLOT_TIME_OPTIONS} value={tableLook.value.tableSlotTime} onChange={(tableSlotTime) => tableLook.save({ ...tableLook.value, tableSlotTime })} ariaLabel="Time in slot" />,
+          },
+          {
+            // YAZ-5602: shows only while Time in slot counts, as Shade darkness shows only with "Grey text and shade".
+            id: 'tableSlotSeconds',
+            label: 'Show seconds',
+            hint: 'The Time in slot pill counts the seconds too, or the minutes only.',
+            keywords: ['calendar', 'slot', 'seconds', 'minutes', 'countdown', 'timer', 'table'],
+            available: ({ tableLook }) => tableLook !== undefined && tableLook.value.tableSlotTime !== 'off',
+            render: ({ tableLook }) =>
+              tableLook && <Segmented options={ON_OFF_OPTIONS} value={tableLook.value.tableSlotSeconds} onChange={(tableSlotSeconds) => tableLook.save({ ...tableLook.value, tableSlotSeconds })} ariaLabel="Show seconds" />,
           },
           {
             // YAZ-5541: a tint on the row after the now row, at the now tint's strength.

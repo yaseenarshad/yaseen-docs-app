@@ -1,5 +1,6 @@
 import { TABLE_LOOK_FILE, TABLE_LOOK_KEYS, tableLookFile, tableLookOf } from '@shared/tableLook'
 import type { SettingsState } from '@shared/types'
+import type { SlotTimeToMove } from './store'
 import { seedVaultPart, type MoveStep } from './vaultSettingsMove'
 
 /**
@@ -24,4 +25,29 @@ export const TABLE_LOOK_MOVE: MoveStep = {
     const part = tableLookPart(s)
     for (const root of roots) await seedVaultPart(root, TABLE_LOOK_FILE, part, OWNS, store, canSeed)
   },
+}
+
+/**
+ * YAZ-5602 round 2: Time in slot and Show seconds left the app settings for table-look.json (`look.slotTime`,
+ * `look.slotSeconds`). The value this Mac set before (`store.slotTimeToMove`, read once at start) moves once into each
+ * vault: with the rest of the look into a vault that has no file (`TABLE_LOOK_MOVE`'s part), else into the `look` of a
+ * file that has neither key, beside its other keys (its own mark, `table-look.json#slot`). The defaults move nothing.
+ */
+export function tableLookMoves(slot: SlotTimeToMove): MoveStep[] {
+  const withSlot = (s: Partial<SettingsState>) => ({ ...s, ...slot })
+  const slotPart = (): Record<string, unknown> | null => {
+    const look = tableLookOf(slot).look
+    return look === undefined ? null : { ...tableLookFile({ look }) }
+  }
+  return [
+    { name: TABLE_LOOK_MOVE.name, key: (s) => tableLookPart(withSlot(s)), run: (roots, s, store, canSeed) => TABLE_LOOK_MOVE.run(roots, withSlot(s) as SettingsState, store, canSeed) },
+    {
+      name: 'Time in slot',
+      key: () => slotPart(),
+      run: async (roots, _s, store, canSeed) => {
+        const part = slotPart()
+        for (const root of roots) await seedVaultPart(root, TABLE_LOOK_FILE, part, ['look.slotTime', 'look.slotSeconds'], store, canSeed, `${TABLE_LOOK_FILE}#slot`)
+      },
+    },
+  ]
 }
