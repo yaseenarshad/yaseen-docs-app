@@ -110,9 +110,10 @@ export function pageLook(data: VaultData, holder: string): PageLook {
   const asset = (src: string) => assetPath(data, holder, src)
   return {
     link(inner): LinkShow {
-      const card = inner.includes('|') ? null : linkCard(inner, source)
-      if (card !== null) return { label: cardLinkTitle(card), open: { kind: 'card', path: card.path, id: card.id } }
-      const label = linksAsShown(`[[${inner}]]`, source)
+      // A card's ID opens the card, with words after `|` too (YAZ-5556), as the Mac's click (`wikilinkClick.ts`); the words show.
+      const card = linkCard(inner, source)
+      const label = card !== null && !inner.includes('|') ? cardLinkTitle(card) : linksAsShown(`[[${inner}]]`, source)
+      if (card !== null) return { label, open: { kind: 'card', path: card.path, id: card.id } }
       // YAZ-5455: a `#heading` goes with the page (`[[Page#Goals]]`); alone (`[[#Goals]]`) it is this page's heading.
       const heading = linkSplit(inner, source).hash.replace(/^#/, '')
       const page = linkPageName(inner, source)

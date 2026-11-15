@@ -56,6 +56,7 @@ import { freePort } from './freePort'
  *    control inside the screen, the dot clear of the ⚙; the title cut first, then the ID's letters; its number shows.
  *    YAZ-5521: the same with the dot amber (`page-not-sent`, `page-waiting`, and with the long ID), at 390 px too.
  *    YAZ-5524: and a page with NO ID chip (`page-no-id-*`): the words cut down to a count, never the ⚙ off the screen.
+ *    YAZ-5556: and a card file (`card-file`, DEMO-40 off its card line) with its chip, the kind and the ⋯ too.
  *  - the Discard ask of a comment not sent, holding a long URL (`#fixture=page-not-sent`, YAZ-5521) at 320, 375 and
  *    390 px: its words wrap, its buttons inside the screen.
  *  - a page card's ⋯ menu low on the screen (`#fixture=page-card-menu`, YAZ-5519 S6) at 375 and 430 px: inside the
@@ -815,7 +816,7 @@ if (process.env.LAYOUT_TOPBAR !== 'no') {
     // YAZ-5524 (sweep3 S-1): topBar_allControlsInsideViewport_pageWithoutId_withWaitingWords: a page with NO ID chip and
     // a long title, "1 comment waiting · no signal", "2 waiting · no signal", 2 comments waiting, 1 not sent; and S-2's
     // "1 not sent · 2 waiting" with and without the chip.
-    for (const name of ['page', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline']) {
+    for (const name of ['page', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'card-file']) {
       const file = await open(name, w, h)
       const m = await evaluate(TOPBAR_FITS)
       const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways

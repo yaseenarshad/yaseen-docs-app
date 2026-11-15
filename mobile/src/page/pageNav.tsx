@@ -127,10 +127,15 @@ export function PageArrows({ data, at, go, noun }: { data: VaultData | null; at:
   )
 }
 
-/** The page's ID as the vault writes it (the card IDs' own code, `pageId.ts`); null in a vault with no IDs, or for a page with none. */
+/**
+ * The page's ID as the vault writes it (the card IDs' own code, `pageId.ts`); null in a vault with no IDs, or for a page with none.
+ * A card file's is its card's ID, off its card line (YAZ-5556): it holds no `id:` property since decision D (YAZ-5308),
+ * so its record has no `id`; its one card's ID is the file's, as the tree's `rowId` and the Mac's `cardFileId` read it.
+ */
 export function pageIdOf(data: VaultData | null, record: IndexRecord | undefined): string | null {
-  if (data === null || !data.ids || record?.id === undefined || record.id.trim() === '') return null
-  return vaultPageId(record.id, data.letters) ?? record.id
+  const id = record?.id ?? (record?.kind === 'card' ? (record.cards?.[0]?.id ?? undefined) : undefined)
+  if (data === null || !data.ids || id === undefined || id.trim() === '') return null
+  return vaultPageId(id, data.letters) ?? id
 }
 
 /**
