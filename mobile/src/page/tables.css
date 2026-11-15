@@ -117,6 +117,9 @@
   --table-fill-solid-purple: rgb(160, 110, 255);
   --table-fill-solid-pink: rgb(255, 120, 180);
   --table-fill-solid-black: rgb(18, 18, 18);
+  /* The Mac's band colours grey and brown (Row band colour, YAZ-5532). */
+  --table-fill-solid-grey: rgb(150, 150, 150);
+  --table-fill-solid-brown: rgb(170, 120, 70);
   /* The Mac's outline colour (`table.css` `--table-outline`), for a table with its own border. */
   --table-file-outline: #a8a8a8;
 }
@@ -633,4 +636,28 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The finger band (YAZ-5532, `rowBand.ts`): the row a finger touches, in the Mac's row band (`table.css` `--table-band-on`,
+   `views.css`' folder hover band): the band colour (`--table-band-colour`, the accent by default) at its strength
+   (`--table-band-strength`, 10%), the vault's `table-look.json` set on the row when it differs. Painted as the cell's own
+   colour, the band over the page mixed solid, so a frozen cell (solid, to hide what passes under it) bands too and still
+   hides the rest; a cell's fill and the past and now marks are layers over it. Every cell of the row, the frozen ones
+   included. The doubled attribute wins over the frozen cells' `--bg`. Light and dark: the page's own `--bg`. */
+.page-table-box .page-table-frame .page-table table tr[data-band][data-band] > :is(th, td) {
+  background-color: color-mix(in srgb, var(--table-band-colour, var(--accent)) var(--table-band-strength, 10%), var(--bg));
+}
+/* Copying (YAZ-5532): a long press on a cell's text selects in THAT cell (the phone's own selection, with Copy), never
+   the whole screen: the table between the cells takes no selection, each cell's content does. Scoped to the tables'
+   cells: the UI rows and controls of the app take none (`fix/yaz-hold-select`), and a table's cells must stay
+   selectable. No grey tap flash over the band. */
+.page-table-box .page-table-frame .page-table table {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.page-table-box .page-table-frame .page-table table :is(th, td) {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }

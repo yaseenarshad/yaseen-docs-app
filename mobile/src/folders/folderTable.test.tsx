@@ -58,6 +58,33 @@ describe('the folder table (YAZ-5460)', () => {
     await h.waitText('Build the shed before winter.')
   })
 
+  it('YAZ-5532: a finger bands the row, its frozen Name cell too; it stays after the lift; a tap still opens the row', async () => {
+    h = await openFolder()
+    await waitFor(h, () => h!.host.querySelector('.folder-table table') !== null)
+    const table = h.host.querySelector('.folder-table table')!
+    const rows = [...table.querySelectorAll<HTMLTableRowElement>('tbody tr')]
+    const fire = (el: Element, type: string) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 10 })
+      el.dispatchEvent(e)
+      return e
+    }
+    const down = fire(rows[1].cells[3], 'pointerdown')
+    expect(down.defaultPrevented).toBe(false)
+    expect([...table.querySelectorAll('tr[data-band]')]).toEqual([rows[1]])
+    expect(rows[1].cells[0].hasAttribute('data-pin-col')).toBe(true)
+    fire(rows[1].cells[3], 'pointerup')
+    expect([...table.querySelectorAll('tr[data-band]')]).toEqual([rows[1]])
+    // Another row: the band moves; its tap opens its page, through the same handler as before.
+    fire(rows[2].cells[0], 'pointerdown')
+    expect(rows[2].hasAttribute('data-band')).toBe(true)
+    expect(rows[1].hasAttribute('data-band')).toBe(false)
+    await act(async () => {
+      fire(rows[2].cells[0], 'pointerup')
+      rows[2].cells[0].click()
+    })
+    await h.waitText('Build the shed before winter.')
+  })
+
   it('a grouped view: its filter, its groups in the option order with their counts, the empty one kept', async () => {
     h = await openFolder()
     await tab(h, 'By status')

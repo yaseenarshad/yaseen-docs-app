@@ -69,9 +69,13 @@ import { freePort } from './freePort'
  *    375 px: in an Explore panel no foot under the body (the body is the box's last part, to its bottom), the section in
  *    the page's scroll (not sticky: it moves when the body scrolls), collapsed with its count, a 44 px tap inside the
  *    screen; a tap opens it in place, its rows inside the screen; the same section on the full page, open, then closed.
+ *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
+ *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
+ *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
+ *    under the finger, the lift keeps it; a cell's text selectable (`user-select: text`).
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -1031,6 +1035,70 @@ if (process.env.LAYOUT_MENTIONS !== 'no') {
     const pageOk = full.error === undefined && full.words === 'Linked mentions (2)' && full.open === 'true' && full.rows.length === 2 && full.rowsInside && !['sticky', 'fixed'].includes(full.position) && full.tap >= 44 && !full.wide && shut.open === 'false' && shut.rows.length === 0
     if (!pageOk) failed++
     console.log(`${pageOk ? 'PASS' : 'FAIL'}  page-linked-from ${scheme} at 375x667: "${full.words}" open ${JSON.stringify(full.rows)}; ${full.position}; ${full.tap}px tap; closed: ${shut.rows.length} rows  ${pageShot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5532: the finger band, light and dark, at 375 px.
+const BAND_CHECK = `(() => {
+  const root = document.querySelector('.table-view') ?? document.querySelector('.folder-table') ?? document.querySelector('.reader__body')
+  const rows = [...root.querySelectorAll('tr[data-band]')]
+  const row = rows[0]
+  if (!row) return { rows: 0 }
+  const bg = (el) => getComputedStyle(el).backgroundColor
+  const page = getComputedStyle(document.body).backgroundColor
+  const cells = [...row.cells].map(bg)
+  const frozen = row.querySelector('[data-pin-col]')
+  const other = row.closest('tbody').rows[row.sectionRowIndex + 3] ?? row.closest('tbody').rows[1]
+  return { rows: rows.length, text: row.cells[0].textContent.trim(), same: cells.every((c) => c === cells[0]), colour: cells[0], page, otherBg: bg(other.cells[1]), frozen: frozen ? getComputedStyle(frozen).position + ' ' + bg(frozen) : null, select: getComputedStyle(row.cells[1]).userSelect }
+})()`
+/** The middle of a cell of the `n`th body row of the shown table (on the screen), and that row's first text. */
+const CELL_AT = (n: number) => `(() => {
+  const root = document.querySelector('.table-view') ?? document.querySelector('.folder-table') ?? document.querySelector('.reader__body')
+  const row = root.querySelector('table').tBodies[0].rows[${n}]
+  const cell = row.cells[Math.min(2, row.cells.length - 1)]
+  cell.scrollIntoView?.({ block: 'center', inline: 'nearest' })
+  const r = cell.getBoundingClientRect()
+  return { x: Math.round(r.left + Math.min(r.width / 2, 30)), y: Math.round(r.top + r.height / 2), text: row.cells[0].textContent.trim() }
+})()`
+const BANDED = `(() => { const root = document.querySelector('.table-view') ?? document.querySelector('.folder-table') ?? document.querySelector('.reader__body'); return [...root.querySelectorAll('tr[data-band]')].map((r) => r.cells[0].textContent.trim()) })()`
+const UNDER = (x: number, y: number) => `(() => { const tr = document.elementFromPoint(${x}, ${y})?.closest('tr'); return tr ? tr.cells[0].textContent.trim() : null })()`
+const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number, y: number) => send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] }, page)
+if (process.env.LAYOUT_BAND !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['page-table-band', 'page-table-band-full', 'folder-table-band']) {
+      const file = await open(name, 375, 667)
+      await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page)
+      const m = await evaluate(BAND_CHECK)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const marked = m.rows === 1 && m.same && m.colour !== m.page && m.colour !== m.otherBg && /^(sticky|relative) /.test(m.frozen ?? '') && (m.frozen === null || m.frozen.endsWith(m.colour)) && m.select === 'text'
+      // A real finger: down on another row, a move, the lift.
+      // The row in view first (a scroll), then its place.
+      const a = await evaluate(CELL_AT(name === 'folder-table-band' ? 3 : 7))
+      await wait(150)
+      const a2 = await evaluate(CELL_AT(name === 'folder-table-band' ? 3 : 7))
+      await touch('touchStart', a2.x, a2.y)
+      await wait(120)
+      const onDown = await evaluate(BANDED)
+      const to = { x: a2.x + 4, y: a2.y + 60 }
+      for (let i = 1; i <= 4; i++) {
+        await touch('touchMove', a2.x + i, a2.y + i * 15)
+        await wait(40)
+      }
+      await wait(120)
+      const onMove = await evaluate(BANDED)
+      const under = await evaluate(UNDER(a2.x + 4, a2.y + 60))
+      await touch('touchEnd', to.x, to.y)
+      await wait(400)
+      const afterLift = await evaluate(BANDED)
+      const moved = onDown.length === 1 && onDown[0] === a2.text && onMove.length === 1 && (under === null || onMove[0] === under) && afterLift.join() === onMove.join()
+      writeFileSync(shot.replace('.png', '-touched.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      await send('Emulation.setTouchEmulationEnabled', { enabled: false }, page)
+      const ok = marked && moved
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: band on "${m.text}" (${m.rows} row), cells ${m.same ? 'one colour' : 'DIFFER'} ${m.colour} (page ${m.page}, a row without ${m.otherBg}), frozen cell ${m.frozen ?? 'none'}, cell text ${m.select}; finger down on "${a.text}" -> ${JSON.stringify(onDown)}, moved -> ${JSON.stringify(onMove)} (under the finger ${JSON.stringify(under)}), after the lift ${JSON.stringify(afterLift)}  ${shot}`)
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

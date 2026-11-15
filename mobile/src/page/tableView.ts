@@ -2,6 +2,7 @@ import { openOverlay } from '../app/browserHistory'
 import { edgeBackOn, swipeIsOurs } from '../app/edgeSwipe'
 import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { pinchZoom, type ZoomRange } from '../drawing/pinchZoom'
+import { DEFAULT_BAND, watchBand, type BandLook } from './rowBand'
 
 /**
  * A TABLE, FULL SCREEN (YAZ-5471): the ⤢ under a wide table opens it here, in a chunk of its own. The whole table, every
@@ -91,8 +92,11 @@ function rowsAndColumns(table: HTMLTableElement): string {
   return `${rows} ${rows === 1 ? 'row' : 'rows'} · ${cols} ${cols === 1 ? 'column' : 'columns'}`
 }
 
-/** Opens `box` (a `.page-table-box`) full screen; `back` gets the focus when it closes. */
-export function showTable(box: HTMLElement, back?: HTMLElement | null): TableView {
+/**
+ * Opens `box` (a `.page-table-box`) full screen; `back` gets the focus when it closes. YAZ-5532: a finger bands a row of
+ * the copy (`band`, the vault's look), starting with the page's banded row; the band goes with the view.
+ */
+export function showTable(box: HTMLElement, back?: HTMLElement | null, band: BandLook = DEFAULT_BAND): TableView {
   open?.close()
   const table = box.querySelector('table')!
   const view = document.createElement('div')
@@ -126,6 +130,7 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null): TableVie
   pane.append(sizer)
   view.append(bar, pane)
   document.body.append(view)
+  const bands = watchBand(view, band)
 
   // The table's own size at scale 1 (jsdom has none: then the screen's).
   const width = Math.max(1, content.offsetWidth || copy.scrollWidth || 1)
@@ -212,6 +217,7 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null): TableVie
     closed = true
     // YAZ-5518: its history entry goes with it (nothing when a Back closed it).
     leave()
+    bands.stop()
     view.remove()
     pane.removeEventListener('scroll', schedule)
     if (frame !== 0) cancelAnimationFrame(frame)

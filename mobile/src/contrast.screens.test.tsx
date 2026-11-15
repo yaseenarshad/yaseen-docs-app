@@ -133,6 +133,10 @@ const FIXTURES = [
   'folder-cards',
   'folder-calendar',
   'folder-sheet',
+  // YAZ-5532: a finger's band on a table row (the frozen cells too), in a page, full screen, and a folder's table.
+  'page-table-band',
+  'page-table-band-full',
+  'folder-table-band',
   // Last: it makes this page's navigator say iPhone.
   'sign-in-iphone',
 ]
@@ -271,6 +275,16 @@ describe('the contrast of every screen the phone draws (YAZ-5179, YAZ-5338 … Y
     // The shown answer word on its mark (YAZ-5338) and the sign-in placeholders (YAZ-5339) are among them.
     expect(all.some((f) => f.where.includes('card__hidden') && f.theme === 'dark')).toBe(true)
     expect(all.some((f) => f.what === 'placeholder' && f.text === 'owner/repo')).toBe(true)
+  })
+
+  it("YAZ-5532: a banded row's text is checked on the band (the frozen cell too), light and dark", () => {
+    for (const [name, text] of [['page-table-band', 'Pine Hollow 1'], ['page-table-band-full', 'Pine Hollow 1'], ['folder-table-band', 'Lisbon weekend']]) {
+      const found = results.find((r) => r.name === name)?.findings.filter((f) => f.text.startsWith(text)) ?? []
+      for (const [theme, page] of [['light', '#ffffff'], ['dark', '#1e1e1e']]) {
+        const on = found.filter((f) => f.theme === theme)
+        expect([name, theme, on.length > 0 && on.every((f) => f.bg !== page && f.ratio >= f.need)]).toEqual([name, theme, true])
+      }
+    }
   })
 
   afterAll(() => {

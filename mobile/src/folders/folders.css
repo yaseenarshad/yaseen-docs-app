@@ -168,11 +168,9 @@
 .folder-table .page-table-box[data-wide] {
   margin-top: calc(-1 * var(--tap) - 2px);
 }
+/* YAZ-5532: a finger's band marks the row it touches (`tables.css`, `rowBand.ts`): no grey flash of its own. */
 .folder-table tr[data-row] {
   cursor: pointer;
-}
-.folder-table tr[data-row]:active > td {
-  background: var(--bg-side);
 }
 .folder-table td[data-name] {
   font-weight: 500;
