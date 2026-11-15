@@ -280,3 +280,32 @@ describe('YAZ-5518 S7: a double tap opens one sheet', { timeout: 20_000 }, () =>
     expect(sheetStack().length).toBe(2)
   })
 })
+
+describe('YAZ-5518 S8: a link to a heading opens a sheet at that heading', { timeout: 20_000 }, () => {
+  it('sheet_headingLink_scrollsToHeading', async () => {
+    const parts = Array.from({ length: 40 }, (_, i) => `## Part ${i + 1}\n\nMade-up words of part ${i + 1}.`).join('\n\n')
+    h = await open({ ...EXPLORE, 'Long notes.md': `---\ntitle: Long notes\n---\n${parts}\n` })
+    await toSearch(h)
+    // jsdom draws no layout: "Part 40" sits 4,418 px down a 20,000 px body, as the sweep measured.
+    const rect = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      const top = /^H[1-6]$/.test(this.tagName) && this.textContent?.trim() === 'Part 40' ? 4418 : 0
+      return { top, bottom: top + 30, left: 0, right: 390, width: 390, height: 30, x: 0, y: top, toJSON: () => ({}) } as DOMRect
+    }
+    const sh = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollHeight')
+    const ch = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientHeight')
+    Object.defineProperty(HTMLElement.prototype, 'scrollHeight', { configurable: true, get: () => 20_000 })
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 700 })
+    restore.push(() => {
+      HTMLElement.prototype.getBoundingClientRect = rect
+      if (sh) Object.defineProperty(HTMLElement.prototype, 'scrollHeight', sh)
+      if (ch) Object.defineProperty(HTMLElement.prototype, 'clientHeight', ch)
+    })
+    await act(async () => openSheet({ kind: 'page', path: 'Long notes.md', heading: 'Part 40' }))
+    await waitFor(h, () => (sheets().at(-1)?.querySelector('.reader__body')?.textContent ?? '').includes('Part 40'))
+    const body = sheets().at(-1)!.querySelector<HTMLElement>('.explore-sheet__body')!
+    await waitFor(h, () => body.scrollTop > 0)
+    // The heading lands 24 px under the sheet's top, as full screen.
+    expect(body.scrollTop).toBe(4418 - 24)
+  })
+})
