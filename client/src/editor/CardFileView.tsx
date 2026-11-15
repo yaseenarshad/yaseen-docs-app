@@ -36,7 +36,8 @@
  *  - COMMENTS (YAZ-5466): the page's one comments block (`CommentsSection`, the file's front matter `comments`), under the
  *    card and its strip, where a page has it: write, reply, edit your own, resolve, delete, the order setting. `comments`
  *    is the file's (decision D): it stays in the front matter beside `kind: card`, never on the card line, never a card
- *    property. While the tab is locked, each comment write asks "Allow edits?" first and goes on once allowed.
+ *    property. Comments are not edits (YAZ-5466 Q56): while the tab is Read only, a comment write goes
+ *    through with no "Allow edits?", never unlocks the tab and never touches the card part.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
@@ -347,13 +348,6 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         onLock: unlock.lock,
         onReturn: giveKeysBack,
       }
-  /** A comment write while locked (YAZ-5466): the chip's "Allow edits?" box at once; the write goes on once allowed. */
-  const askToEdit = !locked
-    ? undefined
-    : (resume?: () => void) => {
-        if (bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', resume)
-        setAsking(true)
-      }
   const cardText = card?.text ?? ''
   const propertyCount = Object.keys(card?.properties ?? {}).length
   const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
@@ -435,7 +429,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
             />
           )}
           {/* YAZ-5466: the page's comments block, under the card and its strip; the file's front matter is its store. */}
-          {commentsOrder !== undefined && onChangeCommentsOrder !== undefined && <CommentsSection file={{ path, content }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} askToEdit={askToEdit} />}
+          {commentsOrder !== undefined && onChangeCommentsOrder !== undefined && <CommentsSection file={{ path, content }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />}
         </div>
       </div>
     </>

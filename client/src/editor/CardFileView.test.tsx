@@ -860,8 +860,8 @@ describe('[[ in Edit card on a card file (YAZ-5185)', () => {
 /**
  * YAZ-5466: comments on a card file, the same as pages. The page's one `CommentsSection` under the card and its strip;
  * the file's front matter `comments` is its store (decision D: the file's, beside `kind: card`). Every comment write
- * keeps the card block and its card line byte for byte, and every card write keeps the comments. While the tab is
- * locked by Read only, each comment write asks "Allow edits?" first; Cancel writes nothing.
+ * keeps the card block and its card line byte for byte, and every card write keeps the comments. Comments are not
+ * edits (Q56): while the tab is Read only, every comment write goes through with no "Allow edits?" and the tab stays locked.
  */
 describe('comments on a card file (YAZ-5466)', () => {
   const ENTRIES =
@@ -1032,79 +1032,102 @@ describe('comments on a card file (YAZ-5466)', () => {
     expect(cardPart(onDisk())).toBe(CARD.replace(/\n/g, '\r\n'))
   })
 
-  describe('Read only: every comment write asks "Allow edits?" first', () => {
-    it('Comment: the box opens; Cancel writes nothing and keeps the draft; "Allow edits" writes it with no second click', async () => {
-      await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
-      open()
-      setValue(textarea(composer()), 'Typed while locked')
-      submit(composer())
-      expect(asks()).toBe('Allow edits?')
-      answer('Cancel')
-      await settle()
-      expect(onDisk()).toBe(WITH)
-      expect(textarea(composer()).value).toBe('Typed while locked')
-      submit(composer())
-      answer('Allow edits for 1 minute')
-      await vi.waitFor(() => expect(readComments(onDisk()).map((c) => c.body)).toContain('Typed while locked'))
-      expect(cardPart(onDisk())).toBe(CARD)
-      await vi.waitFor(() => expect(textarea(composer()).value).toBe(''))
-    })
-
-    for (const [name, run] of [
-      ['Resolve', () => action(itemSaying('Is Paris right?'), 'Resolve')],
-      ['Delete', () => action(itemSaying('Is Paris right?'), 'Delete')],
-      ['Reply', () => action(itemSaying('Is Paris right?'), 'Reply')],
-      ['Edit', () => action(itemSaying('Is Paris right?'), 'Edit')],
-    ] as const) {
-      it(`${name}: asks first; Cancel writes nothing and opens nothing`, async () => {
-        await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
-        open()
-        run()
-        expect(asks()).toBe('Allow edits?')
-        answer('Cancel')
-        await settle()
-        expect(onDisk()).toBe(WITH)
-        expect(document.querySelector('.confirm[role="dialog"]')).toBeNull()
-        expect(block()!.querySelectorAll('.comments__composer')).toHaveLength(1)
-      })
+  /** Q56 (Yaseen): comments are not edits. Read only never asks for one; the tab stays locked; the card part never moves. */
+  describe('Read only: comment writes never ask "Allow edits?" (Q56)', () => {
+    const stillLocked = () => {
+      expect(asks()).toBeNull()
+      // The chip reads "Read only" only while locked; an unlocked tab reads its time ("Editing …").
+      expect(chip()?.textContent).toContain('Read only')
     }
 
-    it('Resolve, then "Allow edits": the resolve lands; Delete, then "Allow edits": the sheet asks, Delete removes it', async () => {
+    it('a read-only vault: Comment writes at once with no ask; the tab stays locked; the card part byte for byte', async () => {
       await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
       open()
-      action(itemSaying('Check the spelling'), 'Resolve')
-      answer('Allow edits for 1 minute')
-      await vi.waitFor(() => expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.resolved).toBeDefined())
-      // Unlocked now: the next write asks nothing.
+      stillLocked()
+      setValue(textarea(composer()), 'Written while locked')
+      submit(composer())
+      expect(asks()).toBeNull()
+      await vi.waitFor(() => expect(readComments(onDisk()).map((c) => c.body)).toContain('Written while locked'))
+      await vi.waitFor(() => expect(textarea(composer()).value).toBe(''))
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
+      // The card itself is still guarded: Edit card shows the chip's "This card is Read only." and opens no editor.
+      act(() => editButton()!.click())
+      expect(el.querySelector('.read-only-message__card')?.textContent).toBe('This card is Read only.Press Enter to allow edits.')
+      expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
+    })
+
+    it('a read-only vault: reply, edit your own, resolve, reopen, delete: none asks; each keeps the card part byte for byte; the tab stays locked', async () => {
+      await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
+      open()
+      // Reply.
+      action(itemSaying('Is Paris right?'), 'Reply')
+      expect(asks()).toBeNull()
+      const reply = block()!.querySelector<HTMLElement>('.comments__replies .comments__composer')!
+      setValue(textarea(reply), 'Yes, Paris.')
+      submit(reply)
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.body === 'Yes, Paris.')?.reply_to).toBe('aaaaaaaa')
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
+      // Edit.
+      action(itemSaying('Check the spelling'), 'Edit')
+      expect(asks()).toBeNull()
+      const edit = itemSaying('Check the spelling').querySelector<HTMLElement>('.comments__composer')!
+      setValue(textarea(edit), 'Check the spelling again')
+      submit(edit)
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.body).toBe('Check the spelling again')
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
+      // Resolve.
+      action(itemSaying('Check the spelling again'), 'Resolve')
+      expect(asks()).toBeNull()
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.resolved).toBeDefined()
+      expect(cardPart(onDisk())).toBe(CARD)
+      await settle()
+      // Reopen from the Resolved group.
+      act(() => block()!.querySelector<HTMLButtonElement>('.comments__resolved-link')?.click())
+      await vi.waitFor(() => expect(block()!.querySelector('.comments__list--resolved')).not.toBeNull())
+      action(block()!.querySelector<HTMLElement>('.comments__list--resolved article.comments__item')!, 'Reopen')
+      expect(asks()).toBeNull()
+      await settle()
+      expect(readComments(onDisk()).find((c) => c.id === 'bbbbbbbb')?.resolved).toBeUndefined()
+      expect(cardPart(onDisk())).toBe(CARD)
+      // Delete, after the sheet's own confirm (that sheet is the delete's, not Read only's).
       action(itemSaying('Is Paris right?'), 'Delete')
       expect(asks()).toBeNull()
       act(() => [...document.querySelectorAll<HTMLButtonElement>('.confirm__btn')].find((b) => b.textContent?.trim() === 'Delete')!.click())
-      await vi.waitFor(() => expect(readComments(onDisk()).map((c) => c.id)).toEqual(['bbbbbbbb']))
+      await settle()
+      expect(readComments(onDisk()).map((c) => c.id)).toEqual(['bbbbbbbb'])
       expect(cardPart(onDisk())).toBe(CARD)
+      expect(onDisk().startsWith('---\nkind: card\ncomments:\n')).toBe(true)
+      stillLocked()
     })
 
-    it('typing in a comment field types nothing and asks', async () => {
+    it('a read-only vault: typing in a comment field types (nothing is held back) and asks nothing', async () => {
       await mount(WITH, { comments: 'oldest', readOnly: true, pane: true })
       open()
       const field = textarea(composer())
       const event = new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType: 'insertText', data: 'x' })
       act(() => void field.dispatchEvent(event))
-      expect(event.defaultPrevented).toBe(true)
-      expect(asks()).toBe('Allow edits?')
-      answer('Cancel')
+      expect(event.defaultPrevented).toBe(false)
+      stillLocked()
     })
 
-    it('a `readonly: true` card file asks too; once the tab is unlocked by the chip, a comment writes at once', async () => {
+    it('a `readonly: true` card file: a comment writes at once with no ask; `readonly: true` stays; the tab stays locked', async () => {
       const locked = WITH.replace('kind: card\n', 'kind: card\nreadonly: true\n')
       await mount(locked, { comments: 'oldest', pane: true })
       open()
-      act(() => chip()!.click())
-      answer('Until I close this tab')
-      setValue(textarea(composer()), 'Unlocked')
+      stillLocked()
+      setValue(textarea(composer()), 'On a locked file')
       submit(composer())
       expect(asks()).toBeNull()
-      await vi.waitFor(() => expect(readComments(onDisk()).map((c) => c.body)).toContain('Unlocked'))
+      await vi.waitFor(() => expect(readComments(onDisk()).map((c) => c.body)).toContain('On a locked file'))
       expect(onDisk()).toContain('readonly: true')
+      expect(cardPart(onDisk())).toBe(CARD)
+      stillLocked()
     })
   })
 })
