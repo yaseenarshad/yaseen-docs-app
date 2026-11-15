@@ -20,9 +20,11 @@ const round = (text: string) => formatCardLine(line(text))
 
 describe('property parts on the card line (YAZ-5379)', () => {
   it('reads the mockup line: tags as a list, level and source as text; the line writes back byte for byte', () => {
-    const text = '<!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", source "Atlas, chapter 3", 2026-11-11T09:12Z good -->'
+    const text = '<!-- card: GEO-197, title "Capital of Spain", tags "europe" "capitals", level "A2", source "Atlas&#44; chapter 3", 2026-11-11T09:12Z good -->'
     expect(cardPropertiesOf(line(text))).toEqual({ tags: ['europe', 'capitals'], level: 'A2', source: 'Atlas, chapter 3' })
     expect(round(text)).toBe(text)
+    // A raw comma in a value (a hand's, or a line from before the value escape) reads as itself; the write encodes it, as a title's (YAZ-5393).
+    expect(round(text.replace('&#44;', ','))).toBe(text)
   })
 
   it('each type: text, number, checkbox, list, date, and an empty value', () => {
