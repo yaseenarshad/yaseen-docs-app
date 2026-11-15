@@ -12,7 +12,6 @@ import './reviewSlot.css'
 import { ScanCode } from './ScanCode'
 import { Search } from './Search'
 import { Settings } from './Settings'
-import { SetupGuide } from './SetupGuide'
 import { SignIn } from './SignIn'
 
 /** The reader (4C, YAZ-5079): a chunk of its own, with the Markdown renderer, so the tabs do not load it. */
@@ -21,6 +20,8 @@ const PageView = lazyScreen(() => import('../page/PageView'), { waiting: routeWa
 const CardView = lazyScreen(() => import('../page/CardView'), { waiting: routeWaiting })
 /** "You vs <friend>" (4E4, YAZ-5085): in the friends chunk. */
 const VsScreen = lazyScreen(() => import('../friends/ui/VsScreen'), { waiting: routeWaiting })
+/** "Set up your phone": a chunk of its own (YAZ-5446 keeps the first load under its ceiling). */
+const SetupGuide = lazyScreen(() => import('./SetupGuide'), { waiting: routeWaiting })
 
 /** Each tab draws one component from its own file; 4B, 4C and 4E replace the placeholders (decision 21). */
 const TAB_SCREENS: Record<Exclude<Tab, 'review'>, () => React.JSX.Element> = { friends: Friends, search: Search }
@@ -121,7 +122,7 @@ function RouteScreen({ route }: { route: Route }) {
     case 'replace-token':
       return <SignIn mode={{ kind: 'again', vault: route.vault }} />
     case 'guide':
-      return <SetupGuide />
+      return <SetupGuide onBack={back} />
     case 'scan':
       return <ScanCode vault={route.vault} />
     case 'page':

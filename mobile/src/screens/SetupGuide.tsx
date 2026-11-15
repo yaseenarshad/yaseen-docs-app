@@ -1,5 +1,6 @@
 import { useApp } from '../app/AppState'
-import { HOME_SCREEN, safariLine } from '../pwa/homeScreen'
+import { Fragment } from 'react'
+import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from '../pwa/homeScreen'
 import { Frame } from './Frame'
 
 /** GitHub's page that makes a fine-grained token. */
@@ -40,10 +41,28 @@ export function SetupGuide() {
 
       <h2 className="section">3. The Home Screen</h2>
       <ol className="guide-steps">
-        <li>{safariLine()}</li>
+        <li>
+          <SpokenThreeLines text={safariLine()} />
+        </li>
         <li>{HOME_SCREEN.olderSafari}</li>
         <li>Open Notecard from the Home Screen, and connect your vault there. {HOME_SCREEN.apart.split('. ')[0]}.</li>
       </ol>
     </Frame>
   )
 }
+
+/** YAZ-5443: the text with each ☰ named for VoiceOver ("the three lines", not "trigram for heaven"). */
+function SpokenThreeLines({ text }: { text: string }) {
+  return splitThreeLines(text).map((part, i) => (
+    <Fragment key={i}>
+      {i > 0 && (
+        <span role="img" aria-label={THREE_LINES.name}>
+          {THREE_LINES.glyph}
+        </span>
+      )}
+      {part}
+    </Fragment>
+  ))
+}
+
+export default SetupGuide

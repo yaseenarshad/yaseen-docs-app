@@ -64,4 +64,14 @@ describe('the Home Screen steps come from the app (one source)', () => {
     expect(document.getElementById('add-steps')!.textContent).toBe(`${safariLine()} ${HOME_SCREEN.olderSafari}`)
     expect(document.getElementById('add-steps')!.textContent).toContain('tap ☰ at the left of the address bar, then Share, then View More, then Add to Home Screen')
   })
+
+  it('YAZ-5443: the ☰ has a spoken name ("the three lines"), never the bare glyph for VoiceOver', async () => {
+    await open(`/friend#${ID}`)
+    const steps = document.getElementById('add-steps')!
+    const named = [...steps.querySelectorAll('[role="img"]')]
+    expect(named.map((el) => [el.getAttribute('aria-label'), el.textContent])).toEqual([['the three lines', '☰']])
+    // No ☰ in a plain text node: each one is inside its named element.
+    const bare = [...steps.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.includes('☰'))
+    expect(bare).toEqual([])
+  })
 })
