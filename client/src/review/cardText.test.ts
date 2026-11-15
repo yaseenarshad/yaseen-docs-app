@@ -3,16 +3,17 @@ import { DEFAULT_SETTINGS, type SettingsState } from '@shared/types'
 import { cardTextVars } from './cardText'
 
 describe('YAZ-5387: Card text size and Card title size as variables on `.app`', () => {
-  it('the default: no card text size (Same as pages), the title at Medium, 1.125× the card text', () => {
-    expect(cardTextVars(DEFAULT_SETTINGS)).toEqual({ '--card-title-scale': 1.125 })
+  it('the defaults set none: the card reads its page, the title its card text × 1.125 (the CSS)', () => {
+    expect(cardTextVars(DEFAULT_SETTINGS)).toEqual({})
   })
-  it('Custom sets its px; each title step its scale', () => {
-    expect(cardTextVars({ ...DEFAULT_SETTINGS, cardTextSize: 20, cardTitleSize: 'small' })).toEqual({ '--card-text-size': '20px', '--card-title-scale': 1 })
-    expect(cardTextVars({ ...DEFAULT_SETTINGS, cardTitleSize: 'large' })['--card-title-scale']).toBe(1.375)
+  it('round 2: each Custom sets its own px; the title px stands alone, not a step of the text', () => {
+    expect(cardTextVars({ ...DEFAULT_SETTINGS, cardTextSize: 20, cardTitleSize: 14 })).toEqual({ '--card-text-size': '20px', '--card-title-size': '14px' })
+    expect(cardTextVars({ ...DEFAULT_SETTINGS, cardTitleSize: 40 })).toEqual({ '--card-title-size': '40px' })
   })
-  it('a main process older than the fields (absent) or a wrong value reads the defaults, never "undefinedpx"', () => {
+  it('a main process older than the fields (absent), round 1\'s steps, or a wrong value read the defaults, never "undefinedpx"', () => {
     const { cardTextSize: _s, cardTitleSize: _t, ...old } = DEFAULT_SETTINGS
-    expect(cardTextVars(old as SettingsState)).toEqual({ '--card-title-scale': 1.125 })
-    expect(cardTextVars({ ...DEFAULT_SETTINGS, cardTextSize: 99, cardTitleSize: 'huge' as never })).toEqual({ '--card-title-scale': 1.125 })
+    expect(cardTextVars(old as SettingsState)).toEqual({})
+    expect(cardTextVars({ ...DEFAULT_SETTINGS, cardTextSize: 99, cardTitleSize: 'large' as never })).toEqual({})
+    expect(cardTextVars({ ...DEFAULT_SETTINGS, cardTitleSize: 41 })).toEqual({})
   })
 })

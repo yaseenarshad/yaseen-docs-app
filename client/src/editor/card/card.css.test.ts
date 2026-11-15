@@ -273,12 +273,12 @@ it('YAZ-5387: the title band reads Card title size over the card text, and its t
   expect(beats(specificity(title.selector), specificity(h1.selector))).toBe(true)
   // No "H1" tag after the title (headingLevelTag.css), however the page is set.
   expect(rules(cardCss, '.card-band.card-band.card-band .page-title__text::after')[0]?.body).toMatch(/content:\s*none/)
-  // The band: a step of the card's text. The card: Custom's px, else its parent's size.
-  expect(rules(cardCss, '.card-band').find((r) => r.selector === '.card-band')?.body).toMatch(/font-size:\s*calc\(1em \* var\(--card-title-scale, 1\.125\)\)/)
+  // The band: Card title size's Custom px, else Default, 1.125× the card's text. The card: Custom's px, else its parent's size.
+  expect(rules(cardCss, '.card-band').find((r) => r.selector === '.card-band')?.body).toMatch(/font-size:\s*var\(--card-title-size, calc\(1em \* 1\.125\)\)/)
   expect(rules(cardCss, '.card').find((r) => r.selector === '.card')?.body).toMatch(/font-size:\s*var\(--card-text-size, 1em\)/)
   // The Inbox and Preview: the card's text, and the band beside it (not inside it) from the same two variables.
   const screens = read('../../review/cardScreens.css')
   expect(rules(screens, '.card.card-inbox__card')[0]?.body).toMatch(/font-size:\s*var\(--card-text-size, 1\.05em\)/)
-  expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*calc\(var\(--card-text-size, 1\.05em\) \* var\(--card-title-scale, 1\.125\)\)/)
+  expect(rules(screens, '.card-inbox__panel > .card-band')[0]?.body).toMatch(/font-size:\s*var\(--card-title-size, calc\(var\(--card-text-size, 1\.05em\) \* 1\.125\)\)/)
   expect(rules(screens, '.card-inbox__card').filter((r) => r.selector === '.card-inbox__card').some((r) => /font-size/.test(r.body))).toBe(false)
 })

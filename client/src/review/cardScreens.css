@@ -812,8 +812,8 @@
 /* The band at the top of the card's frame: the card's own sides. */
 .card-inbox__panel > .card-band {
   padding: 12px var(--inbox-card-pad, 28px);
-  /* Card title size (YAZ-5387): a step of the card's text, which is the card beside it (above), not this frame. */
-  font-size: calc(var(--card-text-size, 1.05em) * var(--card-title-scale, 1.125));
+  /* Card title size (YAZ-5387): Custom's px, else Default, 1.125× the card's text: the card beside it (above), not this frame. */
+  font-size: var(--card-title-size, calc(var(--card-text-size, 1.05em) * 1.125));
 }
 .card-inbox__panel {
   position: relative;
