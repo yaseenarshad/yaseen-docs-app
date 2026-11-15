@@ -7,7 +7,7 @@ import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/folderTitle'
 import { isCardGone, type CardOnPage } from './cardRead'
 import type { ReviewHost } from './reviewHost'
-import { dueFirsts, filterProgress, matchesFilter, type FilterProgress, type SessionAnswer } from './sessionProgress'
+import { dueFirsts, filterPlace, filterProgress, matchesFilter, type FilterProgress, type SessionAnswer } from './sessionProgress'
 import { tourEvent } from '../course/tourBus'
 
 /**
@@ -50,11 +50,13 @@ import { tourEvent } from '../course/tourBus'
  * (`marks`, the marks it last saw), so a snapshot that has not caught up with an answer yet never brings its card back.
  *
  * `answered` (YAZ-5020, the progress bar) is each answer of the session, in order, with its card's kind; ⌘Z takes the
- * last one back. The bar shows the filter on show only (YAZ-5432, `filterProgress`): that filter's answers out of those
- * and its cards left. A new session (or the Inbox tab closed) starts it empty.
+ * last one back. The bar shows the filter on show only (YAZ-5432, `filterProgress`): one step per card of that filter
+ * in this session (YAZ-5594), and "3 of 13" counts the same cards (`filterPlace`). A new session (or the Inbox tab
+ * closed) starts it empty.
  *
  * Same-day steps (YAZ-5020): an answer that leaves the card in its steps (`CardAnswer.inSteps`: a Forgot; a new card's
- * first Remembered) puts it back at the END of this session's queue, and the session grows by one ("3 of 13"). It
+ * first Remembered) puts it back at the END of this session's queue. It is the same card: the session does not grow
+ * ("3 of 13" and the bar's size stay, YAZ-5594 and YAZ-5610), and the card is done only when it is let go. It
  * comes back until the scheduler lets it go: a new card after two Remembered in a row, a known card after one. Closed
  * and opened again, the Inbox shows it at once: a card in its steps is due now (`cardQueue`). ⌘Z takes the repeat
  * out again and puts the card back at its place.
@@ -130,7 +132,7 @@ export interface CardReviewSession {
   cards?: CardReviewScope
   /** The card showing; null once nothing is left (the done screen). */
   card: ShownCard | null
-  /** The showing card's place among the `total` the session started with. */
+  /** The showing card's place among the filter's `total` cards of this session, each card once (YAZ-5594, YAZ-5610). */
   position: number
   total: number
   /** ← and → (YAZ-5004): a card before or after the one showing is still in the queue. */
@@ -149,7 +151,7 @@ export interface CardReviewSession {
   place: CardPlacePart[]
   /** Each answer of the session, in order (YAZ-5020): a Forgot ('again') or a Remembered (any other). */
   answered: CardRating[]
-  /** The progress bar (YAZ-5020) of the filter on show only (YAZ-5432, `filterProgress`): its parts, done and whole. */
+  /** The progress bar (YAZ-5020) of the filter on show only (YAZ-5432, `filterProgress`): one step per card (YAZ-5594). */
   progress: FilterProgress
   /** Today's review work across the vault, from the index (YAZ-5033): the top row's and the done screen's "Today: …". */
   today: ReviewedToday
@@ -168,7 +170,7 @@ export interface CardReviewSession {
   upNext: boolean
   /** The add or Reset, while it is the last thing done (YAZ-5042): the line under the buttons says it; null otherwise. */
   lastAdd: { kind: AddKind; count: number; reset: boolean } | null
-  /** The phone (YAZ-5078): the last thing done was Archive card, and Undo takes it back. Always null on the Mac. */
+  /** The last thing done was Archive card, and Undo takes it back (YAZ-5078 on the phone, YAZ-5621 on the Mac: a host with `undoesArchive`). */
   lastArchive?: { id: string } | null
   /** The saved folder pick for new cards (YAZ-5322), each with its name; empty for All folders. */
   newFrom: Pick<NewCardFolder, 'folder' | 'label'>[]
@@ -278,15 +280,12 @@ interface Session {
   queue: QueueCard[]
   /** The place of the card showing in `queue` (YAZ-5004: ← → move it); 0 until then. */
   at: number
-  total: number
   /** Bumped each time the card at the head is put there: its page is read again, its answers fixed again. */
   turn: number
   /** Each answer and each add (YAZ-5042), in order: ⌘Z takes back the last. */
   undo: UndoStep[]
   /** YAZ-5017: which cards show; `at` is always a card that matches it, or past the end when none does. */
   filter: CardFilter
-  /** The cards with reviews and the new cards at start, plus the repeats (YAZ-5020): each filter's "of 12". */
-  totals: { due: number; new: number; next: number }
   /** YAZ-5020: each answer, in order, with its card's kind (the progress bar and the end's ring, `sessionProgress`); ⌘Z takes the last back. */
   answered: SessionAnswer[]
   /** YAZ-5031: the cards of the scope the index last marked `next` (`cardKey`): a change of them moves the session. */
@@ -340,8 +339,8 @@ interface ResetStep {
 }
 
 /**
- * An Archive card that Undo can take back (YAZ-5078, the phone only: a host with `undoesArchive`): the card, and its
- * place in the queue, so the undo puts it back where it was.
+ * An Archive card that Undo can take back (both apps: YAZ-5078 the phone, YAZ-5621 the Mac; a host with
+ * `undoesArchive`): the card, and its place in the queue, so the undo puts it back where it was.
  */
 interface ArchiveStep {
   kind: 'archive'
@@ -437,24 +436,18 @@ const withMarks = (s: Session, live: readonly DueCard[]): Session => {
   const off = new Set(gone)
   const due = new Set(live.map(cardKey))
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   let shown: QueueCard | undefined = head
   const rest: QueueCard[] = []
   const moved = new Map<string, QueueCard>()
   for (const card of s.queue) {
     const key = cardKey(card)
     if (on.has(key) && !card.next) {
-      totals.next++
       const marked = { ...card, next: true }
       if (card === head) rest.push((shown = marked))
       else moved.set(key, marked)
     } else if (off.has(key) && card.next) {
-      totals.next--
-      if (card !== head && card.repeat !== true && !due.has(key)) {
-        totals[card.isNew ? 'new' : 'due']--
-        total--
-      } else if (card === head) rest.push((shown = { ...card, next: false }))
+      if (card !== head && card.repeat !== true && !due.has(key)) continue
+      if (card === head) rest.push((shown = { ...card, next: false }))
       else rest.push({ ...card, next: false })
     } else rest.push(card)
   }
@@ -466,17 +459,12 @@ const withMarks = (s: Session, live: readonly DueCard[]): Session => {
     if (!on.has(key)) continue
     const mine = moved.get(key)
     if (mine !== undefined) joining.push(mine)
-    else if (!inSession.has(key)) {
-      joining.push(card)
-      totals.next++
-      totals[card.isNew ? 'new' : 'due']++
-      total++
-    }
+    else if (!inSession.has(key)) joining.push(card)
   }
   const place = shown === undefined ? rest.length : rest.indexOf(shown) + 1
   const queue = [...rest.slice(0, place), ...joining, ...rest.slice(place)]
   const at = shown === undefined ? place : place - 1
-  return fitted({ ...s, queue, at, total, totals, marks, turn: shown === head ? s.turn : s.turn + 1 })
+  return fitted({ ...s, queue, at, marks, turn: shown === head ? s.turn : s.turn + 1 })
 }
 
 /** The session with the card at `at` gone from its queue (answered elsewhere, its page gone, review off): the next one shows. */
@@ -496,9 +484,6 @@ const withAdded = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   const promoted = what === 'next' ? live.filter((c) => c.next && inSession.get(cardKey(c))?.next === false && inSession.get(cardKey(c))?.repeat !== true).map(cardKey) : []
   if (joining.length + promoted.length === 0) return s
   const moved = new Set(promoted)
-  const totals = { ...s.totals }
-  for (const c of joining) totals[c.isNew ? 'new' : 'due']++
-  if (what === 'next') totals.next += joining.length + promoted.length
   const coming: QueueCard[] = [...s.queue.filter((c) => moved.has(cardKey(c)) && c !== head).map((c) => ({ ...c, next: true })), ...joining]
   const shownNow = head !== undefined && moved.has(cardKey(head)) ? { ...head, next: true } : head
   const rest = s.queue.filter((c) => c === head || !moved.has(cardKey(c))).map((c) => (c === head ? shownNow! : c))
@@ -521,7 +506,7 @@ const withAdded = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   const undo = [...s.undo, step].slice(-UNDO_DEPTH)
   // YAZ-5043: an add from the "Due today is done." screen with nothing left shows its first card at once.
   const pause = shownNow === undefined ? null : s.pause
-  return fitted({ ...s, queue, at, filter, total: s.total + joining.length, totals, marks, undo, pause, turn: shownNow === head ? s.turn : s.turn + 1 })
+  return fitted({ ...s, queue, at, filter, marks, undo, pause, turn: shownNow === head ? s.turn : s.turn + 1 })
 }
 
 /** The session after an add's undo (YAZ-5042): its cards not answered yet leave; a card it made Up next is not any more. */
@@ -529,26 +514,18 @@ const withoutAdded = (s: Session, step: AddStep): Session => {
   const joined = new Set(step.joined)
   const promoted = new Set(step.promoted)
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   const queue: QueueCard[] = []
   let at = -1
   for (const c of s.queue) {
     const key = cardKey(c)
-    if (joined.has(key) && c.repeat !== true) {
-      totals[c.isNew ? 'new' : 'due']--
-      if (step.what === 'next') totals.next--
-      total--
-      continue
-    }
+    if (joined.has(key) && c.repeat !== true) continue
     const back = promoted.has(key) && c.next && c.repeat !== true ? { ...c, next: false } : c
-    if (back !== c) totals.next--
     if (c === head) at = queue.length
     queue.push(back)
   }
   const marks = step.what === 'next' ? new Set([...s.marks].filter((k) => !joined.has(k) && !promoted.has(k))) : s.marks
   const kept = at !== -1
-  return fitted({ ...s, queue, at: kept ? at : Math.min(s.at, queue.length), total, totals, marks, undo: s.undo.slice(0, -1), turn: kept && queue[at] === head ? s.turn : s.turn + 1 })
+  return fitted({ ...s, queue, at: kept ? at : Math.min(s.at, queue.length), marks, undo: s.undo.slice(0, -1), turn: kept && queue[at] === head ? s.turn : s.turn + 1 })
 }
 
 /**
@@ -559,8 +536,6 @@ const withoutAdded = (s: Session, step: AddStep): Session => {
 const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: number): Session => {
   const today = new Map(live.map((c) => [cardKey(c), c]))
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   const dropped = new Set<string>()
   const queue: QueueCard[] = []
   let at = -1
@@ -569,12 +544,7 @@ const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
     const now = today.get(cardKey(c))
     if (ofKind && c !== head && (now === undefined || (what === 'next' && !now.next))) {
       dropped.add(cardKey(c))
-      if (what === 'next') totals.next--
-      if (now === undefined) {
-        totals[c.isNew ? 'new' : 'due']--
-        total--
-        continue
-      }
+      if (now === undefined) continue
       queue.push({ ...c, next: false })
       continue
     }
@@ -584,7 +554,7 @@ const withReset = (s: Session, what: AddKind, live: readonly DueCard[], delta: n
   const marks = what === 'next' ? new Set([...s.marks].filter((k) => !dropped.has(k))) : s.marks
   const step: ResetStep = { kind: 'reset', what, delta, count: dropped.size }
   const undo = [...s.undo, step].slice(-UNDO_DEPTH)
-  return fitted({ ...s, queue, at: at === -1 ? Math.min(s.at, queue.length) : at, total, totals, marks, undo, turn: s.turn })
+  return fitted({ ...s, queue, at: at === -1 ? Math.min(s.at, queue.length) : at, marks, undo, turn: s.turn })
 }
 
 /**
@@ -597,24 +567,16 @@ const withNewCards = (s: Session, live: readonly DueCard[]): Session => {
   const today = new Set(live.filter(plain).map(cardKey))
   const inSession = new Set(s.queue.map(cardKey))
   const head = s.queue[s.at]
-  const totals = { ...s.totals }
-  let total = s.total
   const queue: QueueCard[] = []
   let at = -1
   for (const c of s.queue) {
-    if (plain(c) && c !== head && !today.has(cardKey(c))) {
-      totals.new--
-      total--
-      continue
-    }
+    if (plain(c) && c !== head && !today.has(cardKey(c))) continue
     if (c === head) at = queue.length
     queue.push(c)
   }
   const joining = live.filter((c) => plain(c) && !inSession.has(cardKey(c)))
   if (joining.length === 0 && queue.length === s.queue.length) return s
-  totals.new += joining.length
-  total += joining.length
-  return fitted({ ...s, queue: [...queue, ...joining], at: at === -1 ? queue.length : at, total, totals })
+  return fitted({ ...s, queue: [...queue, ...joining], at: at === -1 ? queue.length : at })
 }
 
 /** The stop's screen (YAZ-5043): the %, from first answers only, never 100 while one was missed. */
@@ -836,12 +798,11 @@ export function useCardReview(
       if (!settings.enabled) return
       const queue = cardPlan(records, settings, Date.now(), scope.folder, scope.page, source.letters, root === null ? NO_TAKEN : host.upNextTakenToday(root), root === null ? NO_ADDED : host.cardsAddedToday(root)).queue
       const label = scope.page !== undefined ? titleOf(records, scope.page) : scope.folder ? folderTitle(source.folders, `${root}/${scope.folder}`) : 'Inbox'
-      const { due, new: fresh, next } = countOf(queue)
       // A new scope starts on All cards (YAZ-5017), with an empty bar (YAZ-5020); a moved Inbox on its filter, at its
       // card when that is still in the queue, else on the filter's first card (YAZ-5054).
       const filter = resume.filter ?? 'all'
       const at = resume.card === undefined ? -1 : queue.findIndex((c) => c.path === resume.card?.path && c.id === resume.card.id)
-      setSession((s) => fitted({ id: ++sessionCount, label, scope, queue, at: Math.max(at, 0), total: queue.length, turn: (s?.turn ?? 0) + 1, undo: [], filter, totals: { due, new: fresh, next }, answered: [], marks: markedIn(queue), stage: 'first', pause: null }))
+      setSession((s) => fitted({ id: ++sessionCount, label, scope, queue, at: Math.max(at, 0), turn: (s?.turn ?? 0) + 1, undo: [], filter, answered: [], marks: markedIn(queue), stage: 'first', pause: null }))
     },
     [root, source, host],
   )
@@ -905,10 +866,9 @@ export function useCardReview(
         const queue = repeat ? [...rest.slice(0, place), { ...card, due: chosen.due, next: false, repeat: true }, ...rest.slice(place)] : rest
         // YAZ-5432: with what the card was, so each filter's bar reads its own answers.
         const answered = written !== 'gone' ? [...s.answered, { key, rating, isNew: card.isNew, next: card.next, first }] : s.answered
-        // A repeat adds one to the session ("3 of 13", the progress bar's size).
-        const totals = repeat ? { ...s.totals, [card.isNew ? 'new' : 'due']: s.totals[card.isNew ? 'new' : 'due'] + 1 } : s.totals
+        // A repeat is the same card (YAZ-5594, YAZ-5610): "3 / 13" and the bar's size stay; the card is not done yet.
         // The next card is the one after; past the last, the first (a card passed over with →, or the repeat).
-        const next = fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, total: s.total + (repeat ? 1 : 0), totals, turn: s.turn + 1, undo, answered })
+        const next = fitted({ ...s, queue, at: after.length > 0 ? s.at : 0, turn: s.turn + 1, undo, answered })
         return written === 'gone' ? next : { ...next, ...dueStop(next, card) }
       })
       return written !== 'gone'
@@ -1000,14 +960,12 @@ export function useCardReview(
         if (s === null || s.undo.at(-1) !== last) return s
         const rest = s.queue.filter((c) => !sameCard(c, last.card))
         const at = Math.min(last.at, rest.length)
-        const side = last.card.isNew ? 'new' : 'due'
-        const totals = last.repeat ? { ...s.totals, [side]: s.totals[side] - 1 } : s.totals
         // As it was (YAZ-5028): Up next again when it was in today's Up next; a marked card past the day's places
         // gets its mark back in the file, and waits in its normal place again.
         const card = last.card
         const filter = matchesFilter(card, s.filter) ? s.filter : 'all'
         // YAZ-5043: a stop it made goes with it, and Due today's stage is as it was.
-        return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, total: s.total - (last.repeat ? 1 : 0), totals, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1), stage: last.stage, pause: null }
+        return { ...s, queue: [...rest.slice(0, at), card, ...rest.slice(at)], at, turn: s.turn + 1, undo: s.undo.slice(0, -1), filter, answered: s.answered.slice(0, -1), stage: last.stage, pause: null }
       })
   }, [onNotice, forget, root, undoAdd, undoReset, undoArchive, host])
 
@@ -1143,7 +1101,8 @@ export function useCardReview(
     setSession((s) => {
       if (s === null || !showing(s, card)) return s
       const next = without(s, s.at)
-      // The phone's host takes an archive back with Undo (YAZ-5078); the Mac's does not, so its stack is as before.
+      // Both apps take an archive back with Undo (YAZ-5078 the phone, YAZ-5621 the Mac: `undoesArchive`); a host
+      // without it keeps the stack as before.
       return host.undoesArchive === true ? { ...next, undo: [...s.undo, { kind: 'archive' as const, card: s.queue[s.at], at: s.at }].slice(-UNDO_DEPTH) } : next
     })
   }, [onNotice, forget, host])
@@ -1168,12 +1127,11 @@ export function useCardReview(
     let shownCard: ShownCard | null = card === undefined ? null : { ...card, page }
     if (shownCard !== null && page === null && lastShown.current?.session === session.id) shownCard = lastShown.current.card
     else if (shownCard !== null && page !== null) lastShown.current = { session: session.id, card: shownCard }
-    const { filter, queue, totals, scope } = session
+    const { filter, queue, scope } = session
     const counts = countOf(queue)
     const lastStep = session.undo.at(-1)
-    // "3 of 12" under the filter (YAZ-5017): its cards at start, those gone since, and the place among those left.
-    const total = filter === 'all' ? totals.due + totals.new : totals[filter]
-    const before = queue.slice(0, session.at).filter((c) => matchesFilter(c, filter)).length
+    // "3 of 12" under the filter (YAZ-5017): the place among its cards, each card once (YAZ-5594, YAZ-5610).
+    const { position, total } = filterPlace(session.answered, queue, session.at, filter)
     const vault = vaultName ?? (root === null ? 'Inbox' : host.vaultName(root))
     const from = scope.page !== undefined ? [session.label] : scope.folder ? scope.folder.split('/').filter(Boolean) : [vault]
     return {
@@ -1181,7 +1139,7 @@ export function useCardReview(
       scope: scope.page !== undefined ? 'page' : scope.folder ? 'folder' : 'vault',
       cards: scope,
       card: shownCard,
-      position: Math.max(1, Math.min(total - counts[filter] + 1 + before, total)),
+      position,
       total,
       canBack: session.pause === null && stepFrom(session, -1) !== -1,
       canNext: session.pause === null && stepFrom(session, 1) !== -1,
@@ -1193,7 +1151,7 @@ export function useCardReview(
       from,
       place: shownCard === null || root === null ? [] : cardPlace(root, vault, folders, records, shownCard.path),
       answered: session.answered.map((a) => a.rating),
-      progress: filterProgress(session.answered, filter, counts[filter]),
+      progress: filterProgress(session.answered, queue, filter),
       today,
       more: scopePlan.more,
       adds: addsOf(scopePlan, settings),

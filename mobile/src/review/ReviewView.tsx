@@ -252,7 +252,8 @@ function SessionScreen({
   const title = useMemo(() => ({ text: pageText === null ? '' : cardName, waits: hideTitle || hiddenCount(cardName) > 0 }), [pageText, cardName, hideTitle])
   const record = card === null ? undefined : source.records.find((r) => r.path === card.path)
   const cardFile = record?.kind === 'card'
-  const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
+  // A card that comes back (YAZ-5594: same place, "3 / 3") is a new turn: the answers so far tell the two apart.
+  const cardKey = card === null ? null : `${session.answered.length}\n${card.path}\n${card.id}`
 
   // The step (D18; YAZ-5415 follows the Mac's `cardSteps.ts`): a tap shows the MARKED part (the next
   // hidden one), else the next side; a tap ON a hidden part shows THAT part, and the mark goes on after it.
@@ -828,24 +829,24 @@ const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__count-btn, .revie
 const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__lastanswer'
 
 /**
- * The progress bar in steps (round 4; the Mac's YAZ-5020): one step for each card, in the order answered —
- * grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs. It counts ONLY the list
- * on show (the Mac's YAZ-5432, `session.progress`, the same answers as the end ring's %): Due today done fills it.
+ * The progress bar in steps (round 4; the Mac's YAZ-5020): one step for each CARD of the session (YAZ-5594), in the
+ * order answered — red while its last answer was a Forgot, grey once it is done, empty while it waits. A card that
+ * comes back adds no step: the bar does not grow. A long session draws runs. It counts ONLY the list on show (the
+ * Mac's YAZ-5432, `session.progress`): Due today done fills it.
  */
 function Progress({ session }: { session: CardReviewSession }) {
   // The Mac's bar: the filter on show only, `session.progress` (one rule for both apps).
   const { runs, done } = session.progress
   const size = Math.max(1, session.progress.size)
   const steps = size <= 80
-  const marks = runs.flatMap((run) => Array.from({ length: run.count }, () => run.missed))
+  const marks = runs.flatMap((run) => Array.from({ length: run.count }, () => (run.open === true ? undefined : run.missed ? 'forgot' : 'remembered')))
   return (
     <div className="review__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.progress.size} aria-valuenow={done} data-steps={steps || undefined}>
       {steps
         ? Array.from({ length: size }, (_, i) => {
-            const m = marks[i]
-            return <span key={i} className="review__step" data-answer={m === undefined ? undefined : m ? 'forgot' : 'remembered'} />
+            return <span key={i} className="review__step" data-answer={marks[i]} />
           })
-        : runs.map((run, i) => <span key={i} className="review__step" data-answer={run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
+        : runs.map((run, i) => <span key={i} className="review__step" data-answer={run.open === true ? undefined : run.missed ? 'forgot' : 'remembered'} style={{ flex: `0 0 ${(100 * run.count) / size}%` }} />)}
     </div>
   )
 }
