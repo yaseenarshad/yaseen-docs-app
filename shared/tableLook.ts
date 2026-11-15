@@ -3,7 +3,7 @@ import { isValidTimeFormat } from './timeFormat'
 import type { HeaderRow, HeaderRowOwn, SettingsState } from './types'
 
 /**
- * A vault's table look and new-table defaults (YAZ-5487, scoping B3, section 7 row 5): the 21 table settings that were
+ * A vault's table look and new-table defaults (YAZ-5487, scoping B3, section 7 row 5): the 21 table settings (23 with YAZ-5541's next slot) that were
  * the Mac's app settings (YAZ-4167, YAZ-3818, YAZ-4774, YAZ-4899, YAZ-4900, YAZ-4163 …: no vault decision) belong to
  * the vault, so a vault's tables read the same on every Mac and on the phone, and two vaults can differ. It lives in
  * `<vault>/.yaseendocs/table-look.json`, through the generic `vaultConfig` door, as `card-look.json`. Pure: no React, no
@@ -45,6 +45,9 @@ export interface TableLookLook {
   dimPast?: SettingsState['tableDimPast']
   shadeDarkness?: number
   nowMark?: SettingsState['tableNowMark']
+  /** YAZ-5541: Shade the next time slot, and its colour (a band colour's choices). */
+  nextShade?: boolean
+  nextColour?: string
 }
 
 /** How a new table of the vault starts (the file's `newTables`). */
@@ -62,7 +65,7 @@ export interface TableLook {
   newTables?: TableLookNew
 }
 
-/** The 21 settings, by their app names (`SettingsState`). */
+/** The table look's settings, by their app names (`SettingsState`): the 21 of YAZ-5487, then YAZ-5541's two. */
 export const TABLE_LOOK_SETTINGS = [
   'tableHeaderRow',
   'tableSubheaderRow',
@@ -80,6 +83,8 @@ export const TABLE_LOOK_SETTINGS = [
   'tableDimPast',
   'tableShadeDarkness',
   'tableNowMark',
+  'tableNextShade',
+  'tableNextColour',
   'tableNewStyle',
   'tableTimeFormat',
   'tableDayStart',
@@ -109,6 +114,8 @@ export const TABLE_LOOK_DEFAULTS: Readonly<TableLookSettings> = /*#__PURE__*/ Ob
   tableDimPast: 'shade',
   tableShadeDarkness: 6,
   tableNowMark: 'line',
+  tableNextShade: false,
+  tableNextColour: 'red',
   tableNewStyle: 'plain',
   tableTimeFormat: 'h:mm a',
   tableDayStart: 5 * 60,
@@ -120,6 +127,8 @@ const whole = (v: unknown, min: number, max: number, step = 1): v is number => t
 const oneOf = <T extends string>(list: readonly T[]) => (v: unknown): v is T => typeof v === 'string' && (list as readonly string[]).includes(v)
 const bool = (v: unknown): v is boolean => typeof v === 'boolean'
 const COLOURS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'] as const
+// `isBandColour` (`types.ts`, written out): the accent, a table colour, or `#rrggbb`.
+const isBandColour = (v: unknown): boolean => typeof v === 'string' && (v === 'accent' || oneOf([...COLOURS, 'grey', 'brown'])(v) || /^#[0-9a-f]{6}$/i.test(v))
 const halfHour = (v: unknown): v is number => whole(v, 0, 24 * 60 - 1, 30)
 
 /** A header row's choices (`HEADER_ROW_CHOICES` in `types.ts`, written out). */
@@ -136,8 +145,7 @@ const LOOK_OK: { [K in Exclude<keyof TableLookLook, 'headerRow' | 'subheaderRow'
   stickyHeader: bool,
   stickySubheaders: bool,
   rowBand: oneOf(['off', 'calendar', 'all']),
-  // `isBandColour`: the accent, a table colour, or `#rrggbb`.
-  bandColour: (v) => typeof v === 'string' && (v === 'accent' || oneOf([...COLOURS, 'grey', 'brown'])(v) || /^#[0-9a-f]{6}$/i.test(v)),
+  bandColour: isBandColour,
   // TABLE_BAND_STRENGTH_MIN–MAX
   bandStrength: (v) => whole(v, 1, 60),
   bandBold: bool,
@@ -152,6 +160,8 @@ const LOOK_OK: { [K in Exclude<keyof TableLookLook, 'headerRow' | 'subheaderRow'
   // TABLE_SHADE_MIN–MAX, steps of TABLE_SHADE_STEP
   shadeDarkness: (v) => whole(v, 2, 30, 2),
   nowMark: oneOf(['line', 'tint', 'both']),
+  nextShade: bool,
+  nextColour: isBandColour,
 }
 
 const NEW_OK: { [K in keyof TableLookNew]-?: (v: unknown) => boolean } = {
@@ -214,6 +224,8 @@ export function tableLookSettings(file: TableLook): TableLookSettings {
     tableDimPast: l.dimPast ?? d.tableDimPast,
     tableShadeDarkness: l.shadeDarkness ?? d.tableShadeDarkness,
     tableNowMark: l.nowMark ?? d.tableNowMark,
+    tableNextShade: l.nextShade ?? d.tableNextShade,
+    tableNextColour: l.nextColour ?? d.tableNextColour,
     tableNewStyle: n.style ?? d.tableNewStyle,
     tableTimeFormat: n.timeFormat ?? d.tableTimeFormat,
     ...day,
@@ -253,6 +265,8 @@ export function tableLookOf(s: Partial<TableLookSettings>): TableLook {
       ...(differs('tableDimPast') && { dimPast: s.tableDimPast }),
       ...(differs('tableShadeDarkness') && { shadeDarkness: s.tableShadeDarkness }),
       ...(differs('tableNowMark') && { nowMark: s.tableNowMark }),
+      ...(differs('tableNextShade') && { nextShade: s.tableNextShade }),
+      ...(differs('tableNextColour') && { nextColour: s.tableNextColour }),
     },
     newTables: {
       ...(differs('tableNewStyle') && { style: s.tableNewStyle }),

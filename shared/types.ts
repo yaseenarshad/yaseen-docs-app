@@ -2341,6 +2341,14 @@ export interface SettingsState {
   tablePosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
+  /**
+   * Settings › Editor › Calendar tables › Shade the next time slot (YAZ-5541): a calendar table's body row right after the
+   * now row gets a light tint, at the now tint's strength, in `tableNextColour`. Off by default. The vault's
+   * table-look.json (`look.nextShade`), as the now mark.
+   */
+  tableNextShade: boolean
+  /** Its colour (YAZ-5541): the band colour's choices (`isBandColour`: the accent, a table colour, `#rrggbb`). A table colour is its TEXT colour, so `red`, the default, is the now mark's red. */
+  tableNextColour: string
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
   /** Settings › Editor › Calendar tables › Time in slot (YAZ-5602): a pill at the right end of the now line says the time left in the current slot (`down`), the time since it started (`up`), or nothing (`off`, the default). Also on the Now button. `data-table-slot-time` on `.app`; the clock reads it through `slotTimeSetting` (`timeFormatSetting.ts`). */
@@ -3073,6 +3081,8 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableTextInCells: 'wrap',
   tablePosition: 'left',
   tableNowMark: 'line',
+  tableNextShade: false,
+  tableNextColour: 'red',
   tableNowButton: true,
   tableSlotTime: 'off',
   tableSlotSeconds: true,

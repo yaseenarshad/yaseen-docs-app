@@ -120,6 +120,8 @@ describe('settingCandidates', () => {
       // Time in slot (YAZ-5602).
       'tableSlotTime',
       'tableSlotSeconds',
+      'tableNextShade',
+      'tableNextColour',
       'tableNowButton',
       'tableDimPast',
       'tableShadeDarkness',

@@ -23,6 +23,9 @@ import type { HeaderRow } from '@shared/types'
 /** A row band colour: the accent, a table colour (its full strength, as a fill swatch), or a picked one. */
 export const bandColour = (value: string): string => (value === 'accent' ? 'var(--accent)' : value.startsWith('#') ? value : `var(--table-fill-solid-${value})`)
 
+/** The next slot's colour (YAZ-5541): the band colour's choices, but a table colour is its text colour, the now mark's (`red` is `--table-text-red`). */
+export const nextColour = (value: string): string => (value === 'accent' ? 'var(--accent)' : value.startsWith('#') ? value : `var(--table-text-${value})`)
+
 /** A header row's parts as the variables `table.css` reads (`--table-<kind>-hue` …), its `:is(.app, …)[data-table-<kind>-*]` rules written out. */
 export function headerRowVars(row: HeaderRow, kind: 'header' | 'subheader'): Record<string, string> {
   const v = (name: string) => `--table-${kind}-${name}`
@@ -62,6 +65,8 @@ export function tableLookVars(s: TableLookSettings, whole = false): Record<strin
     '--table-dim-past': s.tableDimPast,
     '--table-past-shade': `${s.tableShadeDarkness}%`,
     '--table-now-mark': s.tableNowMark,
+    '--table-next-shade': s.tableNextShade ? 'on' : 'off',
+    '--table-next-colour': nextColour(s.tableNextColour),
   }
   return whole ? style : Object.fromEntries(Object.entries(style).filter(([, value]) => value !== 'initial'))
 }

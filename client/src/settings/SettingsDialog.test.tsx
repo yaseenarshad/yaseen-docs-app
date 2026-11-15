@@ -156,7 +156,7 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
  */
-const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableSlotTime', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableSlotTime', 'tableNextShade', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -943,6 +943,40 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(rowButtons(el, 'tablePosition').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Left', 'true'], ['Centre', 'false']])
     act(() => rowButtons(el, 'tablePosition')[1].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tablePosition: 'center' })
+  })
+
+  it('YAZ-5541: "Shade the next time slot" sits under "Mark the current time" (after YAZ-5602\'s "Time in slot"), Off by default; its colour row (the band colour\'s picker, Red by default) shows only while it is On; a vault\'s look is saved to its table-look.json', () => {
+    const { el, onChange } = mountOn('Tables')
+    const ids = [...row(el, 'tableNowMark')!.closest('.settings-group')!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)
+    expect(ids.slice(ids.indexOf('tableNowMark'), ids.indexOf('tableNowMark') + 3)).toEqual(['tableNowMark', 'tableSlotTime', 'tableNextShade'])
+    expect(row(el, 'tableNextShade')?.querySelector('.setting__label')?.textContent).toBe('Shade the next time slot')
+    expect(rowButtons(el, 'tableNextShade').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'false'], ['Off', 'true']])
+    expect(row(el, 'tableNextColour')).toBeNull()
+    act(() => rowButtons(el, 'tableNextShade')[0].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableNextShade: true })
+    unmount()
+    const on = mountOn('Tables', { ...DEFAULT_SETTINGS, tableNextShade: true })
+    const ids2 = [...row(on.el, 'tableNowMark')!.closest('.settings-group')!.querySelectorAll<HTMLElement>('.setting')].map((r) => r.dataset.setting)
+    expect(ids2.slice(ids2.indexOf('tableNowMark'), ids2.indexOf('tableNowMark') + 4)).toEqual(['tableNowMark', 'tableSlotTime', 'tableNextShade', 'tableNextColour'])
+    expect(row(on.el, 'tableNextColour')?.querySelector('.setting__label')?.textContent).toBe('Next slot colour')
+    const radios = [...row(on.el, 'tableNextColour')!.querySelectorAll<HTMLButtonElement>('[role="radio"]')]
+    expect(radios.find((b) => b.getAttribute('aria-checked') === 'true')?.title).toBe('Red')
+    expect(row(on.el, 'tableNextColour')!.querySelector('[role="radiogroup"]')?.getAttribute('aria-label')).toBe('Next slot colour')
+    act(() => radios.find((b) => b.title === 'Accent')!.click())
+    expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableNextShade: true, tableNextColour: 'accent' })
+    unmount()
+    // A vault's look: the row writes the vault's file, not the app's settings.
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const app = vi.fn()
+    const value = appTableLook(DEFAULT_SETTINGS)
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange: app, tableLook: { vaults: [{ root: '/a', name: 'Alpha' }], root: '/a', choose: vi.fn(), value, save } }} onClose={vi.fn()} />))
+    clickNav(container, 'Tables')
+    act(() => rowButtons(container!, 'tableNextShade')[0].click())
+    expect(save).toHaveBeenLastCalledWith({ ...value, tableNextShade: true })
+    expect(app).not.toHaveBeenCalled()
   })
 
   it('Calendar tables › Now button (YAZ-4163 demo): On by default; Off writes only its own field', () => {

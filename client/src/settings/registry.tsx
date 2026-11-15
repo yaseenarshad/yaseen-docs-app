@@ -62,7 +62,7 @@ import { formatTime } from '@shared/timeFormat'
 import { CalendarDayControl } from './CalendarDayControl'
 import { TimeFormatControl } from './TimeFormatControl'
 import { DEFAULT_NEW_PAGE_TITLE, renderTitleTemplate } from '../sidebar/createEntry'
-import { capital, fillSwatch } from '../editor/table/colours'
+import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
 import { TABLE_COLORS, type TableColor } from '../editor/table/tableComment'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
@@ -185,22 +185,25 @@ function BlockWidthSetting({ name, value, start, onSet, options = BLOCK_WIDTH_OP
   )
 }
 
-/** "Band colour" (the YAZ-3818 demo): the accent, the cell toolbar's ten Fill colours (their swatches), and Custom…. */
-function BandColourControl({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+/**
+ * "Band colour" (the YAZ-3818 demo): the accent, the cell toolbar's ten Fill colours (their swatches), and Custom….
+ * YAZ-5541's "Next slot colour" is the same control, its table colours shown as their text colours (`nextColour`).
+ */
+function BandColourControl({ value, onChange, label = 'Band colour', swatchOf = fillSwatch }: { value: string; onChange: (next: string) => void; label?: string; swatchOf?: typeof fillSwatch }) {
   const swatch = (colour: string) => <span className="settings__band-swatch" style={{ background: colour }} aria-hidden />
   return (
-    <span className="settings__band-colours" role="radiogroup" aria-label="Band colour">
+    <span className="settings__band-colours" role="radiogroup" aria-label={label}>
       <button type="button" role="radio" aria-checked={value === 'accent'} title="Accent" className="settings__band-colour" onClick={() => onChange('accent')}>
         {swatch('var(--accent)')}
       </button>
       {TABLE_COLORS.map((c) => (
         <button key={c} type="button" role="radio" aria-checked={value === c} title={capital(c)} className="settings__band-colour" onClick={() => onChange(c)}>
-          {swatch(fillSwatch(c))}
+          {swatch(swatchOf(c))}
         </button>
       ))}
       <label className={`settings__band-colour settings__band-custom${value.startsWith('#') ? ' settings__band-colour--on' : ''}`} title="Custom colour…">
         {value.startsWith('#') ? swatch(value) : 'Custom…'}
-        <input type="color" aria-label="Custom band colour" value={value.startsWith('#') ? value : '#3b82f6'} onChange={(event) => onChange(event.target.value)} />
+        <input type="color" aria-label={`Custom ${label.toLowerCase()}`} value={value.startsWith('#') ? value : '#3b82f6'} onChange={(event) => onChange(event.target.value)} />
       </label>
     </span>
   )
@@ -534,7 +537,7 @@ const previewRow = (id: string, label: string, keywords: readonly string[], Prev
 const TABLE_LOOK_ROWS: ReadonlySet<string> = new Set([
   'tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle',
   'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteTemplate',
-  'tableNowMark', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat',
+  'tableNowMark', 'tableNextShade', 'tableNextColour', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat',
 ])
 function tableLookCtx(ctx: SettingsCtx): SettingsCtx {
   const look = ctx.tableLook
@@ -1650,6 +1653,28 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             available: ({ settings }) => settings.tableSlotTime !== 'off',
             render: ({ settings, onChange }) => (
               <Segmented options={ON_OFF_OPTIONS} value={settings.tableSlotSeconds} onChange={(tableSlotSeconds) => onChange({ ...settings, tableSlotSeconds })} ariaLabel="Show seconds" />
+            ),
+          },
+          {
+            // YAZ-5541: a tint on the row after the now row, at the now tint's strength.
+            id: 'tableNextShade',
+            label: 'Shade the next time slot',
+            hint: 'In a calendar table, a light tint on the row after the current one.',
+            keywords: ['calendar', 'next', 'slot', 'upcoming', 'tint', 'shade', 'time', 'table'],
+            render: ({ settings, onChange }) => (
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableNextShade ?? DEFAULT_SETTINGS.tableNextShade} onChange={(tableNextShade) => onChange({ ...settings, tableNextShade })} ariaLabel="Shade the next time slot" />
+            ),
+          },
+          {
+            // YAZ-5541: the band colour's choices; Red, the default, is the now mark's red.
+            id: 'tableNextColour',
+            label: 'Next slot colour',
+            hint: 'The app\'s own colour (the first), a table colour, or one you pick. Red is the current time\'s red.',
+            keywords: ['calendar', 'next', 'slot', 'colour', 'color', 'tint', 'table'],
+            available: ({ settings }) => settings.tableNextShade === true,
+            wide: () => true,
+            render: ({ settings, onChange }) => (
+              <BandColourControl label="Next slot colour" swatchOf={textSwatch} value={settings.tableNextColour ?? DEFAULT_SETTINGS.tableNextColour} onChange={(tableNextColour) => onChange({ ...settings, tableNextColour })} />
             ),
           },
           {

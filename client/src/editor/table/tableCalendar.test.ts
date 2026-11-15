@@ -40,6 +40,7 @@ const DAY = Array.from({ length: 40 }, (_, i) => clock(240 + 30 * i))
 const rowsOf = (view: EditorView) => [...view.dom.querySelectorAll<HTMLTableRowElement>('tbody[data-content-dom] > tr')]
 const nowRows = (view: EditorView) => rowsOf(view).flatMap((row, i) => (row.classList.contains('table-now-row') ? [{ i, now: row.style.getPropertyValue('--table-now') }] : []))
 const pastRows = (view: EditorView) => rowsOf(view).flatMap((row, i) => (row.classList.contains('table-past-row') ? [i] : []))
+const nextRows = (view: EditorView) => rowsOf(view).flatMap((row, i) => (row.classList.contains('table-next-row') ? [i] : []))
 
 /** Mount at a wall-clock time today: only `Date` is fake, so the editor's own timers run. */
 async function mountAt(hours: number, minutes: number, markdown: string, options: Parameters<typeof mount>[1] = {}) {
@@ -147,6 +148,34 @@ describe('the now row and the past rows (D2, D14)', () => {
     const { crepe, view } = await mountAt(11, 40, calendar(DAY))
     crepe.setReadonly(true)
     expect(nowRows(view)).toEqual([{ i: 16, now: '0.333' }])
+  })
+})
+
+describe('the next time slot (YAZ-5541)', () => {
+  it('the body row right after the now row gets `table-next-row`; it is never past and never the now row', async () => {
+    const { view } = await mountAt(11, 40, calendar(DAY))
+    expect(nextRows(view)).toEqual([17])
+    expect(pastRows(view)).not.toContain(17)
+    calendarTick(view, 12 * 60 + 5)
+    expect(nowRows(view).map(({ i }) => i)).toEqual([17])
+    expect(nextRows(view)).toEqual([18])
+  })
+
+  it('before the first slot it is the first slot (the next to come); with the now row the last, and after the last slot, none', async () => {
+    const { view } = await mountAt(3, 10, calendar(DAY))
+    expect(nextRows(view)).toEqual([1])
+    const last = await mountAt(22, 30, calendar(['9:00 pm', '10:00 pm'], 'calendar 60m'))
+    expect(nowRows(last.view).map(({ i }) => i)).toEqual([2])
+    expect(nextRows(last.view)).toEqual([])
+    calendarTick(last.view, 23 * 60 + 30)
+    expect(nextRows(last.view)).toEqual([])
+  })
+
+  it('a row with no time right after the now row is the next row (the row after, as the spec says); a plain table has none', async () => {
+    const { view } = await mountAt(9, 15, calendar(['9:00 am', 'Lunch?', '10:00 am']))
+    expect(nextRows(view)).toEqual([2])
+    const plain = await mountAt(9, 15, '| Time | Plan |\n| --- | --- |\n| 9:00 am | |\n| 9:30 am | |\n')
+    expect(nextRows(plain.view)).toEqual([])
   })
 })
 
@@ -328,5 +357,16 @@ describe('the marker in table.css (D2, D6, D14)', () => {
     const paint = rules.filter(({ body }) => /background-image:\s*var\(--table-page-mark, none\), var\(--table-open-ring, none\), var\(--table-band, none\)/.test(body))
     expect(paint.length).toBe(3)
     for (const { body } of paint) expect(body).toMatch(/var\(--table-band, none\), var\(--table-past, none\)/)
+  })
+
+  it('YAZ-5541: the next slot is tinted only with `--table-next-shade: on`, at the now tint\'s 12%, in `--table-next-colour` (the now mark\'s red without one), on the past shade\'s layer', () => {
+    const css = tableCss.replace(/\/\*[\s\S]*?\*\//g, '')
+    const now = /--table-now-tint: linear-gradient\(color-mix\(in srgb, var\(--table-now-colour\) (\d+)%/.exec(css)?.[1]
+    const next = /@container style\(--table-next-shade: on\) \{\s*\.milkdown \.ProseMirror \.milkdown-table-block \.table-next-row > :is\(th, td\) \{\s*--table-past: linear-gradient\(color-mix\(in srgb, var\(--table-next-colour, var\(--table-text-red\)\) (\d+)%/.exec(css)?.[1]
+    expect(next).toBe('12')
+    expect(next).toBe(now)
+    expect(/--table-now-colour: var\(--table-text-red\)/.test(css)).toBe(true)
+    // Nowhere else is the next row painted: off, it reads as any row.
+    expect(rules.filter(({ selector }) => selector.includes('table-next-row'))).toHaveLength(1)
   })
 })
