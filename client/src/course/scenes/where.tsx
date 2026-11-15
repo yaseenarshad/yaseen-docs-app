@@ -29,7 +29,6 @@ import {
   SidebarPreview,
   SlashPreview,
   Stage,
-  TryChip,
   Words,
   between,
   clamp,
@@ -225,12 +224,12 @@ function ByItself(props: SceneProps) {
 const P1 = 'Food is mostly three things. Each one does a different job in your body.'
 const P2 = 'Most meals mix all three. An egg is mostly protein and fat; bread is mostly carbs.'
 
-/** c4-04 to c4-07, one span: a card inside a page; /card; the same menu, history and Inbox; Review this page. */
+/** c4-04 to c4-06, one span: a card inside a page; /card; the same menu, history and Inbox. */
 function InAPage(props: SceneProps) {
   const b = useBeat(props)
   const unit = useUnit()
   const id = props.clip.id
-  const order = ['c4-04', 'c4-05', 'c4-06', 'c4-07']
+  const order = ['c4-04', 'c4-05', 'c4-06']
   const step = order.indexOf(id)
   // c4-04: the card slides in between the paragraphs; the text beside it lights.
   const cardIn = step === 0 ? since(b, cue(b, 0, 0.193), 0.7) : 1
@@ -244,26 +243,15 @@ function InAPage(props: SceneProps) {
   const slash = step === 1 ? showFor(since(b, 0.24, 0.25), since(b, enter, 0.15)) : 0
   // c4-06: the card's menu, its history, the Inbox.
   const menu = step === 2 ? showFor(since(b, cue(b, 0, 0.336), 0.3), since(b, cue(b, 1, 0.595) - 0.05, 0.3)) : 0
-  const history = step === 2 ? since(b, cue(b, 1, 0.595), 0.4) : step > 2 ? 1 : 0
+  const history = step === 2 ? since(b, cue(b, 1, 0.595), 0.4) : 0
   const inbox = step === 2 ? since(b, cue(b, 2, 0.784), 0.4) : 0
-  // c4-07: right-click the page, Review this page.
-  const right = step === 3 ? cue(b, 0, 0.424) : 2
-  const review = step === 3 ? cue(b, 1, 0.724) : 2
-  const pageMenu = step === 3 ? since(b, right + 0.03, 0.3) : 0
   return (
     <Stage beat={b} label={unit('A card inside a page: beside the text, made with /card, with the same menu, history and Inbox')}>
       <Layer>
         <Fit min={0.8}>
           <AppWindow
-            sidebar={<SidebarPreview inbox={4} inboxGlow={inbox} rows={rows(FOOD, { [FOOD]: step === 3 ? showFor(since(b, right - 0.05, 0.3), since(b, 0.98, 0.3)) : 0 })} />}
+            sidebar={<SidebarPreview inbox={4} inboxGlow={inbox} rows={rows(FOOD)} />}
             label={unit('A page with a card in it')}
-            over={
-              <>
-                {/* The page's row in the sidebar: its right-click menu opens beside the row, over the sidebar. */}
-                <MenuPreview beat={b} x={16} y={34} p={pageMenu} items={[{ label: 'Open in new tab' }, { label: 'Add to favorites' }, { label: unit('Review this page'), active: since(b, review, 0.3), rule: true }, { label: 'Rename', rule: true }]} />
-                {step === 3 && <Pointer beat={b} from={[70, 80]} to={[14, 30]} move={between(b, 0.16, right)} click={since(b, right, 0.4)} show={showFor(since(b, 0.12, 0.3), since(b, 0.97, 0.3))} />}
-              </>
-            }
           >
             <Tab name={FOOD}>
               <div className="kit-where__page">
@@ -536,32 +524,6 @@ function Which(props: SceneProps) {
   )
 }
 
-/** c4-14: "Try it in the app": behind it, the step: the card's menu, Copy card link. */
-function TryIt(props: SceneProps) {
-  const b = useBeat(props)
-  const unit = useUnit()
-  const tryAt = cue(b, 0, 0.621)
-  return (
-    <Stage beat={b} label={unit('Try it in the app: embed your first card in a page')}>
-      <Layer style={{ opacity: since(b, 0, 0.6) }}>
-        <AppWindow sidebar={<SidebarPreview inbox={4} rows={rows(CARD.title)} />}>
-          <Tab name={CARD.title}>
-            {/* Behind the button, the card file alone: its menu would lie on the card's words. */}
-            <CardFile beat={b} glow={showFor(since(b, 0.12, 0.4), since(b, 0.6, 0.4))} />
-          </Tab>
-        </AppWindow>
-      </Layer>
-      {/* The app behind "Try it in the app", stepped back by a veil: its parts still cover each other as in the app. */}
-      <Layer place="fill" style={{ padding: 0, opacity: since(b, 0, 0.6) }}>
-        <div className="kit-veil" />
-      </Layer>
-      <Layer>
-        <TryChip beat={b} p={since(b, 0.04, 0.6)} glow={showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))} beside={<span className="course__btn">Next chapter</span>} />
-      </Layer>
-    </Stage>
-  )
-}
-
 /** Where the pages sit around the one card (percent of the stage), and their names. */
 const AROUND: readonly [number, number, string][] = [
   [17, 26, FOOD],
@@ -626,11 +588,10 @@ export const WHERE_SCENES: ChapterScenes = {
     { clips: ['c4-01'], scene: Beside },
     { clips: ['c4-02'], scene: Three },
     { clips: ['c4-03'], scene: ByItself },
-    { clips: ['c4-04', 'c4-05', 'c4-06', 'c4-07'], scene: InAPage },
+    { clips: ['c4-04', 'c4-05', 'c4-06'], scene: InAPage },
     { clips: ['c4-08', 'c4-09', 'c4-16', 'c4-10', 'c4-11'], scene: Embedded },
     { clips: ['c4-12'], scene: Move },
     { clips: ['c4-13'], scene: Which },
-    { clips: ['c4-14'], scene: TryIt },
     { clips: ['c4-15'], scene: Everywhere },
   ],
 }

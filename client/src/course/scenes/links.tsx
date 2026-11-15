@@ -974,25 +974,6 @@ function BaseNotPile(props: SceneProps) {
   )
 }
 
-/** c10-21: "Try it in the app", and Next chapter. */
-function TryLinks(props: SceneProps) {
-  const b = useBeat(props)
-  const glow = showFor(since(b, cue(b, 0, 0.59), 0.4), since(b, 0.95, 0.4))
-  return (
-    <Stage beat={b} label="Try it in the app: link two of your Course Cards">
-      <Layer>
-        <Web beat={b} nodes={PAIR.nodes.map((n, i) => ({ ...n, label: i === 0 ? 'Your first card' : 'Another card' }))} edges={PAIR.edges} show={{ a: since(b, 0, 0.5), b: since(b, 0.05, 0.5), 'a>b': since(b, 0.2, 0.9) }} />
-        <div className="kit-try" style={pop(b, since(b, 0.3, 0.6), 0.85)}>
-          <span className="course__btn course__btn--try" style={{ boxShadow: `0 0 0 ${(4 * glow).toFixed(2)}px var(--accent-soft)` }}>
-            Try it in the app
-          </span>
-          <span className="course__btn">Next chapter</span>
-        </div>
-      </Layer>
-    </Stage>
-  )
-}
-
 const SPROUTS: readonly PlantSpec[] = [
   { x: 190, h: 120, branches: [{ at: 0.5, dir: -1, len: 40, up: 22 }, { at: 0.75, dir: 1, len: 36, up: 16 }] },
   { x: 410, h: 140, branches: [{ at: 0.45, dir: 1, len: 44, up: 20 }, { at: 0.7, dir: -1, len: 38, up: 18 }] },
@@ -1039,7 +1020,6 @@ export const LINKS_SCENES: ChapterScenes = {
     { clips: ['c10-25'], scene: Hubs },
     { clips: ['c10-19'], scene: RemoveLink },
     { clips: ['c10-20'], scene: BaseNotPile },
-    { clips: ['c10-21'], scene: TryLinks },
     { clips: ['c10-22'], scene: NotWhere },
   ],
 }

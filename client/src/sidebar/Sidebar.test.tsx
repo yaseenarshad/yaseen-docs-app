@@ -8876,7 +8876,7 @@ describe('card files (YAZ-5037)', () => {
       rightClick(rowAt(el, '/v/sub'))
       expect(heard).toEqual([['folder-menu-open', '/v/sub']])
       expect(itemByLabel(el, 'New card')!.dataset.tour).toBe('new-card')
-      expect(itemByLabel(el, 'Review this folder')!.dataset.tour).toBe('review-folder')
+      expect(itemByLabel(el, 'Review this folder')!.hasAttribute('data-tour')).toBe(false)
       expect(itemByLabel(el, 'Rename')!.hasAttribute('data-tour')).toBe(false)
       await act(async () => itemByLabel(el, 'New card')?.click())
       expect(nameBox(el)!.dataset.tour).toBe('new-card-name')

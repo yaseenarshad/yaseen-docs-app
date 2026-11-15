@@ -106,8 +106,6 @@ The title sits at the top of the card's tab. Click it to change it, and the file
 
 If the title gives the answer away, set Title on the front to Hide, in the card's menu.
 
-To make one in the real app now, choose Try it in the app.
-
 A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.
 
 ### In the app
@@ -164,17 +162,16 @@ To keep it light, the Inbox brings at most ten new cards a day. You can change t
 
 When nothing is left, the Inbox says Inbox complete. That's it for today.
 
-To answer your own card in the real app, choose Try it in the app.
+From tomorrow, start here. Click Inbox to see what is due.
 
 A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.
 
 ### In the app
 
-1. Right-click the Course Cards folder.
-2. Choose Review this folder.
-3. Look at the card, and try to recall the hidden word. Then press Space.
-4. Now choose Forgot or Remembered.
-5. From tomorrow, start here. Click Inbox to see what is due.
+1. Click Inbox in the sidebar.
+2. Look at the card, and try to recall the hidden word. Then press Space.
+3. Now choose Forgot or Remembered.
+4. From tomorrow, start here. Click Inbox to see what is due.
 
 ## Chapter 4. Where a card lives
 
@@ -190,8 +187,6 @@ In a page, type slash card, and press Enter. A new card opens, ready to edit.
 
 A card in a page has the same menu, the same history, and the same Inbox.
 
-To review only the cards of one page, right-click the page, and choose Review this page.
-
 Third, a card embedded in a page. The card lives in one place, and the page shows it.
 
 To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.
@@ -205,8 +200,6 @@ Edit an embed, and you change the one real card. Its history stays with it.
 You can move a card between these places at any time. Its history goes with it.
 
 Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.
-
-To embed your first card in a page, choose Try it in the app.
 
 This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.
 
@@ -499,8 +492,6 @@ To remove a link, edit the card, and delete the pill like a word.
 
 Your card base is your knowledge base. Links make it a base, not a pile.
 
-To link two of your Course Cards, choose Try it in the app.
-
 Ask what a card connects to, not where it goes. Next: how to keep your tree alive.
 
 ### In the app
@@ -545,8 +536,6 @@ When a link no longer helps, delete it like a word.
 Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.
 
 Want more new cards today? Click their count in the All cards menu, and press Enter.
-
-To try Archive on your own card, choose Try it in the app.
 
 Grow a branch here, prune one there, and your card base stays true. Next: your first week.
 

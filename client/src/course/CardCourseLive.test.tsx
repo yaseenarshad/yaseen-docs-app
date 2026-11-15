@@ -37,7 +37,7 @@ const DO = {
 }
 const AFTER = { id: 'l4', text: 'Back to the lesson.', dock: 'full' as const }
 /** A lesson in full whose step comes right after its words (no words for it yet): the step asks for the corner. */
-const LATE = { id: 'i1', text: 'More than double the memory.', live: [{ target: 'review-folder', say: 'Choose Review this folder.', done: 'click' as const }] }
+const LATE = { id: 'i1', text: 'More than double the memory.', live: [{ target: 'sidebar-inbox', say: 'Click Inbox in the sidebar.', done: 'click' as const }] }
 const COURSE: CourseChapter[] = [
   { id: 'first-card', title: 'Your first card', clips: [LESSON, SHOW, SHOW_TOO, DO, AFTER] },
   { id: 'inbox', title: 'The Inbox', clips: [LATE, { id: 'i2', text: 'The end.' }] },
@@ -216,13 +216,13 @@ describe('live steps (YAZ-5366)', () => {
   })
 
   it('a do step that comes after a lesson asks for the corner; the person in full sees where the step is', async () => {
-    control('review-folder')
+    control('sidebar-inbox')
     await mount({ chapter: 'inbox', clip: 'i1' })
     expect(layer().dataset.size).toBe('full')
     click(button('Play'))
     await play(seconds(LATE) + 1)
     expect(layer().dataset.size).toBe('corner')
-    expect(coachSay()).toBe('Choose Review this folder.')
+    expect(coachSay()).toBe('Click Inbox in the sidebar.')
     // The person goes back to full: the course still holds, says where the step is, and offers the way back.
     click(button('Full size'))
     await play(1)
@@ -232,7 +232,7 @@ describe('live steps (YAZ-5366)', () => {
     click(button(LIVE_IN_APP_BUTTON))
     expect(layer().dataset.size).toBe('corner')
     await play(0.3)
-    expect(coachSay()).toBe('Choose Review this folder.')
+    expect(coachSay()).toBe('Click Inbox in the sidebar.')
   })
 
   it("Next always goes on; Skip moves past a step, and Skip on the last one lets the course go on", async () => {

@@ -142,18 +142,6 @@
   color: var(--fg);
   font-variant-numeric: tabular-nums;
 }
-.kit-try {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  font-size: clamp(13px, 3.4cqmin, 20px);
-}
-.kit-try .course__btn {
-  font-size: inherit;
-  padding: 0.55em 1.2em;
-}
 
 /* Chapter 2 */
 .kit-tags {

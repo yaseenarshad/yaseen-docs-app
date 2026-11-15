@@ -17,7 +17,7 @@ import { InboxIcon } from '../../../views/view/icons'
 import { keysText } from '@shared/keyLabel'
 import { KeyLabel } from '../../../keys/KeyLabel'
 import { CARD_SKILL_MENU } from '../../../sidebar/menuSections'
-import { clamp, ease, lerp, pop, type Beat } from './beat'
+import { clamp, ease, lerp, type Beat } from './beat'
 
 /**
  * A cropped app window: a sidebar on the left (optional), the content on the right. A sidebar alone: a small window as
@@ -206,21 +206,6 @@ export function Keys({ items, p = 1 }: { items: readonly { keys: string; label: 
       {items.map((item) => (
         <KeyLabel key={item.label} action={item.label} keys={item.keys} />
       ))}
-    </div>
-  )
-}
-
-/**
- * The layer's "Try it in the app" button, as a drawing (`course__btn--try`), with what stands beside it (`beside`: the
- * chip "Optional", or "Next chapter"). `p` brings it in; `glow` 0..1 rings the button on the word.
- */
-export function TryChip({ beat, p, glow = 0, beside }: { beat: Beat; p: number; glow?: number; beside?: ReactNode }) {
-  return (
-    <div className="kit-try" style={pop(beat, p, 0.85)}>
-      <span className="course__btn course__btn--try" style={glow > 0 ? { boxShadow: `0 0 0 ${(4 * clamp(glow)).toFixed(2)}px var(--accent-soft)` } : undefined}>
-        Try it in the app
-      </span>
-      {beside}
     </div>
   )
 }

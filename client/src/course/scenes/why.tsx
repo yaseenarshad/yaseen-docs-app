@@ -29,7 +29,6 @@ import {
   SAMPLE_REVIEWS,
   SidebarPreview,
   Stage,
-  TryChip,
   Tally,
   Words,
   between,
@@ -761,12 +760,12 @@ function Chapters(props: SceneProps) {
   )
 }
 
-/** c1-14: "Try it in the app": the course's own button, the real app behind it; always your choice. */
+/** c1-14: some chapters let you try the steps in the real app; always your choice. */
 function TryIt(props: SceneProps) {
   const b = useBeat(props)
   return (
-    <Stage beat={b} label="Try it in the app: optional, always your choice">
-      <Layer style={{ opacity: since(b, 0.38, 0.7) }}>
+    <Stage beat={b} label="Try the steps in the real app: optional, always your choice">
+      <Layer style={{ opacity: since(b, 0.2, 0.7) }}>
         <AppWindow
           sidebar={
             <SidebarPreview
@@ -780,20 +779,10 @@ function TryIt(props: SceneProps) {
           }
         />
       </Layer>
-      {/* The app behind "Try it in the app", stepped back by a veil: its parts still cover each other as in the app. */}
-      <Layer place="fill" style={{ padding: 0, opacity: since(b, 0.38, 0.7) }}>
-        <div className="kit-veil" />
-      </Layer>
       <Layer>
-        <TryChip
-          beat={b}
-          p={since(b, 0.2, 0.6)}
-          beside={
-            <span className="kit-chip" style={pop(b, since(b, 0.78, 0.5), 0.6)}>
-              Optional
-            </span>
-          }
-        />
+        <span className="kit-chip" style={pop(b, since(b, 0.78, 0.5), 0.6)}>
+          Optional
+        </span>
       </Layer>
     </Stage>
   )

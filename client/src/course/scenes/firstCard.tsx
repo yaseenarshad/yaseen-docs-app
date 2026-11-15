@@ -985,28 +985,6 @@ function InTheApp(props: SceneProps) {
   )
 }
 
-/** c2-18: "Try it in the app", and Next chapter: the chapter's end, where the try step is. */
-function TryInApp(props: SceneProps) {
-  const b = useBeat(props)
-  return (
-    <Stage beat={b} label="Try it in the app, at the end of the chapter">
-      <Layer>
-        <div className="kit-try" style={pop(b, since(b, 0, 0.6), 0.85)}>
-          <span
-            className="course__btn course__btn--try"
-            style={{
-              boxShadow: `0 0 0 ${(4 * showFor(since(b, 0.58, 0.4), since(b, 0.9, 0.4))).toFixed(2)}px var(--accent-soft)`,
-            }}
-          >
-            Try it in the app
-          </span>
-          <span className="course__btn">Next chapter</span>
-        </div>
-      </Layer>
-    </Stage>
-  )
-}
-
 /** c2-19: the card as a hub: the short version, the details, room to grow; then the Inbox, where cards come back. */
 function HubAndInbox(props: SceneProps) {
   const b = useBeat(props)
@@ -1087,7 +1065,6 @@ export const FIRST_CARD_SCENES: ChapterScenes = {
       clips: ['c2-15', 'c2-16', 'c2-17', 'c2-29', 'c2-20', 'c2-14', 'c2-21'],
       scene: InTheApp,
     },
-    { clips: ['c2-18'], scene: TryInApp },
     { clips: ['c2-19'], scene: HubAndInbox },
   ],
 }

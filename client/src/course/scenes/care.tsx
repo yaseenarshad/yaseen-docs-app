@@ -487,32 +487,6 @@ function MoreNew(props: SceneProps) {
   )
 }
 
-/** c11-13: "Try it in the app": Archive your own card, then Unarchive it, both from the card's menu. */
-function TryCare(props: SceneProps) {
-  const b = useBeat(props)
-  const glow = showFor(since(b, cue(b, 1, 0.617), 0.4), since(b, 0.95, 0.4))
-  return (
-    <Stage beat={b} label="Try Archive on your own card, in the app: then Unarchive brings it back">
-      <Layer>
-        <div className="kit-tags">
-          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0.12) - 0.04, 0.5))}>
-            <ArchiveIcon /> Archive card
-          </span>
-          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0.12) + 0.14, 0.5))}>
-            Unarchive card
-          </span>
-        </div>
-        <div className="kit-try" style={pop(b, since(b, 0.3, 0.6), 0.85)}>
-          <span className="course__btn course__btn--try" style={{ boxShadow: `0 0 0 ${(4 * glow).toFixed(2)}px var(--accent-soft)` }}>
-            Try it in the app
-          </span>
-          <span className="course__btn">Next chapter</span>
-        </div>
-      </Layer>
-    </Stage>
-  )
-}
-
 /** A garden with one more branch to grow (c11-14). */
 const GROWN: readonly PlantSpec[] = GARDEN.map((p, i) => (i === 1 ? { ...p, branches: [...p.branches, { at: 0.86, dir: 1 as const, len: 40, up: 18 }] } : p))
 
@@ -554,7 +528,6 @@ export const CARE_SCENES: ChapterScenes = {
     { clips: ['c11-18', 'c11-19'], scene: CareForLinks },
     { clips: ['c11-11'], scene: History },
     { clips: ['c11-12'], scene: MoreNew },
-    { clips: ['c11-13'], scene: TryCare },
     { clips: ['c11-14'], scene: TrueGarden },
   ],
 }

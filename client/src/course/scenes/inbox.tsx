@@ -22,7 +22,6 @@ import {
   InboxView,
   JournalCover,
   Layer,
-  MenuPreview,
   MiniCard,
   PageText,
   PageView,
@@ -30,7 +29,6 @@ import {
   Pointer,
   SidebarPreview,
   Stage,
-  TryChip,
   Timeline,
   Words,
   between,
@@ -680,23 +678,24 @@ function Complete(props: SceneProps) {
   )
 }
 
-/** c3-21: "Try it in the app": behind it, what the steps do (right-click Course Cards, Review this folder). */
-function TryIt(props: SceneProps) {
+/** c3-21: from tomorrow, the day starts at the Inbox: the sidebar's Inbox row lights on "Inbox", with what is due. */
+function StartHere(props: SceneProps) {
   const b = useBeat(props)
-  const tryAt = cue(b, 0, 0.649)
+  const tomorrow = cue(b, 0, 0.064)
+  const inbox = cue(b, 1, 0.556)
   return (
-    <Stage beat={b} label="Try it in the app: answer your own card in the real Inbox">
-      <Layer style={{ opacity: since(b, 0, 0.6) }}>
-        <AppWindow sidebar={<SidebarPreview inbox={1} rows={SIDEBAR.map((r) => (r.name === 'Course Cards' ? { ...r, glow: showFor(since(b, 0.1, 0.4), since(b, 0.55, 0.4)) } : r))} />}>
-          <MenuPreview beat={b} x={2} y={30} p={showFor(since(b, 0.15, 0.4), since(b, 0.55, 0.4))} items={[{ label: 'New card' }, { label: 'Review this folder', active: since(b, 0.3, 0.3), rule: true }, { label: 'Rename' }]} />
-        </AppWindow>
-      </Layer>
-      {/* The app behind "Try it in the app", stepped back by a veil: its parts still cover each other as in the app. */}
-      <Layer place="fill" style={{ padding: 0, opacity: since(b, 0, 0.6) }}>
-        <div className="kit-veil" />
-      </Layer>
+    <Stage beat={b} label="From tomorrow, start here: click Inbox to see what is due">
       <Layer>
-        <TryChip beat={b} p={since(b, 0.04, 0.6)} glow={showFor(since(b, tryAt - 0.04, 0.4), since(b, 0.97, 0.4))} beside={<span className="course__btn">Next chapter</span>} />
+        <AppWindow sidebar={<SidebarPreview inbox={4} inboxGlow={since(b, inbox - 0.02, 0.4)} rows={SIDEBAR} />} label="The app's sidebar, with the Inbox row on top">
+          <div className="kit-app__tabbar">
+            <span className="kit-app__tabname">Inbox</span>
+          </div>
+          <div className="kit-inboxrow__main">
+            <span className="kit-chip kit-inboxrow__daily" style={pop(b, since(b, tomorrow, 0.5))}>
+              From tomorrow
+            </span>
+          </div>
+        </AppWindow>
       </Layer>
     </Stage>
   )
@@ -774,7 +773,7 @@ export const INBOX_SCENES: ChapterScenes = {
     { clips: ['c3-18'], scene: Missed },
     { clips: ['c3-19'], scene: NewPerDay },
     { clips: ['c3-20'], scene: Complete },
-    { clips: ['c3-21'], scene: TryIt },
+    { clips: ['c3-21'], scene: StartHere },
     { clips: ['c3-22'], scene: Next },
   ],
 }

@@ -489,7 +489,7 @@ const newFolderMenu = createParent('new-folder-menu', 'New folder', 'dir', [[new
 const reviewFolder: Leaf = (t, h) => {
   const dir = t.reviewDir
   if (dir === null) return null
-  return { id: 'review-folder', label: 'Review this folder', tour: 'review-folder', onSelect: () => h.onReviewFolder(dir) }
+  return { id: 'review-folder', label: 'Review this folder', onSelect: () => h.onReviewFolder(dir) }
 }
 
 /**

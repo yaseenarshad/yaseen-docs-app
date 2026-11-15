@@ -17,16 +17,17 @@ interface TargetHelp {
   where: string
   /** Where "Show me" goes; none when the step before brings the target. */
   show?: (c: TourContext) => TourPlace | null
-  /** A screen that shows when the target cannot come (the folder review has no card today), and what to say then. */
+  /** A screen that shows when the target cannot come (the Inbox has no card today), and what to say then. */
   stuck?: { selector: string; say: string }
 }
 
 const folder = (c: TourContext): TourPlace | null => (c.places.folder === null ? null : { kind: 'folder', path: c.places.folder })
 const card = (c: TourContext): TourPlace | null => (c.lastCard === null ? folder(c) : { kind: 'file', path: c.lastCard })
-const reviewFolder = (c: TourContext): TourPlace | null => (c.places.folder === null ? null : { kind: 'review-folder', path: c.places.folder })
+/** The vault's Inbox: the vault that holds the Course Cards folder. */
+const inbox = (c: TourContext): TourPlace | null => (c.places.folder === null ? null : { kind: 'inbox', path: c.places.folder })
 const NO_CARD_TODAY = {
   selector: '.card-inbox__done',
-  say: 'The review has no card for you today: the Inbox brings only so many new cards a day. Skip this step, or go back to the course.',
+  say: 'The Inbox has no card for you today: it brings only so many new cards a day. Skip this step, or go back to the course.',
 }
 const MENU_FIRST = "Open the card's menu first: the three dots in its head."
 
@@ -37,9 +38,8 @@ export const TARGET_HELP: Record<string, TargetHelp> = {
   'new-card-name': { where: 'Choose New card first. A name box opens in the folder.' },
   'card-editor': { where: 'Open your card, and click Edit card.', show: card },
   'card-done': { where: 'Click Edit card first. Done is at the top of the card while you edit.', show: card },
-  'review-folder': { where: 'Right-click the Course Cards folder first. Review this folder is in its menu.', show: folder },
-  'inbox-card': { where: 'Right-click the Course Cards folder, and choose Review this folder.', show: reviewFolder, stuck: NO_CARD_TODAY },
-  'inbox-answers': { where: 'The answers are under the card, in the Inbox.', show: reviewFolder, stuck: NO_CARD_TODAY },
+  'inbox-card': { where: 'Click Inbox in the sidebar.', show: inbox, stuck: NO_CARD_TODAY },
+  'inbox-answers': { where: 'The answers are under the card, in the Inbox.', show: inbox, stuck: NO_CARD_TODAY },
   'sidebar-inbox': { where: 'Inbox is at the top of the sidebar.', show: () => ({ kind: 'sidebar' }) },
   'card-menu': { where: 'Open a card in Course Cards. Its menu is the three dots in its head.', show: card },
   'card-copy-link': { where: MENU_FIRST, show: card },

@@ -102,7 +102,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.', marks: [0.38, 0.674, 0.788] },
       // The chapter list lights up, 1 to 12.
       { id: 'c1-13', text: 'This course takes about half an hour, in twelve short chapters.', marks: [0.3, 0.581] },
-      // The "Try it in the app" button, with "Optional" beside it.
+      // The real app, with "Optional" over it.
       { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
       // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
       { id: 'c1-15', text: 'Your brain forgets on a curve. Now you have a way to beat it. Next: what a card really is, and you make your first one.' },
@@ -185,8 +185,6 @@ export const COURSE: CourseChapter[] = [
       // The card's ⋯ menu: "Title on the front · Show"; a click; it reads "Hide".
       // APP: client/src/review/cardPane.tsx (`cardMenuSections`: "Title on the front", Show / Hide).
       { id: 'c2-21', text: "If the title gives the answer away, set Title on the front to Hide, in the card's menu.", marks: [0.46, 0.862], dock: 'side', live: [{ target: 'card-menu', mark: 1 }] },
-      // The "Try it in the app" button and "Next chapter".
-      { id: 'c2-18', text: 'To make one in the real app now, choose Try it in the app.', dock: 'full' },
       // The real card as a hub, with its spokes; then the sidebar's Inbox row glows softly.
       { id: 'c2-19', text: 'A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.', dock: 'full' },
     ],
@@ -213,7 +211,7 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.', marks: [0.256, 0.827], dock: 'full' },
       // Under the bars: "Rounds of practice: 237 and 243".
       // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
-      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617], dock: 'full', live: [{ target: 'sidebar-course-cards', say: 'Right-click the Course Cards folder.', done: { event: 'folder-menu-open' } }, { target: 'review-folder', say: 'Choose Review this folder.', done: 'click' }] },
+      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617], dock: 'full', live: [{ target: 'sidebar-inbox', say: 'Click Inbox in the sidebar.', done: 'click' }] },
       // Space; the hidden word shows, then the back.
       { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.', marks: [0.062, 0.477, 0.777], dock: 'corner', live: [{ target: 'inbox-card', mark: 0, say: 'Look at the card, and try to recall the hidden word. Then press Space.', done: { event: 'inbox-step-shown' } }] },
       // Forgot and Remembered show under the card.
@@ -240,8 +238,8 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.', marks: [0.399, 0.776], dock: 'full' },
       // The done screen: "Inbox complete."
       { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today.", marks: [0.157, 0.451], dock: 'full' },
-      // The "Try it in the app" button and "Next chapter".
-      { id: 'c3-21', text: 'To answer your own card in the real app, choose Try it in the app.', marks: [0.649], dock: 'corner', live: [{ target: 'sidebar-inbox', say: 'From tomorrow, start here. Click Inbox to see what is due.', done: 'click' }] },
+      // The real sidebar: "From tomorrow"; the Inbox row lights up.
+      { id: 'c3-21', text: 'From tomorrow, start here. Click Inbox to see what is due.', marks: [0.064, 0.556], dock: 'corner', live: [{ target: 'sidebar-inbox', say: 'From tomorrow, start here. Click Inbox to see what is due.', done: 'click' }] },
       // A page of text, with a space between two paragraphs.
       { id: 'c3-22', text: 'A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.', marks: [0.221, 0.483, 0.809], dock: 'full' },
     ],
@@ -263,8 +261,6 @@ export const COURSE: CourseChapter[] = [
       { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.', marks: [0.446, 0.652], dock: 'full' },
       // A card in a page with its ⋯ menu, its Reviews, and the Inbox behind it.
       { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.', marks: [0.336, 0.595, 0.784], dock: 'full' },
-      // A page's right-click menu: "Review this page".
-      { id: 'c4-07', text: 'To review only the cards of one page, right-click the page, and choose Review this page.', marks: [0.424, 0.724], dock: 'full' },
       // A page shows a card that lives in another file; an arrow back to the card file.
       { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.', marks: [0.545, 0.853], dock: 'full' },
       // The card's ⋯ menu, "Copy card link"; a paste in the page, a pill; a right-click on the pill, "Show as embed".
@@ -281,8 +277,6 @@ export const COURSE: CourseChapter[] = [
       { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.', marks: [0.221, 0.669], dock: 'full' },
       // Two labels: "A fact on its own" under the card file, "Part of your pages" under the page.
       { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.', marks: [0.211, 0.744], dock: 'full' },
-      // The "Try it in the app" button and "Next chapter".
-      { id: 'c4-14', text: 'To embed your first card in a page, choose Try it in the app.', marks: [0.621], dock: 'full' },
       // One card shown in three pages at once; lines lead back to it. Then the stage widens.
       { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.', marks: [0.278, 0.475, 0.798], dock: 'full' },
     ],
@@ -606,8 +600,6 @@ export const COURSE: CourseChapter[] = [
       { id: 'c10-19', text: 'To remove a link, edit the card, and delete the pill like a word.', marks: [0.26, 0.53, 0.7], dock: 'full' },
       // A loose pile of cards; lines join them one by one, until it is one connected web.
       { id: 'c10-20', text: 'Your card base is your knowledge base. Links make it a base, not a pile.', marks: [0.52, 0.72, 0.83], dock: 'full' },
-      // The "Try it in the app" button and "Next chapter".
-      { id: 'c10-21', text: 'To link two of your Course Cards, choose Try it in the app.', marks: [0.59], dock: 'full' },
       // The protein card and the muscle card with their line; then the garden from chapter 9.
       { id: 'c10-22', text: 'Ask what a card connects to, not where it goes. Next: how to keep your tree alive.', marks: [0.31, 0.6], dock: 'full' },
     ],
@@ -650,8 +642,6 @@ export const COURSE: CourseChapter[] = [
       // The All cards menu: the row "New cards 10 / 48"; a click on the count turns it into "Add [10] more new cards"; Enter.
       // APP: client/src/review/CardInboxBar.tsx, client/src/review/AddMoreField.tsx (YAZ-5042 round 2). The menu has no plain "Add" button.
       { id: 'c11-12', text: 'Want more new cards today? Click their count in the All cards menu, and press Enter.', marks: [0.42, 0.79], dock: 'full' },
-      // The "Try it in the app" button and "Next chapter".
-      { id: 'c11-13', text: 'To try Archive on your own card, choose Try it in the app.', marks: [0.12, 0.617], dock: 'full' },
       // The garden, full and tidy; then a calendar page for the week ahead.
       { id: 'c11-14', text: 'Grow a branch here, prune one there, and your card base stays true. Next: your first week.', marks: [0.05, 0.2, 0.52, 0.72], dock: 'full' },
     ],
