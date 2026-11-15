@@ -548,6 +548,15 @@
   --table-now-under: linear-gradient(var(--table-cell-tint, transparent), var(--table-cell-tint, transparent));
 }
 
+/* The next time slot (YAZ-5541, `tableCalendar.ts`'s `table-next-row`): Settings › Calendar tables › Shade the next time
+   slot (`--table-next-shade`, the vault's, nearest wins) tints it as the now tint does (12%), in `--table-next-colour`
+   (the now mark's red by default). The row is never past, so its tint takes the past shade's layer of the cell rules. */
+@container style(--table-next-shade: on) {
+  .milkdown .ProseMirror .milkdown-table-block .table-next-row > :is(th, td) {
+    --table-past: linear-gradient(color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent), color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent));
+  }
+}
+
 /* Past rows: grey text, over a cell's own text colour; marks keep theirs (D14, `--table-dim-past`, YAZ-5487). `shade` also
    lays a light shade (`--table-past-shade`, Settings › Calendar tables › Shade darkness, the YAZ-4163 demo) over the
    cell's fill and under the row band: the `--table-past` layer of the two cell rules above. */

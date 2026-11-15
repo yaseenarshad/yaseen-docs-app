@@ -17,6 +17,8 @@ import { gridColumns } from './tableLayout'
  * column A by `transform` only (never a layout property), or the tint. Each body row before it gets `table-past-row`
  * (grey text, the light shade), except a row the file keeps out (`nodim`, `data-nodim`). With no now row: before the
  * first slot no row is past, after the last every row is. The look is the Mac's defaults (`calendarLook.ts`).
+ * With Shade the next time slot on (YAZ-5541, the vault's), the body row right after the now row gets `table-next-row`
+ * (before the first slot, the first slot; none after the last), tinted as the now tint in `--table-next-colour`.
  *
  * THE CLOCK (`watchCalendars`, from `useTables`): one `setTimeout` to the next whole minute, only while the page has a
  * calendar table; the phone's local time. The app back in front (`visibilitychange`, `pageshow`) marks at once. Nothing
@@ -94,12 +96,18 @@ export function markCalendar(table: HTMLTableElement, minutes: number, look: Cal
   if (table.getAttribute('data-dim-past') !== look.dimPast) table.setAttribute('data-dim-past', look.dimPast)
   const shade = `${look.shadeDarkness}%`
   if (table.style.getPropertyValue('--table-past-shade') !== shade) table.style.setProperty('--table-past-shade', shade)
+  if (look.nextColour === null) table.style.removeProperty('--table-next-colour')
+  else if (table.style.getPropertyValue('--table-next-colour') !== look.nextColour) table.style.setProperty('--table-next-colour', look.nextColour)
+  const rows = table.rows.length
+  const after = place === null ? rows : place.row === null ? place.pastEnd : place.row + 1
+  const nextRow = look.nextShade && after < rows ? after : -1
   let nowRow: HTMLTableRowElement | null = null
   ;[...table.rows].forEach((row, r) => {
     const past = place !== null && r > 0 && r < place.pastEnd && !row.hasAttribute('data-nodim')
     const now = place !== null && r === place.row
     if (row.classList.contains('table-past-row') !== past) row.classList.toggle('table-past-row', past)
     if (row.classList.contains('table-now-row') !== now) row.classList.toggle('table-now-row', now)
+    if (row.classList.contains('table-next-row') !== (r === nextRow)) row.classList.toggle('table-next-row', r === nextRow)
     if (now) {
       nowRow = row
       const at = String(Math.round(place!.fraction * 1000) / 1000)

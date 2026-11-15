@@ -224,6 +224,50 @@ describe('go to now (YAZ-5493)', () => {
   })
 })
 
+describe('the next time slot (YAZ-5541)', () => {
+  const on = calendarLook({ nextShade: true })
+  it('only with Shade the next time slot on: the body row right after the now row; it follows the minute and leaves the old row', async () => {
+    const t = (await draw(CALENDAR_PAGE)).querySelector('table')!
+    markCalendar(t, at(9, 40))
+    expect(rowsOf(t, 'table-next-row')).toEqual([])
+    markCalendar(t, at(9, 40), on)
+    expect(rowsOf(t, 'table-now-row')).toEqual([7])
+    expect(rowsOf(t, 'table-next-row')).toEqual([8])
+    expect(rowsOf(t, 'table-past-row')).not.toContain(8)
+    markCalendar(t, at(10, 5), on)
+    expect(rowsOf(t, 'table-next-row')).toEqual([9])
+    // Off again: the class goes.
+    markCalendar(t, at(10, 5))
+    expect(rowsOf(t, 'table-next-row')).toEqual([])
+  })
+
+  it('before the first slot: the first slot; the now row the last, or after the last slot: none', async () => {
+    const t = (await draw(table(['| 9:00 am | a |', '| 9:30 am | b |'], '<!-- table: calendar 30m -->'))).querySelector('table')!
+    markCalendar(t, at(8, 0), on)
+    expect(rowsOf(t, 'table-next-row')).toEqual([1])
+    markCalendar(t, at(9, 45), on)
+    expect(rowsOf(t, 'table-now-row')).toEqual([2])
+    expect(rowsOf(t, 'table-next-row')).toEqual([])
+    markCalendar(t, at(11, 0), on)
+    expect(rowsOf(t, 'table-next-row')).toEqual([])
+  })
+
+  it('its colour: `--table-next-colour` on the table when the vault picked one; none for the default red', async () => {
+    const t = (await draw(CALENDAR_PAGE)).querySelector('table')!
+    markCalendar(t, at(9, 40), calendarLook({ nextShade: true, nextColour: 'var(--table-text-teal)' }))
+    expect(t.style.getPropertyValue('--table-next-colour')).toBe('var(--table-text-teal)')
+    markCalendar(t, at(9, 40), on)
+    expect(t.style.getPropertyValue('--table-next-colour')).toBe('')
+  })
+
+  it('tables.css tints it at the now tint\'s 12%, in `--table-next-colour` or the now mark\'s red', () => {
+    const css = (styles[2]!.textContent ?? '').replace(/\/\*[\s\S]*?\*\//g, '')
+    const now = /\.table-now-row > :is\(th, td\) \{\s*background-image: linear-gradient\(color-mix\(in srgb, var\(--table-text-red\) (\d+)%/.exec(css)?.[1]
+    const next = /\.table-next-row > :is\(th, td\) \{\s*background-image: linear-gradient\(color-mix\(in srgb, var\(--table-next-colour, var\(--table-text-red\)\) (\d+)%/.exec(css)?.[1]
+    expect([now, next]).toEqual(['12', '12'])
+  })
+})
+
 describe('the look settings: the Mac defaults, through one function (YAZ-5493, for YAZ-5487)', () => {
   it("are the Mac's DEFAULT_SETTINGS", () => {
     expect(MAC_CALENDAR_LOOK).toEqual({
@@ -233,15 +277,19 @@ describe('the look settings: the Mac defaults, through one function (YAZ-5493, f
       shadeDarkness: DEFAULT_SETTINGS.tableShadeDarkness,
       dayStart: DEFAULT_SETTINGS.tableDayStart,
       dayEnd: DEFAULT_SETTINGS.tableDayEnd,
+      nextShade: DEFAULT_SETTINGS.tableNextShade,
+      // null: the CSS's own red (the Mac's default, `red`, is the now mark's red).
+      nextColour: null,
     })
+    expect(DEFAULT_SETTINGS.tableNextColour).toBe('red')
     expect([MAC_CALENDAR_LOOK.dayStart, MAC_CALENDAR_LOOK.dayEnd]).toEqual([DEFAULT_CALENDAR_DAY.start, DEFAULT_CALENDAR_DAY.end])
     expect([SHADE_MIN, SHADE_MAX]).toEqual([TABLE_SHADE_MIN, TABLE_SHADE_MAX])
     expect(calendarLook()).toEqual(MAC_CALENDAR_LOOK)
   })
 
   it('a vault file can feed it later: good values are taken, bad ones fall back', () => {
-    expect(calendarLook({ nowMark: 'both', dimPast: 'text', shadeDarkness: 99, nowButton: false, dayStart: 360, dayEnd: 1200 })).toEqual({ nowMark: 'both', dimPast: 'text', shadeDarkness: 30, nowButton: false, dayStart: 360, dayEnd: 1200 })
-    expect(calendarLook({ nowMark: 'red', dimPast: 7, shadeDarkness: 'dark', nowButton: 'yes', dayStart: 1200, dayEnd: 360 })).toEqual(MAC_CALENDAR_LOOK)
+    expect(calendarLook({ nowMark: 'both', dimPast: 'text', shadeDarkness: 99, nowButton: false, dayStart: 360, dayEnd: 1200, nextShade: true, nextColour: 'var(--accent)' })).toEqual({ nowMark: 'both', dimPast: 'text', shadeDarkness: 30, nowButton: false, dayStart: 360, dayEnd: 1200, nextShade: true, nextColour: 'var(--accent)' })
+    expect(calendarLook({ nowMark: 'red', dimPast: 7, shadeDarkness: 'dark', nowButton: 'yes', dayStart: 1200, dayEnd: 360, nextShade: 'on', nextColour: 3 })).toEqual(MAC_CALENDAR_LOOK)
   })
 
   it('the table takes the look it is given', async () => {

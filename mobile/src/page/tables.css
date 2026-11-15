@@ -573,6 +573,11 @@
 .page-table-box .page-table-frame .page-table table:is([data-now-mark='tint'], [data-now-mark='both']) .table-now-row > :is(th, td) {
   background-image: linear-gradient(color-mix(in srgb, var(--table-text-red) 12%, transparent), color-mix(in srgb, var(--table-text-red) 12%, transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
 }
+/* The next time slot (YAZ-5541, the Mac's `table-next-row`): the now tint's 12%, in `--table-next-colour` (the vault's;
+   the now mark's red by default). Only with the vault's Shade the next time slot on (`tableCalendar.ts` sets the class). */
+.page-table-box .page-table-frame .page-table table .table-next-row > :is(th, td) {
+  background-image: linear-gradient(color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent), color-mix(in srgb, var(--table-next-colour, var(--table-text-red)) 12%, transparent)), linear-gradient(var(--cell-tint, transparent), var(--cell-tint, transparent));
+}
 /* Past rows: grey text over a cell's own text colour (links keep theirs); `shade` also lays a light shade of the text
    colour (`--table-past-shade`, the Mac's Shade darkness) over the cell's fill. */
 .page-table-box .page-table-frame .page-table table:is([data-dim-past='text'], [data-dim-past='shade']) .table-past-row > :is(th, td) {
