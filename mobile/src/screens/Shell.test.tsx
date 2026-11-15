@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadAccount } from '../auth/account'
 import { formatScanCode } from '../auth/scanCode'
 import { loadVaultList, PHONE, type VaultStore } from '../store'
@@ -152,7 +152,8 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
   it('a code from the Mac signs in with its repo, branch and end date, and never shows the token', async () => {
     h = await mount()
     await h.click('Scan a code')
-    expect(h.scanner.on).toBe(true)
+    // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
+    await vi.waitFor(() => expect(h.scanner.on).toBe(true), { timeout: 5000 })
     await h.scan(code())
     expect(h.scanner.on).toBe(false)
     expect(tabs(h)).toEqual(['Friends', 'Review*', 'Search'])
@@ -166,7 +167,8 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     await h.click('Scan a code')
     await h.scan('https://example.com/menu')
     expect(h.text()).toContain('This is not a Notecard code.')
-    expect(h.scanner.on).toBe(true)
+    // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
+    await vi.waitFor(() => expect(h.scanner.on).toBe(true), { timeout: 5000 })
     await h.scan(code())
     expect(tabs(h)).toEqual(['Friends', 'Review*', 'Search'])
   })
@@ -178,7 +180,8 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     expect(h.host.querySelector('[role="alert"]')?.textContent).toContain('GitHub does not accept this token.')
     expect(h.button('How to make a token')).not.toBeNull()
     await h.click('Scan again')
-    expect(h.scanner.on).toBe(true)
+    // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
+    await vi.waitFor(() => expect(h.scanner.on).toBe(true), { timeout: 5000 })
     await storedNothing(h.store, h)
   })
 
