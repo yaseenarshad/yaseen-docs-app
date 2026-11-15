@@ -90,6 +90,45 @@ export interface GistListItem {
   updatedAt: string
 }
 
+/** A gist as GitHub's JSON gives it (`GET /gists`, `GET /gists/{id}`, a write's answer). */
+interface RawGist {
+  id: string
+  owner?: { login?: unknown } | null
+  description: string | null
+  created_at: string
+  updated_at: string
+  files: Record<string, { content?: unknown; truncated?: unknown } | null>
+  truncated?: unknown
+}
+
+/** One gist of GitHub's answer, as the shared logic reads it: the phone's and the Mac's gist calls both read it so. */
+export function gistDoc(data: unknown, etag: string | null): GistDoc {
+  const g = data as RawGist
+  return {
+    id: g.id,
+    // YAZ-5239: GitHub's own owner of the gist; the only login the groups trust.
+    owner: typeof g.owner?.login === 'string' ? g.owner.login : null,
+    description: g.description ?? '',
+    createdAt: g.created_at,
+    updatedAt: g.updated_at,
+    etag,
+    // YAZ-5350: GitHub's own `truncated` of the gist (it gave only its first 300 files).
+    ...(g.truncated === true && { truncated: true }),
+    files: Object.fromEntries(
+      Object.entries(g.files ?? {}).map(([name, f]) => [name, { content: f !== null && typeof f.content === 'string' ? f.content : null, truncated: f?.truncated === true }]),
+    ),
+  }
+}
+
+/** The gists of one page of `GET /gists` (anything that is not a gist is skipped): names only, no text (proof 1C). */
+export function gistListItems(data: unknown): GistListItem[] {
+  const raw = Array.isArray(data) ? (data as RawGist[]).filter((g) => g !== null && typeof g === 'object' && typeof g.id === 'string') : []
+  return raw.map((g) => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files ?? {}), createdAt: g.created_at, updatedAt: g.updated_at }))
+}
+
+/** A write's files: a file's new text, or `null`: GitHub deletes that one file (YAZ-5312). */
+export const gistFilesBody = (files: Record<string, string | null>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, content === null ? null : { content }]))
+
 /**
  * The gist calls, with the user's own token. The phone builds it on 3E's client (`mobile/src/friends/gistsApi.ts`);
  * the Mac (4E5) builds its own in the main process. Every failure throws an error with a `code` of `GistErrorCode`.

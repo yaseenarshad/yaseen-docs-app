@@ -1,4 +1,4 @@
-import { EMPTY_REPO, FILE_THERE, ListError, type RepoPort } from '@shared/friendListStore'
+import { EMPTY_REPO, FILE_THERE, ListError, NO_COMMIT, type RepoPort } from '@shared/friendListStore'
 import { GithubError, repoPath, type GithubClient } from '../github/client'
 import { githubRemote } from '../sync/githubRemote'
 
@@ -39,8 +39,8 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
         const res = await client.request(repoPath(repo, 'contents', path), { query: { ref: commit }, accept: 'application/vnd.github.raw+json', raw: true })
         return new TextDecoder().decode(res.data as Uint8Array)
       } catch (err) {
-        // YAZ-5398: GitHub's 404 "No commit found" is a commit its replica does not have yet (a stale read), not a missing file.
-        if (err instanceof GithubError && err.code === 'NOT_FOUND' && /^No commit found/.test(err.said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
+        // YAZ-5398: a commit GitHub's replica does not have yet (a stale read), not a missing file.
+        if (err instanceof GithubError && err.code === 'NOT_FOUND' && NO_COMMIT.test(err.said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
         // The file is not there at that commit (the commit itself was just read: the repo is there).
         if (err instanceof GithubError && err.code === 'NOT_FOUND') return null
         if (empty(err)) return null
