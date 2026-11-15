@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useOverlay } from '../app/browserHistory'
 import { Confirm } from './Confirm'
 import './discardAnswer.css'
 
@@ -10,6 +11,8 @@ import './discardAnswer.css'
 export function DiscardAnswer({ title, answer, label, onDiscard }: { title: string; answer: string; label: string; onDiscard: () => Promise<unknown> | void }) {
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
+  // Sweep3 N-4 (YAZ-5524): the ask is an overlay of the app's one stack: a Back closes the ask only, not the sheet.
+  useOverlay(asking, () => setAsking(false))
   if (!asking)
     return (
       <button type="button" className="btn discard-answer" aria-label={label} onClick={() => setAsking(true)}>

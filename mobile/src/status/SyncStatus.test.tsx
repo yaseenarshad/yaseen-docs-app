@@ -563,4 +563,28 @@ describe('YAZ-5524 (sweep3 S-2): one change not sent never hides the rest', () =
     expect(h.sync.syncNowCalls).toBe(syncs + 1)
     expect(answers.sendNowCalls).toBe(sends + 1)
   })
+
+  it('discardAsk_back_closesAskOnly (sweep3 N-4): Back on the Discard ask closes the ask; the sheet stays', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ notSent: [orphan] }))
+    await h.click(/^Sync status: 1 comment couldn't be sent/)
+    await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
+    await h.click('Discard: Made-up words')
+    expect(h.host.querySelector('.status-sheet .confirm')).not.toBeNull()
+    await act(async () => void (await new Promise((r) => setTimeout(r, 30))))
+    await act(async () => {
+      history.back()
+      await new Promise((r) => setTimeout(r, 60))
+    })
+    expect(h.host.querySelector('.status-sheet .confirm')).toBeNull()
+    expect(h.host.querySelector('.status-sheet')).not.toBeNull()
+    expect(h.button('Discard: Made-up words')).not.toBeNull()
+    // A second Back closes the sheet.
+    await act(async () => {
+      history.back()
+      await new Promise((r) => setTimeout(r, 60))
+    })
+    expect(h.host.querySelector('.status-sheet')).toBeNull()
+  })
 })

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useOverlay } from '../app/browserHistory'
 import type { WaitingComment } from '../comments/outbox'
 import { Confirm } from '../screens/Confirm'
 
@@ -43,6 +44,8 @@ function NotSentRow({ item, onDiscard }: { item: WaitingComment; onDiscard: () =
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const words = notSentWords(item)
+  // Sweep3 N-4 (YAZ-5524): the ask is an overlay of the app's one stack: a Back closes the ask only, not the sheet.
+  useOverlay(asking, () => setAsking(false))
   const copy = () =>
     void navigator.clipboard?.writeText(words).then(
       () => setCopied(true),
