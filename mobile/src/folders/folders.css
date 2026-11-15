@@ -234,6 +234,27 @@
   color: var(--fg-muted);
   font-size: 13px;
 }
+/*
+ * YAZ-5595: the grid, as Google Sheets and the Mac's folder table (`views.css` `.view-table`: a line right of and under
+ * every cell, always, no setting): a thin line between every column and every row, in the phone tables' light line
+ * colour (`--table-row-line`, light and dark, `tables.css`). The frame is the light outer border, its corners near square;
+ * the header row keeps its shade and its darker line under it. The lines belong to the cells, so a frozen column carries
+ * its own while the table scrolls sideways, and the finger band (each cell's colour) still covers the whole row, its
+ * lines over it. The last column has no line of its own (the frame is its edge); the last body row keeps its line when
+ * the summaries' foot follows. Keyed on the table's own class, so the full-screen view (⤢, a copy of the box) keeps it.
+ */
+.page-table-box .page-table-frame:has(table.folder-table__table) {
+  border-radius: 4px;
+}
+.page-table-box .page-table-frame .page-table table.folder-table__table :is(th, td) {
+  border-right: 1px solid var(--table-row-line);
+}
+.page-table-box .page-table-frame .page-table table.folder-table__table tr > :last-child {
+  border-right: 0;
+}
+.page-table-box .page-table-frame .page-table table.folder-table__table:has(tfoot) tbody tr:last-child > :is(th, td) {
+  border-bottom: 1px solid var(--table-row-line);
+}
 
 /*
  * Cards, board, calendar: a card is a tappable box, its title then its fields (a small label, the value).

@@ -80,6 +80,9 @@ import { freePort } from './freePort'
  *  - a folder's table as the vault's folder-pages.json says (`#fixture=folder-table`, `folder-table-look`, YAZ-5549), light
  *    and dark, at 375 px (in the folder views' part): the row height (Short: the Name cell keeps 44 px; Tall: 68 px),
  *    the `#` numbers, a subfolder's "N inside".
+ *  - the folder table's grid (`#fixture=folder-table`, `folder-grouped`, `folder-table-band`, YAZ-5595), light and dark, at
+ *    375 px: a line between every column and every row, subtle; the frame; the header set apart; the frozen columns keep
+ *    their lines while the table scrolls sideways; the band across the whole row, its lines drawn.
  *  - the finger band (`#fixture=page-table-band`, `page-table-band-full`, `folder-table-band`, YAZ-5532), light and dark
  *    at 375 px: the fixture's band (a finger down and lifted) on every cell of its row, the frozen one too, one colour,
  *    not the page's; then a real touch (the DevTools touch events): down on another row bands it, a move bands the row
@@ -620,6 +623,67 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
       const shot = file.replace('.png', `-${scheme}.png`)
       writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5595: the folder table's grid (Google Sheets, the Mac's `.view-table`), light and dark, at 375 px: a 1 px line right
+// of every cell but the row's last and under every body row, in the light line colour (subtle: under 1.6:1 on the page);
+// the frame a light outer border; the header row its own shade and a darker line; scrolled sideways, the frozen cells
+// stay put with their lines; the banded row (`folder-table-band`) one colour across, its lines still drawn.
+const GRID_CHECK = `(async () => {
+  const table = document.querySelector('.folder-table table')
+  if (!table) return { error: 'no table' }
+  const cs = (el) => getComputedStyle(el)
+  const rgb = (c) => { const m = c.match(/[\\d.]+/g).map(Number); return c.startsWith('color(') ? m.slice(0, 3).map((v) => v * 255) : m.slice(0, 3) }
+  const lum = (c) => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }); return 0.2126 * r + 0.7152 * g + 0.0722 * b }
+  const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return Math.round(((x + 0.05) / (y + 0.05)) * 100) / 100 }
+  // The page's colour: a frozen body cell's (var(--bg), solid), off the band.
+  const page = cs(table.querySelector('tbody tr[data-row]:not([data-band]) td[data-pin-col]') ?? document.body).backgroundColor
+  const rows = [...table.rows]
+  const cols = { missing: [], lastWithLine: [] }
+  for (const tr of rows) [...tr.cells].forEach((c, i, all) => {
+    const w = cs(c).borderRightWidth
+    if (i < all.length - 1 && (w !== '1px' || cs(c).borderRightStyle !== 'solid')) cols.missing.push(tr.rowIndex + ':' + i)
+    if (i === all.length - 1 && w !== '0px') cols.lastWithLine.push(tr.rowIndex)
+  })
+  const body = [...table.tBodies[0].rows]
+  const rowGaps = body.slice(0, table.tFoot ? body.length : body.length - 1).filter((tr) => [...tr.cells].some((c) => cs(c).borderBottomWidth !== '1px')).map((tr) => tr.rowIndex)
+  const td = table.querySelector('tbody tr[data-row] td:not(.folder-table__num):not([data-name])') ?? table.querySelector('tbody td')
+  const th = table.tHead.rows[0].cells[1] ?? table.tHead.rows[0].cells[0]
+  const frame = table.closest('.page-table-frame')
+  const line = cs(td).borderRightColor
+  const box = table.closest('.page-table')
+  const pinned = [...table.querySelectorAll('[data-pin-col]')]
+  const before = pinned.map((c) => Math.round(c.getBoundingClientRect().left))
+  box.scrollLeft = 80
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  const scrolled = box.scrollLeft
+  const after = pinned.map((c) => Math.round(c.getBoundingClientRect().left))
+  const pinnedLines = pinned.filter((c) => c !== c.parentElement.lastElementChild).every((c) => cs(c).borderRightWidth === '1px')
+  const banded = table.querySelector('tr[data-band]')
+  const band = banded ? { colours: [...new Set([...banded.cells].map((c) => cs(c).backgroundColor))].length, lines: [...banded.cells].slice(0, -1).every((c) => cs(c).borderRightWidth === '1px') } : null
+  return {
+    rows: rows.length, cols, rowGaps,
+    line, page, contrast: ratio(line, page),
+    frame: cs(frame).borderTopWidth + ' ' + cs(frame).borderTopColor, frameRadius: cs(frame).borderTopLeftRadius,
+    headShade: cs(th).backgroundColor !== cs(td).backgroundColor, headLine: cs(th).borderBottomColor !== line,
+    scrolled, pinned: pinned.length, pinnedStay: scrolled === 0 || before.join() === after.join(), pinnedLines,
+    band,
+    pageWide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_FOLDERS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['folder-table', 'folder-grouped', 'folder-table-band']) {
+      const file = await open(name, 375, 667)
+      const shot = file.replace('.png', `-grid-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(GRID_CHECK)
+      const ok = m.error === undefined && m.cols.missing.length === 0 && m.cols.lastWithLine.length === 0 && m.rowGaps.length === 0 && m.contrast > 1.05 && m.contrast < 1.6 && m.frame.startsWith('1px ') && m.headShade && m.headLine && m.pinned > 0 && m.pinnedStay && m.pinnedLines && (name !== 'folder-table-band' || (m.band !== null && m.band.colours === 1 && m.band.lines)) && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} grid ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
