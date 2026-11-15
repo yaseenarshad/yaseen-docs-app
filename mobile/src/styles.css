@@ -301,7 +301,8 @@ button,
   border: 0;
 }
 
-.tabbar__tab[aria-selected='true'] {
+.tabbar__tab[aria-selected='true'],
+.tabbar__today[aria-current='page'] {
   color: var(--accent);
   font-weight: 600;
 }

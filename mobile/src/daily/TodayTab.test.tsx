@@ -69,6 +69,8 @@ describe('YAZ-5470: the Today button', () => {
     const before = (await h.store.list(READER_ID)).map((f) => f.path).sort()
     await h.click('Today')
     await h.waitText('Wednesday words')
+    // YAZ-5522 N6: the page Today opened is marked, though it is not today's.
+    await until(h, () => today(h!)?.getAttribute('aria-current') === 'page')
     expect((await h.store.list(READER_ID)).map((f) => f.path).sort()).toEqual(before)
   })
 
@@ -87,5 +89,46 @@ describe('YAZ-5470: the Today button', () => {
     const index = await writeVaultFiles(h.store, { ...OTHER, ...ON, 'Daily/2026-11-13.md': '# Today\n' }, {}, 'c0ffee2')
     await h.syncEmit({ type: 'changed', vault: READER_ID, settings: ['.yaseendocs/daily-pages.json'], diff: { added: ['.yaseendocs/daily-pages.json'], changed: [], removed: [], renamed: [] }, index })
     await until(h, () => today(h!) !== null)
+  })
+
+  it('todayTab_markedWhileTodaysPageIsOpen (YAZ-5522 N6): opened by Today it is marked; Back to Search, it is not', async () => {
+    h = await open({ ...ON, 'Daily/2026-11-12.md': '# Yesterday words\n', 'Daily/2026-11-13.md': '# Today words\n\nSee [[Plan]].\n' })
+    await until(h, () => today(h!) !== null)
+    expect(today(h)!.getAttribute('aria-current')).toBeNull()
+    await h.click('Today')
+    await h.waitText('Today words')
+    await until(h, () => today(h!)?.getAttribute('aria-current') === 'page')
+    // Today is no tab of its own: the tabs stay unmarked on a page, as on any page.
+    expect([...h.host.querySelectorAll('.tabbar [aria-selected="true"]')]).toEqual([])
+    // Another page (a link of today's page): not marked.
+    const link = [...h.host.querySelectorAll<HTMLElement>('.reader__body a')].find((a) => a.textContent === 'Plan')!
+    await act(async () => link.click())
+    await h.waitText('Made-up words')
+    await until(h, () => today(h!)?.getAttribute('aria-current') === null)
+    await h.click('Back')
+    await h.waitText('Today words')
+    await until(h, () => today(h!)?.getAttribute('aria-current') === 'page')
+    await h.click('Back')
+    await until(h, () => h!.host.querySelector('.reader') === null)
+    expect(today(h)!.getAttribute('aria-current')).toBeNull()
+  })
+
+  it("today's daily page opened another way (a link) is marked too; another daily page is not", async () => {
+    h = await open({ ...ON, 'Daily/2026-11-12.md': '# Yesterday words\n\nSee [[2026-11-13]].\n', 'Daily/2026-11-13.md': '# Today words\n\nSee [[2026-11-12]].\n', 'Plan.md': '# Plan\n\nSee [[2026-11-13]] and [[2026-11-12]].\n' })
+    await until(h, () => today(h!) !== null)
+    await h.click('Search')
+    await until(h, () => h!.button(/^Plan, page/) !== null)
+    await h.click(/^Plan, page/)
+    await h.waitText('See 2026-11-13')
+    expect(today(h)!.getAttribute('aria-current')).toBeNull()
+    const go = async (name: string, words: string) => {
+      const link = [...h!.host.querySelectorAll<HTMLElement>('.reader__body a')].find((a) => a.textContent === name)!
+      await act(async () => link.click())
+      await h!.waitText(words)
+    }
+    await go('2026-11-13', 'Today words')
+    await until(h, () => today(h!)?.getAttribute('aria-current') === 'page')
+    await go('2026-11-12', 'Yesterday words')
+    await until(h, () => today(h!)?.getAttribute('aria-current') === null)
   })
 })
