@@ -23,7 +23,7 @@
  * - `inboxCard()` (YAZ-5412): right before chapter 3's "Click Inbox in the sidebar" (`INBOX_CARD_CLIP`): when the
  *   vault's Inbox has no card to show today, and a new card would show, one example card ("Protein", chapter 2's
  *   example) in the folder, once. null: nothing written (the Inbox has a card, the example is there already, or the
- *   day's new cards are used up). Asked again at c3-08 and c3-09 for a person who skipped c3-23 (`INBOX_CARD_CLIPS`).
+ *   day's new cards are used up). Asked again at c3-08 and c3-09 for a person who skipped c3-24 (`INBOX_CARD_CLIPS`).
  * - `inboxHasCard()` (YAZ-5412): the vault's Inbox has a card to show today, in any folder (the Inbox's own queue).
  *   Chapter 3's Inbox steps need only this, not a card in Course Cards (`checkTour`'s `inbox`).
  * - `summary()`: the end screen's numbers: the cards in the folder and when each comes back, from the real schedule.

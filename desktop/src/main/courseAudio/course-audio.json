@@ -102,10 +102,10 @@
    }
   },
   "first-card": {
-   "file": "first-card-77de3137.ydca",
-   "bytes": 1573939,
-   "sha256": "77de3137e21145d362f39e9ab94b8244e7ba2873094d6b53b9a515d848960d7b",
-   "seconds": 181.233,
+   "file": "first-card-b3999d88.ydca",
+   "bytes": 1621287,
+   "sha256": "b3999d889b5b3496a4e32a19647846299ef04845fb79fa7638e058363bbaf801",
+   "seconds": 186.087,
    "clips": {
     "c2-01": {
      "seconds": 7.616,
@@ -192,8 +192,16 @@
      "hash": "d509c200cc8ae5e9"
     },
     "c2-15": {
-     "seconds": 7.941,
-     "hash": "5cba69a394641274"
+     "seconds": 5.55,
+     "hash": "071d60d892bd6ce7"
+    },
+    "c2-32": {
+     "seconds": 2.74,
+     "hash": "2699be9cb3b4664e"
+    },
+    "c2-33": {
+     "seconds": 4.505,
+     "hash": "a76ef75d74cec497"
     },
     "c2-16": {
      "seconds": 7.291,
@@ -226,10 +234,10 @@
    }
   },
   "inbox": {
-   "file": "inbox-8e963680.ydca",
-   "bytes": 1154115,
-   "sha256": "8e963680c8d0ebae6a0e254490bac77cf92a1fb01a8b60f9f9cbf57ae73224ba",
-   "seconds": 131.656,
+   "file": "inbox-7450985e.ydca",
+   "bytes": 1189159,
+   "sha256": "7450985e8abe6998ba9de58347ebb09310f4184404f4f8ca00d07df422b0b974",
+   "seconds": 135.418,
    "clips": {
     "c3-01": {
      "seconds": 4.667,
@@ -262,6 +270,10 @@
     "c3-23": {
      "seconds": 4.412,
      "hash": "a1c5509de2d5fc63"
+    },
+    "c3-24": {
+     "seconds": 3.762,
+     "hash": "ace008f9475e12ec"
     },
     "c3-08": {
      "seconds": 5.201,
@@ -326,10 +338,10 @@
    }
   },
   "where": {
-   "file": "where-4225d2da.ydca",
-   "bytes": 804133,
-   "sha256": "4225d2dacfe8dffa98481cce8cc861b1c8a34ec689db48df0b4d98bb54052355",
-   "seconds": 92.717,
+   "file": "where-890154e4.ydca",
+   "bytes": 826378,
+   "sha256": "890154e45ff0e8d69ac41904f166281b727a3125d815b063ca29e580b6dea82a",
+   "seconds": 94.343,
    "clips": {
     "c4-01": {
      "seconds": 5.712,
@@ -360,8 +372,16 @@
      "hash": "9a0695088cc043ac"
     },
     "c4-09": {
-     "seconds": 9.613,
-     "hash": "b9c1993e03b1fa79"
+     "seconds": 5.132,
+     "hash": "4bf300968181aa78"
+    },
+    "c4-17": {
+     "seconds": 2.647,
+     "hash": "70153b3b45a84f52"
+    },
+    "c4-18": {
+     "seconds": 3.46,
+     "hash": "1fec2211d953436c"
     },
     "c4-16": {
      "seconds": 4.272,
@@ -854,10 +874,10 @@
    }
   },
   "links": {
-   "file": "links-3f6405f9.ydca",
-   "bytes": 1601602,
-   "sha256": "3f6405f925338cc682278e2c600883fa2214b34002a583ef50ef5ff5b9c80077",
-   "seconds": 183.623,
+   "file": "links-12b36315.ydca",
+   "bytes": 1640779,
+   "sha256": "12b363155a0293797d03713ced0fc8865a23cad55409d02c5a1396baf47bd68a",
+   "seconds": 187.779,
    "clips": {
     "c10-01": {
      "seconds": 8.963,
@@ -948,16 +968,20 @@
      "hash": "ebecede73a958015"
     },
     "c10-15": {
-     "seconds": 7.686,
-     "hash": "4039c0072f836a10"
+     "seconds": 4.807,
+     "hash": "474b21157d242e3a"
+    },
+    "c10-32": {
+     "seconds": 5.039,
+     "hash": "53876bf8e522d425"
     },
     "c10-16": {
      "seconds": 4.667,
      "hash": "32e0e2ea560d311b"
     },
     "c10-17": {
-     "seconds": 6.177,
-     "hash": "73c0e7c486646428"
+     "seconds": 8.173,
+     "hash": "3b5176c560d0012a"
     },
     "c10-18": {
      "seconds": 6.989,
@@ -1058,18 +1082,18 @@
    }
   },
   "where-things-are": {
-   "file": "where-things-are-ad7e583c.ydca",
-   "bytes": 1135335,
-   "sha256": "ad7e583cecbf6419018fc1a54f8102f121da657cc0594fd07aa9a04614a2367d",
-   "seconds": 130.497,
+   "file": "where-things-are-f44b0b32.ydca",
+   "bytes": 1168292,
+   "sha256": "f44b0b3267d4d245bc2cea097880fcee8376419697dde374ca9c5744f4b9a6e6",
+   "seconds": 134.328,
    "clips": {
     "c12-01": {
      "seconds": 4.18,
      "hash": "d26bd919fa8510f3"
     },
     "c12-02": {
-     "seconds": 3.228,
-     "hash": "7192591ad9cd979a"
+     "seconds": 4.737,
+     "hash": "660f40c193b1fa6b"
     },
     "c12-03": {
      "seconds": 7.523,
@@ -1088,8 +1112,8 @@
      "hash": "6766bcbba9cea51d"
     },
     "c12-07": {
-     "seconds": 8.104,
-     "hash": "46f4fa20c620d7ec"
+     "seconds": 10.426,
+     "hash": "787aa0aee7ba0e48"
     },
     "c12-17": {
      "seconds": 8.336,

@@ -706,22 +706,26 @@ const WALK_TEXT = SLEEP_DEBT.text
 const NEW_MENU = ['New page', 'New card', 'New drawing', 'New folder']
 
 /**
- * c2-15 to c2-21, one span: the same steps in the app, in a copy of its parts. A right-click on a folder, New card, the
- * name, Enter; the front; Hide word in the toolbar (Cmd + L); `/` New side (Cmd + Shift + Enter); three stars make a section; Esc or Done;
- * the title at the top of the tab; the card's menu, Title on the front.
+ * c2-15 to c2-21, one span: the same steps in the app, in a copy of its parts. A right-click on the Course Cards folder,
+ * New card (c2-15); the name, Enter (c2-32); the front (c2-33); Hide word in the toolbar (Cmd + L); `/` New side
+ * (Cmd + Shift + Enter); three stars make a section; Esc or Done; the title at the top of the tab; the card's menu, Title
+ * on the front.
  */
 function InTheApp(props: SceneProps) {
   const b = useBeat(props)
   const unit = useUnit()
   const id = props.clip.id
-  const order = ['c2-15', 'c2-16', 'c2-17', 'c2-29', 'c2-20', 'c2-14', 'c2-21']
+  const order = ['c2-15', 'c2-32', 'c2-33', 'c2-16', 'c2-17', 'c2-29', 'c2-20', 'c2-14', 'c2-21']
   const step = order.indexOf(id)
   const at = (clip: string): boolean => step >= order.indexOf(clip)
 
-  // c2-15: the menu, New card, the name box, Enter, the tab.
-  const menu = id === 'c2-15' ? showFor(since(b, 0.12, 0.3), since(b, 0.4, 0.2)) : 0
-  const naming = id === 'c2-15' && b.progress >= 0.4 && b.progress < 0.69
-  const created = !(id === 'c2-15' && b.progress < 0.69)
+  // c2-15: a right-click on the folder, its menu, New card; the name box opens. c2-32: the name, Enter, the tab.
+  const rightClick = cue(b, 0, 0.332)
+  const newCard = cue(b, 2, 0.822)
+  const enter = id === 'c2-32' ? cue(b, 1, 0.467) : 0
+  const menu = id === 'c2-15' ? showFor(since(b, rightClick + 0.02, 0.3), since(b, newCard + 0.06, 0.2)) : 0
+  const naming = (id === 'c2-15' && b.progress >= newCard + 0.06) || (id === 'c2-32' && b.progress < enter + 0.04)
+  const created = at('c2-32') && !(id === 'c2-32' && b.progress < enter + 0.04)
   const titleNow =
     id === 'c2-14'
       ? b.progress >= 0.66
@@ -738,7 +742,7 @@ function InTheApp(props: SceneProps) {
       name: 'Course Cards',
       kind: 'folder',
       open: true,
-      glow: id === 'c2-15' ? showFor(since(b, 0.08, 0.4), since(b, 0.4, 0.3)) : 0,
+      glow: id === 'c2-15' ? showFor(since(b, rightClick - 0.06, 0.4), since(b, newCard + 0.06, 0.3)) : 0,
     },
     ...(naming
       ? [
@@ -746,7 +750,7 @@ function InTheApp(props: SceneProps) {
             name: '',
             kind: 'card' as const,
             depth: 1,
-            typing: typedText(b, WALK_TITLE, between(b, 0.54, 0.66)),
+            typing: id === 'c2-32' ? typedText(b, WALK_TITLE, between(b, cue(b, 0, 0.117), enter - 0.03)) : '',
           },
         ]
       : []),
@@ -767,7 +771,8 @@ function InTheApp(props: SceneProps) {
 
   // The editor: what is in the card so far.
   const editing = created && !at('c2-20') ? true : id === 'c2-20' ? b.progress < 0.43 : false
-  const frontTyped = id === 'c2-15' ? '' : id === 'c2-16' ? typedText(b, `${WALK_FRONT} ${WALK_WORD}.`, between(b, 0.0, 0.15)) : `${WALK_FRONT} ${WALK_WORD}.`
+  // c2-33: the front is typed, from "type" to just after "the short version".
+  const frontTyped = !at('c2-33') ? '' : id === 'c2-33' ? typedText(b, `${WALK_FRONT} ${WALK_WORD}.`, between(b, cue(b, 0, 0.071), cue(b, 1, 0.435) + 0.3)) : `${WALK_FRONT} ${WALK_WORD}.`
   const selected = id === 'c2-16' && b.progress >= 0.16 && b.progress < 0.38
   const hidden = at('c2-16') && !(id === 'c2-16' && b.progress < 0.38)
   const sideBreak = at('c2-17') && !(id === 'c2-17' && b.progress < 0.47)
@@ -786,21 +791,22 @@ function InTheApp(props: SceneProps) {
     show: number
   } = { from: [60, 80], to: [60, 80], move: 0, click: 0, show: 0 }
   if (id === 'c2-15')
-    pointer = {
-      from: [70, 70],
-      to: [14, 19],
-      move: between(b, 0, 0.11),
-      click: since(b, 0.11, 0.4),
-      show: 1 - since(b, 0.5, 0.3),
-    }
-  if (id === 'c2-15' && b.progress >= 0.3)
-    pointer = {
-      from: [14, 19],
-      to: [24, 36],
-      move: between(b, 0.3, 0.37),
-      click: since(b, 0.39, 0.4),
-      show: 1 - since(b, 0.5, 0.3),
-    }
+    pointer =
+      b.progress < newCard - 0.12
+        ? {
+            from: [70, 70],
+            to: [14, 19],
+            move: between(b, rightClick - 0.14, rightClick - 0.01),
+            click: since(b, rightClick, 0.4),
+            show: since(b, rightClick - 0.18, 0.3),
+          }
+        : {
+            from: [14, 19],
+            to: [24, 36],
+            move: between(b, newCard - 0.12, newCard - 0.02),
+            click: since(b, newCard, 0.4),
+            show: 1 - since(b, newCard + 0.1, 0.3),
+          }
   if (id === 'c2-16')
     pointer = {
       from: [80, 80],
@@ -872,7 +878,7 @@ function InTheApp(props: SceneProps) {
                 p={menu}
                 items={NEW_MENU.map((label) => ({
                   label,
-                  active: label === 'New card' ? since(b, 0.34, 0.2) : 0,
+                  active: label === 'New card' ? since(b, newCard - 0.04, 0.2) : 0,
                 }))}
               />
               {id === 'c2-15' && <Pointer beat={b} from={pointer.from} to={pointer.to} move={pointer.move} click={pointer.click} show={pointer.show} />}
@@ -900,7 +906,7 @@ function InTheApp(props: SceneProps) {
                       ) : (
                         frontTyped
                       )}
-                      {(id === 'c2-15' && b.progress >= 0.8) || (id === 'c2-16' && b.progress < 0.15) ? <Caret /> : null}
+                      {id === 'c2-32' || id === 'c2-33' ? <Caret /> : null}
                     </p>
                     {id === 'c2-17' && b.progress >= 0.2 && !sideBreak && (
                       <p>
@@ -1062,7 +1068,7 @@ export const FIRST_CARD_SCENES: ChapterScenes = {
       scene: MakeCard,
     },
     {
-      clips: ['c2-15', 'c2-16', 'c2-17', 'c2-29', 'c2-20', 'c2-14', 'c2-21'],
+      clips: ['c2-15', 'c2-32', 'c2-33', 'c2-16', 'c2-17', 'c2-29', 'c2-20', 'c2-14', 'c2-21'],
       scene: InTheApp,
     },
     { clips: ['c2-19'], scene: HubAndInbox },

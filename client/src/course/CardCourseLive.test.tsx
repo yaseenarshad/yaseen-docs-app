@@ -350,9 +350,9 @@ describe("chapter 3's Inbox card (YAZ-5412)", () => {
     host.watchCards = (folder, onCards) => (order.push('watch'), watch(folder, onCards))
     const target = control('sidebar-inbox')
     control('inbox-card')
-    await mount({ chapter: 'inbox', clip: 'c3-23' }, { course: SCRIPT })
+    await mount({ chapter: 'inbox', clip: 'c3-24' }, { course: SCRIPT })
     click(button('Play'))
-    const clip = SCRIPT.find((ch) => ch.id === 'inbox')!.clips.find((c) => c.id === 'c3-23')!
+    const clip = SCRIPT.find((ch) => ch.id === 'inbox')!.clips.find((c) => c.id === 'c3-24')!
     await play(seconds(clip) + 1)
     expect(coachSay()).toBe('Click Inbox in the sidebar.')
     expect(inboxCard).toHaveBeenCalledTimes(1)
@@ -361,7 +361,7 @@ describe("chapter 3's Inbox card (YAZ-5412)", () => {
     act(() => target.click())
     await play(2)
     expect(caption()).toBe(SCRIPT.find((ch) => ch.id === 'inbox')!.clips.find((c) => c.id === 'c3-08')!.text)
-    // c3-08 asks too (for a person who skipped c3-23); the host's write is once only.
+    // c3-08 asks too (for a person who skipped c3-24); the host's write is once only.
     expect(inboxCard).toHaveBeenCalledTimes(2)
   })
 
@@ -383,18 +383,18 @@ describe("chapter 3's Inbox card (YAZ-5412)", () => {
     host.cards = []
     host.inbox = true
     control('sidebar-inbox')
-    await mount({ chapter: 'inbox', clip: 'c3-23' }, { course: SCRIPT })
+    await mount({ chapter: 'inbox', clip: 'c3-24' }, { course: SCRIPT })
     click(button('Play'))
-    await play(seconds(clipOf('c3-23')) + 1)
+    await play(seconds(clipOf('c3-24')) + 1)
     expect(coachSay()).toBe('Click Inbox in the sidebar.')
     act(() => root.unmount())
     root = createRoot(el)
 
     host.inbox = false
     saved = defaultCourseState()
-    await mount({ chapter: 'inbox', clip: 'c3-23' }, { course: SCRIPT })
+    await mount({ chapter: 'inbox', clip: 'c3-24' }, { course: SCRIPT })
     click(button('Play'))
-    await play(seconds(clipOf('c3-23')) + 1)
+    await play(seconds(clipOf('c3-24')) + 1)
     expect(document.body.textContent).toContain(NO_COURSE_CARD)
     expect(coachSay()).not.toBe('Click Inbox in the sidebar.')
   })

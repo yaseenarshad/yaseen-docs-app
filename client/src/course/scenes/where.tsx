@@ -309,7 +309,7 @@ function InAPage(props: SceneProps) {
   )
 }
 
-/** c4-08, c4-09, c4-16, c4-10 and c4-11, one span: the embed. One home, shown in a page; how to make one; the agent; the head; an edit. */
+/** c4-08, c4-09, c4-17, c4-18, c4-16, c4-10 and c4-11, one span: the embed. One home, shown in a page; how to make one (copy the link, paste it, Show as embed); the agent; the head; an edit. */
 function Embedded(props: SceneProps) {
   const b = useBeat(props)
   const unit = useUnit()
@@ -318,6 +318,7 @@ function Embedded(props: SceneProps) {
   let sidebarGlow: Record<string, number> = {}
   let embed = 1
   let pill = 0
+  let pillGlow = 0
   let embedGlow = 0
   let head = 0
   let name = 0
@@ -339,22 +340,36 @@ function Embedded(props: SceneProps) {
     sidebarGlow = { [CARD.title]: showFor(since(b, lives, 0.4), since(b, shows, 0.4)) }
     embedGlow = since(b, shows, 0.4)
   } else if (id === 'c4-09') {
-    const copy = cue(b, 0, 0.183)
-    const paste = cue(b, 1, 0.391)
-    const right = cue(b, 2, 0.624)
-    const choose = cue(b, 3, 0.841)
-    fileView = b.progress < paste - 0.03
+    // The card's menu, Copy card link.
+    const menuAt = cue(b, 0, 0.281)
+    const copy = cue(b, 1, 0.655)
+    fileView = true
+    tab = CARD.title
+    embed = 0
+    cardMenu = showFor(since(b, menuAt - 0.03, 0.3), since(b, copy + 0.12, 0.3))
+    copyActive = since(b, copy, 0.2)
+    pointer = { from: [70, 85], to: [93, 26], move: between(b, 0.04, menuAt - 0.03), click: since(b, menuAt - 0.03, 0.4), show: 1 - since(b, copy + 0.12, 0.3) }
+  } else if (id === 'c4-17') {
+    // A page opens; the link is pasted, a pill.
+    const open = cue(b, 0, 0.151)
+    const paste = cue(b, 1, 0.604)
+    fileView = b.progress < open + 0.08
     tab = fileView ? CARD.title : MEALS
-    cardMenu = fileView ? since(b, copy - 0.03, 0.3) : 0
-    copyActive = since(b, copy + 0.03, 0.2)
-    pill = fileView ? 0 : since(b, paste, 0.3)
-    linkMenu = showFor(since(b, right + 0.02, 0.3), since(b, choose + 0.05, 0.2))
+    sidebarGlow = { [MEALS]: showFor(since(b, open - 0.04, 0.3), since(b, paste, 0.4)) }
+    embed = 0
+    pill = since(b, paste, 0.3)
+    pointer = { from: [70, 85], to: [12, 38], move: between(b, 0, open), click: since(b, open + 0.02, 0.4), show: showFor(since(b, 0, 0.3), since(b, open + 0.2, 0.3)) }
+  } else if (id === 'c4-18') {
+    // A right-click on the pill, Show as embed; the card shows in the page.
+    const right = cue(b, 0, 0.02)
+    const choose = cue(b, 1, 0.601)
+    tab = MEALS
+    linkMenu = showFor(since(b, right + 0.18, 0.3), since(b, choose + 0.05, 0.2))
     showAsEmbed = since(b, choose, 0.2)
     embed = since(b, choose + 0.06, 0.5)
-    pill = pill * (1 - embed)
-    pointer = fileView
-      ? { from: [70, 85], to: [93, 26], move: between(b, 0.04, copy - 0.03), click: since(b, copy - 0.03, 0.4), show: since(b, 0.02, 0.3) }
-      : { from: [70, 85], to: [38, 47], move: between(b, paste + 0.08, right), click: since(b, right, 0.4), show: showFor(since(b, paste + 0.05, 0.3), since(b, 0.98, 0.3)) }
+    pill = 1 - embed
+    pillGlow = showFor(since(b, right + 0.04, 0.3), since(b, choose, 0.3))
+    pointer = { from: [70, 85], to: [38, 47], move: between(b, right, right + 0.16), click: since(b, right + 0.17, 0.4), show: showFor(since(b, 0, 0.3), since(b, 0.98, 0.3)) }
   } else if (id === 'c4-16') {
     tab = FOOD
     chat = { you: between(b, 0.05, cue(b, 0, 0.393) + 0.05), agent: since(b, cue(b, 1, 0.861) - 0.1, 0.5) }
@@ -399,7 +414,7 @@ function Embedded(props: SceneProps) {
                       <PageText beat={b}>{tab === FOOD ? P1 : 'Breakfast this week: eggs and toast. Here is why that works.'}</PageText>
                       {pill > 0 && (
                         <p className="kit-page__p" style={{ opacity: pill }}>
-                          <CardPill title={CARD.title} id={CARD.id} glow={showFor(since(b, cue(b, 2, 0.624), 0.3), since(b, cue(b, 3, 0.841), 0.3))} />
+                          <CardPill title={CARD.title} id={CARD.id} glow={pillGlow} />
                         </p>
                       )}
                       {embed > 0 && (
@@ -589,7 +604,7 @@ export const WHERE_SCENES: ChapterScenes = {
     { clips: ['c4-02'], scene: Three },
     { clips: ['c4-03'], scene: ByItself },
     { clips: ['c4-04', 'c4-05', 'c4-06'], scene: InAPage },
-    { clips: ['c4-08', 'c4-09', 'c4-16', 'c4-10', 'c4-11'], scene: Embedded },
+    { clips: ['c4-08', 'c4-09', 'c4-17', 'c4-18', 'c4-16', 'c4-10', 'c4-11'], scene: Embedded },
     { clips: ['c4-12'], scene: Move },
     { clips: ['c4-13'], scene: Which },
     { clips: ['c4-15'], scene: Everywhere },

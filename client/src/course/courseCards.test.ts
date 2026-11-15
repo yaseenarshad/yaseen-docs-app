@@ -719,7 +719,7 @@ describe("chapter 3's Inbox card (YAZ-5412)", () => {
   it('the example is chapter 2\'s, and the card comes right before "Click Inbox in the sidebar"', () => {
     const clips = COURSE.flatMap((ch) => ch.clips)
     const examples = (id: string) => (clips.find((c) => c.id === id)?.live ?? []).flatMap((st) => (st.example === undefined ? [] : [st.example.text]))
-    expect(examples('c2-15')).toEqual([INBOX_EXAMPLE.title, INBOX_EXAMPLE.front])
+    expect(['c2-15', 'c2-32', 'c2-33'].flatMap(examples)).toEqual([INBOX_EXAMPLE.title, INBOX_EXAMPLE.front])
     expect(examples('c2-17')).toEqual([INBOX_EXAMPLE.back])
     const clip = clips.find((c) => c.id === INBOX_CARD_CLIP)
     expect(clip?.live?.map((st) => [st.target, st.done])).toEqual([['sidebar-inbox', 'click']])
@@ -786,13 +786,13 @@ describe("chapter 3's Inbox card (YAZ-5412)", () => {
     expect(await cardFilesIn(at.path)).toEqual(['protein.md'])
   })
 
-  it('the Inbox check is for chapter 3 from c3-23 on, on Inbox steps only; c3-08 and c3-09 ask for the card too', () => {
+  it('the Inbox check is for chapter 3 from c3-24 on, on Inbox steps only; c3-08 and c3-09 ask for the card too', () => {
     const inboxClips = COURSE.flatMap((ch) => ch.clips.filter((c) => inboxOnlyClip(ch, c.id)).map((c) => c.id))
-    expect(inboxClips).toEqual(['c3-23', 'c3-08', 'c3-09', 'c3-10', 'c3-11', 'c3-21'])
-    expect([...INBOX_CARD_CLIPS]).toEqual(['c3-23', 'c3-08', 'c3-09'])
+    expect(inboxClips).toEqual(['c3-24', 'c3-08', 'c3-09', 'c3-10', 'c3-11', 'c3-21'])
+    expect([...INBOX_CARD_CLIPS]).toEqual(['c3-24', 'c3-08', 'c3-09'])
   })
 
-  it('c3-23\'s check passes on a card the Inbox shows in any folder; with none, and in other chapters, it needs a Course Card as before', async () => {
+  it('c3-24\'s check passes on a card the Inbox shows in any folder; with none, and in other chapters, it needs a Course Card as before', async () => {
     const vault = vaultOf()
     const host = vaultCourseHost(vault.view, depsOf().deps)
     const noCard = { blocked: 'There is no card in Course Cards yet. Chapter 2 shows how to make one.' }

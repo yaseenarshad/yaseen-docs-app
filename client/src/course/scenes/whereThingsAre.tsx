@@ -66,8 +66,8 @@ function SkillSidebar({ rows, skill }: { rows: readonly Row[]; skill: readonly R
 
 const FORMATS = ['concept', 'fact', 'person', 'procedure', 'quote', 'vocabulary']
 
-/** c12-01 to c12-05, one span: the four steps, then the sidebar; the card skill at its bottom; what is in it; read only,
- * duplicate it; the copy syncs, the built-in one updates. */
+/** c12-01 to c12-05, one span: the four steps, then the sidebar; the card skill at its bottom, a click opens it; what is
+ * in it; read only, duplicate it; the copy syncs, the built-in one updates. */
 function CardSkill(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
@@ -75,11 +75,12 @@ function CardSkill(props: SceneProps) {
   const habits = at('c12-01') ? 1 - since(b, cue(b, 0, 0.29) - 0.04, 0.5) : 0
   const app = at('c12-01') ? since(b, cue(b, 0, 0.29), 0.6) : 1
   const week = at('c12-01') ? since(b, cue(b, 1, 0.71), 0.6) : 0
-  const skillGlow = at('c12-02') ? since(b, cue(b, 0, 0.47) - 0.05, 0.6) : at('c12-03') ? 1 - since(b, 0.1, 0.5) : 0
-  const open = at('c12-03') ? since(b, 0.02, 0.6) : at('c12-01') || at('c12-02') ? 0 : 1
-  const rules = at('c12-03') ? since(b, cue(b, 0, 0.38), 0.4) : 1
-  const formats = at('c12-03') ? since(b, cue(b, 1, 0.54), 0.4) : 1
-  const words = at('c12-03') ? since(b, cue(b, 2, 0.76), 0.4) : 1
+  const skillGlow = at('c12-02') ? since(b, cue(b, 0, 0.287) - 0.05, 0.6) : at('c12-03') ? 1 - since(b, 0.1, 0.5) : 0
+  // c12-02: "Click it to open it": the skill opens, empty; c12-03 fills it in.
+  const open = at('c12-02') ? since(b, cue(b, 1, 0.642) + 0.08, 0.6) : at('c12-01') ? 0 : 1
+  const rules = at('c12-02') ? 0 : at('c12-03') ? since(b, cue(b, 0, 0.38), 0.4) : 1
+  const formats = at('c12-02') ? 0 : at('c12-03') ? since(b, cue(b, 1, 0.54), 0.4) : 1
+  const words = at('c12-02') ? 0 : at('c12-03') ? since(b, cue(b, 2, 0.76), 0.4) : 1
   const lock = at('c12-04') ? showFor(since(b, cue(b, 0, 0.07), 0.3), since(b, 0.3, 0.4)) : 0
   const menu = at('c12-04') ? showFor(since(b, cue(b, 1, 0.44) - 0.12, 0.3), since(b, cue(b, 2, 0.77) - 0.06, 0.3)) : 0
   const copy = at('c12-04') ? since(b, cue(b, 2, 0.77) - 0.04, 0.6) : at('c12-05') ? 1 : 0
@@ -98,7 +99,7 @@ function CardSkill(props: SceneProps) {
     { name: 'Course transcript', kind: 'page', depth: 1, p: open * words },
   ]
   return (
-    <Stage beat={b} label={at('c12-01') ? 'To finish: where things are, and your first week' : at('c12-02') ? 'The card skill is at the bottom of the sidebar' : at('c12-03') ? 'The card skill: the rules, the formats with examples, and the words of this course' : at('c12-04') ? 'It is read only: duplicate it into your vault to make it your own' : 'Your copy syncs with your vault; the built-in skill still updates with the app'}>
+    <Stage beat={b} label={at('c12-01') ? 'To finish: where things are, and your first week' : at('c12-02') ? 'The card skill is at the bottom of the sidebar; click it to open it' : at('c12-03') ? 'The card skill: the rules, the formats with examples, and the words of this course' : at('c12-04') ? 'It is read only: duplicate it into your vault to make it your own' : 'Your copy syncs with your vault; the built-in skill still updates with the app'}>
       <Layer style={{ opacity: habits }}>
         <Habits beat={b} show={[1, 1, 1, 1]} lit={[1, 1, 1, 1]} />
       </Layer>
@@ -195,17 +196,18 @@ function Guide(props: SceneProps) {
 /** The Settings list as the app has it, short (YAZ-5271: the section is Cards, was Review, YAZ-5154). */
 const NAV = ['General', 'Editor', 'Sidebar', 'Cards', 'Sync']
 
-/** c12-07: Settings › Cards: the card skill switch, and Open the course. */
+/** c12-07: Command comma opens Settings; Cards; the card skill switch, and Open the course. */
 function SettingsCards(props: SceneProps) {
   const b = useBeat(props)
-  const review = cue(b, 0, 0.168)
-  const sw = cue(b, 1, 0.267)
-  const course = cue(b, 2, 0.691)
+  const keys = cue(b, 0, 0.031)
+  const review = cue(b, 1, 0.292)
+  const sw = cue(b, 2, 0.46)
+  const course = cue(b, 3, 0.783)
   const showHide = since(b, sw + 0.12, 0.3) > 0.5 && b.progress < sw + 0.3 ? 'Hide' : 'Show'
   return (
-    <Stage beat={b} label="Settings › Cards: one switch shows or hides the card skill; Open the course brings you back here">
+    <Stage beat={b} label="Command comma opens Settings; in Cards, one switch shows or hides the card skill; Open the course brings you back here">
       <Layer>
-        <div className="later-settings" style={rise(b, since(b, 0, 0.5), 10)}>
+        <div className="later-settings" style={rise(b, since(b, keys + 0.1, 0.5), 10)}>
           <ul className="later-settings__nav">
             {NAV.map((n) => (
               <li key={n} data-on={n === 'Cards' && since(b, review, 0.3) > 0.5 ? 'true' : undefined}>

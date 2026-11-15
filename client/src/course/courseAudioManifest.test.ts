@@ -11,7 +11,7 @@ import { COURSE } from './script'
 
 /**
  * THE ONE PLACE for clips whose words changed after the voice run, or that are new: they play silent, with captions,
- * until they are voiced and packed again. Empty: every clip's sound says its words (checked 2026-11-13, 245 clips).
+ * until they are voiced and packed again. Empty: every clip's sound says its words (checked 2026-11-14, 269 clips).
  */
 const NOT_VOICED_YET: readonly string[] = []
 

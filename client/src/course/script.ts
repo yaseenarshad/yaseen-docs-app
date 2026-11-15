@@ -164,9 +164,13 @@ export const COURSE: CourseChapter[] = [
       { id: 'c2-12', text: 'Either answer is fine. The app saves it with the card.', dock: 'full' },
       // The sidebar: the folder "Course Cards" opens and shows the new card file.
       { id: 'c2-13', text: 'Your card is now a real file, in a folder called Course Cards, at the top of your vault.', marks: [0.557], dock: 'side', live: [{ target: 'sidebar-course-cards', mark: 0 }] },
-      // A folder's right-click menu, "New card"; the name box in the sidebar; a title is typed, Enter; the card's tab opens in Edit card, empty.
+      // A right-click on the Course Cards folder; its menu, "New card".
       // APP: client/src/sidebar/menuSections.ts (`newCard`, "New card"), client/src/sidebar/CreateInline.tsx (Enter), client/src/review/newCardFile.ts (the typed name is the title; the tab opens in Edit card).
-      { id: 'c2-15', text: 'In the app, right-click a folder and choose New card. Type the title, press Enter, then the front.', marks: [0.122, 0.378, 0.551, 0.898], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } }, { target: 'new-card', mark: 1, say: 'Choose New card.', done: 'click' }, { target: 'new-card-name', mark: 2, say: 'Type a title, and press Enter.', done: { event: 'card-file-created' }, example: { text: 'Protein', enter: true } }, { target: 'card-editor', mark: 3, say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' }, example: { text: 'Your body builds and repairs with protein.' } }] },
+      { id: 'c2-15', text: "Let's make it in the app. Right-click the Course Cards folder, and choose New card.", marks: [0.332, 0.461, 0.822], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } }, { target: 'new-card', mark: 2, say: 'Choose New card.', done: 'click' }] },
+      // The name box in the sidebar; a title is typed, Enter; the card's tab opens in Edit card, empty.
+      { id: 'c2-32', text: 'Type a title, and press Enter.', marks: [0.117, 0.467], dock: 'corner', live: [{ target: 'new-card-name', mark: 0, say: 'Type a title, and press Enter.', done: { event: 'card-file-created' }, example: { text: 'Protein', enter: true } }] },
+      // The empty card in Edit card; the front is typed.
+      { id: 'c2-33', text: 'Now type the front: the short version, in a sentence or two.', marks: [0.071, 0.435], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' }, example: { text: 'Your body builds and repairs with protein.' } }] },
       // A word is selected; the toolbar shows over it; the braces button "Hide word" is clicked; then the key row "Cmd + L hide word".
       // APP: client/src/editor/card/cardEditor.ts (`hideWordButton`: "Hide word", ⌘L, right after H1 H2 H3 T), client/src/editor/card/cardBlockView.ts (`CARD_EDIT_KEYS`, written "Cmd + L" by client/src/keys/keyWords.ts).
       { id: 'c2-16', text: 'To hide a word, select it, and click Hide word in the toolbar. The key is Command L.', marks: [0.19, 0.44], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: 'Select one word. In the toolbar above it, click Hide word.', done: { event: 'card-word-hidden' } }] },
@@ -211,7 +215,9 @@ export const COURSE: CourseChapter[] = [
       { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.', marks: [0.256, 0.827], dock: 'full' },
       // Under the bars: "Rounds of practice: 237 and 243".
       // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
-      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617], dock: 'full', live: [{ target: 'sidebar-inbox', say: 'Click Inbox in the sidebar.', done: 'click' }] },
+      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617], dock: 'full' },
+      // The real sidebar; the Inbox row lights up, and the person clicks it.
+      { id: 'c3-24', text: "Let's try it. Click Inbox in the sidebar.", marks: [0.383, 0.68], dock: 'corner', live: [{ target: 'sidebar-inbox', mark: 0, say: 'Click Inbox in the sidebar.', done: 'click' }] },
       // Space; the hidden word shows, then the back.
       { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.', marks: [0.062, 0.477, 0.777], dock: 'corner', live: [{ target: 'inbox-card', mark: 0, say: 'Look at the card, and try to recall the hidden word. Then press Space.', done: { event: 'inbox-step-shown' } }] },
       // Forgot and Remembered show under the card.
@@ -263,10 +269,14 @@ export const COURSE: CourseChapter[] = [
       { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.', marks: [0.336, 0.595, 0.784], dock: 'full' },
       // A page shows a card that lives in another file; an arrow back to the card file.
       { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.', marks: [0.545, 0.853], dock: 'full' },
-      // The card's ⋯ menu, "Copy card link"; a paste in the page, a pill; a right-click on the pill, "Show as embed".
+      // The card's ⋯ menu, "Copy card link".
       // APP: client/src/review/cardPane.tsx ("Copy card link" copies `[[ID]]`, on the card file tab), client/src/editor/linkMenu.ts ("Show as embed"),
       // client/src/editor/card/cardEmbed.test.ts. The paste chip's "Embed" shows only for a pasted card file PATH (client/src/editor/pathPaste.ts), not for `[[ID]]`.
-      { id: 'c4-09', text: "To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.", marks: [0.183, 0.391, 0.624, 0.841], dock: 'corner', live: [{ target: 'card-menu', mark: 0, say: "Open your card's menu: the three dots in its head.", done: 'click' }, { target: 'card-copy-link', mark: 1, say: 'Choose Copy card link.', done: 'click' }, { target: 'course-page', mark: 2, say: 'Now open Course page, in the Course Cards folder.', done: 'click' }, { target: 'page-editor', mark: 3, say: 'Click in the page, and paste with Command V. Then right-click the link, and choose Show as embed.', done: { event: 'card-embedded' } }] },
+      { id: 'c4-09', text: 'To embed a card, open its menu, and choose Copy card link.', marks: [0.281, 0.655], dock: 'corner', live: [{ target: 'card-menu', mark: 0, say: "Open your card's menu: the three dots in its head.", done: 'click' }, { target: 'card-copy-link', mark: 1, say: 'Choose Copy card link.', done: 'click' }] },
+      // A page opens; the link is pasted, a pill.
+      { id: 'c4-17', text: 'Then open a page, and paste the link.', marks: [0.151, 0.604], dock: 'corner', live: [{ target: 'course-page', mark: 0, say: 'Now open Course page, in the Course Cards folder.', done: 'click' }] },
+      // A right-click on the pill, "Show as embed"; the card shows in the page.
+      { id: 'c4-18', text: 'Right-click the link, and choose Show as embed.', marks: [0.02, 0.601], dock: 'corner', live: [{ target: 'page-editor', mark: 0, say: 'Click in the page, and paste with Command V. Then right-click the link, and choose Show as embed.', done: { event: 'card-embedded' } }] },
       // A short message to the agent: "Embed my protein card in the Food page"; the embed appears in the page.
       { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.', marks: [0.393, 0.861], dock: 'full' },
       // The embed's head: ↗ Embedded from "…" · ID.
@@ -581,15 +591,17 @@ export const COURSE: CourseChapter[] = [
       { id: 'c10-27', text: "Read each suggestion. If the connection makes sense to you, tell the agent to add that link.", marks: [0.03, 0.12, 0.36, 0.62], dock: 'full' },
       // After the pill, a few grey words: "muscle is built from protein". The pill and its reason sit on one line.
       { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.', marks: [0.11, 0.34, 0.64], dock: 'full' },
-      // Edit card on the protein card; the caret at the end of a line; "[[" and "mus" are typed; the list opens.
+      // The protein card opens; Edit card.
       // APP: client/src/editor/card/cardEditorFeatures.ts (pills and the `[[` picker are on in Edit card), client/src/editor/wikilink/wikilinkPicker.ts.
-      { id: 'c10-15', text: "To link by hand, edit the card. Type two square brackets, then a few letters of the other card's title.", marks: [0.2, 0.46, 0.7], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Open the Course Cards folder, and click one of your cards.', done: { event: 'card-file-open' } }, { target: 'card-edit', mark: 0, say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } }, { target: 'card-editor', mark: 1, say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' }, example: { text: '[[', lineEnd: true } }] },
+      { id: 'c10-15', text: 'To link by hand, open one of your cards, and click Edit card.', marks: [0.3, 0.732], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Open the Course Cards folder, and click one of your cards.', done: { event: 'card-file-open' } }, { target: 'card-edit', mark: 1, say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } }] },
+      // The caret at the end of a line; "[[" and "mus" are typed; the list opens.
+      { id: 'c10-32', text: "Type two square brackets, then a few letters of the other card's title.", marks: [0.127, 0.476], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' }, example: { text: '[[', lineEnd: true } }] },
       // The list: pages, then cards with the card icon; the card row is clicked.
       // APP: client/src/links/completion.ts (card rows have the card icon and insert `[[ID]]`; a card file is one row, YAZ-5134).
       { id: 'c10-16', text: 'A list shows what matches. Click the one with the card icon.', marks: [0.07, 0.5, 0.7], dock: 'corner', live: [{ target: 'link-picker', mark: 1, say: 'Click the row with the card icon.', done: { event: 'card-link-added' } }] },
-      // `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
+      // Escape; `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
       // APP: docs/CONTRACTS.md "Links to a card": the pill shows the title, then the ID small and grey, with the card icon (`wikilink--card`).
-      { id: 'c10-17', text: "The link turns into a pill: the other card's title, with its ID small beside it.", marks: [0.21, 0.41, 0.66], dock: 'corner', live: [{ target: 'card-done', say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } }] },
+      { id: 'c10-17', text: "Press Escape to save. The link turns into a pill: the other card's title, with its ID small beside it.", marks: [0.039, 0.44, 0.617, 0.744], dock: 'corner', live: [{ target: 'card-done', mark: 0, say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } }] },
       // A click on the pill; the muscle card opens in the card window; under it, "Linked mentions (1)" lists the protein card.
       // APP: client/src/editor/createCrepe.ts (a card pill's plain click opens the card window), client/src/review/cardPane.tsx ("Linked mentions (n)"), shared/cardLinks.ts (`cardBacklinks`), shared/fences.ts (a card's text counts).
       { id: 'c10-18', text: 'Click the pill, and that card opens. Under it, Linked mentions lists what links to it.', marks: [0.07, 0.27, 0.55], dock: 'corner', live: [{ target: 'card-link-pill', mark: 0, say: 'Click the pill. The other card opens, and Linked mentions lists your first card.', done: 'click' }] },
@@ -653,7 +665,7 @@ export const COURSE: CourseChapter[] = [
       // The four step icons, then the real sidebar.
       { id: 'c12-01', text: 'To finish: where things are, and your first week.', marks: [0.29, 0.71], dock: 'full' },
       // The real sidebar; the card skill's row at the bottom lights up.
-      { id: 'c12-02', text: 'The card skill is at the bottom of the sidebar.', marks: [0.47], dock: 'corner', live: [{ target: 'card-skill-row', mark: 0, say: 'This is the card skill. Click it to open it.', done: 'click' }] },
+      { id: 'c12-02', text: 'The card skill is at the bottom of the sidebar. Click it to open it.', marks: [0.287, 0.642], dock: 'corner', live: [{ target: 'card-skill-row', mark: 0, say: 'This is the card skill. Click it to open it.', done: 'click' }] },
       // The card skill opens: Start here, the rules, Formats, Course transcript.
       { id: 'c12-03', text: 'It is a short guide for you and your agent: the rules, the formats with examples, and the words of this course.', marks: [0.38, 0.54, 0.76], dock: 'side' },
       // The lock on the skill; right-click › "Duplicate into …".
@@ -663,7 +675,7 @@ export const COURSE: CourseChapter[] = [
       // A terminal: `yaseendocs card guide` prints the skill's first page.
       { id: 'c12-06', text: 'Your agent can find it too. One command prints its first page.', marks: [0.47, 0.63], dock: 'side' },
       // Settings › Cards: "Card skill in the sidebar" and "Open the course".
-      { id: 'c12-07', text: 'In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.', marks: [0.168, 0.267, 0.691], dock: 'corner', live: [{ target: 'settings-review', mark: 0, say: 'Now press Command comma to open Settings, and click Cards.', done: 'click' }, { target: 'settings-card-skill', mark: 1, say: 'This switch shows or hides the card skill in the sidebar.' }, { target: 'settings-course', mark: 2, say: 'And this button brings you back to the course, at any time.' }] },
+      { id: 'c12-07', text: 'Press Command comma to open Settings, and click Cards. One switch there shows or hides the card skill. Open the course brings you back here.', marks: [0.031, 0.292, 0.46, 0.783], dock: 'corner', live: [{ target: 'settings-review', mark: 0, say: 'Now press Command comma to open Settings, and click Cards.', done: 'click' }, { target: 'settings-card-skill', mark: 2, say: 'This switch shows or hides the card skill in the sidebar.' }, { target: 'settings-course', mark: 3, say: 'And this button brings you back to the course, at any time.' }] },
       // Settings › Cards opens in full; the section title glows. (YAZ-5331, Yaseen's words.)
       { id: 'c12-17', text: 'Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.', marks: [0.163, 0.274, 0.437, 0.893], dock: 'side', live: [{ target: 'settings-cards-section', mark: 0, say: 'Look around. Hidden words, card width, tables and new cards a day are all here.' }] },
       // The Card look group lights up row by row: Shown hidden words, Card width, Card tables.

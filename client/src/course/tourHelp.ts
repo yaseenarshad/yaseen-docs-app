@@ -90,7 +90,7 @@ const CARDS_WAIT_MS = 3000
 /**
  * The check before a tour: its places, or the one line that says why it cannot run. It uses the course's host (6F):
  * `courseCards()` gives the folder (or why the course only shows), `watchCards()` its cards.
- * `inbox` (YAZ-5412, chapter 3's Inbox steps from c3-23 on, `inboxOnlyClip`): a card the Inbox shows today, in any
+ * `inbox` (YAZ-5412, chapter 3's Inbox steps from c3-24 on, `inboxOnlyClip`): a card the Inbox shows today, in any
  * folder (`inboxHasCard`), is enough; with none, the check is as ever (a card in Course Cards).
  */
 export async function checkTour(chapterId: string, host: CourseHost, opts: { inbox?: boolean } = {}): Promise<{ places: TourPlaces; folderTitle?: string } | { blocked: string }> {

@@ -311,6 +311,24 @@ function Retrieval(props: SceneProps) {
   )
 }
 
+/** c3-24: let's try it: the sidebar's Inbox row lights up, and the pointer clicks it. */
+function TryInbox(props: SceneProps) {
+  const b = useBeat(props)
+  const click = cue(b, 0, 0.383)
+  return (
+    <Stage beat={b} label="Let's try it: click Inbox in the sidebar">
+      <Layer>
+        <AppWindow sidebar={<SidebarPreview inbox={4} inboxGlow={since(b, click - 0.05, 0.4)} rows={SIDEBAR} />} label="The app's sidebar, with the Inbox row on top">
+          <div className="kit-app__tabbar">
+            <span className="kit-app__tabname">{FIRST.title}</span>
+          </div>
+          <Pointer beat={b} from={[60, 80]} to={[16, 6]} move={between(b, click - 0.2, click)} click={since(b, cue(b, 1, 0.68), 0.4)} show={since(b, click - 0.24, 0.3)} />
+        </AppWindow>
+      </Layer>
+    </Stage>
+  )
+}
+
 /** c3-08 to c3-11, one span: Space shows the hidden words and the back; Forgot or Remembered; the hover; the keys. */
 function Answering(props: SceneProps) {
   const b = useBeat(props)
@@ -764,6 +782,7 @@ export const INBOX_SCENES: ChapterScenes = {
     { clips: ['c3-03', 'c3-04'], scene: InboxRow },
     { clips: ['c3-05'], scene: OneAtATime },
     { clips: ['c3-06', 'c3-07', 'c3-23'], scene: Retrieval },
+    { clips: ['c3-24'], scene: TryInbox },
     { clips: ['c3-08', 'c3-09', 'c3-10', 'c3-11'], scene: Answering },
     { clips: ['c3-12', 'c3-13'], scene: Sooner },
     { clips: ['c3-14'], scene: Queue },

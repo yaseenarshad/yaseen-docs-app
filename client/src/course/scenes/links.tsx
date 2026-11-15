@@ -783,23 +783,32 @@ const PICKER = [
   { label: 'Muscle cramps', kind: 'card' as const },
 ]
 
-/** c10-15, c10-16, c10-17 and c10-18, one span: Edit card, `[[` and "mus"; the list, the card row; the pill; click it, Linked mentions. */
+/**
+ * c10-15, c10-32, c10-16, c10-17 and c10-18, one span: open a card, Edit card; `[[` and "mus"; the list, the card row;
+ * Escape, the pill; click it, Linked mentions.
+ */
 function ByHand(props: SceneProps) {
   const b = useBeat(props)
   const id = props.clip.id
   const at = (clip: string) => id === clip
-  const editAt = cue(b, 0, 0.2)
-  const editing = (at('c10-15') && b.progress >= editAt + 0.03) || at('c10-16') || at('c10-17')
-  const brackets = at('c10-15') ? since(b, cue(b, 1, 0.46), 0.25) : 1
-  const letters = at('c10-15') ? since(b, cue(b, 2, 0.7), 0.6) : 1
+  const openAt = at('c10-15') ? cue(b, 0, 0.3) : 0
+  const editAt = at('c10-15') ? cue(b, 1, 0.732) : 0
+  const cardOpen = !at('c10-15') || b.progress >= openAt + 0.04
+  const editing = (at('c10-15') && b.progress >= editAt + 0.03) || at('c10-32') || at('c10-16') || at('c10-17')
+  const brackets = at('c10-15') ? 0 : at('c10-32') ? since(b, cue(b, 0, 0.127), 0.25) : 1
+  const letters = at('c10-15') ? 0 : at('c10-32') ? since(b, cue(b, 1, 0.476), 0.6) : 1
+  // c10-17: Escape saves; then the pill, its title, its ID.
+  const saved = at('c10-17') && b.progress >= cue(b, 0, 0.039) + 0.05
   const list = at('c10-16') ? showFor(since(b, cue(b, 0, 0.07) - 0.04, 0.3), since(b, cue(b, 2, 0.7) + 0.04, 0.3)) : 0
   const rowActive = at('c10-16') ? since(b, cue(b, 1, 0.5), 0.4) : 0
   const raw = at('c10-16') && b.progress >= cue(b, 2, 0.7) + 0.04
-  const pill = at('c10-17') ? since(b, cue(b, 0, 0.21) - 0.06, 0.4) : at('c10-18') ? 1 : 0
+  const pill = at('c10-17') ? since(b, cue(b, 1, 0.44) - 0.06, 0.4) : at('c10-18') ? 1 : 0
   const opened = at('c10-18') ? since(b, cue(b, 1, 0.27), 0.6) : 0
   const mentions = at('c10-18') ? since(b, cue(b, 2, 0.55), 0.6) : 0
   const pointer = at('c10-15')
-    ? { from: [86, 86] as const, to: [76, 14] as const, move: between(b, 0.02, editAt - 0.02), click: since(b, editAt - 0.02, 0.4), show: 1 - since(b, editAt + 0.1, 0.4) }
+    ? b.progress < openAt + 0.08
+      ? { from: [60, 80] as const, to: [14, 25] as const, move: between(b, 0.02, openAt), click: since(b, openAt, 0.4), show: since(b, 0, 0.3) }
+      : { from: [14, 25] as const, to: [76, 14] as const, move: between(b, editAt - 0.2, editAt - 0.02), click: since(b, editAt - 0.02, 0.4), show: 1 - since(b, editAt + 0.1, 0.4) }
     : at('c10-16')
     ? { from: [70, 80] as const, to: [52, 62] as const, move: between(b, cue(b, 1, 0.5) - 0.15, cue(b, 1, 0.5) + 0.05), click: since(b, cue(b, 2, 0.7), 0.4), show: 1 }
     : at('c10-18')
@@ -807,14 +816,15 @@ function ByHand(props: SceneProps) {
     : { from: [0, 0] as const, to: [0, 0] as const, move: 0, show: 0 }
   const typed = `${typedText(b, '[[', brackets)}${brackets >= 1 ? typedText(b, 'mus', letters) : ''}`
   return (
-    <Stage beat={b} label={at('c10-15') ? 'Edit the card; type two square brackets and a few letters' : at('c10-16') ? 'A list shows what matches: click the row with the card icon' : at('c10-17') ? "The link becomes a pill: the other card's title, its ID small beside it" : 'Click the pill: that card opens; under it, Linked mentions'}>
+    <Stage beat={b} label={at('c10-15') ? 'Open one of your cards, and click Edit card' : at('c10-32') ? 'Type two square brackets and a few letters' : at('c10-16') ? 'A list shows what matches: click the row with the card icon' : at('c10-17') ? "The link becomes a pill: the other card's title, its ID small beside it" : 'Click the pill: that card opens; under it, Linked mentions'}>
       <Layer>
-        <AppWindow sidebar={<SidebarPreview inbox={4} rows={[{ name: 'Course Cards', kind: 'folder', open: true }, { name: 'Protein', kind: 'card', depth: 1, active: opened < 0.5 }, { name: 'How muscle grows', kind: 'card', depth: 1, active: opened >= 0.5 }]} />} label="The app: a card, in Edit card">
+        <AppWindow sidebar={<SidebarPreview inbox={4} rows={[{ name: 'Course Cards', kind: 'folder', open: true }, { name: 'Protein', kind: 'card', depth: 1, active: cardOpen && opened < 0.5, glow: at('c10-15') ? showFor(since(b, openAt - 0.06, 0.3), since(b, openAt + 0.12, 0.4)) : 0 }, { name: 'How muscle grows', kind: 'card', depth: 1, active: opened >= 0.5 }]} />} label="The app: a card, in Edit card">
           <div className="kit-app__tabbar">
-            <span className="kit-app__tabname">{opened >= 0.5 ? MUSCLE.title : PROTEIN_BRANCH.title}</span>
+            {cardOpen && <span className="kit-app__tabname">{opened >= 0.5 ? MUSCLE.title : PROTEIN_BRANCH.title}</span>}
           </div>
           <div className="kit-app__tab later-byhand">
-            {opened < 0.5 &&
+            {cardOpen &&
+              opened < 0.5 &&
               (editing ? (
                 <EditCard id={PROTEIN_BRANCH.id} title={PROTEIN_BRANCH.title} keys={0} style={{ opacity: 1 - opened * 2 }}>
                     <p>
@@ -828,14 +838,14 @@ function ByHand(props: SceneProps) {
                       <br />
                       {pill > 0 ? (
                         <span style={{ opacity: clamp(pill * 2) }}>
-                          <CardPill title={MUSCLE.title} id={MUSCLE.id} glow={showFor(since(b, cue(b, 0, 0.21), 0.4), since(b, 0.9, 0.3))} part={{ title: showFor(since(b, cue(b, 1, 0.41), 0.3), since(b, cue(b, 2, 0.66), 0.3)), id: since(b, cue(b, 2, 0.66), 0.3) }} />
+                          <CardPill title={MUSCLE.title} id={MUSCLE.id} glow={showFor(since(b, cue(b, 1, 0.44), 0.4), since(b, 0.95, 0.3))} part={{ title: showFor(since(b, cue(b, 2, 0.617), 0.3), since(b, cue(b, 3, 0.744), 0.3)), id: since(b, cue(b, 3, 0.744), 0.3) }} />
                         </span>
                       ) : raw || (at('c10-17') && pill <= 0) ? (
                         <span className="later-raw">[[{MUSCLE.id}]]</span>
                       ) : (
                         <span className="later-raw">{typed}</span>
                       )}
-                      <Caret />
+                      {!saved && <Caret />}
                     </p>
                     <LinkPicker beat={b} p={list} rows={PICKER.map((r) => ({ ...r, active: r.kind === 'card' && r.label === MUSCLE.title ? rowActive : 0 }))} />
                 </EditCard>
@@ -1016,7 +1026,7 @@ export const LINKS_SCENES: ChapterScenes = {
     { clips: ['c10-13'], scene: TwoQuestions },
     { clips: ['c10-14'], scene: AnyTarget },
     { clips: ['c10-26', 'c10-27', 'c10-24'], scene: AgentLinks },
-    { clips: ['c10-15', 'c10-16', 'c10-17', 'c10-18'], scene: ByHand },
+    { clips: ['c10-15', 'c10-32', 'c10-16', 'c10-17', 'c10-18'], scene: ByHand },
     { clips: ['c10-25'], scene: Hubs },
     { clips: ['c10-19'], scene: RemoveLink },
     { clips: ['c10-20'], scene: BaseNotPile },

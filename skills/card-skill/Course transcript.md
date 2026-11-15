@@ -92,7 +92,11 @@ Either answer is fine. The app saves it with the card.
 
 Your card is now a real file, in a folder called Course Cards, at the top of your vault.
 
-In the app, right-click a folder and choose New card. Type the title, press Enter, then the front.
+Let's make it in the app. Right-click the Course Cards folder, and choose New card.
+
+Type a title, and press Enter.
+
+Now type the front: the short version, in a sentence or two.
 
 To hide a word, select it, and click Hide word in the toolbar. The key is Command L.
 
@@ -135,6 +139,8 @@ Trying to recall is what makes it stick. A study in the journal Science put it t
 People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.
 
 About the same amount of work. More than double the memory.
+
+Let's try it. Click Inbox in the sidebar.
 
 Press Space to show the hidden words, one at a time, and then the back.
 
@@ -189,7 +195,11 @@ A card in a page has the same menu, the same history, and the same Inbox.
 
 Third, a card embedded in a page. The card lives in one place, and the page shows it.
 
-To embed one, copy the card's link from its menu, and paste it in a page. Then right-click the link, and choose Show as embed.
+To embed a card, open its menu, and choose Copy card link.
+
+Then open a page, and paste the link.
+
+Right-click the link, and choose Show as embed.
 
 Or just tell your agent: embed this card in that page.
 
@@ -478,11 +488,13 @@ Read each suggestion. If the connection makes sense to you, tell the agent to ad
 
 Beside each link go a few words on why the two connect. The reason is worth as much as the link.
 
-To link by hand, edit the card. Type two square brackets, then a few letters of the other card's title.
+To link by hand, open one of your cards, and click Edit card.
+
+Type two square brackets, then a few letters of the other card's title.
 
 A list shows what matches. Click the one with the card icon.
 
-The link turns into a pill: the other card's title, with its ID small beside it.
+Press Escape to save. The link turns into a pill: the other card's title, with its ID small beside it.
 
 Click the pill, and that card opens. Under it, Linked mentions lists what links to it.
 
@@ -549,7 +561,7 @@ Grow a branch here, prune one there, and your card base stays true. Next: your f
 
 To finish: where things are, and your first week.
 
-The card skill is at the bottom of the sidebar.
+The card skill is at the bottom of the sidebar. Click it to open it.
 
 It is a short guide for you and your agent: the rules, the formats with examples, and the words of this course.
 
@@ -559,7 +571,7 @@ Your copy syncs with your vault. The built-in skill still gets each update of th
 
 Your agent can find it too. One command prints its first page.
 
-In Settings, under Cards, one switch shows or hides the card skill. Open the course brings you back here.
+Press Command comma to open Settings, and click Cards. One switch there shows or hides the card skill. Open the course brings you back here.
 
 Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.
 

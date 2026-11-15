@@ -143,10 +143,10 @@ export const EXAMPLE_CARDS: readonly { title: string; text: string }[] = [
 ]
 
 /** The clip whose live step is "Click Inbox in the sidebar": the Inbox gets its card right before it (YAZ-5412). */
-export const INBOX_CARD_CLIP = 'c3-23'
+export const INBOX_CARD_CLIP = 'c3-24'
 /**
- * The clips that ask for the Inbox card (`inboxCard`) before their check: c3-23, and the two Inbox steps after it, for
- * a person who skipped past c3-23. The write stays once only.
+ * The clips that ask for the Inbox card (`inboxCard`) before their check: c3-24, and the two Inbox steps after it, for
+ * a person who skipped past c3-24. The write stays once only.
  */
 export const INBOX_CARD_CLIPS: ReadonlySet<string> = new Set([INBOX_CARD_CLIP, 'c3-08', 'c3-09'])
 /** The live targets that are the Inbox itself: its sidebar row, its card, its answers. */
@@ -164,7 +164,7 @@ export function inboxOnlyClip(chapter: Pick<CourseChapter, 'clips'>, clipId: str
   return live.length > 0 && live.every((st) => INBOX_TARGETS.has(st.target))
 }
 
-/** The card chapter 3's Inbox shows when it has none (YAZ-5412): chapter 2's example (`example` on c2-15, c2-16, c2-17). */
+/** The card chapter 3's Inbox shows when it has none (YAZ-5412): chapter 2's example (`example` on c2-32, c2-33, c2-17). */
 export const INBOX_EXAMPLE = {
   title: 'Protein',
   front: 'Your body builds and repairs with protein.',
