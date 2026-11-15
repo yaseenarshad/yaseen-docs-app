@@ -13,13 +13,27 @@ const openTwin = (id: string): string => (id.startsWith('folder') && !id.endsWit
  * YAZ-5488: a row with a `path` (a file or folder on disk) shows its vault's own icon when icons.json gives it one (a
  * pick, then a name rule, `treeIcons.ts`): Material's file, as the Mac. The phone has no Material tables, so it tries
  * the open twin (an open folder), the icon, then Material's `.clone` file; none loads: the kind's glyph.
+ * YAZ-5545: a drawing and a diagram are Material's `excalidraw` and `drawio` (`styles.css`), the Mac's default set; a
+ * draw.io picture is the Mac's image icon (`diagramPictureIcon`). An icon of the user's own still wins.
  */
 export function RowIcon({ kind, open = false, path }: { kind: TreeKind; open?: boolean; path?: string }) {
   const icons = useTreeIconsHere()
   const name = path === undefined ? '' : path.slice(path.lastIndexOf('/') + 1)
   const own = path === undefined ? null : icons.pick(path, name, kind === 'folder' ? 'folder' : 'file')
   if (own !== null) return <OwnIcon key={`${own}${open}`} id={own} open={open && kind === 'folder'} kind={kind} />
+  const picture = kind === 'diagram' ? diagramPictureIcon(name) : null
+  if (picture !== null) return <OwnIcon key={picture} id={picture} open={false} kind={kind} />
   return <Glyph kind={kind} open={open} />
+}
+
+/**
+ * YAZ-5545: the Mac's Material icon of a draw.io PICTURE (`flow.drawio.svg`, `flow.drawio.png`): the Mac reads it as an
+ * image (`fileKind`: its last extension), and Material by its longest known extension, `svg` or `png` (`image`), not
+ * `drawio`. Null for any other name: a `.drawio` is Material's `drawio`, inline (`styles.css`).
+ */
+export function diagramPictureIcon(name: string): string | null {
+  const m = /\.drawio\.(svg|png)$/i.exec(name)
+  return m === null ? null : m[1].toLowerCase() === 'svg' ? 'svg' : 'image'
 }
 
 /** The kind's glyph, in the vault's colour where it set one (`treeIcons.ts`). */
