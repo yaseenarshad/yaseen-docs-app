@@ -243,10 +243,11 @@ describe('a folder row (D31/D32)', () => {
     expect(host.writeValues).toHaveBeenCalledExactlyOnceWith(USERS_FILE, [{ key: 'status', value: 'open', prevRaw: 'done' }])
   })
 
-  it('a board card’s title opens the folder page', () => {
+  it('a board card’s title opens the folder page as a click on any card does (YAZ-5582: a background tab by default)', () => {
     const { el, host } = mount(`views:\n  - type: board\n    name: B\n    order: [file.name]\n    groupBy:\n      property: note.status\n    subfolders: rows\n`)
     click([...el.querySelectorAll('.view-board__title')].find((t) => titleOf(t) === 'Users')!)
-    expect(host.openFolderPage).toHaveBeenCalledExactlyOnceWith('/vault/Schema/Users')
+    expect(host.openBackground).toHaveBeenCalledExactlyOnceWith('/vault/Schema/Users')
+    expect(host.openFolderPage).not.toHaveBeenCalled()
   })
 
   it('"+ New" makes a page, never a folder', () => {

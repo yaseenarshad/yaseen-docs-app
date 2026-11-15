@@ -94,6 +94,11 @@ export interface PageWindowMemory {
   width: number | null
   height: number | null
   pinned: boolean
+  /**
+   * The Properties panel's open state (YAZ-3746 13Q): each page the card shows starts as the last one left it — over its
+   * ‹ › steps, and over a click on another card that swaps the page in this same card (YAZ-5582). Absent: closed.
+   */
+  properties?: { current: boolean | null }
 }
 
 /**
@@ -256,8 +261,8 @@ export function PageWindow({ renderEditor, link, titleOf, memory, onOpenInTab, o
   const at = useRef(-1)
   const closeRef = useRef(onClose)
   closeRef.current = onClose
-  /** The Properties panel's open state across the card's steps (YAZ-3746 13Q): each page starts as the last one left it. */
-  const propertiesOpen = useRef<boolean | null>(null)
+  /** The Properties panel's open state across the card's steps and swaps (YAZ-3746 13Q, YAZ-5582): on the memory, so a swap keeps it. */
+  const propertiesOpen = (memory.properties ??= { current: null })
 
   useLayoutEffect(() => {
     const anchor = anchorRef.current

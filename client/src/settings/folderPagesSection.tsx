@@ -68,6 +68,11 @@ const CALENDAR_SCALE_OPTIONS: readonly Option<FolderPagesSettings['calendarScale
   { label: 'Month', value: 'month' },
   { label: 'Week', value: 'week' },
 ]
+/** YAZ-5582: a plain click on a Calendar or Board card. */
+const CARD_CLICK_OPTIONS: readonly Option<FolderPagesSettings['cardClickOpens']>[] = [
+  { label: 'Mini window', value: 'window' },
+  { label: 'Background tab', value: 'background' },
+]
 const CARD_TITLES_OPTIONS: readonly Option<FolderPagesSettings['cardTitles']>[] = [
   { label: 'Clip', value: 'clip' },
   { label: 'Wrap', value: 'wrap' },
@@ -176,6 +181,8 @@ export const FOLDER_PAGES_SECTION: SettingsSection = {
         // YAZ-4848: what a subfolder's row shows beside its title, in every view.
         row('folderIcons', 'Folder icon', ON_OFF_OPTIONS, { hint: "A subfolder's row shows the folder icon before its title. A view's settings can say otherwise.", keywords: ['folder', 'icon', 'subfolder', 'row'] }),
         row('folderCounts', 'Pages inside count', ON_OFF_OPTIONS, { hint: 'A subfolder\'s row shows how many pages its page holds, as "2 inside". A view\'s settings can say otherwise.', keywords: ['folder', 'count', 'inside', 'pages', 'number', 'subfolder', 'row'] }),
+        // YAZ-5582: a Calendar's or Board's View settings can say otherwise ("Same as Settings" follows this).
+        row('cardClickOpens', 'Clicking a card opens', CARD_CLICK_OPTIONS, { hint: 'A click on a card in a Calendar or a Board. ⌘-click still opens a background tab, ⌥-click the right panel, ⇧↩ the mini window. A view’s settings can say otherwise.', keywords: ['click', 'card', 'open', 'mini window', 'background tab', 'tab', 'calendar', 'board'] }),
         row('calendarScale', 'Calendar opens in', CALENDAR_SCALE_OPTIONS, { keywords: ['calendar', 'month', 'week'] }),
         row('cardTitles', 'Calendar card titles', CARD_TITLES_OPTIONS, { keywords: ['calendar', 'card', 'titles', 'wrap', 'clip'] }),
         row('hideWeekends', 'Calendar hides weekends', ON_OFF_OPTIONS, { hint: 'Monday to Friday only. A weekend page shows on the Friday before.', keywords: ['calendar', 'weekends', 'saturday', 'sunday', 'hide'] }),

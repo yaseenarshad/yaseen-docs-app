@@ -2014,6 +2014,8 @@ export const FOLDER_PAGE_CHOICES = {
   // YAZ-4798: a grouped table's group lines, the three choices of Settings › Sidebar › Level lines (`TocLines`), and their look (`SidebarLineStyle`).
   groupLines: ['hover', 'always', 'off'],
   groupLineStyle: ['plain', 'thread'],
+  // YAZ-5582: what a plain click on a Calendar or Board card opens. A background tab first: a Calendar's click before the setting.
+  cardClickOpens: ['background', 'window'],
 } as const
 
 /**
@@ -2084,6 +2086,11 @@ export interface FolderPagesSettings {
    * text), `off`. A folder's `column_marks` beats it.
    */
   columnMarks: (typeof FOLDER_PAGE_CHOICES.columnMarks)[number]
+  /**
+   * "Clicking a card opens" (YAZ-5582): a plain click on a Calendar or Board card opens its page in a `background` tab
+   * or in the folder page's mini `window`. A view can say otherwise (`clickOpens`). ⌘, ⌥ and ⇧ keep their own meaning.
+   */
+  cardClickOpens: (typeof FOLDER_PAGE_CHOICES.cardClickOpens)[number]
 }
 
 export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
@@ -2122,6 +2129,7 @@ export const DEFAULT_FOLDER_PAGES: FolderPagesSettings = {
   showOtherFiles: true,
   inheritColumns: true,
   columnMarks: 'icon',
+  cardClickOpens: 'background',
 }
 
 export interface SettingsState {
