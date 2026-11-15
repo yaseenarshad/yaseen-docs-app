@@ -71,7 +71,7 @@ import { landOn } from '../editor/toc/tocMotion'
 import { cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import { pageCardIn, type CardPlace } from '../editor/card/cardOpen'
 import { recordAt } from '../editor/card/embedCard'
-import { readPagePlace, showPagePlace, type PagePlace } from '../editor/pagePlace'
+import { keepPlace, readPagePlace, showPagePlace, type PagePlace } from '../editor/pagePlace'
 import { readPageViewOf } from '../lib/pageView'
 import { READ_ONLY_EDIT, ReadOnlyEditEvent } from '../editor/readOnlyEdit'
 import { KeyLabel } from '../keys/KeyLabel'
@@ -344,6 +344,9 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   const shownCrepe = useRef<{ path: string; crepe: ReturnType<typeof createCrepe>; el: HTMLElement; up: Promise<void> } | null>(null)
   /** Where the editor stood as the layer went back to reading (YAZ-5164): put back once the reading Crepe is up, one time. */
   const back = useRef<{ path: string; top: PagePlace } | null>(null)
+  /** The stop of that place, kept while the reading Crepe still draws (round 2); it ends at the person's first scroll. */
+  const keeping = useRef<(() => void) | null>(null)
+  useEffect(() => () => keeping.current?.(), [])
   useEffect(() => {
     const parent = mountRef.current
     const prev = shownCrepe.current
@@ -416,8 +419,9 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
       const from = back.current
       if (from !== null && from.path === path && scroller !== null) {
         back.current = null
-        showPagePlace(editorViewOf(crepe), scroller, from.top)
-        requestAnimationFrame(() => live && showPagePlace(editorViewOf(crepe), scroller, from.top))
+        // Again while the blocks above still draw (card embeds, pictures), until the person scrolls (round 2).
+        keeping.current?.()
+        keeping.current = keepPlace(scroller, () => live && showPagePlace(editorViewOf(crepe), scroller, from.top))
       }
       setReady(crepe)
       setShown('read')

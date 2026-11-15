@@ -317,10 +317,12 @@
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
 }
-/* The line between two sides: the render's rule (`.card__rule`), across the card, selectable as one block. */
+/* The line between two sides: the render's rule (`.card__rule`), across the card, selectable as one block. Its room
+   is the read rule's (16 px each side, `.card .card__rule` below): Done draws side 2 where Edit card had it (YAZ-5164
+   round 2: 12 px here moved every line of side 2 by 8 px). */
 .card .card__side-break {
   height: 1px;
-  margin: 12px -16px;
+  margin: 16px -16px;
   background: var(--border);
   position: relative;
 }

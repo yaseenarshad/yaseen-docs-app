@@ -79,7 +79,14 @@ vi.mock('../editor/createCrepe', () => ({
   editorViewOf: (crepe: Crepe) => ({ dom: crepe.opts.root.firstChild, state: {}, dispatch: folds.dispatch }),
 }))
 /** Where the reading layer stands (YAZ-5164): jsdom draws no boxes; the real reading is in pagePlace.test.ts. */
-vi.mock('../editor/pagePlace', () => ({ readPagePlace: vi.fn(() => null), showPagePlace: vi.fn(() => false) }))
+vi.mock('../editor/pagePlace', () => ({
+  readPagePlace: vi.fn(() => null),
+  showPagePlace: vi.fn(() => false),
+  keepPlace: vi.fn((_scroller: Element, put: () => void) => {
+    put()
+    return () => undefined
+  }),
+}))
 const folds = vi.hoisted(() => ({ dispatch: vi.fn(), next: 'collapse' as 'collapse' | 'expand' | 'none', runs: [] as boolean[] }))
 /** The table of contents' landing (YAZ-5164: a page opened at a card lands as a jump from the outline does), recorded. */
 const landed = vi.hoisted(() => vi.fn())

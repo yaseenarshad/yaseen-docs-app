@@ -20,7 +20,7 @@ import { copyText } from '../editor/linkMenu'
 import { isCardNode } from '../editor/card/cardBlockLine'
 import { cardBlockViewAt, cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import type { CardTitleField } from '../editor/card/cardEditor'
-import { freezeScroll, readSwapPlace, scrollerOf, showSwapPlace, type SwapPlace } from '../editor/pagePlace'
+import { freezeScroll, keepPlace, readSwapPlace, scrollerOf, showSwapPlace, type SwapPlace } from '../editor/pagePlace'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
 import { cardResolverOf, type WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
 import type { ExploreVault } from '../explore/ExplorePage'
@@ -256,11 +256,16 @@ function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () =
     held.current = null
     hold.thaw()
     const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
-    if (box !== null) showSwapPlace(hold.scroller, box, hold.place)
+    keeping.current?.()
+    // Again while the new card still draws (its pictures, its strip), until the person scrolls.
+    if (box !== null) keeping.current = keepPlace(hold.scroller, () => showSwapPlace(hold.scroller, box, hold.place))
   }, [shown, editing])
+  /** The stop of the place kept after the last swap. */
+  const keeping = useRef<(() => void) | null>(null)
   useEffect(
     () => () => {
       held.current?.thaw()
+      keeping.current?.()
       dropEarly()
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -270,6 +275,8 @@ function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () =
     shown,
     beforeDone: () => {
       dropEarly()
+      // Edit card already over (a Read only vault's Lock now ended it first): no Done is coming to take the hold.
+      if (!shownEditing.current) return
       const box = editorRef.current?.querySelector('.card') ?? null
       const scroller = box === null ? null : scrollerOf(box)
       if (box === null || scroller === null) return
