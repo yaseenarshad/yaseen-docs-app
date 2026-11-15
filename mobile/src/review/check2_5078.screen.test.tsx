@@ -133,7 +133,7 @@ describe('checker round 2: the 400 ms guard (YAZ-5226)', () => {
 })
 
 describe('checker round 2: the stuck guard, ways out', () => {
-  it('G6 (probe): after the fast Undo: does Up next or a filter change free it?', async () => {
+  it('G6: after the fast Undo, Up next and a filter change leave the card free (no stuck guard)', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(3)) })
     await raw(h, 'Remembered')
     await raw(h, 'Undo')
@@ -148,7 +148,7 @@ describe('checker round 2: the stuck guard, ways out', () => {
     if (due) { await act(async () => due.click()); await h.settle() }
     await real(600)
     tries.push(`filter Due today: guard ${guarded(h)} head ${h.head()}`)
-    console.log('[G6] ' + tries.join(' | '))
+    expect(tries).toEqual(['Up next: guard false head DC-1', 'filter Due today: guard false head DC-1'])
   })
 })
 
@@ -196,21 +196,24 @@ describe('checker round 2: VoiceOver (YAZ-5229)', () => {
     await h.click('More card actions')
     const menu = [...h.host.querySelectorAll('[role="menu"] *, .review__menu button')].filter((e) => e.matches('button, [role="menuitem"]')).map((e) => `${e.getAttribute('role') ?? e.tagName.toLowerCase()}:${(e.getAttribute('aria-label') ?? e.textContent ?? '').trim()}`)
     const more = h.button('More card actions')
-    console.log('[V3] ⋯ items:', JSON.stringify(menu), '| ⋯ aria-expanded', more?.getAttribute('aria-expanded'), 'haspopup', more?.getAttribute('aria-haspopup'))
+    expect(menu).toEqual(['menuitem:Undo last answer', 'menuitem:Up next', 'menuitem:Archive card', 'menuitem:Fix later', 'menuitem:Title on the frontShow', 'menuitem:Open page'])
+    expect([more?.getAttribute('aria-expanded'), more?.getAttribute('aria-haspopup')]).toEqual(['true', 'menu'])
     await h.click('More card actions')
     await h.click('Remembered')
     await h.s.git.push({ 'p.md': page('P', dueCards(2)[1]) })
     await h.wait(5_000)
     const lost = h.host.querySelector('.review__lost')
-    console.log('[V3] lost line role', lost?.getAttribute('role'), '| spoken:', lost === null ? null : spoken(lost))
+    expect(lost?.getAttribute('role')).toBe('alert')
+    expect(spoken(lost!)).toContain('1 answer could not be saved')
     const discard = [...h.host.querySelectorAll('.review__lost button')].map((b) => b.getAttribute('aria-label') ?? b.textContent)
-    console.log('[V3] lost buttons:', JSON.stringify(discard))
-    const d = h.host.querySelector<HTMLButtonElement>('.review__lost button')
-    if (d) {
-      await act(async () => d.click())
-      await h.settle()
-      const dlg = document.querySelector('[role="dialog"], [role="alertdialog"], dialog')
-      console.log('[V3] confirm:', dlg?.getAttribute('role') ?? dlg?.tagName, '| label', dlg?.getAttribute('aria-label') ?? dlg?.getAttribute('aria-labelledby'), '| text', (dlg?.textContent ?? '').replace(/\s+/g, ' ').slice(0, 200), '| focus', document.activeElement?.textContent)
-    }
+    expect(discard).toEqual(['Discard: Remembered · DC-1'])
+    const d = h.host.querySelector<HTMLButtonElement>('.review__lost button')!
+    await act(async () => d.click())
+    await h.settle()
+    const dlg = document.querySelector('[role="dialog"], [role="alertdialog"], dialog')
+    expect(dlg?.getAttribute('role')).toBe('alertdialog')
+    expect(dlg?.getAttribute('aria-label') ?? dlg?.getAttribute('aria-labelledby')).toBe('Discard answer')
+    expect((dlg?.textContent ?? '').replace(/\s+/g, ' ')).toContain('Discard your answer "Remembered" to "DC-1"? It cannot be taken back.')
+    expect(document.activeElement?.textContent).toBe('Cancel')
   })
 })
