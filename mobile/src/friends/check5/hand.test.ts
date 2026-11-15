@@ -119,7 +119,7 @@ it('H1b (YAZ-5399): the home vault repo is RENAMED (or transferred) on GitHub: G
   expect(m.bfs('B', listAt(m).index.stats).hit).toBe(false)
 })
 
-it('H1c (YAZ-5399): the way out stops half way (after its deletes): the app offers it again, and the second run ends it', async () => {
+it('H1c (YAZ-5399): the way out stops half way (at its new list; YAZ-5462: before its deletes): the app offers it again, and the second run ends it', async () => {
   const m = await world(1)
   const a = m.devs.A[0] as any
   const mine = bMine(m)
@@ -143,13 +143,15 @@ it('H1c (YAZ-5399): the way out stops half way (after its deletes): the app offe
   // The stopped run's calls after the stop never answer (the app is closed); let it reach its next call first.
   for (let i = 0; i < 200; i++) await null
   expect(notes(m)).toEqual([expect.objectContaining({ home: 'ali/vault' })])
-  expect(m.gist(mine)).toBeUndefined()
+  // YAZ-5462: the new list comes first, the deletes after it: at this stop nothing is deleted yet.
+  expect(m.gist(mine)).toBeDefined()
   a.dead = false
   a.lock = undefined
   m.arm(a)
   a.list = m.newList(a)
   expect((await a.list.rows()).kind).toBe('home-gone')
   expect((await a.list.restart('ali/notes')).kind).toBe('done')
+  expect(m.gist(mine)).toBeUndefined()
   const now = listAt(m)
   expect(notes(m)).toEqual([expect.objectContaining({ home: 'ali/notes' })])
   expect(m.world.owned('ali').filter((g) => NUMBERS_FILE in g.files).map((g) => g.id)).toEqual([now.index.stats])

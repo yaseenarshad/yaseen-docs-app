@@ -19,6 +19,10 @@ export interface Run6 {
   fileGone: number
   wayOut: number
   refusedWhileThere: number
+  /** How the list file went (round 7: `empty` is the vault made again with no commit, YAZ-5464). */
+  how: { deleted: number; remade: number; empty: number }
+  /** Way outs that stopped after their new list and were finished by the next open of the list (YAZ-5462). */
+  finishedByOpen: number
   /** I2 findings for C after the way out (set apart: the way out removed C by design). */
   i2AfterWayOut: number
   count: Record<(typeof KEYS6)[number], number>
@@ -26,7 +30,7 @@ export interface Run6 {
 }
 
 export async function runPlans6(from: number, count: number, knobs: Knobs = { ...STALE5, pContents404: 0.01 }): Promise<Run6> {
-  const out: Run6 = { runs: 0, events: 0, crashes: 0, stale: 0, removesStarted: 0, fileGone: 0, wayOut: 0, refusedWhileThere: 0, i2AfterWayOut: 0, count: Object.fromEntries(KEYS6.map((k) => [k, 0])) as Run6['count'], bad: [] }
+  const out: Run6 = { runs: 0, events: 0, crashes: 0, stale: 0, removesStarted: 0, fileGone: 0, wayOut: 0, refusedWhileThere: 0, how: { deleted: 0, remade: 0, empty: 0 }, finishedByOpen: 0, i2AfterWayOut: 0, count: Object.fromEntries(KEYS6.map((k) => [k, 0])) as Run6['count'], bad: [] }
   for (let s = from; s < from + count; s++) {
     let m
     try {
@@ -43,6 +47,8 @@ export async function runPlans6(from: number, count: number, knobs: Knobs = { ..
     out.fileGone += m.st6.fileGone
     out.wayOut += m.st6.wayOut
     out.refusedWhileThere += m.st6.refusedWhileThere
+    for (const k of ['deleted', 'remade', 'empty'] as const) out.how[k] += m.st6.how[k]
+    out.finishedByOpen += m.st6.finishedByOpen
     out.i2AfterWayOut += m.i2AfterWayOut
     const v = violations6(m)
     let first: string | null = null

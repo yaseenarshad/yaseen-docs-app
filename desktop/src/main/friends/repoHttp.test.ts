@@ -46,10 +46,21 @@ it('`contents` 404 "No commit found" (a replica that lags) is STALE_READ, never 
   const { w, wire } = setup()
   const port = macRepoPort(T, wire.fetch, 'ali/vault', 'main')
   const head = await port.head()
-  if (head === 'unchanged') throw new Error('no head')
+  if (head === 'unchanged' || head.sha === null) throw new Error('no head')
   w.repos!.stale = { chance: 0, contents404: 1, rand: () => 0 }
   expect(listErrorCode(await port.read(head.sha, LIST_PATH).catch((e: unknown) => e))).toBe('STALE_READ')
   w.repos!.stale = null
   expect(await port.read(head.sha, LIST_PATH)).toMatch(/"rev":3/)
   expect(await port.read(head.sha, '.yaseendocs/none.json')).toBeNull()
+})
+
+it('YAZ-5464: a repo made again EMPTY (409 "Git Repository is empty"): no list file (missing), never an error; another 409 stays one', async () => {
+  const { w, wire } = setup()
+  w.repos!.remove('ali/vault')
+  w.repos!.createEmpty('ali/vault', 'ali')
+  const port = macRepoPort(T, wire.fetch, 'ali/vault', 'main')
+  expect(await port.head()).toEqual({ sha: null, etag: null })
+  expect(await readRepoList(port)).toEqual({ kind: 'missing', sha: null, etag: null })
+  const other = async () => new Response(JSON.stringify({ message: 'Repository rule violations found' }), { status: 409, headers: { 'content-type': 'application/json' } })
+  await expect(macRepoPort(T, other as never, 'ali/vault', 'main').head()).rejects.toThrow(/409/)
 })

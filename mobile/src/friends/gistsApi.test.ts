@@ -126,4 +126,19 @@ describe('gistsApi (YAZ-5082)', () => {
     }
     expect(JSON.stringify(err) + String(err) + (err as Error).stack).not.toContain(TOKEN)
   })
+  it('YAZ-5464 (nit): `listAll` reads EVERY page; past its page limit it stops with TOO_MANY_GISTS (never a silent cut); `list` keeps its 1,000', async () => {
+    const page = (n: number) => Array.from({ length: n }, (_, i) => ({ id: (i + 1).toString(16).padStart(32, '0'), description: '', files: { 'a.json': {} }, created_at: '2026-11-14T06:00:00Z', updated_at: '2026-11-14T06:00:00Z' }))
+    const pagesAsked: number[] = []
+    const fetch = async (url: string) => {
+      const p = Number(new URL(url).searchParams.get('page'))
+      pagesAsked.push(p)
+      return new Response(JSON.stringify(page(p <= 12 ? 100 : 7)), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
+    const api = gistsApi(githubClient(TOKEN, { fetch: fetch as never }))
+    expect(await api.list()).toHaveLength(1000)
+    pagesAsked.length = 0
+    expect(await api.listAll!(30)).toHaveLength(1207)
+    expect(pagesAsked).toEqual(Array.from({ length: 13 }, (_, i) => i + 1))
+    await expect(api.listAll!(12)).rejects.toMatchObject({ code: 'TOO_MANY_GISTS' })
+  })
 })

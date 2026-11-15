@@ -1,5 +1,5 @@
 import { DESCRIPTIONS, emptyNumbers, gistErrorCode, listPatch, type EntryKind, type GistsApi, type IndexHandle } from '@shared/friendGists'
-import { BrokenList, NewerList, latestList, listErrorCode, openFriendsList, restartList, writeList } from '@shared/friendListHome'
+import { BrokenList, NewerList, finishWayOut, latestList, listErrorCode, openFriendsList, restartList, wayOutOf, writeList } from '@shared/friendListHome'
 import { emptyBudget, recordUpdate, type GistBudget } from '@shared/friendSend'
 import { deviceZone } from '@shared/friendStats'
 import {
@@ -125,9 +125,10 @@ export interface FriendsList {
   /**
    * YAZ-5399, the way out when the home vault is gone: ends ALL sharing (every pointer and numbers gist of mine is
    * deleted) and starts a new, empty list in `vault` (`restartList`). Refused while the home vault answers with its list
-   * file (YAZ-5444: a home that lost only its list file gets the same way out).
+   * file (YAZ-5444: a home that lost only its list file gets the same way out). `too-many-gists` (YAZ-5464): GitHub
+   * would not list every gist of mine, so nothing was changed (`TOO_MANY_GISTS`).
    */
-  restart(vault: string): Promise<{ kind: 'done'; vault: string } | { kind: 'home-is-there' } | { kind: 'bad-target' } | Unavailable>
+  restart(vault: string): Promise<{ kind: 'done'; vault: string } | { kind: 'home-is-there' } | { kind: 'bad-target' } | { kind: 'too-many-gists' } | Unavailable>
   /** One paste box for each kind of link: a friend link (`paste`), a group link (`groups.join`), a join request (`groups.request`). */
   pasteAny(text: string): Promise<PasteResult | JoinResult | JoinRequest | Unavailable>
 }
@@ -224,6 +225,9 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     return list.vaults.filter((v) => repos.includes(v.repo.toLowerCase())).map(vaultId)
   }
 
+  /** The friends API of the action that runs now (under the lock), for `refreshed` (YAZ-5462). */
+  let apiNow: GistsApi | null = null
+
   /** Remembers what the screens need offline: a friend or not, and the settings. */
   async function remember(h: IndexHandle | null): Promise<void> {
     handle = h
@@ -239,7 +243,9 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   /** This session's copy of the list, read again with its ETag (a free 304 when nothing changed, also on another device). */
   async function refreshed(h: IndexHandle): Promise<IndexHandle | Unavailable> {
     try {
-      const next = await latestList(h)
+      let next = await latestList(h)
+      // YAZ-5462: a way out that stopped after its new list (this session's copy is read again): its deletes end here.
+      if (wayOutOf(next) !== null && apiNow !== null) next = await finishWayOut(apiNow, next, opts)
       if (next !== h) await remember(next)
       return next
     } catch (err) {
@@ -322,6 +328,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     if (friends.kind !== 'ok') return { kind: friends.kind }
     return lock('notecards-friends', async () => {
       try {
+        apiNow = friends.api
         return await fn(friends.api, friends.account.login, friends.vault)
       } catch (err) {
         if (err instanceof VaultClosedError) return { kind: 'no-account' as const }
