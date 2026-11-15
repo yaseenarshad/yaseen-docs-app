@@ -50,7 +50,8 @@ import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/mo
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { detectTimeFormat, formatTime, readTime } from '@shared/timeFormat'
+import { minutesOf, nowPlace as placeAmong, rowTimes as timesOfTexts, type NowPlace } from '@shared/tableSlots'
+import { detectTimeFormat, formatTime } from '@shared/timeFormat'
 import { cellTextAt, rowNoDim, tableHasMerge } from './cells'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
 import { tablerIcon } from './tableIcons'
@@ -59,31 +60,11 @@ import { calendarDaySetting, timeFormatSetting } from './timeFormatSetting'
 import type { TableLookPlace } from './tableLook'
 import './tableCalendar.css'
 
-/** Minutes from midnight of `date`, local time. */
-export const minutesOf = (date: Date): number => date.getHours() * 60 + date.getMinutes()
+export { minutesOf, type NowPlace }
 
-/** Where now is in a calendar table: its now row (an index of `table`'s rows) and how far down its slot, and the first row that is not past. */
-export interface NowPlace {
-  row: number | null
-  fraction: number
-  /** Body rows before this index are past. */
-  pastEnd: number
-}
-
-/** Now in `table` at `minutes` from midnight; `null` when it is no calendar table or holds no time. */
+/** Now in `table` at `minutes` from midnight (the one slot rule, `shared/tableSlots.ts`); `null` when it is no calendar table or holds no time. */
 export function nowPlace(table: ProseNode, minutes: number): NowPlace | null {
-  const slot = table.attrs.calendar as number
-  if (!(slot > 0)) return null
-  const starts = rowTimes(table).flatMap(({ time }, i) => (time === null ? [] : [{ row: i + 1, start: time }]))
-  if (starts.length === 0) return null
-  const slots = starts.map(({ row, start }, i) => ({ row, start, end: starts[i + 1]?.start ?? start + slot }))
-  // Today's minute first, then the same minute tomorrow (a row after midnight).
-  for (const at of [minutes, minutes + 1440]) {
-    const now = slots.find(({ start, end }) => start <= at && at < end)
-    if (now !== undefined) return { row: now.row, fraction: (at - now.start) / (now.end - now.start), pastEnd: now.row }
-  }
-  const next = slots.find(({ start }) => start > minutes)
-  return { row: null, fraction: 0, pastEnd: next?.row ?? table.childCount }
+  return placeAmong(columnATimes(table), table.attrs.calendar as number, minutes)
 }
 
 /** A body row and its time from the first day's midnight, or `null`. */
@@ -92,18 +73,19 @@ interface BodyRow {
   time: number | null
 }
 
+/** Each row's time (`shared/tableSlots.ts`), the header row's `null`: column A through the map (YAZ-4792), so a row a merged time cell covers has no time of its own. */
+function columnATimes(table: ProseNode): Array<number | null> {
+  const texts: Array<string | null> = []
+  table.forEach((_, __, r) => void texts.push(r === 0 ? null : cellTextAt(table, r, 0)))
+  return timesOfTexts(texts)
+}
+
 /** Each body row of `table` with its time from the first day's midnight (a time earlier than the one above is a day on), or `null`. */
 function rowTimes(table: ProseNode): BodyRow[] {
+  const times = columnATimes(table)
   const out: BodyRow[] = []
-  let day = 0
-  let last = -1
   table.forEach((row, _, r) => {
-    if (r === 0) return
-    // Column A through the map (YAZ-4792): a row a merged time cell covers has no time of its own.
-    const time = readTime(cellTextAt(table, r, 0))
-    if (time !== null && time < last) day += 1440
-    if (time !== null) last = time
-    out.push({ row, time: time === null ? null : time + day })
+    if (r > 0) out.push({ row, time: times[r] })
   })
   return out
 }
