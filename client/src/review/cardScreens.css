@@ -744,12 +744,6 @@
   font-size: 11px;
   line-height: 16px;
 }
-/* YAZ-5097: the line before To fix (once before Archived, YAZ-5046), across the menu's three columns. */
-.card-inbox__filter-sep {
-  grid-column: 1 / -1;
-  margin: 4px 0;
-  border-top: 1px solid var(--border);
-}
 .card-inbox__filter-name {
   display: inline-flex;
   align-items: center;
@@ -1239,74 +1233,6 @@ body.card-inbox--sizing {
   color: var(--fg);
   background: var(--bg-hover);
 }
-/* The To fix list (YAZ-5097; the Archived list's look, YAZ-5046, kept when YAZ-5319 removed that list): calm rows in
-   the card's place, to look at. Each: the title, the page (quiet), then Fixed on the right. It scrolls inside the panel. */
-.card-inbox__archived {
-  margin: 0;
-  padding: 6px 0;
-  list-style: none;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-.card-inbox__archived-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 8px;
-}
-.card-inbox__archived-row + .card-inbox__archived-row {
-  border-top: 1px solid var(--border);
-}
-.card-inbox__archived-open {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  color: var(--fg);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-.card-inbox__archived-open:hover {
-  background: var(--bg-hover);
-}
-.card-inbox__archived-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.card-inbox__archived-page {
-  flex: none;
-  max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-muted);
-  font-size: 12px;
-}
-.card-inbox__archived-unarchive {
-  flex: none;
-  padding: 2px 10px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 12px;
-}
-.card-inbox__archived-unarchive:hover {
-  background: var(--bg-hover);
-}
-/* A To fix row of a card with no title: its ID, quiet. */
-.card-inbox__archived-title.card__title--empty {
-  color: var(--fg-muted);
-  font-weight: 400;
-}
 /* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`CardInboxHints`), laid out off the
    row so it can still be measured. */
 .card-inbox__hints {
@@ -1393,27 +1319,78 @@ body.card-inbox--sizing {
 .card-preview__close:hover {
   background: var(--bg-hover);
 }
-/* YAZ-5322: where new cards come from. On the New cards row, between the name and the count: "from Spanish ›",
-   grey "from All folders ›" with no pick; its own click target. The chip by the filter while a folder is picked. */
+/* YAZ-5322: where new cards come from; YAZ-5434 (A1, "tree corner line"): the pick on a second, small line under
+   New cards — a thin corner from under the New cards glyph bends into a 12px folder glyph, the name and a small ▾, in
+   the secondary text. `contain: inline-size` keeps the line out of the menu's width (the widest plain row sets it; a
+   long name gets "…"). One wash for the pointer over both lines; the line's own text darkens under the pointer. */
+.card-inbox__new-group {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 5px;
+}
+.card-inbox__new-group:hover {
+  background: var(--accent-soft);
+}
+.card-inbox__new-group > .card-inbox__filter-item:hover:not(:disabled) {
+  background: none;
+}
+.card-inbox__filter-row[data-from] > .card-inbox__reset {
+  align-self: start;
+  margin-top: 6px;
+  line-height: 18px;
+}
 .card-inbox__new-from {
-  max-width: 160px;
-  overflow: hidden;
-  margin-left: 4px;
-  padding: 1px 4px;
-  border-radius: 4px;
+  contain: inline-size;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  /* The corner's foot (17px, the glyph's middle, + 9px) and a 3px gap before the folder glyph. */
+  padding: 0 10px 6px 30px;
+  border: 0;
+  background: none;
   color: var(--fg-muted);
-  font-weight: 400;
+  font: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  text-align: left;
   white-space: nowrap;
-  text-overflow: ellipsis;
   cursor: pointer;
+}
+/* The tree corner: 1px, from under the New cards glyph (its middle, 17px in) down to the folder glyph's middle. */
+.card-inbox__new-from::before {
+  content: '';
+  position: absolute;
+  left: 16.5px;
+  top: -6px;
+  width: 9px;
+  height: 14px;
+  border-left: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--fg-muted) 60%, transparent);
+  border-bottom-left-radius: 4px;
+  pointer-events: none;
+}
+.card-inbox__new-from .card-inbox__glyph {
+  flex: none;
+}
+.card-inbox__new-from-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-inbox__new-from[data-on] .card-inbox__new-from-name {
   color: var(--fg);
   font-weight: 500;
 }
 .card-inbox__new-from:hover {
-  background: var(--bg-hover);
   color: var(--fg);
+}
+.card-inbox__new-from:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 5px;
 }
 .card-inbox__pick-chip {
   flex: none;

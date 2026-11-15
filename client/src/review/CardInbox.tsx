@@ -88,9 +88,9 @@
  *    button; nothing waiting, the screen is as before. The cards menu has the same Add (`CardInboxBar`). The add's
  *    line takes the last answer's line, "+ Added 10 new cards for today · Undo ⌘Z": its Undo, and ⌘Z, take the add
  *    back while it is the last thing done (the hook's own undo).
- *  - TO FIX (YAZ-5097, "Fix later"): the ⋯ row's Fix later / Remove Fix later writes the line's `fix`; the card stays in
- *    review, and its head says "To fix", quietly. The cards menu's To fix row lists the scope's marked cards in the
- *    card's place: a click opens the card window in Edit card (the job is the fix), and "Fixed" takes the mark off.
+ *  - TO FIX (YAZ-5097, "Fix later") never shows in the Inbox (YAZ-5430, Yaseen: "As long as to fix doesn't show up in
+ *    the inbox"): no To fix row, no Fix later in ⋯, no "To fix" on the head. A marked card stays in review. The mark
+ *    shows on the card everywhere else (a page, an embed, its file tab, Explore) and in the Cards table's Card fix status.
  *  - ARCHIVED cards are not listed here (YAZ-5319): a folder page's table shows them (Show cards as rows, Card status
  *    is Archived), and a card's ⋯ menu unarchives it.
  */
@@ -109,8 +109,8 @@ import type { GestureAction } from '@shared/keys'
 import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
-import { isListFilter, type CardReviewApi, type CardReviewSession } from './useCardReview'
-import { ARCHIVE_PATH, FIX_PATH } from './cardInboxIcons'
+import type { CardReviewApi, CardReviewSession } from './useCardReview'
+import { ARCHIVE_PATH } from './cardInboxIcons'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
@@ -145,8 +145,6 @@ export interface CardInboxProps {
   review: CardReviewApi
   session: CardReviewSession
   vaultOf: (path: string) => ExploreVault
-  /** A page's name, for the To fix list's rows (YAZ-5097). */
-  nameOf: (path: string) => string
   /**
    * O, the title and the page name (YAZ-5145): Explore's own page layer for the card's file, reading, at its TOP
    * (YAZ-5022); with `card` (YAZ-5307, Settings › Cards › Inbox: O opens the page at › The card), landed on that card.
@@ -208,7 +206,6 @@ const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
 const ICON_OFF = icon(ARCHIVE_PATH)
 const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
 const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
-const ICON_FIX = icon(FIX_PATH)
 
 /** The last answer's line (YAZ-5025 round 2): its words, its answer, and the session's answer count with it. */
 interface AnswerLine {
@@ -221,40 +218,6 @@ interface AnswerLine {
  * What waits past today's number (YAZ-5042), as the done screen says it: "38 new cards and 3 Up next cards wait for
  * another day." `from` (YAZ-5322): the folders new cards come from, "14 new Spanish cards"; empty for All folders.
  */
-/**
- * A list of cards to look at, not to review: the To fix list (YAZ-5097). Each row: its title (YAZ-5308: off its card
- * line, else its ID; a click opens it in Edit card to fix it, as E does), its page, quiet, and its one action (Fixed).
- * None: one quiet line and the way back to All cards.
- */
-function CardList({ cards, label, empty, open, action, session, nameOf, backToAll }: { cards: CardReviewSession['toFix']; label: string; empty: string; open: (card: CardReviewSession['toFix'][number]) => void; action: { text: string; label?: string; run: (path: string, id: string) => void }; session: CardReviewSession; nameOf: (path: string) => string; backToAll: () => void }) {
-  if (cards.length === 0)
-    return (
-      <div className="card-inbox__done" role="status">
-        <p className="card-inbox__done-line card-inbox__archived-empty">{empty}</p>
-        {session.counts.all > 0 && (
-          <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={backToAll}>
-            {session.counts.all} more in {CARD_FILTERS[0].label}
-          </button>
-        )}
-      </div>
-    )
-  return (
-    <ul className="card-inbox__archived" aria-label={label}>
-      {cards.map((c) => (
-        <li key={`${c.path}\n${c.id}`} className="card-inbox__archived-row">
-          <button type="button" className="card-inbox__archived-open" onMouseDown={(e) => e.preventDefault()} onClick={() => open(c)}>
-            <span className={`card-inbox__archived-title${c.title === undefined ? ' card__title--empty' : ''}`}>{c.title ?? c.id}</span>
-            <span className="card-inbox__archived-page">{nameOf(c.path)}</span>
-          </button>
-          <button type="button" className="explore__button card-inbox__archived-unarchive" aria-label={action.label} onMouseDown={(e) => e.preventDefault()} onClick={() => void action.run(c.path, c.id)}>
-            {action.text}
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKind[], from = ''): string {
   const parts = kinds.map((k) => `${more[k]} ${k === 'new' ? (from === '' ? 'new' : `new ${from}`) : 'Up next'} card${more[k] === 1 ? '' : 's'}`)
   const one = kinds.length === 1 && more[kinds[0]] === 1
@@ -267,7 +230,7 @@ export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kin
 /** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
 
-export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -531,10 +494,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
-          // YAZ-5097: Fix later (round 10, decision 11's ⋯: Archive card, Up next, Fix later, Open card).
-          card.page?.fix === true
-            ? { id: 'fix', label: 'Remove Fix later', icon: ICON_FIX, disabled: false, run: () => void review.setFix(card.path, card.id, false) }
-            : { id: 'fix', label: 'Fix later', icon: ICON_FIX, disabled: card.page === null, run: () => void review.setFix(card.path, card.id, true) },
           { id: 'card', label: 'Open card', icon: ICON_CARD, disabled: false, run: () => openCard(card, cardFile) },
         ]
 
@@ -573,7 +532,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
               <span className="card-inbox__head">
                 <CardId id={card.id} onNotice={onNotice} />
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}
-                {card.page?.fix === true && <span className="card__state card__fix">To fix</span>}
               </span>
             </>
           )}
@@ -586,7 +544,6 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
           bodyRef={bodyRef}
           band={
             card !== null &&
-            !isListFilter(session.filter) &&
             headTitle !== '' && (
               // The title band at the top of the card's frame (YAZ-5308 A3), no label. A card file's title opens its tab; a
               // card in a page's is the page title's own component, a click renames the card (its card line), as in the
@@ -607,9 +564,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             )
           }
         >
-            {session.filter === 'fix' ? (
-              <CardList cards={session.toFix} label="Cards to fix" empty="No cards to fix." open={(c) => editCard(c.path, recordAt(vaultOf(c.path).wikilinks.records, c.path)?.kind === 'card' ? null : { id: c.id, index: c.index })} action={{ text: 'Fixed', label: 'Fixed: remove Fix later', run: (path, id) => void review.setFix(path, id, false) }} session={session} nameOf={nameOf} backToAll={() => review.setFilter('all')} />
-            ) : card === null ? (
+            {card === null ? (
               <div className="card-inbox__done" role="status">
                 {/* YAZ-5043: Due today stopped (its % after the first pass, or done): its own screen, the rest after it. */}
                 {session.end !== null ? (
@@ -645,7 +600,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
         {/* YAZ-5105 round 2: the Reviews strip, as Mochi's, under the card and outside its frame; round 3: as soon as the
             last side shows, its hidden words shown or not; closed again for each card. The buttons' band stays at the
             bottom of the view over it. */}
-        {card?.page != null && !isListFilter(session.filter) && onLastSide && <CardStrip key={cardKey} reviews={card.page.reviews} settings={review.settings} properties={{ values: card.page.properties ?? {} }} />}
+        {card?.page != null && onLastSide && <CardStrip key={cardKey} reviews={card.page.reviews} settings={review.settings} properties={{ values: card.page.properties ?? {} }} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
         {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them.

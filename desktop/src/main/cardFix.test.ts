@@ -1,5 +1,5 @@
 // "Fix later" (YAZ-5097; round 10, addition 3 of YAZ-5055): the mark `fix` on the card line. The phone writes it
-// (YAZ-5073, the `fix` action); the Mac reads it, shows it, sets it, clears it and lists the marked cards ("To fix").
+// (YAZ-5073, the `fix` action); the Mac reads it, shows it, sets it and clears it.
 import { describe, expect, it } from 'vitest'
 import {
   CARD_FIX,
@@ -19,7 +19,6 @@ import {
   withoutCardReviews,
   type CardLine,
 } from '@shared/cardLine'
-import { fixCards } from '@shared/cardSchedule'
 import { moveCardOut, putCardBack } from '@shared/cardConvert'
 import { splitFrontmatter } from '@shared/frontmatter'
 
@@ -58,7 +57,7 @@ describe('the `fix` part (YAZ-5097)', () => {
     expect(write(withCardId(line, 'WIKI-9'))).toBe(`WIKI-9, fix, ${R1}, future-part`)
   })
 
-  it('the index record holds it (`fix: true`), so the To fix count reads no file; a card with none has no key', () => {
+  it('the index record holds it (`fix: true`), so the Card fix status column reads no file; a card with none has no key', () => {
     const page = `# P\n\n\`\`\`card\nHola\n\`\`\`\n<!-- card: WIKI-5, fix, ${R1} -->\n\n\`\`\`card\nAdios\n\`\`\`\n<!-- card: WIKI-6 -->\n`
     const [a, b] = cardRecords(page)
     // YAZ-5308: no line of the text is a title; these cards have none on their card lines.
@@ -124,35 +123,6 @@ describe('`fix` in a card file and through the convert actions', () => {
     const back = putCardBack(left, 'GEO-140', 0, card.content, 'GEO-140')
     expect(isCardFix(pageCards(back)[0].line)).toBe(true)
     expect(back).toContain(`<!-- card: GEO-140, fix, ${R1} -->`)
-  })
-})
-
-describe('fixCards: the To fix list (YAZ-5097), as the Archived list is built', () => {
-  const rec = (path: string, folder: string, cards: { id: string | null; fix?: true; off?: boolean; title?: string }[], embeds?: string[]) => ({
-    path,
-    folder,
-    cards: cards.map((c) => ({ id: c.id, off: c.off ?? false, next: false, reviews: [], ...(c.title !== undefined && { title: c.title }), ...(c.fix && { fix: true as const }) })),
-    ...(embeds !== undefined && { embeds }),
-  })
-
-  it('lists each marked card of the scope by path and page order, an archived one too; a copy of an ID and a card with no ID are left out', () => {
-    const records = [
-      rec('/v/b.md', '', [{ id: 'W-3', fix: true, title: 'Three' }]),
-      rec('/v/a.md', '', [{ id: 'W-1', title: 'One' }, { id: 'W-2', fix: true, off: true }, { id: 'W-2', fix: true }, { id: null, fix: true }]),
-      rec('/v/sub/c.md', 'sub', [{ id: 'W-4', fix: true, title: 'Four' }]),
-    ]
-    expect(fixCards(records)).toEqual([
-      { path: '/v/a.md', index: 1, id: 'W-2' },
-      { path: '/v/b.md', index: 0, id: 'W-3', title: 'Three' },
-      { path: '/v/sub/c.md', index: 0, id: 'W-4', title: 'Four' },
-    ])
-    expect(fixCards(records, 'sub').map((c) => c.id)).toEqual(['W-4'])
-    expect(fixCards(records, '', '/v/b.md').map((c) => c.id)).toEqual(['W-3'])
-  })
-
-  it('a card embedded on two pages is one card: one row', () => {
-    const records = [rec('/v/GEO-140.md', '', [{ id: 'GEO-140', fix: true, title: 'Capital' }]), rec('/v/p1.md', '', [], ['GEO-140']), rec('/v/p2.md', '', [], ['GEO-140'])]
-    expect(fixCards(records)).toEqual([{ path: '/v/GEO-140.md', index: 0, id: 'GEO-140', title: 'Capital' }])
   })
 })
 

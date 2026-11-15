@@ -4368,8 +4368,8 @@ export interface MovedTab extends PopOutCarry {
   path: string
 }
 
-/** The Inbox's filters (YAZ-5017; no Archived since YAZ-5319; YAZ-5097's To fix), as `useCardReview`'s `CardFilter`. */
-export const INBOX_FILTERS = ['all', 'next', 'due', 'new', 'fix'] as const
+/** The Inbox's filters (YAZ-5017; no Archived since YAZ-5319, no To fix since YAZ-5430: a carried `fix` is left out, so All cards), as `useCardReview`'s `CardFilter`. */
+export const INBOX_FILTERS = ['all', 'next', 'due', 'new'] as const
 export type InboxFilter = (typeof INBOX_FILTERS)[number]
 
 /**

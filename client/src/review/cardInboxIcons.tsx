@@ -16,12 +16,6 @@ export const InboxTrayIcon = () => glyph(<path d={INBOX_TRAY_PATH} />)
 /** An archive box: the Inbox ⋯'s Archive card glyph, and the course's Archived chip (YAZ-5046, YAZ-5330). */
 export const ARCHIVE_PATH = 'M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3'
 export const ArchiveIcon = () => glyph(<path d={ARCHIVE_PATH} />)
-/**
- * The wrench of Fix later (YAZ-5097; YAZ-5197: a pencil read as "Edit card"): the To fix row and the Inbox ⋯'s Fix later.
- * Tabler's `tool`, the wrench the app already draws for the Present tab (`toolsIcon`), redrawn at 2/3 for the 16 px grid.
- */
-export const FIX_PATH = 'M4.67 6.67h2v-2l-2.33 -2.33a4 4 0 0 1 5.33 5.33l4 4a1.33 1.33 0 0 1 -2 2l-4 -4a4 4 0 0 1 -5.33 -5.33l2.33 2.33'
-export const FixIcon = () => glyph(<path d={FIX_PATH} />)
 /** Up next (YAZ-5028): the ⋯ row's "Put at top of Inbox" arrow, a line with an arrow up to it. */
 export const UpNextIcon = () => glyph(<path d="M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3" />)
 /** Due today: a circle with a check. */
@@ -44,10 +38,10 @@ export const ClockIcon = ({ size = 14 }: { size?: number }) =>
     size,
   )
 /** The menu's chevron. */
-export const ChevronIcon = () => glyph(<path d="m4.5 6.5 3.5 3.5 3.5-3.5" />, 12)
+export const ChevronIcon = ({ size = 12 }: { size?: number }) => glyph(<path d="m4.5 6.5 3.5 3.5 3.5-3.5" />, size)
 /** The scope: the vault (a stack of cards), a folder, or a page. */
 export const VaultIcon = () => glyph(<path d="M3 5.5h10v7.5H3zM4.5 3.5h7M6 1.75h4" />)
-export const FolderIcon = () => glyph(<path d="M2.25 4.25a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1z" />)
+export const FolderIcon = ({ size = 14 }: { size?: number }) => glyph(<path d="M2.25 4.25a1 1 0 0 1 1-1h3l1.5 1.5h5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-9.5a1 1 0 0 1-1-1z" />, size)
 export const PageIcon = () => glyph(<path d="M4 1.75h5.25L12.5 5v9.25H4zM9 1.75V5.25h3.5" />)
 
 /**
