@@ -182,7 +182,9 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     }
     expect(watch.remote).toEqual([])
     expect(remoteAttributes(el)).toEqual([])
-    expect(el.querySelector('video, audio, source, track, picture, object, embed, iframe, link, meta, base, svg, form, input, button, [background], [style], [srcset], [poster]')).toBeNull()
+    // YAZ-5471: the phone's own table marks (the ⤢ button, the column widths as custom properties) are the only ones.
+    const own = (n: Element) => n.matches('.page-table-box > .page-table__bar > button[data-table-open]') || (n.matches('.page-table table[data-cols], .page-table colgroup > col') && [...(n as HTMLElement).style].every((p) => /^--(table|col)-/.test(p)))
+    expect([...el.querySelectorAll('video, audio, source, track, picture, object, embed, iframe, link, meta, base, svg, form, input, button, [background], [style], [srcset], [poster]')].filter((n) => !own(n))).toEqual([])
     const web = [...el.querySelectorAll<HTMLAnchorElement>('a.page-media--web')]
     expect(web.length).toBeGreaterThanOrEqual(4)
     expect(web.every((a) => a.target === '_blank' && a.rel === 'noopener noreferrer')).toBe(true)

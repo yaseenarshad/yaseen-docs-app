@@ -1,0 +1,259 @@
+/* Tables on the phone (YAZ-5471): a page's tables, a card's tables in a page, the card view and Review, and the full-screen
+   view. The widths come from `tableLayout.ts`; the marks (`data-wide`, `data-more-left`, `data-more-right`) from `useTables.ts`. */
+:root {
+  /* The lines between rows: light. The header: a soft shade, solid, so a sticky cell hides what scrolls under it. */
+  --table-row-line: color-mix(in srgb, var(--fg) 10%, var(--bg));
+  --table-head-line: color-mix(in srgb, var(--fg) 18%, var(--bg));
+  --table-head-bg: color-mix(in srgb, var(--fg) 5%, var(--bg));
+  --table-edge-shadow: rgba(0, 0, 0, 0.14);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --table-row-line: color-mix(in srgb, var(--fg) 14%, var(--bg));
+    --table-head-line: color-mix(in srgb, var(--fg) 24%, var(--bg));
+    --table-head-bg: color-mix(in srgb, var(--fg) 7%, var(--bg));
+    --table-edge-shadow: rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* The box: as wide as the text column; its width is what the columns share (a container query unit, `100cqw`). */
+.page-table-box {
+  margin: 0.8em 0;
+  container-type: inline-size;
+}
+/* The frame: hugs the table, never wider than the screen; the shadows at its sides. */
+.page-table-frame {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--table-row-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+/* The scroll box: the table scrolls sideways in it; the screen does not. A card's table (`.card__table`) is its own. */
+.page-table-box .page-table-frame .page-table {
+  max-width: 100%;
+  margin: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+/* The cell look: one step smaller than the text, comfortable padding, a bold header on a soft shade, light row lines,
+   no column lines. The same in a card (`.card__table`, the Mac's `card.css` and `table.css`) and in Review. */
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875em;
+  line-height: 1.4;
+}
+/* Each column at its own width (a GROW column's from `col`, a FIT column's text): the table is never squeezed to fit
+   the box, where a column would shrink to a letter. A wider table scrolls. */
+.page-table-box .page-table-frame .page-table table {
+  width: max-content;
+  margin: 0;
+  table-layout: auto;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table :is(th, td) {
+  padding: 0.5em 0.75em;
+  border: 0;
+  border-bottom-width: 1px;
+  border-bottom-style: solid;
+  border-bottom-color: var(--table-row-line);
+  text-align: start;
+  vertical-align: top;
+  /* A word breaks only when it is longer than its column (a long address); the column is never narrower than its min. */
+  overflow-wrap: anywhere;
+  word-break: normal;
+  hyphens: none;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table th {
+  border-bottom-color: var(--table-head-line);
+  background: var(--table-head-bg);
+  font-weight: 600;
+  vertical-align: bottom;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table tr:last-child > td {
+  border-bottom: 0;
+}
+/* Markdown's own alignment (`:--:`, `--:`) wins. */
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table :is(th, td)[align='center'] {
+  text-align: center;
+}
+:is(.page-table-box .page-table-frame .page-table, .review__card .card__sides .card__table) table :is(th, td)[align='right'] {
+  text-align: end;
+}
+/* Review has no widths from `tableLayout.ts`: a word stays whole there; the card scrolls sideways when it must. */
+.review__card .card__sides .card__table table :is(th, td) {
+  overflow-wrap: normal;
+}
+.review__card .card__sides .card__table {
+  border: 1px solid var(--table-row-line);
+  border-radius: 10px;
+}
+.review__card .card__sides .card__table table {
+  margin: 0;
+}
+
+/* A short column (numbers, dates, check marks, a word or two) never wraps; numbers align right in even digits. */
+.page-table-box .page-table-frame .page-table table td[data-fit] {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+.page-table-box .page-table-frame .page-table table :is(th, td)[data-num] {
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+/* A longer column: its width from its text, between its min and max, sharing the box by weight. */
+.page-table-box col.page-table__grow {
+  width: var(--col-max);
+  width: clamp(var(--col-min), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1)), var(--col-max));
+}
+/* Code in a cell: a little smaller, so a column of names stays narrow; a short one (a command) on one line. */
+.page-table-box .page-table-frame .page-table table code {
+  font-size: 0.85em;
+}
+.page-table-box .page-table-frame .page-table table code[data-whole] {
+  white-space: nowrap;
+}
+.page-table-box .page-table-frame .page-table table :is(p, ul, ol) {
+  margin: 0;
+}
+
+/* The first column stays in place while a table of three columns or more scrolls sideways. */
+.page-table-box .page-table-frame .page-table table[data-sticky] tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
+.page-table-box .page-table-frame .page-table table[data-sticky] tr > th:first-child {
+  background: var(--table-head-bg);
+}
+.page-table-frame[data-more-left] .page-table table[data-sticky] tr > :first-child {
+  box-shadow: 6px 0 8px -6px var(--table-edge-shadow);
+}
+/* The soft shadows at a side with more to see. */
+.page-table-frame::before,
+.page-table-frame::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.page-table-frame::before {
+  left: 0;
+  background: linear-gradient(to right, var(--table-edge-shadow), transparent);
+}
+.page-table-frame::after {
+  right: 0;
+  background: linear-gradient(to left, var(--table-edge-shadow), transparent);
+}
+.page-table-frame[data-more-left]:not(:has(table[data-sticky]))::before,
+.page-table-frame[data-more-right]::after {
+  opacity: 1;
+}
+
+/* ⤢ under a table wider than the screen: it opens the table full screen. */
+.page-table__bar {
+  display: none;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+.page-table-box[data-wide] .page-table__bar {
+  display: flex;
+}
+.page-table__open {
+  min-width: var(--tap);
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.page-table__open:active {
+  background: var(--bg-side);
+}
+
+/* The full-screen view (`tableView.ts`): the whole table, pinch to zoom, drag to move; it turns with the phone. */
+.table-view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+}
+.table-view__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 4px) calc(env(safe-area-inset-right) + 8px) 4px calc(env(safe-area-inset-left) + 16px);
+  border-bottom: 1px solid var(--border);
+}
+.table-view__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-view__close {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+}
+.table-view__pane {
+  flex: 1;
+  overflow: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.table-view__sizer {
+  position: relative;
+  margin: 12px calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 12px);
+}
+.table-view__content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  overflow-wrap: anywhere;
+}
+/* In the view every column is at its widest, and nothing is sticky (the whole table is there). */
+.table-view .page-table-box {
+  margin: 0;
+  container-type: normal;
+}
+.table-view .page-table-frame,
+.table-view .page-table-box .page-table-frame .page-table {
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+}
+.table-view .page-table-box col.page-table__grow {
+  width: var(--col-max);
+}
+.table-view .page-table-box .page-table-frame .page-table table[data-sticky] tr > :first-child {
+  position: static;
+  box-shadow: none;
+}
+.table-view .page-table__bar {
+  display: none;
+}

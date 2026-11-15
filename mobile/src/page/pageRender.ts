@@ -5,6 +5,7 @@ import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
 import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
+import { layoutTables } from './tableLayout'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (YAZ-5079, 4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -20,7 +21,8 @@ import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
  *
  * What the page shows, as on the Mac:
  *  - Headings, paragraphs, bold, italic, strike, code, `==highlight==`, `<u>`, lists, task boxes (a mark, not a
- *    control: no ticking in stage one), tables (in a box that scrolls sideways), code blocks, quotes, rules.
+ *    control: no ticking in stage one), tables (in a box that scrolls sideways, with column widths
+ *    from their text: `tableLayout.ts`), code blocks, quotes, rules.
  *  - A callout (`> [!tip] Title`): a box with its title. The Mac's page shows it as a quote; the phone draws it as
  *    Obsidian and GitHub do (the brief lists callouts; recorded on YAZ-5079).
  *  - `[[link]]`: what `look.link` says: a page, a card or a file opens; a broken link keeps its text, marked missing.
@@ -415,15 +417,6 @@ function drawCallouts(root: DocumentFragment): void {
   }
 }
 
-function boxTables(root: DocumentFragment): void {
-  for (const table of root.querySelectorAll('table')) {
-    const box = document.createElement('div')
-    box.className = 'page-table'
-    table.replaceWith(box)
-    box.append(table)
-  }
-}
-
 /** One piece of a page as clean elements. */
 export function renderPiece(text: string, look: PageLook): DocumentFragment {
   parse = { cards: [] }
@@ -435,7 +428,8 @@ export function renderPiece(text: string, look: PageLook): DocumentFragment {
   drawEmbeds(root, look)
   drawCards(root, look, cards)
   drawCallouts(root)
-  boxTables(root)
+  // YAZ-5471: each table, the page's and its cards', in its box with its column widths (`tableLayout.ts`).
+  layoutTables(root)
   return root
 }
 
