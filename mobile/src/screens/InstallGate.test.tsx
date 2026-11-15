@@ -11,7 +11,7 @@ const opened = vi.fn(async () => {
   throw new Error('no storage in this test')
 })
 vi.mock('../store', async (real) => ({ ...(await real<object>()), openPhoneStorage: () => opened() }))
-vi.mock('../pwa/browser', () => ({ startUpdates: () => null, swapWaitingVersion: async () => false }))
+vi.mock('../pwa/browser', () => ({ startUpdates: () => null, forgetUpdateMark: () => {} }))
 
 const SAFARI = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'
 const MAC_CHROME = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
