@@ -1,6 +1,7 @@
 /**
  * The window's vaults' one-row icon picks (YAZ-3440 D8, D9), `.yaseendocs/icons.json` through main, with the name
- * rules of the settings (`sidebarIconRules`, the caller's) and whether folders get Material's icon by their name
+ * rules of the settings (`sidebarIconRules`, the caller's: the fallback of a vault whose icons.json has no `rules`,
+ * YAZ-5488) and whether folders get Material's icon by their name
  * (`folderNames`: Folder icons "By name", YAZ-3554): each vault read when
  * it joins and again on every `icons:changed` for it (an own write's echo, another window's, a sync), dropped
  * when it leaves; the favorites idiom (`useVaultListsHere`). `rowIcons` is the one object the tree reads; it
@@ -10,9 +11,13 @@
  * a pick of the same tick included. A refusal (a malformed file → INVALID_CONFIG) toasts and reads the vault's
  * file again: it holds what did save, a later pick's included. A pick past `MAX_ICON_PATHS` is refused at once,
  * with a toast: main would drop it.
+ *
+ * YAZ-5488: `lookOf(root)` is the vault's own rules and colours (each absent while its file has none: the app's then);
+ * `saveLook` writes them, optimistic as `pick`, and a refusal reads the file again with a toast.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { rootOfPath } from '@shared/types'
+import type { SidebarIconColors } from '@shared/types'
 import { MAX_ICON_PATHS, type IconRule, type VaultIcons } from '@shared/vaultIcons'
 import { api } from '../api'
 import type { NoticeKind } from '../lib/notice'
@@ -25,6 +30,15 @@ export interface VaultIconsHere {
   rowIcons: RowIcons
   /** Set (`id`) or clear (null) the pick of each path, in the vault that holds it. */
   pick: (paths: readonly string[], id: string | null) => void
+  /** YAZ-5488: the vault's own rules and colours, each absent while its icons.json has none (the app's then). */
+  lookOf: (root: string | null) => IconLook
+  /** YAZ-5488: write the vault's own rules and/or colours (a key left out stays as the file has it). */
+  saveLook: (root: string, look: IconLook) => void
+}
+
+export interface IconLook {
+  rules?: IconRule[]
+  colors?: SidebarIconColors
 }
 
 export function useVaultIcons(roots: readonly string[], rules: readonly IconRule[], folderNames: boolean, onNotice: (message: string, kind?: NoticeKind) => void): VaultIconsHere {
@@ -69,7 +83,8 @@ export function useVaultIcons(roots: readonly string[], rules: readonly IconRule
       if (root !== null && root !== p) byVault.set(root, [...(byVault.get(root) ?? []), p])
     }
     for (const [root, mine] of byVault) {
-      const next: VaultIcons = { paths: { ...(held.current[root]?.paths ?? {}) } }
+      // The vault's own rules and colours stay as they are (YAZ-5488): main keeps them, the request names only the picks.
+      const next: VaultIcons = { ...held.current[root], paths: { ...(held.current[root]?.paths ?? {}) } }
       for (const p of mine) {
         if (id === null) delete next.paths[p]
         else next.paths[p] = id
@@ -81,16 +96,33 @@ export function useVaultIcons(roots: readonly string[], rules: readonly IconRule
       // Now, not at the next render: a second pick in the same tick builds on this one.
       held.current = { ...held.current, [root]: next }
       setByRoot((all) => ({ ...all, [root]: next }))
-      api.icons.set(root, next).catch((err: unknown) => {
+      api.icons.set(root, { paths: next.paths }).catch((err: unknown) => {
         if (live.current.includes(root)) load(root)
         notice.current(`Can't save the icon: ${err instanceof Error ? err.message : String(err)}`, 'error')
       })
     }
   }, [load])
 
+  const lookOf = useCallback((root: string | null): IconLook => {
+    const icons = root === null ? undefined : byRoot[root]
+    return { ...(icons?.rules !== undefined && { rules: icons.rules }), ...(icons?.colors !== undefined && { colors: icons.colors }) }
+  }, [byRoot])
+
+  const saveLook = useCallback((root: string, look: IconLook) => {
+    if (!live.current.includes(root)) return
+    const now = held.current[root] ?? { paths: {} }
+    const next: VaultIcons = { ...now, ...look }
+    held.current = { ...held.current, [root]: next }
+    setByRoot((all) => ({ ...all, [root]: next }))
+    api.icons.set(root, { paths: now.paths, ...look }).catch((err: unknown) => {
+      if (live.current.includes(root)) load(root)
+      notice.current(`Can't save the icons: ${err instanceof Error ? err.message : String(err)}`, 'error')
+    })
+  }, [load])
+
   // Material's tables (YAZ-3470) load after the first render: their landing builds the icons again, once.
   const material = useMaterialIcons()
   const last = useRef<RowIcons | undefined>(undefined)
   const rowIcons = useMemo(() => (last.current = buildRowIcons(byRoot, roots, rules, folderNames, last.current)), [byRoot, roots, rules, folderNames, material]) // eslint-disable-line react-hooks/exhaustive-deps -- `material` is read by buildRowIcons
-  return useMemo(() => ({ rowIcons, pick }), [rowIcons, pick])
+  return useMemo(() => ({ rowIcons, pick, lookOf, saveLook }), [rowIcons, pick, lookOf, saveLook])
 }

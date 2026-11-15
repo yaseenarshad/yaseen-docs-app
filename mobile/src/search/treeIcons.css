@@ -1,0 +1,18 @@
+/*
+ * YAZ-5488: the vault's own icons and colours in the Search tree (`treeIcons.ts`), as the Mac's sidebar draws them
+ * (`client/src/app.css`): a picked page colour draws the page glyph in it (else grey); a picked folder colour draws
+ * Material's default folder as a silhouette in it. The card, drawing and diagram glyphs already read `--kind-<kind>`.
+ */
+.tree[data-icon-colors~='page'] .file-icon[data-kind='markdown'] {
+  background: var(--kind-page);
+}
+.tree[data-icon-colors~='folder'] .file-icon[data-kind='folder'] {
+  background: var(--kind-folder);
+  mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='m6.922 3.768-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V5a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232' fill='black'/%3E%3C/svg%3E") center / 16px 16px no-repeat;
+}
+.tree[data-icon-colors~='folder'] .file-icon--open[data-kind='folder'] {
+  mask-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M14.483 6H4.721a1 1 0 0 0-.949.684L2 12V5h12a1 1 0 0 0-1-1H7.562a1 1 0 0 1-.64-.232l-.644-.536A1 1 0 0 0 5.638 3H2a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h11l2.403-5.606A1 1 0 0 0 14.483 6' fill='black'/%3E%3C/svg%3E");
+}
+.file-icon--own {
+  object-fit: contain;
+}

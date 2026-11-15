@@ -61,8 +61,11 @@ describe('settingCandidates', () => {
       'sidebarRevealActive',
       'sidebarIconSet',
       'sidebarFileIcons',
+      // YAZ-5488: the colours and the rules are the vault's, each group with its Vault dropdown.
+      'iconColorsVault',
       ...['page', 'card', 'drawing', 'diagram', 'folder', 'text', 'pdf', 'image'].map((k) => `sidebarIconColors.${k}`),
       // The icon rules (YAZ-3440 D9).
+      'iconRulesVault',
       'sidebarIconRules',
       // ⌘D's place (YAZ-3556 D8).
       'goTo',

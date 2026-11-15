@@ -669,7 +669,7 @@ export const CONTRACT = {
     /** Fired in every window after any change to a vault's new-places.json, own or external; filter by `root`. */
     onChanged: push<{ root: string }>('newPlaces:changed'),
   },
-  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); the name rules are `settings.sidebarIconRules`. */
+  /** A vault's one-row icon picks over `.yaseendocs/icons.json` (YAZ-3440 D8), by absolute path (`shared/vaultIcons.ts`); and (YAZ-5488) the vault's own name rules and icon colours, when it has them (absent: the app's settings). */
   icons: {
     /** The picks; none when the file is absent or malformed. Never creates anything. */
     get: invoke<[root: string], VaultIcons>('icons:get', 1),

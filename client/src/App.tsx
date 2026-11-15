@@ -106,7 +106,7 @@ import { useSameList } from './sidebar/hooks/useVaultTree'
 import { VaultLinksContext } from './links/vaultLinks'
 import { CommentPrefsContext, useCardFollowsProfile } from './comments/usePeople'
 import type { LinkActions } from './editor/linkMenu'
-import { useVaultIcons } from './sidebar/useVaultIcons'
+import { useVaultIcons, type IconLook } from './sidebar/useVaultIcons'
 import type { SidebarRevealRequest } from './sidebar/revealRow'
 import { TabBar } from './tabs/TabBar'
 import type { MoveTarget } from './tabs/TabMenu'
@@ -677,6 +677,8 @@ export function App() {
    */
   // Settings › Appearance › Spacing's Vault dropdown (YAZ-5485): the vault it shows; null is the active tab's.
   const [spacingRoot, setSpacingRoot] = useState<string | null>(null)
+  // Settings › Sidebar's icon colours and rules (YAZ-5488): the vault their Vault dropdown shows; null is the active tab's.
+  const [iconLookRoot, setIconLookRoot] = useState<string | null>(null)
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
   /**
    * The window's daily pages (YAZ-5491): the vault's `daily-pages.json` is the one source. The first vault, the active
@@ -970,6 +972,11 @@ export function App() {
   // restyles the rows and renders no tree level. A calendar table's marker look and its dim past rows (YAZ-4162 D6, D14,
   // `data-table-now`, `data-table-dim-past`) too, and the row band (YAZ-4167 D16, `data-table-row-band`): a change
   // restyles the rows and builds no decoration. So does the header row (YAZ-4774, `data-table-header-*`).
+  /**
+   * YAZ-5488: the icon colours the window draws are the ACTIVE tab's vault's (its icons.json `colors`), else the app's
+   * (the fallback: no file yet, or no vault). One set per window: they colour icons everywhere (tabs, links, the tree).
+   */
+  const iconColors = vaultIcons.lookOf(active.root).colors ?? settings.sidebarIconColors
   const settingsVars = {
     '--edit-line-height': settings.lineSpacing,
     '--edit-block-gap': `${settings.blockGap}px`,
@@ -1007,12 +1014,12 @@ export function App() {
     // Absent → app.css falls back to `--thread-color`, then the accent (YAZ-3309 D9).
     ...(settings.sidebarThreadColor !== null ? { '--sidebar-thread-color': settings.sidebarThreadColor } : {}),
     // Each icon colour of the sidebar tree that is set (YAZ-3440 D4) over app.css's own `--kind-<kind>`: a CSS var, so no tree level renders.
-    ...Object.fromEntries(Object.entries(settings.sidebarIconColors).map(([kind, colour]) => [`--kind-${kind}`, colour])),
+    ...Object.fromEntries(Object.entries(iconColors).map(([kind, colour]) => [`--kind-${kind}`, colour])),
   } as CSSProperties
   /** The kinds with a picked icon colour (YAZ-5100 round 2), `data-icon-colors` on `.app`: app.css draws Material's icons of those kinds in it. */
-  const iconColorKinds = Object.keys(settings.sidebarIconColors).join(' ') || undefined
+  const iconColorKinds = Object.keys(iconColors).join(' ') || undefined
   // A picked card colour reaches the hover preview's card icon too, which is portalled to the body, outside `.app`.
-  const cardColour = settings.sidebarIconColors.card
+  const cardColour = iconColors.card
   useEffect(() => {
     if (cardColour === undefined) return
     document.documentElement.style.setProperty('--kind-card', cardColour)
@@ -1048,6 +1055,13 @@ export function App() {
               : { line: appSettings.lineSpacing, blockGap: appSettings.blockGap, bulletIndent: appSettings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent, bulletGap: appSettings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap },
           save: (next: Required<PageSpacing>) => spacingScope.textFormatting.save({ ...spacingScope.textFormatting.formatting, spacing: sanitizeSpacing(next) ?? {} }),
         }
+  /** Settings' icon colours and rules (YAZ-5488): the picked vault's icons.json `colors` / `rules`, each the app's until it has its own. */
+  const iconLookScope = iconLookRoot !== null && roots.includes(iconLookRoot) ? iconLookRoot : active.root
+  const iconLookOwn = vaultIcons.lookOf(iconLookScope)
+  const settingsIconLook =
+    root === null || iconLookScope === null
+      ? undefined
+      : { vaults: placeVaults, root: iconLookScope, choose: setIconLookRoot, rules: iconLookOwn.rules ?? appSettings.sidebarIconRules, colors: iconLookOwn.colors ?? appSettings.sidebarIconColors, save: (look: IconLook) => vaultIcons.saveLook(iconLookScope, look) }
   const settingsTextFormatting =
     root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
 
@@ -1569,7 +1583,10 @@ export function App() {
   const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
   // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
   useEffect(() => {
-    if (!settingsOpen) setSpacingRoot(null)
+    if (!settingsOpen) {
+      setSpacingRoot(null)
+      setIconLookRoot(null)
+    }
   }, [settingsOpen])
   const openSettings = useCallback(() => {
     setSettingsPage(undefined)
@@ -4056,7 +4073,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, iconLook: settingsIconLook, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
       {courseOpen !== null && (
         <Suspense fallback={null}>
           <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />

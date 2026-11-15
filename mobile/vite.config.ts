@@ -3,12 +3,14 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
 import { forbiddenImport, forbiddenUse, mayImportEngine } from './importRules'
 import { commitOf, notecardsPwa } from './publish/pwaPlugin'
-import { readFileSync } from 'node:fs'
+import { cpSync, existsSync, readFileSync } from 'node:fs'
+import { join, normalize, resolve } from 'node:path'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const shared = fileURLToPath(new URL('../shared', import.meta.url))
 const clientSrc = fileURLToPath(new URL('../client/src', import.meta.url))
 const engineFonts = fileURLToPath(new URL('../engine/packages/excalidraw/fonts', import.meta.url))
+const materialIcons = fileURLToPath(new URL('../client/public/material-icons', import.meta.url))
 
 /**
  * Fails the build (and the dev server's load) on any module the phone must not carry: Electron, Node,
@@ -91,6 +93,34 @@ export function drawingChunkTrim(): Plugin {
 }
 
 /**
+ * YAZ-5488: MATERIAL'S ICON FILES (the Mac's `client/public/material-icons/`) at `/material-icons/`, for a vault's own
+ * icons in the Search tree (`search/rowIcon.tsx`). Copied into the build as plain files: no chunk, nothing in the first
+ * load, and not in the worker's shell (`shellFiles` keeps `assets/` and the icons only), so a row fetches only the icon
+ * it shows. The dev server serves them from the Mac's folder.
+ */
+export function materialIconFiles(from: string = materialIcons): Plugin {
+  let outDir = ''
+  return {
+    name: 'notecards-material-icons',
+    configResolved(config) {
+      outDir = resolve(config.root, config.build.outDir)
+    },
+    configureServer(server) {
+      server.middlewares.use('/material-icons/', (req, res, next) => {
+        const name = normalize(decodeURIComponent((req.url ?? '').split('?')[0])).replace(/^\/+/, '')
+        const file = join(from, name)
+        if (name.includes('..') || !/^[\w.-]+\.svg$/.test(name) || !existsSync(file)) return next()
+        res.setHeader('Content-Type', 'image/svg+xml')
+        res.end(readFileSync(file))
+      })
+    },
+    closeBundle() {
+      if (outDir !== '' && existsSync(from)) cpSync(from, join(outDir, 'material-icons'), { recursive: true })
+    },
+  }
+}
+
+/**
  * The phone web app (YAZ-5071, decision 1): a plain Vite build of `mobile/`, with the same `@shared` alias
  * as the desktop renderer (`desktop/electron.vite.config.ts`), and `@client` for the pure parts of `client/src`
  * that later units reuse.
@@ -120,7 +150,7 @@ export default defineConfig({
   define: buildDefine(),
   // The guard is for what the phone bundles. `vitest.config.ts` leaves it out on purpose (YAZ-5160).
   // YAZ-5087: `notecardsPwa` writes the service worker (`dist/sw.js`) with this build's shell list.
-  plugins: [drawingChunkTrim(), phoneImportGuard(), react(), notecardsPwa()],
+  plugins: [drawingChunkTrim(), phoneImportGuard(), react(), notecardsPwa(), materialIconFiles()],
   resolve: phoneResolve,
   // YAZ-5440: the dev server serves the engine's font files to the drawing chunk.
   server: { fs: { allow: [here, shared, clientSrc, engineFonts] } },

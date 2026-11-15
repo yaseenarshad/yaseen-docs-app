@@ -1,15 +1,20 @@
 import path from 'node:path'
-import { VAULT_CONFIG_DIR } from '@shared/types'
-import { cleanIconPaths, ICONS_FILE, ICONS_KEYS, parseIconsConfig, remapIconPaths, type IconsConfig, type VaultIcons } from '@shared/vaultIcons'
+import { VAULT_CONFIG_DIR, type SettingsState } from '@shared/types'
+import { cleanIconColors, cleanIconPaths, cleanIconRules, ICONS_FILE, ICONS_KEYS, ICONS_VERSION, iconsVersionOf, isIconColors, isIconRules, parseIconsConfig, remapIconPaths, type IconsConfig, type VaultIcons } from '@shared/vaultIcons'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { deletedAt, owningRoot, renamedTo, toAbs, toRel, under } from './favorites'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
+import { seedVaultPart, type MoveStep } from './vaultSettingsMove'
 
 /**
  * A vault's one-row icon picks in the vault (YAZ-3440 D8): `<root>/.yaseendocs/icons.json` (`shared/vaultIcons.ts` has
  * the shape; the name rules are a setting (D9), `sidebarIconRules`), favorites.json's idiom over the vaultConfig plumbing: VAULT-RELATIVE paths in the file so sync carries
  * it, ABSOLUTE paths on the bridge, created on the first write and never by a read, written atomically, watched
  * (an own write or an external edit pushes `icons:changed`), and merged by sync (`mergeIconsFile`).
+ *
+ * YAZ-5488 (version 2): the vault's own name rules (`rules`) and icon colours (`colors`) live here too. `getIcons`
+ * answers them only when the file has them (the renderer then reads the app's settings, the fallback); `setIcons`
+ * writes `rules` / `colors` only when the request has them, and keeps the file's otherwise, so a pick never drops them.
  *
  * Corrupt-file policy (favorites' R2.5): unparsable JSON or a wrong shape reads as no icons and refuses every
  * write with `INVALID_CONFIG`; the file is never overwritten. A bad entry inside a good file is dropped on read.
@@ -26,14 +31,27 @@ async function readRaw(root: string): Promise<Raw> {
   return config === null ? { state: 'bad', file: path.join(root, VAULT_CONFIG_DIR, ICONS_FILE) } : { state: 'ok', config }
 }
 
-/** The file's picks by absolute path. */
-const toVault = (root: string, config: IconsConfig): VaultIcons => ({ paths: Object.fromEntries(Object.entries(config.paths).map(([rel, id]) => [toAbs(root, rel), id])) })
-
-/** Absolute picks back to the file's relative ones; a pick outside the vault is dropped. */
-const toConfig = (root: string, icons: VaultIcons): IconsConfig => ({
-  version: 1,
-  paths: cleanIconPaths(Object.fromEntries(Object.entries(icons.paths).filter(([p]) => p !== root && under(root, p)).map(([p, id]) => [toRel(root, p), id])), () => true),
+/** The file's picks by absolute path, and its own rules and colours when it has them (YAZ-5488). */
+const toVault = (root: string, config: IconsConfig): VaultIcons => ({
+  paths: Object.fromEntries(Object.entries(config.paths).map(([rel, id]) => [toAbs(root, rel), id])),
+  ...(config.rules !== undefined && { rules: config.rules }),
+  ...(config.colors !== undefined && { colors: config.colors }),
 })
+
+/**
+ * Absolute picks back to the file's relative ones; a pick outside the vault is dropped. `held` is the file now: its
+ * rules and colours stay unless `icons` brings its own (YAZ-5488), and the version is 2 once either is there.
+ */
+const toConfig = (root: string, icons: VaultIcons, held: IconsConfig | null = null): IconsConfig => {
+  const rules = icons.rules ?? held?.rules
+  const colors = icons.colors ?? held?.colors
+  const look = { ...(rules !== undefined && { rules }), ...(colors !== undefined && { colors }) }
+  return {
+    version: iconsVersionOf(look, held?.version ?? 1),
+    paths: cleanIconPaths(Object.fromEntries(Object.entries(icons.paths).filter(([p]) => p !== root && under(root, p)).map(([p, id]) => [toRel(root, p), id])), () => true),
+    ...look,
+  }
+}
 
 /** Writes and repairs on one root never interleave. */
 const chained = createRootChain()
@@ -45,7 +63,10 @@ export async function getIcons(root: string): Promise<VaultIcons> {
   return raw.state === 'ok' ? toVault(r, raw.config) : { paths: {} }
 }
 
-/** Replace the vault's picks (by absolute path inside `root`); creates the dotfolder and file on the first write. */
+/**
+ * Replace the vault's picks (by absolute path inside `root`); creates the dotfolder and file on the first write.
+ * YAZ-5488: `rules` and `colors`, when the request has them, replace the vault's own; absent, the file's stay.
+ */
 export async function setIcons(root: string, icons: unknown): Promise<void> {
   const r = requireAbsPath(root, 'root')
   const v = icons as Partial<VaultIcons> | null
@@ -53,10 +74,13 @@ export async function setIcons(root: string, icons: unknown): Promise<void> {
   for (const p of Object.keys(v.paths)) {
     if (!path.isAbsolute(p) || !under(r, p) || p === r) throw new BridgeFailure('BAD_REQUEST', 'an icon pick must be inside the vault', { path: p })
   }
+  if (v.rules !== undefined && !isIconRules(v.rules)) throw new BridgeFailure('BAD_REQUEST', 'icon rules must be a list of { match, kind, icon }')
+  if (v.colors !== undefined && !isIconColors(v.colors)) throw new BridgeFailure('BAD_REQUEST', 'icon colours must be { kind: "#rrggbb" }')
   await chained(r, async () => {
     const raw = await readRaw(r)
     if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'icons.json is malformed; fix or delete it', { path: raw.file })
-    await writeConfig(r, ICONS_FILE, toConfig(r, { paths: v.paths as Record<string, string> }), ICONS_KEYS)
+    const look = { ...(v.rules !== undefined && { rules: v.rules.map(({ match, kind, icon }) => ({ match, kind, icon })) }), ...(v.colors !== undefined && { colors: { ...v.colors } }) }
+    await writeConfig(r, ICONS_FILE, toConfig(r, { paths: v.paths as Record<string, string>, ...look }, raw.state === 'ok' ? raw.config : null), ICONS_KEYS)
   })
 }
 
@@ -77,7 +101,7 @@ function repair(roots: readonly string[], p: string, map: (abs: string) => strin
     const icons = toVault(root, raw.config)
     const next = remapIconPaths(icons.paths, map)
     if (next === null) return
-    await writeConfig(root, ICONS_FILE, toConfig(root, { paths: next }), ICONS_KEYS)
+    await writeConfig(root, ICONS_FILE, toConfig(root, { paths: next }, raw.config), ICONS_KEYS)
   })
 }
 
@@ -89,4 +113,27 @@ export function renamePath(roots: readonly string[], oldPath: string, newPath: s
 /** D: a deleted row's pick, and every pick under a deleted folder, leaves the file. */
 export function removePath(roots: readonly string[], deleted: string): Promise<void> {
   return repair(roots, deleted, deletedAt(deleted))
+}
+
+/**
+ * YAZ-5488: the app's name rules and icon colours (`sidebarIconRules`, `sidebarIconColors`) move once into EACH open
+ * vault's icons.json (version 2), by the vault settings rules (`seedVaultPart`): they were for every vault, so every
+ * vault gets a copy; added beside the file's picks; a file that has `rules` or `colors`, or is not valid JSON, is
+ * left; empty rules and no colours move nothing; once per vault, after its first pull. The app values stay (the
+ * fallback for a vault with no file, and what older builds read).
+ */
+export function iconLookPart(s: Pick<SettingsState, 'sidebarIconRules' | 'sidebarIconColors'>): Record<string, unknown> | null {
+  const rules = cleanIconRules(s.sidebarIconRules)
+  const colors = cleanIconColors(s.sidebarIconColors)
+  if (rules.length === 0 && Object.keys(colors).length === 0) return null
+  return { version: ICONS_VERSION, ...(rules.length > 0 && { rules }), ...(Object.keys(colors).length > 0 && { colors }) }
+}
+
+export const ICON_LOOK_MOVE: MoveStep = {
+  name: 'the icon rules and colours',
+  key: (s) => iconLookPart(s),
+  run: async (roots, s, store, canSeed) => {
+    const part = iconLookPart(s)
+    for (const root of roots) await seedVaultPart(root, ICONS_FILE, part, ['rules', 'colors'], store, canSeed, `${ICONS_FILE}#look`)
+  },
 }

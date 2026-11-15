@@ -1,8 +1,11 @@
 /**
- * The sidebar's own icons (YAZ-3440 D8, D9). Two homes:
- * - a vault's one-row picks, `<root>/.yaseendocs/icons.json` = `{ version: 1, paths: { "<vault-relative path>": "<icon id>" } }`;
- * - the name rules, `settings.sidebarIconRules` = `[{ match, kind, icon }]`: a personal preference, so they travel
- *   with the settings folder and work in every vault (D9).
+ * The sidebar's own icons (YAZ-3440 D8, D9; YAZ-5488). One home, the vault's `<root>/.yaseendocs/icons.json`:
+ * - the one-row picks, `paths: { "<vault-relative path>": "<icon id>" }` (version 1);
+ * - YAZ-5488 (version 2, which REPLACES YAZ-3440 D9 "one list for every vault"): the name rules, `rules: [{ match,
+ *   kind, icon }]`, and the kinds' icon colours, `colors: { <kind>: "#rrggbb" }`. Each vault has its own; a file with
+ *   no `rules` (or no `colors`) key reads the app's `settings.sidebarIconRules` (`sidebarIconColors`), the fallback,
+ *   and the one-time move (`ICON_LOOK_MOVE`, `desktop/src/main/icons.ts`) copies the app's into each vault once. The icon set, file icons and folder
+ *   icons stay the app's (how this Mac draws icons, scoping section 2: optional, not moved).
  * An icon id is a Material Icon Theme name (`python`, `folder-docs`). Pure: main reads and writes the file
  * (`desktop/src/main/icons.ts`) and validates the setting (`store.ts`); the sidebar matches rows (`rowIcons.ts`).
  *
@@ -13,9 +16,13 @@
 import { isRecord } from './guards'
 import { mergeConfigFile } from './configMerge'
 
+import { SIDEBAR_ICON_KINDS, type SidebarIconColors } from './types'
+
 export const ICONS_FILE = 'icons.json'
+/** YAZ-5488: version 2 adds `rules` and `colors`. A reader takes any whole version of 1 or more. */
+export const ICONS_VERSION = 2
 /** The keys this build's writer owns (YAZ-5483): every other key of the file (a later version's) is kept on a save. */
-export const ICONS_KEYS: readonly string[] = ['version', 'paths']
+export const ICONS_KEYS: readonly string[] = ['version', 'paths', 'rules', 'colors']
 
 /** At most this many picks and rules: a hand edit must not grow either without end. */
 export const MAX_ICON_PATHS = 5000
@@ -32,16 +39,29 @@ export interface IconRule {
   icon: string
 }
 
-/** The file on disk: picks by VAULT-RELATIVE POSIX path. */
+/** The file on disk: picks by VAULT-RELATIVE POSIX path; `rules` and `colors` only when the vault has its own (YAZ-5488). */
 export interface IconsConfig {
-  version: 1
+  version: number
   paths: Record<string, string>
+  rules?: IconRule[]
+  colors?: SidebarIconColors
 }
 
-/** What the bridge speaks: picks by ABSOLUTE path, as the favorites do. */
+/** What the bridge speaks: picks by ABSOLUTE path, as the favorites do; the vault's own rules and colours, when it has them (YAZ-5488). */
 export interface VaultIcons {
   paths: Record<string, string>
+  rules?: IconRule[]
+  colors?: SidebarIconColors
 }
+
+/** An icon colour: `#rrggbb`. */
+const isHexColour = (v: unknown): v is string => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v)
+/** One entry of the icon colours: a known kind and a `#rrggbb`. */
+const isIconColour = ([kind, colour]: [string, unknown]): boolean => (SIDEBAR_ICON_KINDS as readonly string[]).includes(kind) && isHexColour(colour)
+/** The icon colours, strict (the IPC boundary). */
+export const isIconColors = (v: unknown): v is SidebarIconColors => isRecord(v) && Object.entries(v).every(isIconColour)
+/** The icon colours on load: each entry that does not read is dropped, so that kind has its built-in colour. */
+export const cleanIconColors = (raw: unknown): SidebarIconColors => (isRecord(raw) ? (Object.fromEntries(Object.entries(raw).filter(isIconColour)) as SidebarIconColors) : {})
 
 /** An icon id as Material names them: letters, digits, `_`, `-`, `.`. */
 export const isIconId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 100 && /^[a-z0-9][a-z0-9_.-]*$/i.test(v)
@@ -70,12 +90,24 @@ export function cleanIconPaths(raw: unknown, pathOk: (p: string) => boolean): Re
   return paths
 }
 
-/** The cleaned file, or null when it is not `{ version: 1, … }` with object `paths` (which may be missing). Any other key is ignored. */
+/**
+ * The cleaned file, or null when it is not `{ version: <whole number ≥ 1>, … }` with object `paths` (which may be
+ * missing). YAZ-5488: `rules` and `colors` are read when present (each bad entry dropped alone; a key that is not a
+ * list or an object reads as absent, so the app's fallback holds). Any other key is ignored.
+ */
 export function parseIconsConfig(v: unknown): IconsConfig | null {
-  if (!isRecord(v) || v.version !== 1) return null
+  if (!isRecord(v) || typeof v.version !== 'number' || !Number.isInteger(v.version) || v.version < 1) return null
   if (v.paths !== undefined && !isRecord(v.paths)) return null
-  return { version: 1, paths: cleanIconPaths(v.paths, isSafeRelPath) }
+  return {
+    version: v.version,
+    paths: cleanIconPaths(v.paths, isSafeRelPath),
+    ...(Array.isArray(v.rules) && { rules: cleanIconRules(v.rules) }),
+    ...(isRecord(v.colors) && { colors: cleanIconColors(v.colors) }),
+  }
 }
+
+/** The version a file is written with: 2 once it holds rules or colours (YAZ-5488), else what it had (1 for a new file). */
+export const iconsVersionOf = (config: Pick<IconsConfig, 'rules' | 'colors'>, had = 1): number => (config.rules !== undefined || config.colors !== undefined ? Math.max(had, ICONS_VERSION) : had)
 
 /**
  * A rule's glob as a RegExp over the whole name, any case. `*` any run, `?` one character, `{a,b}` either; `\` makes

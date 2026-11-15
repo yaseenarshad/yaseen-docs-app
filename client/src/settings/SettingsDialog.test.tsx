@@ -1448,6 +1448,43 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, lineSpacing: 2 })
   })
 
+  it('YAZ-5488: the icon colours and rules write the picked vault\'s icons.json; each group has the Vault dropdown with two vaults; the app values with no vault', async () => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    const save = vi.fn()
+    const choose = vi.fn()
+    const onChange = vi.fn()
+    const rules = [{ match: 'Spanish', kind: 'folder' as const, icon: 'folder-i18n' }]
+    const iconLook = { vaults: [{ root: '/a', name: 'Alpha' }, { root: '/b', name: 'Beta' }], root: '/b', choose, rules, colors: { folder: '#112233' }, save }
+    act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, iconLook }} onClose={vi.fn()} />))
+    clickNav(container, 'Sidebar')
+    await act(async () => await import('./IconColourControl'))
+    for (const id of ['iconColorsVault', 'iconRulesVault']) {
+      const select = row(container, id)?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+      expect([...select.options].map((o) => o.textContent)).toEqual(['Alpha', 'Beta'])
+      expect(select.selectedIndex).toBe(1)
+    }
+    expect(row(container, 'sidebarIconColors.folder')?.querySelector<HTMLInputElement>('input[type="color"]')?.value).toBe('#112233')
+    act(() => rowButtons(container!, 'sidebarIconColors.folder').find((b) => b.textContent === 'Reset')!.click())
+    expect(save).toHaveBeenLastCalledWith({ colors: {} })
+    expect([...(row(container, 'sidebarIconRules')?.querySelectorAll('input') ?? [])].map((i) => i.value)).toContain('Spanish')
+    expect(onChange).not.toHaveBeenCalled()
+    const select = row(container, 'iconRulesVault')?.querySelector<HTMLSelectElement>('select') as HTMLSelectElement
+    act(() => {
+      select.value = '/a'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(choose).toHaveBeenCalledWith('/a')
+    unmount()
+    const none = mountOn('Sidebar', { ...DEFAULT_SETTINGS, sidebarIconColors: { folder: '#112233' } })
+    await act(async () => await import('./IconColourControl'))
+    expect(row(none.el, 'iconColorsVault')).toBeNull()
+    expect(row(none.el, 'iconRulesVault')).toBeNull()
+    act(() => rowButtons(none.el, 'sidebarIconColors.folder').find((b) => b.textContent === 'Reset')!.click())
+    expect(none.onChange).toHaveBeenCalledExactlyOnceWith({ ...DEFAULT_SETTINGS, sidebarIconColors: {} })
+  })
+
   it('YAZ-5491: Daily pages name the vault whose daily-pages.json they show, which can be another than the active tab\'s', () => {
     container = document.createElement('div')
     document.body.appendChild(container)

@@ -30,7 +30,8 @@ import { isIdLetters } from '@shared/pageId'
 import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
-import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconColors, type SidebarIconKind } from '@shared/types'
+import type { IconRule } from '@shared/vaultIcons'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -397,6 +398,11 @@ export interface SettingsCtx {
    * rows then edit the app's values.
    */
   pageSpacing?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: Required<PageSpacing>; save: (next: Required<PageSpacing>) => void }
+  /**
+   * The icon colours and name rules (YAZ-5488): the picked vault's icons.json `colors` and `rules` (each the app's
+   * until the vault has its own), with the Vault dropdown as Spacing's. Absent with no vault: the rows edit the app's.
+   */
+  iconLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; rules: readonly IconRule[]; colors: SidebarIconColors; save: (look: { rules?: IconRule[]; colors?: SidebarIconColors }) => void }
   /** Daily pages › Change… (YAZ-5491): App writes the folder to the file of the vault it was picked in. Absent with no vault. */
   pickDailyFolder?: (folder: string, vault: string) => void
   /** The vault whose `daily-pages.json` Settings › Daily pages shows (YAZ-5491); named only where the window has two or more. */
@@ -486,6 +492,23 @@ function iconColourShown(kind: SidebarIconKind, ctx: SettingsCtx): boolean {
   return settings.sidebarIconSet === 'line' || !(kind === 'text' || kind === 'pdf' || kind === 'image')
 }
 
+/** YAZ-5488: the icon colours and rules as the rows show them: the picked vault's, else the app's (no vault in the window). */
+const iconColorsOf = (ctx: SettingsCtx): SidebarIconColors => ctx.iconLook?.colors ?? ctx.settings.sidebarIconColors
+const iconRulesOf = (ctx: SettingsCtx): readonly IconRule[] => ctx.iconLook?.rules ?? ctx.settings.sidebarIconRules
+/** A colour or rules change: the picked vault's icons.json, or the app's settings with no vault. */
+function setIconLook(ctx: SettingsCtx, look: { rules?: IconRule[]; colors?: SidebarIconColors }): void {
+  if (ctx.iconLook !== undefined) return ctx.iconLook.save(look)
+  ctx.onChange({ ...ctx.settings, ...(look.rules !== undefined && { sidebarIconRules: look.rules }), ...(look.colors !== undefined && { sidebarIconColors: look.colors }) })
+}
+/** The Vault dropdown of the icon groups (YAZ-5488, the D15 control as Spacing has it): with two or more vaults. */
+const iconVaultRow = (id: string): SettingDef => ({
+  id,
+  label: 'Vault',
+  keywords: ['sidebar', 'tree', 'icon', 'icons', 'vault'],
+  available: (ctx) => (ctx.iconLook?.vaults.length ?? 0) > 1,
+  render: ({ iconLook }) => iconLook && <Select options={iconLook.vaults.map((v) => ({ label: v.name, value: v.root }))} value={iconLook.root} onChange={iconLook.choose} ariaLabel="Vault" />,
+})
+
 /** One kind's icon colour (YAZ-3440 D4, YAZ-5100 round 2): its picker and Reset (`IconColourControl`). */
 function iconColourRow(kind: SidebarIconKind): SettingDef {
   const name = (ctx: SettingsCtx) => sidebarIconKindLabel(kind, (text) => unit(ctx, text))
@@ -496,7 +519,7 @@ function iconColourRow(kind: SidebarIconKind): SettingDef {
     available: (ctx) => iconColourShown(kind, ctx),
     render: (ctx) => (
       <Suspense fallback={null}>
-        <IconColourControl kind={kind} name={name(ctx)} settings={ctx.settings} onChange={ctx.onChange} />
+        <IconColourControl kind={kind} name={name(ctx)} settings={ctx.settings} colors={iconColorsOf(ctx)} onColors={(colors) => setIconLook(ctx, { colors })} />
       </Suspense>
     ),
   }
@@ -1056,21 +1079,24 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           // YAZ-3440 D4, YAZ-5100 round 2: a colour of its own for each kind, in both icon sets, while the icons have colour.
+          // YAZ-5488: the colours are the vault's (icons.json `colors`), with its Vault dropdown where the window has two or more.
+          iconVaultRow('iconColorsVault'),
           ...SIDEBAR_ICON_KINDS.map(iconColourRow),
         ],
       },
       {
-        // YAZ-3440 D9: the name rules, one list for every vault.
+        // YAZ-5488 (replaces YAZ-3440 D9's one list for every vault): the name rules are the vault's, in its icons.json.
         title: 'Icon rules',
         items: [
+          iconVaultRow('iconRulesVault'),
           {
-            // YAZ-3440 D9: the name rules are a setting, one list for every vault; a row's own pick wins over them.
+            // A row's own pick wins over them. The picked vault's rules (YAZ-5488); the phone's Search tree shows them too.
             id: 'sidebarIconRules',
             label: 'Icon rules',
-            hint: 'Give each file or folder whose name matches a pattern its own icon, in every vault and both icon sets. * stands for any characters. The first rule that matches wins; a row\'s own icon (right-click, Change icon ▸ This file…) wins over every rule.',
+            hint: 'Give each file or folder whose name matches a pattern its own icon, in both icon sets. * stands for any characters. The first rule that matches wins; a row\'s own icon (right-click, Change icon ▸ This file…) wins over every rule. Saved in the vault, so the phone shows them too.',
             keywords: ['sidebar', 'tree', 'icon', 'icons', 'rule', 'rules', 'pattern', 'glob', 'custom'],
             wide: true,
-            render: ({ settings, onChange }) => <IconRulesControl rules={settings.sidebarIconRules} onChange={(sidebarIconRules) => onChange({ ...settings, sidebarIconRules })} />,
+            render: (ctx) => <IconRulesControl rules={iconRulesOf(ctx)} onChange={(rules) => setIconLook(ctx, { rules })} />,
           },
         ],
       },

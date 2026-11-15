@@ -6456,6 +6456,24 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
   /** Main says a vault's file changed, to every listener of the push. */
   const push = <T,>(spy: { mock: { calls: unknown[][] } }, payload: T) => (spy.mock.calls as [(p: T) => void][]).forEach(([listener]) => listener(payload))
 
+  it('YAZ-5488: the window draws the icon colours of the ACTIVE tab\'s vault (its icons.json); a vault with none draws the app\'s', async () => {
+    const { el, emitStateChanged } = await mount(defaultAppState(), TWO, {}, (b) => {
+      PAGES(b)
+      b.bridge.icons.get.mockImplementation(async (vault: string) => (vault === '/w' ? { paths: {}, colors: { folder: '#aa0000' } } : { paths: {} }))
+    })
+    await act(async () => {})
+    const app = el.querySelector<HTMLElement>('.app')!
+    act(() => emitStateChanged({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, sidebarIconColors: { folder: '#00bb00' } } }))
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#00bb00')
+    show('/w/b.md')
+    await act(async () => {})
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#aa0000')
+    expect(app.getAttribute('data-icon-colors')).toBe('folder')
+    show('/v/a.md')
+    await act(async () => {})
+    expect(app.style.getPropertyValue('--kind-folder')).toBe('#00bb00')
+  })
+
   it('YAZ-5485: each vault\'s page spacing on its own layers; a vault with no spacing reads the app\'s values from .app', async () => {
     const files: Record<string, unknown> = { '/v': { version: 2, spacing: { line: 2, blockGap: 8 } } }
     const { el } = await mount(defaultAppState(), TWO, {}, (b) => {
