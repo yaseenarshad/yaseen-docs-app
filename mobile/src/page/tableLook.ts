@@ -15,7 +15,8 @@ import { calendarLook, type CalendarLook } from './calendarLook'
  *  - Subheader row and Sticky subheaders: as the header row, each part a table does not set itself
  *    (`data-subheader-*`), and Off when the table says nothing (`tableSubheads.ts`, `tables.css`);
  *  - the cell bullets' indent and gap and the Table position: CSS variables on the reader (`tableLookVars`);
- *  - the calendar look (`calendarLook()`): Mark the current time, Shade the next time slot and its colour,
+ *  - the calendar look (`calendarLook()`): Mark the current time, Shade the next time slot and its colour, Time in
+ *    slot and Show seconds (YAZ-5606),
  *    Dim past rows, Shade darkness, Calendar day. The Now
  *    button is a habit of each Mac, so the phone keeps the Mac's default.
  * No file, or a file that is not JSON: null, the Mac's defaults, as before. The phone never writes the file.
@@ -35,6 +36,9 @@ export const tableCalendarLook = (look: PhoneTableLook | null | undefined): Cale
         nextShade: look.tableNextShade,
         // The default (red) is the CSS's own fallback, the now mark's red.
         nextColour: look.tableNextColour === TABLE_LOOK_DEFAULTS.tableNextColour ? null : nextColour(look.tableNextColour),
+        // YAZ-5606: Time in slot and Show seconds (`look.slotTime`, `look.slotSeconds`).
+        slotTime: look.tableSlotTime,
+        slotSeconds: look.tableSlotSeconds,
       })
 
 /** The Sticky header row default of a vault's tables (the Mac's: on). */

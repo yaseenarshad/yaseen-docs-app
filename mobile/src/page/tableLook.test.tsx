@@ -8,7 +8,7 @@ import { closeAll } from '../explore/sheets'
 import { mount, newPhone, type Harness } from '../screens/testing'
 import { MAC_CALENDAR_LOOK } from './calendarLook'
 import { applyTableFile } from './tableFile'
-import { setCalendarClock } from './tableCalendar'
+import { setCalendarClock, slotTimeLabel } from './tableCalendar'
 import { applyTableLook, stickyHeaderOf, tableCalendarLook } from './tableLook'
 
 /**
@@ -118,6 +118,43 @@ describe('YAZ-5487: a page on the phone reads its vault\'s table-look.json', () 
       const off = await open(day)
       await waitFor(h!, () => nowOf(off) > 0)
       expect(nextOf(off)).toEqual([])
+    } finally {
+      setCalendarClock(null)
+    }
+  })
+
+  it('YAZ-5606: Time in slot from the file: the pill on the now line and the Now pill\'s words; Off, or no file, nothing changes', async () => {
+    setCalendarClock(() => new Date(2026, 10, 2, 9, 40, 46))
+    try {
+      const day = { 'Table page.md': '# Table page\n\n| Time | Plan |\n|---|---|\n| 9:00 am | Run |\n| 9:30 am | Swim |\n| 10:00 am | Rest |\n| 10:30 am | Read |\n\n<!-- table: calendar 30m -->\n' }
+      const nowOf = (t: HTMLTableElement) => [...t.rows].findIndex((r) => r.classList.contains('table-now-row'))
+      const pills = (t: HTMLTableElement) => [...t.querySelectorAll('.table-slot-pill')].map((p) => [p.closest('tr')!.rowIndex, p.textContent])
+      const label = () => h!.host.querySelector('.page-table__now-label')?.textContent
+      for (const [look, text] of [
+        [{ slotTime: 'down' }, '19:14 left'],
+        [{ slotTime: 'down', slotSeconds: false }, '20 min left'],
+        [{ slotTime: 'up' }, '10:46 in'],
+        [{ slotTime: 'up', slotSeconds: false }, '10 min in'],
+      ] as const) {
+        const t = await open({ ...day, '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look }) })
+        await waitFor(h!, () => nowOf(t) > 0 && pills(t).length > 0)
+        // In the now row's last cell, which has text: it keeps room for the pill.
+        expect(pills(t)).toEqual([[2, text]])
+        const host = t.rows[2].cells[1]
+        expect([host.classList.contains('table-slot-pad'), host.style.getPropertyValue('--table-slot-chars')]).toEqual([true, String(slotTimeLabel(look.slotTime, !('slotSeconds' in look), 570, 600, look.slotTime === 'down' ? 570 * 60 : 600 * 60).length)])
+        expect(label()).toBe(`Now · ${text}`)
+        act(() => closeAll())
+        h!.unmount()
+      }
+      for (const extra of [{ '.yaseendocs/table-look.json': JSON.stringify({ version: 1, look: { slotTime: 'off' } }) }, {}]) {
+        const t = await open({ ...day, ...extra })
+        await waitFor(h!, () => nowOf(t) > 0)
+        expect(t.querySelector('.table-slot-anchor, .table-slot-host, [style*="--table-slot"]')).toBeNull()
+        expect(label()).toBe('Now')
+        act(() => closeAll())
+        h!.unmount()
+      }
+      h = null
     } finally {
       setCalendarClock(null)
     }

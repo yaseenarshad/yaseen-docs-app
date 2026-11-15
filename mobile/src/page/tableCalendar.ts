@@ -1,4 +1,4 @@
-import { minutesOf, nowPlace, rowTimes, type NowPlace } from '@shared/tableSlots'
+import { minutesOf, nowPlace, rowTimes, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
 import { calendarLook, type CalendarLook } from './calendarLook'
 import { gridColumns } from './tableLayout'
 
@@ -27,27 +27,100 @@ import { gridColumns } from './tableLayout'
  * while the table is in view and its now row is not; its arrow points at the row. A tap scrolls the row to the middle
  * (the Mac's `goToNow` on a read-only page). A table with `nonow`, or the Now button setting off, has none. One
  * `IntersectionObserver` says when it shows: no position is read on a scroll.
+ *
+ * TIME IN SLOT (YAZ-5606, the Mac's YAZ-5602): with the vault's `look.slotTime` down or up, a pill at the right end of
+ * the now line says the time left in the now row's slot, or since it started (`19:14 left`, `20 min left`, `10:46 in`:
+ * the Mac's `slotTimeLabel`, ONE copy in `shared/tableSlots.ts`), and the Now pill says `Now · 19:14 left`. As the Mac's
+ * widget: an anchor in the now row's last cell, its track on the line (`--table-now`), the pill sticky at the right end of
+ * the table's visible part; a last cell with text keeps a right padding as wide as the slot's widest text. The clock
+ * sets the text only. With seconds, a timer to each next second runs only while a table with a pill is on the screen
+ * and the app is in front; without, the minute's mark sets it. Off: no pill, no timer, nothing changes.
  */
 
-export { minutesOf, nowPlace, rowTimes, type NowPlace }
+export { minutesOf, nowPlace, rowTimes, slotTimeLabel, type NowPlace }
+
+/** A cell's own text: without a Time in slot pill it holds (a one-column table's column A is its last cell). */
+const ownText = (cell: Element): string => {
+  const text = cell.textContent ?? ''
+  const anchor = cell.querySelector(':scope > .table-slot-anchor')
+  // The anchor is the cell's first child: its text comes first.
+  return anchor === null ? text : text.slice(anchor.textContent?.length ?? 0)
+}
 
 /** Column A's text of each row through the grid (a row a merged cell from above covers has `null`). Pure: no layout. */
 export function columnATexts(table: HTMLTableElement): Array<string | null> {
   const grid = gridColumns(table)
   return [...table.rows].map((row) => {
-    for (const cell of row.cells) if (grid.get(cell) === 0) return (cell.textContent ?? '').trim()
+    for (const cell of row.cells) if (grid.get(cell) === 0) return ownText(cell).trim()
     return null
   })
+}
+
+/** The pill's text for the slot `start`–`end` (minutes from today's midnight) at `seconds` from today's midnight; `''` when off. */
+export const slotPillText = (look: CalendarLook, start: number, end: number, seconds: number): string =>
+  look.slotTime === 'off' ? '' : slotTimeLabel(look.slotTime, look.slotSeconds, start, end, seconds)
+
+/** The Time in slot pill of the now row's last cell: its anchor, its track on the now line, the pill (the Mac's `slotPill`). */
+function slotAnchor(): HTMLElement {
+  const anchor = document.createElement('span')
+  anchor.className = 'table-slot-anchor'
+  anchor.setAttribute('aria-hidden', 'true')
+  const track = document.createElement('span')
+  track.className = 'table-slot-track'
+  const pill = document.createElement('span')
+  pill.className = 'table-slot-pill'
+  track.append(pill)
+  anchor.append(track)
+  return anchor
+}
+
+/**
+ * The pill on `row` (the now row, or `null` for none) of `table` for the slot `start`–`end`: made, moved or taken away,
+ * its cell padded when it has text. Its text at `seconds`. Writes only what changed.
+ */
+function drawSlotPill(table: HTMLTableElement, row: HTMLTableRowElement | null, start: number, end: number, seconds: number, look: CalendarLook): void {
+  const cell = row === null || look.slotTime === 'off' ? null : (row.cells[row.cells.length - 1] ?? null)
+  for (const host of table.querySelectorAll<HTMLElement>('.table-slot-host')) {
+    if (host === cell) continue
+    host.querySelector(':scope > .table-slot-anchor')?.remove()
+    host.classList.remove('table-slot-host', 'table-slot-pad')
+    host.style.removeProperty('--table-slot-chars')
+  }
+  if (cell === null) return
+  let anchor = cell.querySelector<HTMLElement>(':scope > .table-slot-anchor')
+  if (anchor === null) {
+    // Its own text, read before the pill comes: a cell with text keeps room for the pill at its right.
+    const filled = (cell.textContent ?? '').trim() !== ''
+    cell.prepend((anchor = slotAnchor()))
+    cell.classList.add('table-slot-host')
+    cell.classList.toggle('table-slot-pad', filled)
+  }
+  const chars = String(slotPillChars(look.slotTime, look.slotSeconds, start, end))
+  if (cell.style.getPropertyValue('--table-slot-chars') !== chars) cell.style.setProperty('--table-slot-chars', chars)
+  const pill = anchor.querySelector<HTMLElement>('.table-slot-pill')!
+  if (pill.dataset.start !== String(start)) pill.dataset.start = String(start)
+  if (pill.dataset.end !== String(end)) pill.dataset.end = String(end)
+  const text = slotPillText(look, start, end, seconds)
+  if (pill.textContent !== text) pill.textContent = text
+}
+
+/** The pills' text of `root`'s calendar tables at `seconds` (the clock's each second): text only, no layout. */
+function setPillTexts(root: ParentNode, seconds: number, look: CalendarLook): void {
+  for (const pill of root.querySelectorAll<HTMLElement>('table[data-calendar] .table-slot-pill')) {
+    const text = slotPillText(look, Number(pill.dataset.start), Number(pill.dataset.end), seconds)
+    if (pill.textContent !== text) pill.textContent = text
+  }
 }
 
 /** Each calendar table's row times, read once (the reader never changes a table's text). */
 const timesOf = new WeakMap<HTMLTableElement, Array<number | null>>()
 
 /**
- * Marks `table` (a calendar table) for `minutes`: its past rows, its now row and its look; returns the now row (or
+ * Marks `table` (a calendar table) for `minutes`: its past rows, its now row and its look, and with Time in slot the
+ * pill on the now line, its text at `seconds` from midnight (the minute's start by default); returns the now row (or
  * `null`). Writes only what changed.
  */
-export function markCalendar(table: HTMLTableElement, minutes: number, look: CalendarLook = calendarLook()): HTMLTableRowElement | null {
+export function markCalendar(table: HTMLTableElement, minutes: number, look: CalendarLook = calendarLook(), seconds = minutes * 60): HTMLTableRowElement | null {
   let times = timesOf.get(table)
   if (times === undefined) timesOf.set(table, (times = rowTimes(columnATexts(table))))
   const place = nowPlace(times, Number(table.getAttribute('data-calendar')), minutes)
@@ -73,6 +146,8 @@ export function markCalendar(table: HTMLTableElement, minutes: number, look: Cal
       if (row.style.getPropertyValue('--table-now') !== at) row.style.setProperty('--table-now', at)
     } else if (row.style.getPropertyValue('--table-now') !== '') row.style.removeProperty('--table-now')
   })
+  // Time in slot (YAZ-5606): none with Off, and none on a table that never had one: nothing changes.
+  if (look.slotTime !== 'off' || table.querySelector('.table-slot-host') !== null) drawSlotPill(table, nowRow, place?.start ?? 0, place?.end ?? 0, seconds, look)
   return nowRow
 }
 
@@ -91,6 +166,7 @@ function nowChip(): { anchor: HTMLElement; chip: HTMLButtonElement } {
   const dot = document.createElement('span')
   dot.className = 'page-table__now-dot'
   const label = document.createElement('span')
+  label.className = 'page-table__now-label'
   label.textContent = 'Now'
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   svg.setAttribute('viewBox', '0 0 24 24')
@@ -144,6 +220,10 @@ export function watchCalendars(host: HTMLElement, { look = calendarLook(), now =
   let stopped = false
   const watches: ChipWatch[] = []
   const seen = new WeakSet<HTMLTableElement>()
+  /** Time in slot with seconds: the timer to the next whole second, and the table boxes on the screen now. */
+  let second: ReturnType<typeof setTimeout> | null = null
+  const onScreen = new Set<Element>()
+  const counts = look.slotTime !== 'off' && look.slotSeconds
   const own = () => host.querySelectorAll<HTMLTableElement>('table[data-calendar]')
   const all = () => [...own(), ...document.querySelectorAll<HTMLTableElement>('.table-view table[data-calendar]')]
 
@@ -157,6 +237,10 @@ export function watchCalendars(host: HTMLElement, { look = calendarLook(), now =
       ? null
       : new IntersectionObserver((entries) => {
           for (const entry of entries) {
+            if (entry.target.classList.contains('page-table-box')) {
+              if (entry.isIntersecting) onScreen.add(entry.target)
+              else onScreen.delete(entry.target)
+            }
             for (const w of watches) {
               if (entry.target === w.box) w.boxOn = entry.isIntersecting
               else if (entry.target === w.row) {
@@ -168,14 +252,61 @@ export function watchCalendars(host: HTMLElement, { look = calendarLook(), now =
               draw(w)
             }
           }
+          if (counts) {
+            texts()
+            seconds()
+          }
         })
+
+  /** Each Now pill's label: `Now · 19:14 left` while its table has a Time in slot pill (YAZ-5606), else `Now`. */
+  const labels = () => {
+    for (const w of watches) {
+      const label = w.chip.querySelector('.page-table__now-label')
+      const pill = w.table.querySelector('.table-slot-pill')?.textContent ?? ''
+      const text = pill === '' ? 'Now' : `Now · ${pill}`
+      if (label !== null && label.textContent !== text) label.textContent = text
+    }
+  }
+
+  /** The pills' and the Now pills' text at the clock's second: text only (each second, with Show seconds). */
+  const texts = () => {
+    if (stopped || look.slotTime === 'off') return
+    const at = secondsOf(now())
+    setPillTexts(host, at, look)
+    const view = document.querySelector('.table-view')
+    if (view !== null) setPillTexts(view, at, look)
+    labels()
+  }
+
+  /**
+   * The second's timer: only with Time in slot counting seconds, the app in front, and a calendar table with a pill on
+   * the screen (its box seen by the observer; with none, every box counts; the full-screen view's copy is on the screen).
+   */
+  const seconds = () => {
+    const shows = () =>
+      document.querySelector('.table-view table[data-calendar] .table-slot-pill') !== null ||
+      [...own()].some((table) => table.querySelector('.table-slot-pill') !== null && (observer === null || onScreen.has(table.closest('.page-table-box') ?? table)))
+    const want = counts && !stopped && !document.hidden && shows()
+    if (want && second === null) {
+      second = setTimeout(() => {
+        second = null
+        texts()
+        seconds()
+      }, 1000 - (Date.now() % 1000) + 5)
+    } else if (!want && second !== null) {
+      clearTimeout(second)
+      second = null
+    }
+  }
 
   /** Marks every calendar table for the clock's minute; the chips follow their now rows. */
   const mark = () => {
     if (stopped) return
-    const minutes = minutesOf(now())
+    const date = now()
+    const minutes = minutesOf(date)
+    const at = secondsOf(date)
     const rows = new Map<HTMLTableElement, HTMLTableRowElement | null>()
-    for (const table of all()) rows.set(table, markCalendar(table, minutes, look))
+    for (const table of all()) rows.set(table, markCalendar(table, minutes, look, at))
     for (const w of watches) {
       const row = rows.get(w.table) ?? null
       if (row === w.row) continue
@@ -185,12 +316,15 @@ export function watchCalendars(host: HTMLElement, { look = calendarLook(), now =
       if (row !== null) observer?.observe(row)
       draw(w)
     }
+    if (look.slotTime !== 'off') labels()
+    seconds()
   }
 
   const schedule = () => {
     if (timer !== null) clearTimeout(timer)
     timer = null
-    if (stopped || own().length === 0) return
+    // No timer while the app is not in front: back in front, `shown` marks at once and schedules again.
+    if (stopped || own().length === 0 || document.hidden) return
     // A little after the minute turns, so the clock reads the new minute.
     timer = setTimeout(() => {
       timer = null
@@ -200,7 +334,13 @@ export function watchCalendars(host: HTMLElement, { look = calendarLook(), now =
   }
 
   const shown = () => {
-    if (document.hidden) return
+    if (document.hidden) {
+      // Hidden: no timers (the minute's and the second's).
+      if (timer !== null) clearTimeout(timer)
+      timer = null
+      seconds()
+      return
+    }
     mark()
     schedule()
   }
@@ -223,6 +363,8 @@ export function watchCalendars(host: HTMLElement, { look = calendarLook(), now =
       if (seen.has(table)) continue
       seen.add(table)
       const box = table.closest<HTMLElement>('.page-table-box')
+      // With seconds, the second's timer runs only while a box is on the screen.
+      if (box !== null && counts) observer?.observe(box)
       if (box === null || !look.nowButton || table.hasAttribute('data-nonow')) continue
       const { anchor, chip } = nowChip()
       box.append(anchor)
@@ -241,6 +383,7 @@ export function watchCalendars(host: HTMLElement, { look = calendarLook(), now =
     stop() {
       stopped = true
       if (timer !== null) clearTimeout(timer)
+      if (second !== null) clearTimeout(second)
       observer?.disconnect()
       document.removeEventListener('visibilitychange', shown)
       window.removeEventListener('pageshow', shown)

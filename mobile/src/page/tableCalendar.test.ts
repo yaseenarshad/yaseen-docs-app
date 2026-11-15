@@ -2,6 +2,7 @@
 // @vitest-environment-options {"url": "https://app.example/"}
 import { DEFAULT_SETTINGS, TABLE_SHADE_MAX, TABLE_SHADE_MIN } from '@shared/types'
 import { DEFAULT_CALENDAR_DAY } from '@shared/timeFormat'
+import { TABLE_LOOK_DEFAULTS } from '@shared/tableLook'
 import { readFileSync } from 'node:fs'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { CALENDAR_NOW, CALENDAR_PAGE } from '../dev/tableFixtures'
@@ -54,27 +55,29 @@ afterEach(() => {
 describe('the slot math, as the Mac (YAZ-5493)', () => {
   it('15m, 30m and 60m slots: the now row and how far down its slot now is', () => {
     const t15 = times('9:00 am', '9:15 am', '9:30 am', '9:45 am')
-    expect(nowPlace(t15, 15, at(9, 20))).toEqual({ row: 2, fraction: 5 / 15, pastEnd: 2 })
+    expect(nowPlace(t15, 15, at(9, 20))).toMatchObject({ row: 2, fraction: 5 / 15, pastEnd: 2 })
     const t30 = times('9:00 am', '9:30 am', '10:00 am')
-    expect(nowPlace(t30, 30, at(9, 40))).toEqual({ row: 2, fraction: 10 / 30, pastEnd: 2 })
+    expect(nowPlace(t30, 30, at(9, 40))).toMatchObject({ row: 2, fraction: 10 / 30, pastEnd: 2 })
+    // YAZ-5606: the now slot's own start and end, for Time in slot.
+    expect(nowPlace(t30, 30, at(9, 40))).toEqual({ row: 2, fraction: 10 / 30, pastEnd: 2, start: 570, end: 600 })
     const t60 = times('9:00', '10:00', '11:00')
-    expect(nowPlace(t60, 60, at(10, 45))).toEqual({ row: 2, fraction: 0.75, pastEnd: 2 })
+    expect(nowPlace(t60, 60, at(10, 45))).toMatchObject({ row: 2, fraction: 0.75, pastEnd: 2 })
     // The last slot is one slot length long.
-    expect(nowPlace(t60, 60, at(11, 59))).toEqual({ row: 3, fraction: 59 / 60, pastEnd: 3 })
+    expect(nowPlace(t60, 60, at(11, 59))).toMatchObject({ row: 3, fraction: 59 / 60, pastEnd: 3 })
     expect(nowPlace(t15, 15, at(9, 59))?.row).toBe(4)
-    expect(nowPlace(t15, 15, at(10, 0))).toEqual({ row: null, fraction: 0, pastEnd: 5 })
+    expect(nowPlace(t15, 15, at(10, 0))).toMatchObject({ row: null, fraction: 0, pastEnd: 5 })
   })
 
   it('a slot runs to the next row with a time: a row with no time has none, and a gap is one long slot', () => {
     const t = times('To-do', '9:00 am', null, '', '11:00 am')
     expect(t).toEqual([null, null, 540, null, null, 660])
-    expect(nowPlace(t, 30, at(10, 0))).toEqual({ row: 2, fraction: 0.5, pastEnd: 2 })
+    expect(nowPlace(t, 30, at(10, 0))).toMatchObject({ row: 2, fraction: 0.5, pastEnd: 2 })
   })
 
   it('the start and the end of the day: before the first slot no row is past; after the last every row is', () => {
     const t = times('To-do', '7:00 am', '7:30 am', '8:00 am')
-    expect(nowPlace(t, 30, at(6, 0))).toEqual({ row: null, fraction: 0, pastEnd: 2 })
-    expect(nowPlace(t, 30, at(23, 0))).toEqual({ row: null, fraction: 0, pastEnd: 5 })
+    expect(nowPlace(t, 30, at(6, 0))).toMatchObject({ row: null, fraction: 0, pastEnd: 2 })
+    expect(nowPlace(t, 30, at(23, 0))).toMatchObject({ row: null, fraction: 0, pastEnd: 5 })
     // No time at all, or no slot length: no calendar.
     expect(nowPlace(times('To-do', 'Later'), 30, at(9, 0))).toBeNull()
     expect(nowPlace(t, 0, at(9, 0))).toBeNull()
@@ -83,7 +86,7 @@ describe('the slot math, as the Mac (YAZ-5493)', () => {
   it('midnight: a time earlier than the one above is the next day, so 11:30 pm and 12:00 am run on', () => {
     const t = times('11:00 pm', '11:30 pm', '12:00 am', '12:30 am')
     expect(t.slice(1)).toEqual([1380, 1410, 1440, 1470])
-    expect(nowPlace(t, 30, at(0, 10))).toEqual({ row: 3, fraction: 1 / 3, pastEnd: 3 })
+    expect(nowPlace(t, 30, at(0, 10))).toMatchObject({ row: 3, fraction: 1 / 3, pastEnd: 3 })
     expect(nowPlace(t, 30, at(23, 45))?.row).toBe(2)
   })
 
@@ -332,6 +335,9 @@ describe('the look settings: the Mac defaults, through one function (YAZ-5493, f
       nextShade: DEFAULT_SETTINGS.tableNextShade,
       // null: the CSS's own red (the Mac's default, `red`, is the now mark's red).
       nextColour: null,
+      // YAZ-5606: the vault's only (no app setting): the table look's defaults.
+      slotTime: TABLE_LOOK_DEFAULTS.tableSlotTime,
+      slotSeconds: TABLE_LOOK_DEFAULTS.tableSlotSeconds,
     })
     expect(DEFAULT_SETTINGS.tableNextColour).toBe('red')
     expect([MAC_CALENDAR_LOOK.dayStart, MAC_CALENDAR_LOOK.dayEnd]).toEqual([DEFAULT_CALENDAR_DAY.start, DEFAULT_CALENDAR_DAY.end])
@@ -340,8 +346,8 @@ describe('the look settings: the Mac defaults, through one function (YAZ-5493, f
   })
 
   it('a vault file can feed it later: good values are taken, bad ones fall back', () => {
-    expect(calendarLook({ nowMark: 'both', dimPast: 'text', shadeDarkness: 99, nowButton: false, dayStart: 360, dayEnd: 1200, nextShade: true, nextColour: 'var(--accent)' })).toEqual({ nowMark: 'both', dimPast: 'text', shadeDarkness: 30, nowButton: false, dayStart: 360, dayEnd: 1200, nextShade: true, nextColour: 'var(--accent)' })
-    expect(calendarLook({ nowMark: 'red', dimPast: 7, shadeDarkness: 'dark', nowButton: 'yes', dayStart: 1200, dayEnd: 360, nextShade: 'on', nextColour: 3 })).toEqual(MAC_CALENDAR_LOOK)
+    expect(calendarLook({ nowMark: 'both', dimPast: 'text', shadeDarkness: 99, nowButton: false, dayStart: 360, dayEnd: 1200, nextShade: true, nextColour: 'var(--accent)', slotTime: 'up', slotSeconds: false })).toEqual({ nowMark: 'both', dimPast: 'text', shadeDarkness: 30, nowButton: false, dayStart: 360, dayEnd: 1200, nextShade: true, nextColour: 'var(--accent)', slotTime: 'up', slotSeconds: false })
+    expect(calendarLook({ nowMark: 'red', dimPast: 7, shadeDarkness: 'dark', nowButton: 'yes', dayStart: 1200, dayEnd: 360, nextShade: 'on', nextColour: 3, slotTime: 'sideways', slotSeconds: 'yes' })).toEqual(MAC_CALENDAR_LOOK)
   })
 
   it('the table takes the look it is given', async () => {
