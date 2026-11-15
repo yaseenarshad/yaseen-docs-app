@@ -18,6 +18,7 @@ import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 import { useTables } from './useTables'
 import { PageComments, PageCommentsCount } from './comments/PageComments'
+import { usePageTools } from './PageTools'
 
 /** The words of a card file that is not valid (round 15, item 3). */
 export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
@@ -28,7 +29,8 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  * hidden in review" while Review is on) and its title band (none for a card with no title: the ID names it). The top
  * bar says the title ("Untitled card" with none); the heading "Title · ID" is for VoiceOver only, which names a card
  * with no title by its ID, when it is due and how sure you are, its review history, and "Open
- * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card and no ⋯ in stage one.
+ * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card in stage one. Its ⋯
+ * (YAZ-5498) is a page's: Find in page, Headings, and the full title when the top bar cuts it.
  *
  * A card file that is not valid (2 or more cards, text outside the card, or no card; from git or an agent): the first
  * card and one line, "This card file needs a fix on the Mac." (round 15, item 3). The fix actions stay on the Mac.
@@ -85,6 +87,9 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const title = name === '' ? UNTITLED_CARD : name
   const label = name === '' ? (card?.id ?? id) : name
 
+  // YAZ-5498: the card's ⋯ (Find in page, Headings, as a page's), with the full title when the top bar cuts it.
+  const tools = usePageTools(host, { title, path })
+
   const reviewOn = data?.review.enabled === true
   const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
   useEffect(() => {
@@ -114,7 +119,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
 
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} tools={tools.button} notice={tools.bar} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
       <article className="reader card-view" aria-label={label} style={look?.style}>
         {/* YAZ-5478: a card file's comment count, at the top right; a tap goes to its comments under the card. */}
         {isFile && typeof text === 'string' && <PageCommentsCount text={text} />}
@@ -136,6 +141,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
         <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
+        {tools.sheet}
         {card !== null && data !== null && (
           <>
             <p className="card-view__facts">{facts === null ? 'New card' : `${cardDueWords(cardNextReview(facts.due, facts.inSteps, now))}${facts.recall === null ? '' : ` · ${Math.round(facts.recall * 100)}% chance you remember it`}`}</p>

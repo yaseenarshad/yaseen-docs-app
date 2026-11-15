@@ -308,6 +308,21 @@ if (process.env.LAYOUT_SHEETS !== 'no') {
     }
   }
 }
+// YAZ-5498: the top bar cuts a long title; its ⋯ menu shows it whole (wrapped, never cut) and the folder, inside the screen.
+if (process.env.LAYOUT_SHEETS !== 'no') {
+  for (const [w, h] of SIZES.slice(1)) {
+    const file = await open('page-menu-title', w, h)
+    const m = await evaluate(`(() => {
+      const t = document.querySelector('.topbar__title'), menu = document.querySelector('.page-tools__menu'), top = menu && menu.querySelector('.menu-title')
+      if (!top) return { none: true, barCut: t.scrollWidth > t.clientWidth }
+      const name = top.querySelector('.menu-title__name'), r = menu.getBoundingClientRect()
+      return { barCut: t.scrollWidth > t.clientWidth, whole: name.scrollWidth <= name.clientWidth && name.textContent.length > 60, lines: Math.round(name.getBoundingClientRect().height / parseFloat(getComputedStyle(name).lineHeight)), folder: top.querySelector('.menu-title__path')?.textContent, inside: r.left >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight, box: [Math.round(r.left), Math.round(r.right)] }
+    })()`)
+    const ok = !m.none && m.barCut && m.whole && m.lines >= 2 && m.folder === 'travel / 2026' && m.inside
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-menu-title at ${w}x${h}: ${m.none ? `NO TITLE in the menu (bar cut: ${m.barCut})` : `bar cut ${m.barCut}; the full title ${m.whole ? 'whole' : 'CUT'} on ${m.lines} lines; folder "${m.folder}"; menu ${m.box.join('..')} ${m.inside ? 'inside' : 'OUTSIDE'}`}  ${file}`)
+  }
+}
 // YAZ-5458: the reading look, light and dark, at 375 px: a picture of each screen down the page.
 if (process.env.LAYOUT_LOOK !== 'no') {
   for (const scheme of ['light', 'dark'] as const) {

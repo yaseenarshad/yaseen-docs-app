@@ -27,11 +27,12 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
 
  * YAZ-5497: `page-headings` the Headings sheet of a page with 60 headings (over the arrows and the tab bar);
  * `page-headings-few` of a page with none ("no headings to list"); `page-headings-alone` in a vault with Search alone (no
- * tab bar: Review off).
+ * tab bar: Review off); `card-headings` of a card file's view (YAZ-5498 gave it the ⋯).
+ * YAZ-5498: `page-menu-title` a page whose long title the top bar cuts, its ⋯ open: the full title and folder on top.
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'card-headings', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -183,6 +184,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 // `page-headings-alone`: Review off in the vault's file, and the tabs read from it: Search alone, no tab bar.
                 ...(name === 'page-headings-alone' && { '.yaseendocs/review.json': '{"enabled": false}' }),
               }
+          : name === 'page-menu-title'
+            ? { 'travel/2026/Madrid week.md': '---\ntitle: A very long page title about the first week of the trip to Madrid in May\n---\n\n# Week\n\nDay one.\n' }
           : name === 'page-folder'
             ? { 'git/Merge.md': '---\ntitle: Merge\n---\n\nMerge notes.\n', 'git/deep/Rebase.md': '---\ntitle: Rebase\n---\n\nRebase notes.\n' }
           : name === 'card-file-comments'
@@ -256,8 +259,12 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'page-headings':
     case 'page-headings-alone':
     case 'page-headings-few':
+    case 'card-headings':
       if (name === 'page-headings-few') await open(/^Trip plan/, '.reader__body p')
-      else {
+      else if (name === 'card-headings') {
+        await typed('capital')
+        await open(/^Capital of Spain/, '.card-view__card *')
+      } else {
         await typed('long notes')
         await open(/^Long notes/, '.reader__body h2')
       }
@@ -265,6 +272,12 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await wait(50)
       press(/Headings/)
       await until(() => document.querySelector('.headings-sheet__row, .headings-sheet__none') !== null)
+      break
+    case 'page-menu-title':
+      await typed('madrid week')
+      await open(/^A very long page title/, '.reader__body h1')
+      press('Page tools')
+      await until(() => document.querySelector('.page-tools__menu') !== null)
       break
     case 'page-properties':
       await typed('trip notes')

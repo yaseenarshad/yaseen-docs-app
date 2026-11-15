@@ -50,11 +50,19 @@ async function waitFor(x: Harness, done: () => boolean, ms = 5000): Promise<void
     await act(async () => void (await new Promise((r) => setTimeout(r, 10))))
   }
 }
-async function open(files: Record<string, string | Uint8Array>, row: RegExp, ready: string, tabs: 'review' | 'files' = 'review'): Promise<Harness> {
+async function open(files: Record<string, string | Uint8Array>, row: RegExp, ready: string, tabs: 'review' | 'files' = 'review', query = ''): Promise<Harness> {
   const phone = await newPhone()
   await seedReaderVault(phone.store, phone.tokens, files)
   const x = await mount({ phone, ...(tabs === 'files' && { vaultTabs: 'files' as const }) })
   if (x.button('Search') !== null) await x.click('Search')
+  if (query !== '') {
+    await waitFor(x, () => x.host.querySelector('input[type="search"]') !== null)
+    const box = x.host.querySelector<HTMLInputElement>('input[type="search"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(box, query)
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  }
   await waitFor(x, () => x.button(row) !== null)
   await x.click(row)
   await waitFor(x, () => x.host.querySelector(ready) !== null)
@@ -111,6 +119,14 @@ describe('YAZ-5497: the Headings sheet is fully on screen, above the arrow bar a
     expect(h.host.querySelector('.tabbar')).toBeNull()
     expect(h.host.querySelector('.page-arrows')).not.toBeNull()
     expectWholeOnTop(await openHeadings(h))
+  })
+
+  it('a card view (YAZ-5498 gave it the ⋯): whole and on top of its arrows and the tab bar', async () => {
+    h = await open(FILES, /^Capital of Spain/, '.card-view__card .card__body', 'review', 'capital of spain')
+    expect(h.host.querySelector('.page-arrows')).not.toBeNull()
+    const sheet = await openHeadings(h)
+    expectWholeOnTop(sheet)
+    expect(sheet.querySelector('.headings-sheet__none')?.textContent).toBe('This page has no headings to list.')
   })
 
   it('the same cause, the properties panel: whole and on top of the top bar, the arrows and the tab bar', async () => {

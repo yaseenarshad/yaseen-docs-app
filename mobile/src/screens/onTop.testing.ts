@@ -57,6 +57,9 @@ export function readRules(css: string): Rule[] {
   return out
 }
 
+/** The rules of one of the app's stylesheets, by its path from `src/screens/`. */
+export const rulesOf = (file: string): Rule[] => readRules(readFileSync(new URL(file, import.meta.url), 'utf8'))
+
 /** Loads the app's stylesheets (once). */
 export function loadAppCss(): void {
   if (rules.length > 0) return

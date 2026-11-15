@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { Toast, useToast } from '../screens/Toast'
+import { MenuTitle, isCut } from './menuTitle'
 import './find/pageTools.css'
 
 /**
@@ -23,9 +25,21 @@ const HeadingsSheet = lazy(() => import('./find/HeadingsSheet'))
 
 export type PageTool = 'find' | 'headings' | null
 
-export function usePageTools(host: RefObject<HTMLElement | null>): { button: ReactNode; bar: ReactNode; sheet: ReactNode } {
+/**
+ * The open file the ⋯ is for. YAZ-5498: when the top bar cuts its title, the menu shows `title` whole, and the folder
+ * of `path`. A page, a card and a card file have the two tools; a drawing (no text to find, no headings) has "Copy path".
+ */
+export interface ToolsFor {
+  title: string
+  path: string
+  drawing?: boolean
+}
+
+export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor): { button: ReactNode; bar: ReactNode; sheet: ReactNode } {
   const [menu, setMenu] = useState(false)
   const [tool, setTool] = useState<PageTool>(null)
+  const [cut, setCut] = useState(false)
+  const [said, say] = useToast()
   const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!menu) return
@@ -44,21 +58,45 @@ export function usePageTools(host: RefObject<HTMLElement | null>): { button: Rea
     setMenu(false)
     setTool(next)
   }
+  // YAZ-5498: measured once, as the menu opens: is the top bar's title cut ("…")?
+  const toggle = () => {
+    if (!menu) setCut(isCut(box.current?.closest('.topbar')?.querySelector('.topbar__title')))
+    setMenu(!menu)
+  }
+  const copy = async () => {
+    setMenu(false)
+    try {
+      await navigator.clipboard.writeText(file.path)
+      say(`Copied: ${file.path}`)
+    } catch {
+      say(file.path)
+    }
+  }
   const button = (
     <div className="page-tools" ref={box}>
-      <button type="button" className="icon-btn page-tools__btn" aria-label="Page tools" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>
+      <button type="button" className="icon-btn page-tools__btn" aria-label="Page tools" aria-haspopup="menu" aria-expanded={menu} onClick={toggle}>
         ⋯
       </button>
       {menu && (
-        <div className="page-tools__menu" role="menu" aria-label="Page tools">
-          <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('find')}>
-            <span aria-hidden="true">🔍</span> Find in page
-          </button>
-          <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('headings')}>
-            <span aria-hidden="true">☰</span> Headings
-          </button>
+        <div className={cut ? 'page-tools__menu page-tools__menu--titled' : 'page-tools__menu'} role="menu" aria-label="Page tools">
+          {cut && <MenuTitle title={file.title} path={file.path} />}
+          {file.drawing === true ? (
+            <button type="button" role="menuitem" className="page-tools__item" onClick={() => void copy()}>
+              <span aria-hidden="true">⧉</span> Copy path
+            </button>
+          ) : (
+            <>
+              <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('find')}>
+                <span aria-hidden="true">🔍</span> Find in page
+              </button>
+              <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('headings')}>
+                <span aria-hidden="true">☰</span> Headings
+              </button>
+            </>
+          )}
         </div>
       )}
+      {said !== null && <Toast text={said} />}
     </div>
   )
   const close = () => setTool(null)

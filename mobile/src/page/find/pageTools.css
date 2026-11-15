@@ -39,6 +39,14 @@
   background: var(--bg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
 }
+/* YAZ-5498: with the full title at its top, the menu is as wide as the screen allows, and the title wraps in it. Held
+   to the screen's right edge, just under the top bar (57 px under the notch): from the ⋯ it would run off the left. */
+.page-tools__menu--titled {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 61px);
+  right: 12px;
+  width: min(320px, calc(100vw - 24px));
+}
 .page-tools__item {
   display: flex;
   align-items: center;
