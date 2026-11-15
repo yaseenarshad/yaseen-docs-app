@@ -1,4 +1,4 @@
-import { isGistId, type GistDoc, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
+import { isGistId, POINTER_FILE, type GistDoc, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
 import type { RepoPort } from '@shared/friendListStore'
 import { GithubError, type GithubClient, type RateLimit } from '../github/client'
 
@@ -106,18 +106,28 @@ export function gistsApi(client: GithubClient, repos?: () => Promise<readonly Re
       const answer = await request('/gists', { method: 'POST', body: { description, public: false, files: filesBody(files) } })
       return toDoc(answer.data, answer.etag)
     },
-    async update(id, files) {
+    async update(id, files, again) {
       // YAZ-5312 (proved live): two PATCHes of one gist at the same moment, on DIFFERENT files, can get 409 for one of
-      // them. GitHub refused that whole write, so the same write is safe to send again: up to 2 more times, after a wait.
+      // them. GitHub refused that whole write, so it may be sent again: up to 2 more times, after a wait.
+      // YAZ-5516 (N9-1): but never the SAME body blind: the other write may be newer (a pointer moved to the newest
+      // generation). Read the gist again and work out the change again on it (`again`). A pointer write with no way to
+      // work it out again is not sent again: the other write stands (`superseded`).
+      let body = files
       for (let attempt = 0; ; attempt++) {
         try {
-          const answer = await request(gistPath(id), { method: 'PATCH', body: { files: filesBody(files) } })
+          const answer = await request(gistPath(id), { method: 'PATCH', body: { files: filesBody(body) } })
           return { gist: answer.data === null ? null : toDoc(answer.data, answer.etag), rate: gistRate(answer.rateLimit) }
         } catch (err) {
           if (!(err instanceof GithubError && err.status === 409)) throw err
           // Round 4, Nit 3: still refused after the retries: quiet ("try again later"), never an exception on a screen.
           if (attempt >= CONFLICT_RETRIES) throw new GithubError('GITHUB_DOWN', 409, 'GitHub answered 409: the gist is being written', null, err.said, err.rateLimit)
           await new Promise((r) => setTimeout(r, CONFLICT_WAIT_MS * (attempt + 1)))
+          if (again === undefined && !(POINTER_FILE in body)) continue
+          const read = await request(gistPath(id))
+          const fresh = toDoc(read.data, read.etag)
+          const next = again === undefined ? null : again(fresh)
+          if (next === null) return { gist: fresh, rate: null, superseded: true }
+          body = next
         }
       }
     },

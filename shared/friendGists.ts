@@ -93,6 +93,13 @@ export interface GistListItem {
  * The gist calls, with the user's own token. The phone builds it on 3E's client (`mobile/src/friends/gistsApi.ts`);
  * the Mac (4E5) builds its own in the main process. Every failure throws an error with a `code` of `GistErrorCode`.
  */
+/**
+ * YAZ-5516 (N9-1): a write that GitHub refused with 409 (another write of the gist at that moment) is never sent again
+ * as it was: that other write may be newer. An adapter that sends it again reads the gist again first and asks this for
+ * the change worked out again on what is there now; `null`: nothing to write any more (`superseded`).
+ */
+export type GistRedo = (fresh: GistDoc) => Record<string, string | null> | null
+
 export interface GistsApi {
   /** All of the user's own gists (secret too), every page. */
   list(): Promise<GistListItem[]>
@@ -110,7 +117,7 @@ export interface GistsApi {
    * Changes these files, and ONLY these files: GitHub keeps each file the call does not name (YAZ-5312; proved live).
    * `null` deletes that one file. Counts 1 on `gist_update`; `rate` is GitHub's count after it.
    */
-  update(id: string, files: Record<string, string | null>): Promise<{ gist: GistDoc | null; rate: GistRate | null }>
+  update(id: string, files: Record<string, string | null>, again?: GistRedo): Promise<{ gist: GistDoc | null; rate: GistRate | null; superseded?: true }>
   remove(id: string): Promise<void>
   /**
    * YAZ-5238: GitHub's time (ms) at its last answer, or null when it is not known: the `Date` header, or else a lower
@@ -180,6 +187,30 @@ function versioned<T>(text: string | null | undefined, read: (text: string) => {
 
 export const readStatsFile = (text: string | null | undefined): FileState<FriendStats> => versioned(text, parseFriendStats)
 export const readPointerFile = (text: string | null | undefined): FileState<FriendPointer> => versioned(text, parseFriendPointer)
+
+/**
+ * YAZ-5516 (N9-1): a pointer write worked out again after a 409. `base` is the pointer as read before the write, `ours`
+ * what the write wanted. Each field the write changes goes onto the pointer read NOW, but only where that field is still
+ * as `base` had it: a field the other write changed stays (it may name a NEWER generation; the next settle or round looks
+ * again with the list read again). `held` is a set: ours are added. `null`: nothing left to write.
+ */
+export function pointerRedo(base: Record<string, unknown>, ours: Record<string, unknown>): GistRedo {
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+  return (fresh) => {
+    const now = readPointerFile(fileText(fresh, POINTER_FILE))
+    if (now.kind !== 'ok') return null
+    const next: Record<string, unknown> = { ...now.raw }
+    for (const key of new Set([...Object.keys(base), ...Object.keys(ours)])) {
+      if (same(ours[key], base[key])) continue
+      if (key === 'held' && Array.isArray(ours.held)) next.held = [...new Set([...(Array.isArray(now.raw.held) ? now.raw.held : []), ...ours.held])]
+      else if (same(now.raw[key], base[key])) {
+        if (ours[key] === undefined) delete next[key]
+        else next[key] = ours[key]
+      }
+    }
+    return same(next, now.raw) ? null : { [POINTER_FILE]: JSON.stringify(next) }
+  }
+}
 
 /** The one text of `file` in a gist, or null when it is missing or cut short. */
 const fileText = (gist: GistDoc, file: string): string | null => {
@@ -730,7 +761,8 @@ export async function relinkPointers(api: GistsApi, pointers: readonly string[],
     if (state.kind !== 'ok') continue
     if (state.value.stats === stats) continue
     const raw = state.raw
-    await write(() => api.update(id, { [POINTER_FILE]: JSON.stringify({ ...raw, v: 1, stats }) }))
+    const ours = { ...raw, v: 1, stats }
+    await write(() => api.update(id, { [POINTER_FILE]: JSON.stringify(ours) }, pointerRedo(raw, ours)))
     updated.push(id)
   }
   return { updated, gone }
