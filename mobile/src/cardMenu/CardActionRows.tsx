@@ -19,7 +19,7 @@ export interface CardActionRowsProps {
 }
 
 /**
- * THE CARD ACTIONS (YAZ-5505): ONE shared, lazy block of rows, put in a host's own menu (Review's ⋯, the card view's
+ * THE CARD ACTIONS: ONE shared, lazy block of rows, put in a host's own menu (Review's ⋯, the card view's
  * ⋯, a page card's ⋯). Every row needs two taps (`twoTap.ts`): the first turns the row into "Tap again to …" in place,
  * the second, within about 3 s, does it. A tap anywhere but this row, Escape, or the menu closing cancels.
  * No wrapper: the rows are the host menu's own `menuitem`s; the live line (VoiceOver) goes first, so a host's

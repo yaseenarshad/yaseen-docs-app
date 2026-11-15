@@ -1,5 +1,5 @@
 /**
- * A page card's ⋯ (YAZ-5504): at the RIGHT of the card's head (its ID and marks, over its title band; YAZ-5437), it
+ * A page card's ⋯: at the RIGHT of the card's head (its ID and marks, over its title band), it
  * opens the card actions for THAT card (`pageCardMenu.tsx`). 44 pt to tap, quiet: a grey ⋯ drawn by CSS, so the head's
  * words (and find in page) stay the card's own. No React: the page is drawn with the DOM (`pageRender.ts`).
  */

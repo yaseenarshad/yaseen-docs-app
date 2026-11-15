@@ -8,7 +8,7 @@ import { CARD_MORE_ATTR } from './moreButton'
 import './cardMenu.css'
 
 /**
- * A PAGE CARD'S ⋯ MENU (YAZ-5504; also the card view's card, YAZ-5527): a tap on the ⋯ at the right of a card's head in the page (`moreButton.ts`) opens
+ * A PAGE CARD'S ⋯ MENU (also the card view's card): a tap on the ⋯ at the right of a card's head in the page (`moreButton.ts`) opens
  * the card actions for THAT card, under the ⋯, in the card's own box. A tap outside, Escape, the ⋯ again, or an action
  * closes it. What was done shows in the app's quiet toast; the card shows it at once (the page reads `shownText`). The
  * page view mounts it with one line; the rows are a lazy chunk (`CardMenuFor`).
@@ -16,7 +16,7 @@ import './cardMenu.css'
 export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { path: string; answers: Answers | null; upNext: boolean }): ReactNode {
   const [said, say] = useToast(2500)
   const [open, setOpen] = useState<{ id: string; button: HTMLElement } | null>(null)
-  // YAZ-5518: the open menu is an overlay of the app's one stack: a Back closes it, and the page stays.
+  // The open menu is an overlay of the app's one stack: a Back closes it, and the page stays.
   useOverlay(open !== null, () => setOpen(null))
   const menu = useRef<HTMLDivElement>(null)
   // The ⋯ of a card: the page's DOM is drawn by `renderPage`, so one listener on the page's box.
@@ -26,7 +26,7 @@ export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { 
     const click = (e: Event) => {
       const button = e.target instanceof Element ? e.target.closest<HTMLElement>(`[${CARD_MORE_ATTR}]`) : null
       if (button === null || !el.contains(button)) return
-      // Only the app's own ⋯ of the page's own card, or of the card view's card (YAZ-5527) (the text cannot forge one:
+      // Only the app's own ⋯ of the page's own card, or of the card view's card (the text cannot forge one:
       // YAZ-5280): its card box names the ID.
       const id = button.getAttribute(CARD_MORE_ATTR)!
       if (!button.classList.contains('card__more') || button.closest<HTMLElement>('.page-card, .card-view__card')?.dataset.cardId !== id) return

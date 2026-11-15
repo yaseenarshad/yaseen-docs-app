@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
- * THE TWO-TAP RULE (YAZ-5505, Yaseen: "any change that we make through the mobile device on a card needs a two-click").
+ * THE TWO-TAP RULE (Yaseen: "any change that we make through the mobile device on a card needs a two-click").
  * The first tap on a row ARMS it: the row says "Tap again to …" in place (no pop-up). A second tap on the SAME row
  * within `TWO_TAP_MS` does it. Anything else cancels: a tap on another row (which arms that one instead), a tap
  * outside, closing the menu (the rows unmount), or the time passing.
