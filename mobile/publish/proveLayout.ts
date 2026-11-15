@@ -27,9 +27,13 @@ import { freePort } from './freePort'
  *    the box (right of the number, its middle a tap on it), then the text.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
- *  - the Headings sheet (`#fixture=page-headings`, `page-headings-few`, `page-headings-alone`, YAZ-5497) and the properties
- *    panel (`page-properties`) at 375×667 and 390×844: the box inside the screen, and on top: `elementFromPoint` at its
- *    list's centre, its head and its bottom finds the sheet itself, and at the page arrows' and the tab bar's place too.
+ *  - the Headings sheet (`#fixture=page-headings`, `page-headings-few`, `page-headings-alone`, YAZ-5497) at 375×667 and
+ *    390×844: the box inside the screen, and on top: `elementFromPoint` at its list's centre, its head and its bottom
+ *    finds the sheet itself, and at the page arrows' and the tab bar's place too.
+ *  - a page's properties (`#fixture=page-properties`, `page-properties-closed`, `page-properties-title`, YAZ-5529), light
+ *    and dark, at 375 px: no edge tab; the Mac's chip at the right of the title, on its first line, a 44 px tap, its own
+ *    at its centre; closed: no rows; open: the rows right under the title, in the page's flow (they scroll with it), inside
+ *    the column; the page never scrolls sideways.
  *  - the folder page (`#fixture=folder-*`, YAZ-5460), light and dark, at 375 px: a held folder's menu, the page with
  *    its text and tabs, its table (in its box, the header row and the Name column marked to stay), the grouped table,
  *    the board (its columns scroll sideways in their row), the cards, the calendar's agenda, the page in a sheet; the
@@ -56,7 +60,7 @@ import { freePort } from './freePort'
  *    screen, above the page arrows and the tab bar; its first row on top.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -79,7 +83,7 @@ const ASKS = process.env.LAYOUT_ONLY === 'tables' ? [] : ['c4erase-3-friends-rem
 process.env.NOTECARDS_SERVE = 'no'
 const { serveDist } = await import('./serve')
 const server = await serveDist(DIST, PORT)
-// YAZ-5524: 28 more top-bar cases (pages with no ID chip): the budget grows with them.
+// YAZ-5524: 28 more top-bar cases (pages with no ID chip): the budget grows with them. YAZ-5529: 6 properties cases.
 setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 420_000).unref()
 const profile = mkdtempSync(join(tmpdir(), 'notecards-layout-profile-'))
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
@@ -436,7 +440,6 @@ if (process.env.LAYOUT_SHEETS !== 'no') {
     ['page-headings', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list', '.headings-sheet__title')],
     ['page-headings-few', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__none', '.headings-sheet__title')],
     ['page-headings-alone', ON_TOP('.headings-sheet', '.headings-sheet__panel', '.headings-sheet__list', '.headings-sheet__title')],
-    ['page-properties', ON_TOP('.props', '.props__panel', '.props__rows', '.props__title')],
   ] as const
   for (const [w, h] of SIZES.slice(1)) {
     for (const [name, check] of CASES) {
@@ -801,6 +804,59 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-card-menu third card at ${w}x${h}: menu ${m.top}-${m.bottom} (${m.place}), the screen ${m.screenTop}-${m.screenBottom}; its first row ${m.hit ? 'is on top' : 'IS COVERED'}  ${shot}`)
   }
+}
+// YAZ-5529: a page's properties, light and dark, at 375 px. The Mac's chip at the right of the title (the reader's, or the
+// page's own heading when that says the title), on its first line, a 44 px tap whose centre is its own; no edge tab. Open,
+// the rows right under the title, in the page's flow: a scroll of the page moves them with it.
+const PROPS_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const chip = document.querySelector('.page-props')
+  if (!chip) return { error: 'no chip' }
+  const title = document.querySelector('.reader__title:not(.reader__title--same)') || document.querySelector('.reader__body > h1')
+  const range = document.createRange()
+  range.selectNodeContents(title)
+  const line = range.getClientRects()[0]
+  const c = r(chip), t = r(title), col = r(document.querySelector('.reader'))
+  const hit = document.elementFromPoint(c.left + c.width / 2, c.top + c.height / 2)
+  const body = document.querySelector('.page-props__body')
+  const screen = document.querySelector('.screen--reader')
+  let rows = null
+  if (body) {
+    const b = r(body), before = b.top
+    screen.scrollTop = 60
+    const moved = Math.round(before - r(body).top)
+    screen.scrollTop = 0
+    rows = { n: body.querySelectorAll('.props__row').length, gap: Math.round(b.top - t.bottom), inColumn: b.left >= col.left - 0.5 && b.right <= col.right + 0.5, position: getComputedStyle(body).position, moved, next: (body.parentElement.classList.contains('page-props__slot') ? body.parentElement : body).nextElementSibling?.className || '' }
+  }
+  return {
+    title: title.tagName + ' ' + title.textContent.trim(),
+    rect: [c.left, c.top, c.right, c.bottom].map(Math.round),
+    tap: c.width >= 44 && c.height >= 44,
+    right: c.left >= line.right - 0.5 && c.right <= col.right + 8.5 && c.right <= innerWidth,
+    onLine: Math.abs((c.top + c.bottom) / 2 - (line.top + line.bottom) / 2) <= 8,
+    hit: hit !== null && hit.closest('.page-props') === chip,
+    expanded: chip.getAttribute('aria-expanded'),
+    edgeTab: document.querySelector('.props-tab, .props__panel') !== null,
+    rows,
+    wide: screen.scrollWidth > screen.clientWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_PROPS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['page-properties-closed', 'page-properties', 'page-properties-title'] as const) {
+      const file = await open(name, 375, 667)
+      const m = await evaluate(PROPS_CHECK)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const open_ = name !== 'page-properties-closed'
+      const rowsOk = open_ ? m.rows !== null && m.rows.n === 11 && m.rows.gap >= -0.5 && m.rows.gap <= 16 && m.rows.inColumn && m.rows.position === 'static' && m.rows.moved === 60 && /reader__body|^$/.test(m.rows.next) : m.rows === null
+      const ok = m.error === undefined && m.tap && m.right && m.onLine && m.hit && !m.edgeTab && m.expanded === String(open_) && rowsOk && !m.wide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${m.error ?? `title ${m.title}; chip ${m.rect.join(',')} ${m.tap ? '44px tap' : 'TAP TOO SMALL'}, ${m.right ? 'right of the title' : 'NOT RIGHT OF THE TITLE'}, ${m.onLine ? 'on its line' : 'OFF ITS LINE'}, ${m.hit ? 'its own' : 'COVERED'}; ${m.edgeTab ? 'AN EDGE TAB' : 'no edge tab'}; ${m.rows === null ? 'closed' : `${m.rows.n} rows ${m.rows.gap}px under the title, ${m.rows.inColumn ? 'in the column' : 'OUT OF THE COLUMN'}, ${m.rows.position}, a 60px scroll moves them ${m.rows.moved}px`}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}`}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()
 server.close()

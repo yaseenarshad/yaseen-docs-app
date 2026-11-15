@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { DateValue, FileValue, LinkValue, fromYaml, linkText, render, type Resolver, type Value } from '@client/views/expr/values'
 import { reservedKeyText, reservedKeys } from '@client/links/reservedKeys'
 import { ALSO_IN_KEY } from '@shared/alsoIn'
@@ -24,7 +24,7 @@ import './properties.css'
  *    a check box ticked or not (it cannot change), a list as chips, a link as a pill with its page's title that opens the
  *    page (the one link door), a text holding `[[links]]` with each link a pill; `also_in` names each folder by its title.
  *
- * Slides in from the right; a tap outside it, a swipe to the right, ✕ or Escape closes it. Nothing is written.
+ * YAZ-5529: they open inline under the page's title, from the Mac's chip at its right (`../PageProperties.tsx`). Nothing is written.
  */
 
 export interface Row {
@@ -49,66 +49,17 @@ export function propertyRows(record: IndexRecord, ids: boolean): Row[] {
     .map(([key, raw]) => ({ key, raw, chip: reserved.has(key) ? 'reserved' : isOpaque(raw) ? 'yaml' : null }))
 }
 
-const SWIPE_PX = 60
-
-export default function PropertiesPanel({ record, data, door, onClose }: { record: IndexRecord; data: VaultData; door: LinkDoor; onClose: () => void }) {
-  const [shown, setShown] = useState(false)
-  const [drag, setDrag] = useState(0)
-  const start = useRef<{ x: number; y: number } | null>(null)
-  const closeBtn = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    // The slide: drawn off the edge first, then in (no slide with Reduce Motion: the CSS says so).
-    const frame = requestAnimationFrame(() => setShown(true))
-    closeBtn.current?.focus()
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    document.addEventListener('keydown', key)
-    return () => {
-      cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', key)
-    }
-  }, [onClose])
-
-  const open = (path: string) => {
-    onClose()
-    openLink(door, { kind: 'page', path })
-  }
-  const rows = propertyRows(record, data.ids)
+/** The rows, open under the page's title (YAZ-5529): the Mac's panel body, read only. A link value opens its page. */
+export default function PropertiesInline({ record, data, door }: { record: IndexRecord; data: VaultData; door: LinkDoor }) {
   return (
-    <div className="props" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <aside
-        className="props__panel"
-        data-shown={shown || undefined}
-        role="dialog"
-        aria-label="Properties"
-        style={drag > 0 ? { transform: `translateX(${drag}px)`, transition: 'none' } : undefined}
-        onTouchStart={(e) => (start.current = { x: e.touches[0].clientX, y: e.touches[0].clientY })}
-        onTouchMove={(e) => {
-          if (start.current === null) return
-          const dx = e.touches[0].clientX - start.current.x
-          const dy = Math.abs(e.touches[0].clientY - start.current.y)
-          if (dx > 0 && dx > dy) setDrag(dx)
-        }}
-        onTouchEnd={() => {
-          const far = drag > SWIPE_PX
-          start.current = null
-          setDrag(0)
-          if (far) onClose()
-        }}
-      >
-        <div className="props__head">
-          <h2 className="props__title">Properties</h2>
-          <button ref={closeBtn} type="button" className="icon-btn props__close" aria-label="Close properties" onClick={onClose}>
-            ✕
-          </button>
-        </div>
-        <PropertyRows rows={rows} data={data} open={open} />
-      </aside>
-    </div>
+    <section className="page-props__body" aria-label="Properties">
+      <PropertyRows rows={propertyRows(record, data.ids)} data={data} open={(path) => openLink(door, { kind: 'page', path })} className="props__rows page-props__rows" />
+    </section>
   )
 }
 
 /**
- * The panel's rows (YAZ-5459), alone: a key and its value each, read only. The card strip's Properties part
+ * The rows (YAZ-5459), alone: a key and its value each, read only. The card strip's Properties part
  * (`cardStrip/CardStrip.tsx`, YAZ-5508) shows a card's own properties with them, the same rows and look as a page's.
  */
 export function PropertyRows({ rows, data, open, className = 'props__rows' }: { rows: readonly Row[]; data: VaultData; open: (path: string) => void; className?: string }) {

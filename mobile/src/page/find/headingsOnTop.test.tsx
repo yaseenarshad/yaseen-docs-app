@@ -122,13 +122,6 @@ describe('YAZ-5497: the Headings sheet is fully on screen, above the arrow bar a
   })
 
   // YAZ-5504: a card view's ⋯ holds the card actions and Find in card, no Headings: no card case here.
-  it('the same cause, the properties panel: whole and on top of the top bar, the arrows and the tab bar', async () => {
-    h = await open(FILES, /^Trip notes, page/, '.reader__body p')
-    await h.click('Properties')
-    await waitFor(h, () => h!.host.querySelector('.props__panel') !== null)
-    expect(onTopProblems(h.host.querySelector('.props')!)).toEqual([])
-  })
-
   it('the check itself: the reader\'s scroll box clips and shuts in what it holds (the cause)', async () => {
     h = await open(FILES, /^Fruit, page/, '.reader__body h1')
     const inBox = document.createElement('div')

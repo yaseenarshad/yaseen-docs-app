@@ -1,0 +1,84 @@
+/* A page's properties (YAZ-5529): the Mac's chip at the right of the title (`app.css` `.frontmatter-panel__header` in
+   `.page-header`): the chevron, the glyph and the count, muted, on the title's line; a 44 px tap. It floats, so the title
+   wraps beside it and never runs under it. */
+.page-props {
+  float: right;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: var(--tap, 44px);
+  min-height: var(--tap, 44px);
+  margin: -8px -8px 0 8px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+/* The page's own first heading is the title (`reader__title--same`): the chip sits on that heading's line. */
+.page-props--same {
+  margin-top: 0;
+}
+.page-props[aria-expanded='true'] {
+  color: var(--fg);
+}
+.page-props__chevron {
+  flex: none;
+  transition: transform 120ms ease;
+}
+.page-props[aria-expanded='false'] .page-props__chevron {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-props__chevron {
+    transition: none;
+  }
+}
+
+/* The rows, under the title, in the page (they scroll with it): the Mac's typed rows (`.frontmatter-panel__rows`),
+   flat, one line per key, the name in a muted column so the values line up; no lines between. */
+.page-props__body {
+  clear: both;
+  margin: 0 0 12px;
+}
+.page-props__rows.props__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  overflow: visible;
+}
+.page-props__rows .props__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0;
+  border-bottom: 0;
+}
+.page-props__rows .props__key {
+  flex: none;
+  width: min(180px, 38%);
+  padding: 6px 0;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.page-props__rows .props__value {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 4px 0;
+}
+
+/* The chip floats beside the title only: the page's text starts under it, full width (the box after the page's own
+   heading, or the page's text after the reader's title). */
+.page-props__slot,
+.page-props:not(.page-props--same) ~ .reader__body {
+  clear: both;
+}

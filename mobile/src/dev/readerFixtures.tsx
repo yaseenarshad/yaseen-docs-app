@@ -58,7 +58,7 @@ import { fixtureAnswers } from './fixtureAnswers'
  * no signal", `-waiting2-offline` "2 waiting · no signal" (a comment and a tick), `-waiting`, `-not-sent`. YAZ-5524 S-2:
  * `-mixed-offline` (also on `page`, with the ID chip): one comment not sent AND two waiting, no signal.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -224,10 +224,13 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
                 'Links.md': `---\ntitle: Links\nid: DEMO-7\n---\n\n# Links\n\nBy words: [[Trip plan|the trip]]. By ID: [[DEMO-4]]. To a heading: [[Spanish words#Places]].\n\nA card: [[DEMO-40]]. Missing: [[No such page]]. Web: [a site](https://example.com/x).\n\nRelative: [the guide](notes/Folder%20guide.md#step-two).\n`,
                 'notes/Folder guide.md': '---\ntitle: Folder guide\n---\n\n# Folder guide\n\n## Step one\n\nOne.\n\n## Step two\n\nDone.\n',
               }
-          : name === 'page-properties'
+          : name.startsWith('page-properties')
             ? {
+                // YAZ-5529: the page's own `# Trip notes` is its title (the chip on its line), but in `-title` (the reader's).
                 'Trip notes.md':
-                  '---\ntitle: Trip notes\nid: DEMO-8\nstatus: Planning\ndue: 2026-12-01\nstarts: 2026-12-01T09:30\nbudget: 1250.5\nbooked: true\npacked: false\ntags: [spain, trains]\nsee: "[[Trip plan]]"\nnote: Read [[Café notes]] first\naliases: [Viaje]\n---\n\nThe notes.\n',
+                  '---\ntitle: Trip notes\nid: DEMO-8\nstatus: Planning\ndue: 2026-12-01\nstarts: 2026-12-01T09:30\nbudget: 1250.5\nbooked: true\npacked: false\ntags: [spain, trains]\nsee: "[[Trip plan]]"\nnote: Read [[Café notes]] first\naliases: [Viaje]\n---\n\n' +
+                  (name === 'page-properties-title' ? '' : '# Trip notes\n\n') +
+                  'The notes for the trip: the trains, the rooms and the days, as planned so far.\n\n## Days\n\nThe first day is in Madrid.\n',
               }
           : name === 'page-pills'
             ? {
@@ -398,11 +401,15 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       await until(() => document.querySelector('.page-tools__menu') !== null)
       break
     case 'page-properties':
+    case 'page-properties-closed':
+    case 'page-properties-title':
       await typed('trip notes')
       await open(/^Trip notes/, '.reader__body p')
-      press('Properties')
-      await until(() => document.querySelector('.props__panel[data-shown]') !== null)
-      await wait(300)
+      await until(() => document.querySelector('.page-props') !== null)
+      if (name === 'page-properties-closed') break
+      press(/^Properties/)
+      await until(() => document.querySelector('.page-props__rows') !== null)
+      await wait(150)
       break
     case 'page-pills':
       await open(/^Spanish words/, '.reader__body h1')

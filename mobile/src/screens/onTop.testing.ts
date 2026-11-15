@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs'
  *    `z-index`, `position: fixed | sticky`.
  * And the overlay paints over the arrows and the tab bar: its `z-index` is higher than theirs.
  */
-const CSS = ['../styles.css', '../page/pageNav.css', '../page/find/pageTools.css', '../page/reader.css', '../page/properties/properties.css', '../page/properties/propertiesTab.css']
+const CSS = ['../styles.css', '../page/pageNav.css', '../page/find/pageTools.css', '../page/reader.css', '../page/properties/properties.css', '../page/properties/pageProperties.css']
 
 interface Rule {
   selector: string
