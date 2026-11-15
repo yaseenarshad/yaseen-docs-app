@@ -2008,7 +2008,8 @@ export const FOLDER_PAGE_CHOICES = {
   textInCells: ['kind', 'wrap', 'clip'],
   groupIndent: ['medium', 'small', 'large'],
   subfolders: ['pages', 'rows', 'both', 'hide'],
-  calendarScale: ['month', 'week'],
+  // YAZ-5588: Rolling, one scrolling column of week rows with no month breaks.
+  calendarScale: ['month', 'week', 'rolling'],
   cardTitles: ['clip', 'wrap'],
   columnMarks: ['icon', 'name', 'off'],
   // YAZ-4798: a grouped table's group lines, the three choices of Settings › Sidebar › Level lines (`TocLines`), and their look (`SidebarLineStyle`).

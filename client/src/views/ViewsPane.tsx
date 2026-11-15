@@ -24,7 +24,7 @@ import { type NewPageSeed, deriveSeed } from './newPage'
 import type { PropertyWrite } from './writeProperty'
 import { BoardView } from './view/BoardView'
 import { CalendarView } from './view/CalendarView'
-import { type DayKey, calendarDateKey, calendarEndKey, dateColumns, dayLabel, dayOf, hideWeekendsDefault, hidesWeekends, movedDate, spanLabel } from './calendar'
+import { type DayKey, calendarDateKey, calendarEndKey, calendarScaleOf, dateColumns, dayLabel, dayOf, hideWeekendsDefault, hidesWeekends, movedDate, spanLabel } from './calendar'
 import { CardsView } from './view/CardsView'
 import { canonicalKey } from './view/keys'
 import { allPropertyKeys } from './view/properties'
@@ -1399,7 +1399,7 @@ export function ViewsPane({ parsed, onChange, root, folderPath, tabId, viewKey, 
             // The new page opens in the mini window (YAZ-3746 13G); in this tab where the host has no editor for one.
             if (dateKey !== null) onNewPage(null, undefined, undefined, { [dateKey]: day }, openWindow)
           }}
-          scale={view.calendarScale === 'week' ? 'week' : 'month'}
+          scale={calendarScaleOf(view)}
           onScale={(scale) =>
             update((d) => {
               // Settings' scale removes the key (YAZ-4558 D22, YAZ-4585): Month, unless Settings › Folder pages says Week.

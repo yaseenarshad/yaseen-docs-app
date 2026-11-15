@@ -12,6 +12,16 @@ import { writableKey } from './readOnlyRows'
 import { allPropertyKeys } from './view/properties'
 import type { ViewDef, ViewSet } from './viewSchema'
 
+/** The Calendar's scales (YAZ-4558 D22, YAZ-5588 Rolling) in the switch's order, with their words: the toolbar's switch and the View tab's "Opens in" share them. */
+export type CalendarScale = FolderPagesSettings['calendarScale']
+export const CALENDAR_SCALES: readonly (readonly [CalendarScale, string])[] = [
+  ['month', 'Month'],
+  ['week', 'Week'],
+  ['rolling', 'Rolling'],
+]
+/** A view's scale as written (Settings' scale already filled in by the pane), Month for anything else. */
+export const calendarScaleOf = (view: ViewDef): CalendarScale => CALENDAR_SCALES.find(([s]) => s === view.calendarScale)?.[0] ?? 'month'
+
 /** A day as the grid and a write name it: `YYYY-MM-DD`. */
 export type DayKey = string
 
