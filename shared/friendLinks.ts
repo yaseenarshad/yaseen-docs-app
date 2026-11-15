@@ -30,3 +30,13 @@ export const isOurSite = (host: string): boolean => SITES.some((site) => host ==
 
 /** A gist ID: 20 (old gists) or 32 hex characters. */
 export const LINK_ID = /^[0-9a-f]{20,40}$/i
+
+/**
+ * A pasted link's path, part by part, without regard to case (YAZ-5524, sweep3 N-5): `/GROUP#…`, `/Join#…` and
+ * `/Friend/<id>` read as the app's own (some apps capitalise a pasted first word). An ID in it is hex, read in any case.
+ */
+export const linkPath = (url: URL): string[] =>
+  url.pathname
+    .split('/')
+    .filter(Boolean)
+    .map((part) => part.toLowerCase())

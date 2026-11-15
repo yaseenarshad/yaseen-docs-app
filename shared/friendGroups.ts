@@ -22,7 +22,7 @@ import {
 import { BrokenList, ListError, NewerList, latestList, listErrorCode, openFriendsList, writeList } from './friendListHome'
 import { Elsewhere, HomeGone, pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
 import type { GistBudget } from './friendSend'
-import { GROUP_LINK_BASE, JOIN_LINK_BASE, LINK_ID, isOurSite } from './friendLinks'
+import { GROUP_LINK_BASE, JOIN_LINK_BASE, LINK_ID, isOurSite, linkPath } from './friendLinks'
 import type { FriendDay, FriendStats } from './friendStatsFormat'
 
 /**
@@ -131,7 +131,7 @@ export function parseAnyLink(text: string): AnyLink {
       continue
     }
     const host = url.hostname.toLowerCase()
-    const parts = url.pathname.split('/').filter(Boolean)
+    const parts = linkPath(url)
     if (isOurSite(host)) {
       const kind = parts[0]
       const raw = (url.hash.replace(/^#/, '') || url.searchParams.get('id') || parts[1] || '').replace(/\/+$/, '')
