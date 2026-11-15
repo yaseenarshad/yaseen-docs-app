@@ -62,7 +62,7 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
-import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setStickyHeaderSetting, setStickySubheadersSetting, setSubheaderRowSetting, setTextInCellsSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
+import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setSlotTimeSetting, setStickyHeaderSetting, setStickySubheadersSetting, setSubheaderRowSetting, setTextInCellsSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
 import { requestGoToNow } from './editor/table/goToNowRequest'
 import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
 import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
@@ -808,6 +808,7 @@ export function App() {
   const textInCells = settings.tableTextInCells ?? DEFAULT_SETTINGS.tableTextInCells
   useEffect(() => setTextInCellsSetting(textInCells), [textInCells])
   useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
+  useEffect(() => setSlotTimeSetting(settings.tableSlotTime, settings.tableSlotSeconds), [settings.tableSlotTime, settings.tableSlotSeconds])
   // The new cell note template (round 3 of the YAZ-3818 demo): read when a cell note is made. Absent from an older main process.
   useEffect(() => setCellNoteTemplate(settings.tableCellNoteTemplate ?? ''), [settings.tableCellNoteTemplate])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.

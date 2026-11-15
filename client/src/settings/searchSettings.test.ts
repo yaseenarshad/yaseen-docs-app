@@ -115,6 +115,9 @@ describe('settingCandidates', () => {
       'tableCellNotePinned',
       'tableAllNotesOpensAt',
       'tableNowMark',
+      // Time in slot (YAZ-5602).
+      'tableSlotTime',
+      'tableSlotSeconds',
       'tableNowButton',
       'tableDimPast',
       'tableShadeDarkness',

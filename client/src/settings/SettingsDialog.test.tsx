@@ -155,7 +155,7 @@ const EDITOR_ROWS = ['guideLinesOnByDefault', 'guideLinesShow', 'guideLineDarkne
  * Settings › Tables (YAZ-4775), after Editor: the page tables' rows, moved off the Editor page with their keys. "All tables"
  * starts with Header row (YAZ-4774) and Width (YAZ-4783); Cell notes with the "+" (YAZ-4790).
  */
-const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
+const TABLES_ROWS = ['tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle', 'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandRows', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteButton', 'tableCellNoteTemplate', 'tableCellNotePinned', 'tableAllNotesOpensAt', 'tableNowMark', 'tableSlotTime', 'tableNowButton', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat']
 /** Settings › Code (YAZ-3449), after Editor: the three switches a code tab's cog has too, then "Jump across files" (YAZ-3500). */
 const CODE_ROWS = ['codeReadOnly', 'codeWrap', 'codeMinimap', 'codeLanguageHelpers']
 /** The groups of the Editor page, in registry order: Outline (YAZ-4094) first, then Section indent directly under Bullet threading, whose rows draw its path (Yasin's call, YAZ-2709), and "Table of contents" (YAZ-2700) follows. */
@@ -950,6 +950,20 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(rowButtons(el, 'tableNowButton').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
     act(() => rowButtons(el, 'tableNowButton')[1].click())
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableNowButton: false })
+  })
+
+  it('Calendar tables › Time in slot (YAZ-5602): Off by default, under Mark the current time; Show seconds shows only while it counts', () => {
+    const { el, onChange } = mountOn('Tables')
+    expect(row(el, 'tableSlotTime')?.querySelector('.setting__label')?.textContent).toBe('Time in slot')
+    expect(rowButtons(el, 'tableSlotTime').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'true'], ['Count down', 'false'], ['Count up', 'false']])
+    expect(row(el, 'tableSlotTime')?.previousElementSibling?.getAttribute('data-setting')).toBe('tableNowMark')
+    expect(row(el, 'tableSlotSeconds')).toBeNull()
+    act(() => rowButtons(el, 'tableSlotTime')[1].click())
+    expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableSlotTime: 'down' })
+    const on = mountOn('Tables', { ...DEFAULT_SETTINGS, tableSlotTime: 'down' })
+    expect(rowButtons(on.el, 'tableSlotSeconds').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
+    act(() => rowButtons(on.el, 'tableSlotSeconds')[1].click())
+    expect(on.onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })
   })
 
   it('Calendar tables › Shade darkness (YAZ-4163 demo): 6% by default, a stepper in steps of 2 from 2% to 30%, and Reset off the default', () => {
