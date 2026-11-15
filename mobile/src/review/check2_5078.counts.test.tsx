@@ -31,7 +31,7 @@ describe('checker round 2: counts agree (YAZ-5227)', () => {
     await h.syncSet({ status: 'synced', vault: VAULT, ready: true })
     h.sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
     await h.click('Settings') // the dot mounts again and reads the list (the fake sync had no review() at the first mount)
-    await h.click('‹ Back')
+    await h.click('Back')
     await h.click('Search')
     await h.click('Review')
     for (let i = 0; i < 30 && !h.text().includes('CT-'); i++) await h.settle()

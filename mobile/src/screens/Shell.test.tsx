@@ -140,7 +140,7 @@ describe('each sign-in result has plain words and a way forward', () => {
     const named = glyphs[0].querySelector('[role="img"]')!
     expect([named.getAttribute('aria-label'), named.textContent]).toEqual(['the three lines', '☰'])
     expect([...glyphs[0].childNodes].filter((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.includes('☰'))).toEqual([])
-    await h.click('‹ Back')
+    await h.click('Back')
     expect(h.button('Show my repos')).not.toBeNull()
   })
 })

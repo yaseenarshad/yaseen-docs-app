@@ -37,6 +37,12 @@
   cursor: pointer;
 }
 
+/* YAZ-5451: green, blue and grey are the dot only, in a 44 pt box: a tap syncs now. */
+.sync-status--dot {
+  min-width: var(--tap);
+  justify-content: center;
+}
+
 /* YAZ-5216: the words are never cut. The box takes the room it needs; the vault's name gives room, down to 4 letters.
    Under 380 px (iPhone SE, mini) the short form shows: the same facts, 20 characters at most (`dot.ts`). */
 .topbar .topbar__title {

@@ -87,6 +87,10 @@ const FIXTURES = [
   'card-file',
   'card-invalid',
   'page-offline',
+  'page-copied',
+  'page-copy-by-hand',
+  'page-last',
+  'card-next',
   // Last: it makes this page's navigator say iPhone.
   'sign-in-iphone',
 ]

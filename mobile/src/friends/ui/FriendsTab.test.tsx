@@ -530,7 +530,7 @@ describe('"You vs <friend>" (decision 23) and Cheer and Nudge (decision 24)', ()
     expect(plain(h.host.querySelector('.fr-week li')?.getAttribute('aria-label'))).toMatch(/: you finished, Sam finished\. You both win\.$/)
     // The dot stays in the top bar (4D), with the gear.
     expect(btn(h, 'Settings')).not.toBeNull()
-    await tap(h, '‹ Back')
+    await tap(h, 'Back')
     expect(plain(h.host.querySelector('.topbar__title')?.textContent)).not.toBe('Sam')
   })
 

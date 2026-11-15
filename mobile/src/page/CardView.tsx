@@ -12,6 +12,7 @@ import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
+import { PageArrows } from './pageNav'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 
 /** The words of a card file that is not valid (round 15, item 3). */
@@ -101,7 +102,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
 
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
       <article className="reader card-view" aria-label={label}>
         <h2 className="reader__title reader__title--same">
           {title}

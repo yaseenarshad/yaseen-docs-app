@@ -122,7 +122,7 @@ describe('a card alone ("Open card") and an embedded card', () => {
     // YAZ-5437: the card's box as the Mac's card window: the head (ID), then the title band.
     expect(h.host.querySelector('.card-view__card .card__head')?.textContent).toBe('GEO-3')
     expect(h.host.querySelector('.card-view__card .card-band')?.textContent).toBe('Capital of France')
-    await h.click('‹ Back')
+    await h.click('Back')
     await typeQuery(h, 'GEO-4')
     await h.click(/^geo-4|^GEO-4/)
     await waitFor(h, () => h!.host.querySelector('.card-view') !== null && h!.host.querySelector('.card-view__card .card__body') !== null)

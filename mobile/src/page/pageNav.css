@@ -1,0 +1,113 @@
+/* The page arrows and the page ID chip (YAZ-5449, YAZ-5450): option A of the approved mockup, on the phone's tokens. */
+
+/* A thin bar over the tabs: "‹ page before" on the left, "page after ›" on the right; a long title ends in "…". */
+.page-arrows {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.page-arrows__go {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.page-arrows__go--after {
+  text-align: right;
+}
+
+/* The first or the last: that side is dim and does nothing. */
+.page-arrows__go:disabled {
+  color: var(--fg-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+.page-arrows__place {
+  flex: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The ID chip in the top bar: a small pill, never cut (the page's title gives room); its box is 44 pt tall to tap. */
+.page-id {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.page-id__pill {
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 12px/1 ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+/* Dark: the accent on its soft fill is under 4.5:1; the text takes the page's colour. */
+@media (prefers-color-scheme: dark) {
+  .page-id__pill {
+    color: var(--fg);
+  }
+}
+
+/* "Copied: <path>", over the arrows, near the thumb. */
+.page-toast {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 120px);
+  z-index: 15;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.page-toast--by-hand {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-side);
+  color: var(--fg);
+}
+
+.page-toast--by-hand label {
+  display: grid;
+  gap: 6px;
+}
+
+.page-toast__path {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--fg-muted);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13px ui-monospace, 'SF Mono', Menlo, monospace;
+}

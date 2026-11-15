@@ -85,9 +85,9 @@ describe('checker round 2: the kept Review tab', () => {
     vi.setSystemTime(NOW + 5_000)
     await h.click('More card actions')
     await h.click(/^Open (page|card)$/)
-    await until(() => h.button('‹ Back') !== null)
+    await until(() => h.button('Back') !== null)
     vi.setSystemTime(NOW + 105_000)
-    await h.click('‹ Back')
+    await h.click('Back')
     await many()
     vi.setSystemTime(NOW + 106_000)
     await h.click('Friends')
@@ -125,7 +125,7 @@ describe('checker round 2: the kept Review tab', () => {
     await many()
     at('page open')
     const onPage = held
-    await h.click('‹ Back')
+    await h.click('Back')
     await many()
     at('back')
     const back = held
@@ -173,8 +173,8 @@ describe('checker round 2: the kept Review tab', () => {
         steps.push('page again: ' + h.text().includes('Madrid'))
       }
     }
-    for (let i = 0; i < 5 && h.button('‹ Back') !== null && h.host.querySelector('.review') === null; i++) {
-      await h.click('‹ Back')
+    for (let i = 0; i < 5 && h.button('Back') !== null && h.host.querySelector('.review') === null; i++) {
+      await h.click('Back')
       await many(6)
       steps.push(`back ${i + 1}: review ${h.host.querySelector('.review') !== null}`)
     }
