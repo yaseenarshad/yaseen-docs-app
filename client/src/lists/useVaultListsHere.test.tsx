@@ -6,7 +6,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { MAX_FOCUS, MAX_FOLDER_ITEMS, defaultAppState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
+import { MAX_FOLDER_ITEMS } from '@shared/vaultLists'
+import { MAX_FOCUS, defaultAppState, defaultRightPanelIdentity, type AppState, type FocusFolder, type ListScope, type WindowIdentity, type WorkspaceLists } from '@shared/types'
 import { storage } from '../lib/storage'
 import { useVaultListsHere, type VaultListsHere } from './useVaultListsHere'
 

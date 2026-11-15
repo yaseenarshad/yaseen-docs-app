@@ -1,22 +1,40 @@
 import { atOrBelow } from '@client/lib/treeState'
+import { mergeFolders } from '@client/lists/focusFolders'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { FAVORITES_FILE, favoritesOf } from '@shared/vaultLists'
+import { FAVORITES_FILE, favoritesOf, focusOf, foldersOf, macListFiles, pickNewest, type MacListFile } from '@shared/vaultLists'
 import type { VaultStore } from '../store'
-import { readJson } from './vaultData'
+import { readJson, type VaultData } from './vaultData'
 
 /**
- * THE MAC'S LISTS AS SEARCH FILTERS (YAZ-5452): a filter next to "All types" that shows one list of the vault, read
- * from the files the Mac keeps in `.yaseendocs/` (the phone downloads that folder first, `isEager` in `sync/plan.ts`).
- * Read only: the phone never writes these files. Its own chunk (Search's tree), never the first load (YAZ-5377).
+ * THE MAC'S LISTS AS SEARCH FILTERS (YAZ-5452, YAZ-5453): a filter next to "All types" that shows one list of the vault,
+ * read from the files the Mac keeps in `.yaseendocs/` (the phone downloads that folder first, `isEager` in
+ * `sync/plan.ts`), by the Mac's own rules (`@shared/vaultLists`, which `desktop/src/main/` uses too). Read only: the
+ * phone never writes these files. Its own chunk (Search's tree), never the first load (YAZ-5377).
  *
- * Favorites: `favorites.json`, the Mac's `desktop/src/main/favorites.ts`, by its shared rule (`@shared/vaultLists`).
+ * Each list is the VAULT's own (`scope: 'vault'`), never its workspace list (`*-workspace*.json`, YAZ-4450): that one
+ * is for a Mac window with two or more vaults, and the phone shows one vault.
+ *  - Favorites: `favorites.json` (`desktop/src/main/favorites.ts`), and the Favorites tab's folders,
+ *    `favorite-folders.<mac id>.json` (YAZ-4460 demo).
+ *  - Focus: `focus.<mac id>.json` (`focus.ts`) and the Focus tab's folders, `focus-folders.<mac id>.json`
+ *    (`focusFolders.ts`). The `<mac id>` is a MAC's, not a window's: each Mac writes only its own file, so a sync never
+ *    conflicts, and the Mac shows the NEWEST valid file by its `at` (of two with one `at`, the later name). So does the phone.
  */
 
-export type ListKind = 'favorites'
+export type ListKind = 'favorites' | 'focus'
 
-/** A list as a Search filter: what it holds, in its order, and the test of a search row. */
+/** A folder of the Focus or the Favorites tab (YAZ-4460): a named group of the list's items; it moves nothing on disk. */
+export interface ListFolder {
+  id: string
+  name: string
+  /** Its items of this vault, vault-relative, in its order. */
+  paths: readonly string[]
+}
+
+/** A list as a Search filter: what it holds, in the Mac's order, and the test of a search row. */
 export interface Scope {
   kind: ListKind
+  /** The tab's folders, in the tab's order (`mergeFolders`): above the top rows, as on the Mac. */
+  folders: readonly ListFolder[]
   /** The list's own paths, vault-relative, in the Mac's order: its top rows. */
   top: readonly string[]
   /** `path` is in the list: one of its paths, or inside a folder of it (the Mac's `atOrBelow`). */
@@ -26,43 +44,68 @@ export interface Scope {
 }
 
 const CONFIG = `${VAULT_CONFIG_DIR}/`
+const read = (store: VaultStore, vault: string, name: string) => readJson(store, vault, `${CONFIG}${name}`)
 
-/**
- * The vault's Favorites, in the Mac's order. Only the vault's OWN list (`scope: 'vault'`, `favorites.json`), never its
- * workspace list (`favorites-workspace.json`, YAZ-4450): that one is for a Mac window with two or more vaults, and the
- * phone shows one vault. A missing or corrupt file is an empty list (the Mac's rule, R2.5).
- */
-export async function readFavorites(store: VaultStore, vault: string): Promise<string[]> {
-  return favoritesOf(await readJson(store, vault, `${CONFIG}${FAVORITES_FILE}`)) ?? []
+/** The names in the vault's `.yaseendocs/` (the checkpoint's list: what the vault holds at the commit the phone has). */
+const configNames = (files: readonly string[]): string[] => files.flatMap((f) => (f.startsWith(CONFIG) && !f.includes('/', CONFIG.length) ? [f.slice(CONFIG.length)] : []))
+
+/** The newest valid file of a list of one file for each Mac, parsed by `parse`; null when none is valid (or there is none). */
+async function newestOf<T extends { at: number }>(store: VaultStore, vault: string, names: readonly string[], list: MacListFile, parse: (v: unknown) => T | null): Promise<T | null> {
+  return pickNewest(await Promise.all(macListFiles(names, list, 'vault').map((name) => read(store, vault, name))), parse)
 }
 
-/** The filter of `kind` over `top`. */
-export function scopeOf(kind: ListKind, top: readonly string[]): Scope {
-  const set = new Set(top)
-  return { kind, top, has: (path) => atOrBelow(set, path) }
+/**
+ * The tab's folders (YAZ-4460), the Mac's way: tombstones out, the dragged order, then the order they were made
+ * (`mergeFolders`, the Mac's own). Each item names its vault by the vault's folder name on the Mac; the file says which
+ * name is this vault's (`self`), and an item of another vault (a ghost on the Mac) is not shown. An old file with no
+ * `self`: every item is taken (a path this vault does not hold has no row anyway).
+ */
+async function readFolders(store: VaultStore, vault: string, names: readonly string[], list: 'focus-folders' | 'favorite-folders'): Promise<ListFolder[]> {
+  const held = await newestOf(store, vault, names, list, foldersOf)
+  if (held === null) return []
+  return mergeFolders([held.folders]).map((f) => ({ id: f.id, name: f.name, paths: f.items.filter((i) => held.self === undefined || i.vault === held.self).map((i) => i.path) }))
+}
+
+/** The vault's Favorites, in the Mac's order. A missing or corrupt `favorites.json` is an empty list (the Mac's rule, R2.5). */
+export async function readFavorites(store: VaultStore, vault: string): Promise<string[]> {
+  return favoritesOf(await read(store, vault, FAVORITES_FILE)) ?? []
+}
+
+/** The list of `kind` of the vault as the phone holds it. */
+async function readList(store: VaultStore, data: VaultData, kind: ListKind): Promise<{ folders: ListFolder[]; top: string[] }> {
+  const names = configNames(data.files)
+  if (kind === 'favorites') return { folders: await readFolders(store, data.vault, names, 'favorite-folders'), top: await readFavorites(store, data.vault) }
+  return { folders: await readFolders(store, data.vault, names, 'focus-folders'), top: (await newestOf(store, data.vault, names, 'focus', focusOf))?.rels ?? [] }
+}
+
+/** The filter of `kind` over its folders and top rows. */
+export function scopeOf(kind: ListKind, folders: readonly ListFolder[], top: readonly string[]): Scope {
+  const set = new Set([...folders.flatMap((f) => f.paths), ...top])
+  return { kind, folders, top, has: (path) => atOrBelow(set, path) }
 }
 
 /** A list while it is read for the first time. */
-export const loadingScope = (kind: ListKind): Scope => ({ kind, top: [], has: () => false, loading: true })
+export const loadingScope = (kind: ListKind): Scope => ({ kind, folders: [], top: [], has: () => false, loading: true })
 
 /** The filter each vault has on, and the last list read, kept while the app runs (a page opened over Search keeps it). */
 const chosen = new Map<string, ListKind>()
-const lists = new Map<string, Scope>()
+const lists = new Map<string, { sign: string; scope: Scope }>()
 export const chosenOf = (vault: string | null): ListKind | null => chosen.get(vault ?? '') ?? null
 export function choose(vault: string | null, kind: ListKind | null): void {
   if (kind === null) chosen.delete(vault ?? '')
   else chosen.set(vault ?? '', kind)
 }
-export const heldList = (vault: string | null, kind: ListKind): Scope | undefined => lists.get(`${vault}\n${kind}`)
+export const heldList = (vault: string | null, kind: ListKind): Scope | undefined => lists.get(`${vault}\n${kind}`)?.scope
 
-/** The list of `kind` as the phone holds it now: the same object as before when nothing in it changed. */
-export async function loadScope(store: VaultStore, vault: string, kind: ListKind): Promise<Scope> {
-  const top = await readFavorites(store, vault)
-  const key = `${vault}\n${kind}`
+/** The list of `kind` as the phone holds it now: the same object as before when nothing in it changed (no search runs again). */
+export async function loadScope(store: VaultStore, data: VaultData, kind: ListKind): Promise<Scope> {
+  const { folders, top } = await readList(store, data, kind)
+  const key = `${data.vault}\n${kind}`
+  const sign = JSON.stringify([folders, top])
   const held = lists.get(key)
-  if (held !== undefined && held.top.length === top.length && held.top.every((p, i) => p === top[i])) return held
-  const scope = scopeOf(kind, top)
-  lists.set(key, scope)
+  if (held !== undefined && held.sign === sign) return held.scope
+  const scope = scopeOf(kind, folders, top)
+  lists.set(key, { sign, scope })
   return scope
 }
 

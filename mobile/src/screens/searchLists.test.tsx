@@ -10,7 +10,8 @@ import { mount, newPhone, type Harness } from './testing'
 /**
  * YAZ-5452: Search's list filters. Favorites shows the vault's own `favorites.json`, as the Mac's Favorites tab: the
  * Mac's order, the tree's icons, a folder that opens in place, a path that is gone hidden; a missing or corrupt file is
- * a plain line; typed text finds only inside the list, in the folder tree; a sync's new file shows at once. Made-up vault.
+ * a plain line; typed text finds only inside the list, in the folder tree; a sync's new file shows at once.
+ * YAZ-5453: Focus, the newest valid `focus.<mac id>.json`, and the folders of the Focus and Favorites tabs. Made-up vault.
  */
 let h: Harness | null = null
 beforeEach(() => {
@@ -58,7 +59,7 @@ const chip = (x: Harness, name: string) => [...x.host.querySelectorAll<HTMLButto
 describe('the Favorites filter (YAZ-5452)', () => {
   it('a chip beside All types; on, only the favorites in the Mac order, with the tree icons; off again, the whole tree', async () => {
     h = await openSearch(favs(['Trip plan.md', 'cards/capital-of-spain-demo-40.md', 'Spanish words.md']))
-    expect([...h.host.querySelectorAll('.search__bar button')].map((b) => b.textContent)).toEqual(['All types ▾', 'Favorites'])
+    expect([...h.host.querySelectorAll('.search__bar button')].map((b) => b.textContent)).toEqual(['All types ▾', 'Favorites', 'Focus'])
     expect(chip(h, 'Favorites').getAttribute('aria-pressed')).toBe('false')
     await h.click('Favorites')
     await waitFor(h, () => h!.host.querySelector('[aria-label="Favorites"][role="tree"]') !== null)
@@ -140,5 +141,79 @@ describe('the Favorites filter (YAZ-5452)', () => {
     const index = await writeVaultFiles(h.store, { ...READER_FILES, ...favs(['Café notes.md', 'Trip plan.md']) }, {}, 'c2')
     await h.syncEmit({ type: 'changed', vault: READER_ID, settings: ['.yaseendocs/favorites.json'], diff: { added: [], changed: ['.yaseendocs/favorites.json'], removed: [], renamed: [] }, index })
     await waitFor(h, () => tree(h!).join() === '0:markdown:Café notes,0:markdown:Trip plan')
+  })
+})
+
+const MAC_A = 'aaaaaaaaaaaa'
+const MAC_B = 'bbbbbbbbbbbb'
+const focus = (mac: string, at: string, list: string[]) => ({ [`.yaseendocs/focus.${mac}.json`]: JSON.stringify({ version: 1, at, focus: list }) })
+const folder = (id: string, name: string, items: [string, string][], more: Record<string, unknown> = {}) => ({ id, name, created: 1, at: 1, items: items.map(([vault, path]) => ({ vault, path })), ...more })
+
+describe('the Focus filter (YAZ-5453)', () => {
+  it('the newest valid focus file of any Mac is the list, never a workspace file; its folders stand above it, the Mac order', async () => {
+    h = await openSearch({
+      // Mac B wrote last: its file is the list. Mac A's is older; a bad file and a workspace file are passed over.
+      ...focus(MAC_A, '2026-11-01T10:00:00Z', ['Café notes.md']),
+      ...focus(MAC_B, '2026-11-02T10:00:00Z', ['Trip plan.md', 'git']),
+      '.yaseendocs/focus.cccccccccccc.json': '{"version": 1, "at": "not a time", "focus": ["Spanish words.md"]}',
+      [`.yaseendocs/focus-workspace.${MAC_A}.json`]: JSON.stringify({ version: 1, at: '2026-12-01T00:00:00Z', focus: ['Spanish words.md'] }),
+      [`.yaseendocs/focus-folders.${MAC_A}.json`]: JSON.stringify({
+        version: 1,
+        at: '2026-11-01T00:00:00Z',
+        self: 'vault',
+        folders: [
+          folder('f2', 'Trip', [['vault', 'Spanish words.md'], ['other-vault', 'Elsewhere.md']], { created: 2 }),
+          folder('f1', 'Study', [['vault', 'cards']], { pos: 0 }),
+          folder('f3', 'Old', [['vault', 'Café notes.md']], { deleted: true }),
+        ],
+      }),
+    })
+    await h.click('Focus')
+    await waitFor(h, () => h!.host.querySelector('[aria-label="Focus"][role="tree"]') !== null)
+    expect(h.host.querySelector('h2.section')?.textContent).toBe('Focus')
+    // The dragged folder (pos 0) first, then by when made; the deleted one gone; another vault's item (a ghost) not shown.
+    expect(tree(h)).toEqual(['0:group:Study', '1:folder:cards', '0:group:Trip', '1:markdown:Spanish words', '0:markdown:Trip plan', '0:folder:git'])
+    // A folder of the tab folds shut and open; a folder in it opens in place.
+    await h.click(/^Trip, focus folder/)
+    expect(tree(h)).not.toContain('1:markdown:Spanish words')
+    await h.click(/^cards, folder/)
+    expect(tree(h).slice(0, 4)).toEqual(['0:group:Study', '1:folder-open:cards', '2:card:Capital of Spain', '2:card:Two cards in one'])
+  })
+
+  it('typed text finds inside the focus items and its folders only; no focus file: the plain line', async () => {
+    h = await openSearch({ ...focus(MAC_A, '2026-11-01T10:00:00Z', ['git']) })
+    await h.click('Focus')
+    await typeQuery(h, 'trip')
+    await waitFor(h, () => h!.text().includes('No matches with these filters.'))
+    await typeQuery(h, 'pull')
+    await waitFor(h, () => [...h!.host.querySelectorAll('.search__found .tree__label')].map((l) => l.textContent).join() === 'git,Git cheat sheet,git pull')
+    h.unmount()
+    forgetSearch()
+    forgetLists()
+    h = await openSearch()
+    await h.click('Focus')
+    await waitFor(h, () => h!.text().includes('Nothing in focus in this vault yet. Add it on the Mac.'))
+  })
+
+  it('a sync that brings a newer focus file from another Mac changes the list', async () => {
+    h = await openSearch(focus(MAC_A, '2026-11-01T10:00:00Z', ['Trip plan.md']))
+    await h.click('Focus')
+    await waitFor(h, () => tree(h!).join() === '0:markdown:Trip plan')
+    const files = { ...READER_FILES, ...focus(MAC_A, '2026-11-01T10:00:00Z', ['Trip plan.md']), ...focus(MAC_B, '2026-11-03T10:00:00Z', ['Café notes.md']) }
+    const index = await writeVaultFiles(h.store, files, {}, 'c2')
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: [], diff: { added: [`.yaseendocs/focus.${MAC_B}.json`], changed: [], removed: [], renamed: [] }, index })
+    await waitFor(h, () => tree(h!).join() === '0:markdown:Café notes')
+  })
+
+  it('Favorites shows the Favorites tab folders too (favorite-folders), above its top rows', async () => {
+    h = await openSearch({
+      ...favs(['Trip plan.md']),
+      [`.yaseendocs/favorite-folders.${MAC_A}.json`]: JSON.stringify({ version: 1, at: '2026-11-01T00:00:00Z', self: 'vault', folders: [folder('g1', 'Reading', [['vault', 'Café notes.md']])] }),
+    })
+    await h.click('Favorites')
+    await waitFor(h, () => tree(h!).length === 3)
+    expect(tree(h)).toEqual(['0:group:Reading', '1:markdown:Café notes', '0:markdown:Trip plan'])
+    await typeQuery(h, 'caf')
+    await waitFor(h, () => [...h!.host.querySelectorAll('.search__found .tree__label')].map((l) => l.textContent).join() === 'Café notes')
   })
 })

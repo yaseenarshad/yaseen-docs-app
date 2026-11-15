@@ -12,7 +12,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'search-favorites'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'search-favorites', 'search-focus'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -81,7 +81,14 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 // YAZ-5452: the Mac's Favorites, in its order: a page, a folder, a card file, and a path that is gone (no row).
                 '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['Trip plan.md', 'travel', 'cards/capital-of-spain-demo-40.md', 'Gone.md'] }),
               }
-            : {}
+            : name === 'search-focus'
+              ? {
+                  // YAZ-5453: two Macs' focus files (the newer is the list) and a folder of the Focus tab.
+                  '.yaseendocs/focus.aaaaaaaaaaaa.json': JSON.stringify({ version: 1, at: '2026-11-01T10:00:00Z', focus: ['Café notes.md'] }),
+                  '.yaseendocs/focus.bbbbbbbbbbbb.json': JSON.stringify({ version: 1, at: '2026-11-02T10:00:00Z', focus: ['Trip plan.md', 'git'] }),
+                  '.yaseendocs/focus-folders.bbbbbbbbbbbb.json': JSON.stringify({ version: 1, at: '2026-11-02T10:00:00Z', self: 'vault', folders: [{ id: 'f1', name: 'Spanish study', created: 1, at: 1, items: [{ vault: 'vault', path: 'Spanish words.md' }, { vault: 'vault', path: 'cards' }] }] }),
+                }
+              : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -173,6 +180,12 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       press('Favorites')
       await until(() => document.querySelector('[role="tree"][aria-label="Favorites"]') !== null)
       press(/^travel, folder/)
+      await wait(80)
+      break
+    case 'search-focus':
+      press('Focus')
+      await until(() => document.querySelector('[role="tree"][aria-label="Focus"]') !== null)
+      press(/^cards, folder/)
       await wait(80)
       break
     case 'search-clear':

@@ -5,17 +5,20 @@ import type { PhoneType } from './searchRun'
 import type { VaultData } from './vaultData'
 
 /** The list filters, in the bar's order, with the word each chip shows. */
-const LISTS: readonly [ListKind, string][] = [['favorites', 'Favorites']]
+const LISTS: readonly [ListKind, string][] = [
+  ['favorites', 'Favorites'],
+  ['focus', 'Focus'],
+]
 
 /**
  * THE FILTER BAR OF SEARCH (round 15 item 2; YAZ-5452), in Search's lazy chunk so the first load does not grow
  * (YAZ-5377). "All types ▾" opens the Type menu (All types, Pages, Cards). Beside it, a chip for each list of the vault
- * (Favorites): a tap shows only that list, a second tap shows everything again. A chip and not a row of the Type menu:
+ * (Favorites, Focus): a tap shows only that list, a second tap shows everything again. A chip and not a row of the Type menu:
  * a list is not a type, and the two go together (Favorites with Cards: the cards of the favorites), as on the Mac,
  * where the Type filter works inside any tab. One list at a time: two lists at once has no clear meaning.
  *
- * The list is read again at each sync (`data` is new after each `changed` event), so a new `favorites.json` from the
- * Mac shows at once.
+ * The list is read again at each sync (`data` is new after each `changed` event), so a new `favorites.json` or focus
+ * file from the Mac shows at once.
  */
 export function SearchBar({ data, kind, cards, onType, onScope }: { data: VaultData | null; kind: PhoneType; cards: boolean; onType: (type: PhoneType) => void; onScope: (scope: Scope | null) => void }) {
   const app = useApp()
@@ -30,13 +33,13 @@ export function SearchBar({ data, kind, cards, onType, onScope }: { data: VaultD
     onScope(on === null ? null : (heldList(vaultKey, on) ?? loadingScope(on)))
   }, [on, vaultKey, onScope])
   useEffect(() => {
-    if (on === null || vaultKey === null) return
+    if (on === null || data === null) return
     let live = true
-    void loadScope(store, vaultKey, on).then((scope) => live && onScope(scope))
+    void loadScope(store, data, on).then((scope) => live && onScope(scope))
     return () => {
       live = false
     }
-  }, [on, vaultKey, store, data, onScope])
+  }, [on, store, data, onScope])
 
   const pick = (next: ListKind | null) => {
     choose(vaultKey, next)

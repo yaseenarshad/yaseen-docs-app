@@ -1,7 +1,7 @@
 import { readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { LIST_SCOPES, MAX_FOCUS, VAULT_CONFIG_DIR, type FocusConfig, type ListScope } from '@shared/types'
-import { isRecord, isStringArray } from '@shared/guards'
+import { MAX_LIST_FILES, focusOf, macListFile, macListFiles, macListRe, pickNewest } from '@shared/vaultLists'
 import { deletedAt, isSafeRel, owningRoot, remap, renamedTo, toAbs, toRel, under } from './favorites'
 import { BridgeFailure, createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { repairFolders } from './focusFolders'
@@ -39,11 +39,10 @@ import { macId } from './vaultIndex/mint'
  * `focus.<mac id>.json` is the vault's own list, `focus-workspace.<mac id>.json` its workspace list (YAZ-4450 D1). The Mac ID
  * has `mint.ts`'s shape. Any other name in the dotfolder is not a focus file; an old build reads the first name only.
  */
-const PREFIX: Record<ListScope, string> = { vault: 'focus', workspace: 'focus-workspace' }
-const FOCUS_FILE_RE: Record<ListScope, RegExp> = { vault: new RegExp(`^${PREFIX.vault}\\.[0-9a-z]{12}\\.json$`), workspace: new RegExp(`^${PREFIX.workspace}\\.[0-9a-z]{12}\\.json$`) }
-export const focusFile = (mac: string, scope: ListScope = 'vault'): string => `${PREFIX[scope]}.${mac}.json`
+const FOCUS_FILE_RE: Record<ListScope, RegExp> = { vault: macListRe('focus', 'vault'), workspace: macListRe('focus', 'workspace') }
+export const focusFile = (mac: string, scope: ListScope = 'vault'): string => macListFile('focus', mac, scope)
 /** A read looks at this many focus files at most, the first by name (R13): a folder full of them must not make a read slow. */
-export const MAX_FOCUS_FILES = 64
+export const MAX_FOCUS_FILES = MAX_LIST_FILES
 
 const clean = (rels: readonly string[]): string[] => [...new Set(rels.filter(isSafeRel))].slice(0, MAX_FOCUS)
 
@@ -61,19 +60,10 @@ async function readNewest(root: string, scope: ListScope): Promise<Held | null> 
     if (code === 'ENOENT' || code === 'ENOTDIR') return [] as string[]
     throw toBridgeFailure(err, dir)
   })
-  const files = names.filter((name) => FOCUS_FILE_RE[scope].test(name)).sort().slice(0, MAX_FOCUS_FILES)
+  const files = macListFiles(names, 'focus', scope)
   const reads = await Promise.all(files.map((name) => readConfigDetailed(root, name).catch(() => undefined)))
-  let newest: Held | null = null
-  for (const res of reads) {
-    if (res?.state !== 'ok') continue
-    const v = res.value
-    if (!isRecord(v) || v.version !== 1 || typeof v.at !== 'string' || !isStringArray(v.focus)) continue
-    const at = Date.parse(v.at)
-    if (Number.isNaN(at)) continue
-    // `>=`: the files are in name order, so of two with one `at` the later name is the list (R1).
-    if (newest === null || at >= newest.at) newest = { at, rels: clean(v.focus) }
-  }
-  return newest
+  // The rule is shared with the phone (YAZ-5453): the newest valid file, of two with one `at` the later name (R1).
+  return pickNewest(reads.map((res) => (res?.state === 'ok' ? res.value : undefined)), focusOf)
 }
 
 /** Writes and repairs on one root never interleave (R9). */

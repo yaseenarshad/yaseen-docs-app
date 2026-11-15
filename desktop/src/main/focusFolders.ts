@@ -1,8 +1,8 @@
 import { readdir } from 'node:fs/promises'
 import path from 'node:path'
-import { MAX_FOCUS_FOLDERS, MAX_FOLDER_ITEMS, VAULT_CONFIG_DIR, isFocusFolder, type FocusFolder, type FocusFoldersConfig, type ListScope } from '@shared/types'
-import { isRecord } from '@shared/guards'
-import { isSafeRel, toAbs, toRel, under } from './favorites'
+import { VAULT_CONFIG_DIR, type FocusFolder, type FocusFoldersConfig, type ListScope } from '@shared/types'
+import { cleanFolders, foldersOf, macListFile, macListFiles, macListRe, pickNewest } from '@shared/vaultLists'
+import { toAbs, toRel, under } from './favorites'
 import { createRootChain, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
 import { macId } from './vaultIndex/mint'
@@ -22,27 +22,14 @@ import { macId } from './vaultIndex/mint'
 /** Whose folders: the Focus tab's, or the Favorites tab's — the same rules, files of their own (YAZ-4460 demo). */
 export type FolderKind = 'focus' | 'favorites'
 const KINDS: readonly FolderKind[] = ['focus', 'favorites']
-const PREFIX: Record<FolderKind, Record<ListScope, string>> = {
-  focus: { vault: 'focus-folders', workspace: 'focus-folders-workspace' },
-  favorites: { vault: 'favorite-folders', workspace: 'favorite-folders-workspace' },
-}
-const fileRe = (kind: FolderKind, scope: ListScope): RegExp => new RegExp(`^${PREFIX[kind][scope]}\\.[0-9a-z]{12}\\.json$`)
-export const foldersFile = (mac: string, scope: ListScope, kind: FolderKind = 'focus'): string => `${PREFIX[kind][scope]}.${mac}.json`
-/** A read looks at this many files of a scope at most, as `focus.ts`'s MAX_FOCUS_FILES. */
-const MAX_FILES = 64
+/** The files' names, shared with the phone (YAZ-5453): `focus-folders.<mac id>.json`, `favorite-folders.<mac id>.json`, and their workspace twins. */
+const LIST = { focus: 'focus-folders', favorites: 'favorite-folders' } as const
+const fileRe = (kind: FolderKind, scope: ListScope): RegExp => macListRe(LIST[kind], scope)
+export const foldersFile = (mac: string, scope: ListScope, kind: FolderKind = 'focus'): string => macListFile(LIST[kind], mac, scope)
 /** A tombstone older than this leaves the file: by then every copy a sync could still bring is newer. */
 const TOMBSTONE_MS = 90 * 24 * 3600_000
 
-const clean = (folders: readonly unknown[]): FocusFolder[] => {
-  const seen = new Set<string>()
-  const out: FocusFolder[] = []
-  for (const f of folders) {
-    if (!isFocusFolder(f) || seen.has(f.id)) continue
-    seen.add(f.id)
-    out.push({ ...f, items: f.items.filter((item) => isSafeRel(item.path) && item.vault !== '').slice(0, MAX_FOLDER_ITEMS) })
-  }
-  return out.slice(0, MAX_FOCUS_FOLDERS)
-}
+const clean = cleanFolders
 
 interface Held {
   at: number
@@ -59,18 +46,9 @@ async function readNewest(root: string, scope: ListScope, kind: FolderKind): Pro
     if (code === 'ENOENT' || code === 'ENOTDIR') return [] as string[]
     throw toBridgeFailure(err, dir)
   })
-  const files = names.filter((name) => fileRe(kind, scope).test(name)).sort().slice(0, MAX_FILES)
+  const files = macListFiles(names, LIST[kind], scope)
   const reads = await Promise.all(files.map((name) => readConfigDetailed(root, name).catch(() => undefined)))
-  let newest: Held | null = null
-  for (const res of reads) {
-    if (res?.state !== 'ok') continue
-    const v = res.value
-    if (!isRecord(v) || v.version !== 1 || typeof v.at !== 'string' || !Array.isArray(v.folders)) continue
-    const at = Date.parse(v.at)
-    if (Number.isNaN(at)) continue
-    if (newest === null || at >= newest.at) newest = { at, folders: clean(v.folders), self: typeof v.self === 'string' && v.self !== '' ? v.self : undefined }
-  }
-  return newest
+  return pickNewest(reads.map((res) => (res?.state === 'ok' ? res.value : undefined)), foldersOf)
 }
 
 const chained = createRootChain()
