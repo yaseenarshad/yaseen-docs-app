@@ -190,9 +190,9 @@ markdown.use({
       const comment = (token as FiledTable).fileComment
       return comment === undefined ? html : html.replace(/^<table>/, `<table ${localMark('table-file')}="${escapeHtml(comment)}">`)
     },
-    // YAZ-5494, YAZ-5513: a task's box carries its core (`data-task`), as the parse found it (`markTasks`), so a tap
-    // finds the same task in the file with the same parser. `listitem` hands the item to its box: marked draws the box
-    // first.
+    // YAZ-5494, YAZ-5513: a task's box carries its core (`data-task`) and its line in the page's body (`data-task-line`),
+    // as the parse found them (`markTasks`), so a tap names exactly the line it writes. `listitem` hands the item to its
+    // box: marked draws the box first.
     listitem(item) {
       taskItem = item.task ? (item as TaskItem) : null
       return Renderer.prototype.listitem.call(this, item)
@@ -200,7 +200,7 @@ markdown.use({
     checkbox: ({ checked }) => {
       const task = taskItem?.pageTask
       taskItem = null
-      const mark = task === undefined || task === null ? '' : ` ${localMark('task')}="${escapeHtml(task.core)}"`
+      const mark = task === undefined || task === null ? '' : ` ${localMark('task')}="${escapeHtml(task.core)}" ${localMark('task-line')}="${task.line}"`
       return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${mark}></span> `
     },
     code(token) {
@@ -546,11 +546,14 @@ export async function renderPage(body: string, look: PageLook, into: HTMLElement
   }
   let size = FIRST_PIECE
   let first = true
+  // The line each piece starts on, so its boxes carry their lines in the whole body (YAZ-5513).
+  let line = 0
   for (let from = 0; from < body.length; ) {
     const end = cutAt(body, from, size)
     const t0 = performance.now()
     const text = body.slice(from, end)
-    const piece = renderPiece(text, look)
+    const piece = renderPiece(text, look, line)
+    line += text.match(/\r\n|\r|\n/g)?.length ?? 0
     // The first piece replaces the old page at once; the rest are added as they come.
     if (first) into.replaceChildren(piece)
     else into.append(piece)

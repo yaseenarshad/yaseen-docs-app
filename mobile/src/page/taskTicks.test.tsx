@@ -247,3 +247,48 @@ describe('a tap ticks the task the reader drew, found with the reader\'s own par
     expect(await tapAndWrite('```\r\n- [ ] Buy milk\r\n```js\r\n- [ ] Buy milk\r\n```\r\n\r\n- [ ] Buy milk\r\n')).toBe(7)
   })
 })
+
+describe('no tap is refused when nothing changed (YAZ-5513, T2)', () => {
+  it('a task with a commented-out twin can be ticked', async () => {
+    // The same line in an HTML comment, a <div> and a $$ block: no box, so they are no twins of the task.
+    for (const twin of ['<!--\n- [ ] Buy milk\n-->', '<div>\n- [ ] Buy milk\n</div>', '$$\n- [ ] Buy milk\n$$']) {
+      expect(await tapAndWrite(`# Shop\n\n${twin}\n\n- [ ] Buy milk\n`)).toBe(7)
+      act(() => root?.unmount())
+    }
+  })
+
+  it('a long page drawn in pieces: a box names its own line, so a piece read on its own never shifts which task a tap writes', async () => {
+    // A piece cut inside a comment (`renderPage` cuts long pages at blank lines) draws a box for the comment's line;
+    // the whole page, as the send reads it, has no task there. The real task is still the one its box names.
+    const head = `# Long\n\n<!--\n\n`
+    const tail = `- [ ] Buy milk\n\n-->\n\n- [ ] Buy milk\n`
+    const text = head + tail
+    const port = fakePort()
+    const said: string[] = []
+    function Page() {
+      const host = useRef<HTMLDivElement>(null)
+      useTaskTicks(host, PATH, text, port, (w) => said.push(w))
+      useEffect(() => {
+        host.current!.replaceChildren(renderPiece(head, look, 0), renderPiece(tail, look, head.split('\n').length - 1))
+      }, [])
+      return <div className="reader__body" ref={host} />
+    }
+    const el = document.createElement('div')
+    document.body.append(el)
+    root = createRoot(el)
+    await act(async () => root!.render(<Page />))
+    await act(async () => {})
+    const boxes = [...el.querySelectorAll<HTMLElement>('.page-task[data-task]')]
+    expect(boxes).toHaveLength(2)
+    // The real task (line 9) ticks.
+    await tap(boxes[1]!)
+    expect(said).toEqual([])
+    expect(port.list.map((c) => c.task)).toEqual([{ core: '- [ ] Buy milk', nth: 0, of: 1, checked: true }])
+    const out = applyTask(text, port.list[0]!.task!) as { content: string }
+    expect(out.content.split('\n')[8]).toBe('- [x] Buy milk')
+    // The comment's line (5) is no task of the page: refused, nothing goes in the list.
+    await tap(boxes[0]!)
+    expect(said).toEqual([TASK_REFUSED_WORDS.changed])
+    expect(port.list).toHaveLength(1)
+  })
+})

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { CommentsPort } from '../comments/bridge'
 import type { WaitingComment } from '../comments/outbox'
-import { TASK_REFUSED_WORDS, applyTask, taskLines, type TaskTick } from '../comments/taskWrite'
+import { TASK_REFUSED_WORDS, taskLines, type TaskTick } from '../comments/taskWrite'
 
 /**
  * TICK A TASK FROM THE PHONE (YAZ-5494): a tap on a task's check box in a page ticks it, or unticks it. Only that
@@ -14,17 +14,37 @@ import { TASK_REFUSED_WORDS, applyTask, taskLines, type TaskTick } from '../comm
  * fresh page no longer has the same is refused: a short line on the page says so, the box shows the page's own state,
  * and nothing was written.
  *
- * WHERE: a box the page renderer drew with its line (`data-task`, `pageRender.ts`): a task of the page's own text, in
- * a list, a nested list or a quote. A card's box (a card block in the page, an embedded card, Review) is the Mac's
+ * WHERE: a box the page renderer drew with its line (`data-task`, its core, and `data-task-line`, its line in the
+ * body; `pageRender.ts`): a task of the page's own text, in a list, a nested list or a quote, as the reader's parser
+ * reads it (`pageMarked.ts`, YAZ-5513). The tap finds the task on THAT line of the stored page with the same parser,
+ * so the line it writes is the box's own, never a line of code or HTML that reads the same. A card's box (a card block in the page, an embedded card, Review) is the Mac's
  * card look, a glyph that the Mac does not tick either: it has no `data-task`, so it is never a control. The tap area
  * is 44 px around the box (`reader.css`); the box's look does not change.
  */
 
-const BOX = '.page-task[data-task]'
+const BOX = '.page-task[data-task][data-task-line]'
 
-/** The box of the tick's task in `host`: the `nth` box with its line. */
-function boxOf(host: HTMLElement, tick: Pick<TaskTick, 'core' | 'nth'>): HTMLElement | null {
-  return [...host.querySelectorAll<HTMLElement>(BOX)].filter((b) => b.dataset.task === tick.core)[tick.nth] ?? null
+/** The task of `text` that a tick names: the `nth` with its core (`taskLines`: the reader's parse). */
+const taskOf = (text: string, tick: Pick<TaskTick, 'core' | 'nth'>) => taskLines(text).filter((l) => l.core === tick.core)[tick.nth]
+
+/** The box of the tick's task in `host`, drawn from `text`: the box on that task's line. */
+function boxOf(host: HTMLElement, text: string, tick: Pick<TaskTick, 'core' | 'nth'>): HTMLElement | null {
+  const task = taskOf(text, tick)
+  if (task === undefined) return null
+  return [...host.querySelectorAll<HTMLElement>(BOX)].find((b) => b.dataset.taskLine === String(task.line) && b.dataset.task === task.core) ?? null
+}
+
+/**
+ * YAZ-5513: the tick of a tapped box, from the stored page `text`: the box names its line (`data-task-line`) and its
+ * core, both from the reader's parse; the task on that line of `text`, found by the same parse, is the one, and its
+ * place among the tasks that read the same is how the send finds it again on the fresh page. Null when `text` has no
+ * such task on that line (the page was drawn from other text): nothing is written.
+ */
+export function tickOfBox(text: string, box: HTMLElement, checked: boolean): TaskTick | null {
+  const core = box.dataset.task
+  const same = taskLines(text).filter((l) => l.core === core)
+  const nth = same.findIndex((l) => String(l.line) === box.dataset.taskLine)
+  return core === undefined || nth < 0 ? null : { core, nth, of: same.length, checked }
 }
 
 /** The box shows `checked` (the reader's look reads `data-checked`), and says so. */
@@ -62,7 +82,7 @@ export function useTaskTicks(host: RefObject<HTMLElement | null>, path: string, 
     if (el === null) return
     controls(el)
     for (const c of p?.waiting(at) ?? []) if (c.task !== undefined && c.refused === undefined) {
-      const box = boxOf(el, c.task)
+      const box = typeof latest.current.text === 'string' ? boxOf(el, latest.current.text, c.task) : null
       if (box !== null) showBox(box, c.task.checked)
     }
   }
@@ -76,8 +96,8 @@ export function useTaskTicks(host: RefObject<HTMLElement | null>, path: string, 
       for (const c of gone) {
         tell(c.refused === 'changed' ? TASK_REFUSED_WORDS.changed : TASK_REFUSED_WORDS.gone)
         void port.discard(c.id)
-        const box = host.current === null ? null : boxOf(host.current, c.task)
-        const own = typeof t === 'string' ? taskLines(t).filter((l) => l.core === c.task.core)[c.task.nth] : undefined
+        const box = host.current === null || typeof t !== 'string' ? null : boxOf(host.current, t, c.task)
+        const own = typeof t === 'string' ? taskOf(t, c.task) : undefined
         if (box !== null && own !== undefined) showBox(box, own.checked)
       }
       paint()
@@ -97,11 +117,9 @@ export function useTaskTicks(host: RefObject<HTMLElement | null>, path: string, 
       event.stopPropagation()
       const { port: p, path: at, text: t, say: tell } = latest.current
       if (p === null || typeof t !== 'string') return tell('The phone is still starting. Try again in a moment.')
-      const core = box.dataset.task!
-      const same = [...el.querySelectorAll<HTMLElement>(BOX)].filter((b) => b.dataset.task === core)
-      const tick: TaskTick = { core, nth: same.indexOf(box), of: same.length, checked: box.dataset.checked !== 'true' }
-      // The stored page must hold the same task (the same line, as many of them): else nothing goes in the list.
-      if (applyTask(t, tick).kind === 'refused') return tell(TASK_REFUSED_WORDS.changed)
+      // The stored page must hold the task on the box's line, found by the reader's parse: else nothing goes in the list.
+      const tick = tickOfBox(t, box, box.dataset.checked !== 'true')
+      if (tick === null) return tell(TASK_REFUSED_WORDS.changed)
       showBox(box, tick.checked)
       void p.add({ path: at, body: '', task: tick }).catch(() => {
         showBox(box, !tick.checked)
