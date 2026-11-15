@@ -12,7 +12,7 @@ import { remember } from '../search/recent'
 import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
 import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
-import { TASKS_PAGE } from './taskFixtures'
+import { NUMBERED_TASKS_PAGE, TASKS_PAGE } from './taskFixtures'
 import { fixtureAnswers } from './fixtureAnswers'
 
 /**
@@ -41,7 +41,8 @@ import { fixtureAnswers } from './fixtureAnswers'
  * line a third down the 9:30 row, the rows before it dimmed; `page-calendar-chip` the same (`proveLayout.ts` scrolls it past the now
  * row: the Now pill at the bottom); `page-calendar-full` the table full screen.
  * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
- * tap ticks (44 px around it), the card's box a glyph.
+ * tap ticks (44 px around it), the card's box a glyph. YAZ-5510: `page-tasks-numbered` numbered tasks (`1.` to `11.`): the
+ * number, then the box, then the text.
  * YAZ-5460: the folder page on the made-up `Projects` folder (`folderVault.ts`): `folder-hold` the menu of a held
  * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
  * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (every day, "Earlier" open) its other views;
@@ -52,7 +53,7 @@ import { fixtureAnswers } from './fixtureAnswers'
  * folders stuck at the top (`STICKY_FILES`).
  * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -179,6 +180,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
           ? { 'Frozen table.md': `---\ntitle: Frozen table\n---\n\n${FROZEN_PAGE}\n` }
         : name === 'page-tasks'
           ? { 'home/Weekend jobs.md': TASKS_PAGE }
+        : name === 'page-tasks-numbered'
+          ? { 'home/Shed list.md': NUMBERED_TASKS_PAGE }
         : name === 'page-calendar' || name === 'page-calendar-chip' || name === 'page-calendar-full'
           ? { 'Day plan.md': `---\ntitle: Day plan\n---\n\n${CALENDAR_PAGE}\n` }
         : name === 'page-table-look'
@@ -600,6 +603,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'page-tasks':
       await typed('weekend jobs')
       await open(/^Weekend jobs/, '.reader__body .page-task[data-task]')
+      break
+    case 'page-tasks-numbered':
+      await typed('shed list')
+      await open(/^Shed list/, '.reader__body .page-task[data-task]')
       break
     case 'page-table-look':
       await typed('table look')

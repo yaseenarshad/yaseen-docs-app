@@ -22,6 +22,8 @@ import { join } from 'node:path'
  *    full screen, the copy marked too.
  *  - the task page (`#fixture=page-tasks`, YAZ-5494), light and dark: each box of the page a check box with a 44 px tap
  *    area, a done task struck through.
+ *  - numbered tasks (`#fixture=page-tasks-numbered`, YAZ-5510), light and dark, at 375 px: for 1. to 11., the number, then
+ *    the box (right of the number, its middle a tap on it), then the text.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
  *  - the Headings sheet (`#fixture=page-headings`, `page-headings-few`, `page-headings-alone`, YAZ-5497) and the properties
@@ -357,6 +359,36 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     const ok = m.own === 11 && m.checkboxes && m.hits === m.own && m.size > 0 && m.size < 30 && m.struck.includes('line-through') && !m.pageWide
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks at 375x667, ${scheme}: ${m.own} of ${m.all} boxes are the page's check boxes; ${m.hits} answer a tap 18 px to each side and 9 px up and down${m.misses.length ? ' (MISSED ' + m.misses.join(' | ') + ')' : ''}; a box is ${m.size}px; a done task ${m.struck}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5510: numbered tasks, light and dark, at 375 px: each number (its `::marker`, outside the item, so it ends at the
+// item's left edge) shows, its box starts right of it, the text right of the box; a tap at the box's middle is the box.
+const NUMBERED_CHECK = `(() => {
+  const items = [...document.querySelectorAll('.reader__body ol > li')].flatMap((li) => {
+    const box = li.querySelector(':scope > .page-task, :scope > p:first-child > .page-task')
+    if (!box) return []
+    const b = box.getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(li)
+    const words = [...range.getClientRects()].filter((r) => r.width > 0 && r.left >= b.right - 0.5)
+    const n = li.parentElement.start + [...li.parentElement.children].indexOf(li)
+    const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2) === box
+    return [{ n, gap: Math.round((b.left - li.getBoundingClientRect().left) * 10) / 10, text: words.length ? Math.round((Math.min(...words.map((r) => r.left)) - b.right) * 10) / 10 : null, shown: getComputedStyle(li).listStyleType !== 'none', hit }]
+  })
+  return { items, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_PAGES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('page-tasks-numbered', 375, 667)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const m = await evaluate(NUMBERED_CHECK)
+    const items = m.items as { n: number; gap: number; text: number | null; shown: boolean; hit: boolean }[]
+    const ok = items.map((i) => i.n).join(',') === '1,2,10,11' && items.every((i) => i.shown && i.gap >= 0 && i.text !== null && i.text > 0 && i.hit) && !m.pageWide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-tasks-numbered at 375x667, ${scheme}: ${items.map((i) => `${i.n}. ${i.shown ? '' : 'NO NUMBER '}box ${i.gap}px right of the number, text ${i.text}px right of the box${i.hit ? '' : ' (TAP MISSES)'}`).join('; ')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
