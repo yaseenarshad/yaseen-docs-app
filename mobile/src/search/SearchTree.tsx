@@ -13,6 +13,7 @@ import { buildTree, visibleRows, type TreeRow } from './vaultTree'
 import type { Scope } from './lists'
 import { ListTree } from './ListTree'
 import { rowId, useIdsForm } from './showIds'
+import { openFile } from '../explore/openFile'
 
 export { SearchBar } from './SearchBar'
 
@@ -63,7 +64,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
               data-kind={ICON_KIND[row.kind]}
               style={{ '--tree-depth': row.depth } as CSSProperties}
               aria-label={`${row.label}, ${row.kind === 'folder' ? 'folder' : row.kind === 'card' ? 'card' : app.unit('page')}`}
-              onClick={() => (row.kind === 'folder' ? toggle(row.path) : app.go({ type: 'open', route: treeRoute(row) }))}
+              onClick={() => (row.kind === 'folder' ? toggle(row.path) : openFile(app, treeRoute(row)))}
             >
               <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               <RowIcon kind={row.kind} open={row.open === true} />
@@ -90,7 +91,7 @@ function ResultRow({ row }: { row: SearchCandidate }) {
   const card = row.card === true
   const side = card ? (row.id ?? '') : ''
   return (
-    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : app.unit('page')}`} onClick={() => app.go({ type: 'open', route: routeOf(row) })}>
+    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : app.unit('page')}`} onClick={() => openFile(app, routeOf(row))}>
       <RowIcon kind={card ? 'card' : 'page'} />
       <span className="row__main">{row.label}</span>
       {side !== '' && <span className="row__side">{side}</span>}
@@ -154,7 +155,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   const open = (row: FoundRow) => {
     if (row.kind === 'folder') return toggle(row.path)
     const route: Route = row.hit !== undefined ? routeOf(row.hit) : treeRoute({ kind: row.kind, path: row.path, label: row.label, depth: row.depth, ...(row.id !== undefined && { id: row.id }) })
-    app.go({ type: 'open', route })
+    openFile(app, route)
   }
   return (
     <>

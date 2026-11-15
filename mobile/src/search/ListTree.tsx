@@ -11,6 +11,7 @@ import { ShowMore, TreeId, treeRoute } from './SearchTree'
 import { rowId, useIdsForm } from './showIds'
 import type { VaultData } from './vaultData'
 import { fileKind, fileLabel, type TreeKind } from './vaultTree'
+import { openFile } from '../explore/openFile'
 
 /** What a list is called, and its line when it holds nothing the phone can show. */
 const WORDS: Record<ListKind, { title: string; none: string }> = {
@@ -141,7 +142,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
               data-kind={row.kind === 'group' ? 'group' : ICON_KIND[row.kind]}
               style={{ '--tree-depth': row.depth } as CSSProperties}
               aria-label={`${row.label}, ${row.kind === 'group' ? `${words.title.toLowerCase()} folder` : row.kind === 'folder' ? 'folder' : row.kind === 'card' ? 'card' : app.unit('page')}`}
-              onClick={() => (row.kind === 'folder' || row.kind === 'group' ? toggle(row.key) : app.go({ type: 'open', route: treeRoute({ ...row, kind: row.kind }) }))}
+              onClick={() => (row.kind === 'folder' || row.kind === 'group' ? toggle(row.key) : openFile(app, treeRoute({ ...row, kind: row.kind })))}
             >
               <span className={row.kind === 'folder' || row.kind === 'group' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
               {row.kind === 'group' ? <StackIcon /> : <RowIcon kind={row.kind} open={row.open === true} />}
