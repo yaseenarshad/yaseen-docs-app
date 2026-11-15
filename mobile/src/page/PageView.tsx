@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
+import type { VaultStore } from '../store'
 import { Frame } from '../screens/Frame'
 import { setSearchNotice } from '../search/searchState'
-import { useVaultData } from '../search/vaultData'
+import { useVaultData, vaultDataFor } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import { useDrawings } from '../drawing/useDrawings'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
@@ -14,14 +15,14 @@ import { headingTarget, landingTop, landOn } from './headings'
 import { LinkedMentions } from './LinkedMentions'
 import { openLink, type LinkDoor } from './openLink'
 import { resolveSourceOf } from './pageLook'
-import { useVaultLook } from './vaultLook'
+import { loadVaultLook, useVaultLook } from './vaultLook'
 import { usePageTools } from './PageTools'
 import { usePageProperties } from './PageProperties'
 import { vaultName } from '../screens/Frame'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
-import { renderPage } from './pageRender'
+import { renderPage, warmRenderer } from './pageRender'
 import { markSections, pageSwitchAttrs } from './pageSwitches'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
 import { hasUnsentDraft } from './comments/unsentDrafts'
@@ -44,13 +45,37 @@ import { usePageCardMenu } from '../cardMenu/pageCardMenu'
 /** Where each page was read last (phone memory only), so Back shows a page at its place. */
 const readingPlace = new Map<string, number>()
 
+/**
+ * YAZ-5589: the text of the pages read last (phone memory only, a few), so a page opened again (Today's, read ahead
+ * by `primePage`) draws in the same frame as the tap. The stored file is read again at once; a change draws again.
+ */
+const heldTexts = new Map<string, string>()
+const HELD_TEXTS = 8
+function holdText(vault: string, path: string, text: string): void {
+  const key = `${vault}\n${path}`
+  heldTexts.delete(key)
+  heldTexts.set(key, text)
+  if (heldTexts.size > HELD_TEXTS) heldTexts.delete(heldTexts.keys().next().value!)
+}
+
+/**
+ * YAZ-5589: everything a page needs to draw in the same frame as the tap, read ahead (the Today button, once the app
+ * is idle): the vault's data and look, the page's stored text, and the renderer's warm-up.
+ */
+export async function primePage(store: VaultStore, vault: string, repoName: string, path: string): Promise<void> {
+  const data = await vaultDataFor(store, vault, repoName)
+  const [text] = await Promise.all([shownText(store, vault, path, null), loadVaultLook(store, data)])
+  if (typeof text === 'string') holdText(vault, path, text)
+  await warmRenderer(pageLook(data, path), uiSlicer())
+}
+
 export default function PageView({ path: opened, at, heading }: { path: string; at?: string; heading?: string }) {
   const app = useApp()
   const { store, sync } = app.services
   const vault = app.vaultKey!
   const data = useVaultData()
   const [path, setPath] = useState(opened)
-  const [text, setText] = useState<string | null | undefined>(undefined)
+  const [text, setText] = useState<string | null | undefined>(() => heldTexts.get(`${vault}\n${opened}`))
   const [reads, setReads] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
   /** The page's first block is a heading with its title: the reader's own title is not drawn a second time. */
@@ -139,6 +164,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         setNotice((n) => (n === words ? null : n))
       }
       setText(content)
+      if (typeof content === 'string') holdText(vault, path, content)
       // The same text as the page on the screen draws nothing again; its boxes still show the
       // file (a settled tick's box kept the tap's state).
       if (typeof content === 'string' && drawn.current?.text === content) ticksRef.current.paint()

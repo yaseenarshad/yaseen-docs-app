@@ -6,22 +6,42 @@ import { Component, lazy, Suspense, useMemo, useState, type ComponentType, type 
  * app and the screen goes blank. With it, only the screen's place says so, in plain words, with "Try again" (a new
  * import, not React's cached failure), and "‹ Back" for a screen over the tabs. The tabs, the dot and the waiting
  * answers stay. Every lazy screen of `mobile/src` uses it (Review, the page view, the card view).
+ *
+ * YAZ-5589: `preload()` loads the chunk ahead (the Today button, once the app is idle). A screen whose chunk is
+ * loaded draws AT ONCE, in the same frame as the tap: no `lazy`, so no `waiting` frame (the page view's is an empty
+ * screen with no bars: the "flash" of Today).
  */
 export function lazyScreen<P extends object>(load: () => Promise<{ default: ComponentType<P> }>, options: { waiting?: ReactNode } = {}) {
+  type M = { default: ComponentType<P> }
+  let loaded: M | null = null
+  let loading: Promise<M> | null = null
+  const loadOnce = (): Promise<M> => {
+    loading ??= load().then(
+      (m) => (loaded = m),
+      (error: unknown) => {
+        // A failed load is tried again at the next call (no cached failure).
+        loading = null
+        throw error
+      },
+    )
+    return loading
+  }
   function LazyScreen(props: P & { onBack?: () => void }) {
     const [attempt, setAttempt] = useState(0)
     // A new `lazy` for each attempt: React keeps a failed import's error, so "Try again" needs a fresh one.
-    const Screen = useMemo(() => lazy(load), [attempt]) // eslint-disable-line react-hooks/exhaustive-deps
+    const Screen = useMemo(() => lazy(loadOnce), [attempt]) // eslint-disable-line react-hooks/exhaustive-deps
     const { onBack, ...rest } = props
+    // Chosen once, at mount: a screen drawn through `lazy` keeps that place (a change of the tree would remount it).
+    const [Loaded] = useState(() => loaded?.default)
     return (
       <ChunkBoundary key={attempt} onRetry={() => void relinkFailedStyles().then(() => setAttempt((n) => n + 1))} onBack={onBack}>
         <Suspense fallback={options.waiting ?? <div className="lazy-screen" aria-busy="true" />}>
-          <Screen {...(rest as P)} />
+          {Loaded !== undefined ? <Loaded {...(rest as P)} /> : <Screen {...(rest as P)} />}
         </Suspense>
       </ChunkBoundary>
     )
   }
-  return LazyScreen
+  return Object.assign(LazyScreen, { preload: loadOnce })
 }
 
 /** A stylesheet that loaded (it has a sheet whose rules can be read). A failed or a cross-origin one has none. */

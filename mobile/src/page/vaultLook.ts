@@ -53,6 +53,8 @@ async function readJson(store: VaultStore, vault: string, name: string): Promise
 }
 
 const looks = new WeakMap<VaultData, Promise<VaultLook>>()
+/** YAZ-5589: each look once read, so a page that mounts with data read before draws with its look at once. */
+const read = new WeakMap<VaultData, VaultLook>()
 
 export function loadVaultLook(store: VaultStore, data: VaultData): Promise<VaultLook> {
   let held = looks.get(data)
@@ -66,13 +68,17 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
       return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...textVars(text), ...spacingVars(text.spacing), ...card, ...tableLookVars(table) }, table }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
+    void held.then((look) => read.set(data, look))
   }
   return held
 }
 
 /** The open vault's look; undefined until it is first read (a page waits for it, a few ms, so its links draw once). */
 export function useVaultLook(store: VaultStore, data: VaultData | null): VaultLook | undefined {
-  const [look, setLook] = useState<{ data: VaultData; look: VaultLook } | null>(null)
+  const [look, setLook] = useState<{ data: VaultData; look: VaultLook } | null>(() => {
+    const known = data === null ? undefined : read.get(data)
+    return data === null || known === undefined ? null : { data, look: known }
+  })
   useEffect(() => {
     if (data === null) return
     let live = true

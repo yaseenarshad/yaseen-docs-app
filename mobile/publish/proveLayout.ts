@@ -75,6 +75,8 @@ import { freePort } from './freePort'
  *    screen; a tap opens it in place, its rows inside the screen; the same section on the full page, open, then closed.
  *  - the Today tab (`#fixture=today-open`, YAZ-5522 N6), light and dark, at 375 px: today's page open, "Today" marked
  *    (`aria-current="page"`) in the selected tab's colour and weight; on the tab bar alone (`today`) it is not.
+ *    YAZ-5589: a real tap on Today once the app is idle: the first frame after it shows today's page (its title, its
+ *    text, the bars), and no frame shows the empty waiting screen or "Loading".
  *  - a folder's table as the vault's folder-pages.json says (`#fixture=folder-table`, `folder-table-look`, YAZ-5549), light
  *    and dark, at 375 px (in the folder views' part): the row height (Short: the Name cell keeps 44 px; Tall: 68 px),
  *    the `#` numbers, a subfolder's "N inside".
@@ -121,7 +123,8 @@ process.env.NOTECARDS_SERVE = 'no'
 const { serveDist } = await import('./serve')
 const server = await serveDist(DIST, PORT)
 // YAZ-5524: 28 more top-bar cases (pages with no ID chip): the budget grows with them. YAZ-5529: 6 properties cases.
-setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 420_000).unref()
+// YAZ-5589: the Today tap's frame check (light and dark).
+setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 600_000).unref()
 const profile = mkdtempSync(join(tmpdir(), 'notecards-layout-profile-'))
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
 let browserWs = ''
@@ -887,6 +890,49 @@ if (process.env.LAYOUT_TODAY !== 'no') {
     const ok = bar.error === undefined && bar.current === null && bar.color !== selected.color && m.error === undefined && m.page && m.current === 'page' && m.color === selected.color && m.weight === selected.weight
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  Today tab ${scheme} at 375x667: on Search ${bar.current === null ? 'not marked' : 'MARKED'} (${bar.color}); today's page open: ${m.current === 'page' ? 'marked' : 'NOT MARKED'}, ${m.color} ${m.weight} (the selected tab: ${selected.color} ${selected.weight})  ${barFile} ${shot}`)
+  }
+  // YAZ-5589: todayTab_firstFrameAfterTheTap_showsThePage. On the tab bar (`#fixture=today`), once the app is idle (the
+  // button's read ahead: `data-ahead="ready"`), a real tap: the FIRST frame drawn after it already shows today's page,
+  // its title in the top bar, its text, the bars; never the empty waiting screen (`aria-busy`) or "Loading".
+  const todayTitle = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  const FRAMES = `(() => {
+    const frames = []
+    let t0 = null
+    addEventListener('click', () => { t0 = performance.now() }, { capture: true, once: true })
+    const snap = () => ({
+      t: Math.round(performance.now() - t0),
+      title: document.querySelector('.topbar__title')?.textContent ?? null,
+      body: (document.querySelector('.reader__body')?.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 40),
+      bars: document.querySelector('.topbar') !== null && document.querySelector('.tabbar') !== null,
+      busy: document.querySelector('[aria-busy="true"]')?.className ?? null,
+      loading: /Loading/.test(document.body.innerText),
+    })
+    const tick = () => {
+      if (t0 !== null) frames.push(snap())
+      if (t0 === null || performance.now() - t0 < 600) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+    window.__todayFrames = frames
+  })()`
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('today', 375, 667)
+    for (let i = 0; i < 50 && (await evaluate(`document.querySelector('.tabbar__today')?.dataset.ahead`)) !== 'ready'; i++) await wait(100)
+    const ahead = await evaluate(`document.querySelector('.tabbar__today')?.dataset.ahead ?? null`)
+    await evaluate(FRAMES)
+    const at = await evaluate(`(() => { const b = document.querySelector('.tabbar__today').getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } })()`)
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 }, page)
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 }, page)
+    await wait(800)
+    const frames = (await evaluate('window.__todayFrames')) as { t: number; title: string | null; body: string; bars: boolean; busy: string | null; loading: boolean }[]
+    const shot = file.replace('.png', `-tap-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const first = frames[0]
+    const ok = ahead === 'ready' && first !== undefined && first.title === todayTitle && first.body.length > 0 && first.bars && first.busy === null && !first.loading && frames.every((f) => f.busy === null && !f.loading && f.bars)
+    if (!ok) failed++
+    console.log(
+      `${ok ? 'PASS' : 'FAIL'}  Today tap ${scheme} at 375x667: read ahead ${ahead ?? 'NOT DONE'}; the first frame after the tap (+${first?.t ?? '?'} ms): title "${first?.title}"${first?.title === todayTitle ? '' : ` (NOT "${todayTitle}")`}, text "${first?.body}", ${first?.bars ? 'bars' : 'NO BARS'}${first?.busy ? `, WAITING (${first.busy})` : ''}${first?.loading ? ', LOADING TEXT' : ''}; ${frames.length} frames, ${frames.some((f) => f.busy !== null || f.loading || !f.bars) ? 'A WAITING OR EMPTY FRAME' : 'none waiting or empty'}  ${shot}`,
+    )
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
