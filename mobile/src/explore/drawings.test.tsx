@@ -10,10 +10,18 @@ import { readRecent } from '../search/recent'
 import { mount, newPhone, type Harness } from '../screens/testing'
 import { closeAll } from './sheets'
 
+/** YAZ-5533: draw.io's viewer runs in a frame, which jsdom does not load: its answer is made up here (the figure is real). */
+vi.mock('../drawing/diagram/drawDiagram', async () => ({
+  ...(await vi.importActual<typeof import('../drawing/diagram/figure')>('../drawing/diagram/figure')),
+  DiagramUnavailable: class extends Error {},
+  drawDiagram: async () => ({ svg: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="120"></svg>', width: 300, height: 120, pages: [{ id: 'd', name: 'Page-1' }], page: 'd', missing: [] }),
+}))
+
 /**
  * YAZ-5473, DRAWINGS FIRST CLASS: `.excalidraw`, `.drawio.svg` and `.drawio` files are in Search's tree with the Mac's
  * icons and in the Mac's order, typed search finds them by name, Favorites and Recent hold them, and they open on their
- * own (full screen, or in a sheet) with YAZ-5440's drawing code. Made-up vault only (`drawingVault.ts`).
+ * own (full screen, or in a sheet) with YAZ-5440's drawing code; YAZ-5533: a plain `.drawio` is drawn by draw.io's
+ * viewer. Made-up vault only (`drawingVault.ts`).
  */
 let h: Harness | null = null
 beforeEach(() => {
@@ -111,10 +119,12 @@ describe('drawings first class (YAZ-5473)', () => {
     await waitFor(h, () => h!.button('garden, drawing') !== null)
   })
 
-  it('a plain .drawio says "Open it on the Mac"; a .drawio.svg shows as a picture', async () => {
+  it('YAZ-5533: a plain .drawio is drawn (draw.io\'s viewer), never "Open it on the Mac"; a .drawio.svg shows as a picture', async () => {
     h = await openSearch()
     await h.click('old plan, diagram')
-    await h.waitText('Open it on the Mac')
+    await waitFor(h, () => h!.host.querySelector('.reader__body .page-drawing--diagram img.page-drawing__img') !== null)
+    expect(h.host.querySelector('.page-drawing__img')?.getAttribute('alt')).toBe('Diagram · old plan.drawio')
+    expect(h.text()).not.toContain('Open it on the Mac')
     await h.click('Back')
     await waitFor(h, () => h!.host.querySelector('.tree') !== null)
     await h.click('flow.drawio, diagram')

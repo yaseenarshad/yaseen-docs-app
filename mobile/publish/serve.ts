@@ -7,6 +7,7 @@ import { headersFor, parseHeaders } from './headers'
  * A tiny local copy of the Cloudflare static assets host (YAZ-5087), for the headless check: it serves a build folder
  * with the rules of `wrangler.jsonc` and `_headers`:
  * - `html_handling: auto-trailing-slash`: `/` is index.html, `/friend` is friend.html; `/index.html` and `/friend.html` redirect (307);
+ *   so does any other page (`/drawio/<hash>/render.html` is served at `/drawio/<hash>/render`, YAZ-5533);
  * - `not_found_handling: single-page-application`: ANY other address gets index.html with 200 (Cloudflare does this
  *   also for a script request; YAZ-5283), with the headers of that address;
  * - every answer gets the headers of `_headers` for its path. `_headers` itself is never served.
@@ -21,6 +22,7 @@ const TYPES: Record<string, string> = {
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
   '.json': 'application/json',
+  '.txt': 'text/plain; charset=utf-8',
 }
 
 export function serveDist(dir: string, port: number, delayMs = Number(process.env.NOTECARDS_DELAY ?? 0)): Promise<Server> {
@@ -45,7 +47,11 @@ export function serveDist(dir: string, port: number, delayMs = Number(process.en
     if (page && page[2] === '.html') return send(307, null, { location: `/${page[1]}` })
     const want = path === '/' ? 'index.html' : page ? `${page[1]}.html` : path.slice(1)
     const file = normalize(join(dir, want))
-    if (file.startsWith(normalize(dir)) && want !== '_headers' && existsSync(file) && statSync(file).isFile()) return send(200, file)
+    const inside = file.startsWith(normalize(dir)) && want !== '_headers'
+    // YAZ-5533: any other page as the host serves it (`auto-trailing-slash`): `/a/b.html` redirects to `/a/b`, which is it.
+    if (inside && path.endsWith('.html') && existsSync(file)) return send(307, null, { location: path.slice(0, -'.html'.length) })
+    if (inside && !path.endsWith('.html') && existsSync(`${file}.html`) && statSync(`${file}.html`).isFile()) return send(200, `${file}.html`)
+    if (inside && existsSync(file) && statSync(file).isFile()) return send(200, file)
     return send(200, join(dir, 'index.html'))
   })
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)))

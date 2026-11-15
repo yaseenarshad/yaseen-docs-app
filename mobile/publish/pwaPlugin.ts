@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { build as esbuild } from 'esbuild'
 import type { Plugin } from 'vite'
 import type { ShellBuild } from '../src/pwa/swCore'
+import { drawioFiles } from './drawioPhone'
 
 /**
  * The build step of the home-screen app (YAZ-5087): it writes `dist/sw.js`, the service worker, with this build's
@@ -27,12 +28,14 @@ export const WORKER_SOURCES = ['../src/pwa/sw.ts', '../src/pwa/swCore.ts', '../s
 /**
  * What the worker keeps: every build file (ALL chunks, the lazy ones too, so the sync engine and the QR reader work
  * offline), the two pages, the manifest and the icons. Not: the splash pictures (iOS reads them at "Add to Home
- * Screen"), `_headers`, the worker itself, source maps, anything else in `public/`.
+ * Screen"), `_headers`, the worker itself, source maps, anything else in `public/`, and NO draw.io file (YAZ-5533:
+ * `drawio/<hash>/…` is fetched the first time a diagram is opened, then kept by the worker's draw.io cache; so is
+ * the app's own small diagram chunk, `notInstalled`).
  */
-export function shellFiles(bundleFiles: string[], publicFiles: string[]): string[] {
+export function shellFiles(bundleFiles: string[], publicFiles: string[], notInstalled: string[] = []): string[] {
   const out = new Set<string>()
   for (const file of bundleFiles) {
-    if (file.endsWith('.map')) continue
+    if (file.endsWith('.map') || notInstalled.includes(file)) continue
     if (file in SERVED) out.add(SERVED[file])
     else if (file.startsWith('assets/')) out.add(`/${file}`)
   }
@@ -78,12 +81,20 @@ export function notecardsPwa(): Plugin {
       if (!friendPage || friendPage.type !== 'asset') this.error('notecards-pwa: no friend.html in the build')
       for (const copy of LANDING_COPIES) this.emitFile({ type: 'asset', fileName: copy, source: friendPage.source })
       const publicFiles = publicDir ? walk(publicDir).map((p) => relative(publicDir, p).replaceAll('\\', '/')) : []
-      const files = shellFiles([...Object.keys(bundle), ...LANDING_COPIES], publicFiles)
+      // YAZ-5533: the app's diagram chunk (the frame's host) is kept on first use, as draw.io's own files.
+      const diagram = Object.values(bundle).filter((o) => o.type === 'chunk' && /\/mobile\/src\/drawing\/diagram\/drawDiagram\.ts$/.test(o.facadeModuleId ?? ''))
+      if (diagram.length !== 1 || diagram[0].type !== 'chunk' || diagram[0].imports.length > 0) this.error('notecards-pwa: the diagram code is not ONE lazy chunk that imports nothing (YAZ-5533)')
+      // The chunk and its stylesheet.
+      const drawioChunks = diagram.flatMap((o) => (o.type === 'chunk' ? [o.fileName, ...(o.viteMetadata?.importedCss ?? [])] : []))
+      const files = shellFiles([...Object.keys(bundle), ...LANDING_COPIES], publicFiles, drawioChunks)
       const landingChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/friend\.html$/.test(o.facadeModuleId ?? ''))
       if (!landingChunk) this.error('notecards-pwa: no entry chunk for friend.html')
       const entryChunk = Object.values(bundle).find((o) => o.type === 'chunk' && o.isEntry && /\/index\.html$|\/src\/main\.tsx$/.test(o.facadeModuleId ?? ''))
       if (!entryChunk) this.error('notecards-pwa: no entry chunk for index.html')
       const hash = createHash('sha256')
+      // YAZ-5533: the draw.io folder of this build (its files are not in the shell; the worker keeps them on first use).
+      const drawio = drawioFiles().base
+      hash.update(drawio).update('\0')
       for (const source of WORKER_SOURCES) hash.update(readFileSync(fileURLToPath(new URL(source, import.meta.url)))).update('\0')
       for (const path of files) {
         const name = Object.entries(SERVED).find(([, served]) => served === path)?.[0] ?? path.slice(1)
@@ -93,7 +104,7 @@ export function notecardsPwa(): Plugin {
       }
       const entry = `/${entryChunk.fileName}`
       const landing = `/${landingChunk.fileName}`
-      const shell: ShellBuild = { version: hash.digest('hex').slice(0, 16), files, entry, pages: { '/': entry, '/friend': landing, '/group': landing, '/join': landing } }
+      const shell: ShellBuild = { version: hash.digest('hex').slice(0, 16), files, entry, pages: { '/': entry, '/friend': landing, '/group': landing, '/join': landing }, drawio, drawioChunks: drawioChunks.map((f) => `/${f}`) }
       // YAZ-5285: the kill switch replaces the worker (`npm run mobile:publish:preview:kill-switch`).
       const kill = process.env.NOTECARDS_KILL_SWITCH === '1'
       const result = await esbuild({

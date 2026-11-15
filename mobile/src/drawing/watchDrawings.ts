@@ -1,7 +1,8 @@
 import { openOverlay } from '../app/browserHistory'
 import { edgeBackOn, swipeIsOurs } from '../app/edgeSwipe'
 import { browserFacts, whereAmI } from '../pwa/homeScreen'
-import { onMacWords } from './drawingBox'
+import { firstTimeWords, isPlainDiagram, onMacWords } from './drawingBox'
+import type { DiagramDrawn, DiagramInput, DiagramFigure } from './diagram/drawDiagram'
 import type { DrawInput, Drawn } from './engine/drawPicture'
 import { pinchZoom } from './pinchZoom'
 
@@ -21,6 +22,12 @@ import { pinchZoom } from './pinchZoom'
  *
  * Calm lines, never a crash: with no signal and no engine yet, "Open it on the Mac" (the old line); a file that is not
  * a drawing, "Can't show this drawing"; a drawing with nothing in it, "Empty drawing".
+ *
+ * A PLAIN DRAW.IO DIAGRAM (`.drawio`, YAZ-5533) the same way, drawn by draw.io's own read-only viewer in the app's one
+ * hidden frame (`diagram/drawDiagram.ts`), as the Mac draws it, light or dark as the iPhone is. A diagram of several
+ * pages gets a page picker above its picture. Its own lines: the viewer not on the phone yet and no signal, "Diagrams
+ * need the internet the first time; then they work offline" (it draws when the signal comes back); a shape library not
+ * on the phone yet, a placeholder box for its shapes and a line under the picture (drawn again online).
  */
 
 export interface DrawingDeps {
@@ -30,6 +37,10 @@ export interface DrawingDeps {
   files(): readonly string[]
   /** The drawing chunk; a test gives its own. */
   load?: () => Promise<{ drawPicture(input: DrawInput): Promise<Drawn> }>
+  /** YAZ-5533: the diagram chunk (draw.io's viewer in its frame); a test gives its own. */
+  loadDiagram?: () => Promise<{ drawDiagram(input: DiagramInput): Promise<DiagramDrawn | 'empty'>; diagramFigure: DiagramFigure }>
+  /** Is there a signal now (`navigator.onLine`)? */
+  isOnline?: () => boolean
   /** Dark mode now, and its changes; a test gives its own. */
   dark?: { matches: boolean; addEventListener(type: 'change', fn: () => void): void; removeEventListener(type: 'change', fn: () => void): void }
   /** Where the signal's return is heard (`window`). */
@@ -56,19 +67,110 @@ function line(box: HTMLElement, words: string): void {
   box.textContent = words
 }
 
+/** Each box: its path, whether it is drawing now, its picture's URL, whether it waits for the signal, the page shown. */
+interface Held {
+  path: string
+  busy: boolean
+  url: string | null
+  waits: boolean
+  near: boolean
+  ended: boolean
+  /** A diagram's page shown (YAZ-5533); null: the first. */
+  page: string | null
+}
+
+/** The picture of a drawing: its `blob:` URL, fit to the page's width. */
+function picture(url: string, alt: string, width: number, height: number): HTMLImageElement {
+  const img = document.createElement('img')
+  img.className = 'page-drawing__img'
+  img.alt = alt
+  img.width = Math.round(width)
+  img.height = Math.round(height)
+  img.decoding = 'async'
+  img.src = url
+  return img
+}
+
 const defaultDark = () => (typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: dark)') : undefined)
 
 export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatch {
   let stopped = false
   const load = deps.load ?? (() => import('./engine/drawPicture'))
+  const importDiagram = deps.loadDiagram ?? (() => import('./diagram/drawDiagram'))
+  // One load for every diagram of the page (asked again after a failure: no signal, the first time).
+  let diagramChunk: ReturnType<typeof importDiagram> | null = null
+  const loadDiagram = () =>
+    (diagramChunk ??= importDiagram().catch((err: unknown) => {
+      diagramChunk = null
+      throw err
+    }))
+  const isOnline = deps.isOnline ?? (() => typeof navigator === 'undefined' || navigator.onLine !== false)
   const dark = deps.dark ?? defaultDark()
-  /** Each box: its path, whether it is drawing now, its picture's URL, whether it waits for the signal. */
   let queue: Promise<void> = Promise.resolve()
-  const boxes = new Map<HTMLElement, { path: string; busy: boolean; url: string | null; waits: boolean; near: boolean; ended: boolean }>()
+  const boxes = new Map<HTMLElement, Held>()
 
   const release = (held: { url: string | null }) => {
     if (held.url !== null) URL.revokeObjectURL(held.url)
     held.url = null
+  }
+
+  /** One at a time, each after the screen had its turn: two big drawings never draw in one go. */
+  const inTurn = <T,>(work: () => Promise<T>): Promise<T> => {
+    const turn = queue.then(nextTurn).then(work)
+    queue = turn.then(
+      () => undefined,
+      () => undefined,
+    )
+    return turn
+  }
+
+  /** YAZ-5533: a plain draw.io diagram, by draw.io's viewer (`diagram/drawDiagram.ts`). */
+  const drawDiagramBox = async (box: HTMLElement, held: Held, name: string, live: () => boolean) => {
+    let chunk
+    try {
+      chunk = await loadDiagram()
+    } catch {
+      // The diagram chunk is not on the phone and no signal: as the viewer's own files.
+      if (live()) (held.waits = true), line(box, isOnline() ? `Diagram · ${name} · Can't show it now` : firstTimeWords(name))
+      return
+    }
+    const got = await deps.read(held.path)
+    if (!live()) return
+    if (!('bytes' in got)) {
+      held.waits = got.why === 'offline' || got.why === 'slowed'
+      held.ended = !held.waits
+      line(box, got.why === 'offline' ? `Diagram · ${name} · Needs a connection` : got.why === 'gone' || got.why === 'not-in-vault' ? `Missing diagram · ${name}` : `Diagram · ${name} · Can't show it now`)
+      return
+    }
+    let drawn: DiagramDrawn | 'empty'
+    try {
+      const input: DiagramInput = { text: new TextDecoder().decode(got.bytes), theme: dark?.matches ? 'dark' : 'light', page: held.page }
+      drawn = await inTurn(() => chunk.drawDiagram(input))
+    } catch (err) {
+      if (!live()) return
+      // The viewer did not start: its files are not on the phone yet (no signal), or the site did not answer.
+      if (err instanceof Error && err.name === 'DiagramUnavailable') return void ((held.waits = true), line(box, isOnline() ? `Diagram · ${name} · Can't show it now` : firstTimeWords(name)))
+      return void ((held.ended = true), line(box, `Diagram · ${name} · Can't show this diagram`))
+    }
+    if (!live()) return
+    if (drawn === 'empty') return void ((held.ended = true), line(box, `Diagram · ${name} · Empty diagram`))
+    release(held)
+    held.url = URL.createObjectURL(new Blob([drawn.svg], { type: 'image/svg+xml' }))
+    held.page = drawn.page
+    // A shape library not on the phone yet: drawn again when the signal comes back.
+    held.waits = drawn.missing.length > 0
+    const parts = chunk.diagramFigure(drawn, held.url, name, {
+      picture,
+      open: openView,
+      page: (id) => {
+        held.page = id
+        void draw(box)
+      },
+    })
+    box.className = 'page-drawing page-drawing--diagram'
+    box.removeAttribute('role')
+    box.removeAttribute('aria-label')
+    box.replaceChildren(...parts)
   }
 
   const draw = async (box: HTMLElement) => {
@@ -79,6 +181,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
     const name = nameOf(held.path)
     const live = () => !stopped && box.isConnected && boxes.get(box) === held
     try {
+      if (isPlainDiagram(held.path)) return await drawDiagramBox(box, held, name, live)
       let chunk
       try {
         chunk = await load()
@@ -99,12 +202,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
       try {
         // One drawing at a time, each after the screen had its turn: two big boards never draw in one go.
         const input: DrawInput = { text: new TextDecoder().decode(got.bytes), theme: dark?.matches ? 'dark' : 'light', files: deps.files(), read: deps.read }
-        const turn = queue.then(nextTurn).then(() => chunk.drawPicture(input))
-        queue = turn.then(
-          () => undefined,
-          () => undefined,
-        )
-        drawn = await turn
+        drawn = await inTurn(() => chunk.drawPicture(input))
       } catch {
         if (live()) (held.ended = true), line(box, `Drawing · ${name} · Can't show this drawing`)
         return
@@ -113,13 +211,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
       if (drawn === 'empty') return void ((held.ended = true), line(box, `Drawing · ${name} · Empty drawing`))
       release(held)
       held.url = URL.createObjectURL(new Blob([drawn.svg], { type: 'image/svg+xml' }))
-      const img = document.createElement('img')
-      img.className = 'page-drawing__img'
-      img.alt = `Drawing · ${name}`
-      img.width = Math.round(drawn.width)
-      img.height = Math.round(drawn.height)
-      img.decoding = 'async'
-      img.src = held.url
+      const img = picture(held.url, `Drawing · ${name}`, drawn.width, drawn.height)
       img.addEventListener('click', () => openView(img.src, name, drawn.width, drawn.height))
       box.className = 'page-drawing'
       box.removeAttribute('role')
@@ -148,7 +240,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
   const take = (box: HTMLElement) => {
     const path = box.dataset.vaultDrawing
     if (boxes.has(box) || path === undefined) return
-    boxes.set(box, { path, busy: false, url: null, waits: false, near: false, ended: false })
+    boxes.set(box, { path, busy: false, url: null, waits: false, near: false, ended: false, page: null })
     if (seen === null) void draw(box)
     else seen.observe(box)
   }

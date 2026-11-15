@@ -3,16 +3,22 @@ import './drawing.css'
 /**
  * A DRAWING IN A PAGE (YAZ-5440): the box the reader draws for `![[board.excalidraw]]`, with no engine. It holds the
  * file's path (`data-vault-drawing`) and a soft placeholder; `watchDrawings` draws the picture into it when it comes
- * near the screen. A plain draw.io file (`.drawio`) keeps the line "Open it on the Mac": the Mac draws it with draw.io's
- * own viewer, a whole web app (tens of MB) that runs in a frame on its own origin, which the phone's CSP does not allow
- * and its size does not fit. A `.drawio.svg` is a picture already: the reader shows it as one (`<img>`).
+ * near the screen. YAZ-5533: a plain draw.io file (`![[flow.drawio]]`) gets the same box, and draw.io's own read-only
+ * viewer draws it (`diagram/drawDiagram.ts`), in place of the old "Open it on the Mac". A `.drawio.svg` is a picture
+ * already: the reader shows it as one (`<img>`).
  */
 
 /** The words of a drawing that the phone does not draw now. */
 export const onMacWords = (name: string): string => `Drawing · ${name} · Open it on the Mac`
 
-/** Is `path` an Excalidraw drawing the phone draws? The Mac's one drawing kind (`DRAWING_VIEW_EXTENSIONS`). */
-export const isPhoneDrawing = (path: string): boolean => /\.excalidraw$/i.test(path)
+/** YAZ-5533: the words of a diagram when draw.io's viewer is not on the phone yet and there is no signal. */
+export const firstTimeWords = (name: string): string => `Diagram · ${name} · Diagrams need the internet the first time; then they work offline`
+
+/** Is `path` a plain draw.io diagram (`.drawio`, not a `.drawio.svg` picture)? draw.io's viewer draws it (YAZ-5533). */
+export const isPlainDiagram = (path: string): boolean => /\.drawio$/i.test(path)
+
+/** Is `path` a drawing the phone draws? An Excalidraw drawing (YAZ-5440) or a plain draw.io diagram (YAZ-5533). */
+export const isPhoneDrawing = (path: string): boolean => /\.excalidraw$/i.test(path) || isPlainDiagram(path)
 
 /** Is `path` a draw.io diagram saved as a picture (`.drawio.svg`, `.drawio.png`)? It shows as a picture. */
 export const isDiagramPicture = (path: string): boolean => /\.drawio\.(svg|png)$/i.test(path)
@@ -23,7 +29,7 @@ export function drawingBox(path: string | null, name: string): HTMLElement | nul
     // A drawing the vault does not have: the reader's "Missing …" line.
     const missing = document.createElement('span')
     missing.className = 'page-media page-media--missing'
-    missing.textContent = `Missing drawing · ${name}`
+    missing.textContent = `Missing ${isPlainDiagram(name) ? 'diagram' : 'drawing'} · ${name}`
     return missing
   }
   if (path === null || !isPhoneDrawing(path)) return null
@@ -31,10 +37,11 @@ export function drawingBox(path: string | null, name: string): HTMLElement | nul
   box.className = 'page-drawing page-drawing--wait'
   box.dataset.vaultDrawing = path
   box.setAttribute('role', 'img')
-  box.setAttribute('aria-label', `Drawing · ${name}`)
+  const kind = isPlainDiagram(path) ? 'Diagram' : 'Drawing'
+  box.setAttribute('aria-label', `${kind} · ${name}`)
   const wait = document.createElement('span')
   wait.className = 'page-drawing__wait'
-  wait.textContent = `Drawing · ${name}`
+  wait.textContent = `${kind} · ${name}`
   box.append(wait)
   return box
 }

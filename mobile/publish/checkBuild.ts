@@ -26,6 +26,9 @@ export function checkDist(files: DistFile[]): string[] {
     if (file.path.endsWith('.map')) problems.push(`${file.path}: a source map (the build must have none)`)
     if (file.text === undefined) continue
     for (const rule of NEVER) {
+      // YAZ-5533: draw.io's pinned viewer (size and sha256 checked, `drawioPhone.ts`) carries DOMPurify's own
+      // `//# sourceMappingURL=purify.min.js.map` comment; no map ships, and the file stays the Mac's byte for byte.
+      if (rule.what === 'a source map link' && /^drawio\/[0-9a-f]{12}\/viewer-static\.min\.js$/.test(file.path)) continue
       const m = rule.test.exec(file.text)
       if (m) problems.push(`${file.path}: ${rule.what === 'a source map link' ? 'a source map link' : rule.what} ("${m[0].slice(0, 24)}")`)
     }

@@ -1,4 +1,4 @@
-import { CACHE_PREFIX, META_CACHE, type SwScope } from './swCore'
+import { CACHE_PREFIX, DRAWIO_CACHE_PREFIX, META_CACHE, type SwScope } from './swCore'
 
 /**
  * THE KILL SWITCH (YAZ-5285): the `sw.js` to publish when a bad version reached the phones and the normal update cannot
@@ -6,7 +6,8 @@ import { CACHE_PREFIX, META_CACHE, type SwScope } from './swCore'
  * site with this file as `sw.js` (`publish/pwaPlugin.ts`, `NOTECARDS_KILL_SWITCH=1`).
  *
  * - `install`: it takes over at once (`skipWaiting`). It does not wait for a page message: the bad page may never send one.
- * - `activate`: it deletes this app's shell caches (`notecards-shell-*`) and `notecards-meta`, and nothing else; it
+ * - `activate`: it deletes this app's shell caches (`notecards-shell-*`), its draw.io caches (`notecards-drawio-*`,
+ *   YAZ-5533) and `notecards-meta`, and nothing else; it
  *   unregisters itself; then it loads each open page again, ONE time, from the network.
  * - It answers no request: with no `fetch` listener, every request goes to the network.
  * - It never touches IndexedDB, and never sends `Clear-Site-Data`: the token, the vault copy and the waiting answers stay.
@@ -21,7 +22,7 @@ export function wireKillSwitch(scope: SwScope): void {
       (async () => {
         let deleted = 0
         for (const name of await scope.caches.keys()) {
-          if (name.startsWith(CACHE_PREFIX) || name === META_CACHE) {
+          if (name.startsWith(CACHE_PREFIX) || name.startsWith(DRAWIO_CACHE_PREFIX) || name === META_CACHE) {
             await scope.caches.delete(name)
             deleted++
           }

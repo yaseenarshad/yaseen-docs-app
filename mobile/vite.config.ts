@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { fileURLToPath } from 'node:url'
 import { forbiddenImport, forbiddenUse, mayImportEngine } from './importRules'
 import { commitOf, notecardsPwa } from './publish/pwaPlugin'
+import { drawioPhone } from './publish/drawioPhone'
 import { cpSync, existsSync, readFileSync } from 'node:fs'
 import { join, normalize, resolve } from 'node:path'
 
@@ -150,7 +151,8 @@ export default defineConfig({
   define: buildDefine(),
   // The guard is for what the phone bundles. `vitest.config.ts` leaves it out on purpose (YAZ-5160).
   // YAZ-5087: `notecardsPwa` writes the service worker (`dist/sw.js`) with this build's shell list.
-  plugins: [drawingChunkTrim(), phoneImportGuard(), react(), notecardsPwa(), materialIconFiles()],
+  // YAZ-5533: `drawioPhone` puts draw.io's viewer and its files in `dist/drawio/<hash>/`, outside that list.
+  plugins: [drawingChunkTrim(), phoneImportGuard(), react(), notecardsPwa(), materialIconFiles(), drawioPhone()],
   resolve: phoneResolve,
   // YAZ-5440: the dev server serves the engine's font files to the drawing chunk.
   server: { fs: { allow: [here, shared, clientSrc, engineFonts] } },

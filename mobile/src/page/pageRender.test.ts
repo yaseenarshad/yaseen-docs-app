@@ -232,7 +232,7 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect([...el.querySelectorAll('.wikilink--unresolved')][1].getAttribute('aria-label')).toBe('Missing page · DEMO-99')
   })
 
-  it('embeds: a card in place, a missing card as the Mac says it, a sound, a drawing to draw, a draw.io file to open on the Mac', async () => {
+  it('embeds: a card in place, a missing card as the Mac says it, a sound, a drawing to draw, a draw.io diagram to draw', async () => {
     const el = await draw('![[DEMO-40]]\n\n![[DEMO-77]]\n\n![[song.mp3]]\n\n![[board.excalidraw]]\n\n![[plan.drawio]] and ![[gone.excalidraw]]\n\n![[Some page]]')
     expect(el.querySelector('[data-card-embed]')?.getAttribute('data-card-embed')).toBe('DEMO-40')
     expect(el.querySelector('.card-embed--missing')?.textContent).toBe('Missing card · DEMO-77')
@@ -242,8 +242,12 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect(box?.getAttribute('data-vault-drawing')).toBe('boards/board.excalidraw')
     expect(box?.parentElement?.tagName).not.toBe('P')
     expect(box?.textContent).toBe('Drawing · board.excalidraw')
-    // A plain draw.io file: the line. A drawing the vault does not have: "Missing".
-    expect([...el.querySelectorAll('.page-media--board')].map((e) => e.textContent)).toEqual(['Drawing · plan.drawio · Open it on the Mac'])
+    // YAZ-5533: a plain draw.io file is a box too, which draw.io's viewer fills (no more "Open it on the Mac").
+    const diagram = el.querySelector('figure[data-vault-drawing="boards/plan.drawio"]')
+    expect(diagram?.textContent).toBe('Diagram · plan.drawio')
+    expect(diagram?.getAttribute('aria-label')).toBe('Diagram · plan.drawio')
+    expect(el.textContent).not.toContain('Open it on the Mac')
+    // A drawing the vault does not have: "Missing".
     expect(el.querySelector('.page-media--missing')?.textContent).toBe('Missing drawing · gone.excalidraw')
     expect(el.textContent).toContain('![[Some page]]')
   })
