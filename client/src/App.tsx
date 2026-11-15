@@ -3215,6 +3215,8 @@ export function App() {
     },
     [requestRename, scopeOf, notify],
   )
+  /** An Explore page layer's frame (YAZ-5164 Option A): the vault's property declarations and the title door, as a tab's editor has them. */
+  const explorePageFrameOf = useCallback((path: string) => ({ properties: scopeOf(path).properties, onRetitle: (title: string) => void requestRetitle(path, title, 'file') }), [scopeOf, requestRetitle])
 
   // `dontAskAgain` is the box of the rename sheet (YAZ-2690 D2): the rename runs, and "Ask before
   // renaming" goes off. A move has its own sheet (`confirmMoves`).
@@ -3791,7 +3793,7 @@ export function App() {
       {/* The explore stack (YAZ-2571): unmounted when closed, so every layer is gone with it. */}
       {exploreOpen && root !== null && (
         <Suspense fallback={null}>
-          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
+          <ExploreStack request={exploreRequest} requestLayer={explorePage.current} vaults={exploreVaults} vaultOf={exploreVaultOf} nameOf={nameOf} textVarsFor={textVarsFor} renderEditor={renderExploreEditor} createFolder={newPageFolderFor} onFileAction={allowFileAction} linkActions={linkActions} openInTab={openNewTabPage} openLinkIn={openLink} onNotice={notify} onRenameFile={renameInSidebar} pageFrameOf={explorePageFrameOf} commentsOrder={settings.commentsOrder} onChangeCommentsOrder={changeCommentsOrder} onClose={closeExplore} opensOf={storage.getOpens} editsOf={storage.getEdits} hidden={cardPreview !== null} />
         </Suspense>
       )}
       {whatsNewOpen && (
@@ -4078,7 +4080,7 @@ export function App() {
                 under it stays as it was. Behind a page tab it stays mounted, hidden, so it comes back at its card and step. */}
             {session !== null && (
               <Suspense fallback={null}>
-                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} />
+                <CardInbox shown={inboxShown} review={review} session={session} vaultOf={exploreVaultOf} nameOf={nameOf} openPage={openFromInbox} openAt={settings.inboxOpenAt} editCard={editFromInbox} openInTab={openBehindInbox} openLinkIn={openLink} openLayer={openExploreOn} onNotice={notify} openPlace={openKeptPage} focusMode={inboxFocusMode} onFocusMode={changeInboxFocus} />
               </Suspense>
             )}
             {/* Preview a card (YAZ-5152 A): in the page area as the Inbox tab is, over it too; the sidebar and the tab row stay. */}

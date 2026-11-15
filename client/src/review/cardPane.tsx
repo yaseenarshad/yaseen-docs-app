@@ -9,7 +9,7 @@
 import { previewCard } from '../editor/card/cardOpen'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { cardBlock, EMPTY_CARD_LINE, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardReviews, type CardReview } from '@shared/cardLine'
+import { cardBlock, EMPTY_CARD_LINE, withCardFix, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -18,7 +18,7 @@ import { CrepeFeature } from '../editor/crepe'
 import { features } from '../editor/featureConfig'
 import { copyText } from '../editor/linkMenu'
 import { isCardNode } from '../editor/card/cardBlockLine'
-import { cardBlockViewAt } from '../editor/card/cardBlockView'
+import { cardBlockViewAt, cardBlockViewOfDom } from '../editor/card/cardBlockView'
 import type { CardTitleField } from '../editor/card/cardEditor'
 import { freezeScroll, readSwapPlace, scrollerOf, showSwapPlace, type SwapPlace } from '../editor/pagePlace'
 import { useIndexFeed } from '../editor/wikilink/useIndexFeed'
@@ -71,13 +71,14 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
     /**
      * Edit card's Done (YAZ-5003): the card's text by its ID and, when given, its `title` on its card line (YAZ-5308), in
      * one write; the rest of the file as it is on disk now. `onFail` after the notice (a card file tab's "Save failed",
-     * YAZ-5102).
+     * YAZ-5102). A changed card marked Fix later loses the mark in the same write (YAZ-5097: the edit is the fix; it
+     * asks nothing). No change: the mark stays.
      */
     editDone(text: string, after: () => void, onFail?: () => void, title?: string) {
       if (card === null) return
       const retitled = title !== undefined && title !== card.title ? title : undefined
       if (text.replace(/\n+$/, '') === card.text && retitled === undefined) return after()
-      changeCardTextIn(path, card.id, text, card.index, retitled).then(
+      changeCardTextIn(path, card.id, text, card.index, retitled, card.fix === true).then(
         () => {
           read()
           after()
@@ -105,10 +106,10 @@ export function cardWrites(path: string, card: CardAtPage | null, read: () => vo
 }
 
 /**
- * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Title on the front; then
- * Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037); then the caller's `more` (the card file tab's
- * "Turn into a page"); and LAST, alone, Reset history (YAZ-5376), which asks by typing (`askResetHistory`). None of
- * them for a card with no ID yet, but its copy rows once it has one.
+ * The card's own ⋯ rows (D13): Put at top of Inbox (with `inbox`: the vault reviews), Archive, Fix later (YAZ-5097),
+ * Title on the front; then Copy card ID and, with `link`, Copy card link (`[[ID]]`, YAZ-5037); then the caller's `more`
+ * (the card file tab's "Turn into a page"); and LAST, alone, Reset history (YAZ-5376), which asks by typing
+ * (`askResetHistory`). None of them for a card with no ID yet, but its copy rows once it has one.
  */
 export function cardMenuSections(card: CardAtPage | null, id: string | null, changeLine: (change: CardLineChange) => void, onNotice: (message: string) => void, opts: { inbox: boolean; link: boolean; preview?: () => void; more?: MenuSection[] }): MenuSection[] {
   const rows: MenuSection[] = []
@@ -118,6 +119,7 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
     rows.push([
       ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
       { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+      { id: 'fix', label: card.fix === true ? 'Remove Fix later' : 'Fix later', onSelect: () => changeLine((l) => withCardFix(l, card.fix !== true)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
       { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
     ])
@@ -173,7 +175,7 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
     <>
       {(editing || swap.shown === 'edit') && (
         <div ref={swap.editorRef} className={`card-pane__editor${swap.shown === 'edit' ? '' : ' card-pane__incoming'}`}>
-          <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleField={titleField} onUp={swap.editorUp} />
+          <CardPaneEditor key={`${card.index}`} text={card.text} title={card.title} path={path} vault={vault} onDone={onEditDone} select={select} titleField={titleField} onUp={swap.editorUp} beforeDone={swap.beforeDone} />
         </div>
       )}
       {(!editing || swap.shown === 'read') && (
@@ -213,19 +215,39 @@ export function CardPane({ card, path, vault, editing, onEditDone, select, doors
  * read card's text, which draws in an effect. The card file tab, Explore's card window and the card window all show cards
  * through here.
  */
-function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () => void; readUp: () => void; readRef: React.RefObject<HTMLDivElement | null>; editorRef: React.RefObject<HTMLDivElement | null> } {
+function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () => void; readUp: () => void; beforeDone: () => void; readRef: React.RefObject<HTMLDivElement | null>; editorRef: React.RefObject<HTMLDivElement | null> } {
   const readRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<HTMLDivElement>(null)
   const [shown, setShown] = useState<'read' | 'edit'>(editing ? 'edit' : 'read')
   /** The card box on show as a switch starts: its scroller and its spot, put back on the incoming card. */
   const held = useRef<{ scroller: Element; place: SwapPlace; thaw: () => void } | null>(null)
+  /**
+   * Done's place, read by the card editor just before it draws the card again (`CardHost.beforeDone`): by the time the
+   * host's Done turns `editing` off (after its save), the editor's card already shows its read look, without the title
+   * band the read card has, and its lines stand higher. The scroller is held from then on.
+   */
+  const early = useRef<{ scroller: Element; place: SwapPlace; thaw: () => void; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const dropEarly = () => {
+    if (early.current === null) return
+    clearTimeout(early.current.timer)
+    early.current.thaw()
+    early.current = null
+  }
   const shownEditing = useRef(editing)
   if (shownEditing.current !== editing) {
     shownEditing.current = editing
     held.current?.thaw()
-    const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
-    const scroller = box === null ? null : scrollerOf(box)
-    held.current = box === null || scroller === null ? null : { scroller, place: readSwapPlace(scroller, box), thaw: freezeScroll(scroller) }
+    const pre = !editing ? early.current : null
+    if (pre !== null) {
+      clearTimeout(pre.timer)
+      early.current = null
+      held.current = pre
+    } else {
+      dropEarly()
+      const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
+      const scroller = box === null ? null : scrollerOf(box)
+      held.current = box === null || scroller === null ? null : { scroller, place: readSwapPlace(scroller, box), thaw: freezeScroll(scroller) }
+    }
   }
   // The new card is on show: at the old card's spot, before it paints; the scroller is the person's again.
   useLayoutEffect(() => {
@@ -236,15 +258,34 @@ function useCardSwap(editing: boolean): { shown: 'read' | 'edit'; editorUp: () =
     const box = shown === 'read' ? readRef.current : (editorRef.current?.querySelector('.card') ?? null)
     if (box !== null) showSwapPlace(hold.scroller, box, hold.place)
   }, [shown, editing])
-  useEffect(() => () => held.current?.thaw(), [])
+  useEffect(
+    () => () => {
+      held.current?.thaw()
+      dropEarly()
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
   return {
     shown,
+    beforeDone: () => {
+      dropEarly()
+      const box = editorRef.current?.querySelector('.card') ?? null
+      const scroller = box === null ? null : scrollerOf(box)
+      if (box === null || scroller === null) return
+      const thaw = freezeScroll(scroller)
+      // A Done whose save fails keeps Edit card's state: the scroller is the person's again soon.
+      early.current = { scroller, place: readSwapPlace(scroller, box), thaw, timer: setTimeout(dropEarly, EARLY_MS) }
+    },
     editorUp: () => setShown((now) => (shownEditing.current ? 'edit' : now)),
     readUp: () => setShown((now) => (shownEditing.current ? now : 'read')),
     readRef,
     editorRef,
   }
 }
+
+/** How long Done's early place waits for the host's Done (its save) before the scroller is the person's again. */
+const EARLY_MS = 3000
 
 /** Tells its card it is drawn: after the read card's own effect drew its text (a child's effects run first). */
 function ReadCardUp({ onUp }: { onUp: () => void }): null {
@@ -263,7 +304,9 @@ const CARD_EDIT_FEATURES = { ...features, [CrepeFeature.BlockEdit]: false, [Crep
  * title over. Made once per edit: the text and title it starts from are the card's when Edit card began, and a read
  * again under it (an outside write) does not touch them.
  */
-function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, onUp }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleField: CardTitleField; onUp?: () => void }) {
+function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, onUp, beforeDone }: { text: string; title: string; path: string; vault: ExploreVault; onDone: (text: string, title: string) => void; select?: { from: number; to: number }; titleField: CardTitleField; onUp?: () => void; beforeDone?: () => void }) {
+  const beforeRef = useRef(beforeDone)
+  beforeRef.current = beforeDone
   const upRef = useRef(onUp)
   upRef.current = onUp
   const hostRef = useRef<HTMLDivElement>(null)
@@ -285,7 +328,13 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, 
       wikilinks: vault.wikilinks,
       viewOnlyLinks: vault.viewOnlyLinks,
       image: { root: vault.root, pagePath: path },
-      cards: { path, onEditDone: (t, next) => doneRef.current(t, next), titleField },
+      cards: { path, onEditDone: (t, next) => doneRef.current(t, next), beforeDone: () => beforeRef.current?.(), titleField },
+      // Esc with the keyboard on the card's frame, not in its text (YAZ-5164): Done, as in its text; never a step out to
+      // the sidebar from inside a card file, a card window or Explore.
+      onEscape: () => {
+        cardBlockViewOfDom(el.querySelector('.card'))?.done()
+        return true
+      },
     })
     let live = true
     void crepe.create().then(() => {

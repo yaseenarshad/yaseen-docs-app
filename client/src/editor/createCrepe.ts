@@ -451,6 +451,11 @@ export interface CreateCrepeOptions {
    */
   lockAgain?: () => boolean
   /**
+   * What Esc does in the text when nothing else takes it: absent, it steps out to the sidebar (YAZ-936). An Explore
+   * layer's editor hands it to its layer instead (back to reading, YAZ-4997). True: it was taken.
+   */
+  onEscape?: () => boolean
+  /**
    * The page editor (YAZ-4162 D2, D9): a calendar table's current-time marker moves each minute (`table/tableCalendar.ts`).
    * Absent on the hover preview card and the other previews: they show the marker of the time they opened and start no timer.
    */
@@ -642,13 +647,13 @@ function buildToolbar(builder: ToolbarBuilder, hotkeys: HotkeyOverrides | undefi
  * anything that means something by Esc (the `[[` picker's dismiss at 100, menus) wins first; and
  * it DECLINES when neither is on screen (collapsed sidebar), so Esc stays free everywhere else.
  */
-const escapeToSidebar = (lockAgain?: () => boolean) =>
+const escapeToSidebar = (lockAgain?: () => boolean, onEscape: () => boolean = focusSidebar) =>
   $shortcut(() => ({
     EscapeToSidebar: {
       key: 'Escape',
       priority: 10,
       // An unlocked page locks first (YAZ-4997): this Esc saves it and locks it again, and only a later Esc goes on.
-      onRun: () => () => lockAgain?.() === true || focusSidebar(),
+      onRun: () => () => lockAgain?.() === true || onEscape(),
     },
   }))
 
@@ -969,7 +974,7 @@ export function createCrepe(opts: CreateCrepeOptions): Crepe {
   // YAZ-4800 demo: ⌘↵ / ⌘⇧↵ in a table add a line below / above it (priority 200, above the ⌘↵ above); the code block's
   // keys find their editor through `addLineViews`.
   crepe.editor.use(addLineKeymap).use(addLineViews)
-  crepe.editor.use(escapeToSidebar(opts.lockAgain))
+  crepe.editor.use(escapeToSidebar(opts.lockAgain, opts.onEscape))
   if (opts.lockAgain !== undefined) crepe.editor.use(lockAgainKey(opts.lockAgain))
   if (opts.outlineZoom !== false) crepe.editor.use(zoomKeymap)
   // YAZ-1734 D3: a list_item left without its own paragraph (its line deleted) yields its children one level up, whatever path produced it.

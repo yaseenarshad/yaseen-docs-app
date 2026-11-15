@@ -10,6 +10,7 @@ import { isCardKey } from '../cardRows'
 /** The filter type of each card column (YAZ-5319); Page and Card ID are text. */
 const CARD_TYPES: Readonly<Record<string, PropertyType>> = {
   'card.status': 'select',
+  'card.fix': 'select',
   'card.upNext': 'checkbox',
   'card.nextReview': 'date',
   'card.lastReview': 'date',

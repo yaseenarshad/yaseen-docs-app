@@ -3,10 +3,14 @@
  * table, and the Inbox's calm panel in the Explore window's look (`explore.css`). Light and dark from the app's tokens.
  */
 
-/* The card, read-only, outside the page: the page's card frame, no head. */
+/* The card, read-only, outside the page: the page's card frame, no head. Its text at the page's size, as Edit card's
+   editor has it (YAZ-5164: one card frame in read and in Edit card), or Card text size's Custom px. */
 .card-screen {
   margin: 0;
   width: 100%;
+}
+.card.card-screen {
+  font-size: var(--card-text-size, var(--text-size, 16px));
 }
 
 /* The strip (D13; YAZ-5032, Yaseen's pick, round 2's words): the page's name, then one calm line of words — "Due in
@@ -380,6 +384,16 @@
 .explore-card__edit .milkdown .card {
   margin: 0;
 }
+/* ONE CARD FRAME (YAZ-5164 Option A, Yaseen: "the size of the card changes left to right"): Edit card's editor adds no
+   sides and no room above or below the card, so the card stands where the read card stood, as wide, in the card file
+   tab, Explore's card file and the card window alike. */
+.explore-card__edit > .editor-instance {
+  max-width: none;
+  padding: 0;
+}
+.explore-card__edit > .editor-instance > .milkdown > .ProseMirror {
+  padding: 0;
+}
 
 /* ---------- the Inbox ---------- */
 /* Over the tab stack: the page under it stays mounted and still. */
@@ -390,7 +404,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 16px 16px;
+  /* No bottom padding (YAZ-5431): the dock's own 16 px is the gap, so a short card's dock and a long card's stuck dock
+     end on the same line, the view's bottom edge. */
+  padding: 0 16px;
   overflow: auto;
   background: var(--bg-side);
   outline: none;
@@ -728,6 +744,12 @@
   font-size: 11px;
   line-height: 16px;
 }
+/* YAZ-5097: the line before To fix (once before Archived, YAZ-5046), across the menu's three columns. */
+.card-inbox__filter-sep {
+  grid-column: 1 / -1;
+  margin: 4px 0;
+  border-top: 1px solid var(--border);
+}
 .card-inbox__filter-name {
   display: inline-flex;
   align-items: center;
@@ -764,9 +786,11 @@
 /* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys.
    YAZ-5049 round 2 (Yaseen: "with mochi, they dont have a scroll bar, they move the entire thing up and down it becomes
    a long page"): the column is as tall as its card — it does not shrink to the window — so the Inbox's own view
-   scrolls the whole card as one page, and the card has no scroll bar of its own. */
+   scrolls the whole card as one page, and the card has no scroll bar of its own.
+   YAZ-5431 (as Mochi): it is at least as tall as the view, so a short card leaves the room under it and the dock sits at
+   the view's bottom; a long card makes it taller and the view scrolls. */
 .card-inbox__column {
-  flex: none;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -922,13 +946,16 @@ body.card-inbox--sizing {
 [data-card-clean] {
   --inbox-card-pad: 44px;
 }
-/* The buttons and their line (YAZ-5049 round 2): at the bottom of the view while a long card scrolls under them, so
-   an answer is always one click away; under a short card, where they always were. The page colour, fading in at the
-   top, hides the card's text under them. */
+/* The buttons, their line and the key row (YAZ-5049 round 2, YAZ-5431): ONE band at the bottom of the view for every
+   card. A short card: the column fills the view and the band is pushed to its end (`margin-top: auto`). A long card:
+   the band sticks at the same bottom edge while the card scrolls under it, and at the scroll's end it sits right under
+   the card, so the card's last line is never under it. The page colour, fading in at the top, hides the card's text
+   under it. */
 .card-inbox__dock {
   position: sticky;
-  bottom: -16px;
+  bottom: 0;
   z-index: 2;
+  margin-top: auto;
   padding-bottom: 16px;
 }
 /* Its page colour reaches over the card's shadow (into the view's side padding), and fades out at its ends, so the
@@ -1075,7 +1102,7 @@ body.card-inbox--sizing {
 .card-inbox__answer[data-rating='easy'] .card-inbox__answer-icon {
   color: var(--ok);
 }
-/* The last answer's line (YAZ-5025 round 2): one quiet line, centred under the buttons; a Forgot in red. The row keeps
+/* The last answer's line (YAZ-5025 round 2): one quiet line, centred under the buttons, grey for every answer; only its mark has the answer's colour (YAZ-5433). The row keeps
    its height when empty, so nothing under it moves (YAZ-5029). */
 .card-inbox__last {
   display: flex;
@@ -1096,7 +1123,8 @@ body.card-inbox--sizing {
 .card-inbox__last[data-rating='hard'] .card-inbox__last-mark {
   color: var(--warn);
 }
-.card-inbox__last[data-rating='again'],
+/* YAZ-5433 (Yaseen: "it turns red and it becomes a little bit too noisy"): a Forgot line is the line's own grey, as a
+   Remembered one; only its small mark is red, as the ✓ is green. */
 .card-inbox__last[data-rating='again'] .card-inbox__last-mark {
   color: var(--danger);
 }
@@ -1211,6 +1239,74 @@ body.card-inbox--sizing {
   color: var(--fg);
   background: var(--bg-hover);
 }
+/* The To fix list (YAZ-5097; the Archived list's look, YAZ-5046, kept when YAZ-5319 removed that list): calm rows in
+   the card's place, to look at. Each: the title, the page (quiet), then Fixed on the right. It scrolls inside the panel. */
+.card-inbox__archived {
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.card-inbox__archived-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+}
+.card-inbox__archived-row + .card-inbox__archived-row {
+  border-top: 1px solid var(--border);
+}
+.card-inbox__archived-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.card-inbox__archived-open:hover {
+  background: var(--bg-hover);
+}
+.card-inbox__archived-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.card-inbox__archived-page {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.card-inbox__archived-unarchive {
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+}
+.card-inbox__archived-unarchive:hover {
+  background: var(--bg-hover);
+}
+/* A To fix row of a card with no title: its ID, quiet. */
+.card-inbox__archived-title.card__title--empty {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
 /* ONE line at any width (YAZ-5024): no wrap; a key that does not fit folds (`CardInboxHints`), laid out off the
    row so it can still be measured. */
 .card-inbox__hints {
@@ -1218,7 +1314,8 @@ body.card-inbox--sizing {
   flex-wrap: nowrap;
   justify-content: center;
   gap: 16px;
-  margin-top: 26px;
+  /* In the bottom band (YAZ-5431): a little closer to the buttons, so the band takes less of a short window. */
+  margin-top: 14px;
   overflow: hidden;
   border-top: 0;
   white-space: nowrap;
@@ -1252,7 +1349,9 @@ body.card-inbox--sizing {
   inset: auto;
   flex: 1;
   min-height: 0;
+  /* No answer band here (nothing is saved): the view keeps its own 16 px under the card's end. */
   padding-top: 24px;
+  padding-bottom: 16px;
 }
 .card-preview__bar {
   flex: none;

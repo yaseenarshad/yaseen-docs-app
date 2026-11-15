@@ -1,5 +1,5 @@
 import { FSRS, Rating, State, createEmptyCard, generatorParameters, type Card, type Grade, type StepUnit } from 'ts-fsrs'
-import { cardReviewsOf, cardTime, withoutCardReview, type CardRating, type CardReview, type CardRecord } from './cardLine'
+import { cardReviewsOf, cardsWithIds, cardTime, withoutCardReview, type CardRating, type CardReview, type CardRecord } from './cardLine'
 import { embeddedCards, makeCardResolver } from './cardLinks'
 import { hasLetters, pageIdNumber } from './pageId'
 import type { ReviewSettings } from './reviews'
@@ -281,6 +281,33 @@ export function pageCardCounts(r: CardPage, s: ReviewSettings, now: number): Pag
  */
 export function anyUpNext(records: readonly CardPage[]): boolean {
   return records.some((r) => r.cards !== undefined && r.cards.some((c) => c.next && !c.off && c.id !== null))
+}
+
+/** A card of the To fix list (YAZ-5097): its page, its place among the page's cards, its ID and its title. */
+export interface FixCard {
+  /** The absolute path of the page or card file that holds the card. */
+  path: string
+  /** Its place among the page's cards. */
+  index: number
+  id: string
+  /** Its title (off its card line, YAZ-5308); absent for a card with none. */
+  title?: string
+}
+
+/**
+ * The cards marked "Fix later" (YAZ-5097: the line's `fix`, the To fix list) of the vault, of `folder` (root-relative,
+ * and its subfolders) or of `page` (its absolute path), by path and then in page order: an archived card too. Only a
+ * card with an ID; a copy whose ID a card before it on the same page holds is left out, as `cardPlan` leaves it out
+ * (`cardsWithIds`). A card embedded on other pages is one row: an embed holds no card line.
+ */
+export function fixCards(records: readonly CardPage[], folder = '', page?: string): FixCard[] {
+  const out: FixCard[] = []
+  const sorted = records.filter((r) => r.cards !== undefined && r.cards.some((c) => c.fix === true)).sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
+  for (const r of sorted) {
+    if (page === undefined ? !inFolder(r.folder, folder) : r.path !== page) continue
+    for (const { card, id, index } of cardsWithIds(r.cards)) if (card.fix === true) out.push({ path: r.path, index, id, ...(card.title !== undefined && { title: card.title }) })
+  }
+  return out
 }
 
 /**

@@ -20,6 +20,9 @@
  * says "22 / 48 · Reset": Reset sets today back to the Settings number, never below today's work. No pop-up: it
  * changes today only, and the line under the buttons (Undo, ⌘Z) takes back the last add or Reset.
  *
+ * To fix (YAZ-5097): the cards marked Fix later, the last row, under a line. It is no review: its pick shows the
+ * cards as a list, to look at, each with Fixed (`CardInbox`).
+ *
  * Where new cards come from (YAZ-5322; YAZ-5434, Yaseen: "go with A one, tree corner line"): the New cards row reads
  * "New cards  9", the same shape as the others (no "/ 23": the total made the row long), so the menu is as wide as its
  * widest plain row and the counts stand in one column. Under it, indented, a second small line: a thin tree corner drops
@@ -41,7 +44,7 @@ import { TodayWork } from './TodayWork'
 import type { TimeSoFar } from '@shared/reviews'
 import { AddMoreField } from './AddMoreField'
 import { pickLabel, useNewCardsPicker } from './NewCardsPicker'
-import { ChevronIcon, DueIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
+import { ChevronIcon, DueIcon, FixIcon, FolderIcon, InboxTrayIcon, NewIcon, PageIcon, UpNextIcon, VaultIcon } from './cardInboxIcons'
 
 const NO_PICK: Pick<CardReviewApi, 'setNewFrom' | 'newCardFolders'> = { setNewFrom: () => undefined, newCardFolders: () => ({ all: 0, folders: [] }) }
 
@@ -55,6 +58,7 @@ export const CARD_FILTERS: readonly {
   { id: 'next', label: 'Up next', icon: UpNextIcon },
   { id: 'due', label: 'Due today', icon: DueIcon },
   { id: 'new', label: 'New cards', icon: () => <NewIcon /> },
+  { id: 'fix', label: 'To fix', icon: FixIcon },
 ]
 
 /**
@@ -171,7 +175,7 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               // YAZ-5042: the two rows that have a number a day read "today / total" (round 2), and add on a click.
               const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
               const add = kind === null || addCards === undefined ? 0 : session.adds[kind]
-              const count = session.counts[f.id]
+              const count = f.id === 'fix' ? session.toFix.length : session.counts[f.id]
               // YAZ-5434: New cards' count stands alone ("9", not "9 / 23"); only Up next keeps its total.
               const total = kind === 'next' && session.limited.next ? count + session.more.next : null
               const reset = kind !== null && resetCards !== undefined && session.canReset[kind]
@@ -221,7 +225,10 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
               // YAZ-5434: the pick on its own small line under New cards, joined to the row by a tree corner.
               const from = f.id === 'new' && pick !== undefined
               return (
-                <div key={f.id} className="card-inbox__filter-row" role="none" data-from={from || undefined}>
+                <Fragment key={f.id}>
+                  {/* YAZ-5097: a line sets the To fix list apart: its cards are to look at, not to review. */}
+                  {f.id === 'fix' && <div className="card-inbox__filter-sep" role="separator" />}
+                  <div className="card-inbox__filter-row" role="none" data-from={from || undefined}>
                   {from ? (
                     <div className="card-inbox__new-group" role="none">
                       {item}
@@ -248,7 +255,8 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
                       Reset
                     </button>
                   )}
-                </div>
+                  </div>
+                </Fragment>
               )
             })}
           </ContextMenuSurface>

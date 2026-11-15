@@ -272,6 +272,19 @@
 .milkdown .card .card__editor .milkdown > .ProseMirror > :first-child {
   margin-top: 0;
 }
+/* Edit card's text spaced as the read card's (YAZ-5164: Edit card and Done move no line): the card's line spacing and
+   space between blocks (`--card-line`, `--card-gap`, Card spacing), not only the page's. */
+.milkdown .card .card__editor .milkdown > .ProseMirror {
+  line-height: var(--card-line);
+}
+.milkdown .card .card__editor .milkdown > .ProseMirror p {
+  margin: 0;
+  padding: var(--card-gap) 0;
+  line-height: var(--card-line);
+}
+.milkdown .card .card__editor .milkdown > .ProseMirror li > p {
+  padding: 0;
+}
 /* The block handle is off in a card (the card's own list): the `/` menu stays. */
 .card .card__editor .milkdown-block-handle {
   display: none !important;
@@ -378,7 +391,8 @@
    (`outline/bullets.css`): the dot's column is fixed, the text starts after it and the gap, and a child level's dot
    steps in by the indent from its parent's. The dots are the page's ● ○ ■ by level, the numbers its right-aligned
    ones, in the marker colour. Edit card is the page's editor inside `.editor-instance`: it follows them already. */
-.card__side {
+.card__side,
+.card .card__editor {
   /* YAZ-5050: Card spacing's Custom values first; with Same as pages they are not set, and the pages' hold. */
   --card-gap: var(--card-block-gap, var(--edit-block-gap, 4px));
   --card-line: var(--card-line-height, var(--edit-line-height, 1.5));
@@ -786,4 +800,14 @@
 .card .card-band__field:read-only {
   border-color: transparent;
   background: transparent;
+}
+/* A card file's Edit card (YAZ-5164 Option A): its title shows, not edited here (the tab's title renames the file), so
+   the band is the read card's band — the title alone, no label, no box — and Edit card and Done move nothing. */
+.card .card-band:has(> .card-band__field:read-only) > .card-band__label {
+  display: none;
+}
+.card .card-band__field:read-only {
+  padding-block: 0;
+  border-width: 0;
+  line-height: inherit;
 }

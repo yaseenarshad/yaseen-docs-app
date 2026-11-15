@@ -392,6 +392,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
                   {state !== null && <span className="card__state card-file__state">{state}</span>}
                   {reviewOn && card.notitle === true && <span className="card__state card__notitle">Title hidden in review</span>}
                   {reviewOn && card.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
+                  {card.fix === true && <span className="card__state card__fix">To fix</span>}
                   {(canEdit || lockedBase) && (
                     <button type="button" className="card__edit" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
                       Edit card
