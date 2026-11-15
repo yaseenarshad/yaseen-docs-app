@@ -9,7 +9,8 @@
 import { describe, expect, it } from 'vitest'
 import type { IndexRecord } from '@shared/types'
 import { resolverFor } from '../views/engine'
-import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, matchLinks, matchRanges, mergeLinkCandidates, nameCandidate, readNeedle, trailingLinkFragment } from './completion'
+import { MAX_SUGGESTIONS, titleCandidates, linkCandidates, matchLinkCandidates, matchLinks, mergeLinkCandidates, nameCandidate, readNeedle, trailingLinkFragment } from './completion'
+import { matchRanges } from './matchRanges'
 
 const rec = (path: string, aliases: string[] = []): IndexRecord => {
   const name = path.slice(path.lastIndexOf('/') + 1)

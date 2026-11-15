@@ -1,5 +1,9 @@
-import { useCallback, useMemo, useState, type CSSProperties } from 'react'
-import type { SearchCandidate } from '@client/search/searchCandidates'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { readNeedle } from '@client/links/completion'
+import { idNeedle, marked } from '@client/search/marked'
+import { SEARCH_CAP, type SearchCandidate } from '@client/search/searchCandidates'
+import { folderHits, folderRowsOf, foundRows, foundTree, vaultNodes, type FoundRow } from './foundTree'
+import type { PhoneType } from './searchRun'
 import { useApp } from '../app/AppState'
 import type { Route } from '../app/nav'
 import type { VaultData } from './vaultData'
@@ -19,6 +23,7 @@ export function treeRoute(row: TreeRow): Route {
  */
 export default function SearchTree({ data, cards, shown, more }: { data: VaultData; cards: boolean; shown: number; more: React.ReactNode }) {
   const app = useApp()
+  useEffect(forgetFlips, [])
   const open = openFoldersOf(app.vaultKey)
   const [turn, setTurn] = useState(0)
   const tree = useMemo(() => buildTree(data.records, data.folders), [data])
@@ -78,18 +83,95 @@ function ResultRow({ row }: { row: SearchCandidate }) {
   )
 }
 
-/** The result rows (the box has text), or the cards of Cards with an empty box (`cards`, under its heading). */
-export function ResultList({ rows, cards }: { rows: readonly SearchCandidate[]; cards: boolean }) {
+/** The cards of Cards with an empty box, under their heading. */
+export function ResultList({ rows }: { rows: readonly SearchCandidate[] }) {
+  useEffect(forgetFlips, [])
   return (
     <>
-    {cards && <h2 className="section">Cards</h2>}
-    <ul className="rows search__rows" aria-label={cards ? 'Cards' : 'Results'}>
-      {rows.map((row) => (
-        <li key={`${row.path}\n${row.label}`}>
-          <ResultRow row={row} />
-        </li>
-      ))}
-    </ul>
+      <h2 className="section">Cards</h2>
+      <ul className="rows search__rows" aria-label="Cards">
+        {rows.map((row) => (
+          <li key={`${row.path}\n${row.label}`}>
+            <ResultRow row={row} />
+          </li>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+/**
+ * The folds tapped during a search (YAZ-5447): they last as long as its text, a page opened over the tab and closed too.
+ * The box emptied ends the search, and its folds (the Mac's `setText`): the empty box's list forgets them as it shows.
+ */
+let flips: { key: string; open: ReadonlySet<string> } = { key: '', open: new Set() }
+function forgetFlips(): void {
+  flips = { key: '', open: new Set() }
+}
+
+/**
+ * THE RESULTS IN THE TREE (YAZ-5447), the box has text: the Mac's Search tab (`foundTree.ts`). The matches stand in the
+ * vault's tree, each folder that leads to one open at its depth, every other row hidden. A match shows its name with
+ * the typed text marked (the Mac's `marked`, its `tree__mark`); a row that is no match (a parent, a row inside a
+ * matched folder) is dim. A row found by its ID reads `ID — name`, the matched digits marked; a card's ID stands at the
+ * right, as in the phone's rows before. "No matches" as the Mac says it, "with these filters" with a Type on.
+ */
+export function ResultTree({ data, rows, query, type, shown, more }: { data: VaultData; rows: readonly SearchCandidate[]; query: string; type: PhoneType; shown: number; more: React.ReactNode }) {
+  const app = useApp()
+  const key = `${app.vaultKey}\n${type}\n${query}`
+  const [, setTurn] = useState(0)
+  if (flips.key !== key) flips = { key, open: new Set() }
+  const flipped = flips.open
+  const vault = vaultNodes(data)
+  const folderRows = useMemo(() => folderRowsOf(data), [data])
+  const folders = useMemo(() => folderHits(folderRows, query, type), [folderRows, query, type])
+  const found = useMemo(() => foundTree(vault, rows, folders, query), [vault, rows, folders, query])
+  const drawn = useMemo(() => foundRows(vault, found, flipped, data.review.enabled), [vault, found, flipped, data])
+  const needle = readNeedle(query)
+  const toggle = (path: string) => {
+    flips = { key, open: new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]) }
+    setTurn((n) => n + 1)
+  }
+  if (drawn.length === 0) return <p className="muted">{type === 'all' ? 'No matches' : 'No matches with these filters.'}</p>
+  const open = (row: FoundRow) => {
+    if (row.kind === 'folder') return toggle(row.path)
+    const route: Route = row.hit !== undefined ? routeOf(row.hit) : treeRoute({ kind: row.kind, path: row.path, label: row.label, depth: row.depth, ...(row.id !== undefined && { id: row.id }) })
+    app.go({ type: 'open', route })
+  }
+  return (
+    <>
+      <ul className="tree search__found" role="tree" aria-label="Results">
+        {drawn.slice(0, shown).map((row) => {
+          const hit = row.hit
+          // `ID — ` in front of a row the search found by its ID (the Mac's "Only when it matches"), its digits marked.
+          const id = hit?.id !== undefined && hit.label.startsWith(`${hit.id} — `) ? hit.id : null
+          const side = hit?.card === true ? (hit.id ?? '') : ''
+          const what = row.kind === 'folder' ? 'folder' : row.kind === 'card' ? `card${side === '' ? '' : ` ${side}`}` : app.unit('page')
+          return (
+            <li key={row.path} role="treeitem" aria-expanded={row.kind === 'folder' ? row.open : undefined}>
+              <button
+                type="button"
+                className={`tree__row tree__row--${row.kind === 'folder' ? 'dir' : 'file'}${hit === undefined ? ' tree__row--context' : ''}`}
+                data-kind={ICON_KIND[row.kind]}
+                style={{ '--tree-depth': row.depth } as CSSProperties}
+                aria-label={`${id === null ? '' : `${id} — `}${row.label}, ${what}`}
+                onClick={() => open(row)}
+              >
+                <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
+                <RowIcon kind={row.kind} open={row.open === true} />
+                <span className="tree__label">
+                  {id !== null && hit !== undefined && <>{marked(id, idNeedle(hit, query))} — </>}
+                  {marked(row.label, hit === undefined ? undefined : needle)}
+                </span>
+                {side !== '' && <span className="row__side">{side}</span>}
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+      {drawn.length > shown && more}
+      {/* The Mac's limit line (🔒 D6): the ranking keeps the best SEARCH_CAP rows. */}
+      {(rows.length === SEARCH_CAP || folders.length === SEARCH_CAP) && <p className="muted">Showing {SEARCH_CAP} matches. Type more to narrow.</p>}
     </>
   )
 }

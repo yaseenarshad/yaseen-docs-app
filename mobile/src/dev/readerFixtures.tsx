@@ -12,7 +12,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -70,7 +70,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const extra: Record<string, string | Uint8Array> =
     name === 'page-tricks'
       ? { 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` }
-      : name === 'page-cards' || name === 'search-tree'
+      : name === 'page-cards' || name === 'search-tree' || name === 'search-found'
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-drawing'
           ? DRAWING_FILES
@@ -103,8 +103,8 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const typed = async (q: string) => {
     typeSearch(q)
     await wait(150)
-    // The result rows are a lazy chunk (YAZ-5438): the first one waits for it.
-    await until(() => document.querySelector('.search__rows') !== null || /Nothing matches/.test(document.body.textContent ?? ''))
+    // The results' tree is a lazy chunk (YAZ-5438, YAZ-5447): the first one waits for it.
+    await until(() => document.querySelector('.search__found') !== null || /No matches/.test(document.body.textContent ?? ''))
   }
   const open = async (row: RegExp, ready: string) => {
     press(row)
@@ -156,6 +156,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         press(folder)
         await wait(80)
       }
+      break
+    case 'search-found':
+      // YAZ-5447: the matches in the tree: a page two folders down, a card under its page, the typed text marked.
+      await typed('madrid')
       break
     case 'search-clear':
       document.querySelector<HTMLInputElement>('input[name="search"]')?.focus()

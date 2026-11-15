@@ -193,3 +193,22 @@
 .search .row.search__row {
   gap: 8px;
 }
+
+/*
+ * YAZ-5447: the results in the tree, as the Mac's Search tab draws them (`client/src/app.css`): the typed text marked in
+ * a match (`tree__mark`, the `==highlight==` wash and weight); a row that is no match (a parent, a row inside a matched
+ * folder) steps back (`tree__row--context`).
+ */
+.search .tree__row--context {
+  color: var(--fg-muted);
+}
+.tree__mark {
+  background: var(--mark-bg);
+  border-radius: 2px;
+  color: inherit;
+  font-weight: 600;
+}
+.search .tree__row .row__side {
+  flex: none;
+  margin-left: 8px;
+}
