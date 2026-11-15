@@ -71,9 +71,12 @@ export function folderRowsOf(data: VaultData): SearchCandidate[] {
   })
 }
 
-/** The folders that match `query` (the Mac's ranking), the ones `type` keeps: Pages and Cards keep none, as on the Mac. */
+const NO_FOLDERS: SearchCandidate[] = []
+
+/** The folders that match `query` (the Mac's ranking), the ones `type` keeps: a type on keeps none, as on the Mac. No text: none. */
 export function folderHits(rows: readonly SearchCandidate[], query: string, type: PhoneType): SearchCandidate[] {
   const keep = typeTest(type)
+  if (query.trim() === '') return NO_FOLDERS
   return searchRows(keep === undefined ? rows : rows.filter(keep), query)
 }
 
@@ -88,6 +91,8 @@ export interface Found {
   cards: ReadonlyMap<string, readonly SearchCandidate[]>
   /** Best match's score of each row of the cut. */
   scores: ReadonlyMap<string, number>
+  /** YAZ-5534: no text (a Type alone): the tree's own order (Name A to Z, folders first), as the empty box's tree. */
+  treeOrder?: true
 }
 
 const NO_FULL: ReadonlySet<string> = new Set()
@@ -108,7 +113,34 @@ export function foundTree(vault: VaultNodes, results: readonly SearchCandidate[]
   const cut = new Set([...hits.keys(), ...cards.keys()])
   if (cut.size === 0) return { nodes: [], open: new Set(), hits, cards, scores: new Map() }
   const { nodes, open } = searchTree(vault.nodes, cut, NO_FULL)
+  if (query.trim() === '') return { nodes, open, hits, cards, scores: new Map(), treeOrder: true }
   return { nodes, open, hits, cards, scores: bestScores([...folders, ...results], query, nodes, open) }
+}
+
+/**
+ * The cut of one search, kept for its last inputs: the result tree and the box's Collapse all read the same cut
+ * (YAZ-5534), built once. `rows` and `folders` are the same arrays while nothing changed.
+ */
+let last: { vault: VaultNodes; results: readonly SearchCandidate[]; folders: readonly SearchCandidate[]; query: string; found: Found } | null = null
+export function foundTreeOf(vault: VaultNodes, results: readonly SearchCandidate[], folders: readonly SearchCandidate[], query: string): Found {
+  if (last !== null && last.vault === vault && last.results === results && last.folders === folders && last.query === query) return last.found
+  const found = foundTree(vault, results, folders, query)
+  last = { vault, results, folders, query, found }
+  return found
+}
+
+/** Every folder of a cut (YAZ-5534: what Collapse all and Expand all act on). */
+export function cutFolders(nodes: readonly TreeNode[]): string[] {
+  const out: string[] = []
+  const walk = (list: readonly TreeNode[]) => {
+    for (const node of list)
+      if (node.type === 'dir') {
+        out.push(node.path)
+        walk(node.children)
+      }
+  }
+  walk(nodes)
+  return out
 }
 
 /** One drawn row of the result tree. */
@@ -154,7 +186,7 @@ export function bestLevel(nodes: readonly TreeNode[], scores: ReadonlyMap<string
 export function foundRows(vault: VaultNodes, found: Found, flipped: ReadonlySet<string>, cardFiles: boolean): FoundRow[] {
   const rows: FoundRow[] = []
   const walk = (nodes: readonly TreeNode[], depth: number) => {
-    for (const node of bestLevel(nodes, found.scores)) {
+    for (const node of found.treeOrder === true ? nodes : bestLevel(nodes, found.scores)) {
       const hit = found.hits.get(node.path)
       if (node.type === 'dir') {
         const open = found.open.has(node.path) !== flipped.has(node.path)

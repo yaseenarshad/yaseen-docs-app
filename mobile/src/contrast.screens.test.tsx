@@ -87,6 +87,10 @@ const FIXTURES = [
   'search',
   'search-typed',
   'search-type',
+  // YAZ-5534: the Type filter's tree and its menu of checks.
+  'search-types',
+  'search-types-menu',
+  'search-types-favorites',
   'search-none',
   'page',
   'page-comments',

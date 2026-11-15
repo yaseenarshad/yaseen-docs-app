@@ -62,9 +62,12 @@ import { freePort } from './freePort'
  *    screen, above the page arrows and the tab bar; its first row on top.
  *  - a card file's own ⋯ (`#fixture=card-menu`, YAZ-5527), light and dark, at 375 px: at the right of the card's head, a
  *    44 px tap; its menu inside the screen; the top bar's ⋯ holds Find in card and no card action.
+ *  - the Type filter of Search (`#fixture=search-types`, `search-types-menu`, `search-types-favorites`, YAZ-5534), light and
+ *    dark, at 375 px: the bar one line, the pill naming the pick; each menu row a 44 px tap; each row of the types in the
+ *    tree under its open parent folders; the page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -915,6 +918,54 @@ if (process.env.LAYOUT_PROPS !== 'no') {
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: ${m.error ?? `title ${m.title}; chip ${m.rect.join(',')} ${m.tap ? '44px tap' : 'TAP TOO SMALL'}, ${m.right ? 'right of the title' : 'NOT RIGHT OF THE TITLE'}, ${m.onLine ? 'on its line' : 'OFF ITS LINE'}, ${m.hit ? 'its own' : 'COVERED'}; ${m.edgeTab ? 'AN EDGE TAB' : 'no edge tab'}; ${m.rows === null ? 'closed' : `${m.rows.n} rows ${m.rows.gap}px under the title, ${m.rows.inColumn ? 'in the column' : 'OUT OF THE COLUMN'}, ${m.rows.position}, a 60px scroll moves them ${m.rows.moved}px`}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}`}  ${shot}`)
     }
   }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5534: the Type filter (`search-types*`), light and dark, at 375 px: the bar one line, the pill whole; each menu row a
+// 44 px tap with its check; the tree of the types with each row's parent folders open above it; no side scroll.
+const TYPES_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const screen = document.querySelector('.screen')
+  const bar = document.querySelector('.search__bar')
+  const pill = bar.querySelector('.pill[aria-haspopup]')
+  const chips = [...bar.querySelectorAll('button')]
+  const items = [...document.querySelectorAll('[role=menuitemcheckbox]')]
+  const rows = [...document.querySelectorAll('.search__found > li > .tree__row')]
+  const depth = (b) => Number(b.style.getPropertyValue('--tree-depth'))
+  // Each row deeper than 0 sits under its parent, the nearest row above one level up: an open folder, or the page of a card in it.
+  const placed = rows.every((b, i) => {
+    if (depth(b) === 0) return true
+    const parent = rows.slice(0, i).reverse().find((a) => depth(a) === depth(b) - 1)
+    return parent !== undefined && (parent.closest('li').getAttribute('aria-expanded') === 'true' || (b.dataset.kind === 'card' && parent.dataset.kind === 'markdown'))
+  })
+  return {
+    pill: pill.textContent,
+    lines: new Set(chips.map((c) => Math.round(r(c).top))).size,
+    outside: chips.filter((c) => r(c).right > innerWidth + 0.5).map((c) => c.textContent),
+    menu: items.map((m) => m.textContent),
+    short: items.filter((m) => r(m).height < 44).length,
+    rows: rows.map((b) => depth(b) + ':' + b.dataset.kind + ':' + b.querySelector('.tree__label').textContent),
+    placed,
+    wide: screen.scrollWidth > screen.clientWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_TYPES !== 'no') {
+  const WANT: Record<string, { pill: string; menu: number }> = {
+    'search-types': { pill: '3 types ▾', menu: 0 },
+    // Two names do not fit beside the three chips at 375 pt: the count, so the bar keeps one line.
+    'search-types-menu': { pill: '2 types ▾', menu: 5 },
+    'search-types-favorites': { pill: 'Cards ▾', menu: 0 },
+  }
+  for (const [name, want] of Object.entries(WANT))
+    for (const scheme of ['light', 'dark'] as const) {
+      await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+      const file = await open(name, 375, 667)
+      const m = await evaluate(TYPES_CHECK)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const ok = m.pill === want.pill && m.lines === 1 && m.outside.length === 0 && m.menu.length === want.menu && m.short === 0 && m.rows.length > 0 && m.placed && !m.wide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at 375x667: pill "${m.pill}", bar ${m.lines} line${m.outside.length ? `, OUTSIDE ${m.outside}` : ''}; menu ${JSON.stringify(m.menu)}${m.short ? `, ${m.short} SHORT` : ''}; ${m.rows.length} rows ${m.placed ? 'each under its open parents' : 'NOT UNDER THEIR PARENTS'}: ${m.rows.join(' / ')}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+    }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()

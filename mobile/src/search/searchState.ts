@@ -15,11 +15,11 @@ interface Held {
   notice: string | null
 }
 
-const held: Held = { vault: null, query: '', type: 'all', shown: null, scroll: 0, notice: null }
+const held: Held = { vault: null, query: '', type: [], shown: null, scroll: 0, notice: null }
 
 /** The box, the Type, the rows shown and the scroll place of `vault`: empty for another vault. */
 export function searchStateOf(vault: string | null): { query: string; type: PhoneType; shown: number | null; scroll: number } {
-  if (held.vault !== vault) Object.assign(held, { vault, query: '', type: 'all', shown: null, scroll: 0 })
+  if (held.vault !== vault) Object.assign(held, { vault, query: '', type: [], shown: null, scroll: 0 })
   return { query: held.query, type: held.type, shown: held.shown, scroll: held.scroll }
 }
 
@@ -56,6 +56,6 @@ export function openFoldersOf(vault: string | null): Set<string> {
 
 /** Forgets the box, the Type, the line and the open folders (a test starts clean). */
 export function forgetSearch(): void {
-  Object.assign(held, { vault: null, query: '', type: 'all', shown: null, scroll: 0, notice: null })
+  Object.assign(held, { vault: null, query: '', type: [], shown: null, scroll: 0, notice: null })
   opened.clear()
 }

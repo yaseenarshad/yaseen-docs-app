@@ -304,3 +304,13 @@
     transform: none;
   }
 }
+
+/* YAZ-5534: the Type pill stays lit while a type is on (as a list chip does), and each type row has its tree icon. */
+.pill[data-on] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+.search__menu .search__type {
+  gap: 10px;
+}

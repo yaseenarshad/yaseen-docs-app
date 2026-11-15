@@ -32,7 +32,7 @@ export function boardLabel(name: string): string {
 const hidden = (path: string) => path.split('/').some((part) => part.startsWith('.'))
 
 /** A record for a board file: what the tree, the search and the lists read of a file. No text, no links. */
-function boardRecord(path: string): IndexRecord {
+export function boardRecord(path: string): IndexRecord {
   const name = path.slice(path.lastIndexOf('/') + 1)
   const dot = name.lastIndexOf('.')
   const label = boardLabel(name)

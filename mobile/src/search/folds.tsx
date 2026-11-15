@@ -3,7 +3,9 @@ import { favoriteRoots } from '@client/lib/treeState'
 import { copyFoldKey } from '@shared/foldKey'
 import type { TreeNode } from '@shared/types'
 import { useApp } from '../app/AppState'
-import { vaultNodes, type VaultNodes } from './foundTree'
+import { cutFolders, folderHits, foundTreeOf, vaultNodes, type VaultNodes } from './foundTree'
+import type { SearchCandidate } from '@client/search/searchCandidates'
+import type { PhoneType } from './searchRun'
 import type { ListFolder, Scope } from './lists'
 import { foldsOf, groupKey } from './ListTree'
 import { openFoldersOf } from './searchState'
@@ -23,6 +25,8 @@ import type { VaultData } from './vaultData'
  *    `FocusFolderList` folds them apart from the button.
  *  - Recent has no folders: no button (the Mac dims it, "Nothing to fold"; the phone's box shows nothing).
  * The folds are the tree's own sets (YAZ-5438/5447 rules): kept for each vault while the app runs.
+ * YAZ-5534: a Type on with an empty box shows the result tree (the search's cut): the button folds ITS folders, by the
+ * search's own folds (`flipsOf`), as a fold tapped in that tree does.
  */
 
 /** A change of any fold of the empty box's trees: the button and the trees draw again. */
@@ -52,6 +56,26 @@ export function listFoldKeys(vault: VaultNodes, folders: readonly ListFolder[], 
   return keys
 }
 
+/**
+ * The folds tapped during a search (YAZ-5447): they last as long as its text and Type, a page opened over the tab and
+ * closed too. The box emptied with no Type ends the search, and its folds (the Mac's `setText`): the empty box's tree
+ * forgets them as it shows. A folder is open when the cut opens it XOR it is flipped.
+ */
+let flips: { key: string; open: ReadonlySet<string> } = { key: '', open: new Set() }
+export function flipsOf(key: string): ReadonlySet<string> {
+  if (flips.key !== key) flips = { key, open: new Set() }
+  return flips.open
+}
+export function setFlips(key: string, open: ReadonlySet<string>): void {
+  flips = { key, open }
+  bumpFolds()
+}
+export function forgetFlips(): void {
+  flips = { key: '', open: new Set() }
+}
+/** The key of one search's folds: the vault, the types on, the list on, the text. */
+export const searchKey = (vault: string | null, type: PhoneType, scope: Scope | null, query: string): string => `${vault}\n${type.join('+')}\n${scope?.kind}\n${query}`
+
 /** The open set and every folder of the tab shown; null: nothing to fold. */
 function foldTarget(data: VaultData, vault: string | null, scope: Scope | null): { open: Set<string>; keys: string[] } | null {
   if (scope === null) return { open: openFoldersOf(vault), keys: [...vaultNodes(data).dirs.keys()] }
@@ -66,15 +90,18 @@ const Chevrons = ({ up }: { up: boolean }) => (
   </svg>
 )
 
-/** The button at the right end of the empty box. */
-export function FoldButton({ data, scope }: { data: VaultData; scope: Scope | null }) {
+/**
+ * The button at the right end of the empty box. `found`: a Type is on, these are its rows (Search's pool cut to the
+ * types), shown as the result tree, whose folders it folds.
+ */
+export function FoldButton({ data, scope, found }: { data: VaultData; scope: Scope | null; found?: { rows: readonly SearchCandidate[]; type: PhoneType } }) {
   const app = useApp()
   useFolds()
+  if (found !== undefined) return <CutFoldButton data={data} scope={scope} rows={found.rows} type={found.type} />
   const target = foldTarget(data, app.vaultKey, scope)
   if (target === null || target.keys.length === 0) return null
   const { open, keys } = target
   const anyOpen = keys.some((k) => open.has(k))
-  const label = anyOpen ? 'Collapse all folders' : 'Expand all folders'
   const fold = () => {
     for (const k of keys) {
       if (anyOpen) open.delete(k)
@@ -82,6 +109,26 @@ export function FoldButton({ data, scope }: { data: VaultData; scope: Scope | nu
     }
     bumpFolds()
   }
+  return <FoldGlyph anyOpen={anyOpen} fold={fold} />
+}
+
+/** YAZ-5534: the button over the result tree of a Type with no text: the same cut `ResultTree` draws (`foundTreeOf`). */
+function CutFoldButton({ data, scope, rows, type }: { data: VaultData; scope: Scope | null; rows: readonly SearchCandidate[]; type: PhoneType }) {
+  const app = useApp()
+  if (scope?.loading === true) return null
+  const found = foundTreeOf(vaultNodes(data), rows, folderHits([], '', type), '')
+  const keys = cutFolders(found.nodes)
+  if (keys.length === 0) return null
+  const key = searchKey(app.vaultKey, type, scope, '')
+  const flipped = flipsOf(key)
+  const anyOpen = keys.some((k) => found.open.has(k) !== flipped.has(k))
+  // Collapse all: each folder the cut opens is flipped shut; Expand all: each one it leaves shut is flipped open.
+  const fold = () => setFlips(key, new Set(keys.filter((k) => found.open.has(k) === anyOpen)))
+  return <FoldGlyph anyOpen={anyOpen} fold={fold} />
+}
+
+function FoldGlyph({ anyOpen, fold }: { anyOpen: boolean; fold: () => void }) {
+  const label = anyOpen ? 'Collapse all folders' : 'Expand all folders'
   return (
     <button type="button" className="search__clear search__fold" aria-label={label} title={label} onClick={fold}>
       <Chevrons up={anyOpen} />
