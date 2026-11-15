@@ -3,7 +3,7 @@ import { GithubError, repoPath, type GithubClient } from '../github/client'
 import { githubRemote } from '../sync/githubRemote'
 
 /**
- * The phone's repo calls of the friends list (YAZ-5083, the list in the vault repo). The commit is 3B's
+ * The phone's repo calls of the friends list (the list in the vault repo). The commit is 3B's
  * `githubRemote.commit`, the SAME code that writes the answer list: blobs, a tree with `base_tree`, a commit, then the
  * ref `PATCH` with `force: false`; a moved branch is `STALE_HEAD`. Reads: the branch head with its ETag (a free 304),
  * and one file at one commit (`contents` with `ref`, raw: the file's bytes, never a base64 copy).
@@ -15,10 +15,10 @@ import { githubRemote } from '../sync/githubRemote'
  */
 export function listRepo(client: GithubClient, repo: string, branch: string): RepoPort {
   const remote = githubRemote(client, repo, branch)
-  // YAZ-5464: GitHub's 409 "Git Repository is empty" (and only that 409; the client gives it as `UNEXPECTED`).
+  // GitHub's 409 "Git Repository is empty" (and only that 409; the client gives it as `UNEXPECTED`).
   const empty = (err: unknown): boolean => err instanceof GithubError && err.status === 409 && EMPTY_REPO.test(err.said)
   const noAccess = (err: unknown): never => {
-    // YAZ-5399: a 404 on the repo is "gone" (deleted, or this token has no access at all: GitHub hides a private repo).
+    // A 404 on the repo is "gone" (deleted, or this token has no access at all: GitHub hides a private repo).
     if (err instanceof GithubError && err.code === 'NOT_FOUND') throw Object.assign(new ListError('NO_LIST_ACCESS', 'The vault of the friends list is not on GitHub for this token'), { gone: true })
     if (err instanceof GithubError && (err.code === 'NO_ACCESS' || err.code === 'READ_ONLY')) throw new ListError('NO_LIST_ACCESS', 'The token cannot use the vault of the friends list')
     throw err
@@ -39,7 +39,7 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
         const res = await client.request(repoPath(repo, 'contents', path), { query: { ref: commit }, accept: 'application/vnd.github.raw+json', raw: true })
         return new TextDecoder().decode(res.data as Uint8Array)
       } catch (err) {
-        // YAZ-5398: a commit GitHub's replica does not have yet (a stale read), not a missing file.
+        // A commit GitHub's replica does not have yet (a stale read), not a missing file.
         if (err instanceof GithubError && err.code === 'NOT_FOUND' && NO_COMMIT.test(err.said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
         // The file is not there at that commit (the commit itself was just read: the repo is there).
         if (err instanceof GithubError && err.code === 'NOT_FOUND') return null
@@ -69,7 +69,7 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
     },
   }
 
-  /** YAZ-5464: the first commit of an empty repo, by the Contents API (it makes the branch); only while `path` is missing. */
+  /** The first commit of an empty repo, by the Contents API (it makes the branch); only while `path` is missing. */
   async function firstCommit(path: string, text: string, message: string): Promise<string> {
     try {
       const bytes = new TextEncoder().encode(text)

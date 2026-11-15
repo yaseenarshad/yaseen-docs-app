@@ -4,12 +4,12 @@ import { daysReviewed, rememberedPercent, type FriendDay, type FriendMark, type 
 import type { FriendsSendState } from '../sender'
 
 /**
- * THE RULES OF THE FRIENDS SCREENS (YAZ-5085, 4E4; decisions 21, 23, 24 and 25 on YAZ-5057; round 10, items 12 and 13).
+ * THE RULES OF THE FRIENDS SCREENS (4E4; decisions 21, 23, 24 and 25 on YAZ-5057; round 10, items 12 and 13).
  * Pure: no React, no store, no network. The screens draw what these functions give and compute no number of their own.
  * The numbers come from the friend's `FriendStats` (2C, `shared/friendStats.ts`); "remembered %" and "days reviewed of
  * 30" are 2C's own readers. "Updated … ago" is 4E1's `agoLabel(updatedAgo(…))`.
  *
- * Each person's own local day counts (YAZ-5058). A friend's "today" is the day in their file with MY local date, or
+ * Each person's own local day counts. A friend's "today" is the day in their file with MY local date, or
  * their newest day when it is after my date (they are ahead of me in time). A friend who is behind me in time shows
  * their running day under "Yesterday" until their day turns (round 10, item 21: travel and time zones are accepted).
  */
@@ -410,7 +410,7 @@ export function cleanName(text: unknown, max = NAME_MAX): string {
 }
 /**
  * THE ONE CLEANING of a string from a gist (a friend's name, a login, a group's name) before any screen draws it
- * (YAZ-5256): `cleanName` (no control or bidi character, one line, at most `max` letters, then "…"), wrapped in a bidi
+ *: `cleanName` (no control or bidi character, one line, at most `max` letters, then "…"), wrapped in a bidi
  * isolate (U+2068 … U+2069) so a right-to-left name cannot turn the words around it. It is idempotent: a cleaned text
  * cleans to itself. '' stays '' (the caller's fallback words then show).
  */

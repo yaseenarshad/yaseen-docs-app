@@ -28,7 +28,7 @@ export async function openFriendsApi(store: VaultStore, tokens: TokenStore, opti
   const token = await tokens.read(chosen.vault)
   const account = await loadAccount(store, chosen.vault)
   if (token === undefined || token === null || token === '' || account === undefined) return { kind: 'no-account' }
-  // YAZ-5083: the vaults where the friends list can live: this phone's vaults on the friends account, the friends
+  // The vaults where the friends list can live: this phone's vaults on the friends account, the friends
   // vault first. Each one with its OWN token (the one with Contents on that repo, decision 17).
   const repos = async (): Promise<readonly RepoPort[]> => {
     const list = await loadVaultList(store)
@@ -91,7 +91,7 @@ export async function countedVaults(store: VaultStore, repos: readonly string[],
     const vault = list.vaults.find((v) => v.repo.toLowerCase() === repo)
     if (vault === undefined) return null
     const id = vaultId(vault)
-    // YAZ-5255: the open vault's index as the sync engine holds it (no read of the store), else the stored one.
+    // The open vault's index as the sync engine holds it (no read of the store), else the stored one.
     const index = held?.(id) ?? (await store.getState<PhoneIndex>(id, INDEX_STATE))
     if (index === undefined || index === null || typeof index.records !== 'object') return null
     out.push({ pages: Object.values(index.records), settings: await settingsOf(store, id) })

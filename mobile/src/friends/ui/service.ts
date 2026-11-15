@@ -60,7 +60,7 @@ export type Board =
       offline: boolean
       /** This phone's send of my numbers (`sender.ts`), as it is now. Absent until the sync engine loaded. */
       sending?: FriendsSendState
-      /** YAZ-5274: friends who added me back since the last read (their names): the tab says so one time. */
+      /** Friends who added me back since the last read (their names): the tab says so one time. */
       newlyPaired?: string[]
     }
   | Unavailable
@@ -72,7 +72,7 @@ export interface FriendsService {
   share(): Promise<ShareResult | Unavailable>
   paste(text: string): Promise<PasteAnswer>
   remove(mine: string, asked?: EntryKind): Promise<{ kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'not-found' } | Unavailable>
-  /** YAZ-5399: the way out when the home vault is gone (`FriendsList.restart`). */
+  /** The way out when the home vault is gone (`FriendsList.restart`). */
   restart?(vault: string): ReturnType<FriendsList['restart']>
   mark(mine: string, kind: MarkKind): Promise<MarkSend>
   see(marks: readonly { theirs: string; mark: FriendMark }[]): Promise<void>
@@ -80,7 +80,7 @@ export interface FriendsService {
   whatFriendsSee: string
 }
 
-/** 4A's port with the screens' service; `stop` before "Sign out and erase this phone" (YAZ-5195). */
+/** 4A's port with the screens' service; `stop` before "Sign out and erase this phone". */
 export interface FriendsServices extends FriendsPort {
   service(): Promise<FriendsService>
   stop(): Promise<void>
@@ -101,7 +101,7 @@ export interface ServiceOptions {
   /** 3B's engine once it loads: the sender listens to its passes (4E1). Absent in tests. */
   engine?: Promise<SyncEngine>
   sleep?: (ms: number) => Promise<void>
-  /** YAZ-5255: the kept count of my numbers (tests pass one to count the counts). */
+  /** The kept count of my numbers (tests pass one to count the counts). */
   numbers?: OwnNumbers
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
 }
@@ -134,9 +134,9 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     now,
     lock: options.lock,
   })
-  // 4E3 (YAZ-5084): groups run by an admin, on the same list.
+  // 4E3: groups run by an admin, on the same list.
   const groups: GroupsPort = list.groups
-  // YAZ-5255: my numbers, counted once for each change and kept; my row and the sender read the same count.
+  // My numbers, counted once for each change and kept; my row and the sender read the same count.
   const own: OwnNumbers = options.numbers ?? createOwnNumbers(store)
 
   let sender: FriendsSender | null = null
@@ -173,7 +173,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     const phone = await loadVaultList(store)
     const ids = settings.vaults ?? phone.vaults.map(vaultId)
     const repos = phone.vaults.filter((v) => ids.includes(vaultId(v))).map((v) => v.repo.toLowerCase())
-    const counted = await own.counted(repos, now(), settings.zone) // YAZ-5251: the home time zone of the days
+    const counted = await own.counted(repos, now(), settings.zone) // The home time zone of the days
     const stats =
       counted === null
         ? null
@@ -198,7 +198,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       name: gistText(row.name) || 'Friend',
       avatar: avatarUrl(ok?.stats.avatar),
       state: row.state,
-      // YAZ-5256: 4E2's words hold the raw name ("Waiting for <name> to add you"): the cleaned one goes in its place.
+      // 4E2's words hold the raw name ("Waiting for <name> to add you"): the cleaned one goes in its place.
       label: row.label === null ? null : row.name === '' ? row.label : row.label.split(row.name).join(gistText(row.name) || 'your friend'),
       sendBack: row.sendBack,
       stats: ok?.stats ?? null,
@@ -219,7 +219,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       const read = f.stats === null ? null : parseFriendStats(JSON.stringify(f.stats))
       return { ...f, stats: read !== null && read.ok ? read.value : null }
     })
-    // YAZ-5259: the groups too, each member's numbers checked again as a friend's file.
+    // The groups too, each member's numbers checked again as a friend's file.
     const groups = (Array.isArray(copy.groups) ? copy.groups : []).map((g): GroupView => {
       if (g.kind !== 'ok') return g
       return {
@@ -241,18 +241,18 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     whatFriendsSee: WHAT_FRIENDS_SEE,
     port: list.port,
     async board() {
-      // The list first: it drains the phone's remove queue (removes go before marks, YAZ-5293), and gives the pointers.
+      // The list first: it drains the phone's remove queue (removes go before marks), and gives the pointers.
       const rows = await list.rows()
       const [mine, seen] = await Promise.all([me(), marks.seen()])
       if (rows.kind === 'ok') {
         const all = await groups.all()
-        // YAZ-5259: a group that cannot be read now keeps its last view (its members' "updated … ago" say how old).
+        // A group that cannot be read now keeps its last view (its members' "updated … ago" say how old).
         const kept = Array.isArray(all) && all.every((g) => g.kind !== 'offline') ? [] : (await loadCopy())?.groups ?? []
         const last = (g: GroupView) => (g.kind === 'offline' ? kept.find((k) => k.kind === 'ok' && k.group === g.group) ?? g : g)
         const groupViews = Array.isArray(all) ? all.map(cleanGroup).map(last) : kept
         const queued = await queuedMines(store)
         const friends = rows.rows.map(entryOf).map(removing(queued))
-        // YAZ-5293, YAZ-5294: waiting marks go now, only to friends who still share and whose remove does not wait, and
+        // Waiting marks go now, only to friends who still share and whose remove does not wait, and
         // with the remove reserve of the list's pointers.
         const reach = new Set(friends.filter((f) => f.state === 'ok' || f.state === 'waiting').map((f) => f.mine))
         await marks.flush({ pointers: rows.rows.length + rows.shared.length + (Array.isArray(all) ? all.length : 0), keep: (m) => reach.has(m) })
@@ -276,7 +276,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
       if (rows.kind === 'offline' || rows.kind === 'rate-limited') {
         const copy = await loadCopy()
         const outbox = await marks.outbox()
-        // YAZ-5292: a remove asked with no signal waits on the phone: its row says "Removing…" (also after a restart).
+        // A remove asked with no signal waits on the phone: its row says "Removing…" (also after a restart).
         if (copy !== null) return { kind: 'ok', me: mine, ...copy, friends: copy.friends.map(removing(await queuedMines(store))), seen, outbox, offline: true, ...(sender !== null && { sending: sender.state() }) }
       }
       return rows
@@ -298,13 +298,13 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
   }
 }
 
-/** YAZ-5292: a friend whose remove waits in the phone's queue: "Removing…", no numbers, no mark, no tap. */
+/** A friend whose remove waits in the phone's queue: "Removing…", no numbers, no mark, no tap. */
 const removing =
   (queued: Set<string>) =>
   (f: FriendEntry): FriendEntry =>
     queued.has(f.mine) ? { ...f, state: 'removing', label: 'Removing…', stats: null, sendBack: null, mark: undefined, updatedAt: null } : f
 
-/** YAZ-5256: each name and login of a group view from a gist, cleaned once (`gistText`). */
+/** Each name and login of a group view from a gist, cleaned once (`gistText`). */
 function cleanGroup(view: GroupView): GroupView {
   if (view.kind === 'not-found') return view
   const named = { ...view, name: gistText(view.name, 30) || 'Group' }
@@ -312,7 +312,7 @@ function cleanGroup(view: GroupView): GroupView {
   return { ...named, members: named.members.map((m) => ({ ...m, name: gistText(m.name) || gistText(m.login) || 'Member', login: gistText(m.login) })) }
 }
 
-/** YAZ-5256: the names in a paste answer (a friend, a group, a person who asks to join), cleaned before the words. */
+/** The names in a paste answer (a friend, a group, a person who asks to join), cleaned before the words. */
 function cleanAnswer(answer: PasteAnswer): PasteAnswer {
   const out = { ...answer } as Record<string, unknown>
   for (const field of ['name', 'groupName', 'login']) if (typeof out[field] === 'string') out[field] = gistText(out[field])

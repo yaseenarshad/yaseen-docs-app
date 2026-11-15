@@ -3,7 +3,7 @@ import type { RepoPort } from '@shared/friendListStore'
 import { GithubError, type GithubClient, type RateLimit } from '../github/client'
 
 /**
- * The gist calls (YAZ-5082) on the ONE GitHub client of 3E (`github/client.ts`): the token goes in the Authorization
+ * The gist calls on the ONE GitHub client of 3E (`github/client.ts`): the token goes in the Authorization
  * header only, to `api.github.com` only, and each failure is a typed `GithubError` (`READ_ONLY` for a write with no
  * Gists permission, `NOT_FOUND`, `RATE_LIMITED`, `OFFLINE`, …). The shared friends logic reads the same codes.
  * Proof 1C: `GET /gists` lists the user's own secret gists with file names (no text); `GET /gists/{id}` reads any
@@ -28,9 +28,9 @@ function gistPath(id: string): string {
   return `/gists/${id.toLowerCase()}`
 }
 
-/** `repos` (YAZ-5083): this phone's vaults on the friends account, where the friends list can live. */
+/** `repos`: this phone's vaults on the friends account, where the friends list can live. */
 export function gistsApi(client: GithubClient, repos?: () => Promise<readonly RepoPort[]>, repo?: (full: string) => Promise<RepoPort>): GistsApi {
-  /** YAZ-5238: GitHub's time at its last answer (the `Date` header, or a lower bound from the core reset). */
+  /** GitHub's time at its last answer (the `Date` header, or a lower bound from the core reset). */
   let serverTime: number | null = null
   const request: GithubClient['request'] = async (path, options) => {
     const answer = await client.request(path, options)
@@ -41,7 +41,7 @@ export function gistsApi(client: GithubClient, repos?: () => Promise<readonly Re
     return answer
   }
   /**
-   * `GET /gists`, page by page. `all` (YAZ-5464): more than `max` pages is `TOO_MANY_GISTS`. YAZ-5492 (nit): a full
+   * `GET /gists`, page by page. `all`: more than `max` pages is `TOO_MANY_GISTS`. YAZ-5492 (nit): a full
    * last page may be the end (exactly 3,000 gists): one more page tells; only a gist on it is too many.
    */
   async function pages(max: number, all: boolean): Promise<GistListItem[]> {
@@ -74,9 +74,9 @@ export function gistsApi(client: GithubClient, repos?: () => Promise<readonly Re
       return gistDoc(answer.data, answer.etag)
     },
     async update(id, files, again) {
-      // YAZ-5312 (proved live): two PATCHes of one gist at the same moment, on DIFFERENT files, can get 409 for one of
+      // Two PATCHes of one gist at the same moment, on DIFFERENT files, can get 409 for one of
       // them. GitHub refused that whole write, so it may be sent again: up to 2 more times, after a wait.
-      // YAZ-5516 (N9-1): but never the SAME body blind: the other write may be newer (a pointer moved to the newest
+      // But never the SAME body blind: the other write may be newer (a pointer moved to the newest
       // generation). Read the gist again and work out the change again on it (`again`). A pointer write with no way to
       // work it out again is not sent again: the other write stands (`superseded`).
       let body = files

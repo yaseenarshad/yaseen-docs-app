@@ -29,7 +29,7 @@ import { deviceTag, keepListSeen, listSeen } from './deviceTag'
 import { drainQueue, loadQueue } from './removeQueue'
 
 /**
- * The phone's send of the numbers (YAZ-5082, 4E1). It listens to the sync engine (3B) and sends the person's ONE
+ * The phone's send of the numbers (4E1). It listens to the sync engine (3B) and sends the person's ONE
  * numbers gist (round 16) with the shared rules of `shared/friendSend.ts`:
  * - only after a sync pass (decision 16), so the numbers hold the other devices' reviews;
  * - only with at least one friend or group (decision 22). It never MAKES a friends file: 4E2 does, at the first friend;
@@ -61,9 +61,9 @@ export type FriendsSendStatus =
   | 'unchanged'
   | 'needs-newer-app'
   | 'needs-repair'
-  /** YAZ-5083: the friends list is in a vault this phone does not have; nothing is sent from here. */
+  /** The friends list is in a vault this phone does not have; nothing is sent from here. */
   | 'list-elsewhere'
-  /** YAZ-5083: the token cannot read the vault that holds the friends list. */
+  /** The token cannot read the vault that holds the friends list. */
   | 'no-list-access'
   | 'sign-in-again'
   | 'failed'
@@ -100,12 +100,12 @@ export interface FriendsSenderOptions {
   /** One tab sends at a time. Default: the Web Lock `notecards-friends`, else no lock. */
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
   /**
-   * YAZ-5195: the app's erase. Aborted (before "Sign out and erase this phone"), the sender stops as `stop()` does:
+   * The app's erase. Aborted (before "Sign out and erase this phone"), the sender stops as `stop()` does:
    * the running request is aborted and nothing is stored again.
    */
   signal?: AbortSignal
   /**
-   * YAZ-5255: my numbers, counted once for each change and kept (`ownNumbers.ts`), shared with the Friends tab. Absent:
+   * My numbers, counted once for each change and kept (`ownNumbers.ts`), shared with the Friends tab. Absent:
    * the sender counts them itself (2C's `friendStats`) at each try.
    */
   numbers?: OwnNumbers
@@ -121,7 +121,7 @@ export interface FriendsSender {
   attempt(reason: SendReason): Promise<FriendsSendState>
   /** Resolves when no try runs and none waits to run. */
   idle(): Promise<void>
-  /** Stops the timers and the polling, aborts a running request (YAZ-5195), and resolves when the running try ended. */
+  /** Stops the timers and the polling, aborts a running request, and resolves when the running try ended. */
   stop(): Promise<void>
 }
 
@@ -169,7 +169,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     return saved ?? { lastSentAt: null, lastKey: null, budget: emptyBudget(), pointers: 0 }
   }
 
-  /** YAZ-5354: the pointers as last read (ETags: an unchanged pointer is a free 304), for the check before each send. */
+  /** The pointers as last read (ETags: an unchanged pointer is a free 304), for the check before each send. */
   const pointerCache = new Map<string, { etag: string | null; gist: GistDoc }>()
 
   /** The list: the copy of this session (an ETag read of the vault's branch), or found by the note. Null: no list. */
@@ -184,7 +184,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       index = null // gone or broken: find it again
     }
     if (noIndexAt !== null && reason !== 'background' && now < noIndexAt + PUBLISH_EVERY_MS) return null
-    // YAZ-5083: an old gist list is moved into the vault here too; the sender never MAKES a list (decision 22).
+    // An old gist list is moved into the vault here too; the sender never MAKES a list (decision 22).
     const found = await openFriendsList(api, writeOptions)
     if (found.kind === 'none') {
       noIndexAt = now
@@ -194,7 +194,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     if (found.kind === 'newer') return 'newer'
     if (found.kind === 'broken') return 'broken'
     if (found.kind === 'elsewhere') return 'elsewhere'
-    // YAZ-5399: the home vault is gone: nothing is sent; the Friends tab shows the way out.
+    // The home vault is gone: nothing is sent; the Friends tab shows the way out.
     if (found.kind === 'no-vault' || found.kind === 'home-gone') return 'no-access'
     return (index = found.handle)
   }
@@ -204,20 +204,20 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     const now = clock.now()
     if (!passSeen) return set({ status: 'no-pass' })
     const saved = await loadSaved()
-    // YAZ-5195: the phone-wide session of this try. After "Sign out and erase this phone" (in any tab) its writes
+    // The phone-wide session of this try. After "Sign out and erase this phone" (in any tab) its writes
     // throw `VaultClosedError`, so nothing of this try is stored again.
     const session = await store.session(PHONE)
-    // YAZ-5083: this phone's tag in the list's steps (stable across restarts).
+    // This phone's tag in the list's steps (stable across restarts).
     writeOptions.device ??= await deviceTag(session)
-    // YAZ-5398: the newest list this phone wrote or read (shared with the Friends list in this run of the app).
+    // The newest list this phone wrote or read (shared with the Friends list in this run of the app).
     writeOptions.memory ??= await listSeen(store)
-    // YAZ-5195: after an erase or a stop, nothing of the friends state is stored again.
+    // After an erase or a stop, nothing of the friends state is stored again.
     const save = async (patch: Partial<Saved>) => {
       if (await guard.live()) await session.setState(PHONE, SEND_STATE, { ...saved, ...patch })
     }
 
     // The cheap checks first: the 5-minute rule and the budget need no network and no count.
-    // YAZ-5192: also for a background send. `lastSentAt` is phone-only state, so the rule holds after a restart too.
+    // Also for a background send. `lastSentAt` is phone-only state, so the rule holds after a restart too.
     if (saved.lastSentAt !== null) {
       const at = saved.lastSentAt + sendGap(saved.budget, now, reserveFor(saved.pointers))
       if (now < at) {
@@ -233,12 +233,12 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
     try {
       let handle = await readIndex(api, now, reason)
       if (handle === 'newer') return set({ status: 'needs-newer-app' })
-      // YAZ-5191: a list that cannot be read: no send and no write; 4E4 shows LIST_NEEDS_REPAIR.
+      // A list that cannot be read: no send and no write; 4E4 shows LIST_NEEDS_REPAIR.
       if (handle === 'broken') return set({ status: 'needs-repair' })
       if (handle === 'elsewhere') return set({ status: 'list-elsewhere' })
       if (handle === 'no-access') return set({ status: 'no-list-access' })
       if (handle === null) return set({ status: 'no-friends' })
-      // YAZ-5236: removes that wait on the phone go first: a remove has priority over a numbers update.
+      // Removes that wait on the phone go first: a remove has priority over a numbers update.
       if ((await loadQueue(session)).length > 0) {
         const drained = await drainQueue(api, handle, session, saved.budget, { ...writeOptions, now: () => clock.now() })
         if (drained !== null) {
@@ -254,7 +254,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
           }
         }
       }
-      // 4E2 (YAZ-5083): a remove waits in the list (the app closed, or the budget ran out). Finish it first; never
+      // 4E2: a remove waits in the list (the app closed, or the budget ran out). Finish it first; never
       // send to the old numbers gist while it waits, so the removed friend's last numbers do not change.
       if (pendingRemove(handle) !== null) {
         const finished = await finishRemove(api, handle, saved.budget, { ...writeOptions, now: () => clock.now() })
@@ -275,7 +275,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         handle = finished.handle
       }
       const pointers = pointersOf(handle.index).length
-      // YAZ-5251: a list with no home time zone gets this phone's zone, one write, once. Until it is written, the count
+      // A list with no home time zone gets this phone's zone, one write, once. Until it is written, the count
       // uses this phone's zone, as before. YAZ-5083: a commit of the vault repo (compare-and-swap; no `gist_update`):
       // a zone that another device wrote at the same moment stays.
       const own = deviceZone()
@@ -304,7 +304,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         await save({ pointers })
         return set({ status: 'unchanged' })
       }
-      // YAZ-5354: each pointer of the list names the numbers gist this send writes (a pointer that a slow run of another
+      // Each pointer of the list names the numbers gist this send writes (a pointer that a slow run of another
       // device wrote back to an older gist moves now), so every kept friend reads these numbers (I6). Reads with ETags
       // (free when nothing changed); a write only for a pointer that is wrong.
       handle = await settlePointers(api, handle, { ...writeOptions, now: () => clock.now() }, pointerCache, 'stats')
@@ -369,7 +369,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
       }
     } catch (err) {
       if (err instanceof VaultClosedError) throw err
-      // YAZ-5083: the list in the vault repo.
+      // The list in the vault repo.
       if (err instanceof NewerList) return set({ status: 'needs-newer-app' })
       if (err instanceof BrokenList) return set({ status: 'needs-repair' })
       if (listErrorCode(err) === 'NO_LIST_ACCESS') return set({ status: 'no-list-access' })
@@ -409,7 +409,7 @@ export function createFriendsSender(options: FriendsSenderOptions): FriendsSende
         queued = null
         await lock('notecards-friends', () => run(next))
       })
-      // An erase during the try: it ends quietly, with nothing stored (YAZ-5195).
+      // An erase during the try: it ends quietly, with nothing stored.
       .catch((err) => set({ status: err instanceof VaultClosedError ? 'idle' : 'failed' }))
     return chain.then(() => state)
   }

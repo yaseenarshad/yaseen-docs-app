@@ -10,7 +10,7 @@ import type { MarkKind, MarkSend, OutMark } from './marks'
 import type { Board, FriendEntry, FriendsService, FriendsServices, Me, PasteAnswer } from './service'
 
 /**
- * TEST AND FIXTURE HELP ONLY (YAZ-5085): made-up friends and a fake service, for the screen tests and the screenshot
+ * TEST AND FIXTURE HELP ONLY: made-up friends and a fake service, for the screen tests and the screenshot
  * fixtures (`--mode fixtures`). No real name, no network.
  */
 export const DEMO_AVATAR = 'https://avatars.githubusercontent.com/u/1?v=4'
@@ -218,7 +218,7 @@ export interface FakeCalls {
   share: number
   paste: string[]
   remove: string[]
-  /** YAZ-5399: the vaults of each "Start the friends list again in …". */
+  /** The vaults of each "Start the friends list again in …". */
   restart: string[]
   mark: { mine: string; kind: MarkKind }[]
   see: string[]

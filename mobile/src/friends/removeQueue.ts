@@ -4,7 +4,7 @@ import type { GistBudget } from '@shared/friendSend'
 import { PHONE, type VaultStore } from '../store'
 
 /**
- * YAZ-5236: removes that GitHub refused BEFORE their first write (its own "rate limit", or no connection). The list
+ * Removes that GitHub refused BEFORE their first write (its own "rate limit", or no connection). The list
  * cannot hold them yet, so the phone keeps them (phone-only state) until the sender or the rows run them, in order, as
  * ONE re-key. A restart keeps them. Until then the row shows "Removing…".
  */
@@ -16,7 +16,7 @@ export interface QueuedRemove {
   /** More of my gists to delete with it ("Delete group": the group file). */
   drop?: string[]
   /**
-   * YAZ-5352: the kind of entry the person removed (a friend, a group, a shared link). The drain removes the pointer
+   * The kind of entry the person removed (a friend, a group, a shared link). The drain removes the pointer
    * only while it is still that kind: a shared link that a friend took since then is that friend's pointer now.
    * Absent (a queue of an older app): any kind, as before.
    */
@@ -29,7 +29,7 @@ export async function loadQueue(store: VaultStore): Promise<QueuedRemove[]> {
   return Array.isArray(q) ? q : []
 }
 
-/** Adds a remove to the queue (once). `store` is the phone-wide session of the action (YAZ-5195). */
+/** Adds a remove to the queue (once). `store` is the phone-wide session of the action. */
 export async function enqueueRemove(store: VaultStore, item: QueuedRemove): Promise<void> {
   const q = await loadQueue(store)
   if (q.some((x) => x.mine === item.mine)) return
@@ -54,7 +54,7 @@ export async function drainQueue(api: GistsApi, handle: IndexHandle, store: Vaul
   return result
 }
 
-/** YAZ-5275: takes a waiting remove back (the person added the same friend again before it ran). */
+/** Takes a waiting remove back (the person added the same friend again before it ran). */
 export async function dequeueRemove(store: VaultStore, mine: string): Promise<void> {
   const q = await loadQueue(store)
   if (!q.some((x) => x.mine === mine)) return

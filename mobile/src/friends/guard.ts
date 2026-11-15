@@ -2,7 +2,7 @@ import type { FetchLike } from '../github/client'
 import { loadVaultList, type VaultStore } from '../store'
 
 /**
- * The erase guard of the friends code (YAZ-5195). After "Sign out and erase this phone" (or a stop of the sender or
+ * The erase guard of the friends code. After "Sign out and erase this phone" (or a stop of the sender or
  * the list), no friends request starts, a running one is aborted, and nothing of the friends state is stored again:
  * the login, the name and the numbers must not come back to the phone (row N7).
  * - `stop()` aborts each request in flight (an `AbortSignal` on the request) and refuses the next ones. The app calls

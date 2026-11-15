@@ -6,7 +6,7 @@ import { uiSlicer } from '../sync/yieldToUi'
 import { countedVaults } from './friendsApi'
 
 /**
- * MY OWN NUMBERS, counted once and kept (YAZ-5255). 2C's count runs over every card of each vault that counts: 94 ms
+ * MY OWN NUMBERS, counted once and kept. 2C's count runs over every card of each vault that counts: 94 ms
  * for 1,000 cards and 1.8 s for 20,000 on a Mac. So it runs:
  * - once for each change of the data: the vaults that count, a sync pass that changed the open vault (3B's `changed`
  *   event; the phone's index changes only in a pass), and a new local day (the due cards of a day);
@@ -28,7 +28,7 @@ export type Counted = Omit<FriendStats, 'login' | 'name' | 'avatar'>
 export interface OwnNumbers {
   /**
    * The count for these vaults (`owner/name`, lower case), or null when the phone does not hold all of them. `zone`
-   * (YAZ-5251): the home time zone of the days; none is the phone's own zone.
+   *: the home time zone of the days; none is the phone's own zone.
    */
   counted(repos: readonly string[], now: number, zone?: string | null): Promise<Counted | null>
   /** The data changed: the next read counts again. */
@@ -43,7 +43,7 @@ export function createOwnNumbers(store: VaultStore, options: { slicer?: () => ()
   let engine: HeldEngine | null = null
   /**
    * The engine's index is used only while it is known to be the stored one. After a vault switch it is not: the pass of
-   * the vault that was open can still write that vault's stored index (YAZ-5295). It is trusted again at the first
+   * the vault that was open can still write that vault's stored index. It is trusted again at the first
    * `changed` event after that pass ended; until then the count reads the store.
    */
   let trustHeld = true
@@ -52,9 +52,9 @@ export function createOwnNumbers(store: VaultStore, options: { slicer?: () => ()
   let kept: { key: string; value: Promise<Counted | null> } | null = null
   const own: OwnNumbers = {
     counted(repos, now, zone) {
-      // YAZ-5295: every input of the count is in the key: the vaults that count, the open vault and the version of its
+      // Every input of the count is in the key: the vaults that count, the open vault and the version of its
       // index (the engine's), the local day AND the zone (a zone change moves the day borders on the same date), and
-      // the generation (YAZ-5251: the home zone and its day are in the key too) (each data change of any vault that counts: a `changed` event, a vault switch, and the end of
+      // the generation (the home zone and its day are in the key too) (each data change of any vault that counts: a `changed` event, a vault switch, and the end of
       // the pass of a vault that was open before).
       const open = engine?.state?.().vault ?? null
       const version = open === null ? '' : engine?.index?.()?.commit ?? ''
@@ -94,7 +94,7 @@ export function createOwnNumbers(store: VaultStore, options: { slicer?: () => ()
           own.invalidate()
         } else if (event.type === 'state' && event.state.vault !== lastOpen) {
           // A vault switch: the pass of the vault that was open runs on and writes its index with no event. Count again
-          // now, and again when that pass has ended (YAZ-5295).
+          // now, and again when that pass has ended.
           lastOpen = event.state.vault
           trustHeld = false
           settled = false

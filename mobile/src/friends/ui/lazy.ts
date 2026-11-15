@@ -4,12 +4,12 @@ import type { SyncEngine } from '../../sync/engine'
 import type { FriendsService, FriendsServices } from './service'
 
 /**
- * Friends for `main.tsx` (YAZ-5085): 4A's `FriendsPort` and the screens' service, loaded as a chunk of their own. The
+ * Friends for `main.tsx`: 4A's `FriendsPort` and the screens' service, loaded as a chunk of their own. The
  * friends logic (4E1, 4E2, the marks) and the screens are not in the first load; the chunk loads when the app starts
  * (it must know whether to open on Friends, decision 21), in parallel with the rest.
  */
 /**
- * YAZ-5260: the phone-only fact "there is a friend or a group" that 4E2's list keeps (`friendsHas`, in `list.ts`). The
+ * The phone-only fact "there is a friend or a group" that 4E2's list keeps (`friendsHas`, in `list.ts`). The
  * first screen reads it from the store, with no friends chunk (`start.test.tsx` checks that the list writes it).
  */
 export const HAS_FRIENDS_STATE = 'friendsHas'

@@ -59,7 +59,7 @@ import { dequeueRemove, drainQueue, enqueueRemove, queuedMines } from './removeQ
 import { SEND_STATE } from './sender'
 
 /**
- * The friends list on the phone (YAZ-5083, 4E2): "Share my link", "Paste a friend's link", Remove, the rows, and the
+ * The friends list on the phone (4E2): "Share my link", "Paste a friend's link", Remove, the rows, and the
  * `FriendsPort` of 4A (`app/friendsPort.ts`) on the person's friends list gist (decision 15; round 12, item 3).
  * The logic is `shared/friendsList.ts`; this file adds the phone's account (3E, round 13 item 4), its stored state,
  * the lock that the sender (4E1) also takes, and the `gist_update` budget that the sender keeps. No screen: 4E4 draws.
@@ -75,14 +75,14 @@ export type Unavailable =
   | { kind: 'rate-limited' }
   | { kind: 'unauthorized' }
   | { kind: 'newer-app' }
-  /** My friends list on GitHub cannot be read: nothing is written to it (YAZ-5191). Show `LIST_NEEDS_REPAIR`. */
+  /** My friends list on GitHub cannot be read: nothing is written to it. Show `LIST_NEEDS_REPAIR`. */
   | { kind: 'needs-repair' }
-  /** YAZ-5083: my friends list is in the vault `home` (`owner/name`), which this phone does not have. Nothing is written. */
+  /** My friends list is in the vault `home` (`owner/name`), which this phone does not have. Nothing is written. */
   | { kind: 'list-elsewhere'; home: string }
-  /** YAZ-5083: the token cannot read or write the vault that holds my friends list (Contents permission). */
+  /** The token cannot read or write the vault that holds my friends list (Contents permission). */
   | { kind: 'no-list-access' }
   /**
-   * YAZ-5399: GitHub does not have the vault `home` of my friends list for this account any more (deleted, or no access).
+   * GitHub does not have the vault `home` of my friends list for this account any more (deleted, or no access).
    * Show `homeGoneMessage(home)` and, for each of `vaults` (this phone's other vaults on the friends account), the way
    * out: `restartAction(vault)`, which runs `restart(vault)` after `restartWarning(vault)`.
    * YAZ-5444 `fileGone`: the vault answers but the list FILE is gone from it (`homeGoneMessage(home, true)`); then
@@ -90,7 +90,7 @@ export type Unavailable =
    */
   | { kind: 'home-gone'; home: string; vaults: string[]; fileGone?: true }
   /**
-   * YAZ-5400: my OLD friends list (a gist from before the move) has more than 300 files, and GitHub gives only 300: it
+   * My OLD friends list (a gist from before the move) has more than 300 files, and GitHub gives only 300: it
    * cannot be read whole, so nothing is moved or written (and no new list starts). Show `LIST_CUT`, and the same way
    * out as `home-gone`, in each of `vaults`.
    */
@@ -120,14 +120,14 @@ export interface FriendsList {
   rows(): Promise<({ kind: 'ok' } & ListRows) | Unavailable>
   /** 4A's port, on the list gist. */
   port: FriendsPort
-  /** YAZ-5195: before "Sign out and erase this phone": aborts a running request; no friends call or write after it. */
+  /** Before "Sign out and erase this phone": aborts a running request; no friends call or write after it. */
   stop(): void
-  /** 4E3 (YAZ-5084): groups run by an admin. */
+  /** 4E3: groups run by an admin. */
   groups: FriendsGroups
   /**
    * YAZ-5399, the way out when the home vault is gone: ends ALL sharing (every pointer and numbers gist of mine is
    * deleted) and starts a new, empty list in `vault` (`restartList`). Refused while the home vault answers with its list
-   * file (YAZ-5444: a home that lost only its list file gets the same way out). `too-many-gists` (YAZ-5464): GitHub
+   * file (a home that lost only its list file gets the same way out). `too-many-gists`: GitHub
    * would not list every gist of mine, so nothing was changed (`TOO_MANY_GISTS`).
    */
   restart(vault: string): Promise<{ kind: 'done'; vault: string } | { kind: 'home-is-there' } | { kind: 'bad-target' } | { kind: 'too-many-gists' } | Unavailable>
@@ -137,7 +137,7 @@ export interface FriendsList {
 
 type LeaveOutcome = { kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'admin-cannot-leave' } | { kind: 'not-found' }
 
-/** 4E3 (YAZ-5084). The logic is `shared/friendGroups.ts`; each write counts on the sender's `gist_update` budget. */
+/** 4E3. The logic is `shared/friendGroups.ts`; each write counts on the sender's `gist_update` budget. */
 export interface FriendsGroups {
   /** "New group": `link` for the share sheet (`navigator.share({ title, text, url: link })`). */
   create(name: string): Promise<{ kind: 'ok'; group: string; link: string; title: string; text: string } | { kind: 'bad-name' } | Unavailable>
@@ -167,7 +167,7 @@ export interface FriendsListOptions {
   sleep?: (ms: number) => Promise<void>
   lock?: <T>(name: string, fn: () => Promise<T>) => Promise<T>
   describe?: ListOptions['describe']
-  /** YAZ-5195: the app's erase signal; aborted, the list stops as `stop()` does. */
+  /** The app's erase signal; aborted, the list stops as `stop()` does. */
   signal?: AbortSignal
 }
 
@@ -175,14 +175,14 @@ export interface FriendsListOptions {
 const HAS = 'friendsHas'
 const COPY = 'friendsListCopy'
 /**
- * YAZ-5361: the removes that wait in the list on GitHub (the saga state: "Removing…"), as last read, for the erase ask.
+ * The removes that wait in the list on GitHub (the saga state: "Removing…"), as last read, for the erase ask.
  * Phone-only state; the list on GitHub stays the truth.
  */
 export const WAITING_REMOVES = 'friendsWaitingRemoves'
 interface ListCopy {
   vaults: string[]
   nickname: string | null
-  /** YAZ-5251: the home time zone of the list (absent: not set yet). */
+  /** The home time zone of the list (absent: not set yet). */
   zone?: string
 }
 
@@ -197,7 +197,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   }
   const cache = newListCache()
   const guard = friendsGuard(store, options.fetch, options.signal)
-  /** The phone-wide session of the running action (YAZ-5195). */
+  /** The phone-wide session of the running action. */
   let phoneStore: VaultStore = store
   let handle: IndexHandle | null = null
   const local = localFriends(store)
@@ -222,14 +222,14 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     return list.vaults.filter((v) => repos.includes(v.repo.toLowerCase())).map(vaultId)
   }
 
-  /** The friends API of the action that runs now (under the lock), for `refreshed` (YAZ-5462). */
+  /** The friends API of the action that runs now (under the lock), for `refreshed`. */
   let apiNow: GistsApi | null = null
 
   /** Remembers what the screens need offline: a friend or not, and the settings. */
   async function remember(h: IndexHandle | null): Promise<void> {
     handle = h
     if (h === null) return
-    if (!(await guard.live())) return // YAZ-5195: nothing comes back after an erase
+    if (!(await guard.live())) return // Nothing comes back after an erase
     await phoneStore.setState(PHONE, HAS, h.index.friends.length + h.index.groups.length > 0)
     await phoneStore.setState(PHONE, COPY, { vaults: h.index.vaults, nickname: h.index.nickname, ...(h.index.zone !== undefined && { zone: h.index.zone }) } satisfies ListCopy)
     const waiting = waitingRemoves(h).count
@@ -241,21 +241,21 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   async function refreshed(h: IndexHandle): Promise<IndexHandle | Unavailable> {
     try {
       let next = await latestList(h)
-      // YAZ-5462: a way out that stopped after its new list (this session's copy is read again): its deletes end here.
+      // A way out that stopped after its new list (this session's copy is read again): its deletes end here.
       if (wayOutOf(next) !== null && apiNow !== null) next = await finishWayOut(apiNow, next, opts)
       if (next !== h) await remember(next)
       return next
     } catch (err) {
       handle = null
       if (err instanceof NewerList) return { kind: 'newer-app' }
-      // YAZ-5444: a missing file goes to `withApi`, which opens the list again by its note (the way out, if it is gone).
+      // A missing file goes to `withApi`, which opens the list again by its note (the way out, if it is gone).
       if (err instanceof BrokenList && !err.missing) return { kind: 'needs-repair' }
       throw err
     }
   }
 
   /**
-   * The list: this session's copy, or found by the note in the list gist (YAZ-5083: in the home vault). An old gist list
+   * The list: this session's copy, or found by the note in the list gist (in the home vault). An old gist list
    * is moved into the vault here. Made (with the carried-over settings) when `make`. Null: no list and `make` is false.
    */
   async function list(api: GistsApi, login: string, make: boolean, vault = ''): Promise<IndexHandle | Unavailable | null> {
@@ -266,13 +266,13 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       // The first numbers file names the person at once (the sender fills the numbers after the next sync pass).
       const account = vault === '' ? undefined : await loadAccount(store, vault)
       const numbers = { ...emptyNumbers(now()), login, name: settings.nickname ?? account?.name ?? login, avatar: account?.avatarUrl ?? '' }
-      // YAZ-5251: the first device writes the home time zone: the one chosen in Settings, or its own.
+      // The first device writes the home time zone: the one chosen in Settings, or its own.
       seed = { vaults: await idsToRepos(settings.vaults, login), nickname: settings.nickname, numbers, zone: settings.zone ?? deviceZone() }
     }
     const found = await openFriendsList(api, opts, seed)
     switch (found.kind) {
       case 'ok': {
-        // YAZ-5492: once a session, a list whose numbers gist is gone heals itself (a new generation).
+        // Once a session, a list whose numbers gist is gone heals itself (a new generation).
         const healed = await heal(api, found.handle)
         await remember(healed)
         return healed
@@ -296,8 +296,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     }
   }
   /**
-   * YAZ-5399: the home is gone; the vaults where the list can start again (this phone's, on the friends account).
-   * YAZ-5444: only the list FILE is gone: the home vault is one of them (first).
+   * The home is gone; the vaults where the list can start again (this phone's, on the friends account).
+   * Only the list FILE is gone: the home vault is one of them (first).
    */
   async function homeGone(api: GistsApi, home: string, fileGone = false): Promise<Unavailable> {
     handle = null
@@ -307,7 +307,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   }
   const isHandle = (x: IndexHandle | Unavailable | null): x is IndexHandle => x !== null && 'index' in x
 
-  /** YAZ-5492: the list with its numbers gist made again when it is gone (or as it is: the heal waits for later). */
+  /** The list with its numbers gist made again when it is gone (or as it is: the heal waits for later). */
   async function heal(api: GistsApi, h: IndexHandle): Promise<IndexHandle> {
     const r = await healNumbers(api, h, await budget(), opts)
     if (r === null) return h
@@ -326,11 +326,11 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   /** Runs `fn` with the friends account, under the lock the sender takes; a gist failure becomes plain state. */
   async function withApi<T>(fn: (api: GistsApi, login: string, vault: string) => Promise<T | Unavailable>): Promise<T | Unavailable> {
     if (!(await guard.live())) return { kind: 'no-account' }
-    // YAZ-5195: the phone-wide session of this action; after an erase in any tab its writes throw VaultClosedError.
+    // The phone-wide session of this action; after an erase in any tab its writes throw VaultClosedError.
     phoneStore = await store.session(PHONE)
-    // YAZ-5083: this phone's tag in the list's steps (stable across restarts).
+    // This phone's tag in the list's steps (stable across restarts).
     opts.device ??= await deviceTag(phoneStore)
-    // YAZ-5398: the newest list this phone wrote or read (a stale read of GitHub is never trusted).
+    // The newest list this phone wrote or read (a stale read of GitHub is never trusted).
     opts.memory ??= await listSeen(store)
     const friends = await openFriendsApi(store, tokens, { fetch: guard.fetch, now })
     if (friends.kind !== 'ok') return { kind: friends.kind }
@@ -340,11 +340,11 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         return await fn(friends.api, friends.account.login, friends.vault)
       } catch (err) {
         if (err instanceof VaultClosedError) return { kind: 'no-account' as const }
-        // YAZ-5083: the list in the vault repo.
+        // The list in the vault repo.
         if (err instanceof NewerList) return { kind: 'newer-app' as const }
         if (err instanceof BrokenList) {
           handle = null
-          // YAZ-5444: this session's list FILE is not in its vault any more: open the list again by its note, which
+          // This session's list FILE is not in its vault any more: open the list again by its note, which
           // tells a file gone for good (`home-gone` with the way out) from a lag (still "needs repair", nothing offered).
           if (err.missing) {
             const again = await list(friends.api, friends.account.login, false).catch(() => null)
@@ -356,7 +356,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (err instanceof HomeGone) return homeGone(friends.api, err.home, err.fileGone)
         if (listErrorCode(err) === 'NO_LIST_ACCESS') {
           handle = null
-          // YAZ-5399: GitHub answered 404 for the repo of this session's list: open the list again by its note, which
+          // GitHub answered 404 for the repo of this session's list: open the list again by its note, which
           // tells "the home vault is gone" (with the way out) from "this token cannot write there".
           if ((err as { gone?: unknown }).gone === true) {
             const again = await list(friends.api, friends.account.login, false).catch(() => null)
@@ -427,9 +427,9 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
       const result = await withApi(async (api, login) => {
         const fresh = await list(api, login, false)
         if (!isHandle(fresh)) return { kind: 'failed' as const }
-        // YAZ-5237: a write changes only what the person changed. The vaults that this phone does not hold (the Mac's)
+        // A write changes only what the person changed. The vaults that this phone does not hold (the Mac's)
         // stay; only the phone's own vaults follow the choice. An unchanged name keeps the list's own (also a long one).
-        // YAZ-5083: an operation on the NEWEST list (compare-and-swap): another device's change at the same moment stays.
+        // An operation on the NEWEST list (compare-and-swap): another device's change at the same moment stays.
         const onPhone = (await loadVaultList(store)).vaults.map((v) => v.repo.toLowerCase())
         const chosen = await idsToRepos(settings.vaults, login)
         const next = await writeList(
@@ -438,7 +438,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
             const listed = cur.index.vaults
             const vaults = [...listed.filter((v) => !onPhone.includes(v) || chosen.includes(v)), ...chosen.filter((v) => !listed.includes(v))]
             const nickname = settings.nickname === copy.nickname ? cur.index.nickname : settings.nickname
-            // YAZ-5251: the home time zone changes only when the person changed it here.
+            // The home time zone changes only when the person changed it here.
             const zone = settings.zone === undefined || settings.zone === null || settings.zone === (copy.zone ?? null) ? cur.index.zone : settings.zone
             const patch = listPatch(cur, { ...cur.index, vaults, nickname, ...(zone !== undefined && { zone }) })
             return Object.keys(patch).length === 0 ? null : patch
@@ -465,7 +465,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         return { kind: 'no-gists' as const }
       }
       if (result.kind === 'added') await remember(result.handle)
-      // YAZ-5275: the person adds a friend whose remove still waits on the phone (its first write has not gone, so no
+      // The person adds a friend whose remove still waits on the phone (its first write has not gone, so no
       // re-key has happened): the add wins, and the waiting remove is taken back. A remove already in the list (its
       // re-key started) finishes first; the paste then made a NEW pointer, which the re-key moves with the friends.
       if (result.kind === 'added' || result.kind === 'already') {
@@ -495,7 +495,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
   const leaveOutcome = async (r: LeaveResult, vault: string, queue?: { mine: string; kind: EntryKind; drop?: string[] }): Promise<LeaveOutcome | Unavailable> =>
     r.kind === 'admin-cannot-leave' ? r : r.kind === 'not-found' && !('handle' in r) ? { kind: 'not-found' } : mapRemove(r as RemoveResult, vault, queue)
   let swept = false
-  /** YAZ-5312: `settlePointers` ran in this session. */
+  /** `settlePointers` ran in this session. */
   let settled = false
 
   const groups: FriendsGroups = {
@@ -637,7 +637,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (r.kind !== 'ok') return r.kind === 'newer' ? { kind: 'newer-app' as const } : { kind: r.kind }
         // Nothing of the old list waits on this phone any more: its pointers are gone.
         for (const mine of await queuedMines(phoneStore)) await dequeueRemove(phoneStore, mine)
-        // YAZ-5492: another phone's way out at the same moment may have deleted the numbers gist of the list that won.
+        // Another phone's way out at the same moment may have deleted the numbers gist of the list that won.
         const healed = await heal(api, r.handle)
         await remember(healed)
         return { kind: 'done' as const, vault: healed.store!.port.repo }
@@ -647,8 +647,8 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const h0 = await list(api, login, false)
         if (h0 === null) return { kind: 'not-found' as const }
         if (!isHandle(h0)) return h0
-        // YAZ-5352: the kind of entry the person removes (a friend, a group, or a shared link), from the newest list; with
-        // no connection, from this session's copy (the remove then waits on the phone, YAZ-5236).
+        // The kind of entry the person removes (a friend, a group, or a shared link), from the newest list; with
+        // no connection, from this session's copy (the remove then waits on the phone).
         let h: IndexHandle | Unavailable
         try {
           h = await refreshed(h0)
@@ -675,7 +675,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const fresh = await refreshed(found)
         if (!isHandle(fresh)) return fresh
         let h: IndexHandle = fresh
-        // YAZ-5236: the removes that wait on the phone run first, then a remove that waits in the list.
+        // The removes that wait on the phone run first, then a remove that waits in the list.
         const drained = await drainQueue(api, h, phoneStore, await budget(), opts)
         if (drained !== null) {
           await mapRemove(drained, vault)
@@ -686,7 +686,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
           await mapRemove(r, vault)
           h = r.handle
         }
-        // YAZ-5312: once each session, each pointer of the list that is parked or older moves to the numbers gist.
+        // Once each session, each pointer of the list that is parked or older moves to the numbers gist.
         // It waits while a remove waits on this phone (removes come first in the hour), and a refused write (the hour
         // used up, offline) only means it runs again next time: the rows never fail on it.
         if (!settled && pendingRemove(h) === null && (await queuedMines(phoneStore)).size === 0) {
@@ -702,12 +702,12 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         const read = await readFriends(api, h, cache, now())
         const queued = await queuedMines(phoneStore)
         for (const row of read.rows) if (queued.has(row.mine)) Object.assign(row, { state: 'removing' as const, label: 'Removing…', sendBack: null })
-        // YAZ-5274: a friend seen paired for the first time is marked in the list (one write, once).
+        // A friend seen paired for the first time is marked in the list (one write, once).
         if (read.newlyPaired.length > 0) {
           h = await markPaired(api, h, read.newlyPaired, opts)
           await remember(h)
         }
-        // YAZ-5235: my shared links that a friend holds but does not use are deleted.
+        // My shared links that a friend holds but does not use are deleted.
         if (read.held.length > 0) {
           h = await dropHeldShares(api, h, read.held, opts)
           await remember(h)

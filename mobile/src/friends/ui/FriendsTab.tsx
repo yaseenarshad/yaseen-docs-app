@@ -24,7 +24,7 @@ import type { Board, FriendEntry, FriendsService, PasteAnswer } from './service'
 import { useBoard, useNow, useService } from './useFriends'
 
 /**
- * The Friends tab (YAZ-5085, 4E4; decisions 20, 21, 22, 24, 25; round 10, items 12 and 13). The tab draws the board
+ * The Friends tab (4E4; decisions 20, 21, 22, 24, 25; round 10, items 12 and 13). The tab draws the board
  * that the service reads (`useBoard`, each `FRIENDS_POLL_MS` while it shows). Each number and mark comes from
  * `board.ts`; the tab computes none.
  */
@@ -74,7 +74,7 @@ export default function FriendsTab() {
   )
 }
 
-/** Words for a board that cannot show (decision 17, round 13 item 4, YAZ-5191). */
+/** Words for a board that cannot show (decision 17, round 13 item 4). */
 function Unreadable({ board, refresh, service }: { board: Unavailable; refresh: () => Promise<void>; service: FriendsService }) {
   const app = useApp()
   switch (board.kind) {
@@ -124,7 +124,7 @@ function Unreadable({ board, refresh, service }: { board: Unavailable; refresh: 
 }
 
 /**
- * YAZ-5399: the vault that held the friends list is gone on GitHub (or, YAZ-5444, its list file is gone; or, YAZ-5400,
+ * The vault that held the friends list is gone on GitHub (or, YAZ-5444, its list file is gone; or, YAZ-5400,
  * an old list has more than 300 files and cannot be read whole). The tab says what happened, and offers the way out
  * for each other vault of this phone: "Start the friends list again in <vault>", after a confirm that says its effect.
  */
@@ -275,7 +275,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
   const entries = showGroup ? groupEntries : friendEntries
   const rows = boardRows(entries, period, now)
 
-  // YAZ-5274: a friend who just added me back: said one time (the list marks the pair, so the next read has none).
+  // A friend who just added me back: said one time (the list marks the pair, so the next read has none).
   const paired = (board.newlyPaired ?? []).join(', ')
   useEffect(() => {
     if (paired !== '') setSaid(`${paired} added you back. You are friends now.`)
@@ -296,7 +296,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
     if (asking === null) return
     setBusy(true)
     try {
-      // YAZ-5257: an answer that is not `done` says why, and what happens next.
+      // An answer that is not `done` says why, and what happens next.
       setSaid(actionWords(await asking.run()))
     } finally {
       setBusy(false)
@@ -370,7 +370,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
               {group.streak === 1 ? 'Group streak: 1 day that everyone finished' : `Group streak: ${group.streak} days that everyone finished`}
             </p>
           )}
-          {/* B8 (YAZ-5084): who joined today, in 4E3's words, once and quietly under the streak. */}
+          {/* B8: who joined today, in 4E3's words, once and quietly under the streak. */}
           {showGroup && group !== undefined && group.kind === 'ok' && groupViewMessage(group) !== null && <p className="fr-line">{groupViewMessage(group)}</p>}
           {showGroup && group !== undefined && group.kind !== 'ok' && <GroupProblem view={group} />}
           <ul className="rows" aria-label={showGroup ? `${gistText(group?.name ?? '')} members` : 'Friends'}>
@@ -409,7 +409,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                     )}
                   </button>
                   {entry.friend?.state === 'stopped' && (
-                    // YAZ-5274: the link I pasted is gone and they never added me: the one way on is a new link of mine.
+                    // The link I pasted is gone and they never added me: the one way on is a new link of mine.
                     <button type="button" className="btn" aria-label="Share a new link" onClick={() => setPanel('share')}>
                       New link
                     </button>
@@ -771,7 +771,7 @@ function PastePanel({ service, close, refresh }: { service: FriendsService; clos
           disabled={adding}
           aria-busy={adding}
           onClick={() => {
-            // YAZ-5265: ONE add for each request; a second tap while it runs does nothing.
+            // ONE add for each request; a second tap while it runs does nothing.
             if (addRunning.current) return
             addRunning.current = true
             setAdding(true)
@@ -817,7 +817,7 @@ function GroupPanel({ service, close, refresh }: { service: FriendsService; clos
       if (made.kind === 'bad-name') return setSaid('Give the group a name.')
       if (made.kind !== 'ok') return setSaid(UNAVAILABLE_WORDS[made.kind])
       void refresh()
-      // YAZ-5263: the site the app runs on, and words that tell the true step (no page shows a group code yet).
+      // The site the app runs on, and words that tell the true step (no page shows a group code yet).
       const data = groupShareText(gistText(name, 30), ownSiteLink(made.link))
       const how = await shareOut(data)
       if (how === 'show') setLink(data.url)
@@ -851,7 +851,7 @@ function GroupPanel({ service, close, refresh }: { service: FriendsService; clos
 
 /**
  * The line "cheered you" or "nudged you" (decision 24). It tells `onSeen` once, when the line is really on the screen
- * (YAZ-5262): an `IntersectionObserver` (all of the line in view); with none, a check of its place on each scroll.
+ *: an `IntersectionObserver` (all of the line in view); with none, a check of its place on each scroll.
  */
 function CheerLine({ text, onSeen }: { text: string; onSeen: () => void }) {
   const ref = useRef<HTMLSpanElement>(null)

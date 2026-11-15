@@ -65,7 +65,7 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
           : member !== null && group !== undefined && service.groups !== null
           ? await service.groups.remove(group.group, member.pointer)
           : { kind: 'done' }
-      // YAZ-5257: done goes back to the list; else the screen stays and says why, and what happens next.
+      // Done goes back to the list; else the screen stays and says why, and what happens next.
       const words = actionWords(result)
       setSaid(words)
       if (words === null) back()
@@ -84,7 +84,7 @@ export default function VsScreen({ route }: { route: Extract<Route, { kind: 'fri
         </p>
       )}
       {friend !== null && friend.state !== 'ok' && friend.label !== null && <p className="fr-line">{friend.label}</p>}
-      {/* YAZ-5261: the two columns say who they are: "You" at the left, the friend at the right. */}
+      {/* The two columns say who they are: "You" at the left, the friend at the right. */}
       <div className="fr-vs fr-vs--who" role="group" aria-label={`You vs ${name}`} style={{ margin: '6px 0 10px' }}>
         <span className="fr-vs__col" aria-hidden="true">
           <Avatar name={ok.me.name} url={ok.me.avatar} big />
