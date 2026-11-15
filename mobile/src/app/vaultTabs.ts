@@ -4,11 +4,11 @@ import type { PhoneIndex } from '../sync/phoneIndex'
 import { PLAIN_VAULT, type VaultTabs } from './nav'
 
 /**
- * WHICH TABS THE OPEN VAULT TURNS ON (YAZ-5476), from its own files on the phone, read as the Mac reads them. Small
+ * WHICH TABS THE OPEN VAULT TURNS ON, from its own files on the phone, read as the Mac reads them. Small
  * reads with no parser of their own, because the first load carries this file.
  *
  * - Review (the Review and Friends tabs): the Mac's `useReviewOn`. `.yaseendocs/review.json` `enabled` (the
- *   `sanitizeReviewSettings` rule: on when the file or the field is absent), AND the vault gives IDs (YAZ-5154: cards
+ *   `sanitizeReviewSettings` rule: on when the file or the field is absent), AND the vault gives IDs (cards
  *   need IDs; `.yaseendocs/ids.json` `enabled`, else some page or card has an ID, as `vaultData.ts` and the Mac's index
  *   say). A plain vault (no IDs) has Review off.
  * - Daily pages (the Today button): `.yaseendocs/daily-pages.json` `enabled: true` (`shared/dailyPagesFile.ts`), the

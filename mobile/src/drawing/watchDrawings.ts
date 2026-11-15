@@ -8,7 +8,7 @@ import { pinchZoom } from './pinchZoom'
 import { schemeWatch } from '../settings/appearance'
 
 /**
- * THE DRAWINGS OF AN OPEN PAGE (YAZ-5440). Each `drawingBox` of the page gets its picture when it comes near the screen:
+ * THE DRAWINGS OF AN OPEN PAGE. Each `drawingBox` of the page gets its picture when it comes near the screen:
  *  1. the drawing chunk (`engine/drawPicture.ts`, the engine) loads, the first time only;
  *  2. the file's bytes: the phone's store first, then GitHub through the media layer (`read`), as a picture's bytes;
  *  3. the picture is drawn (the Mac's own code) and shown as an `<img>` of an SVG `blob:` URL, which fits the page's
@@ -24,7 +24,7 @@ import { schemeWatch } from '../settings/appearance'
  * Calm lines, never a crash: with no signal and no engine yet, "Open it on the Mac" (the old line); a file that is not
  * a drawing, "Can't show this drawing"; a drawing with nothing in it, "Empty drawing".
  *
- * A PLAIN DRAW.IO DIAGRAM (`.drawio`, YAZ-5533) the same way, drawn by draw.io's own read-only viewer in the app's one
+ * A PLAIN DRAW.IO DIAGRAM (`.drawio`) the same way, drawn by draw.io's own read-only viewer in the app's one
  * hidden frame (`diagram/drawDiagram.ts`), as the Mac draws it, light or dark as the iPhone is. A diagram of several
  * pages gets a page picker above its picture. Its own lines: the viewer not on the phone yet and no signal, "Diagrams
  * need the internet the first time; then they work offline" (it draws when the signal comes back); a shape library not
@@ -38,7 +38,7 @@ export interface DrawingDeps {
   files(): readonly string[]
   /** The drawing chunk; a test gives its own. */
   load?: () => Promise<{ drawPicture(input: DrawInput): Promise<Drawn> }>
-  /** YAZ-5533: the diagram chunk (draw.io's viewer in its frame); a test gives its own. */
+  /** The diagram chunk (draw.io's viewer in its frame); a test gives its own. */
   loadDiagram?: () => Promise<{ drawDiagram(input: DiagramInput): Promise<DiagramDrawn | 'empty'>; diagramFigure: DiagramFigure }>
   /** Is there a signal now (`navigator.onLine`)? */
   isOnline?: () => boolean
@@ -76,7 +76,7 @@ interface Held {
   waits: boolean
   near: boolean
   ended: boolean
-  /** A diagram's page shown (YAZ-5533); null: the first. */
+  /** A diagram's page shown; null: the first. */
   page: string | null
 }
 
@@ -126,7 +126,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
     return turn
   }
 
-  /** YAZ-5533: a plain draw.io diagram, by draw.io's viewer (`diagram/drawDiagram.ts`). */
+  /** A plain draw.io diagram, by draw.io's viewer (`diagram/drawDiagram.ts`). */
   const drawDiagramBox = async (box: HTMLElement, held: Held, name: string, live: () => boolean) => {
     let chunk
     try {
@@ -343,7 +343,7 @@ export function openView(url: string, name: string, width: number, height: numbe
   const done = () => {
     if (closeView !== done) return
     closeView = null
-    // YAZ-5518: its history entry goes with it (nothing when a Back closed it).
+    // Its history entry goes with it (nothing when a Back closed it).
     leave()
     view.remove()
     document.removeEventListener('keydown', key)
@@ -353,7 +353,7 @@ export function openView(url: string, name: string, width: number, height: numbe
   }
   close.addEventListener('click', done)
   document.addEventListener('keydown', key)
-  // YAZ-5518: an overlay of the app's one stack: a Back closes the drawing, and the page stays.
+  // An overlay of the app's one stack: a Back closes the drawing, and the page stays.
   closeView = done
   const leave = openOverlay(done)
   // The left-edge Back (the Home Screen app) closes it too: the view is over the frame, out of its swipe.

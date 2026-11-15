@@ -2,10 +2,10 @@ import type { Route } from '../app/nav'
 import type { VaultStore } from '../store'
 
 /**
- * RECENT ON THE PHONE (YAZ-5457): the pages and cards opened on THIS phone, newest first, `MAX_RECENT` at most, kept
+ * RECENT ON THE PHONE: the pages and cards opened on THIS phone, newest first, `MAX_RECENT` at most, kept
  * for each vault in the phone's own storage (IndexedDB, the vault's state `recent`). Not the Mac's Recents: those live
  * in the Mac's own settings, not in the vault, and writing the phone's into the vault would make a GitHub commit for
- * each page opened. A chunk of its own, never the first load (YAZ-5377): the app state loads it as a page opens.
+ * each page opened. A chunk of its own, never the first load: the app state loads it as a page opens.
  */
 
 export const RECENT_STATE = 'recent'
@@ -34,7 +34,7 @@ export async function readRecent(store: VaultStore, vault: string): Promise<Rece
 const chains = new Map<string, Promise<void>>()
 
 /**
- * A page, a card or a drawing (YAZ-5473) was opened (`go` of the app state, YAZ-5457): it goes to the top of the vault's list, once.
+ * A page, a card or a drawing was opened (`go` of the app state): it goes to the top of the vault's list, once.
  * Any other screen is not recorded. Never throws: a list that cannot be written only misses this entry.
  */
 export function remember(store: VaultStore, vault: string | null, route: Route, now = Date.now()): Promise<void> {

@@ -14,10 +14,10 @@ import { asInstalled, gateOf } from './pwa/installGate'
 import { InstallGate } from './screens/InstallGate'
 import './styles.css'
 
-// YAZ-5565: light or dark as Settings › Appearance says, on the page before anything draws (no flash).
+// Light or dark as Settings › Appearance says, on the page before anything draws (no flash).
 startAppearance()
 
-// YAZ-5209: every card the phone draws (the reader, Review) loads nothing from another host (`localOnly.ts`).
+// Every card the phone draws (the reader, Review) loads nothing from another host (`localOnly.ts`).
 onlyLocalMedia()
 
 const root = createRoot(document.getElementById('root')!)
@@ -27,9 +27,9 @@ const root = createRoot(document.getElementById('root')!)
 if (import.meta.env.MODE === 'fixtures' && location.hash.startsWith('#fixture')) void import('./dev/fixtures').then((m) => m.mountFixture(root, location.hash))
 else void boot(root)
 
-// YAZ-5555: a new version NEVER starts by itself, not even here at a cold start: the app starts the version the person
-// runs, and "A new version is ready" waits for a tap on Restart (`pwa/safeMoment.ts`). After that tap, the address
-// loses its update mark.
+// A new version NEVER starts by itself, not even here at a cold start: the app starts the version the person runs,
+// and "A new version is ready" waits for a tap on Restart (`pwa/safeMoment.ts`). After that tap, the address loses
+// its update mark. A browser tab shows only the install screen.
 async function boot(root: Root) {
   // YAZ-5564: a browser tab shows only the install screen: no storage opens, no worker, no sign-in.
   const gate = gateOf(browserFacts(), asInstalled(location.search))
@@ -47,9 +47,9 @@ async function start(root: Root) {
     return
   }
   const { store, tokens } = storage
-  // 3B's engine (YAZ-5072), loaded when a vault opens. 3D's media (YAZ-5074) is made with the engine once it loads, in a
-  // chunk of its own (`lazyMedia`): the reader and Review show pictures, sounds and files through it (YAZ-5079).
-  // Friends (4E, YAZ-5085): the list gist, the sender (on the engine's passes), Cheer and Nudge, in a chunk of their own.
+  // 3B's engine, loaded when a vault opens. 3D's media is made with the engine once it loads, in a
+  // chunk of its own (`lazyMedia`): the reader and Review show pictures, sounds and files through it.
+  // Friends (4E): the list gist, the sender (on the engine's passes), Cheer and Nudge, in a chunk of their own.
   const sync = lazySync(store, tokens)
   const friends = lazyFriends(store, tokens, sync.loaded())
   const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends, scanner: cameraScanner() }

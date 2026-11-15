@@ -3,7 +3,7 @@ import { paintFindRanges, textMatches } from '@client/editor/find/cardFind'
 import { landingTop } from '../headings'
 
 /**
- * FIND IN PAGE (YAZ-5456), on the phone's drawn page (no editor). The Mac's rules (`findInPage.ts`, `cardFind.ts`):
+ * FIND IN PAGE, on the phone's drawn page (no editor). The Mac's rules (`findInPage.ts`, `cardFind.ts`):
  * case-insensitive and literal, a match within one block, never across one; a card's drawn text counts, its controls
  * and its ID do not. The matching is the Mac's own (`textMatches`), and so is the paint: the CSS Custom Highlight API
  * (`paintFindRanges`, `::highlight(find-match)`), ranges over the text, no change to the page's DOM.

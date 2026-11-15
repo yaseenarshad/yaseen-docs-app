@@ -9,7 +9,7 @@ import { Frame, Problem } from './Frame'
 import { FormLine, InstallHint } from './InstallHint'
 import { lazyScreen } from './LazyScreen'
 
-/** YAZ-5408: the repo list loads as its own chunk when the person taps "Show my repos". */
+/** The repo list loads as its own chunk when the person taps "Show my repos". */
 const RepoPicker = lazyScreen(() => import('./RepoPicker'), { waiting: <div className="lazy-screen" aria-busy="true" /> })
 
 /**
@@ -28,7 +28,7 @@ type Step = 'token' | 'pick' | 'typed'
 export type SignInMode = { kind: 'first' } | { kind: 'add' } | { kind: 'again'; vault: string }
 
 /**
- * The sign-in screen (decision 13; YAZ-5408): the token first, then the repo from the token's list. One link
+ * The sign-in screen (decision 13): the token first, then the repo from the token's list. One link
  * "How to make a token" opens "Set up your phone". "Scan a code" reads the Mac's code (round 11, item 23). The token is
  * pasted here, inside the installed app: Safari and the app do not share storage.
  */
@@ -42,7 +42,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
   const [asking, setAsking] = useState(false)
   const [step, setStep] = useState<Step>('token')
   const repoField = useRef<HTMLInputElement>(null)
-  /** Set in the same turn as the tap: a second tap before the next render sees it (YAZ-5178). */
+  /** Set in the same turn as the tap: a second tap before the next render sees it. */
   const checking = useRef(false)
   const again = mode.kind === 'again' ? (app.list.vaults.find((v) => vaultId(v) === mode.vault) ?? null) : null
 
@@ -107,7 +107,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
       <form className="stack" onSubmit={submit} noValidate>
         {mode.kind === 'first' && <p className="lead">Paste your GitHub token. Then choose the repo of your vault.</p>}
         {mode.kind === 'add' && <p className="lead">Paste a GitHub token. Then choose the repo.</p>}
-        {again !== null && <p className="lead">{app.unit(`GitHub needs a new token for ${again.repo}. The pages on this phone stay.`)}</p>}
+        {again !== null && <p className="lead">{`GitHub needs a new token for ${again.repo}.${app.unit(' The pages on this phone stay.')}`}</p>}
         <label className="field">
           <span className="field__label">Token</span>
           <input
@@ -173,7 +173,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
         <div>
           {asking ? (
             <Confirm
-              question={app.unit(`Remove ${again.repo} from this phone? Its pages on this phone go, and answers that are not sent yet are lost. The repo on GitHub does not change.`)}
+              question={`Remove ${again.repo} from this phone?${app.unit(' Its pages on this phone go, and answers that are not sent yet are lost. The repo on GitHub does not change.')}`}
               yes="Remove"
               onYes={() => void app.removeVault(mode.vault)}
               onNo={() => setAsking(false)}

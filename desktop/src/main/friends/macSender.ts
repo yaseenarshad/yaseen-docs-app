@@ -26,7 +26,7 @@
  * for Settings; never a dialog, a throw or a log line. The stored state holds no token and no gist ID.
  */
 import { createHash } from 'node:crypto'
-import { gistErrorCode, gistErrorResetAt, pointersOf, readListGist, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
+import { gistErrorCode, gistErrorResetAt, pointersOf, type GistsApi, type IndexHandle, type WriteOptions } from '@shared/friendGists'
 import { BrokenList, NewerList, findFriendsIndex, latestList, listErrorCode } from '@shared/friendListHome'
 import { ListError, type RepoPort } from '@shared/friendListStore'
 import { PUBLISH_EVERY_MS, emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
@@ -220,13 +220,6 @@ export function createMacSender(deps: MacSenderDeps): MacSender {
       try {
         // YAZ-5083: a list in the vault repo: an ETag read of the branch (free when nothing changed).
         if (index.store !== undefined) return (index = await latestList(index))
-        const answer = await api.read(index.id, index.etag)
-        if (answer === 'unchanged') return index
-        // YAZ-5312: the list is the head and one file for each entry: read the whole gist.
-        const read = readListGist(answer)
-        if (read.kind === 'newer') return 'newer'
-        // An old list that was moved meanwhile (its head is the note now) is found again below.
-        if (read.kind === 'ok') return (index = { ...index, index: read.value, raw: read.raw, etag: answer.etag, files: read.files, state: read.list })
       } catch (err) {
         if (err instanceof NewerList) return 'newer'
         if (!(err instanceof BrokenList) && listErrorCode(err) === null && gistErrorCode(err) !== 'NOT_FOUND') throw err

@@ -12,7 +12,8 @@ import type { ListMemory, RepoPort } from './friendListStore'
  *   ID. It holds the ID of the numbers gist (`stats`), and `reads` and `mark` for that one friend.
  * - YAZ-5083: the person's own friends LIST is in one of their vault repos (`.yaseendocs/friends.json`, written with
  *   compare-and-swap: `friendListStore.ts`, `friendListHome.ts`). The gist `notecards-friends.json` of decision 15 is
- *   now a small note that names that vault. An old list (version 1 or 2, in that gist) is read here and moved once.
+ *   now a small note that names that vault. An old list (version 1 or 2, in that gist; never shipped) is `broken`:
+ *   it is not read, and nothing is written to it.
  * Two devices that make a note at the same time each look again after `SETTLE_MS`: every device keeps the oldest.
  */
 
@@ -88,6 +89,45 @@ export interface GistListItem {
   createdAt: string
   updatedAt: string
 }
+
+/** A gist as GitHub's JSON gives it (`GET /gists`, `GET /gists/{id}`, a write's answer). */
+interface RawGist {
+  id: string
+  owner?: { login?: unknown } | null
+  description: string | null
+  created_at: string
+  updated_at: string
+  files: Record<string, { content?: unknown; truncated?: unknown } | null>
+  truncated?: unknown
+}
+
+/** One gist of GitHub's answer, as the shared logic reads it: the phone's and the Mac's gist calls both read it so. */
+export function gistDoc(data: unknown, etag: string | null): GistDoc {
+  const g = data as RawGist
+  return {
+    id: g.id,
+    // YAZ-5239: GitHub's own owner of the gist; the only login the groups trust.
+    owner: typeof g.owner?.login === 'string' ? g.owner.login : null,
+    description: g.description ?? '',
+    createdAt: g.created_at,
+    updatedAt: g.updated_at,
+    etag,
+    // YAZ-5350: GitHub's own `truncated` of the gist (it gave only its first 300 files).
+    ...(g.truncated === true && { truncated: true }),
+    files: Object.fromEntries(
+      Object.entries(g.files ?? {}).map(([name, f]) => [name, { content: f !== null && typeof f.content === 'string' ? f.content : null, truncated: f?.truncated === true }]),
+    ),
+  }
+}
+
+/** The gists of one page of `GET /gists` (anything that is not a gist is skipped): names only, no text (proof 1C). */
+export function gistListItems(data: unknown): GistListItem[] {
+  const raw = Array.isArray(data) ? (data as RawGist[]).filter((g) => g !== null && typeof g === 'object' && typeof g.id === 'string') : []
+  return raw.map((g) => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files ?? {}), createdAt: g.created_at, updatedAt: g.updated_at }))
+}
+
+/** A write's files: a file's new text, or `null`: GitHub deletes that one file (YAZ-5312). */
+export const gistFilesBody = (files: Record<string, string | null>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, content === null ? null : { content }]))
 
 /**
  * The gist calls, with the user's own token. The phone builds it on 3E's client (`mobile/src/friends/gistsApi.ts`);
@@ -524,15 +564,6 @@ export function readListFiles(input: Record<string, string | null | undefined>):
     }),
   }
   return { kind: 'ok', value, raw, files, list: { tombs, gens, legacyStats, pending, intents } }
-}
-
-/** The list from a gist answer (its files; a file cut short reads as missing). */
-export function readListGist(gist: GistDoc): ListRead {
-  // YAZ-5350: GitHub gave only the first 300 files: the list is not whole, so it is not read (and never written).
-  if (gist.truncated === true) return { kind: 'unreadable', why: 'GitHub gave only part of the list (more than 300 files)' }
-  const files: Record<string, string | null> = {}
-  for (const [name, f] of Object.entries(gist.files)) files[name] = f.truncated ? null : f.content
-  return readListFiles(files)
 }
 
 /** The text of an entry file: the known fields over the fields of the file as read (an older app's extra fields stay). */

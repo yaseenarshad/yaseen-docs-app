@@ -1,4 +1,4 @@
-/* YAZ-5533: a plain draw.io diagram: its page picker (several pages) and the line under a picture with shapes to come. */
+/* A plain draw.io diagram: its page picker (several pages) and the line under a picture with shapes to come. */
 .page-drawing--diagram {
   display: flex;
   flex-direction: column;

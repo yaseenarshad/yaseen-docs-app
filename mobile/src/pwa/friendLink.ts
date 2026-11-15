@@ -1,5 +1,5 @@
 /**
- * The links that the app shares (decision 20; round 10, item 7; YAZ-5087, YAZ-5290): a landing page of the site the app
+ * The links that the app shares (decision 20; round 10, item 7): a landing page of the site the app
  * runs on, with the code after `#`. No browser sends the part after `#` to a server: not to Cloudflare, not in a
  * referrer (the site also says `no-referrer`).
  *

@@ -76,7 +76,7 @@ export async function syncPass(options: PassOptions): Promise<PassResult> {
   const diff = diffTrees(checkpoint?.shas ?? null, tree)
   const stored = new Set((await store.list(vault)).map((e) => e.path))
   const saved = await store.getState<PhoneIndex>(vault, INDEX_STATE)
-  // An index of an older build's rules (YAZ-5309) is not trusted: every record is built again from the stored files.
+  // An index of an older build's rules is not trusted: every record is built again from the stored files.
   const trusted = checkpoint !== null && saved !== undefined && saved.commit === checkpoint.commit && ofTheseRules(saved)
   await slice()
 

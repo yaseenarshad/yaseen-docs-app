@@ -6,7 +6,7 @@ import { useVaultData } from '../search/vaultData'
 import { watchDrawings, type DrawingDeps } from './watchDrawings'
 
 /**
- * The drawings of an open page (YAZ-5440, `watchDrawings`), for as long as the page shows. A file's bytes come from the
+ * The drawings of an open page (`watchDrawings`), for as long as the page shows. A file's bytes come from the
  * phone's store first; a file not there comes through the media layer (`media.show`: GitHub, then kept by its own
  * rules), and is read from the store once kept. A pass that ends asks again for each drawing that waited.
  */

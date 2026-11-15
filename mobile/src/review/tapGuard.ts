@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useReducer } from 'react'
 
-/** YAZ-5226: how long a NEW card is on the screen before a tap acts on it (a double tap is about 150 ms apart). */
+/** How long a NEW card is on the screen before a tap acts on it (a double tap is about 150 ms apart). */
 export const SEEN_MS = 400
 
 /**
- * THE TAP GUARD (YAZ-5226; YAZ-5266, YAZ-5315): one small state machine with ONE owner (the Review screen), so the
+ * THE TAP GUARD (YAZ-5266): one small state machine with ONE owner (the Review screen), so the
  * second tap of a double tap never answers a card the person has not seen, and no path can leave the card stuck.
  *
  *  - `ready`: taps act (a tap on the card shows the next part; the answer buttons answer).
@@ -18,14 +18,14 @@ export const SEEN_MS = 400
  *  - `answered` with the same card still on the screen (the save failed; the screen says so), or no card (the session
  *    ended): `ready` at once. With another card: `awaiting` (or nothing, when `shown` came first).
  *  - `undo` (any time, also at 0 ms): `ready` (the card that comes back is one the person saw). But from the screen
- *    after the last card (`fromDone`, sweep2 M-A, YAZ-5521): `settling`. The card that comes back is drawn where the
+ *    after the last card (`fromDone`, sweep2 M-A): `settling`. The card that comes back is drawn where the
  *    finger is (its ✓ sits under "↶ Undo"), so the second tap of a double tap on Undo answered it. Its key is `UNDONE`:
  *    the drawing of the card that comes back starts the 400 ms again; the timer still ends it.
  *  - `arrive`: a card is drawn where the screen after the last card was ("Review missed cards", "Learn new cards", an
  *    Undo): `settling`, as `undo` with `fromDone` (sweep2 nit 3: the second tap of a double tap showed side 2).
  *  - `reset` (the tab hidden or shown again, the session starts again): `ready`, but a save that runs keeps
- *    `answering` (YAZ-5315: its next card still gets its 400 ms).
- *  - `shown` of another drawing in `settling` starts its 400 ms again (YAZ-5335).
+ *    `answering` (its next card still gets its 400 ms).
+ *  - `shown` of another drawing in `settling` starts its 400 ms again.
  *  - `seen`: the `SEEN_MS` timer of `settling` ran out.
  */
 export type GuardState = { kind: 'ready' } | { kind: 'answering'; from: string | null; follows: boolean } | { kind: 'awaiting'; from: string | null } | { kind: 'settling'; turn: number; key?: string }
@@ -52,7 +52,7 @@ export function guardStep(state: GuardState, event: GuardEvent): GuardState {
       // ANOTHER card drawn, during the save or after it. (A card that comes back has a new key: its place moved. The old
       // card drawn again while the next one reads is not "another".)
       if ((state.kind === 'awaiting' || (state.kind === 'answering' && state.follows)) && event.key !== state.from) return { kind: 'settling', turn: ++turns, key: event.key }
-      // YAZ-5335: another drawing while settling (the next card drawn after a redraw of the answered one): the 400 ms
+      // Another drawing while settling (the next card drawn after a redraw of the answered one): the 400 ms
       // start again from it. It can only make the wait longer, never shorter.
       if (state.kind === 'settling' && state.key !== undefined && event.key !== state.key) return { kind: 'settling', turn: ++turns, key: event.key }
       return state

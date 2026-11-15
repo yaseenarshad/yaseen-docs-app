@@ -5,11 +5,11 @@ import { readJson } from '../search/vaultData'
 import { LINK_CLICK_PATH, sanitizeLinkClick, setLinkClick } from './openFile'
 import { closeAll, loadSheetLayer, openSheet, preloadSheets, sheetStack, subscribeSheets } from './sheets'
 
-/** The sheets' own chunk (YAZ-5472): not in the first load. */
+/** The sheets' own chunk: not in the first load. */
 const SheetLayer = lazyScreen(loadSheetLayer, { waiting: <></> })
 
 /**
- * The sheets' place in the app (YAZ-5472), next to the shell: it draws the stack (its chunk) while a sheet is open,
+ * The sheets' place in the app, next to the shell: it draws the stack (its chunk) while a sheet is open,
  * reads the vault's "Clicking a link" (`link-click.json`) for `openFile`, preloads the chunk when the app is idle,
  * and closes every sheet when another vault opens.
  */

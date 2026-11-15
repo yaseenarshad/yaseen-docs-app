@@ -9,7 +9,7 @@ const NEW_TOKEN_URL = 'https://github.com/settings/personal-access-tokens/new'
 /**
  * "Set up your phone" (round 11, item 9): make the repo, make the token, add the app to the Home Screen. It says the
  * supported setup (round 13, item 4): one GitHub account and one token with Contents and Gists. The token steps are
- * 3E's (YAZ-5075, proofs 1B and 1C); the permissions are decision 17's.
+ * 3E's (proofs 1B and 1C); the permissions are decision 17's.
  */
 export function SetupGuide() {
   const app = useApp()
@@ -51,7 +51,7 @@ export function SetupGuide() {
   )
 }
 
-/** YAZ-5443: the text with each ☰ named for VoiceOver ("the three lines", not "trigram for heaven"). */
+/** The text with each ☰ named for VoiceOver ("the three lines", not "trigram for heaven"). */
 function SpokenThreeLines({ text }: { text: string }) {
   return splitThreeLines(text).map((part, i) => (
     <Fragment key={i}>

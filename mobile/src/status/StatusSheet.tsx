@@ -19,7 +19,7 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
   const app = useApp()
   const close = useRef<HTMLButtonElement>(null)
   const nav = useRef(app.nav)
-  // YAZ-5518: an overlay of the app's one stack: a Back closes the sheet, and the screen under stays.
+  // An overlay of the app's one stack: a Back closes the sheet, and the screen under stays.
   useOverlay(true, onClose)
 
   useEffect(() => {
@@ -38,15 +38,15 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
 
   const sync = app.sync
   const lost = lostRows(answers.state?.lost ?? [])
-  // YAZ-5517: the comments and ticks that could not be sent, with their words (the list re-reads at each state).
+  // The comments and ticks that could not be sent, with their words (the list re-reads at each state).
   const notSent = (answers.list?.comments?.waiting() ?? []).filter((c) => c.refused !== undefined)
   const listWait = dot.reason === 'waiting' ? waitWords(answers, now) : null
   const said = listWait !== null ? null : why(dot, sync.status === 'slowed' ? sync.retryAt : null)
-  // YAZ-5524 (sweep3 S-2): the state under a lost answer or a change not sent: its own group, never hidden.
+  // The state under a lost answer or a change not sent: its own group, never hidden.
   const then = dot.then
   const thenSaid = then === null ? null : why(then, sync.status === 'slowed' ? sync.retryAt : null)
   const down = sync.status === 'off' && sync.problem === 'GITHUB_DOWN' && navigator.onLine
-  // YAZ-5524: a loud sheet can ask for a sync (and a send) now, unless it has its own way (Try now, red) or GitHub asked to wait.
+  // A loud sheet can ask for a sync (and a send) now, unless it has its own way (Try now, red) or GitHub asked to wait.
   const [syncing, setSyncing] = useState(false)
   const canSync = dot.state === 'pending' && listWait === null && sync.status !== 'slowed' && dot.reason !== 'slowed'
   const syncNow = () => {
@@ -156,7 +156,7 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
 }
 
 /**
- * YAZ-5214: the answer list waits by its OWN state, not the engine's: after "slow down" or a branch that kept moving
+ * The answer list waits by its OWN state, not the engine's: after "slow down" or a branch that kept moving
  * (`STALE_HEAD`) it backs off 1, 2, 4 … up to 60 minutes; after a failed send it waits for the next sync. The sheet
  * says when the next try is and that nothing is lost. Null: the list sends in a few seconds (the normal case).
  */

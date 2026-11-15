@@ -6,7 +6,7 @@ import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 
 /**
- * THE VAULT'S FOLDER PAGE DEFAULTS ON THE PHONE (YAZ-5489): the Mac's 27 view and page defaults of Settings › Folder
+ * THE VAULT'S FOLDER PAGE DEFAULTS ON THE PHONE: the Mac's 27 view and page defaults of Settings › Folder
  * pages live in the vault's `.yaseendocs/folder-pages.json` (`shared/folderPages.ts`); a folder page here reads them
  * from the phone's copy, so a view with no key of its own draws as the Mac draws it. The personal parts (week start,
  * row band, keep pinned, ask before delete) are each Mac's: the phone keeps the Mac's defaults. No file, or one that is

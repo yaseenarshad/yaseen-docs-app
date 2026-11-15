@@ -33,15 +33,15 @@ export interface CommentSendReport {
 type Refusal = { id: string; why: NonNullable<WaitingComment['refused']> }
 
 /**
- * ONE SEND of the comment list (YAZ-5461; and the check box ticks, YAZ-5494: `taskWrite.ts`, on the same path), on the answer list's path (`answers/send.ts`, YAZ-5097 decision 2): the
+ * ONE SEND of the comment list (and the check box ticks, YAZ-5494: `taskWrite.ts`, on the same path), on the answer list's path (`answers/send.ts`, YAZ-5097 decision 2): the
  * write is compare-and-swap on the branch, never a force push, never a conflict copy.
  *  1. A sync pass brings the stored copy to the newest head: the page's FRESH bytes.
  *  2. Each comment that is due goes onto its page as it is NOW (`applyComment`): the number is taken on that page,
  *     and a comment whose id the page holds already is not added again (a try whose answer was lost).
- *  3. A page that is gone from its path but found again FOR SURE (YAZ-5517: `movedTo`): the comment goes there.
+ *  3. A page that is gone from its path but found again FOR SURE (`movedTo`): the comment goes there.
  *     A page whose `comments` is not a comment list, that does not parse, or that is gone: the comment is refused,
  *     nothing is written, and it stays on the phone with its words (the page shows it with Discard; and the dot and
- *     its sheet count it until Discard, YAZ-5517).
+ *     its sheet count it until Discard).
  *  4. ONE commit with each changed page (`remote.commit`: a tree on `base_tree`, then the ref `PATCH` with
  *     `force: false`). GitHub refuses it when the branch moved first (`STALE_HEAD`): back to 1, at most
  *     `MAX_STALE_HEADS` times: the comments go again onto the newest pages, with the numbers of those pages.
@@ -53,7 +53,7 @@ export async function sendComments(options: CommentSendOptions): Promise<Comment
   const now = options.now ?? Date.now
   const report: CommentSendReport = { result: 'nothing', commit: null, sent: 0, refused: 0, staleHeads: 0, stored: false }
   // An unsigned comment (no account known yet) waits for its `by`: the sender signs it first.
-  // A tick (YAZ-5494) is signed by nothing: it changes one box, not the comments.
+  // A tick is signed by nothing: it changes one box, not the comments.
   const due = () => box.waiting().filter((c) => c.refused === undefined && (c.by !== undefined || c.task !== undefined) && c.notBefore <= now())
   /** Commits GitHub refused to move the branch to (`STALE_HEAD`): never in it. */
   const notLanded = new Set<string>()
@@ -69,7 +69,7 @@ export async function sendComments(options: CommentSendOptions): Promise<Comment
         // From here GitHub may hold them: Undo can no longer take them back. One that Undo took meanwhile: plan again.
         const marked = await box.markTried(plan.added.map((c) => c.id))
         if (marked.length < plan.added.length) continue
-        // YAZ-5513: each tick knows its try's commit before the branch moves, so a lost answer can be settled later.
+        // Each tick knows its try's commit before the branch moves, so a lost answer can be settled later.
         const made: { sha: string | null } = { sha: null }
         const ticks = plan.added.filter((c) => c.task !== undefined).map((c) => c.id)
         try {
@@ -112,12 +112,12 @@ interface CommentPlan {
   added: WaitingComment[]
   already: WaitingComment[]
   refused: Refusal[]
-  /** YAZ-5517: comments whose page moved, and where to. */
+  /** Comments whose page moved, and where to. */
   moved: { id: string; path: string }[]
 }
 
 /**
- * YAZ-5517: what finds a page again after the Mac moves it: its blob SHA (only when no other file had the same bytes, so
+ * What finds a page again after the Mac moves it: its blob SHA (only when no other file had the same bytes, so
  * one path with it later is that file), and its page `id`. From the stored copy, when the comment goes in.
  */
 export async function pageMark(store: VaultStore, vault: string, path: string): Promise<WaitingComment['was']> {
@@ -140,7 +140,7 @@ function pageIdOf(content: string): string | undefined {
 }
 
 /**
- * YAZ-5517: where a page gone from its path is now, when that is SURE: the one path that holds its old bytes (a git
+ * Where a page gone from its path is now, when that is SURE: the one path that holds its old bytes (a git
  * rename, as the sync pass pairs them, `diffTrees`), else the one page with its `id`. None: null. YAZ-5521: two or
  * more pages with its `id` (and no one path with its bytes): `{ copies: true }`, the page was copied, not deleted.
  */
@@ -159,7 +159,7 @@ function movedTo(was: WaitingComment['was'], shas: Readonly<Record<string, strin
 }
 
 /**
- * YAZ-5513 (W3): the ticks whose earlier try's commit the branch holds. Its answer was lost, and the phone could not
+ * The ticks whose earlier try's commit the branch holds. Its answer was lost, and the phone could not
  * know whether GitHub took it; what the page says now is not the answer, since a later change may have set the box
  * back (the Mac unticked it). So the history says, one `remote.contains` per commit (as answers ask it, `heldByBranch`;
  * one request, with no depth limit, so a busy branch far past the try still says yes). Held: the tick was done, and a
@@ -183,10 +183,10 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
   const checkpoint = await store.checkpoint(vault)
   if (checkpoint === null) throw new Error('The phone has no full copy of the vault yet')
   const plan: CommentPlan = { parent: checkpoint.commit, changes: [], added: [], already: [], refused: [], moved: [] }
-  // YAZ-5517: a page gone from its path that is found again for sure: its comments and ticks go to its new path.
+  // A page gone from its path that is found again for sure: its comments and ticks go to its new path.
   let index: PhoneIndex | null | undefined
   const byPath = new Map<string, WaitingComment[]>()
-  // YAZ-5521: comments whose page's `id` is on two or more pages now (copied on the Mac): not "gone".
+  // Comments whose page's `id` is on two or more pages now (copied on the Mac): not "gone".
   const copied = new Set<string>()
   for (const c of list) {
     let path = c.path
@@ -217,7 +217,7 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
         plan.already.push(c)
         continue
       }
-      // YAZ-5494: a tick finds its task on the page as it is NOW, and sets its box; a task that changed is refused.
+      // A tick finds its task on the page as it is NOW, and sets its box; a task that changed is refused.
       const out = c.task !== undefined ? applyTask(content, c.task) : applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
       if (out.kind === 'added' || out.kind === 'ticked') {
         content = out.content

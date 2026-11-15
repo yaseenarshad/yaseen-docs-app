@@ -25,21 +25,21 @@ export interface GithubRemote {
   /**
    * One atomic commit; rejects `STALE_HEAD` when GitHub has moved past `parent`. Resolves with the new commit SHA.
    * `made` hears the new commit's SHA once GitHub made it, BEFORE the branch moves to it, and the move waits for it
-   * (YAZ-5513, YAZ-5514): a caller keeps the SHA, so after a lost answer it can ask whether the branch took that commit
+   *: a caller keeps the SHA, so after a lost answer it can ask whether the branch took that commit
    * (`contains`).
    */
   commit(parent: string, changes: Change[], message: string, made?: (sha: string) => Promise<void>): Promise<string>
   /**
-   * YAZ-5514: does the history of `head` hold `commit` (the head itself, or one of its ancestors)? False for a commit
+   * Does the history of `head` hold `commit` (the head itself, or one of its ancestors)? False for a commit
    * that never reached the branch, or that GitHub does not know. One request (`GET compare/{commit}...{head}`).
    */
   contains(commit: string, head: string): Promise<boolean>
 }
 
-/** GitHub's answer when the ref `PATCH` (force: false) is refused because the branch moved (proof 1B, YAZ-5063). */
+/** GitHub's answer when the ref `PATCH` (force: false) is refused because the branch moved (proof 1B). */
 export const NOT_FAST_FORWARD = 'Update is not a fast forward'
 /**
- * YAZ-5083 (proved live): two ref `PATCH`es of one branch at the SAME moment: GitHub refuses one with 422 "Reference
+ * Two ref `PATCH`es of one branch at the SAME moment: GitHub refuses one with 422 "Reference
  * cannot be updated" (not "not a fast forward"). The branch moved under it: the same answer as a stale head.
  */
 export const REF_RACE = 'Reference cannot be updated'
@@ -57,7 +57,7 @@ interface TreeEntry {
  * - head: `GET git/ref/heads/{branch}` with `If-None-Match` (a 304 did not lower the rate count);
  * - tree: `GET git/trees/{commit}?recursive=1` (the commit SHA works, so no `GET git/commits` first);
  * - blob: `GET git/blobs/{sha}` with the raw media type (bytes, not base64);
- * - contains: `GET compare/{commit}...{head}` (YAZ-5514: does the branch hold an answer's commit, after a lost answer);
+ * - contains: `GET compare/{commit}...{head}` (does the branch hold an answer's commit, after a lost answer);
  * - commit: `GET git/commits/{parent}` for its tree, `POST git/blobs` for bytes only, `POST git/trees` with
  *   `base_tree` (text inline: a Markdown commit is 3 writes, not 5), `POST git/commits`, then `PATCH git/refs/heads/
  *   {branch}` with `force: false`. GitHub refuses a moved branch with 422 "Update is not a fast forward": `STALE_HEAD`.

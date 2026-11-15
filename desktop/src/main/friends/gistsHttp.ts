@@ -7,7 +7,7 @@
  *   permission, `RATE_LIMITED` with `resetAt`, `OFFLINE`, `GITHUB_DOWN`, `UNAUTHORIZED`, `NOT_FOUND`, `NO_ACCESS`.
  * - A message holds the status only: never the token, a gist ID or an address.
  */
-import { GistError, isGistId, type GistDoc, type GistErrorCode, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
+import { GistError, gistDoc, gistFilesBody, gistListItems, isGistId, type GistErrorCode, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
 
 export const GITHUB_API = 'https://api.github.com'
 /** A request with no answer this long is OFFLINE. */
@@ -19,26 +19,6 @@ const PAGE = 100
 const MAX_PAGES = 10
 
 export type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string; signal?: AbortSignal; redirect?: 'manual' }) => Promise<Response>
-
-interface RawGist {
-  id: string
-  description: string | null
-  created_at: string
-  updated_at: string
-  files: Record<string, { content?: unknown; truncated?: unknown } | null>
-}
-
-function toDoc(data: unknown, etag: string | null): GistDoc {
-  const g = data as RawGist
-  return {
-    id: g.id,
-    description: g.description ?? '',
-    createdAt: g.created_at,
-    updatedAt: g.updated_at,
-    etag,
-    files: Object.fromEntries(Object.entries(g.files ?? {}).map(([name, f]) => [name, { content: f !== null && typeof f.content === 'string' ? f.content : null, truncated: f?.truncated === true }])),
-  }
-}
 
 /** GitHub's `gist_update` count from an answer's headers, or null for another resource. */
 function gistRate(headers: Headers): GistRate | null {
@@ -128,9 +108,6 @@ function gistPath(id: string): string {
   return `/gists/${id.toLowerCase()}`
 }
 
-/** A file's new text, or `null`: GitHub deletes that one file (YAZ-5312; the Mac never writes the list, so it sends no null). */
-const filesBody = (files: Record<string, string | null>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, content === null ? null : { content }]))
-
 export function macGistsApi(token: string, fetch: FetchLike, now: () => number = Date.now): GistsApi {
   const go = (path: string, init?: Parameters<typeof call>[4]) => call(token, fetch, now, path, init)
   return {
@@ -138,23 +115,23 @@ export function macGistsApi(token: string, fetch: FetchLike, now: () => number =
       const out: GistListItem[] = []
       for (let page = 1; page <= MAX_PAGES; page++) {
         const { data } = await go(`/gists?per_page=${PAGE}&page=${page}`)
-        const items = (Array.isArray(data) ? data : []).filter((g): g is RawGist => g !== null && typeof g === 'object' && typeof (g as RawGist).id === 'string')
-        out.push(...items.map((g) => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files ?? {}), createdAt: g.created_at, updatedAt: g.updated_at })))
+        const items = gistListItems(data)
+        out.push(...items)
         if (items.length < PAGE) break
       }
       return out
     },
     async read(id, etag) {
       const answer = await go(gistPath(id), { etag })
-      return answer.status === 304 ? 'unchanged' : toDoc(answer.data, answer.etag)
+      return answer.status === 304 ? 'unchanged' : gistDoc(answer.data, answer.etag)
     },
     async create(description, files) {
-      const answer = await go('/gists', { method: 'POST', body: { description, public: false, files: filesBody(files) } })
-      return toDoc(answer.data, answer.etag)
+      const answer = await go('/gists', { method: 'POST', body: { description, public: false, files: gistFilesBody(files) } })
+      return gistDoc(answer.data, answer.etag)
     },
     async update(id, files) {
-      const answer = await go(gistPath(id), { method: 'PATCH', body: { files: filesBody(files) } })
-      return { gist: answer.data === null ? null : toDoc(answer.data, answer.etag), rate: answer.rate }
+      const answer = await go(gistPath(id), { method: 'PATCH', body: { files: gistFilesBody(files) } })
+      return { gist: answer.data === null ? null : gistDoc(answer.data, answer.etag), rate: answer.rate }
     },
     async remove(id) {
       await go(gistPath(id), { method: 'DELETE' })

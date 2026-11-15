@@ -1,5 +1,5 @@
 /*
- * YAZ-5460: A FOLDER'S PAGE ON THE PHONE, read only: the title with the folder glyph, its own text, its view tabs (a
+ * A FOLDER'S PAGE ON THE PHONE, read only: the title with the folder glyph, its own text, its view tabs (a
  * row that scrolls sideways, the open one underlined in the accent, as the Mac's tabs), the open view, Other files.
  */
 /* The file glyphs (`styles.css`) at their size here; a file with no glyph of its own (a PDF) is a plain sheet. */
@@ -155,7 +155,7 @@
 }
 
 /*
- * The table view (YAZ-5460): the phone's table look (`tables.css`); each row opens its page with a tap. A group's
+ * The table view: the phone's table look (`tables.css`); each row opens its page with a tap. A group's
  * header row is a band with its name and count in the Name column (which stays at the left), the rows under it.
  */
 .folder-table {
@@ -168,10 +168,10 @@
 .folder-table .page-table-box[data-wide] {
   margin-top: calc(-1 * var(--tap) - 2px);
 }
-/* YAZ-5549: the vault's row height (the Mac's Short 28, Medium 44, Tall 68 px: `--folder-row-h` on the table), each body
-   cell's least height, as the Mac's. YAZ-5532: a finger's band marks the row it touches (`tables.css`, `rowBand.ts`): no
-   grey flash of its own. A tap on the Name opens the row: the Name cell (so its row) is at least a finger's tap tall (a
-   table cell's height is its least); a taller row height wins. */
+/* The vault's row height (the Mac's Short 28, Medium 44, Tall 68 px: `--folder-row-h` on the table), each body cell's
+   least height, as the Mac's. A finger's band marks the row it touches (`tables.css`, `rowBand.ts`): no grey flash of
+   its own. A tap on the Name opens the row: the Name cell (so its row) is at least a finger's tap tall (a table cell's
+   height is its least); a taller row height wins. */
 .folder-table tbody tr:not(.folder-table__group) > td {
   height: var(--folder-row-h, 28px);
 }
@@ -236,7 +236,7 @@
 }
 
 /*
- * Cards, board, calendar (YAZ-5460): a card is a tappable box, its title then its fields (a small label, the value).
+ * Cards, board, calendar: a card is a tappable box, its title then its fields (a small label, the value).
  */
 .folder-cards {
   display: grid;

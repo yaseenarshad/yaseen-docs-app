@@ -25,7 +25,7 @@ export type Op =
   /**
    * A condition, not a write: the batch lands only when the row at `key` holds `value` now (`undefined`: no row). Else
    * no op of the batch lands and `apply` rejects with `StaleWriteError`. Checked inside the same transaction as the
-   * writes, so a change by another tab cannot slip in between (YAZ-5193, YAZ-5194).
+   * writes, so a change by another tab cannot slip in between.
    */
   | { check: Table; key: Key; value: unknown }
 

@@ -1,4 +1,4 @@
-/* The Search tab (4C, YAZ-5079), on the Mac's tokens (`styles.css`). Tuned in the demo round (7-). */
+/* The Search tab (4C), on the Mac's tokens (`styles.css`). Tuned in the demo round (7-). */
 .search__box {
   margin: 0 0 8px;
   -webkit-appearance: none;
@@ -24,7 +24,7 @@
   font-size: 14px;
   cursor: pointer;
 }
-/* YAZ-5452, YAZ-5457: the list filters (Favorites, Focus, Recent) are chips beside the Type pill, lit while on. All four
+/* The list filters (Favorites, Focus, Recent) are chips beside the Type pill, lit while on. All four
    fit one line of a 375 pt phone (343 pt inside the gutters: about 105 + 84 + 60 + 67 + 3 gaps of 6 = 334); a narrower
    screen wraps the bar to a second line, never past the edge. */
 .search__chip {
@@ -72,7 +72,7 @@
   border-bottom: 0;
 }
 
-/* YAZ-5439: the ✕ at the right of the box clears it and leaves the search (the Mac's search has one). A 44 pt target. */
+/* The ✕ at the right of the box clears it and leaves the search (the Mac's search has one). A 44 pt target. */
 .search__field {
   position: relative;
 }
@@ -110,19 +110,19 @@
   line-height: 1;
 }
 
-/* YAZ-5474: Collapse all / Expand all, in the ✕'s place while the box is empty: the Mac's chevrons, quiet, no disc. */
+/* Collapse all / Expand all, in the ✕'s place while the box is empty: the Mac's chevrons, quiet, no disc. */
 .search__fold {
   color: var(--fg-muted);
 }
 
 /*
- * YAZ-5438: THE MAC'S SIDEBAR TREE (`client/src/app.css`: `.tree__row`, `.tree__chevron`, the icon rules), at the
+ * THE MAC'S SIDEBAR TREE (`client/src/app.css`: `.tree__row`, `.tree__chevron`, the icon rules), at the
  * phone's tap size. A row's indent is the Mac's: 8 + depth × 14 px, then the chevron (14 px), the icon, the name.
  * The icons are the Mac's default set (Material, file icons "Colour", folder icons "Plain"): a folder is Material's
  * folder (its open twin while open); a page is the grey page glyph; a card file and a card are the card glyph in the
- * card colour (`--kind-card`); a drawing and a diagram (YAZ-5473) the Mac's pen and boxes, in their colours. The glyphs are the Mac's own SVGs, inline.
+ * card colour (`--kind-card`); a drawing and a diagram the Mac's pen and boxes, in their colours. The glyphs are the Mac's own SVGs, inline.
  */
-/* The kind colours and the card glyph are app-wide (`styles.css`, YAZ-5475): the top bar and the page arrows draw them too. */
+/* The kind colours and the card glyph are app-wide (`styles.css`): the top bar and the page arrows draw them too. */
 .tree {
   list-style: none;
   margin: 0 -8px;
@@ -182,14 +182,14 @@
   height: 16px;
   margin-right: 4px;
 }
-/* The glyph of each kind: `styles.css` (YAZ-5475), one copy for the tree, the top bar and the page arrows. */
+/* The glyph of each kind: `styles.css`, one copy for the tree, the top bar and the page arrows. */
 /* A result row: the icon, the name, a card's ID at the right. */
 .search .row.search__row {
   gap: 8px;
 }
 
 /*
- * YAZ-5447: the results in the tree, as the Mac's Search tab draws them (`client/src/app.css`): the typed text marked in
+ * The results in the tree, as the Mac's Search tab draws them (`client/src/app.css`): the typed text marked in
  * a match (`tree__mark`, the `==highlight==` wash and weight); a row that is no match (a parent, a row inside a matched
  * folder) steps back (`tree__row--context`).
  */
@@ -207,12 +207,12 @@
   margin-left: 8px;
 }
 
-/* YAZ-5453: a folder of the Focus or the Favorites tab: the Mac's stack glyph, in the muted text color. */
+/* A folder of the Focus or the Favorites tab: the Mac's stack glyph, in the muted text color. */
 .search .focus-folder__icon {
   color: var(--fg-muted);
 }
 
-/* YAZ-5454: a page row's ID (the vault's "Show IDs in the files list"), as the Mac's `.tree__id`: quiet, at the
+/* A page row's ID (the vault's "Show IDs in the files list"), as the Mac's `.tree__id`: quiet, at the
    right end so the IDs line up; a long name is cut before it. */
 .search .tree__id {
   flex: none;
@@ -224,7 +224,7 @@
 }
 
 /*
- * YAZ-5460: HOLD A FOLDER. While a finger stays on a folder row it shows pressed (`data-pressing`, `holdFolder.tsx`);
+ * HOLD A FOLDER. While a finger stays on a folder row it shows pressed (`data-pressing`, `holdFolder.tsx`);
  * held long enough, the folder's menu comes up from the bottom over a dim: "Open folder page", "Copy path", Cancel.
  * The phone's own callout and text selection never start on a row.
  */
@@ -305,7 +305,7 @@
   }
 }
 
-/* YAZ-5534: the Type pill stays lit while a type is on (as a list chip does), and each type row has its tree icon. */
+/* The Type pill stays lit while a type is on (as a list chip does), and each type row has its tree icon. */
 .pill[data-on] {
   border-color: transparent;
   background: var(--accent-soft);

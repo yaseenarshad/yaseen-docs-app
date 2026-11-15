@@ -5,11 +5,11 @@ import { stickFolders, treeShape } from './stickyFolders'
 import './treeLook.css'
 
 /**
- * The Mac sidebar's look on one of Search's trees: its sticky folders (YAZ-5506, `stickyFolders.ts`) and its guide lines
- * (YAZ-5507, `guideLines.ts`). Put JUST BEFORE the tree's `<ul>`
+ * The Mac sidebar's look on one of Search's trees: its sticky folders (`stickyFolders.ts`) and its guide lines
+ * (`guideLines.ts`). Put JUST BEFORE the tree's `<ul>`
  * (its list is the next element: no ref, and in place when this layout effect runs); `rows` are the
  * rows drawn in it, in order. Its box is the stuck rows' layer: copies, hidden from VoiceOver (the rows are in the list).
- * `icons`: the tree's icons (YAZ-5488, `treeIcons.ts`); when the vault's are read, the stuck copies are made again, so
+ * `icons`: the tree's icons (`treeIcons.ts`); when the vault's are read, the stuck copies are made again, so
  * a stuck folder wears the same icon as its row.
  */
 export function TreeLook({ rows, icons }: { rows: readonly { depth: number; open?: boolean }[]; icons?: unknown }) {

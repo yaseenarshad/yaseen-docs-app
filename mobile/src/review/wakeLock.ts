@@ -17,7 +17,7 @@ export function useWakeLock(on: boolean, nav: { wakeLock?: WakeLockLike } = navi
   useEffect(() => {
     const api = nav.wakeLock
     if (!on || api === undefined) return
-    // ONE lock at most (YAZ-5232): an ask that is still open counts as held, and a lock that comes when one is held
+    // ONE lock at most: an ask that is still open counts as held, and a lock that comes when one is held
     // already, or after the leave, is let go at once.
     let held: WakeLockSentinelLike | null = null
     let asking = false

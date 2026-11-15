@@ -23,7 +23,7 @@ const OLD = '2026-10-04T09:00Z good'
 const cards = (ids: number[]) => ids.map((i) => cardBlock(`Q${i}?\n---\n{{w${i}}}`, `CT-${i}, ${OLD}${i === 3 ? ', next' : ''}`))
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 
-describe('checker round 2: counts agree (YAZ-5227)', () => {
+describe('the Review tab, the dot and the sheet: counts agree (YAZ-5227)', () => {
   it('C1: tab, dot and sheet: lost answers and waiting answers by group, after each of 20 actions', async () => {
     const t = await answersSetup({ files: { '.yaseendocs/review.json': '{}', 'a.md': page('A', ...cards([1, 2, 3])), 'b.md': page('B', ...cards([4, 5, 6])) } })
     await saveVaultList(t.store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 0 }], open: VAULT })

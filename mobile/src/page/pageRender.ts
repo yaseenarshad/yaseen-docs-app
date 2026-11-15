@@ -13,7 +13,7 @@ import { layoutTables } from './tableLayout'
 import { BLOCK_MATH, markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } from './pageMarked'
 
 /**
- * A PAGE, READ ONLY, WITH NO EDITOR (YAZ-5079, 4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
+ * A PAGE, READ ONLY, WITH NO EDITOR (4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
  * ProseMirror), which never reaches the phone. The phone draws the page's Markdown with the two libraries the Mac
  * already uses to draw a card and a comment (`renderCard`, `comments/markdown.ts`): `marked` (GitHub flavour; a single
  * line break is a line break, as the Mac's page shows it, `softBreaks.css`) and DOMPurify. This file is in a chunk of
@@ -33,11 +33,11 @@ import { BLOCK_MATH, markTasks, pageMarked, withoutBom, type PageLinkToken, type
  *  - `[[link]]`: what `look.link` says: a page, a card or a file opens; a broken link keeps its text, marked missing.
  *  - `![[ID]]` of a card: a box the page view fills with the card (round 15, item 1); an ID no card has: "Missing card ·
  *    ID", as the Mac. A picture or a sound waits for its bytes (`data-vault-src`, `data-vault-sound`): the address is
- *    never one the browser fetches. A drawing: a picture the phone draws (`drawing/`, YAZ-5440); a plain draw.io file: a diagram draw.io's viewer draws (`drawing/diagram/`, YAZ-5533). A picture from the web: a calm line, because
+ *    never one the browser fetches. A drawing: a picture the phone draws (`drawing/`); a plain draw.io file: a diagram draw.io's viewer draws (`drawing/diagram/`). A picture from the web: a calm line, because
  *    the page's CSP loads none (decision 8, round 12 item 13).
  *  - The page's own card (a `card` fence): drawn read only by `look.card` (`renderCard`); its card line is out of sight,
  *    and gives the card its head (ID, "Archived", "Title hidden in review") and its title band, as the Mac's page card
- *    (YAZ-5437: before, only the ID was kept, so a card's title never showed in a page).
+ *    (before, only the ID was kept, so a card's title never showed in a page).
  *  - Web links open in Safari (`target="_blank"`); a link to a vault file opens it (`data-open`).
  *
  * A long page draws in slices (`renderPage`'s `slice`): it is cut between blocks (`cutAt`, never inside a code fence),
@@ -47,9 +47,9 @@ import { BLOCK_MATH, markTasks, pageMarked, withoutBom, type PageLinkToken, type
  */
 
 /**
- * What a `[[link]]` or a Markdown link opens (YAZ-5455): a page (at a heading, when the link names one), a card, a file
- * of the vault, a heading of this same page (`[[#Heading]]`, `[x](#heading)`), or a folder's page (YAZ-5550: a link
- * that names a folder and no page, `folderLink.ts`).
+ * What a `[[link]]` or a Markdown link opens: a page (at a heading, when the link names one), a card, a file
+ * of the vault, a heading of this same page (`[[#Heading]]`, `[x](#heading)`), or a folder's page (a link that names
+ * a folder and no page, `folderLink.ts`).
  */
 export type LinkOpen = { kind: 'page'; path: string; heading?: string } | { kind: 'card'; path: string; id: string } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'folder'; path: string }
 
@@ -60,7 +60,7 @@ export interface LinkShow {
   open: LinkOpen | null
   /** A broken link's words for VoiceOver ("Missing page · DEMO-9"). */
   missing?: string
-  /** The vault's pill format's ends (YAZ-5455, `link-pills.json`): drawn before and after the name, as the Mac's page. */
+  /** The vault's pill format's ends (`link-pills.json`): drawn before and after the name, as the Mac's page. */
   ends?: { head: PillEnd | null; tail: PillEnd | null }
 }
 
@@ -82,7 +82,7 @@ export interface PageLook {
   asset(src: string): string | null
   /** The page's own card, drawn read only (`renderCard`). */
   card(text: string): HTMLElement
-  /** The vault's table look (YAZ-5487, `table-look.json`); absent or null: the Mac's defaults. */
+  /** The vault's table look (`table-look.json`); absent or null: the Mac's defaults. */
   tables?: PhoneTableLook | null
 }
 
@@ -128,7 +128,7 @@ const ownTokens: RendererExtension[] = [
     },
   },
   {
-    // A footnote mark (as the Mac's GFM page). A table's cell note (`[^cell-N]`, YAZ-3818) is a small mark.
+    // A footnote mark (as the Mac's GFM page). A table's cell note (`[^cell-N]`) is a small mark.
     name: 'footnoteRef',
     renderer(token) {
       const id = String(token.id)
@@ -137,7 +137,7 @@ const ownTokens: RendererExtension[] = [
     },
   },
   {
-    // The note, where it is written (as the Mac's page). A cell note stays hidden under its table (YAZ-3818).
+    // The note, where it is written (as the Mac's page). A cell note stays hidden under its table.
     name: 'footnoteDef',
     renderer(token) {
       const id = String(token.id)
@@ -194,7 +194,7 @@ markdown.use({
       const comment = (token as FiledTable).fileComment
       return comment === undefined ? html : html.replace(/^<table>/, `<table ${localMark('table-file')}="${escapeHtml(comment)}">`)
     },
-    // YAZ-5494, YAZ-5513: a task's box carries its core (`data-task`) and its line in the page's body (`data-task-line`),
+    // A task's box carries its core (`data-task`) and its line in the page's body (`data-task-line`),
     // as the parse found them (`markTasks`), so a tap names exactly the line it writes. `listitem` hands the item to its
     // box: marked draws the box first. A list item marked reads as a task but the Mac does not (`pageTask` null) gets
     // no box: its brackets show as the text they are on the Mac.
@@ -217,7 +217,7 @@ markdown.use({
     },
     html({ text }) {
       // A comment shows nothing. A card line (`<!-- card: ID, title "…", … -->`) under a card gives that card its ID, its
-      // title (YAZ-5308) and its marks.
+      // title and its marks.
       if (/^\s*<!--\s*card:[\s\S]*?-->\s*$/.test(text)) {
         const last = parse.cards.at(-1)
         const line = parseCardLine(text.trim())
@@ -226,7 +226,7 @@ markdown.use({
         }
         return ''
       }
-      // YAZ-5364: only WHOLE comments show nothing. An unclosed `<!--` runs to the end of the text (CommonMark); hiding
+      // Only WHOLE comments show nothing. An unclosed `<!--` runs to the end of the text (CommonMark); hiding
       // it would hide the rest of the page. It goes to `cleanLocal`, which shows it, and the rest, as text.
       return text.replace(/<!--[\s\S]*?--!?>/g, '').trim() === '' ? '' : false
     },
@@ -235,7 +235,7 @@ markdown.use({
 
 /**
  * The page's text cleaned by THE phone's allow list (`cleanLocal`, `client/src/editor/card/localOnly.ts`), which every
- * card on the phone goes through too: document markup only, and nothing that loads from another host (YAZ-5208).
+ * card on the phone goes through too: document markup only, and nothing that loads from another host.
  */
 const clean = (html: string): DocumentFragment => cleanLocal(html)
 
@@ -300,7 +300,7 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       const show = look.link(inner)
       a.textContent = show.label
       a.className = show.open === null ? 'wikilink wikilink--unresolved' : show.open.kind === 'card' ? 'wikilink wikilink--card' : 'wikilink'
-      // The vault's format adds pieces at the pill's ends (YAZ-5455): the Mac's three spans, the head, the name, the
+      // The vault's format adds pieces at the pill's ends: the Mac's three spans, the head, the name, the
       // tail, each in the pill's classes; the `<a>` holds them and draws nothing itself.
       const head = show.ends?.head ?? null
       const tail = show.ends?.tail ?? null
@@ -312,7 +312,7 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
         a.replaceChildren(...[head === null ? null : headSpan(cls, head), name, tail === null ? null : tailSpan(cls, tail)].filter((el): el is HTMLElement => el !== null))
         a.className = show.open === null ? 'page-pill page-pill--missing' : 'page-pill'
       }
-      // YAZ-5455: a missing page's link is plain and dim, and no link: a tap on it does nothing.
+      // A missing page's link is plain and dim, and no link: a tap on it does nothing.
       if (show.open !== null) opens(a, show.open)
       else {
         a.removeAttribute('href')
@@ -321,7 +321,7 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       }
       continue
     }
-    // Every other link, by what the browser would open (`urlOf`, YAZ-5243): the web opens Safari; mail stays; a part of
+    // Every other link, by what the browser would open (`urlOf`): the web opens Safari; mail stays; a part of
     // the page stays; a vault file opens in the app; anything else is text. A class from the text changes nothing.
     const web = a.classList.contains('page-media--web')
     a.removeAttribute('class')
@@ -336,7 +336,7 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       continue
     }
     if (kind === 'mail') continue
-    // YAZ-5455: a `#part` of this page lands on its heading (or a footnote); the window's address never changes.
+    // A `#part` of this page lands on its heading (or a footnote); the window's address never changes.
     if (kind === 'path' && href.trim().startsWith('#')) {
       opens(a, { kind: 'heading', heading: partOf(href.trim()) })
       continue
@@ -393,7 +393,7 @@ function drawEmbeds(root: DocumentFragment, look: PageLook): void {
         el = sound(show.path)
         break
       case 'drawing':
-        // YAZ-5440: an Excalidraw drawing is drawn on the phone (`drawing/`); any other board keeps its line.
+        // An Excalidraw drawing is drawn on the phone (`drawing/`); any other board keeps its line.
         el = drawingBox(show.path ?? null, show.name) ?? mediaLine('board', onMacWords(show.name))
         break
       case 'file': {
@@ -408,7 +408,7 @@ function drawEmbeds(root: DocumentFragment, look: PageLook): void {
         el = document.createTextNode(show.text)
         break
     }
-    // A card box (and a drawing's, YAZ-5440) is a block: alone in its paragraph, it takes the paragraph's place.
+    // A card box (and a drawing's) is a block: alone in its paragraph, it takes the paragraph's place.
     const p = span.parentElement
     if ((show.kind.endsWith('card') || (el as Element).tagName === 'FIGURE') && p?.tagName === 'P' && p.childNodes.length === 1) p.replaceWith(el)
     else span.replaceWith(el)
@@ -422,12 +422,12 @@ function drawCards(root: DocumentFragment, look: PageLook, cards: Parse['cards']
     if (card === undefined) continue
     slot.className = card.off === true ? 'card page-card card--off' : 'card page-card'
     if (card.id !== null) slot.dataset.cardId = card.id
-    // The Mac's card box: the head, the title band (YAZ-5437), the sides in `.card__body` (`card.css` spaces them).
+    // The Mac's card box: the head, the title band, the sides in `.card__body` (`card.css` spaces them).
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(look.card(card.text))
     const head = cardHead(card)
-    // YAZ-5504: a card with an ID has its ⋯ (the card actions) at the right of its head.
+    // A card with an ID has its ⋯ (the card actions) at the right of its head.
     if (head !== null && card.id !== null) head.append(cardMoreButton(card.id, card.title))
     for (const part of [head, titleBand(card.title)]) if (part !== null) slot.append(part)
     slot.append(body)
@@ -478,14 +478,14 @@ export function renderPiece(text: string, look: PageLook, firstLine = 0): Docume
   drawEmbeds(root, look)
   drawCards(root, look, cards)
   drawCallouts(root)
-  // YAZ-5480: a table's own settings from the file (its frozen rows and columns), read with the Mac's parser.
+  // A table's own settings from the file (its frozen rows and columns), read with the Mac's parser.
   for (const table of root.querySelectorAll<HTMLTableElement>('table[data-table-file]')) {
     applyTableFile(table, table.getAttribute('data-table-file') ?? '', look.tables)
     table.removeAttribute('data-table-file')
   }
-  // YAZ-5487: each table's defaults from the vault, for what it does not set itself.
+  // Each table's defaults from the vault, for what it does not set itself.
   if (look.tables != null) for (const table of root.querySelectorAll('table')) applyTableLook(table, look.tables)
-  // YAZ-5471: each table, the page's and its cards', in its box with its column widths (`tableLayout.ts`).
+  // Each table, the page's and its cards', in its box with its column widths (`tableLayout.ts`).
   layoutTables(root)
   return root
 }
@@ -516,7 +516,7 @@ export function cutAt(text: string, from: number, size: number): number {
       if (fence === null) fence = m[1][0]
       else if (m[1][0] === fence) fence = null
     }
-    // YAZ-5480: never between a table and its comment (the blank line the Mac writes between them).
+    // Never between a table and its comment (the blank line the Mac writes between them).
     if (fence === null && line.trim() === '' && end - from >= size && !TABLE_COMMENT_NEXT.test(text.slice(end, end + 200))) return end
     at = end
   }
@@ -543,7 +543,7 @@ export async function renderPage(body: string, look: PageLook, into: HTMLElement
     into.replaceChildren(renderPiece(body, look))
     return
   }
-  // YAZ-5244: the first start of `marked` and DOMPurify is slow (40 to 50 ms of CPU in jsdom), also for a short page (the
+  // The first start of `marked` and DOMPurify is slow (40 to 50 ms of CPU in jsdom), also for a short page (the
   // first that opens). It runs once, cut into its own slices: the cleaner, then small texts with each kind of block.
   // Then the pieces of a long page start small and grow while they are quick.
   if (!warm) {
@@ -562,7 +562,7 @@ export async function renderPage(body: string, look: PageLook, into: HTMLElement
   }
   let size = FIRST_PIECE
   let first = true
-  // The line each piece starts on, so its boxes carry their lines in the whole body (YAZ-5513).
+  // The line each piece starts on, so its boxes carry their lines in the whole body.
   let line = 0
   for (let from = 0; from < body.length; ) {
     const end = cutAt(body, from, size)

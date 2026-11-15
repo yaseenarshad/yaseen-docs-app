@@ -2,7 +2,7 @@ import { edgeSwipe } from '../app/edgeSwipe'
 import { SHEET_EASE, SHEET_MS, releaseMs, sheetDrag, type DragFrom } from './sheetDrag'
 
 /**
- * THE TOP SHEET'S MOTION (YAZ-5472): the finger in, the sheet drawn. "Butter smooth" is the test, so:
+ * THE TOP SHEET'S MOTION: the finger in, the sheet drawn. "Butter smooth" is the test, so:
  *
  *  - NO REACT STATE PER FRAME. A finger's move only notes where the sheet should be; ONE requestAnimationFrame callback
  *    draws the latest place: the sheet's `transform` and its dim's `opacity`, both drawn by the compositor (no layout,

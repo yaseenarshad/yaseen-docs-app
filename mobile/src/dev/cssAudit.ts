@@ -1,5 +1,5 @@
 /**
- * YAZ-5179 round 4 (YAZ-5338 … YAZ-5341): the contrast of what a screen REALLY draws. jsdom renders the phone's
+ * The contrast of what a screen REALLY draws. jsdom renders the phone's
  * screens, but its `getComputedStyle` does not resolve custom properties, `color-mix()` or the cascade of the phone's
  * stylesheets. So this module computes the cascade itself over the rendered DOM: each rule that `element.matches`,
  * by specificity and load order; inherited `color`, font and custom properties; `var()`, `color-mix()`,
@@ -161,7 +161,7 @@ export const ratio = (a: RGBA, b: RGBA) => {
 export const hexOf = (c: RGBA) => '#' + c.slice(0, 3).map((n) => Math.round(n).toString(16).padStart(2, '0')).join('')
 
 /**
- * Resolves `var()` with the custom properties of an element. It matches the brackets itself (YAZ-5359): a fallback can
+ * Resolves `var()` with the custom properties of an element. It matches the brackets itself: a fallback can
  * hold `color-mix()` that holds `calc()` that holds `var()` (`table.css`'s head ink), deeper than a pattern can follow.
  */
 function substitute(value: string, vars: Map<string, string>, depth = 0): string {
@@ -194,7 +194,7 @@ function substitute(value: string, vars: Map<string, string>, depth = 0): string
 }
 
 /**
- * YAZ-5359: resolves each `calc()` whose terms are numbers, or numbers of ONE unit (`%`, `px`, `em`, `rem`), with
+ * Resolves each `calc()` whose terms are numbers, or numbers of ONE unit (`%`, `px`, `em`, `rem`), with
  * `+ - * /` and parentheses: `calc(6 * 1 * 1%)` is `6%`. A `calc()` it cannot resolve stays as written, and the colour
  * that holds it is reported as unresolved (`audit().unresolved`).
  */
@@ -352,7 +352,7 @@ export interface AuditOptions {
 export function audit(root: Element, sheets: Sheet[], options: AuditOptions): { findings: Finding[]; elements: number; skipped: number; unresolved: string[] } {
   const { theme } = options
   /**
-   * YAZ-5359: each colour value the engine cannot read (a function it does not know, a `calc()` it cannot resolve). The
+   * Each colour value the engine cannot read (a function it does not know, a `calc()` it cannot resolve). The
    * engine does NOT guess for them (it would draw the element on the wrong fill). It reports each one, and the screen
    * test expects none: a new kind of value turns the test red, not a silent pass.
    */

@@ -2,7 +2,7 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import { pageTasks, readTaskLine, withoutBom } from '../page/pageMarked'
 
 /**
- * YAZ-5494: THE PHONE'S SECOND WRITE TO A PAGE: it ticks or unticks ONE task check box, and changes no other byte.
+ * THE PHONE'S SECOND WRITE TO A PAGE: it ticks or unticks ONE task check box, and changes no other byte.
  *
  * A task is a list item whose first line starts with a box, as the Mac's Markdown (GitHub flavour) reads it: `- [ ]`,
  * `* [ ]`, `+ [ ]`, `1. [ ]`, `1) [ ]`, at any depth, in a quote too (`> - [ ]`). YAZ-5513: the tasks of a page are

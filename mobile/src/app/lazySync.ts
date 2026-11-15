@@ -7,7 +7,7 @@ import { IDLE, type ShellSync, type ShellSyncEvent, type ShellSyncState } from '
 type EngineModule = {
   createSyncEngine: typeof import('../sync/engine').createSyncEngine
   followPage: typeof import('../sync/pageEvents').followPage
-  /** 3C's answer list (YAZ-5073), made with the engine: ONE list for the Review tab and the send. */
+  /** 3C's answer list, made with the engine: ONE list for the Review tab and the send. */
   createAnswers?: typeof import('../answers/answers').createAnswers
   /** The list's own page events (decision 4): hidden → send at once; `online` → send at once. */
   followAnswers?: typeof import('../review/followAnswers').followAnswers
@@ -17,13 +17,13 @@ type EngineModule = {
 export const engineFits = (engine: SyncEngine): ShellSync => engine
 
 /**
- * 3B's sync engine (YAZ-5072), loaded the first time a vault opens. The engine brings the shared frontmatter parser
+ * 3B's sync engine, loaded the first time a vault opens. The engine brings the shared frontmatter parser
  * (`yaml`, through `indexRecord`): about 126 kB minified, so it is a chunk of its own and the sign-in screen does not
  * wait for it. A vault whose copy is whole on the phone (a checkpoint) is ready at once, also while the engine loads
  * or reads its stored index, so a returning person sees the tabs, and only a first open sees the download view.
  */
 /**
- * The shell's sync, and (4C, YAZ-5079) `loaded()`: 3B's engine once it has loaded (a vault opened). It never loads the
+ * The shell's sync, and (4C) `loaded()`: 3B's engine once it has loaded (a vault opened). It never loads the
  * engine itself. 3D's media is made with it (`lazyMedia`, `main.tsx`).
  */
 export type LazySync = ShellSync & { loaded(): Promise<SyncEngine> }
@@ -52,7 +52,7 @@ export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Prom
     (loading ??= load().then((m) => {
       const e = m.createSyncEngine({ store, tokens })
       m.followPage(e)
-      // 3C's result comment: the list needs its own two calls, or the background send does not run (YAZ-5078).
+      // 3C's result comment: the list needs its own two calls, or the background send does not run.
       if (m.createAnswers !== undefined) {
         answers = m.createAnswers({ store, engine: e })
         m.followAnswers?.(answers)
@@ -71,7 +71,7 @@ export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Prom
       return () => void listeners.delete(listener)
     },
     async open(vault) {
-      // The LAST call wins (YAZ-5176): a call that waited for the chunk, or for the checkpoint, while a later call came
+      // The LAST call wins: a call that waited for the chunk, or for the checkpoint, while a later call came
       // does nothing when it wakes.
       const call = ++calls
       const id = vault === null ? null : vaultId(vault)

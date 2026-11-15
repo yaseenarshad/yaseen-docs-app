@@ -1,7 +1,7 @@
 import { READER_FILES } from './readerVault'
 
 /**
- * A MADE-UP VAULT WITH A FOLDER PAGE (YAZ-5460), for the tests and the screen fixtures: `Projects` has a `.folder.md`
+ * A MADE-UP VAULT WITH A FOLDER PAGE, for the tests and the screen fixtures: `Projects` has a `.folder.md`
  * with its own text and views (a table sorted by its due date, a table grouped by status with a filter, a board, the
  * cards and a calendar), its columns (a Select, a Date and a Number with the Mac's formats, a Text), a subfolder with a
  * column of its own, a page moved to Other files, a PDF beside its pages. No real vault, no network. Only tests and

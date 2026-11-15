@@ -47,7 +47,7 @@ it('check4 shrink', async () => {
     }
     // Try smaller setups too.
     for (const s of [[1, 1, 1], [2, 1, 1], [1, 2, 1], [1, 1, 2]] as const) {
-      const q = { ...p, setup: [s[0], s[1], s[2], p.setup[3], p.setup[4], p.setup[5]] as Plan['setup'] }
+      const q = { ...p, setup: [s[0], s[1], s[2], p.setup[3], p.setup[4]] as Plan['setup'] }
       if ((await fails(q)) !== null) {
         p = q
         break

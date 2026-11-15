@@ -1,4 +1,4 @@
-/* The page arrows and the page ID chip (YAZ-5449, YAZ-5450): option A of the approved mockup, on the phone's tokens. */
+/* The page arrows and the page ID chip: option A of the approved mockup, on the phone's tokens. */
 
 /* A thin bar over the tabs: "‹ page before" on the left, "page after ›" on the right; a long title ends in "…". */
 .page-arrows {
@@ -121,7 +121,7 @@
   color: var(--fg);
 }
 
-/* YAZ-5475: the kind glyph before a title, very small; the Mac's glyph (`styles.css`) scaled down. */
+/* The kind glyph before a title, very small; the Mac's glyph (`styles.css`) scaled down. */
 .page-arrows__kind {
   display: inline-block;
   width: 11px;

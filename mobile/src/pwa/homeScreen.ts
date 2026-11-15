@@ -20,7 +20,7 @@ export const HOME_SCREEN = {
 }
 
 /**
- * YAZ-5443: Safari's ☰ button. VoiceOver reads the bare glyph as "trigram for heaven", so each place that shows it in
+ * Safari's ☰ button. VoiceOver reads the bare glyph as "trigram for heaven", so each place that shows it in
  * text wraps it in an element with this spoken name (`role="img"`, as the install hint's drawn lines).
  */
 export const THREE_LINES = { glyph: '☰', name: 'the three lines' } as const

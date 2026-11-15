@@ -1,5 +1,5 @@
 /**
- * THE ENGINE'S FONT FILES (YAZ-5440), as `engine/packages/excalidraw/fonts/<Folder>/index.ts` registers them
+ * THE ENGINE'S FONT FILES, as `engine/packages/excalidraw/fonts/<Folder>/index.ts` registers them
  * (`Fonts.init`): the family, the file under `fonts/`, the unicode range (null: all), the weight and the style.
  * Written from those files; `fontFaces.test.ts` fails when the engine's list changes, and prints the new one.
  * Left out: the CJK fallback (Xiaolai, 209 files, 12.7 MB), which the phone draws with the iPhone's own font, and the

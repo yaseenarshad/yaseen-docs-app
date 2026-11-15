@@ -12,7 +12,7 @@ const K0 = { pStale: 0, p502: 0, pSecondary: 0, pContents404: 0 }
 async function world() {
   const m = new Model5(4242, K0)
   m.hookRepos()
-  await m.setup4(1, 1, 1, false, false, false)
+  await m.setup4(1, 1, 1, false, false)
   const a = m.devs.A[0] as any
   const b = m.devs.B[0] as any
   const s = await a.list.share()

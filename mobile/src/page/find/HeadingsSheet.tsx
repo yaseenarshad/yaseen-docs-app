@@ -2,7 +2,7 @@ import { useEffect, useMemo, type RefObject } from 'react'
 import { ENOUGH_ROWS, headingRows, landOn } from '../headings'
 
 /**
- * THE PAGE'S HEADINGS (YAZ-5456): the Mac's table of contents as a list (`headings.ts`: H1 to H5 in page order, each at
+ * THE PAGE'S HEADINGS: the Mac's table of contents as a list (`headings.ts`: H1 to H5 in page order, each at
  * its level), in a sheet from the bottom. The row of the part on screen is marked (the Mac's scroll spy: the last
  * heading at or above 40 px under the top). A tap closes the sheet and lands on the heading (the Mac's landing, a
  * little under the top, and one flash). A page with fewer than two headings says so (the Mac draws no list then).

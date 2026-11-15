@@ -5,13 +5,13 @@ import './discardAnswer.css'
 
 /**
  * Discard of a lost answer (round 12 item 9), in ONE place for the dot's sheet (4D) and the Review screen's amber
- * line (4B). It asks first (YAZ-5215): the answer cannot come back. The ask says which answer goes; Cancel is the
+ * line (4B). It asks first: the answer cannot come back. The ask says which answer goes; Cancel is the
  * default (4A's `Confirm`: it has the focus, so a stray tap does nothing).
  */
 export function DiscardAnswer({ title, answer, label, onDiscard }: { title: string; answer: string; label: string; onDiscard: () => Promise<unknown> | void }) {
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
-  // Sweep3 N-4 (YAZ-5524): the ask is an overlay of the app's one stack: a Back closes the ask only, not the sheet.
+  // Sweep3 N-4: the ask is an overlay of the app's one stack: a Back closes the ask only, not the sheet.
   useOverlay(asking, () => setAsking(false))
   if (!asking)
     return (

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { Route } from './nav'
 
 /**
- * YAZ-5499: THE BROWSER'S HISTORY FOLLOWS THE SCREENS, so a Safari TAB goes back with Safari's own edge swipe (and its
+ * THE BROWSER'S HISTORY FOLLOWS THE SCREENS, so a Safari TAB goes back with Safari's own edge swipe (and its
  * ‹ button), as the Home Screen app goes back with the app's swipe (`useEdgeBack.ts`). Before, the app never wrote a
  * history entry: in a tab, Safari's swipe had nothing of ours to go back to, so it did nothing or left the app.
  *
@@ -11,7 +11,7 @@ import type { Route } from './nav'
  *    the `popstate` then shows it. ONE path for every Back, so a Back is never done twice.
  *  - Any other change (a tab, Home, another vault) rewrites the entry in place: no entry is added.
  *
- * YAZ-5518: ONE STACK OF OVERLAYS over the screens: the Explore sheets, a page's panels (Properties, Headings, Find),
+ * ONE STACK OF OVERLAYS over the screens: the Explore sheets, a page's panels (Properties, Headings, Find),
  * its menus (⋯) and its full-screen views (a table, a drawing). Each overlay open is ONE entry more (`o`: how many are
  * open at that entry), so every Back (the browser's, Safari's swipe, the app's swipe, ←) closes the TOP overlay first,
  * one at a time, and the screen under stays. An overlay closed in the app (✕, a tap outside, a drag) takes its entry

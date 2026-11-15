@@ -1,4 +1,4 @@
-/* A page's properties (YAZ-5529): the Mac's chip at the right of the title (`app.css` `.frontmatter-panel__header` in
+/* A page's properties: the Mac's chip at the right of the title (`app.css` `.frontmatter-panel__header` in
    `.page-header`): the chevron, the glyph and the count, muted, on the title's line; a 44 px tap. It floats, so the title
    wraps beside it and never runs under it. */
 .page-props {

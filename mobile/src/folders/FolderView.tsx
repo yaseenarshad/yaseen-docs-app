@@ -4,7 +4,7 @@ import { useVaultData } from '../search/vaultData'
 import FolderBody from './FolderBody'
 import { folderTitleOf } from './folderTitle'
 
-/** A FOLDER'S PAGE FULL SCREEN (YAZ-5460): the vault opens files full screen, or "Open full page" of its sheet. Back returns. */
+/** A FOLDER'S PAGE FULL SCREEN: the vault opens files full screen, or "Open full page" of its sheet. Back returns. */
 export default function FolderView({ path }: { path: string }) {
   const app = useApp()
   const data = useVaultData()

@@ -24,8 +24,6 @@ export interface Run4 {
   sendsSent: number
   removesStarted: number
   removesFinished: number
-  oldRuns: number
-  oldBlocked: number
   listWrites: number
   maxRecords: number
   /** Orders where the OLD app wrote its old gist after the move, over a change it had not read (not the list). */
@@ -38,7 +36,7 @@ export interface Run4 {
 
 /** Runs seeds `from` .. `from + count - 1` of the round 4 plan generator. */
 export async function runPlans(from: number, count: number): Promise<Run4> {
-  const out: Run4 = { runs: 0, events: 0, crashes: 0, c409: 0, c422: 0, sends: 0, sendsSent: 0, removesStarted: 0, removesFinished: 0, oldRuns: 0, oldBlocked: 0, listWrites: 0, maxRecords: 0, oldGistAfterMove: 0, count: Object.fromEntries(KEYS.map((k) => [k, 0])) as Run4['count'], bad: [] }
+  const out: Run4 = { runs: 0, events: 0, crashes: 0, c409: 0, c422: 0, sends: 0, sendsSent: 0, removesStarted: 0, removesFinished: 0, listWrites: 0, maxRecords: 0, oldGistAfterMove: 0, count: Object.fromEntries(KEYS.map((k) => [k, 0])) as Run4['count'], bad: [] }
   for (let s = from; s < from + count; s++) {
     let m
     try {
@@ -56,8 +54,6 @@ export async function runPlans(from: number, count: number): Promise<Run4> {
     out.sendsSent += m.st4.sendsSent
     out.removesStarted += m.st.removesStarted
     out.removesFinished += m.st.removesFinished
-    if (m.oldDev) out.oldRuns++
-    out.oldBlocked += m.st4.oldBlocked
     out.listWrites += m.st.listWrites
     out.maxRecords = Math.max(out.maxRecords, m.st4.maxListFiles)
     const v = violations(m)

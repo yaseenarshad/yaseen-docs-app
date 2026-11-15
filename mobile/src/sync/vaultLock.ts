@@ -1,5 +1,5 @@
 /*
- * The lock of a stored list (the answer list, the comment list), ONE copy (YAZ-5092 A4). Its own small module: the
+ * The lock of a stored list (the answer list, the comment list), ONE copy. Its own small module: the
  * answer list is in the first load, and nothing more of the sync code comes with it.
  */
 

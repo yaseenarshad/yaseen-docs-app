@@ -30,7 +30,7 @@ import { LIST_PATH, parseListFile } from '@shared/friendListStore'
 import { saveAccount } from '../../auth/account'
 import { loadVaultList, saveVaultList, vaultId } from '../../store'
 import { mulberry, type Ev } from '../check3/model.testing'
-import { randomEvent4, type Model4 } from '../check4/model4.testing'
+import { randomEvent4 } from '../check4/model4.testing'
 import { KEYS5, Model5, violations5, type Knobs } from '../check5/model5.testing'
 
 const HOME = 'ali/vault'
@@ -50,8 +50,8 @@ export class Model6 extends Model5 {
     this.st.steps++
     const repos = this.world.repos!
     const before = repos.file(HOME, LIST_PATH)
-    // Once per order; not with the old v1 app (it keeps its own list gist); only over a list that is there.
-    if (this.st6.fileGone > 0 || this.oldDev || before === null) {
+    // Once per order; only over a list that is there.
+    if (this.st6.fileGone > 0 || before === null) {
       this.log.push(`${String(this.step).padStart(2)} fileGone: skipped`)
       return
     }
@@ -299,11 +299,11 @@ export class Model6 extends Model5 {
 
 export function plan6(seed: number) {
   const g = mulberry(seed)
-  const withOld = g() < 0.2
-  const nA = withOld ? 1 + Math.floor(g() * 2) : 1 + Math.floor(g() * 3)
-  const setup: [number, number, number, boolean, boolean, boolean] = [nA, 1 + Math.floor(g() * 3), 1 + Math.floor(g() * 3), !withOld && g() < 0.35, !withOld && g() < 0.25, withOld]
+  // YAZ-5092 C2: this draw chose the old (v1) app; it stays, so every other seed keeps its order.
+  g()
+  const nA = 1 + Math.floor(g() * 3)
+  const setup: [number, number, number, boolean, boolean] = [nA, 1 + Math.floor(g() * 3), 1 + Math.floor(g() * 3), g() < 0.35, g() < 0.25]
   const n = 40 + Math.floor(g() * 41)
-  const probe = { oldDev: withOld ? {} : null } as unknown as Model4
   // One `fileGone` at a random place (the model runs it once per order).
   const at = Math.floor(g() * n)
   const events: Ev[] = Array.from({ length: n }, (_, i) => {
@@ -311,7 +311,7 @@ export function plan6(seed: number) {
     const x = g()
     if (x < 0.07) return { t: 'autosync' }
     if (x < 0.13) return { t: 'syncDuring', dev: Math.floor(g() * 3) }
-    return randomEvent4(probe, g)
+    return randomEvent4(g)
   })
   return { seed, setup, events }
 }

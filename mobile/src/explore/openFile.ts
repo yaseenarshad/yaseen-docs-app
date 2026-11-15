@@ -5,7 +5,7 @@ import type { Route } from '../app/nav'
 import { isSheetRoute, openSheet } from './sheets'
 
 /**
- * THE ONE DOOR TO OPEN A FILE (YAZ-5472): `openFile(app, route, { from })`. Every place of the app that opens a page, a
+ * THE ONE DOOR TO OPEN A FILE: `openFile(app, route, { from })`. Every place of the app that opens a page, a
  * card, a card file, a drawing or a folder's page calls it, and says WHERE the tap came from.
  *
  * THE RULE (Yaseen's, YAZ-5472 Q4 "the first open is a full page"):
@@ -14,7 +14,7 @@ import { isSheetRoute, openSheet } from './sheets'
  *    (`TodayTab.tsx`), Review's "Open page" and "Open card" (`Review.tsx`), a held folder's "Open folder page"
  *    (`holdFolder.tsx`). Back from that page goes back to the tab screen.
  *  - `from: 'inside'`: a link or a row tapped INSIDE a page, a card view, a folder page or an Explore panel follows the
- *    vault (`.yaseendocs/link-click.json`, the Mac's "Clicking a link", YAZ-4936): `"explore"` opens an Explore panel
+ *    vault (`.yaseendocs/link-click.json`, the Mac's "Clicking a link"): `"explore"` opens an Explore panel
  *    over where you are (`openSheet`; Back closes the panel); `"open"`, or no file, opens it full screen (`go`). That is
  *    every link of the reader through its own door (`page/openLink.ts`: a link, a pill, "Linked from", "Embedded
  *    from") and a folder page's rows (`FolderBody.tsx`, `FolderTable.tsx`, `FolderCards.tsx`).
@@ -35,7 +35,7 @@ const choices = new Map<string, LinkClick>()
 export const setLinkClick = (vault: string, click: LinkClick): void => void choices.set(vault, click)
 export const linkClickOf = (vault: string | null): LinkClick => (vault === null ? DEFAULT_LINK_CLICK : (choices.get(vault) ?? DEFAULT_LINK_CLICK))
 
-/** Where an open comes from (YAZ-5472 Q4): a tab screen (always a full page), or inside a page, a card, a folder page or a panel. */
+/** Where an open comes from: a tab screen (always a full page), or inside a page, a card, a folder page or a panel. */
 export type OpenFrom = 'tab' | 'inside'
 
 export interface OpenHow {

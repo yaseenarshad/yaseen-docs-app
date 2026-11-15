@@ -1,4 +1,4 @@
-/* The page's tools (YAZ-5456): the ⋯ menu, the find line under the top bar, the headings sheet. The paint of a match is
+/* The page's tools: the ⋯ menu, the find line under the top bar, the headings sheet. The paint of a match is
    the Mac's (`find.css`): a see-through yellow, the current one solid. */
 :root {
   --find-match-bg: rgba(255, 213, 0, 0.35);
@@ -37,7 +37,7 @@
   background: var(--bg);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
 }
-/* YAZ-5498: with the full title at its top, the menu is as wide as the screen allows, and the title wraps in it. Held
+/* With the full title at its top, the menu is as wide as the screen allows, and the title wraps in it. Held
    to the screen's right edge, just under the top bar (57 px under the notch): from the ⋯ it would run off the left. */
 .page-tools__menu--titled {
   position: fixed;
@@ -111,7 +111,7 @@
 }
 
 /* Drawn in the frame (`.app`), after the arrows and the tab bar: over them, and over the page's masked scroll box
-   (YAZ-5497, `overFrame` in `PageTools.tsx`). */
+   (`overFrame` in `PageTools.tsx`). */
 .headings-sheet {
   position: fixed;
   inset: 0;

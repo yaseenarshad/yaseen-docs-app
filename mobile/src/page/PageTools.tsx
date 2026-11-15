@@ -7,7 +7,7 @@ import { MenuTitle, isCut } from './menuTitle'
 import './find/pageTools.css'
 
 /**
- * THE PAGE'S TOOLS (YAZ-5456): one "⋯" in the top bar opens a small menu, "Find in page" and "Headings". Each loads its
+ * THE PAGE'S TOOLS: one "⋯" in the top bar opens a small menu, "Find in page" and "Headings". Each loads its
  * own chunk only when it is first used (`find/FindBar.tsx`, `find/HeadingsSheet.tsx`): an open page costs nothing more.
  *
  * Why a ⋯ and not a 🔍: the top bar holds Back, the kind icon, the title, the ID chip, the dot and the ⚙ on a 375 pt
@@ -17,7 +17,7 @@ import './find/pageTools.css'
  * The find bar shows under the top bar (the frame's line for a notice), so the page's text stays in view; the headings
  * list is a sheet from the bottom, over the page, closed by a tap outside it, ✕ or Escape.
  *
- * YAZ-5497: the sheet is drawn in the FRAME (`.app`, `overFrame`), not in the page. The page's scroll box
+ * The sheet is drawn in the FRAME (`.app`, `overFrame`), not in the page. The page's scroll box
  * (`.screen--reader`) has a soft fade at its bottom, a `mask-image`: a masked element clips all it holds, a fixed child
  * too, and is a stacking context, so a sheet in it was cut off at the box's end and faded, under the page arrows and the
  * tab bar whatever its `z-index`.
@@ -32,7 +32,7 @@ export type PageTool = 'find' | 'headings' | null
  * of `path`. A page, a card and a card file have the two tools; a drawing (no text to find, no headings) has "Copy path".
  *
  * The same ⋯ for a card's own view: "Find in card" (`find`); a card has no headings (`headings: false`). `label` names
- * the button and menu. The card's actions are on the card's own ⋯, on its head (YAZ-5527), not here.
+ * the button and menu. The card's actions are on the card's own ⋯, on its head, not here.
  */
 export interface ToolsFor {
   title: string
@@ -49,15 +49,15 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const [tool, setTool] = useState<PageTool>(null)
   const [cut, setCut] = useState(false)
   const box = useRef<HTMLDivElement>(null)
-  // YAZ-5518: the open tool is an overlay: a Back closes it, and the page stays. The menu: the app's one rule for
-  // menus (YAZ-5552): ⋯ again, a tap outside (only that), Escape or Back closes it.
+  // The open tool is an overlay: a Back closes it, and the page stays. The menu: the app's one rule for menus: ⋯
+  // again, a tap outside (only that), Escape or Back closes it.
   useOverlay(tool !== null, () => setTool(null))
   useMenuToggle(menu, () => setMenu(false), (target) => box.current?.contains(target) === true)
   const pick = (next: PageTool) => {
     setMenu(false)
     setTool(next)
   }
-  // YAZ-5498: measured once, as the menu opens: is the top bar's title cut ("…")?
+  // Measured once, as the menu opens: is the top bar's title cut ("…")?
   const toggle = () => {
     if (!menu) setCut(isCut(box.current?.closest('.topbar')?.querySelector('.topbar__title')))
     setMenu(!menu)
@@ -116,7 +116,7 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
 }
 
 /**
- * YAZ-5497: a sheet or a panel over the whole screen goes in the frame (`.app`: the top bar, the screen, the page
+ * A sheet or a panel over the whole screen goes in the frame (`.app`: the top bar, the screen, the page
  * arrows, the tab bar), after them, so that its `position: fixed` and `z-index` are the screen's and nothing at the
  * bottom paints over it; never inside the page's masked scroll box. The frame is `from`'s (else the document's body).
  */

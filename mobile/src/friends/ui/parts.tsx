@@ -77,14 +77,14 @@ export const SHARED_WORDS: Record<'shared' | 'copied' | 'cancelled' | 'show', st
 export const clockTime = (t: number): string => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 
 /**
- * 5- (YAZ-5087): the link that the share sheet sends points at the landing page of the site the app runs on, so the
+ * 5-: the link that the share sheet sends points at the landing page of the site the app runs on, so the
  * preview and the stable site each make their own (`friendLink`). 4E2's link carries the same code.
  */
 export function ownSiteLink(link: string, origin: string = globalThis.location?.origin ?? 'null'): string {
   if (!/^https:\/\//.test(origin)) return link
   const code = friendCodeFrom(link)
   if (code !== null) return friendLink(origin, code)
-  // YAZ-5263: a group or join link (4E3's) names the site the app runs on too; its path and code stay.
+  // A group or join link (4E3's) names the site the app runs on too; its path and code stay.
   try {
     const url = new URL(link)
     return /^\/(group|join)\/?$/.test(url.pathname) ? `${origin.replace(/\/+$/, '')}${url.pathname}${url.hash}` : link
@@ -94,7 +94,7 @@ export function ownSiteLink(link: string, origin: string = globalThis.location?.
 }
 
 /**
- * YAZ-5263, YAZ-5290: the words that go with a group link and a join link. Each opens a landing page of the site
+ * The words that go with a group link and a join link. Each opens a landing page of the site
  * (`/group`, `/join`, as `/friend`) with the code and Copy; the paste box reads it.
  */
 export const groupShareText = (name: string, url: string) => ({
@@ -109,7 +109,7 @@ export const joinShareText = (name: string, url: string) => ({
 })
 
 /**
- * YAZ-5257: the words for the answer of Remove, Cancel link, Leave group, Delete group and Remove a member, or null
+ * The words for the answer of Remove, Cancel link, Leave group, Delete group and Remove a member, or null
  * when it is done. A remove that waits (4E2's `paused`: the budget, GitHub's rate limit, no connection) is kept on the
  * phone and finishes by itself; the words say so, and when.
  */

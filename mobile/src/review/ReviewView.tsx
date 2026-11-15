@@ -45,17 +45,17 @@ import './review.css'
  *  - The top row: the filter "All cards ▾" (round 10, addition 1: All cards, Up next, Due today, New cards, with
  *    counts) and today's work, "Today: 31 cards · 9 min".
  *  - Above the card: its state ("Due today", "New card") and "3 of 12"; then the head, "Title · ID", with "in <page>"
- *    for a card in a page (round 15, item 4). The title is the card line's (YAZ-5308, decision D; YAZ-5309): never a
+ *    for a card in a page (round 15, item 4). The title is the card line's (decision D): never a
  *    line of the card's text, so the text is drawn whole. A card with no title: the ID alone, as the Mac's Inbox head.
  *    "Title on the front: Hide" (`notitle`): the ID alone until the card is fully shown; so too a title that holds a
- *    hidden-word mark (YAZ-5314: a title never gives the answer away). A card file that is not valid says so (round
+ *    hidden-word mark (a title never gives the answer away). A card file that is not valid says so (round
  *    15, item 3).
  *  - A TAP ON THE CARD shows the next hidden word, else the next side: what Space does on the Mac. No swipes.
  *  - At the bottom, in reach of the thumb: ✕ Forgot and ✓ Remembered (or four by the setting), then ⋯: Archive card,
  *    Up next, Fix later, Open page (a card file: Open card). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
  *  - Done: "Inbox complete", today's work, and "Add more for today" (round 10, addition 2) when cards wait.
- *  - The end of Due today (YAZ-5495, the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
+ *  - The end of Due today (the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
  *    remembered 93% of 73 cards." with "Review missed cards 5"; then "Due today is done." with "Learn new cards 11"
  *    and its "from All folders ›" (the sheet's folder page). The ring and the confetti: `DueEnd.tsx`.
  *  - The amber line (round 12, item 9): an answer whose card is gone, with Discard.
@@ -75,7 +75,7 @@ export interface ReviewViewProps {
   /** The app's media (`useVaultMedia`). Absent: `link.media`, else the store alone. */
   media?: VaultMedia
   /**
-   * The tab is on the screen (YAZ-5224: the shell keeps it mounted behind a page, a card, another tab). Off the screen
+   * The tab is on the screen (the shell keeps it mounted behind a page, a card, another tab). Off the screen
    * the session stays; the answer timer and the Wake Lock rest. Default true.
    */
   shown?: boolean
@@ -143,12 +143,12 @@ type Step = Reveal & { key: string | null }
 
 /** The line under the buttons: the last answer, the last add, or a ⋯ action. */
 /** The line under the buttons: the last answer, the last ⋯ mark (with its own Undo: YAZ-5078), or Archive card. */
-/** `name` and `rating` (YAZ-5500): the hint line's "Last: Capital of Spain (Forgot) · ↶ Undo", right after the answer. */
+/** `name` and `rating`: the hint line's "Last: Capital of Spain (Forgot) · ↶ Undo", right after the answer. */
 type Line = { kind: 'answer'; count: number; id: string; name: string; rating: CardRating } | { kind: 'mark'; text: string; key: string | null; undo?: () => Promise<unknown> } | { kind: 'archive' }
 
 function ReviewSession({ link, vault, vaultName, unit, open, source, host, media, pick: firstPick, shown = true }: ReviewViewProps & Setup) {
   const { ready, settings: vaultSettings } = useSourceState(source)
-  // YAZ-5415: where new cards come from — the Mac's rule (`setNewFrom` → `saveSettings` → `newFrom`), this phone's pick.
+  // Where new cards come from — the Mac's rule (`setNewFrom` → `saveSettings` → `newFrom`), this phone's pick.
   const [pick, setPick] = useState(firstPick)
   const settings = useMemo(() => (pick === null ? vaultSettings : { ...vaultSettings, newFrom: pick }), [vaultSettings, pick])
   const saveSettings = useCallback(
@@ -159,7 +159,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
     [link, vault],
   )
   const [notice, setNotice] = useState<string | null>(null)
-  // No inner error text reaches the screen (YAZ-5076, YAZ-5228): the hook's words before the reason, e.g. "Can't undo the answer.".
+  // No inner error text reaches the screen: the hook's words before the reason, e.g. "Can't undo the answer.".
   const onNotice = useCallback((text: string) => setNotice(`${text.split(':')[0].trim()}.`), [])
   const review = useCardReview(vault, source, settings, onNotice, vaultName, host, saveSettings)
   const { session } = review
@@ -170,12 +170,12 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
     if (ready && settings.enabled && session === null) start()
   }, [ready, settings.enabled, session, start])
 
-  // YAZ-5269: the one fact the update logic reads: a card on show, or an Undo still to give, on any tab.
+  // The one fact the update logic reads: a card on show, or an Undo still to give, on any tab.
   const inProgress = session !== null && (session.card !== null || session.canUndo)
   useEffect(() => setReviewInProgress(inProgress), [inProgress])
   useEffect(() => () => setReviewInProgress(false), [])
 
-  // YAZ-5484: the vault's card look (card-look.json, the Mac's card variables) on the card; read again with each index
+  // The vault's card look (card-look.json, the Mac's card variables) on the card; read again with each index
   // the source takes in (a sync that brought a new file). No file: none, the look before.
   const [cardLook, setCardLook] = useState<Record<string, string>>({})
   const records = source.records
@@ -191,7 +191,7 @@ function ReviewSession({ link, vault, vaultName, unit, open, source, host, media
   // A pass that ends well asks again for each picture that waited for a signal.
   const { engine } = link
   const retry = useCallback((fn: () => void) => engine.subscribe((e) => void (e.type === 'state' && e.state.status === 'synced' && fn())), [engine])
-  // ONE owner of the Wake Lock (YAZ-5232): this session, while its card is on the screen.
+  // ONE owner of the Wake Lock: this session, while its card is on the screen.
   useWakeLock(shown && session?.card != null)
 
   if (!ready) return <Waiting />
@@ -234,16 +234,16 @@ function SessionScreen({
   notice: string | null
   setNotice: (text: string | null) => void
   shown: boolean
-  /** The vault's card look (YAZ-5484): the Mac's card variables, on the card. */
+  /** The vault's card look: the Mac's card variables, on the card. */
   cardLook: Record<string, string>
 }) {
-  // YAZ-5495: the end of Due today has its own screen (`DueEnd`); the YAZ-5465 shim that went on at once is gone.
+  // The end of Due today has its own screen (`DueEnd`); the YAZ-5465 shim that went on at once is gone.
   const card = session.card
   const page = card?.page ?? null
   const pageText = page?.text ?? null
-  // The head's title, off the card line (YAZ-5308; the Mac's `useCardFront`): never part of the text, so the front is
-  // the whole text. "Title on the front: Hide" (YAZ-5030) makes it wait for the card's last step; so does a title that
-  // holds a hidden-word mark (YAZ-5314): its words may be the answer.
+  // The head's title, off the card line (the Mac's `useCardFront`): never part of the text, so the front is
+  // the whole text. "Title on the front: Hide" makes it wait for the card's last step; so does a title that
+  // holds a hidden-word mark: its words may be the answer.
   const text = pageText
   const cardName = page?.title ?? ''
   const hideTitle = page?.notitle === true
@@ -252,7 +252,7 @@ function SessionScreen({
   const cardFile = record?.kind === 'card'
   const cardKey = card === null ? null : `${session.position}\n${card.path}\n${card.id}`
 
-  // The step (D18; YAZ-5415 follows the Mac's `cardSteps.ts`, YAZ-5049 round 4): a tap shows the MARKED part (the next
+  // The step (D18; YAZ-5415 follows the Mac's `cardSteps.ts`): a tap shows the MARKED part (the next
   // hidden one), else the next side; a tap ON a hidden part shows THAT part, and the mark goes on after it.
   const counts = useMemo(() => (text === null ? [] : cardSides(text).map(hiddenCount)), [text])
   const [stepState, setStep] = useState<Step>({ ...START, key: cardKey })
@@ -262,24 +262,24 @@ function SessionScreen({
   const mark = markOf(step, upTo(step.sides))
   // What the hint line counts: the hidden parts not shown yet, and each side still to come.
   const left = text === null ? 0 : upTo(counts.length) - step.open.length + Math.max(0, counts.length - step.sides)
-  // YAZ-5226: after an answer, taps wait until the next card is on the screen AND a short time has passed, so the
+  // After an answer, taps wait until the next card is on the screen AND a short time has passed, so the
   // second tap of a double tap never lands on a card the person has not seen. The answer buttons still work at any
   // step of a card once it is seen (decision 11, as the Mac: "the buttons should always be there").
   const guard = useTapGuard()
   const guarded = !guard.taps
   const liveKey = useRef(cardKey)
   liveKey.current = cardKey
-  // YAZ-5315: the guard's 400 ms start when the NEXT card is drawn on the screen (a new key, with its text).
+  // The guard's 400 ms start when the NEXT card is drawn on the screen (a new key, with its text).
   const { shown: cardShown } = guard
   // A DRAWING is one read of a card (its page object): the hook keeps the old card's object on the screen while the
   // next one reads, and a card that comes back is read again (a new object).
-  // YAZ-5335: only a card that is LIVE counts (its answers are fixed: the hook gives none to the card before, which it
+  // Only a card that is LIVE counts (its answers are fixed: the hook gives none to the card before, which it
   // keeps on show while the next one reads). So a sync pass that redraws the answered card starts no 400 ms.
   const drawing = page === null || session.answers === null ? null : drawingOf(page)
   useEffect(() => {
     if (drawing !== null) cardShown(drawing)
   }, [drawing, cardShown])
-  // Sweep2 nit 3 (YAZ-5521): a card drawn where the screen after the last card was ("Review missed cards", "Learn new
+  // Sweep2 nit 3: a card drawn where the screen after the last card was ("Review missed cards", "Learn new
   // cards") takes no tap for 400 ms: the second tap of a double tap on the button showed its side 2.
   const { arrive } = guard
   const onDone = useRef(card === null)
@@ -288,21 +288,21 @@ function SessionScreen({
     onDone.current = card === null
     if (was && card !== null) arrive()
   }, [card, arrive])
-  // Hidden and shown again: the guard starts from `ready` (YAZ-5266).
+  // Hidden and shown again: the guard starts from `ready`.
   const { reset: resetGuard } = guard
   useEffect(() => resetGuard(), [shown, resetGuard])
 
   const cardBox = useRef<HTMLDivElement>(null)
-  // The end of the card (YAZ-5415; the Mac's end cue, YAZ-5049 round 3): one more tap when every part shows makes ✕
+  // The end of the card (the Mac's end cue): one more tap when every part shows makes ✕
   // and ✓ bounce once with a soft ring. Two names, so each new tap plays it again.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
-  // The part a step just showed: VoiceOver hears it (YAZ-5538: no flash; it simply shows).
+  // The part a step just showed: VoiceOver hears it (no flash; it simply shows).
   const lastShown = useRef<number | null>(null)
   const advance = () => {
     if (page === null || guarded) return
     firstAction()
     const target: TapTarget = mark !== null ? mark : step.sides < counts.length ? 'side' : 'end'
-    // The Mac's reading scroll (YAZ-5049 round 6): a part out of view first comes into view; that tap shows nothing.
+    // The Mac's reading scroll: a part out of view first comes into view; that tap shows nothing.
     const view = cardBox.current
     const move = view === null ? 0 : tapMove(view, target)
     if (move !== 0 && view !== null) return glideCard(view, move)
@@ -322,7 +322,7 @@ function SessionScreen({
     setStep({ ...reveal(step, word, upTo(step.sides)), key: step.key })
   }
 
-  // YAZ-5229, YAZ-5268: VoiceOver hears ONLY what a step newly shows: a new side (its text), else the new word.
+  // VoiceOver hears ONLY what a step newly shows: a new side (its text), else the new word.
   const [revealed, setRevealed] = useState('')
   const lastStep = useRef<Step>(step)
   useEffect(() => {
@@ -335,14 +335,14 @@ function SessionScreen({
       if (body == null) return
       if (step.sides > before.sides) {
         const side = body.querySelector(`.card__side[data-side="${step.sides - 1}"]`)
-        // YAZ-5314: what VoiceOver reads of the side: a hidden word is "Hidden word", never its text.
+        // What VoiceOver reads of the side: a hidden word is "Hidden word", never its text.
         setRevealed(side === null ? '' : spokenText(side))
       } else if (word !== null) setRevealed((body.querySelector(`[data-hidden="${word}"]`)?.textContent ?? '').trim())
     }, 0)
     return () => clearTimeout(id)
   }, [step.key, step.sides, step.open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // No scroll bar (YAZ-5415, round 4): a soft fade and "↓ more" while more of the card lies below; both go at its end.
+  // No scroll bar (round 4): a soft fade and "↓ more" while more of the card lies below; both go at its end.
   const [more, setMore] = useState(false)
   useLayoutEffect(() => {
     const view = cardBox.current
@@ -392,10 +392,10 @@ function SessionScreen({
   }, [card, page, cardFile, link])
   const fixed = card !== null && fixOn?.key === `${card.path}\n${card.id}` && fixOn.on
 
-  // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards", YAZ-5495).
+  // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards").
   const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
   const [line, setLine] = useState<Line | null>(null)
-  // YAZ-5500 (reopened): the answer's "Last: … · ↶ Undo" stays until the first thing done on the next card (a tap that
+  // The answer's "Last: … · ↶ Undo" stays until the first thing done on the next card (a tap that
   // shows a part, ← or →, the deck drawer); then the hint line is the plain hint again. No timer. Undo stays in ⋯.
   const [putAway, setPutAway] = useState<Line | null>(null)
   const firstAction = () => void (line?.kind === 'answer' && putAway !== line && setPutAway(line))
@@ -415,8 +415,8 @@ function SessionScreen({
     // The title's words as they read (a hidden-word mark gives its words: the card is answered), else the ID.
     const name = cardPieces(cardName).map((p) => p.text).join('').trim()
     setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id, name: name === '' ? card.id : name, rating })
-    // YAZ-5266: the guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
-    // YAZ-5502: whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
+    // The guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
+    // Whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
     // the phone React may draw the next card AFTER a 0 ms timer, and the screen then still showed the old count, so a
     // saved answer looked failed and its line (with the 4-second Undo) was put back to the one before.
     let counted = false
@@ -425,7 +425,7 @@ function SessionScreen({
         counted = await review.answer(rating, seconds())
         // Let the next card draw before the guard reads the screen.
         await new Promise((r) => setTimeout(r, 0))
-        // YAZ-5316: a save that failed counts no answer; the line goes back to what it said (the earlier Undo stays).
+        // A save that failed counts no answer; the line goes back to what it said (the earlier Undo stays).
         if (!counted) setLine(earlier)
       },
       // `sameCard`: the save failed (no answer counted; the card stays). The next card's drawing starts the 400 ms.
@@ -433,7 +433,7 @@ function SessionScreen({
       fromDrawing,
     )
   }
-  // YAZ-5228: an answer whose card was gone at the send is in the amber line. Its Undo takes it away cleanly (as
+  // An answer whose card was gone at the send is in the amber line. Its Undo takes it away cleanly (as
   // Discard), and never asks the host for a card that is not there.
   const lostRow = line?.kind === 'answer' ? lostRows(answers.lost).find((r) => r.id === line.id && answers.lost.some((l) => r.seqs.includes(l.seq) && l.op.kind === 'review')) : undefined
   const undo = () => {
@@ -442,7 +442,7 @@ function SessionScreen({
     // sweep2 M-A: from the screen after the last card, the card that comes back takes no tap for 400 ms (its ✓ sits
     // under the finger that tapped Undo).
     guard.undo(card === null)
-    // YAZ-5078: Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
+    // Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
     if (line?.kind === 'mark' && line.undo !== undefined) {
       const run = line.undo
       setLine(null)
@@ -462,13 +462,13 @@ function SessionScreen({
         return false
       },
     )
-    // YAZ-5334: the Undo waits for the mark's own save, so it never reads the line before the mark is in it (a tap
+    // The Undo waits for the mark's own save, so it never reads the line before the mark is in it (a tap
     // during the save was lost). Then the host's rule decides: an unsent mark leaves the list; a tried one gets its
     // inverse as an action. A mark that did not save has nothing to take back.
     const undoAfter = undoIt === undefined ? undefined : () => saved.then((ok) => (ok ? undoIt() : undefined))
     setLine({ kind: 'mark', text, key: cardKey, undo: undoAfter })
   }
-  // YAZ-5078 (the phone's decision): Archive card is on the hook's Undo stack; the line says "Archived · Undo".
+  // Archive card is on the hook's Undo stack; the line says "Archived · Undo".
   const archive = () => {
     setMenu(null)
     setNotice(null)
@@ -499,8 +499,8 @@ function SessionScreen({
             : line?.kind === 'mark' && line.text === 'Answer removed'
               ? { kind: 'mark', text: line.text, undo: false }
               : null
-  // YAZ-5415 (round 5): an add, a mark or Archive card sits IN the hint line for about 4 seconds, then goes; Undo stays
-  // in ⋯. An answer has no timer (YAZ-5500): its "Last: … · ↶ Undo" (below) goes at the first action on the next card.
+  // An add, a mark or Archive card sits IN the hint line for about 4 seconds, then goes; Undo stays
+  // in ⋯. An answer has no timer: its "Last: … · ↶ Undo" (below) goes at the first action on the next card.
   const [fresh, setFresh] = useState<object | null>(null)
   const lineId = session.lastAdd ?? line
   useEffect(() => {
@@ -510,7 +510,7 @@ function SessionScreen({
     return () => clearTimeout(id)
   }, [lineId])
   const quietLine = shownLine !== null && shownLine.kind !== 'answer' && fresh === lineId ? shownLine : null
-  // YAZ-5500: right after an answer, the hint line says it, with its Undo: "Last: Capital of Spain (Forgot) · ↶ Undo".
+  // Right after an answer, the hint line says it, with its Undo: "Last: Capital of Spain (Forgot) · ↶ Undo".
   const lastAnswer = shownLine?.kind === 'answer' && line?.kind === 'answer' && putAway !== line ? { ...line, undo: shownLine.undo } : null
   const lastLine = <LastLine last={lastAnswer} quiet={quietLine} undo={undo} settings={review.settings} />
   // ⋯'s "Undo last answer": whatever the line's Undo would take back, also after the line went.
@@ -521,19 +521,19 @@ function SessionScreen({
   // The crumb (YAZ-5132's place, without the vault): "LEARNING / Memory", inside the card, on the chip's line.
   const crumb = session.place.filter((p) => p.kind !== 'vault').map((p) => p.label)
 
-  // TAP ANYWHERE (YAZ-5415): a tap on the screen shows the next part — the card, the empty space, the hint line, the
+  // TAP ANYWHERE: a tap on the screen shows the next part — the card, the empty space, the hint line, the
   // crumb. Not: a button or a link (✕ ✓ ← → ⋯, Undo, the menus' rows), an open menu, and the card's own taps (a link,
   // a pill, a picture, a sound's Play: YAZ-5298). The CAPTURE phase: a sound player stops each click inside it (the
   // Mac's `cardMedia`), so a tap on its name or its empty part reaches here first.
   const onTap = (e: React.MouseEvent) => {
     const target = e.target instanceof Element ? e.target : null
     if (target === null || card === null) return
-    // YAZ-5539: a tap on the button that opened the menu is left to that button (its second tap closes it). On a real
+    // A tap on the button that opened the menu is left to that button (its second tap closes it). On a real
     // tap the browser lets React draw between this capture handler and the button's own click: had this closed the
     // menu, the button's click would read "closed" and open it again.
     if (menu !== null) return void (target.closest(MENU_OWN_TAPS) === null && setMenu(null))
     if (target.closest(SCREEN_OWN_TAPS) !== null || target.closest(CARD_OWN_TAPS) !== null) return
-    // The bar's own listener (the Mac's seek) never runs on the phone: the tap is a step (YAZ-5333).
+    // The bar's own listener (the Mac's seek) never runs on the phone: the tap is a step.
     if (target.closest('.card__audio-bar') !== null) e.stopPropagation()
     const blank = target.closest<HTMLElement>('.card__blank[data-hidden]')
     if (blank !== null && cardBox.current?.contains(blank) === true) return showPart(Number(blank.dataset.hidden))
@@ -581,7 +581,7 @@ function SessionScreen({
       {card !== null ? (
         <>
           <div className="review__stage">
-            {/* YAZ-5229: the card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
+            {/* The card is TEXT for VoiceOver (its question is read; a hidden word stays "Hidden word" until it
                 shows), not one button with a label. The tap is the sighted way; VoiceOver has its own button below. */}
             <div ref={cardBox} className="review__card card card-screen" style={cardLook}>
               <div className="review__cardtop">
@@ -636,7 +636,7 @@ function SessionScreen({
       ) : (
         <DoneStage>
           {session.end !== null ? (
-            // YAZ-5495: Due today stopped (its % after the first pass, or done): its own screen, the rest after it.
+            // Due today stopped (its % after the first pass, or done): its own screen, the rest after it.
             <div className="review__done" role="status">
               <DueEnd
                 end={session.end}
@@ -741,7 +741,7 @@ function SessionScreen({
 const NO_OP = () => undefined
 
 /**
- * The status part of the hint line. After an answer (YAZ-5500, Yaseen's pick A, text only): "Last: Capital of Spain
+ * The status part of the hint line. After an answer (Yaseen's pick A, text only): "Last: Capital of Spain
  * (Forgot) · ↶ Undo" — the answer in words, no ✕ or ✓ and no colour, so nothing leans on the next answer; one line, a
  * long title gives way with "…". Its words are not a tap (a tap on them never steps the card); its Undo takes the answer
  * back. Else an add, a mark or Archive card, with its Undo, for its few seconds.
@@ -789,12 +789,12 @@ const MENU_OWN_TAPS = '.review__sheet, .review__menu, .review__count-btn, .revie
 const SCREEN_OWN_TAPS = 'button, a[href], input, label, select, textarea, [role="menu"], [role="dialog"], .review__sheet, .review__menu, .review__lastanswer'
 
 /**
- * The progress bar in steps (YAZ-5415, round 4; the Mac's YAZ-5020): one step for each card, in the order answered —
+ * The progress bar in steps (round 4; the Mac's YAZ-5020): one step for each card, in the order answered —
  * grey for Remembered, red for Forgot, so only a miss stands out. A long session draws runs. It counts ONLY the list
  * on show (the Mac's YAZ-5432, `session.progress`, the same answers as the end ring's %): Due today done fills it.
  */
 function Progress({ session }: { session: CardReviewSession }) {
-  // The Mac's bar (YAZ-5432): the filter on show only, `session.progress` (one rule for both apps).
+  // The Mac's bar: the filter on show only, `session.progress` (one rule for both apps).
   const { runs, done } = session.progress
   const size = Math.max(1, session.progress.size)
   const steps = size <= 80
@@ -813,7 +813,7 @@ function Progress({ session }: { session: CardReviewSession }) {
 
 const drawings = new WeakMap<object, string>()
 let drawingCount = 0
-/** One name for each read of a card (YAZ-5315): the guard counts its 400 ms from a NEW drawing. */
+/** One name for each read of a card: the guard counts its 400 ms from a NEW drawing. */
 function drawingOf(page: object): string {
   let name = drawings.get(page)
   if (name === undefined) drawings.set(page, (name = `d${++drawingCount}`))
@@ -821,7 +821,7 @@ function drawingOf(page: object): string {
 }
 
 /**
- * The accessible text of `el` (YAZ-5314): a part marked `aria-hidden` says nothing, a part with a role and a label (a
+ * The accessible text of `el`: a part marked `aria-hidden` says nothing, a part with a role and a label (a
  * hidden word: `role="img"`, "Hidden word") says its label, any other text as it is. Built from what SHOWS only.
  */
 export function spokenText(el: Element): string {
@@ -839,13 +839,13 @@ export function spokenText(el: Element): string {
 }
 
 /**
- * What a tap keeps for itself (never a step): a link, a pill, a picture, a board, and a sound's Play (YAZ-5298). The
- * sound's progress bar is NOT a control on the phone (YAZ-5333): a 4 px line is no tap target (YAZ-5317), and a
+ * What a tap keeps for itself (never a step): a link, a pill, a picture, a board, and a sound's Play. The
+ * sound's progress bar is NOT a control on the phone: a 4 px line is no tap target, and a
  * 44 pt box around it covered the middle of a short card. A tap on it steps, as anywhere on the card.
  */
 const CARD_OWN_TAPS = 'a[href], [data-card-link], [data-card-board], img, .card__audio-play, .page-media'
 
-/** "Today: 31 cards · 9 min" (YAZ-5033), with the time as the setting says (YAZ-5130: hidden behind a tap by default). */
+/** "Today: 31 cards · 9 min", with the time as the setting says (hidden behind a tap by default). */
 function TodayLine({ session, mode: setting }: { session: CardReviewSession; mode: CardReviewApi['settings']['timeSoFar'] }) {
   const [open, setOpen] = useState(false)
   const cards = todayCards(session.today)
@@ -869,7 +869,7 @@ function TodayLine({ session, mode: setting }: { session: CardReviewSession; mod
 
 /**
  * S5 (sweep1): the screen after the last card, which takes no tap for `SEEN_MS` after it appears, as a new card (the tap
- * guard, YAZ-5226). Its "↶ Undo" sits where ✓ was: the second tap of a quick double tap on ✓ hit it and took the
+ * guard). Its "↶ Undo" sits where ✓ was: the second tap of a quick double tap on ✓ hit it and took the
  * answer back, with no word. A tap under 400 ms is that second tap: it is dropped, before any button sees it.
  */
 function DoneStage({ children }: { children: React.ReactNode }) {
@@ -891,7 +891,7 @@ function DoneStage({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** What the done screen says; `title` false under the end of Due today (YAZ-5495), which has its own. */
+/** What the done screen says; `title` false under the end of Due today, which has its own. */
 function DoneBody({ review, session, addKinds, today, title }: { review: CardReviewApi; session: CardReviewSession; addKinds: readonly AddKind[]; today: React.ReactNode; title: boolean }) {
   const adds = addKinds.map((k) => (
     <button key={k} type="button" className="btn review__add" onClick={() => review.addCards(k)}>
@@ -932,7 +932,7 @@ function DoneBody({ review, session, addKinds, today, title }: { review: CardRev
 /**
  * Round 12, item 9: the answers whose card was gone at the send. Amber; one row for each card, with every lost action
  * of that card, and Discard (with its ask) takes them all. The rows, the count and the words are 4D's own (`lostRows`
- * in `status/dot.ts`), so the dot and this line always agree (YAZ-5227).
+ * in `status/dot.ts`), so the dot and this line always agree.
  */
 function LostAnswers({ answers, link }: { answers: AnswersState; link: ReviewLink }) {
   const rows = lostRows(answers.lost)
@@ -953,5 +953,5 @@ function LostAnswers({ answers, link }: { answers: AnswersState; link: ReviewLin
   )
 }
 
-/** The Review tab's lost rows ARE the dot's (one function, YAZ-5227). */
+/** The Review tab's lost rows ARE the dot's (one function). */
 export { lostRows }

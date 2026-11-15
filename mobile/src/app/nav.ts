@@ -2,8 +2,8 @@
  * The shell's navigation (decision 21): the tabs at the bottom, Friends · Review · Search, and screens that open over
  * them (Settings from the gear, and the screens Settings opens). Pure, so it is tested without React.
  *
- * YAZ-5476: the tabs follow the OPEN vault's own settings (`vaultTabs.ts`). Search is always there. Review and Friends
- * only while the vault's Review is on (Friends compares review numbers). The Today button (YAZ-5470) only while its
+ * The tabs follow the OPEN vault's own settings (`vaultTabs.ts`). Search is always there. Review and Friends
+ * only while the vault's Review is on (Friends compares review numbers). The Today button only while its
  * Daily pages are on. A plain vault has Search alone, and then there is no tab bar at all (`showsTabBar`).
  */
 
@@ -54,15 +54,15 @@ export type Route =
   /** A new token for a vault: "Replace token" in Settings, or "Sign in again" (row N6). */
   | { kind: 'replace-token'; vault: string }
   /**
-   * 4C (YAZ-5079): a page, read only. `at`: the ID of a card on it to show first ("Open page" of a card). `heading`: the
-   * `#part` a link named (YAZ-5455): the page opens at that heading.
+   * 4C: a page, read only. `at`: the ID of a card on it to show first ("Open page" of a card). `heading`: the
+   * `#part` a link named: the page opens at that heading.
    */
   | { kind: 'page'; path: string; at?: string; heading?: string }
   /** 4C (round 12, item 10): a card alone, read only: the card, its review history, "Open page" for a card in a page. */
   | { kind: 'card'; path: string; id: string }
-  /** YAZ-5473: a drawing file on its own (`.excalidraw`, `.drawio.svg`, a plain `.drawio` drawn by draw.io's viewer: YAZ-5533), read only. */
+  /** A drawing file on its own (`.excalidraw`, `.drawio.svg`, a plain `.drawio` drawn by draw.io's viewer: YAZ-5533), read only. */
   | { kind: 'drawing'; path: string }
-  /** YAZ-5460: a folder's page, read only (hold a folder in Search): its `.folder.md` text and its views. `path`: the folder as the index names it. */
+  /** A folder's page, read only (hold a folder in Search): its `.folder.md` text and its views. `path`: the folder as the index names it. */
   | { kind: 'folder'; path: string }
   /** 4E4 (decision 23): "You vs <friend>". `theirs`: the friend's pointer; or `group` and `pointer`: a member of a group. */
   | { kind: 'friend'; theirs: string; group?: undefined; pointer?: undefined }
@@ -81,7 +81,7 @@ export function navigate(state: NavState, action: NavAction): NavState {
     case 'tab':
       return { tab: action.tab, stack: [] }
     case 'open':
-      // YAZ-5518: the screen already on top (Today tapped again, a double tap) opens nothing: one entry, one Back.
+      // The screen already on top (Today tapped again, a double tap) opens nothing: one entry, one Back.
       return sameRoute(state.stack.at(-1), action.route) ? state : { ...state, stack: [...state.stack, action.route] }
     case 'swap':
       return { ...state, stack: [...state.stack.slice(0, -1), action.route] }

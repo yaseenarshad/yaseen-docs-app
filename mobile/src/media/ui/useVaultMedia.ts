@@ -3,7 +3,7 @@ import { useApp } from '../../app/AppState'
 import { storedMedia, watchMedia, type VaultMedia } from './vaultMedia'
 
 /**
- * The open vault's media for a screen (YAZ-5079; 4B's Review screen uses the same): 3D's `MediaAhead` from the app
+ * The open vault's media for a screen (4B's Review screen uses the same): 3D's `MediaAhead` from the app
  * (`AppServices.media`), or, with none (tests), the store alone, whose URLs are revoked when the screen closes.
  */
 export function useVaultMedia(): VaultMedia {

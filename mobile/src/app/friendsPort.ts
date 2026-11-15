@@ -1,7 +1,7 @@
 import { PHONE, type VaultStore } from '../store'
 
 /**
- * What the shell needs from Friends (4E, YAZ-5081): whether there is a friend (decision 21: the app opens on Friends;
+ * What the shell needs from Friends (4E): whether there is a friend (decision 21: the app opens on Friends;
  * with no friend yet, on Review), and the two Friends settings (decision 22: "Vaults that count" and "Name").
  *
  * Round 12, item 3 puts both settings in the person's friends list (`FriendsIndex.vaults`, `nickname`, a gist), so each
@@ -15,7 +15,7 @@ export interface FriendsSettings {
   /** The name friends see in place of the GitHub name. Null: the GitHub name (or the login). */
   nickname: string | null
   /**
-   * YAZ-5251: the HOME time zone (IANA) in which every device counts the days of the numbers. Null or absent: not set
+   * The HOME time zone (IANA) in which every device counts the days of the numbers. Null or absent: not set
    * yet (the first device that makes the list or sends writes its own zone).
    */
   zone?: string | null
@@ -26,7 +26,7 @@ export interface FriendsPort {
   hasFriends(): Promise<boolean>
   settings(): Promise<FriendsSettings>
   saveSettings(settings: FriendsSettings): Promise<void>
-  /** YAZ-5195 (4E4 wires it): before "Sign out and erase this phone", stop each friends request and timer. */
+  /** Before "Sign out and erase this phone", stop each friends request and timer. */
   stop?(): Promise<void>
 }
 

@@ -1,4 +1,4 @@
-/* The sync status dot (decision 12; YAZ-5080). The five states and the pulse of GitHub AutoSync and the phone mockup
+/* The sync status dot (decision 12). The five states and the pulse of GitHub AutoSync and the phone mockup
    (version 9). Green, amber and red are the Mac's tokens; blue is the mockup's. Each dot is 3:1 or more against the
    top bar, light and dark (`look.test.ts`). The light amber is the mockup's: the Mac's `--warn` is 2.94:1 on white. */
 :root {
@@ -35,13 +35,13 @@
   cursor: pointer;
 }
 
-/* YAZ-5451: green, blue and grey are the dot only, in a 44 pt box: a tap syncs now. */
+/* Green, blue and grey are the dot only, in a 44 pt box: a tap syncs now. */
 .sync-status--dot {
   min-width: var(--tap);
   justify-content: center;
 }
 
-/* YAZ-5216: the words are never cut. The box takes the room it needs; the vault's name gives room, down to 4 letters.
+/* The words are never cut. The box takes the room it needs; the vault's name gives room, down to 4 letters.
    Under 380 px (iPhone SE, mini) the short form shows: the same facts, 20 characters at most (`dot.ts`). */
 .topbar .topbar__title {
   min-width: 4em;
@@ -61,7 +61,7 @@
   }
 }
 
-/* YAZ-5521 (sweep2 S-B): with a page's ID chip in the bar, the amber dot says its number alone ("2", "1"): the words
+/* With a page's ID chip in the bar, the amber dot says its number alone ("2", "1"): the words
    pushed the ⚙ off the screen. The full words are in the sheet and the button's VoiceOver name. */
 .sync-status__words--count {
   display: none;
@@ -80,7 +80,7 @@
   display: inline;
 }
 
-/* YAZ-5524 (sweep3 S-1): the form the bar has room for (`useFitWords`): the short words, the count alone, the dot alone.
+/* The form the bar has room for (`useFitWords`): the short words, the count alone, the dot alone.
    Any bar, with or without a page's ID chip: the ⚙ and the dot never leave the screen. */
 .sync-status[data-fit='short'] .sync-status__words--full {
   display: none;

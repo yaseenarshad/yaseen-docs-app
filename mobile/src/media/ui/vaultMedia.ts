@@ -5,7 +5,7 @@ import type { VaultStore } from '../../store'
 import type { MediaAhead } from '../ahead'
 
 /**
- * THE PICTURES, SOUNDS AND FILES OF A DRAWN PAGE OR CARD (YAZ-5079, 4C; shared with 4B's Review screen). The screens
+ * THE PICTURES, SOUNDS AND FILES OF A DRAWN PAGE OR CARD (4C; shared with 4B's Review screen). The screens
  * draw first and ask for bytes after: a drawn picture is `<img data-vault-src="<vault path>">` with no address, a page's
  * sound is `[data-vault-sound]`, a card's sound player (`renderCard`'s `.card__audio`) holds `vaultMediaUrl(path)`.
  * `watchMedia(root, media)` gives each one its bytes from 3D (`MediaAhead.show`: the store first, then GitHub, then
@@ -15,7 +15,7 @@ import type { MediaAhead } from '../ahead'
  *
  * The object URLs are 3D's: one per file of the open vault, counted by its users. The watcher lets go of each URL it
  * used (`releaseUrl`) when its element leaves the page or the view closes; 3D revokes it when no screen uses it, past a
- * few recent ones (YAZ-5200). The store-only stand-in (`storedMedia`, tests and before the engine loads) revokes its
+ * few recent ones. The store-only stand-in (`storedMedia`, tests and before the engine loads) revokes its
  * own at `release()`.
  */
 
@@ -34,7 +34,7 @@ export interface VaultMedia {
   show(path: string): Promise<FileShow>
   /** The URL `show` made for `path` before, or null: for a card drawn at once (`CardLookPlace.src`). */
   urlNow?(path: string): string | null
-  /** The screen no longer uses `url`, which one `show` of `path` gave (YAZ-5200, YAZ-5221): 3D may revoke it. */
+  /** The screen no longer uses `url`, which one `show` of `path` gave: 3D may revoke it. */
   releaseUrl?(path: string, url?: string): void
 }
 
@@ -81,7 +81,7 @@ export function storedMedia(store: VaultStore, vault: string): VaultMedia & { re
 
 /**
  * The mark a drawn card's picture or sound holds until its bytes come: a `#…` reference to the page itself that names the
- * vault file. It is never set as an address (YAZ-5242): `watchMedia` puts the bytes in its place.
+ * vault file. It is never set as an address: `watchMedia` puts the bytes in its place.
  */
 export const VAULT_MEDIA_PREFIX = '#vault-media:'
 export const vaultMediaUrl = (path: string): string => `${VAULT_MEDIA_PREFIX}${encodeURIComponent(path)}`
@@ -98,7 +98,7 @@ export function missingWords(kind: 'Picture' | 'Sound' | 'File', path: string, s
 }
 
 /**
- * THE TYPES THAT MAY OPEN AS A PAGE (YAZ-5280). A `blob:` page has the APP'S OWN origin, where the token is kept. So the
+ * THE TYPES THAT MAY OPEN AS A PAGE. A `blob:` page has the APP'S OWN origin, where the token is kept. So the
  * iPhone's viewer opens only a type that cannot run script there:
  *  - `application/pdf`: WebKit draws a PDF with its own viewer, which runs no script of the file.
  *  - `image/png`, `image/jpeg`, `image/gif`, `image/webp`, `image/avif`, `image/bmp`: raster pictures; pixels only.
@@ -127,7 +127,7 @@ const OPENS_AS_PAGE = new Set([
 
 /**
  * Opens a vault file in the iPhone's own viewer from its stored blob (a PDF: round 12, item 11), when its type is on
- * `OPENS_AS_PAGE` (YAZ-5280). Any other file gets "<name> · Open this file on the Mac" at once, with no attempt
+ * `OPENS_AS_PAGE`. Any other file gets "<name> · Open this file on the Mac" at once, with no attempt
  * (round 12, item 12; the follow-up of the live run): the download path read the blob with `fetch`, which the CSP's
  * `connect-src` (GitHub only) refuses, so it never worked on the site. Returns the words to show, or null when it opened.
  */
@@ -197,7 +197,7 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
           if (show.status === 'ready') media.releaseUrl?.(held.path, show.url)
           return
         }
-        // Only the app's own bytes become an address (YAZ-5242).
+        // Only the app's own bytes become an address.
         if (show.status === 'ready' && urlOf(show.url).kind !== 'own') show = { status: 'missing', path: held.path, why: 'failed' }
         if (show.status === 'ready') {
           held.done = true
@@ -251,7 +251,7 @@ export function watchMedia(root: HTMLElement, media: VaultMedia, options: { onli
     for (const el of node.querySelectorAll(WAITING)) take(el)
   }
   scan(root)
-  /** Lets go of the URL `el` used, one time (YAZ-5200). */
+  /** Lets go of the URL `el` used, one time. */
   const letGo = (el: Element) => {
     const held = state.get(el)
     state.delete(el)

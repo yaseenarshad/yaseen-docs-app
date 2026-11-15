@@ -24,12 +24,12 @@ import { seeMark, type SeenMark } from './board'
  * The other side: what this phone has SEEN of a friend's mark (phone-only state, 3A; the gist does not change for it).
  */
 export type MarkKind = FriendMark['kind']
-/** Why a mark waits: the account's budget, the hourly cap of marks (YAZ-5258), no signal, GitHub's rate limit. */
+/** Why a mark waits: the account's budget, the hourly cap of marks, no signal, GitHub's rate limit. */
 export type MarkWait = 'budget' | 'marks-limit' | 'offline' | 'rate-limited'
 
 export type MarkSend =
   | { kind: 'sent'; mark: FriendMark }
-  /** YAZ-5258: this friend already has this kind of mark from me today (one cheer and one nudge a day): no write. */
+  /** This friend already has this kind of mark from me today (one cheer and one nudge a day): no write. */
   | { kind: 'already'; mark: FriendMark }
   /** Kept on the phone; it goes at `retryAt` (null: at the next read with a signal). */
   | {
@@ -59,8 +59,8 @@ export interface Marks {
   send(mine: string, kind: MarkKind, pointers?: number): Promise<MarkSend>
   /** Sends each kept mark whose time has come. */
   /**
-   * Sends each kept mark whose time has come. `pointers`: my pointers in the list (the remove reserve, YAZ-5294).
-   * `keep`: whether a pointer is still a friend's whom a mark may reach (YAZ-5293); a mark for any other is dropped.
+   * Sends each kept mark whose time has come. `pointers`: my pointers in the list (the remove reserve).
+   * `keep`: whether a pointer is still a friend's whom a mark may reach; a mark for any other is dropped.
    */
   flush(options: { pointers: number; keep(mine: string): boolean }): Promise<void>
   /** By my pointer. */
@@ -74,7 +74,7 @@ export interface Marks {
 
 export const MARKS_OUT = 'friendsMarksOut'
 export const MARKS_SEEN = 'friendsMarksSeen'
-/** YAZ-5258: the times of my mark writes in the last hour, and the local day of the last cheer and nudge for each pointer. */
+/** The times of my mark writes in the last hour, and the local day of the last cheer and nudge for each pointer. */
 export const MARKS_LOG = 'friendsMarksLog'
 interface MarksLog {
   times: number[]
@@ -164,16 +164,16 @@ export function createMarks(options: MarksOptions): Marks {
       const reserve = Math.max(saved.pointers ?? 0, pointers)
       const t = now()
       const log = (await store.getState<MarksLog>(PHONE, MARKS_LOG)) ?? { times: [], days: {} }
-      // YAZ-5258: one cheer and one nudge a day for each friend; a second tap of the day makes no write.
+      // One cheer and one nudge a day for each friend; a second tap of the day makes no write.
       if (log.days[mine]?.[mark.kind] === dayOf(t)) return { kind: 'already', mark: (await outbox())[mine]?.mark ?? mark }
-      // YAZ-5258: the 5 updates an hour kept for marks are a hard cap, so marks never take the numbers send's budget.
+      // The 5 updates an hour kept for marks are a hard cap, so marks never take the numbers send's budget.
       const hour = log.times.filter((x) => x > t - HOUR && x <= t).sort((a, b) => a - b)
-      // YAZ-5293: checked at SEND time too: a mark never goes to a friend whose remove waits (the phone's queue).
+      // Checked at SEND time too: a mark never goes to a friend whose remove waits (the phone's queue).
       if ((await queuedMines(store)).has(mine)) {
         await saveOut(session, mine, null)
         return { kind: 'gone' }
       }
-      // YAZ-5294: the order of the hour is `mayMark`'s (removes, then the numbers send, then marks from their own 5).
+      // The order of the hour is `mayMark`'s (removes, then the numbers send, then marks from their own 5).
       if (!mayMark(budget, t, reserve, hour.length)) {
         if (hour.length >= MARK_HEADROOM) return wait('marks-limit', hour[hour.length - MARK_HEADROOM] + HOUR + 1)
         return wait('budget', freeAt(budget, t, 1, reserve))
@@ -250,7 +250,7 @@ export function createMarks(options: MarksOptions): Marks {
       const t = now()
       for (const [mine, out] of Object.entries(await outbox())) {
         if (out.state !== 'waiting') continue
-        // YAZ-5293: a friend who is being removed, is removed, stopped, or no longer shares: the mark is dropped.
+        // A friend who is being removed, is removed, stopped, or no longer shares: the mark is dropped.
         if (!keep(mine)) {
           if (await guard.live()) await saveOut(await store.session(PHONE), mine, null)
           continue

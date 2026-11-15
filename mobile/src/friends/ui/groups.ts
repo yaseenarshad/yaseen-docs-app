@@ -2,7 +2,7 @@ import type { GroupChange, JoinRequest } from '@shared/friendGroups'
 import type { FriendsGroups } from '../list'
 
 /**
- * Groups run by an admin (decision 18; round 14: remove, leave, delete), from 4E3 (YAZ-5084): `list.groups` on 4E2's
+ * Groups run by an admin (decision 18; round 14: remove, leave, delete), from 4E3: `list.groups` on 4E2's
  * list, the types and the words of `shared/friendGroups.ts` (`joinMessage`, `groupViewMessage`). The screens draw them.
  */
 export type { GroupChange, GroupMemberRow, GroupView, JoinRequest, JoinResult } from '@shared/friendGroups'

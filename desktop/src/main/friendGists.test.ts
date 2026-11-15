@@ -131,57 +131,24 @@ describe('make or find the files (one of each, on each device)', () => {
     expect(w.owned('y')).toHaveLength(2)
   })
 
-  it('duplicates left from before are joined: the friends of both, then the extra index is deleted', async () => {
-    const w = world()
-    const api = w.api(T1)
-    const old = await api.create('x', { [INDEX_FILE]: JSON.stringify({ v: 1, nickname: null, vaults: ['a/b'], stats: null, friends: [{ name: 'Sam', theirs: 'a1', mine: 'b1' }], groups: [] }) })
-    w.advance(2000) // GitHub's created_at has whole seconds
-    await api.create('x', { [INDEX_FILE]: JSON.stringify({ v: 1, nickname: 'Y', vaults: ['a/b'], stats: null, friends: [{ name: 'Ali', theirs: 'a2', mine: 'b2' }], groups: [{ name: 'G', group: 'c3', mine: 'b3', admin: false }] }) })
-    const found = await findFriendsIndex(api, opts)
-    expect(found.kind).toBe('ok')
-    if (found.kind !== 'ok') return
-    // YAZ-5083: found as an old list (read only); the phone moves it, with the twin's friends, into the vault.
-    expect(found.handle.id).toBe(old.id)
-    const moved = await ensureFriendsFiles(api, seed, opts)
-    if (moved.kind !== 'ok') throw new Error(moved.kind)
-    expect(moved.handle.id).toBe(old.id)
-    expect(moved.handle.index.friends.map((f) => f.name)).toEqual(['Sam', 'Ali'])
-    expect(moved.handle.index.groups).toHaveLength(1)
-    expect(moved.handle.index.nickname).toBe('Y')
-    // The twin is gone; the old list's gist is the note (and the numbers gist made for a list that had none).
-    expect(w.owned('yaseen').filter((g) => INDEX_FILE in g.files).map((g) => g.id)).toEqual([old.id])
-  })
-
-  it('YAZ-5083: an old list moves into the vault repo once; a remove that an older app writes during the move is not lost', async () => {
+  it('YAZ-5092 C2: an old gist list (version 1 or 2, never shipped) is "broken": it is not read, moved or written', async () => {
     const w = world()
     const api = w.api(T1)
     const statsId = w.seed('yaseen', { [NUMBERS_FILE]: JSON.stringify(STATS) })
-    const sam = 'aa11aa11aa11aa11aa11aa11aa11aa11'
     const old = w.seed('yaseen', {
       [INDEX_FILE]: JSON.stringify({ v: 2, nickname: 'Y', vaults: ['yaseen/vault'] }),
       [`notecards-friends.n.0-${statsId}.json`]: JSON.stringify({ v: 1, stats: statsId, covers: [] }),
       [`notecards-friends.d.${statsId}.json`]: '{"v":1}',
-      [`notecards-friends.f.${sam}.json`]: JSON.stringify({ v: 1, name: 'Sam', theirs: 'bb22bb22bb22bb22bb22bb22bb22bb22' }),
+      [`notecards-friends.f.aa11aa11aa11aa11aa11aa11aa11aa11.json`]: JSON.stringify({ v: 1, name: 'Sam', theirs: 'bb22bb22bb22bb22bb22bb22bb22bb22' }),
     })
-    // The older app (on another phone) removes Sam at the moment of the move: its tombstone lands before the note.
-    const older = w.api(T2)
-    const racing: typeof api = {
-      ...api,
-      update: async (id, files) => {
-        if (id === old && readNote(files[INDEX_FILE] ?? null).kind === 'note') await older.update(old, { [`notecards-friends.x.${sam}-fr1.json`]: JSON.stringify({ v: 1, kinds: ['friend'], rekey: true, at: '' }) })
-        return api.update(id, files)
-      },
-    }
-    const moved = await ensureFriendsFiles(racing, seed, opts)
-    if (moved.kind !== 'ok') throw new Error(moved.kind)
-    expect(readNote(w.text(old, INDEX_FILE))).toEqual({ kind: 'note', home: 'yaseen/vault' })
-    const read = listIn(w)
-    expect(read.kind === 'ok' && read.value.friends).toEqual([])
-    expect(read.kind === 'ok' && read.list.pending.map((t) => t.mine)).toEqual([sam])
-    // Only the note is left in the old gist; a second open moves nothing again.
-    expect(Object.keys(w.owned('yaseen').find((g) => g.id === old)!.files)).toEqual([INDEX_FILE])
-    const again = await ensureFriendsFiles(api, seed, opts)
-    expect(again.kind === 'ok' && again.handle.index.nickname).toBe('Y')
+    w.advance(2000) // GitHub's created_at has whole seconds: a twin list of version 1, made later
+    await api.create('x', { [INDEX_FILE]: JSON.stringify({ v: 1, nickname: null, vaults: ['yaseen/vault'], stats: null, friends: [], groups: [] }) })
+    const before = JSON.stringify(w.owned('yaseen'))
+    expect(await findFriendsIndex(api, opts)).toEqual({ kind: 'broken', id: old })
+    expect(await ensureFriendsFiles(api, seed, opts)).toEqual({ kind: 'broken' })
+    // Nothing is written: no gist, and no list file in the vault.
+    expect(JSON.stringify(w.owned('yaseen'))).toBe(before)
+    expect(w.repos!.file('yaseen/vault', LIST_PATH)).toBeNull()
   })
 
   it('an index written by a newer app is not touched', async () => {
@@ -208,48 +175,6 @@ describe('make or find the files (one of each, on each device)', () => {
 })
 
 describe('YAZ-5191: a friends list that this app cannot read is never written over', () => {
-  it('a list that this app cannot read (one name over 200 letters) is never written over: its friends stay', async () => {
-    const w = world()
-    const api = w.api(T1)
-    const statsId = w.seed('yaseen', { [NUMBERS_FILE]: JSON.stringify(STATS) })
-    const listId = w.seed('yaseen', { [INDEX_FILE]: JSON.stringify({ v: 1, nickname: null, vaults: ['yaseen/vault'], stats: statsId, friends: [
-      { name: 'x'.repeat(201), theirs: 'aa11', mine: 'bb22' },
-      { name: 'Sam', theirs: 'cc33', mine: 'dd44' },
-    ], groups: [] }) })
-    await ensureFriendsFiles(api, seed, opts)
-    // YAZ-5083: moved into the vault repo, both friends kept, the long name whole.
-    void listId
-    expect(Object.values(recordsIn(w).records).filter((r) => typeof r.theirs === 'string').map((r) => r.name)).toEqual(['x'.repeat(201), 'Sam'])
-  })
-
-  it('a write keeps each entry that this app cannot read, and each long name whole (cut only for the screens)', async () => {
-    const w = world()
-    const api = w.api(T1)
-    const statsId = w.seed('yaseen', { [NUMBERS_FILE]: JSON.stringify(STATS) })
-    const long = 'L'.repeat(260)
-    const odd = { name: 'Odd', theirs: 'not hex', mine: 'zz', later: 1 }
-    const listId = w.seed('yaseen', {
-      [INDEX_FILE]: JSON.stringify({ v: 1, nickname: 'N'.repeat(250), vaults: ['a/b', 7], stats: statsId, friends: [{ name: long, theirs: 'aa11', mine: 'bb22' }, odd], groups: [{ name: 'G', group: 'ee55', mine: 'ff66' }] }),
-    })
-    const found = await findFriendsIndex(api, opts)
-    if (found.kind !== 'ok') throw new Error(found.kind)
-    expect(found.handle.index.friends).toEqual([{ name: long.slice(0, 200), theirs: 'aa11', mine: 'bb22' }])
-    // YAZ-5083: the phone moves the list into the vault repo first; then it writes there.
-    const moved = await ensureFriendsFiles(api, seed, opts)
-    if (moved.kind !== 'ok') throw new Error(moved.kind)
-    await writeFriendsIndex(api, moved.handle, { ...moved.handle.index, friends: [...moved.handle.index.friends, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }] })
-    void listId
-    // Each long name whole; the entry this app cannot read stays (in the head); Sam has his own record.
-    const after = recordsIn(w)
-    expect(after.records['f.bb22']).toMatchObject({ name: long, theirs: 'aa11' })
-    expect(after.head.friends).toEqual([odd])
-    const read = listIn(w)
-    expect(read.kind === 'ok' && read.value.friends).toEqual([{ name: long.slice(0, 200), theirs: 'aa11', mine: 'bb22' }, { name: 'Sam', theirs: 'cc33', mine: 'dd44' }])
-    expect(after.head.nickname).toBe('N'.repeat(250))
-    expect(after.head.vaults).toEqual(['a/b', 7])
-    expect(after.records['g.ff66']).toMatchObject({ name: 'G', group: 'ee55' })
-  })
-
   it('a list that is not JSON: find says "broken", and NO call writes to it (ensure, add, remove)', async () => {
     const w = world()
     const api = w.api(T1)

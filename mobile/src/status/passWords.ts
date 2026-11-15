@@ -1,7 +1,7 @@
 import type { ShellSyncEvent, ShellSyncState } from '../app/syncPort'
 
 /**
- * YAZ-5469: the words of the quiet toast after a tap on the dot, from the pass that the tap ran. Its own chunk: the
+ * The words of the quiet toast after a tap on the dot, from the pass that the tap ran. Its own chunk: the
  * first load keeps only the toast. The automatic 15 s pass says nothing.
  *  - "Synced · 3 pages updated" (the files that came in: added, changed, removed, renamed);
  *  - "Synced · up to date";

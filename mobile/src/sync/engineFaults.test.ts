@@ -35,7 +35,7 @@ async function setup(files: Record<string, string | Uint8Array> = { 'a.md': page
   return { s, clock, engine, tick, refs: () => s.count('ref') }
 }
 
-describe('checker YAZ-5072: rate limit', () => {
+describe('rate limit', () => {
   it('3B-A: a rate limit whose reset time has already passed (phone clock a little ahead) does not retry with no wait', async () => {
     const t = await setup()
     await t.engine.open(VAULT_ROW)
@@ -52,7 +52,7 @@ describe('checker YAZ-5072: rate limit', () => {
   })
 })
 
-describe('checker YAZ-5072: the polling timer after an error', () => {
+describe('the polling timer after an error', () => {
   it('3B-B: one failed read of the token store (IndexedDB "connection lost") does not stop the polling for good', async () => {
     const s0 = await syncSetup({ 'a.md': pageText('A', 'NC-1') })
     let fail = 0
@@ -76,7 +76,7 @@ describe('checker YAZ-5072: the polling timer after an error', () => {
   })
 })
 
-describe('checker YAZ-5072: switching vault mid-pass', () => {
+describe('switching vault mid-pass', () => {
   it('3B-C: opening vault B while vault A downloads shows B from storage at once, and B syncs, without waiting for A', async () => {
     const gitA = await fakeGit({ 'a.md': pageText('A', 'NC-1'), 'a2.md': pageText('A2', 'NC-2') }, 'main')
     const gitB = await fakeGit({ 'b.md': pageText('B', 'NC-9') }, 'main')
@@ -120,7 +120,7 @@ describe('checker YAZ-5072: switching vault mid-pass', () => {
   })
 })
 
-describe('checker YAZ-5072: file(path) and a pass at the same time', () => {
+describe('file(path) and a pass at the same time', () => {
   it('3B-D: a picture fetched on demand while a pass changes it does not keep the old version for good', async () => {
     let releaseBlob: (() => void) | null = null
     let holdNextBlob = false
@@ -149,7 +149,7 @@ describe('checker YAZ-5072: file(path) and a pass at the same time', () => {
   })
 })
 
-describe('checker YAZ-5072: a request that never ends', () => {
+describe('a request that never ends', () => {
   it('3B-E: a GitHub request that hangs (no answer, no error) ends after a time limit; the engine goes grey and polls again', async () => {
     let hang = false
     const wrap = (f: FetchLike): FetchLike => (url, init) => (hang ? new Promise<Response>(() => {}) : f(url, init))
@@ -166,7 +166,7 @@ describe('checker YAZ-5072: a request that never ends', () => {
   })
 })
 
-describe('checker YAZ-5072: probes that are expected to pass', () => {
+describe('edge cases that pass', () => {
   it('paths with spaces, #, %, emoji, non-ASCII; a case-only rename; a big binary', async () => {
     const s = await syncSetup({
       'my pages/a #1 100%.md': pageText('Hash', 'NC-1'),

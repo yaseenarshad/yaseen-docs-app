@@ -19,10 +19,10 @@ export interface CommentsState {
   vault: string | null
   /** Comments not sent yet (refused ones not counted): the dot counts them as waiting. */
   waiting: number
-  /** YAZ-5494: of `waiting`, the check box ticks. */
+  /** Of `waiting`, the check box ticks. */
   ticks: number
   refused: number
-  /** YAZ-5517: of `refused`, the ticks, and those whose page is gone. */
+  /** Of `refused`, the ticks, and those whose page is gone. */
   refusedTicks: number
   refusedGone: number
   sending: boolean
@@ -39,7 +39,7 @@ export interface NewCommentInput {
    * YAZ-5522 N11: a tick's hold (`TICK_HOLD_MS`) joins the ticks already held, so they go in one commit.
    */
   holdMs?: number
-  /** YAZ-5494: a tick of a task check box, not a comment (`body` is then empty). */
+  /** A tick of a task check box, not a comment (`body` is then empty). */
   task?: TaskTick
 }
 
@@ -75,7 +75,7 @@ const NEEDS_PERSON = ['UNAUTHORIZED', 'READ_ONLY', 'NOT_FOUND', 'NO_ACCESS']
 const NO_SIGNAL = ['OFFLINE', 'GITHUB_DOWN', 'NO_LOGIN']
 
 /**
- * YAZ-5461: the comment list of the open vault and WHEN it is sent, as the answer list is (`answers/answers.ts`): at
+ * The comment list of the open vault and WHEN it is sent, as the answer list is (`answers/answers.ts`): at
  * once when a comment is due (a typed one at once, the one-tap "Approved" after its 4-second Undo), at once when the
  * app goes to the background, when the connection comes back and when the engine's poll works again; "slow down" at
  * the time GitHub gives. One send at a time, in the engine's lane (never while a pass writes the store, and never at
@@ -230,7 +230,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
           slowedInRow++
           setState({ problem, retryAt: slowedUntil(error as GithubError, slowedInRow, clock.now()) })
         } else if (problem === 'STALE_HEAD') {
-          // The branch kept moving: wait 1, 2, 4 … minutes, as the answer list does (YAZ-5183).
+          // The branch kept moving: wait 1, 2, 4 … minutes, as the answer list does.
           staleInRow++
           setState({ problem, retryAt: staleUntil(staleInRow, clock.now()) })
         } else setState({ problem, retryAt: null })

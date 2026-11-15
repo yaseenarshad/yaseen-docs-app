@@ -1,8 +1,8 @@
 import { formatCardLine, parseCardLine, type CardLine, type CardPart } from '@shared/cardLine'
 
 /**
- * YAZ-5409: the phone changes ONLY the part that its action changes. The shared writer (`formatCardLine`) writes each
- * part in the app's form: a raw comma in a title or a value becomes `&#44;` (YAZ-5393), an ID in small letters gets
+ * The phone changes ONLY the part that its action changes. The shared writer (`formatCardLine`) writes each
+ * part in the app's form: a raw comma in a title or a value becomes `&#44;`, an ID in small letters gets
  * capitals, the spaces around the commas change. That is right for the Mac, which owns the line. The phone writes the
  * line again by SPLICE: each part that its actions kept (the same part object, `applyOp` never copies one) keeps its
  * bytes and its place in `text`, and only an added part is written in the app's form.

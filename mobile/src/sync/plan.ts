@@ -4,7 +4,7 @@ import { FOLDER_SETTINGS_FILE, VAULT_CONFIG_DIR } from '@shared/types'
 /**
  * What the sync pass downloads, and what it compares (October 2E; decision 6).
  *
- * - Eager: downloaded on the first sync and kept current. A card file (YAZ-5037) is a `.md` file, so it is eager with
+ * - Eager: downloaded on the first sync and kept current. A card file is a `.md` file, so it is eager with
  *   the pages; the phone needs no other rule.
  * - Pictures and sounds ahead of time (`MEDIA_AHEAD_DAYS`) are 3D's (`mobile/src/media`): they download AFTER the pass,
  *   in the background, so the first download and each refresh are never slower for them.

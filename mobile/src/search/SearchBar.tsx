@@ -37,8 +37,8 @@ export function toggleType(type: PhoneType, kind: PhoneKind): PhoneType {
 const TYPE_MENU_OWN = '.search__menu, .search__type-chip'
 
 /**
- * THE FILTER BAR OF SEARCH (round 15 item 2; YAZ-5452), in Search's lazy chunk so the first load does not grow
- * (YAZ-5377). "All types ▾" opens the Type menu (YAZ-5534: the Mac's words and order, `searchFilter.ts`: All types,
+ * THE FILTER BAR OF SEARCH (round 15 item 2), in Search's lazy chunk so the first load does not grow
+ *. "All types ▾" opens the Type menu (the Mac's words and order, `searchFilter.ts`: All types,
  * Pages, Cards, Drawings, Diagrams; Cards only while Review is on), each type with its tree icon. Any mix of types, each
  * with its check: a tap turns one on or off and the menu stays; All types turns them all off and closes it. Beside it, a chip for each list of the vault
  * (Favorites, Focus, Recent): a tap shows only that list, a second tap shows everything again. A chip and not a row of the Type menu:
@@ -53,8 +53,8 @@ export function SearchBar({ data, kind, cards, onType, onScope }: { data: VaultD
   const { vaultKey, unit } = app
   const store = app.services.store
   const [menu, setMenu] = useState(false)
-  // YAZ-5092 D3: the Type menu is an overlay of the app's one stack: a Back closes it, and Search stays. The app's one
-  // rule for menus (YAZ-5552): the chip again, a tap outside (only that), Escape or Back closes it.
+  // The Type menu is an overlay of the app's one stack: a Back closes it, and Search stays. The app's one rule for
+  // menus: the chip again, a tap outside (only that), Escape or Back closes it.
   useMenuToggle(menu, () => setMenu(false), TYPE_MENU_OWN)
   const [on, setOn] = useState(() => chosenOf(vaultKey))
   const types = PHONE_KINDS.filter(([value]) => cards || value !== 'cards')

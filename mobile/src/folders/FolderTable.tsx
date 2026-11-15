@@ -7,7 +7,7 @@ import { columnAlignOf } from '@client/views/view/columnAlign'
 import { columnFillOf } from '@client/views/view/columnFill'
 import { canonicalKey } from '@client/views/view/keys'
 import { useApp } from '../app/AppState'
-// YAZ-5472 Q4: a folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
+// A folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
 import { openFile } from '../explore/openFile'
 import { layoutTables } from '../page/tableLayout'
 import { useTables } from '../page/useTables'
@@ -16,16 +16,16 @@ import { useVaultData } from '../search/vaultData'
 import { rowTarget, type ViewRun } from './folderModel'
 
 /**
- * A FOLDER'S TABLE VIEW ON THE PHONE (YAZ-5460), read only: the rows and the columns the Mac's table shows (the Mac's
+ * A FOLDER'S TABLE VIEW ON THE PHONE, read only: the rows and the columns the Mac's table shows (the Mac's
  * engine ran it: the same columns in the same order and labels, the same formats, filter, sort and groups), in the
- * phone's own table look (YAZ-5471, YAZ-5480): the header row stays at the top, the Name column at the left, the table
+ * phone's own table look: the header row stays at the top, the Name column at the left, the table
  * scrolls sideways in its box, and ⤢ opens it full screen. The view's own column widths (`columnSize`), alignment,
  * fills and Clip come with it, as a page's table brings the file's (`data-widths`, `align`, `data-fill`, `data-clip`).
  * A group is a header row (its name and count in the Name column, so it stays in sight while the table scrolls
  * sideways), its rows under it, its inner groups after. A tap on a row's Name opens its page (a subfolder's row, its
  * folder's page; a card row, its card) through the one file door.
  *
- * YAZ-5532: a finger on a row bands it, as the Mac's hover band (`rowBand.ts`, the vault's band look): the band follows
+ * A finger on a row bands it, as the Mac's hover band (`rowBand.ts`, the vault's band look): the band follows
  * the finger and stays on the last row after the lift. A tap on the row's Name opens it (its cell at least 44 px tall);
  * a tap on another cell only moves the band; a long press on a cell's text selects in that cell.
  *
@@ -43,7 +43,7 @@ export function FolderTable({ run }: { run: ViewRun }) {
   const app = useApp()
   const host = useRef<HTMLDivElement>(null)
   const rows = useRef<Row[]>([])
-  // YAZ-5532: the vault's band look (`table-look.json`), as a page's tables.
+  // The vault's band look (`table-look.json`), as a page's tables.
   const look = useVaultLook(app.services.store, useVaultData())
   useTables(host, look?.table ?? null)
   useEffect(() => {
@@ -54,7 +54,7 @@ export function FolderTable({ run }: { run: ViewRun }) {
     el.replaceChildren(table)
     layoutTables(el)
   }, [run])
-  // YAZ-5532 (Yaseen picked A): only a tap on the row's Name opens it; a tap elsewhere only moves the band.
+  // Only a tap on the row's Name opens it; a tap elsewhere only moves the band.
   const onClick = (e: React.MouseEvent) => {
     const name = (e.target as Element).closest<HTMLElement>('td[data-name]')
     const tr = name?.closest<HTMLElement>('tr[data-row]') ?? null

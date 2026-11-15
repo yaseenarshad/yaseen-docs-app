@@ -1,7 +1,7 @@
 import { urlOf } from '@client/editor/card/localOnly'
 
 /**
- * A tap on a link in a drawn page or card that the app does not open itself (YAZ-5243). The app's window never leaves the
+ * A tap on a link in a drawn page or card that the app does not open itself. The app's window never leaves the
  * app: a web or mail link opens in Safari (a new browsing context, no opener, no referrer; in a Home Screen app the
  * window would else go to the other host); a `#part` scrolls the page; anything else does nothing.
  * Returns true when it took the tap.

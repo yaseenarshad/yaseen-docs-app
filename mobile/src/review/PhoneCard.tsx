@@ -2,14 +2,15 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { CARD_MEDIA, CARD_OPENS } from '@client/editor/card/cardMedia'
 import { CARD_LINK_ATTR, type CardShow } from '@client/editor/card/cardRender'
 import { linkCard, linkPath, type WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
-// `cardRender.ts` draws the card but brings no styles (YAZ-5153): the phone loads the Mac's card, table and card-screen
-// styles itself, so a table, a pill, a hidden word and a sound look as on the Mac.
+// `cardRender.ts` draws the card but brings no styles: the phone loads the Mac's card, table and card-screen
+// styles itself, so a table, a pill, a hidden word and a sound look as on the Mac. Of the Mac's table look, only the
+// part that reaches a table outside its editor (`cardTable.css`): the rest matches only inside the editor.
 import '@client/editor/card/card.css'
-import '@client/editor/table/table.css'
-// YAZ-5471: the phone's cell look for a card's table (`tables.css`, as in a page).
+import '@client/editor/table/cardTable.css'
+// The phone's cell look for a card's table (`tables.css`, as in a page).
 import '../page/tables.css'
 import '@client/review/cardScreens.css'
-// YAZ-5363: the media line ("Picture · … · Needs a connection") on a card, as on a page.
+// The media line ("Picture · … · Needs a connection") on a card, as on a page.
 import '../media/mediaLine.css'
 import { drawLocalCard } from '../media/ui/cardDraw'
 import { guardLink } from '../media/ui/safeLinks'
@@ -34,7 +35,7 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
   // The pills follow the index: a new snapshot draws the card again.
   const snapshot = useSyncExternalStore(links.subscribe, () => links.records)
   const { sides, shown, next } = show
-  // Words shown out of order (YAZ-5415: a tap on a hidden part shows THAT part, as the Mac's click): by value.
+  // Words shown out of order (a tap on a hidden part shows THAT part, as the Mac's click): by value.
   const picked = show.picked?.join(',') ?? ''
 
   // One watch for the life of the card: each drawing's new pictures are watched too; the card's sound stops at the end.
@@ -52,7 +53,7 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
   useEffect(() => {
     const el = box.current
     if (el === null) return
-    // The phone's ONE card drawing (YAZ-5242): the same as the card view's and the page's, local media only.
+    // The phone's ONE card drawing: the same as the card view's and the page's, local media only.
     const drawn = drawLocalCard(text, { sides, shown, picked: picked === '' ? [] : picked.split(',').map(Number), next }, { links, files, holder })
     el.replaceChildren(drawn)
   }, [text, holder, sides, shown, picked, next, links, snapshot, files])
@@ -60,7 +61,7 @@ export function PhoneCard({ text, holder, show, links, files, media, retry, onOp
   const onClick = (event: React.MouseEvent) => {
     const target = event.target instanceof Element ? event.target : null
     if (target === null || target.closest(CARD_MEDIA) !== null) return
-    // A link in the card's text: the web opens Safari, the app's window stays (YAZ-5243).
+    // A link in the card's text: the web opens Safari, the app's window stays.
     if (target.closest('a') !== null && guardLink(event)) return void event.stopPropagation()
     const pill = target.closest<HTMLElement>(CARD_OPENS)
     const inner = pill?.getAttribute(CARD_LINK_ATTR)

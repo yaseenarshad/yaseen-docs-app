@@ -1,4 +1,4 @@
-/* YAZ-5440: a drawing in a page (`drawingBox.ts`, `watchDrawings.ts`) and its full-screen view. */
+/* A drawing in a page (`drawingBox.ts`, `watchDrawings.ts`) and its full-screen view. */
 .page-drawing {
   display: block;
   margin: 12px 0;

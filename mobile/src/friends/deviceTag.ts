@@ -2,7 +2,7 @@ import { listMemory, type ListMemory } from '@shared/friendListStore'
 import { PHONE, type VaultStore } from '../store'
 
 /**
- * YAZ-5083: this phone's own tag in the friends list (phone-only state, made once). A remove's step that this phone
+ * This phone's own tag in the friends list (phone-only state, made once). A remove's step that this phone
  * began before a stop (the intent of a new numbers generation) is known as its own after a restart, so it goes on at
  * once instead of waiting for the lease of another device. Random: it names no person and no device.
  */
@@ -17,7 +17,7 @@ export async function deviceTag(store: VaultStore): Promise<string> {
 }
 
 /**
- * YAZ-5398: the newest friends list this phone wrote or read, in each vault repo (`ListMemory` of
+ * The newest friends list this phone wrote or read, in each vault repo (`ListMemory` of
  * `shared/friendListStore.ts`): only the repo name with a write count and a time. A read of GitHub that is OLDER than it
  * (a read replica that lags) is never trusted, so a remove never says "done" from an old list. Kept in the phone's own
  * state, so a restart keeps it; one copy for each store in memory, so the list and the sender share it.

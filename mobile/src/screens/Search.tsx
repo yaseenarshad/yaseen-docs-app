@@ -9,34 +9,34 @@ import { uiSlicer } from '../sync/yieldToUi'
 import '../search/search.css'
 import { recordsWithBoards } from '../drawing/boardFiles'
 
-/** The tree (YAZ-5438): its own chunk, loaded when the box is empty. */
+/** The tree: its own chunk, loaded when the box is empty. */
 const SearchTree = lazy(() => import('../search/SearchTree'))
-/** The results in the tree (YAZ-5447): the same chunk (the first load stays under its ceiling, YAZ-5377). */
+/** The results in the tree: the same chunk (the first load stays under its ceiling). */
 const ResultTree = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultTree })))
-/** The filter bar: Type and the vault's lists (YAZ-5452), the same chunk. */
+/** The filter bar: Type and the vault's lists, the same chunk. */
 const SearchBar = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.SearchBar })))
-/** Collapse all / Expand all in the box (YAZ-5474), the same chunk. */
+/** Collapse all / Expand all in the box, the same chunk. */
 const FoldButton = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.FoldButton })))
 
 /** Rows drawn at first, and added at each "Show more" (5,000 pages are not drawn at once). */
 const STEP = 100
 
 /**
- * THE SEARCH TAB (YAZ-5079, 4C; decisions 10 and 21, round 15 item 2). One box: cards and pages in one list, by title,
+ * THE SEARCH TAB (4C; decisions 10 and 21, round 15 item 2). One box: cards and pages in one list, by title,
  * alias and ID, as the Mac's search finds them (`searchRun.ts`). The list changes with each letter, from the phone's own
- * index, so it works with no signal. The Type filter (YAZ-5534): All types, Pages, Cards, Drawings, Diagrams, any mix
+ * index, so it works with no signal. The Type filter: All types, Pages, Cards, Drawings, Diagrams, any mix
  * (Cards only while the vault's Review is on). A tap on a page opens it read only; a tap on a card opens the card alone
  * (round 12, item 10). The words follow the vault's word for "page" (`unit`).
  *
- * YAZ-5438: the box empty shows the Mac's sidebar tree (`SearchTree`): folders that open and close, pages and card
+ * The box empty shows the Mac's sidebar tree (`SearchTree`): folders that open and close, pages and card
  * files, with the Mac's icons and order (Cards: the cards, each with the card icon). A result row has the same icons
  * (a page, a card file, a card in a page) in place of the word "page".
- * YAZ-5439: the ✕ at the right of the box (and Escape) clears the text and leaves the search: the keyboard goes away
+ * The ✕ at the right of the box (and Escape) clears the text and leaves the search: the keyboard goes away
  * and the tree shows again.
- * YAZ-5447: with text, the results stand in that tree, as on the Mac's Search tab (`ResultTree`, `foundTree.ts`).
- * YAZ-5452: a list filter (Favorites, `SearchBar`) cuts the rows to that list before the search, so the text finds only in it.
- * YAZ-5474: with an empty box, the ✕'s place holds the Mac's Collapse all / Expand all (`folds.tsx`).
- * YAZ-5534: a Type on shows its rows in that same result tree, with text or not, in a list too (Favorites + Cards):
+ * With text, the results stand in that tree, as on the Mac's Search tab (`ResultTree`, `foundTree.ts`).
+ * A list filter (Favorites, `SearchBar`) cuts the rows to that list before the search, so the text finds only in it.
+ * With an empty box, the ✕'s place holds the Mac's Collapse all / Expand all (`folds.tsx`).
+ * A Type on shows its rows in that same result tree, with text or not, in a list too (Favorites + Cards):
  * the parents of each row open, so the folder it sits in shows. The fold button folds that tree.
  */
 export function Search() {
@@ -50,11 +50,11 @@ export function Search() {
   const [rows, setRows] = useState<SearchCandidate[] | null>(null)
   const [found, setFound] = useState<SearchCandidate[] | null>(null)
   const [shown, setShown] = useState(held.shown ?? STEP)
-  /** The query and Type the rows shown are for: a new one starts the list again at its top (YAZ-5211). */
+  /** The query and Type the rows shown are for: a new one starts the list again at its top. */
   const listOf = useRef(`${held.query}\n${held.type.join('+')}`)
   const section = useRef<HTMLElement>(null)
   const input = useRef<HTMLInputElement>(null)
-  /** YAZ-5439: clear the box and leave the search (the keyboard goes away). */
+  /** Clear the box and leave the search (the keyboard goes away). */
   const leave = () => {
     setQuery('')
     input.current?.blur()
@@ -100,14 +100,14 @@ export function Search() {
   // its first sync do the pages come with the next one.
   const synced = app.sync.vault === vaultKey && app.sync.ready
   const tree = empty && kind.length === 0
-  // YAZ-5534: a Type with no text: every row of its types, drawn in the result tree as a search's.
+  // A Type with no text: every row of its types, drawn in the result tree as a search's.
   const typed = useMemo(() => {
     const keep = typeTest(kind)
     return pool !== null && empty && keep !== undefined ? pool.filter(keep) : null
   }, [pool, empty, kind])
   const results = empty ? typed : found
 
-  // YAZ-5211: the list's scroll place is kept as the person scrolls, and given back when the tab shows again.
+  // The list's scroll place is kept as the person scrolls, and given back when the tab shows again.
   useEffect(() => keepPlace(shown), [shown])
   const placed = useRef(false)
   useLayoutEffect(() => {

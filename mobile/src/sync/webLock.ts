@@ -4,7 +4,7 @@ const browserLocks = (): Locks | undefined => (globalThis as { navigator?: { loc
 
 /**
  * `fn` under the Web Lock `name`: one at a time in every tab of the app. Where Web Locks are missing, no lock. The ONE
- * copy (YAZ-5092 A4) for the sync engine and the friends code; the stored lists use `vaultLock` (`vaultLock.ts`).
+ * copy for the sync engine and the friends code; the stored lists use `vaultLock` (`vaultLock.ts`).
  */
 export function webLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
   const locks = browserLocks()

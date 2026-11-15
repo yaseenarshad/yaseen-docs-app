@@ -1,5 +1,5 @@
 /**
- * THE DRAG DOWN OF A SHEET (YAZ-5472): the rules, pure, so they are tested without a phone. `sheetMotion.ts` feeds it
+ * THE DRAG DOWN OF A SHEET: the rules, pure, so they are tested without a phone. `sheetMotion.ts` feeds it
  * the finger and draws what it says.
  *
  *  - From the HEAD the sheet follows the finger 1:1 from where it came down, at any scroll place.

@@ -783,9 +783,10 @@ describe('3D: "show this picture" (C1, N3), store first, then the network', () =
 })
 
 describe('3D: 2,000 files to fetch, no long task on the UI thread', () => {
-  // YAZ-5190 (3D5): the hold is the CPU time of 3D's own work between two yields (`process.cpuUsage`), not the wall
-  // clock: another process on a busy machine does not count, and a long task of this code always does. No skip.
-  it('plans and downloads 2,000 pictures; no slice of its work holds the thread past budgetMs(50); the numbers are printed', async () => {
+  // YAZ-5190 (3D5): the hold is the CPU time of 3D's own work between two yields, of THIS thread
+  // (`process.threadCpuUsage`, as `review/perf.test.tsx`), not the wall clock: another process or test worker on a busy
+  // machine does not count, and a long task of this code always does. 50 ms of CPU, as the other phone perf tests. No skip.
+  it('plans and downloads 2,000 pictures; no slice of its work holds the thread for 50 ms of CPU; the numbers are printed', async () => {
     const files: Record<string, string | Uint8Array> = { '.yaseendocs/review.json': '{"newPerDay":null}' }
     for (let p = 0; p < 100; p++) {
       const cards = Array.from({ length: 10 }, (_, c) => block(`NC-${p * 10 + c + 1}`, `Q ![](img/${p}-${c}-a.png)\n---\n![](img/${p}-${c}-b.png)`, NEAR))
@@ -796,12 +797,12 @@ describe('3D: 2,000 files to fetch, no long task on the UI thread', () => {
       }
     }
     const cpuMs = () => {
-      const u = process.cpuUsage()
+      const u = process.threadCpuUsage()
       return (u.user + u.system) / 1000
     }
     let best = { cpu: Infinity, wall: 0, ms: 0, slices: 0 }
     // Best of up to 3 runs: a GC pause can land in one slice of one run.
-    for (let run = 0; run < 3 && (best.cpu >= budgetMs(50) || best.wall >= budgetMs(50)); run++) {
+    for (let run = 0; run < 3 && (best.cpu >= 50 || best.wall >= budgetMs(50)); run++) {
       const t = await setup(files, { runner: false })
       await t.engine.open(MAIN)
       await t.engine.idle()
@@ -847,7 +848,7 @@ describe('3D: 2,000 files to fetch, no long task on the UI thread', () => {
       return longest
     })()
     console.log(`[3D perf] 1,000 cards, 2,000 pictures: ${best.ms.toFixed(0)} ms, ${best.slices} slices; longest slice ${best.cpu.toFixed(1)} ms CPU, ${best.wall.toFixed(1)} ms wall; idle probe ${idle.toFixed(1)} ms`)
-    expect(best.cpu).toBeLessThan(budgetMs(50))
+    expect(best.cpu).toBeLessThan(50)
     if (idle < budgetMs(50)) expect(best.wall).toBeLessThan(budgetMs(50))
     else console.log('[3D perf] the idle probe alone is over the budget: the wall-clock check is skipped (the CPU check ran)')
   }, 120_000)

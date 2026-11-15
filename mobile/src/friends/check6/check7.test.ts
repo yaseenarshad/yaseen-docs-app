@@ -14,7 +14,7 @@ const K0 = { pStale: 0, p502: 0, pSecondary: 0, pContents404: 0 }
 async function world(nA = 2) {
   const m = new Model5(4242, K0)
   m.hookRepos()
-  await m.setup4(nA, 1, 1, false, false, false)
+  await m.setup4(nA, 1, 1, false, false)
   // Pair B with A (A shares, B pastes, B's link back, A pastes).
   const a = m.devs.A[0] as any
   const b = m.devs.B[0] as any

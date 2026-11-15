@@ -1,7 +1,7 @@
 /**
- * WHICH FILE AN ACTION GOES TO (YAZ-5514, W2). An action names its card by ID, and remembers the file the person acted
+ * WHICH FILE AN ACTION GOES TO (W2). An action names its card by ID, and remembers the file the person acted
  * in (`WaitingAnswer.path`). Two files can hold one ID for a while: a page copied in Finder keeps its cards' IDs until
- * the Mac's sweep gives the copy new ones (`idSweep.ts`, YAZ-4960). So:
+ * the Mac's sweep gives the copy new ones (`idSweep.ts`). So:
  *  - the file the person acted in, while it still holds the card;
  *  - else the ONE file that holds it now (the Mac moved the card, or renumbered the copy the person answered in: the
  *    sweep gives a same-text copy's reviews to the card that keeps the ID, so the answer joins them there);

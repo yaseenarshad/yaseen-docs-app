@@ -2,7 +2,7 @@ import type { IndexRecord } from '@shared/types'
 import { boardKindOf } from '../drawing/boardFiles'
 
 /**
- * THE MAC'S SIDEBAR TREE ON THE PHONE (YAZ-5438): the Files tree of the Mac (`client/src/sidebar/Tree.tsx`), cut to
+ * THE MAC'S SIDEBAR TREE ON THE PHONE: the Files tree of the Mac (`client/src/sidebar/Tree.tsx`), cut to
  * what the phone opens: folders, pages and card files. The pure parts, copied from the Mac (its modules pull the
  * desktop's tree feed and bridge, which the phone's import wall stops):
  *  - The ORDER is the Mac's default (`treeSort.ts` `sortLevel`, Sort Name A to Z, `DEFAULT_SIDEBAR_SORT`): each level
@@ -71,7 +71,7 @@ export function buildTree(records: readonly IndexRecord[], folders: readonly Ind
 /** A page's or a card file's name: the Mac's `pageLabel` (the title, else the file name without its extension). */
 export const fileLabel = (record: IndexRecord): string => (record.title.trim() !== '' ? record.title : record.name.replace(/\.(md|markdown)$/i, ''))
 
-/** A page, a card file, or a drawing file (YAZ-5473: the Mac's drawing and diagram rows). */
+/** A page, a card file, or a drawing file (the Mac's drawing and diagram rows). */
 export const fileKind = (record: IndexRecord): TreeKind => (record.kind === 'card' ? 'card' : (boardKindOf(record.path) ?? 'page'))
 
 interface Level {

@@ -171,10 +171,8 @@ export class Model5 extends Model4 {
         const o = JSON.parse(head) as Record<string, unknown>
         if (o.v === 3) {
           const keys = Object.keys(o).sort().join(',')
-          if (keys !== 'about,home,v' || Object.keys(g.files).length > 1) {
-            // Old files may still be in the gist for a moment (tidy is best effort); a key beyond these three is a leak.
-            if (keys !== 'about,home,v') this.st5.i8.push(`seed ${this.seed} step ${this.step}: the note holds ${keys}`)
-          }
+          // A key beyond these three, or a second file, is a leak (YAZ-5092 C2: no old list is moved into a note any more).
+          if (keys !== 'about,home,v' || Object.keys(g.files).length > 1) this.st5.i8.push(`seed ${this.seed} step ${this.step}: the note holds ${keys} (${Object.keys(g.files).length} files)`)
         }
       } catch {
         /* */
@@ -185,16 +183,16 @@ export class Model5 extends Model4 {
 
 export function plan5(seed: number) {
   const g = mulberry(seed)
-  const withOld = g() < 0.25
-  const nA = withOld ? 1 + Math.floor(g() * 2) : 1 + Math.floor(g() * 3)
-  const setup: [number, number, number, boolean, boolean, boolean] = [nA, 1 + Math.floor(g() * 3), 1 + Math.floor(g() * 3), !withOld && g() < 0.35, !withOld && g() < 0.25, withOld]
+  // YAZ-5092 C2: this draw chose the old (v1) app; it stays, so every other seed keeps its order.
+  g()
+  const nA = 1 + Math.floor(g() * 3)
+  const setup: [number, number, number, boolean, boolean] = [nA, 1 + Math.floor(g() * 3), 1 + Math.floor(g() * 3), g() < 0.35, g() < 0.25]
   const n = 40 + Math.floor(g() * 41)
-  const probe = { oldDev: withOld ? {} : null } as unknown as Model4
   const events: Ev[] = Array.from({ length: n }, () => {
     const x = g()
     if (x < 0.07) return { t: 'autosync' }
     if (x < 0.13) return { t: 'syncDuring', dev: Math.floor(g() * 3) }
-    return randomEvent4(probe, g)
+    return randomEvent4(g)
   })
   return { seed, setup, events }
 }

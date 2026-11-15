@@ -5,12 +5,12 @@ import { pinchZoom, type ZoomRange } from '../drawing/pinchZoom'
 import { DEFAULT_BAND, watchBand, type BandLook } from './rowBand'
 
 /**
- * A TABLE, FULL SCREEN (YAZ-5471): the ⤢ under a wide table opens it here, in a chunk of its own. The whole table, every
+ * A TABLE, FULL SCREEN: the ⤢ under a wide table opens it here, in a chunk of its own. The whole table, every
  * column at its widest (`tables.css`), first fitted to the screen's width (not smaller than `READ_MIN`, so its words
  * stay readable; pinch out to see it all); pinch (or double-tap) to zoom, drag to move. It turns with the phone: the
  * fit is counted again. ✕, Escape or a swipe down from the top closes it. It shows a copy of the table: nothing is saved.
  *
- * YAZ-5480: the frozen rows (the file's, else the header row) stay at the top of the view and the frozen columns at its
+ * The frozen rows (the file's, else the header row) stay at the top of the view and the frozen columns at its
  * left, as in the page. The table is scaled, so `position: sticky` would put them at the wrong place: each frozen cell
  * moves by the pane's own scroll, on a scroll-driven animation (`tables.css`), whose ranges this file sets for the scale
  * (`pinRanges`), when the scale changes, never on a scroll. Without scroll-driven animations, a scroll listener moves
@@ -135,7 +135,7 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null, band: Ban
   // The table's own size at scale 1 (jsdom has none: then the screen's).
   const width = Math.max(1, content.offsetWidth || copy.scrollWidth || 1)
   const height = Math.max(1, content.offsetHeight || copy.scrollHeight || 1)
-  // YAZ-5480: the frozen rows and columns, measured at scale 1; their ranges follow the scale.
+  // The frozen rows and columns, measured at scale 1; their ranges follow the scale.
   const copied = copy.querySelector('table')!
   copied.removeAttribute('data-pin-rows-off')
   copied.removeAttribute('data-pin-cols-off')
@@ -215,7 +215,7 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null, band: Ban
   const done = () => {
     if (closed) return
     closed = true
-    // YAZ-5518: its history entry goes with it (nothing when a Back closed it).
+    // Its history entry goes with it (nothing when a Back closed it).
     leave()
     bands.stop()
     view.remove()
@@ -229,7 +229,7 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null, band: Ban
   }
   close.addEventListener('click', done)
   document.addEventListener('keydown', key)
-  // YAZ-5518: an overlay of the app's one stack: a Back (Safari's swipe, the app's) closes the table, and the page stays.
+  // An overlay of the app's one stack: a Back (Safari's swipe, the app's) closes the table, and the page stays.
   const leave = openOverlay(done)
   // The left-edge Back (the Home Screen app) closes it too: the view is over the frame, out of its swipe.
   edgeBackOn(view, done, swipeIsOurs(whereAmI(browserFacts())))

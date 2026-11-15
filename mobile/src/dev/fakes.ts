@@ -96,7 +96,7 @@ export function fakeFriends(store: VaultStore, hasFriends: boolean): FriendsPort
 }
 
 /**
- * YAZ-5476: the tabs of a made-up vault for the tests and fixtures of other features: the vault's own files, but Review
+ * The tabs of a made-up vault for the tests and fixtures of other features: the vault's own files, but Review
  * on (their vaults have no IDs, and their screens are the Review and Friends tabs).
  */
 export const reviewOnTabs: typeof readVaultTabs = async (store, vault, index) => ({ ...(await readVaultTabs(store, vault, index)), review: true })

@@ -1,7 +1,7 @@
 import type { VaultStore } from '../store'
 
 /**
- * WHERE NEW CARDS COME FROM, on the phone (YAZ-5415; the Mac's YAZ-5322). The rule is the Mac's own: the shared hook's
+ * WHERE NEW CARDS COME FROM, on the phone (the Mac's YAZ-5322). The rule is the Mac's own: the shared hook's
  * `setNewFrom` saves the pick through `saveSettings`, the settings' `newFrom` follows, and `cardPlan` takes today's new
  * cards from those folders (more than one may be picked; a folder takes its subfolders).
  *

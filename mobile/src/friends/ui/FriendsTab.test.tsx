@@ -272,6 +272,14 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     expect(rows(h)[0]).toContain('2h ago')
   })
 
+  it("this phone's send of my numbers: one line when it is not sent, and when it was sent last", async () => {
+    ;({ h } = await open(demoBoard(NOW, { sending: { status: 'no-gists', lastSentAt: null, retryAt: null, remade: false } })))
+    expect(plain(h.text())).toContain('Not sent: the token has no Gists permission.')
+    h.unmount()
+    ;({ h } = await open(demoBoard(NOW, { sending: { status: 'sent', lastSentAt: NOW - 5 * 60_000, retryAt: null, remade: false } })))
+    expect(plain(h.text())).toContain('Your numbers were last sent 5m ago.')
+  })
+
   it('the wrong setup: vaults on two GitHub accounts (round 13, item 4)', async () => {
     ;({ h } = await open(demoBoard(NOW), { logins: ['demo', 'work'] }))
     expect(plain(h.text())).toContain('Your vaults are on two GitHub accounts. Friends use @demo.')

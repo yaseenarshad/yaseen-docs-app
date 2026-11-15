@@ -1,5 +1,5 @@
 /**
- * YAZ-5526: A FINGER HELD ON A ROW SELECTS NOTHING. On the iPhone a long press starts the phone's own text selection
+ * A FINGER HELD ON A ROW SELECTS NOTHING. On the iPhone a long press starts the phone's own text selection
  * (over the whole screen when the finger is on no text: the hold menu opens under it) and its Copy, Look Up, Translate
  * bar. The CSS turns selection off on the rows and the chrome (`styles.css`); this also stops the phone's
  * `selectstart` and `contextmenu` from the press until the finger lifts, wherever the hold has moved them (the menu).

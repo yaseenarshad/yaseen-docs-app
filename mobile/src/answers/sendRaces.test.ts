@@ -23,7 +23,7 @@ const linesOf = (bytes: Uint8Array) => {
 }
 const tick0 = () => new Promise((r) => setTimeout(r, 0))
 
-describe('checker YAZ-5073: Undo and a send that already reached GitHub', () => {
+describe('Undo and a send that already reached GitHub', () => {
   it('3C-A: Undo of an answer while its send is on the way to GitHub: GitHub must not keep the review', async () => {
     let release: () => void = () => {}
     let holding = false
@@ -79,7 +79,7 @@ describe('checker YAZ-5073: Undo and a send that already reached GitHub', () => 
   })
 })
 
-describe('checker YAZ-5073: an action sent two times', () => {
+describe('an action sent two times', () => {
   it('3C-B: `unreview` sent again after a lost answer removes a SECOND review of the same minute', async () => {
     const line = `<!-- card: NC-2, ${at(1)} again, ${at(1)} good -->`
     const files = { 'a.md': pageText('A', 'NC-1', ['NC-3']).replace('# A\n\n', `# A\n\n${card('NC-2').replace('<!-- card: NC-2 -->', line)}\n\n`) }
@@ -106,8 +106,8 @@ describe('checker YAZ-5073: an action sent two times', () => {
   })
 })
 
-describe('checker YAZ-5073: bytes the phone did not mean to change', () => {
-  it('probe: CRLF, a BOM, odd spaces, unknown parts and a card in a list: only the answered line changes', async () => {
+describe('bytes the phone did not mean to change', () => {
+  it('CRLF, a BOM, odd spaces, unknown parts and a card in a list: only the answered line changes', async () => {
     const page = [
       '﻿---',
       'id: NC-1',
@@ -143,7 +143,7 @@ describe('checker YAZ-5073: bytes the phone did not mean to change', () => {
     expect(line11).toBe(`<!--card:NC-2,zzz unknown,   2026-11-14T05:00Z good 3s, ${at(1)} good,off-->\r\n`)
   })
 
-  it('probe: a card ID inside a code block, and two cards with one ID: what the send writes', async () => {
+  it('a card ID inside a code block, and two cards with one ID: what the send writes', async () => {
     const page = pageText('A', 'NC-1', ['NC-2', 'NC-2'], '````md\n```card\nfake\n```\n<!-- card: NC-2 -->\n````\n\n')
     const t = await answersSetup({ files: { 'a.md': page } })
     await t.add(answer('NC-2', 1))
@@ -155,7 +155,7 @@ describe('checker YAZ-5073: bytes the phone did not mean to change', () => {
     expect(text).toContain('````md\n```card\nfake\n```\n<!-- card: NC-2 -->\n````')
   })
 
-  it('probe: a page with bytes that are not UTF-8 (Latin-1 é) next to the card', async () => {
+  it('a page with bytes that are not UTF-8 (Latin-1 é) next to the card', async () => {
     const enc = new TextEncoder()
     const head = enc.encode(pageText('A', 'NC-1', ['NC-2']))
     const latin = Uint8Array.from([0x63, 0x61, 0x66, 0xe9, 0x0a]) // "caf\xE9\n"
@@ -172,8 +172,8 @@ describe('checker YAZ-5073: bytes the phone did not mean to change', () => {
   })
 })
 
-describe('checker YAZ-5073: the branch keeps moving', () => {
-  it('probe: 30 STALE_HEADs in a row: how many writes, and is there a backoff?', async () => {
+describe('the branch keeps moving', () => {
+  it('30 STALE_HEADs in a row: how many writes, and is there a backoff?', async () => {
     let moves = 0
     const t = await answersSetup({
       fetch: (s) => async (url, init) => {
@@ -199,7 +199,7 @@ describe('checker YAZ-5073: the branch keeps moving', () => {
   })
 })
 
-describe('checker YAZ-5073: two tabs on one list', () => {
+describe('two tabs on one list', () => {
   it('3C-C: two tabs add an answer at the same moment: both answers stay', async () => {
     const t = await answersSetup()
     const a = await openOutbox(t.store, VAULT)
@@ -210,8 +210,8 @@ describe('checker YAZ-5073: two tabs on one list', () => {
   })
 })
 
-describe('checker YAZ-5073: security and day numbers', () => {
-  it('probe: the token is in no stored list, no state, no event, and the commit names no person', async () => {
+describe('security and day numbers', () => {
+  it('the token is in no stored list, no state, no event, and the commit names no person', async () => {
     const t = await answersSetup()
     await t.add(answer('NC-2', 1))
     await t.tick(SEND_AFTER_MS)
@@ -227,8 +227,8 @@ describe('checker YAZ-5073: security and day numbers', () => {
   })
 })
 
-describe('checker YAZ-5073: a big file', () => {
-  it('probe: a page with 10,000 cards: one answer changes one line; applyOps time', async () => {
+describe('a big file', () => {
+  it('a page with 10,000 cards: one answer changes one line; applyOps time', async () => {
     const { applyOps } = await import('./ops')
     const ids = Array.from({ length: 10_000 }, (_, i) => `NC-${i + 10}`)
     const page = pageText('Big', 'NC-1', ids)

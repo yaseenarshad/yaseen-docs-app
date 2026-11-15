@@ -4,7 +4,7 @@ import type { VaultStore } from '../store'
 import type { SyncEngine } from '../sync/engine'
 
 /**
- * What the Review tab (4B, YAZ-5078) needs from the engine (3B) and the answer list (3C) of the open vault. The app
+ * What the Review tab (4B) needs from the engine (3B) and the answer list (3C) of the open vault. The app
  * shell makes ONE of each when the engine loads (`app/lazySync.ts`) and gives them here, so the screen and the send
  * share one list. Tests give the real engine and list on the fake GitHub (`review/testing.ts`).
  */

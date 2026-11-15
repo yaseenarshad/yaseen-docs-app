@@ -28,7 +28,7 @@ export interface AppServices {
   friends: FriendsPort
   scanner: Scanner
   /**
-   * 4C (YAZ-5079): one file's bytes for the reader and Review (a picture, a sound, a PDF): 3D's `MediaAhead`, made when
+   * 4C: one file's bytes for the reader and Review (a picture, a sound, a PDF): 3D's `MediaAhead`, made when
    * the engine loads (`lazyMedia`, `main.tsx`). Absent (tests): the screens read the store only (`storedMedia`).
    */
   media?: VaultMedia
@@ -37,7 +37,7 @@ export interface AppServices {
   now?: () => number
   keepStorage?: () => Promise<KeepStorage>
   /**
-   * YAZ-5476: which tabs a vault turns on. Default: its own files (`readVaultTabs`). The screen tests of other features
+   * Which tabs a vault turns on. Default: its own files (`readVaultTabs`). The screen tests of other features
    * pass one that keeps Review on (`screens/testing.ts`), as their made-up vaults have no IDs.
    */
   vaultTabs?: typeof readVaultTabs
@@ -65,7 +65,7 @@ export interface AppModel {
   friendsSettings: FriendsSettings
   /** The open vault's word for "page": `unit('Search pages')` → "Search docs" (round 15, item 5). */
   unit: UnitText
-  /** What the open vault turns on (YAZ-5476, `vaultTabs.ts`): the Review and Friends tabs, the Today button. */
+  /** What the open vault turns on (`vaultTabs.ts`): the Review and Friends tabs, the Today button. */
   tabs: VaultTabs
   sync: ShellSyncState
   /** Its `tab` is always one the open vault has (`tabIn`): a tab that went away shows Search. */
@@ -105,11 +105,11 @@ function hearOtherTabs(listener: (message: TabMessage) => void): () => void {
   return () => channel.close()
 }
 
-/** How long a removal waits for a running pass to end. The store refuses that pass's later writes anyway (YAZ-5175),
+/** How long a removal waits for a running pass to end. The store refuses that pass's later writes anyway,
  *  so the wait only keeps the screen honest; a stuck download must not hold the erase. */
 export const STOP_WAIT_MS = 3_000
 
-/** Closes the vault in the sync, then waits (at most `STOP_WAIT_MS`) for its pass to end (YAZ-5175). */
+/** Closes the vault in the sync, then waits (at most `STOP_WAIT_MS`) for its pass to end. */
 async function stopSync(sync: ShellSync): Promise<void> {
   await sync.open(null)
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -149,14 +149,14 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const tabsOfVault = services.vaultTabs ?? readVaultTabs
   const [loaded, setLoaded] = useState<Loaded>(EMPTY)
   const [nav, setNav] = useState<NavState>({ tab: 'review', stack: [] })
-  // YAZ-5499: the browser's history follows the screens, so Safari's own back swipe (in a tab) goes back too.
+  // The browser's history follows the screens, so Safari's own back swipe (in a tab) goes back too.
   const shownStack = useRef(nav.stack)
   shownStack.current = nav.stack
   const showStack = useCallback((stack: NavState['stack']) => setNav((n) => ({ ...n, stack })), [])
   useBrowserHistory(nav.stack, showStack)
   const [syncState, setSyncState] = useState<ShellSyncState>(() => sync.state() ?? IDLE)
   const openKey = useRef<string | null>(null)
-  /** YAZ-5476: the vault's tabs changed (Review turned off, another vault): a tab it no longer has goes to Search, and stays there. */
+  /** The vault's tabs changed (Review turned off, another vault): a tab it no longer has goes to Search, and stays there. */
   const keepTab = useCallback((tabs: VaultTabs) => setNav((n) => (tabIn(n.tab, tabs) === n.tab ? n : { ...n, tab: tabIn(n.tab, tabs) })), [])
 
   /** Reads everything the screens show from the phone. No network call. `opening`: open the vault in the sync too. */
@@ -182,7 +182,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
       // Closing waits (nothing may poll a vault that leaves). Opening does not hold the screen: the sync's state
       // tells the shell when the vault is ready (3B's engine loads as a chunk of its own, `lazySync`).
       if (syncing === null) await sync.open(null)
-      // YAZ-5260: the opening tab is set BEFORE the tabs show, so the first screen is the right one (no jump).
+      // The opening tab is set BEFORE the tabs show, so the first screen is the right one (no jump).
       await beforeShow?.(next)
       setLoaded(next)
       keepTab(next.tabs)
@@ -216,7 +216,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         const vault = event.vault
         // Round 15, item 5: a new `.yaseendocs/unit-word.json` from the Mac changes the words at once.
         if (event.settings.includes(UNIT_WORD_PATH)) void readUnitWord(store, vault).then((unit) => setLoaded((l) => ({ ...l, unit })))
-        // YAZ-5476: the vault's settings (or its first IDs) can bring a tab or take one away, at once.
+        // The vault's settings (or its first IDs) can bring a tab or take one away, at once.
         void tabsOfVault(store, vault, event.index).then((tabs) => {
           if (openKey.current !== vault) return
           setLoaded((l) => (sameTabs(l.tabs, tabs) ? l : { ...l, tabs }))
@@ -228,7 +228,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
 
   const go = useCallback(
     (action: NavAction) => {
-      // YAZ-5457: a page or card opened (or swapped in by the arrows) goes to this phone's Recent (its own lazy chunk; it records only those two).
+      // A page or card opened (or swapped in by the arrows) goes to this phone's Recent (its own lazy chunk; it records only those two).
       const vault = openKey.current
       if ('route' in action) void import('../search/recent').then((m) => m.remember(store, vault, action.route))
       // Back steps the browser back when the entry under is the screen under: its `popstate` shows it (one Back only).
@@ -305,18 +305,18 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   )
 
   const eraseAll = useCallback(async () => {
-    // YAZ-5195: the friends sender, list and marks stop first; nothing of theirs is stored after the erase.
+    // The friends sender, list and marks stop first; nothing of theirs is stored after the erase.
     await friends.stop?.()
     await stopSync(sync)
     await signOutAndErase(store, tokens)
-    // YAZ-5194: the other tabs of the app stop too and show the first-run screen. The store already refuses their
+    // The other tabs of the app stop too and show the first-run screen. The store already refuses their
     // writes (the erase count is in the database); this makes their screens follow.
     tellOtherTabs({ type: 'erased' })
     await load(false)
     setNav({ tab: 'review', stack: [] })
   }, [store, tokens, sync, load, friends])
 
-  // Another tab erased the phone: stop the sync here and show the sign-in (YAZ-5194).
+  // Another tab erased the phone: stop the sync here and show the sign-in.
   useEffect(
     () =>
       hearOtherTabs((message) => {
@@ -346,7 +346,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     [friends],
   )
 
-  // YAZ-5476: a tab the open vault does not have shows Search (`keepTab` makes it stay Search when the tabs change).
+  // A tab the open vault does not have shows Search (`keepTab` makes it stay Search when the tabs change).
   const tab = tabIn(nav.tab, loaded.tabs)
   const shownNav = useMemo(() => (tab === nav.tab ? nav : { ...nav, tab }), [nav, tab])
 

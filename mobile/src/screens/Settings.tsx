@@ -12,7 +12,7 @@ import { Frame, Problem } from './Frame'
 import { InstallHint } from './InstallHint'
 import { lazyScreen } from './LazyScreen'
 
-/** YAZ-5446: the list of What's new, its own chunk: it loads when the person first opens it, never in the first load. */
+/** The list of What's new, its own chunk: it loads when the person first opens it, never in the first load. */
 const WhatsNewList = lazyScreen(() => import('../settings/WhatsNewList'), { waiting: <p className="muted" aria-busy="true">Loading…</p> })
 /** YAZ-5559: Vault health, read only, its own chunk (with the shared list of the vault's settings files). */
 const VaultHealth = lazyScreen(() => import('../settings/VaultHealth'), { waiting: <p className="muted" aria-busy="true">Vault health…</p> })
@@ -20,7 +20,7 @@ const VaultHealth = lazyScreen(() => import('../settings/VaultHealth'), { waitin
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19): the vaults (switch, add, replace the token, reset the
  * local copy, remove), the Friends part ("Friends use @login", "Vaults that count", "Name"; no sharing switch), the
- * version and What's new (YAZ-5446), and last, apart, "Sign out and erase this phone" (it always asks first).
+ * version and What's new, and last, apart, "Sign out and erase this phone" (it always asks first).
  */
 export function Settings() {
   const app = useApp()
@@ -69,7 +69,7 @@ export function Settings() {
 
       <AboutPart />
 
-      {/* YAZ-5446: never by accident: at the very bottom, apart from the other rows, in red, and it asks first (Cancel has the focus). */}
+      {/* Never by accident: at the very bottom, apart from the other rows, in red, and it asks first (Cancel has the focus). */}
       <div className="settings__erase">
         <h2 className="section">This phone</h2>
         {erasing !== null ? (
@@ -99,7 +99,7 @@ export function Settings() {
 }
 
 /**
- * YAZ-5446: the version (the number, the build's date and time in the phone's own time, the commit) and What's new,
+ * The version (the number, the build's date and time in the phone's own time, the commit) and What's new,
  * closed at first. Open, its list scrolls inside its own short box, so the screen does not grow.
  */
 function AboutPart() {
@@ -159,7 +159,7 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
         <div className="sheet">
           {asking === 'reset' ? (
             <Confirm
-              question={app.unit(`Reset the copy of ${vault.repo}? Its pages on this phone go, and the vault downloads again. The token stays.`)}
+              question={`Reset the copy of ${vault.repo}?${app.unit(' Its pages on this phone go, and the vault downloads again. The token stays.')}`}
               yes="Reset local copy"
               busy={busy}
               onYes={() => void run(() => app.resetCopy(id)).then(() => setAsking(null))}
@@ -167,7 +167,7 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
             />
           ) : asking === 'remove' ? (
             <Confirm
-              question={app.unit(`Remove ${vault.repo} from this phone? Its token and its pages on this phone go. Answers that are not sent yet are lost. The repo on GitHub does not change.`)}
+              question={`Remove ${vault.repo} from this phone?${app.unit(' Its token and its pages on this phone go. Answers that are not sent yet are lost. The repo on GitHub does not change.')}`}
               yes="Remove"
               busy={busy}
               onYes={() => void run(() => app.removeVault(id))}
@@ -217,7 +217,7 @@ function FriendsPart() {
   const counts = (id: string) => counting === null || counting.includes(id)
   const countLabel = counting === null ? 'All vaults' : app.list.vaults.filter((v) => counts(vaultId(v))).map((v) => v.repo.split('/')[1]).join(', ') || 'None'
   const [nickname, setNickname] = useState(app.friendsSettings.nickname ?? '')
-  // YAZ-5251: the home time zone of the numbers (every device counts the days in it). Not set yet: this phone's zone.
+  // The home time zone of the numbers (every device counts the days in it). Not set yet: this phone's zone.
   const phoneZone = deviceZone()
   const homeZone = app.friendsSettings.zone ?? phoneZone
   const zones = editing === 'zone' ? zoneChoices(homeZone) : []
@@ -351,7 +351,7 @@ function FriendsPart() {
   )
 }
 
-/** YAZ-5251: the zones to choose from: the home zone, this phone's, then every zone the runtime knows. */
+/** The zones to choose from: the home zone, this phone's, then every zone the runtime knows. */
 function zoneChoices(home: string | null): string[] {
   const all = (Intl as { supportedValuesOf?: (key: 'timeZone') => string[] }).supportedValuesOf?.('timeZone') ?? []
   return [...new Set([home, deviceZone(), ...all].filter((z): z is string => isTimeZone(z)))]

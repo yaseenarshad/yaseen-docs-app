@@ -1,4 +1,4 @@
-// The pure card read (YAZ-5161): no bridge, so the phone's build wall takes it. Never `cardFile.ts` (the desktop's).
+// The pure card read: no bridge, so the phone's build wall takes it. Never `cardFile.ts` (the desktop's).
 import { cardOnPageIn, type CardOnPage } from '@client/review/cardRead'
 import type { ReviewHost } from '@client/review/reviewHost'
 import { CardNotFoundError, cardIdOf, cardNextIndex, cardReviewIndex, cardReviewKey, cardReviewsOf, pageCards, type CardLine, type CardReview } from '@shared/cardLine'
@@ -10,7 +10,7 @@ import type { CardOp } from './ops'
 
 /**
  * DECISION 9: the phone's own two day numbers, kept on this phone only (they never sync, and never become an action):
- * the Up next places an answer took today (YAZ-5028), and "Add more for today" (YAZ-5042). The new-card limit needs no
+ * the Up next places an answer took today, and "Add more for today". The new-card limit needs no
  * number of its own: it is counted from the reviews, which sync. Kept as the vault's phone-only state `DAYS_STATE`.
  * A number of another day reads as none, as on the Mac (`upNextTaken.ts`, `cardsAdded.ts`: the local calendar day).
  */
@@ -104,11 +104,11 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     const card = text === null ? null : cardOnPageIn(path, text, id)
     const block = text === null ? undefined : pageCards(text).find((c) => cardIdOf(c.line) === card?.id)
     if (card === null || block === undefined) throw new CardNotFoundError(id)
-    // The title off the card line (YAZ-5308), '' for a card with none: the lost-answer line then names the card by its ID.
+    // The title off the card line, '' for a card with none: the lost-answer line then names the card by its ID.
     return { line: block.line, title: card.title }
   }
   const add = (path: string, title: string, ops: readonly CardOp[]) => answers.add(ops.map((op) => ({ op, path, title })))
-  /** The review action for `review` on `line`: a second one of the same minute and rating says so (`nth`, YAZ-5078). */
+  /** The review action for `review` on `line`: a second one of the same minute and rating says so (`nth`). */
   const reviewOp = (id: string, line: CardLine, review: CardReview): CardOp => {
     const nth = cardReviewsOf(line).filter((r) => cardReviewKey(r) === cardReviewKey(review)).length + 1
     return nth > 1 ? { kind: 'review', id, review, nth } : { kind: 'review', id, review }
@@ -118,7 +118,7 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     const w = [...answers.waiting()].reverse().find((w) => w.op.kind === 'review' && w.op.id === id && w.op.review.at === at)
     return w === undefined || w.op.kind !== 'review' ? null : { group: w.group, rating: w.op.review.rating }
   }
-  /** The `unreview` of the LAST copy of `review`'s name on `line`: it names that copy (`nth`, YAZ-5198). */
+  /** The `unreview` of the LAST copy of `review`'s name on `line`: it names that copy (`nth`). */
   const unreviewOp = (id: string, line: CardLine, at: string, rating: CardReview['rating']): CardOp => {
     const nth = cardReviewsOf(line).filter((r) => cardReviewKey(r) === cardReviewKey({ at, rating })).length
     return nth > 1 ? { kind: 'unreview', id, at, rating, nth } : { kind: 'unreview', id, at, rating }
@@ -140,11 +140,11 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     async undoCardAnswer(path, id, at, next) {
       const waiting = unsentAnswer(id, at)
       // Removed from the list only while no send has tried it. Else (a send runs, or its reply was lost) GitHub may
-      // hold the review, so Undo sends `unreview` (YAZ-5180). On a line with no such review it changes nothing.
+      // hold the review, so Undo sends `unreview`. On a line with no such review it changes nothing.
       if (waiting !== null && (await answers.undo(waiting.group))) return
       const { line, title } = await current(path, id)
       const rating = waiting?.rating ?? reviewAt(line, at)?.rating
-      // YAZ-5409: `next` goes back at its place (`next`, from `cardNextIndex` before the answer), not the writer's place.
+      // `next` goes back at its place (`next`, from `cardNextIndex` before the answer), not the writer's place.
       // The `unreview` goes first, so the line has the same parts as before the answer when `next` goes back.
       const ops: CardOp[] = [...(rating === undefined ? [] : [unreviewOp(id, line, at, rating)]), ...(next >= 0 ? [{ kind: 'next', id, on: true, at: next } as const] : [])]
       if (ops.length > 0) await add(path, title, ops)
@@ -161,7 +161,7 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
       const { line, title } = await current(path, id)
       await add(path, title, [reviewOp(id, line, review)])
     },
-    // The phone's safe card-line write (`cardLineWrite.ts`), shared with the reader's card menu (YAZ-5504).
+    // The phone's safe card-line write (`cardLineWrite.ts`), shared with the reader's card menu.
     changeCardLine: (path, id, change) => changeCardLine(answers, path, id, change),
     upNextTakenToday: () => days.upNextTakenToday(),
     setUpNextTaken: (_root, id, taken) => days.setUpNextTaken(id, taken),
@@ -170,7 +170,7 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
     setCardsAdded: (_root, added) => days.setCardsAdded(added),
     subscribeCardsAdded: (listener) => days.subscribeAdded(listener),
     vaultName: (root) => options.vaultName(root),
-    // YAZ-5078: on the phone, Undo takes back Archive card too (the Mac's host says no).
+    // On the phone, Undo takes back Archive card too (the Mac's host says no).
     undoesArchive: true,
   }
 }

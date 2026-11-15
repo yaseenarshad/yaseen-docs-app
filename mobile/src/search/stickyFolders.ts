@@ -1,7 +1,7 @@
 import { stickyCap } from '@client/sidebar/stickyFolders'
 
 /**
- * STICKY FOLDERS IN SEARCH'S TREE (YAZ-5506), the Mac sidebar's (YAZ-3440 D1, D2, D3; `client/src/sidebar/Tree.tsx`,
+ * STICKY FOLDERS IN SEARCH'S TREE, the Mac sidebar's (`client/src/sidebar/Tree.tsx`,
  * `stickyFolders.ts`, app.css): while the tree scrolls, each open folder whose rows pass under the top sticks there,
  * one row below the folder that holds it, the shallower on top, up to the cap (`sidebarStickyLevels`, 7 by default,
  * cut to the rows that fit in 40% of the list: the Mac's `stickyCap`); it leaves with its last row, pushed up by the
@@ -118,7 +118,7 @@ export function stickFolders(scroller: HTMLElement, list: HTMLElement, layer: HT
         copy.removeAttribute('aria-label')
         copy.dataset.stuck = String(s.index)
         copy.style.zIndex = String(10 - s.depth)
-        // YAZ-5488: a vault icon that does not load moves its row to the next try (`rowIcon.tsx`); the copy, which has
+        // A vault icon that does not load moves its row to the next try (`rowIcon.tsx`); the copy, which has
         // no React, is made again from the row a frame later, so it shows what the row shows.
         const index = s.index
         for (const img of copy.querySelectorAll('img')) img.addEventListener('error', () => recopy(index), { once: true })

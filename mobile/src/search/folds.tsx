@@ -12,20 +12,20 @@ import { openFoldersOf } from './searchState'
 import type { VaultData } from './vaultData'
 
 /**
- * COLLAPSE ALL / EXPAND ALL FOR SEARCH'S TREE (YAZ-5474), the Mac's fold button of the sidebar's tab row
- * (`client/src/sidebar/SidebarTabs.tsx`, ⚡ YAZ-862, YAZ-873), put inside the search box where the ✕ shows while there is
- * text, so it takes no room. In Search's lazy chunk (the first load stays under its ceiling, YAZ-5377).
+ * COLLAPSE ALL / EXPAND ALL FOR SEARCH'S TREE, the Mac's fold button of the sidebar's tab row
+ * (`client/src/sidebar/SidebarTabs.tsx`, ⚡ YAZ-862), put inside the search box where the ✕ shows while there is
+ * text, so it takes no room. In Search's lazy chunk (the first load stays under its ceiling).
  *
  * The Mac's rules (`Sidebar.tsx` `foldRef`):
  *  - ONE button for both ways: any folder of the tab open (fully or partly) → "Collapse all", which closes every one;
  *    only a fully closed tree → "Expand all", which opens every folder, to any depth, with no limit (the phone draws
  *    only `shown` rows, "Show more" the rest).
  *  - It acts on the tab shown: the tree, or the Favorites or the Focus list (each folder copy of the list, by its own
- *    fold key, as the Mac's `copyDirs`). The tab's own folders (the stack rows, YAZ-4460) keep their folds: the Mac's
+ *    fold key, as the Mac's `copyDirs`). The tab's own folders (the stack rows) keep their folds: the Mac's
  *    `FocusFolderList` folds them apart from the button.
  *  - Recent has no folders: no button (the Mac dims it, "Nothing to fold"; the phone's box shows nothing).
  * The folds are the tree's own sets (YAZ-5438/5447 rules): kept for each vault while the app runs.
- * YAZ-5534: a Type on with an empty box shows the result tree (the search's cut): the button folds ITS folders, by the
+ * A Type on with an empty box shows the result tree (the search's cut): the button folds ITS folders, by the
  * search's own folds (`flipsOf`), as a fold tapped in that tree does.
  */
 
@@ -57,7 +57,7 @@ export function listFoldKeys(vault: VaultNodes, folders: readonly ListFolder[], 
 }
 
 /**
- * The folds tapped during a search (YAZ-5447): they last as long as its text and Type, a page opened over the tab and
+ * The folds tapped during a search: they last as long as its text and Type, a page opened over the tab and
  * closed too. The box emptied with no Type ends the search, and its folds (the Mac's `setText`): the empty box's tree
  * forgets them as it shows. A folder is open when the cut opens it XOR it is flipped.
  */
@@ -83,7 +83,7 @@ function foldTarget(data: VaultData, vault: string | null, scope: Scope | null):
   return { open: foldsOf(vault, scope.kind), keys: listFoldKeys(vaultNodes(data), scope.folders, scope.top) }
 }
 
-/** The Mac's glyphs (`client/src/views/view/icons.tsx`, YAZ-3938 D9): stacked chevrons up (collapse), down (expand). */
+/** The Mac's glyphs (`client/src/views/view/icons.tsx`): stacked chevrons up (collapse), down (expand). */
 const Chevrons = ({ up }: { up: boolean }) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
     <path d={up ? 'M4.5 7 8 4l3.5 3M4.5 12 8 9l3.5 3' : 'M4.5 4 8 7l3.5-3M4.5 9 8 12l3.5-3'} />
@@ -112,7 +112,7 @@ export function FoldButton({ data, scope, found }: { data: VaultData; scope: Sco
   return <FoldGlyph anyOpen={anyOpen} fold={fold} />
 }
 
-/** YAZ-5534: the button over the result tree of a Type with no text: the same cut `ResultTree` draws (`foundTreeOf`). */
+/** The button over the result tree of a Type with no text: the same cut `ResultTree` draws (`foundTreeOf`). */
 function CutFoldButton({ data, scope, rows, type }: { data: VaultData; scope: Scope | null; rows: readonly SearchCandidate[]; type: PhoneType }) {
   const app = useApp()
   if (scope?.loading === true) return null

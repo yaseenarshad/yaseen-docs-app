@@ -13,21 +13,21 @@ import { readCardLook } from '../media/ui/cardDraw'
 import './linkPills.css'
 
 /**
- * THE VAULT'S OWN LOOK IN THE READER (YAZ-5455), read only, from the phone's copy of `.yaseendocs/`:
- *  - the link pills (`link-pills.json`, YAZ-4924): sanitised by the Mac's `sanitizeLinkPills`; the box and the parts'
+ * THE VAULT'S OWN LOOK IN THE READER, read only, from the phone's copy of `.yaseendocs/`:
+ *  - the link pills (`link-pills.json`): sanitised by the Mac's `sanitizeLinkPills`; the box and the parts'
  *    styles as the Mac's CSS variables (`linkPillVars`), the format's ends drawn on a page's links (`pageLook.ts`).
  *    No file, or a file that is not JSON: today's look (`NO_LINK_PILLS`), as the Mac.
- *  - the text formatting (`text-formatting.json`, `sanitizeTextFormatting`) as the Mac's `textVars` (YAZ-5566): the Text
+ *  - the text formatting (`text-formatting.json`, `sanitizeTextFormatting`) as the Mac's `textVars`: the Text
  *    size (`--text-size`, the page's and a card's set to Same as pages), the headings' sizes, weight and underline
  *    (`--h1-size` …) and the default line (`--line-default-*`, a `---` rule), which the reader's CSS reads.
- *  - the page spacing (`text-formatting.json` › `spacing`, YAZ-5485): line spacing, space between blocks, bullet
+ *  - the page spacing (`text-formatting.json` › `spacing`): line spacing, space between blocks, bullet
  *    indent and gap, as the Mac's `--edit-line-height`, `--edit-block-gap`, `--page-bullet-indent`, `--page-bullet-gap`
  *    (`spacingVars`), which `reader.css` reads. No `spacing`: the reader's own defaults (the Mac's defaults).
  *  - the card look (`card-look.json`, YAZ-5484, `cardLook.ts`): the Mac's card variables, so a card in a page and the
  *    card view draw with the vault's text and title size, hidden-word look, next mark and spacing. No file: none.
  *  - "Clicking a link" (`link-click.json`), for the link door (`openLink.ts`).
- *  - the table look (`table-look.json`, YAZ-5487): the page's tables' defaults (`tableLook.ts`), and (YAZ-5567) the
- *    cell bullets' indent and gap and the Table position as the Mac's variables (`tableLookVars`). No file: null, the
+ *  - the table look (`table-look.json`): the page's tables' defaults (`tableLook.ts`), and the cell bullets' indent
+ *    and gap and the Table position as the Mac's variables (`tableLookVars`). No file: null, the
  *    Mac's defaults.
  * Read once for each version of the vault's data (a sync that brings a new file makes a new version).
  */

@@ -5,10 +5,10 @@ import type { AddKind } from '@shared/cardSchedule'
 import { FILTERS, FILTER_ICON } from './words'
 
 /**
- * THE REVIEW MENU as a sheet (YAZ-5415; the Mac's cards menu, `CardInboxBar`, YAZ-5017, YAZ-5042, YAZ-5322): a tap on
+ * THE REVIEW MENU as a sheet (the Mac's cards menu, `CardInboxBar`): a tap on
  * the count at the top opens it. The same shared session and rules as the Mac (`inboxMenu.ts`):
  *
- *  - All cards (count) · Up next "today / total" with Reset (only while some card is marked Up next, YAZ-5321) ·
+ *  - All cards (count) · Up next "today / total" with Reset (only while some card is marked Up next) ·
  *    Due today (count) · New cards "from All folders ›" "today / total" with Reset.
  *  - Reset sets today's number of that kind back to the Settings number, never below today's work (`resetCards`); the
  *    hint line's Undo takes it back, as on the Mac.
@@ -27,7 +27,7 @@ export function ReviewSheet({
   review: Pick<CardReviewApi, 'setFilter' | 'resetCards' | 'setNewFrom' | 'newCardFolders'>
   today: ReactNode
   onClose: () => void
-  /** Open at the folder page (YAZ-5495: "Learn new cards" … "from All folders ›"); its ‹ closes the sheet. */
+  /** Open at the folder page ("Learn new cards" … "from All folders ›"); its ‹ closes the sheet. */
   folders?: boolean
 }) {
   const [folders, setFolders] = useState<ReturnType<CardReviewApi['newCardFolders']> | null>(() => (atFolders ? review.newCardFolders() : null))
@@ -84,7 +84,7 @@ export function ReviewSheet({
   )
 }
 
-/** The folder page (YAZ-5322): All folders, then each folder with a tick box; a parent before its subfolders. */
+/** The folder page: All folders, then each folder with a tick box; a parent before its subfolders. */
 function FolderPage({ rows, session, onPick, onBack }: { rows: { all: number; folders: NewCardFolder[] }; session: CardReviewSession; onPick: (folders: string[]) => void; onBack: () => void }) {
   const picked = session.newFrom.map((f) => f.folder)
   const top = rows.folders.length === 0 ? 0 : Math.min(...rows.folders.map((f) => f.folder.split('/').length))

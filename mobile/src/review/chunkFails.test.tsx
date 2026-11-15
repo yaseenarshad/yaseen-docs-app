@@ -22,7 +22,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('4B checker: the Review chunk does not load', () => {
+describe('the Review chunk does not load', () => {
   it('4B-G: the app stays on screen (the tabs, a way to try again); it does not go blank', async () => {
     const t = await answersSetup({ files: { '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Q?\n---\n{{a}}', 'CH-1')) } })
     await saveVaultList(t.store, { vaults: [{ repo: REPO, branch: BRANCH, addedAt: 0 }], open: VAULT })

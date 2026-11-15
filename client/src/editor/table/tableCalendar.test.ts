@@ -15,7 +15,10 @@ import { formatTableComment, parseTableComment, plainTable } from './tableCommen
 import { readTime } from '@shared/timeFormat'
 import { calendarTick } from './tableCalendar'
 import { cellPos } from './tableTestKit'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(async () => {
   await unmountAll()

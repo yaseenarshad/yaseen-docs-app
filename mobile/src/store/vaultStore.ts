@@ -18,7 +18,7 @@ export const MEDIA_KEPT_STATE = 'mediaKept'
 export const PHONE = ''
 
 /**
- * What a stored file is, for the rule of row P2. A page and a card file (both `.md`, YAZ-5037) and a settings file
+ * What a stored file is, for the rule of row P2. A page and a card file (both `.md`) and a settings file
  * are never dropped. A picture, a sound or any other file is media: it can be dropped when storage is full, and it
  * is downloaded again the next time something shows it (3D).
  */
@@ -84,8 +84,7 @@ export class StorageFullError extends Error {
 /**
  * A write of an older generation of the vault: it started before a clear of that vault ("Reset local copy", "Remove
  * from this phone", "Sign out and erase this phone"), in this tab or another one. The store refuses it, so nothing of
- * the old open comes back after the clear, and nothing of it is marked done for the new open (YAZ-5175, YAZ-5193,
- * YAZ-5194). The writer should stop quietly: its vault, as it knew it, is gone.
+ * the old open comes back after the clear, and nothing of it is marked done for the new open (* YAZ-5194). The writer should stop quietly: its vault, as it knew it, is gone.
  */
 export class VaultClosedError extends Error {
   constructor(readonly vault: string) {
@@ -111,10 +110,10 @@ export interface VaultStore {
   /** The file was shown now: its media is dropped later than media not shown since. */
   markViewed(vault: string, path: string): Promise<void>
   /**
-   * 3D (YAZ-5074): the open vault's media that the cards due in the window need. Row P2 never drops these files; the
+   * 3D: the open vault's media that the cards due in the window need. Row P2 never drops these files; the
    * other media goes as before. One vault at a time (the open one, decision 7): a call replaces the set, and `null`
    * clears it. With `paths`, the set holds at once and is also kept as the vault's state `MEDIA_KEPT_STATE`. Without
-   * `paths`, the vault's kept set holds (YAZ-5188: at the start of a session, before the media's first plan, a full
+   * `paths`, the vault's kept set holds (at the start of a session, before the media's first plan, a full
    * phone must not drop a window file). The promise ends when the set is kept.
    */
   protectMedia(vault: string | null, paths?: Iterable<string>): Promise<void>
@@ -138,13 +137,13 @@ export interface VaultStore {
   statesWith(scope: string, prefix: string): Promise<Record<string, unknown>>
 
   /**
-   * The vault's generation (YAZ-5193): a count in `meta` that each clear of the vault raises (`resetCopy`,
-   * `removeVault`), with the phone's count that `eraseAll` raises. Kept in the database, so every tab sees it (YAZ-5194).
+   * The vault's generation: a count in `meta` that each clear of the vault raises (`resetCopy`,
+   * `removeVault`), with the phone's count that `eraseAll` raises. Kept in the database, so every tab sees it.
    *
    * `session(scope)` reads the generation NOW and gives the same store, whose writes for `scope` land only while the
    * generation is still that one: checked in the same transaction as each write. A writer that starts work for one open
    * of a vault takes a session at its start: the sync pass (3B), and any sender outside the store, for example the
-   * friends sender with `session(PHONE)` (YAZ-5195: refused after "Sign out and erase this phone"). A refused write
+   * friends sender with `session(PHONE)` (refused after "Sign out and erase this phone"). A refused write
    * throws `VaultClosedError`.
    *
    * The plain store's writes use the generation that this store object first saw for the vault (and the phone's count
@@ -202,7 +201,7 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
   /** 3D: the open vault and its media that must stay (`protectMedia`); `paths` null: read the kept set when needed. */
   let kept: { vault: string; paths: ReadonlySet<string> | null } | null = null
   const isKept = (e: FileRef) => kept !== null && e.vault === kept.vault && kept.paths !== null && kept.paths.has(e.path)
-  /** The generation of a scope (YAZ-5193): the phone's erase count and the vault's clear count, both in `meta`. */
+  /** The generation of a scope: the phone's erase count and the vault's clear count, both in `meta`. */
   type Generation = { all: unknown; vault: unknown }
   const ERASES = 'erases'
   const clearsKey = (vault: string) => `clears:${vault}`
@@ -278,11 +277,11 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
 
   /**
    * Applies `ops`. When storage is full, drops media (row P2) and tries again. EVERY write of the store goes through
-   * here, not only `write()` (YAZ-5156): a full phone must never refuse the answer list while media can go.
+   * here, not only `write()`: a full phone must never refuse the answer list while media can go.
    *
    * After a refused write the store knows only one thing: the real room is less than the write. It does NOT use
    * `navigator.storage.estimate()`: that gives the browser's quota, not the free disk, so it can be too high by any
-   * amount (YAZ-5157, rounds 2 and 3). So:
+   * amount (rounds 2 and 3). So:
    * - `bytes` (what a file write adds): the room left counts as 0. If all the media that may go is less than `bytes`,
    *   the write cannot succeed, and nothing is dropped. Else the store drops ONE file, tries again, and goes on only while
    *   the bytes dropped are less than the bytes the write adds: it drops only what the write needs, never more than
@@ -415,7 +414,7 @@ export async function openVaultStore(backend: Backend, options: OpenOptions = {}
       admitted.add(vault)
     },
 
-    // Each clear raises the generation in the same transaction (YAZ-5193): every older writer of the vault is refused.
+    // Each clear raises the generation in the same transaction: every older writer of the vault is refused.
     async resetCopy(vault) {
       // The vault stays: the plain store moves to the new generation; a session (a pass) taken before is refused.
       const before = await backend.get('meta', clearsKey(vault))

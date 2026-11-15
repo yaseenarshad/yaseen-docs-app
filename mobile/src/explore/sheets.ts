@@ -2,7 +2,7 @@ import { openOverlay } from '../app/browserHistory'
 import type { Route } from '../app/nav'
 
 /**
- * EXPLORE ON THE PHONE (YAZ-5472): the stack of sheets. A link (or a row of Search, or "Open page") opens the file in a
+ * EXPLORE ON THE PHONE: the stack of sheets. A link (or a row of Search, or "Open page") opens the file in a
  * SHEET that slides up over where you are; a link in that sheet opens another sheet on top; a drag down closes the top
  * one, and you are back where you were. The screens under the stack (Review, Search, a page) stay mounted, so nothing
  * under it moves or scrolls.
@@ -11,12 +11,12 @@ import type { Route } from '../app/nav'
  * the sheets' own chunk (`SheetLayer.tsx`) has loaded; the chunk loads on the first open (and is preloaded when idle).
  * It is a plain store, not React state, so a caller with no React (the reader's `openLink`) can push a sheet.
  *
- * YAZ-5518: each sheet is one overlay of the app's ONE overlay stack (`openOverlay`): one history entry, so Safari's
+ * Each sheet is one overlay of the app's ONE overlay stack (`openOverlay`): one history entry, so Safari's
  * Back in a tab and the app's Back close the top sheet first. A second open of the route already on top (a double tap,
  * Today tapped again) opens nothing.
  */
 
-/** What a sheet can show: a page, a card (in a page, or a card file), a drawing file (YAZ-5473), or a folder's page (YAZ-5460). */
+/** What a sheet can show: a page, a card (in a page, or a card file), a drawing file, or a folder's page. */
 export type SheetRoute = Extract<Route, { kind: 'page' | 'card' | 'drawing' | 'folder' }>
 
 export interface Sheet {

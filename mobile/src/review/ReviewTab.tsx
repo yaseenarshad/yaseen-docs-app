@@ -9,7 +9,7 @@ import { ReviewView, type ReviewViewProps } from './ReviewView'
 export type ReviewTabProps = Omit<ReviewViewProps, 'media'> & { link: ReviewLink }
 
 export function ReviewTab(props: ReviewTabProps) {
-  // `shown` passes through: the shell keeps the tab mounted while it is off the screen (YAZ-5224).
+  // `shown` passes through: the shell keeps the tab mounted while it is off the screen.
   const media = useVaultMedia()
   return <ReviewView {...props} media={media} />
 }

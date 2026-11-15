@@ -3,7 +3,7 @@ import { TABLE_LOOK_DEFAULTS } from '@shared/tableLook'
 import type { PhoneTableLook } from './tableLook'
 
 /**
- * THE FINGER BAND (YAZ-5532): the Mac's row band (`table.css`, YAZ-4167; the folder view's hover band, `views.css`,
+ * THE FINGER BAND: the Mac's row band (`table.css`, YAZ-4167; the folder view's hover band, `views.css`,
  * YAZ-4538) under a finger. Yaseen: on a big table "you lose track of the rows"; a finger on a row lights the row.
  *
  *  - A finger down on a body row (`pointerdown`) marks that row (`data-band`): the WHOLE row, every column, the frozen

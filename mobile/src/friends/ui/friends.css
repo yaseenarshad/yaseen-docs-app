@@ -1,5 +1,5 @@
-/* The Friends screens (4E4, YAZ-5085): plain, on 4A's tokens (styles.css). The look is tuned in the demo round (7-).
-   YAZ-5264: the phone's own colours for the rows' small words and marks, where the Mac's tokens are under 4.5:1 (text)
+/* The Friends screens (4E4): plain, on 4A's tokens (styles.css). The look is tuned in the demo round (7-).
+   The phone's own colours for the rows' small words and marks, where the Mac's tokens are under 4.5:1 (text)
    or 3:1 (a sign) on the page in light mode. `look.test.ts` checks each one, light and dark. */
 :root {
   --fr-muted: #6b6b6b;
@@ -312,7 +312,7 @@
   color: var(--fr-cheer);
 }
 
-/* YAZ-5261: who each column is, under its avatar. A long name ends with "…" in its own column (320 px). */
+/* Who each column is, under its avatar. A long name ends with "…" in its own column (320 px). */
 .fr-vs__col {
   display: flex;
   flex-direction: column;

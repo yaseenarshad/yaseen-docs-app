@@ -1,9 +1,9 @@
-import { isGistId, POINTER_FILE, type GistDoc, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
+import { gistDoc, gistFilesBody, gistListItems, isGistId, POINTER_FILE, type GistListItem, type GistRate, type GistsApi } from '@shared/friendGists'
 import type { RepoPort } from '@shared/friendListStore'
 import { GithubError, type GithubClient, type RateLimit } from '../github/client'
 
 /**
- * The gist calls (YAZ-5082) on the ONE GitHub client of 3E (`github/client.ts`): the token goes in the Authorization
+ * The gist calls on the ONE GitHub client of 3E (`github/client.ts`): the token goes in the Authorization
  * header only, to `api.github.com` only, and each failure is a typed `GithubError` (`READ_ONLY` for a write with no
  * Gists permission, `NOT_FOUND`, `RATE_LIMITED`, `OFFLINE`, …). The shared friends logic reads the same codes.
  * Proof 1C: `GET /gists` lists the user's own secret gists with file names (no text); `GET /gists/{id}` reads any
@@ -15,36 +15,6 @@ const MAX_PAGES = 10
 /** A PATCH that GitHub refused with 409 (another write of the same gist at that moment) is sent again this often. */
 const CONFLICT_RETRIES = 2
 const CONFLICT_WAIT_MS = 1000
-
-interface RawGist {
-  id: string
-  owner?: { login?: unknown } | null
-  description: string | null
-  created_at: string
-  updated_at: string
-  files: Record<string, { content?: unknown; truncated?: unknown } | null>
-  truncated?: unknown
-}
-
-const asList = (data: unknown): RawGist[] => (Array.isArray(data) ? (data as RawGist[]).filter((g) => g !== null && typeof g === 'object' && typeof g.id === 'string') : [])
-
-function toDoc(data: unknown, etag: string | null): GistDoc {
-  const g = data as RawGist
-  return {
-    id: g.id,
-    // YAZ-5239: GitHub's own owner of the gist; the only login the groups trust.
-    owner: typeof g.owner?.login === 'string' ? g.owner.login : null,
-    description: g.description ?? '',
-    createdAt: g.created_at,
-    updatedAt: g.updated_at,
-    etag,
-    // YAZ-5350: GitHub's own `truncated` of the gist (it gave only its first 300 files).
-    ...(g.truncated === true && { truncated: true }),
-    files: Object.fromEntries(
-      Object.entries(g.files ?? {}).map(([name, f]) => [name, { content: f !== null && typeof f.content === 'string' ? f.content : null, truncated: f?.truncated === true }]),
-    ),
-  }
-}
 
 /** GitHub's `gist_update` count from an answer's `x-ratelimit-*` headers (3E reads them into `rateLimit`). */
 export function gistRate(rate: RateLimit | null): GistRate | null {
@@ -58,12 +28,9 @@ function gistPath(id: string): string {
   return `/gists/${id.toLowerCase()}`
 }
 
-/** A file's new text, or `null`: GitHub deletes that one file (YAZ-5312). */
-const filesBody = (files: Record<string, string | null>) => Object.fromEntries(Object.entries(files).map(([name, content]) => [name, content === null ? null : { content }]))
-
-/** `repos` (YAZ-5083): this phone's vaults on the friends account, where the friends list can live. */
+/** `repos`: this phone's vaults on the friends account, where the friends list can live. */
 export function gistsApi(client: GithubClient, repos?: () => Promise<readonly RepoPort[]>, repo?: (full: string) => Promise<RepoPort>): GistsApi {
-  /** YAZ-5238: GitHub's time at its last answer (the `Date` header, or a lower bound from the core reset). */
+  /** GitHub's time at its last answer (the `Date` header, or a lower bound from the core reset). */
   let serverTime: number | null = null
   const request: GithubClient['request'] = async (path, options) => {
     const answer = await client.request(path, options)
@@ -74,19 +41,19 @@ export function gistsApi(client: GithubClient, repos?: () => Promise<readonly Re
     return answer
   }
   /**
-   * `GET /gists`, page by page. `all` (YAZ-5464): more than `max` pages is `TOO_MANY_GISTS`. YAZ-5492 (nit): a full
+   * `GET /gists`, page by page. `all`: more than `max` pages is `TOO_MANY_GISTS`. YAZ-5492 (nit): a full
    * last page may be the end (exactly 3,000 gists): one more page tells; only a gist on it is too many.
    */
   async function pages(max: number, all: boolean): Promise<GistListItem[]> {
     const out: GistListItem[] = []
     for (let page = 1; page <= max + (all ? 1 : 0); page++) {
       const answer = await request('/gists', { query: { per_page: String(PAGE), page: String(page) } })
-      const items = asList(answer.data)
+      const items = gistListItems(answer.data)
       if (page > max) {
         if (items.length === 0) return out
         throw Object.assign(new Error(`You have more than ${max * PAGE} gists on GitHub: the app cannot see them all`), { code: 'TOO_MANY_GISTS' })
       }
-      out.push(...items.map((g) => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files ?? {}), createdAt: g.created_at, updatedAt: g.updated_at })))
+      out.push(...items)
       if (items.length < PAGE) return out
     }
     return out
@@ -100,23 +67,23 @@ export function gistsApi(client: GithubClient, repos?: () => Promise<readonly Re
     async read(id, etag) {
       const answer = await request(gistPath(id), etag ? { etag } : {})
       if (answer.status === 304) return 'unchanged'
-      return toDoc(answer.data, answer.etag)
+      return gistDoc(answer.data, answer.etag)
     },
     async create(description, files) {
-      const answer = await request('/gists', { method: 'POST', body: { description, public: false, files: filesBody(files) } })
-      return toDoc(answer.data, answer.etag)
+      const answer = await request('/gists', { method: 'POST', body: { description, public: false, files: gistFilesBody(files) } })
+      return gistDoc(answer.data, answer.etag)
     },
     async update(id, files, again) {
-      // YAZ-5312 (proved live): two PATCHes of one gist at the same moment, on DIFFERENT files, can get 409 for one of
+      // Two PATCHes of one gist at the same moment, on DIFFERENT files, can get 409 for one of
       // them. GitHub refused that whole write, so it may be sent again: up to 2 more times, after a wait.
-      // YAZ-5516 (N9-1): but never the SAME body blind: the other write may be newer (a pointer moved to the newest
+      // But never the SAME body blind: the other write may be newer (a pointer moved to the newest
       // generation). Read the gist again and work out the change again on it (`again`). A pointer write with no way to
       // work it out again is not sent again: the other write stands (`superseded`).
       let body = files
       for (let attempt = 0; ; attempt++) {
         try {
-          const answer = await request(gistPath(id), { method: 'PATCH', body: { files: filesBody(body) } })
-          return { gist: answer.data === null ? null : toDoc(answer.data, answer.etag), rate: gistRate(answer.rateLimit) }
+          const answer = await request(gistPath(id), { method: 'PATCH', body: { files: gistFilesBody(body) } })
+          return { gist: answer.data === null ? null : gistDoc(answer.data, answer.etag), rate: gistRate(answer.rateLimit) }
         } catch (err) {
           if (!(err instanceof GithubError && err.status === 409)) throw err
           // Round 4, Nit 3: still refused after the retries: quiet ("try again later"), never an exception on a screen.
@@ -124,7 +91,7 @@ export function gistsApi(client: GithubClient, repos?: () => Promise<readonly Re
           await new Promise((r) => setTimeout(r, CONFLICT_WAIT_MS * (attempt + 1)))
           if (again === undefined && !(POINTER_FILE in body)) continue
           const read = await request(gistPath(id))
-          const fresh = toDoc(read.data, read.etag)
+          const fresh = gistDoc(read.data, read.etag)
           const next = again === undefined ? null : again(fresh)
           if (next === null) return { gist: fresh, rate: null, superseded: true }
           body = next

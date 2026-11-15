@@ -101,6 +101,8 @@ export class ListError extends Error {
  * first-load bundle does not grow, YAZ-5377.)
  */
 export const EMPTY_REPO = /^Git Repository is empty/
+/** YAZ-5398: GitHub's 404 "No commit found": a commit its replica does not have yet (a stale read), not a missing file. */
+export const NO_COMMIT = /^No commit found/
 
 /** YAZ-5464: GitHub's answers of a `PUT contents` with no `sha` (or an old one) over a file that is there by now. */
 export const FILE_THERE = /"sha" wasn't supplied|does not match/

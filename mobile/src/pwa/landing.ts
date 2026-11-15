@@ -3,7 +3,7 @@ import { landingCodeFrom, landingCopy, type LandingKind } from './friendLink'
 import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from './homeScreen'
 
 /**
- * The landing page of a shared link (`/friend#…`, `/group#…`, `/join#…`; round 10, item 7; YAZ-5087, YAZ-5290). A link
+ * The landing page of a shared link (`/friend#…`, `/group#…`, `/join#…`; round 10, item 7). A link
  * opens in Safari, not in the Home Screen app (iOS has no link capture for a web app). This page shows the code and
  * copies it. It reads the code from the part after `#` ONLY, which no browser sends to a server, and it makes no
  * network call of its own. Every text goes in as text (`textContent`, `value`), never as HTML.

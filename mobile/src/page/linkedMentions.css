@@ -1,5 +1,5 @@
 /*
- * "Linked mentions" (YAZ-5455, YAZ-5535): the Mac's (`backlinks.css`) on the phone's tokens, at the end of a page, on the
+ * "Linked mentions": the Mac's (`backlinks.css`) on the phone's tokens, at the end of a page, on the
  * full page and in an Explore panel. In the page's column, so it scrolls with it; as the Mac, no hairline of its own.
  */
 .linked-mentions {

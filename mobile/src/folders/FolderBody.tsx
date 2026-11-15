@@ -11,7 +11,7 @@ import { pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
 import { useTables } from '../page/useTables'
 import { vaultName } from '../screens/Frame'
-// YAZ-5472 Q4: a folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
+// A folder page's row is tapped INSIDE a page (`from: 'inside'`): an Explore panel when the vault says explore.
 import { openFile } from '../explore/openFile'
 import { useFileText, useSheetTap } from '../explore/SheetBody'
 import { boardKindOf } from '../drawing/boardFiles'
@@ -23,12 +23,12 @@ import { FolderViewPane } from './FolderViewPane'
 import './folders.css'
 
 /**
- * A FOLDER'S PAGE, READ ONLY (YAZ-5460), in a sheet or full screen: what the Mac's folder page shows for the folder, from
+ * A FOLDER'S PAGE, READ ONLY, in a sheet or full screen: what the Mac's folder page shows for the folder, from
  * the vault (its `.folder.md` and the view keys in it; nothing of it is the Mac's own state):
  *  - its title and its own text (the `.folder.md`'s body), drawn by the reader;
  *  - its view tabs as the Mac lists them, the saved default view open first (a Page tab is the text above, so it has no
  *    tab here), and the open view under them (`FolderViewPane`);
- *  - Other files (YAZ-4597): the files in the folder that are not pages, then the pages and folders moved there.
+ *  - Other files: the files in the folder that are not pages, then the pages and folders moved there.
  * A chunk of its own, with the Mac's view engine; the first load never carries it. Nothing here writes.
  */
 
@@ -41,7 +41,7 @@ export default function FolderBody({ path, onDrawn, sheet = true }: { path: stri
   const app = useApp()
   const data = useVaultData()
   const repo = vaultName(app.vault?.repo ?? '')
-  // YAZ-5489: the vault's folder page defaults (folder-pages.json); the views wait for them (a few ms) so they draw once.
+  // The vault's folder page defaults (folder-pages.json); the views wait for them (a few ms) so they draw once.
   const defaults = useFolderPages(app.services.store, data)
   const model = useMemo(() => (data === null || defaults === undefined ? null : folderModel(data, path, repo, defaults)), [data, path, repo, defaults])
   const key = `${app.vaultKey}\n${path}`
@@ -139,7 +139,7 @@ function FolderText({ model, sheet, onDrawn }: { model: FolderModel; sheet: bool
   )
 }
 
-/** Other files (the Mac's tray, YAZ-4597): a tap opens a page, a folder's page, a drawing, or a file as the reader does. */
+/** Other files (the Mac's tray): a tap opens a page, a folder's page, a drawing, or a file as the reader does. */
 function OtherFiles({ model }: { model: FolderModel }) {
   const app = useApp()
   const [open, setOpen] = useState(true)

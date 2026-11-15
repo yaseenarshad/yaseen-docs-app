@@ -1,7 +1,7 @@
 import { CACHE_PREFIX, DRAWIO_CACHE_PREFIX, META_CACHE, type SwScope } from './swCore'
 
 /**
- * THE KILL SWITCH (YAZ-5285): the `sw.js` to publish when a bad version reached the phones and the normal update cannot
+ * THE KILL SWITCH: the `sw.js` to publish when a bad version reached the phones and the normal update cannot
  * replace it (the worker or the update code is the bad part). `npm run mobile:publish:preview:kill-switch` builds the
  * site with this file as `sw.js` (`publish/pwaPlugin.ts`, `NOTECARDS_KILL_SWITCH=1`).
  *

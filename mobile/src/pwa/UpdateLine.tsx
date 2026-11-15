@@ -8,9 +8,9 @@ import type { Updates } from './updates'
 import './update.css'
 
 /**
- * "A new version is ready." (YAZ-5087; YAZ-5555): a line over the tab bar whenever a new version is there. Only a tap on
- * Restart makes it take over; nothing restarts by itself (THE RULE: `safeMoment.ts`). When the tap would lose something
- * (answers waiting, words in a comment box, the first download), the line says why instead of showing the button.
+ * "A new version is ready.": a line over the tab bar whenever a new version is there. Only a tap on Restart makes it
+ * take over; nothing restarts by itself (THE RULE: `safeMoment.ts`). When the tap would lose something (answers
+ * waiting, words in a comment box, the first download), the line says why instead of showing the button.
  */
 export function UpdateLine({ updates }: { updates: Updates }) {
   const app = useApp()

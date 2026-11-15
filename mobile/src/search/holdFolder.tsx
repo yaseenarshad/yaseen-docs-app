@@ -6,7 +6,7 @@ import { openFile } from '../explore/openFile'
 import { useCopyPath } from '../screens/copyPath'
 
 /**
- * HOLD A FOLDER (YAZ-5460): in Search's tree, Favorites and Focus, a finger held on a folder row for `HOLD_MS` opens a
+ * HOLD A FOLDER: in Search's tree, Favorites and Focus, a finger held on a folder row for `HOLD_MS` opens a
  * small menu: "Open folder page" (the folder's page and its views, read only, through the one file door `openFile`, so
  * the vault's "Clicking a link" says sheet or full screen) and "Copy path". A tap still opens or closes the folder: a
  * hold that fired eats the click that follows it. The row shows it is pressed (`data-pressing`, `search.css`) while
@@ -143,7 +143,7 @@ export function useFolderHold(): { hold: (path: string, label: string) => HoldPr
 function FolderMenu({ folder, onClose, onCopy }: { folder: { path: string; label: string }; onClose(): void; onCopy(path: string): void }) {
   const app = useApp()
   const first = useRef<HTMLButtonElement>(null)
-  // YAZ-5518: an overlay of the app's one stack: a Back closes the menu, and Search stays.
+  // An overlay of the app's one stack: a Back closes the menu, and Search stays.
   useOverlay(true, onClose)
   useEffect(() => {
     first.current?.focus({ preventScroll: true })
@@ -153,7 +153,7 @@ function FolderMenu({ folder, onClose, onCopy }: { folder: { path: string; label
   }, [onClose])
   const open = () => {
     onClose()
-    // YAZ-5472 Q4: from Search, a tab screen, so ALWAYS a full page; its rows then open panels (`from: 'inside'`).
+    // From Search, a tab screen, so ALWAYS a full page; its rows then open panels (`from: 'inside'`).
     openFile(app, { kind: 'folder', path: folder.path }, { from: 'tab' })
   }
   return createPortal(

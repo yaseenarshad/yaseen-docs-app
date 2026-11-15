@@ -1,7 +1,7 @@
 import type { PhoneType } from './searchRun'
 
 /**
- * What the Search tab keeps while a page or a card is open over it (YAZ-5079): the box's text, the Type, and one line to
+ * What the Search tab keeps while a page or a card is open over it: the box's text, the Type, and one line to
  * say once (R5: the open page was deleted). The tab draws again from here when the person comes back. Phone memory
  * only: a new start has an empty box (as the Mac's search, D15).
  */
@@ -9,7 +9,7 @@ interface Held {
   vault: string | null
   query: string
   type: PhoneType
-  /** YAZ-5211: the rows shown ("Show more") and the scroll place of the list. */
+  /** The rows shown ("Show more") and the scroll place of the list. */
   shown: number | null
   scroll: number
   notice: string | null
@@ -27,7 +27,7 @@ export function keepSearch(vault: string | null, query: string, type: PhoneType)
   Object.assign(held, { vault, query, type })
 }
 
-/** YAZ-5211: the list's rows shown and its scroll place, kept while a page is open over the tab. */
+/** The list's rows shown and its scroll place, kept while a page is open over the tab. */
 export function keepPlace(shown: number | null, scroll?: number): void {
   if (shown !== null) held.shown = shown
   if (scroll !== undefined) held.scroll = scroll
@@ -45,7 +45,7 @@ export function takeSearchNotice(): string | null {
   return text
 }
 
-/** YAZ-5438: the tree's open folders, for each vault, kept while the app runs (as the Mac's sidebar keeps them). */
+/** The tree's open folders, for each vault, kept while the app runs (as the Mac's sidebar keeps them). */
 const opened = new Map<string, Set<string>>()
 export function openFoldersOf(vault: string | null): Set<string> {
   const key = vault ?? ''

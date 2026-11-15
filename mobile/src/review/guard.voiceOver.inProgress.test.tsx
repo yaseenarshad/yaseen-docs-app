@@ -32,7 +32,7 @@ const raw = async (hh: ReviewHarness, name: string) => {
 }
 const guarded = (hh: ReviewHarness) => hh.host.querySelector('[data-guard]') !== null
 
-describe('checker round 3: G1, the original intent in a correct form', () => {
+describe('G1, the original intent in a correct form', () => {
   it('G1c: a fast Undo; after 1 s the card and the buttons work; the next answer guards the NEXT card for SEEN_MS, then it is free again', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(3)) })
     await raw(h, 'Remembered')
@@ -81,7 +81,7 @@ function readingOrder(root: Element): string[] {
   return out
 }
 
-describe('checker round 3: VoiceOver by the accessibility tree (YAZ-5268)', () => {
+describe('VoiceOver by the accessibility tree (YAZ-5268)', () => {
   it('V3: a card with 3 hidden words: reading order; nothing hidden early; each step announced once, only the new part', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Rivers\n---\n{{Seine}} runs through {{Paris}} to the {{sea}}.\n---\nThe last side.', `RV-1, ${OLD}`)) })
     const box = h.host.querySelector('.review')!
@@ -116,7 +116,7 @@ describe('checker round 3: VoiceOver by the accessibility tree (YAZ-5268)', () =
   })
 })
 
-describe('checker round 3: VoiceOver, the common card shape', () => {
+describe('VoiceOver, the common card shape', () => {
   it('V4: front "Hola", back "{{Hello}}": the step to the back must not say "Hello" before the word shows', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Hola\n---\n{{Hello}}', `HL-1, ${OLD}`)) })
     const live = h.host.querySelector('.review__stage ~ p[aria-live]')!
@@ -127,7 +127,7 @@ describe('checker round 3: VoiceOver, the common card shape', () => {
   })
 })
 
-describe('checker round 3: "a review is in progress" (YAZ-5269)', () => {
+describe('"a review is in progress" (YAZ-5269)', () => {
   it('I1: a card on show: set; an answer and Inbox complete with Undo: set; Undo of the last: set; no card and no Undo: clear', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(1)) })
     expect(reviewInProgress()).toBe(true)
@@ -150,7 +150,7 @@ function fakeUpdates() {
   return { applied: 0, ready: () => true, tookOver: () => true, start: async () => {}, subscribe: () => () => {}, apply(this: { applied: number }) { this.applied++ }, check: async () => {} } as unknown as Updates & { applied: number }
 }
 
-describe('checker round 3: the update line while a review is in progress on Friends', () => {
+describe('the update line while a review is in progress on Friends', () => {
   it('U1: Restart is offered and works; a resume never swaps; answers sent later: is Restart offered again without a tab change?', async () => {
     const updates = fakeUpdates()
     const moment: AppMoment = { phase: 'ready', routeOpen: false, tab: 'friends', downloading: false, answersWaiting: 0, reviewInProgress: true }

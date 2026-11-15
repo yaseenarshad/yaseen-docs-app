@@ -4,7 +4,7 @@ import { fromGithub, type CheckDeps, type SignInError } from './check'
 import { cleanToken } from './input'
 
 /**
- * YAZ-5408: the repos a token can reach, for the repo picker. The person pastes only the token; the app lists the
+ * The repos a token can reach, for the repo picker. The person pastes only the token; the app lists the
  * repos; a tap runs the existing check on save (`checkSignIn`, unchanged).
  * - `GET /user/repos?per_page=100`: a fine-grained token lists the repos it was given; a classic token, every repo of
  *   its user. The app follows the `Link` header page by page, to at most `REPO_LIST_CAP` repos, and says when it stops.

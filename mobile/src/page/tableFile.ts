@@ -3,7 +3,7 @@ import { stickyHeaderOf, type PhoneTableLook } from './tableLook'
 import { applySubheads } from './tableSubheads'
 
 /**
- * THE TABLE'S OWN SETTINGS, FROM THE FILE (YAZ-5480). The Mac keeps each table's settings in the file, in the comment
+ * THE TABLE'S OWN SETTINGS, FROM THE FILE. The Mac keeps each table's settings in the file, in the comment
  * right after the table (`<!-- table: … freeze 2 rows 1 col … -->`), and reads it with ONE parser,
  * `client/src/editor/table/tableComment.ts` (no editor imports; the line-number worker reads it too). The phone reads
  * it with the same parser: this file is in the reader's lazy chunk (`pageRender.ts` imports it), never in the first
@@ -14,11 +14,11 @@ import { applySubheads } from './tableSubheads'
  *  - `data-freeze-rows`: the rows that stay at the top while the page scrolls down through the table;
  *  - `data-freeze-cols`: the columns that stay at the left while the table scrolls sideways (only when the file
  *    freezes columns: then they replace the phone's own "first column sticky" rule);
- *  - the table's look (YAZ-5482): see `applyTableFile`.
+ *  - the table's look: see `applyTableFile`.
  */
 
 /**
- * THE MAC'S RULES (`tableFreeze.ts`, `frozenRowCount`, YAZ-3769, YAZ-4899 round 2):
+ * THE MAC'S RULES (`tableFreeze.ts`, `frozenRowCount`):
  *  - rows: the table's own `freeze N rows` wins; else one row (the header row) when the header is sticky: the table's
  *    own `stickyheader` / `nostickyheader`, else Settings › Tables › Sticky header row, which is ON by default
  *    (`shared/types.ts`: `tableStickyHeader: true`). The phone has no such setting: the Mac's default.
@@ -27,7 +27,7 @@ import { applySubheads } from './tableSubheads'
  */
 export function freezeOf(style: TableStyle | null, rows: number, cols: number, stickyDefault = STICKY_HEADER_DEFAULT): { rows: number; cols: number } {
   const own = style?.freeze ?? { rows: 0, cols: 0 }
-  // YAZ-5487: the vault's Sticky header row (`table-look.json`, `tableLook.ts`), else the Mac's default.
+  // The vault's Sticky header row (`table-look.json`, `tableLook.ts`), else the Mac's default.
   const sticky = style?.stickyHeader ?? stickyDefault
   const r = own.rows > 0 ? own.rows : sticky ? 1 : 0
   return { rows: Math.max(0, Math.min(r, rows)), cols: Math.max(0, Math.min(own.cols, cols)) }
@@ -67,7 +67,7 @@ export function contrast(a: string, b: string): number {
 }
 
 /**
- * A custom text colour (`#rrggbb`), readable on `bg` (YAZ-5482): the colour itself when it reaches `INK_CONTRAST`, else
+ * A custom text colour (`#rrggbb`), readable on `bg`: the colour itself when it reaches `INK_CONTRAST`, else
  * the nearest mix of it toward black (on a light page) or white (on a dark one) that does. The Mac shows a custom text
  * colour as picked in both themes; on the phone a dark ink in dark mode (or a pale one in light) would not be read.
  */
@@ -102,13 +102,13 @@ export const BORDER_PX_PHONE = 2
 export function applyTableFile(table: HTMLTableElement, body: string, look: PhoneTableLook | null = null): TableStyle | null {
   const style = readTableComment(`<!-- ${body} -->`)
   if (style === null) return null
-  // YAZ-5487: its freeze and Clip are decided here, with the vault's defaults (`applyTableLook` leaves them).
+  // Its freeze and Clip are decided here, with the vault's defaults (`applyTableLook` leaves them).
   table.setAttribute('data-table-look-own', '')
   const grid = gridOf(table)
   const { rows, cols } = freezeOf(style, grid.rows, grid.cols, stickyHeaderOf(look))
   table.setAttribute('data-freeze-rows', String(rows))
   if (cols > 0) table.setAttribute('data-freeze-cols', String(cols))
-  // YAZ-5493: a calendar table (`calendar 15m | 30m | 60m`): its slot length, `nonow` (no Now button) and the rows it
+  // A calendar table (`calendar 15m | 30m | 60m`): its slot length, `nonow` (no Now button) and the rows it
   // never dims (`nodim`, the rows' indexes with the header row as 0, the Mac's). `tableCalendar.ts` draws now from them.
   if (style.calendar) {
     table.setAttribute('data-calendar', String(style.calendar))
@@ -150,7 +150,7 @@ export function applyTableFile(table: HTMLTableElement, body: string, look: Phon
   for (const [address, align] of style.align) cells.get(address)?.style.setProperty('text-align', align)
   for (const [address, valign] of style.valign) cells.get(address)?.style.setProperty('vertical-align', valign)
 
-  // Text in cells (YAZ-4900): each column's own, else the table's Clip or Wrap, else the vault's (YAZ-5487), else Wrap, as the Mac's.
+  // Text in cells: each column's own, else the table's Clip or Wrap, else the vault's, else Wrap, as the Mac's.
   const clip = (c: number) => (style.text?.get(c) ?? (style.nowrap ? 'clip' : style.wrap ? 'wrap' : (look?.tableTextInCells ?? 'wrap'))) === 'clip'
   for (const row of table.rows) [...row.cells].forEach((cell, c) => clip(c) && cell.setAttribute('data-clip', ''))
 

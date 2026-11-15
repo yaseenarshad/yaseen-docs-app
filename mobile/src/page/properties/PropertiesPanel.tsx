@@ -13,7 +13,7 @@ import { resolveSourceOf } from '../pageLook'
 import './properties.css'
 
 /**
- * A PAGE'S PROPERTIES, READ ONLY (YAZ-5459): the Mac's Properties panel as it shows a read-only page
+ * A PAGE'S PROPERTIES, READ ONLY: the Mac's Properties panel as it shows a read-only page
  * (`FrontmatterPanel.tsx`, `readOnly`), with the Mac's own code for the values:
  *  - ROWS: the page's own fields in the file's order; in a vault with IDs `in` and `title` are no rows (the title is the
  *    page's title, `in` the folders' blocks); a card file's mark (`kind: card`) is no row; `comments` is the page's
@@ -24,7 +24,7 @@ import './properties.css'
  *    a check box ticked or not (it cannot change), a list as chips, a link as a pill with its page's title that opens the
  *    page (the one link door), a text holding `[[links]]` with each link a pill; `also_in` names each folder by its title.
  *
- * YAZ-5529: they open inline under the page's title, from the Mac's chip at its right (`../PageProperties.tsx`). Nothing is written.
+ * They open inline under the page's title, from the Mac's chip at its right (`../PageProperties.tsx`). Nothing is written.
  */
 
 export interface Row {
@@ -49,7 +49,7 @@ export function propertyRows(record: IndexRecord, ids: boolean): Row[] {
     .map(([key, raw]) => ({ key, raw, chip: reserved.has(key) ? 'reserved' : isOpaque(raw) ? 'yaml' : null }))
 }
 
-/** The rows, open under the page's title (YAZ-5529): the Mac's panel body, read only. A link value opens its page. */
+/** The rows, open under the page's title: the Mac's panel body, read only. A link value opens its page. */
 export default function PropertiesInline({ record, data, door }: { record: IndexRecord; data: VaultData; door: LinkDoor }) {
   return (
     <section className="page-props__body" aria-label="Properties">
@@ -59,8 +59,8 @@ export default function PropertiesInline({ record, data, door }: { record: Index
 }
 
 /**
- * The rows (YAZ-5459), alone: a key and its value each, read only. The card strip's Properties part
- * (`cardStrip/CardStrip.tsx`, YAZ-5508) shows a card's own properties with them, the same rows and look as a page's.
+ * The rows, alone: a key and its value each, read only. The card strip's Properties part
+ * (`cardStrip/CardStrip.tsx`) shows a card's own properties with them, the same rows and look as a page's.
  */
 export function PropertyRows({ rows, data, open, className = 'props__rows' }: { rows: readonly Row[]; data: VaultData; open: (path: string) => void; className?: string }) {
   const source = resolveSourceOf(data)
@@ -89,7 +89,7 @@ export function PropertyRows({ rows, data, open, className = 'props__rows' }: { 
   )
 }
 
-/** A card's own properties (off its card line, YAZ-5379) as rows, in the line's order: no app keys, no YAML chips. */
+/** A card's own properties (off its card line) as rows, in the line's order: no app keys, no YAML chips. */
 export const cardPropertyRows = (values: Readonly<Record<string, unknown>>): Row[] => Object.entries(values).map(([key, raw]) => ({ key, raw, chip: null }))
 
 /** One value, as the Mac's read-only cell (`cellContent`): a check box, chips, link pills, or its text. */

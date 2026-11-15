@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /// <reference path="../../../client/src/bridge.d.ts" />
-// Checker (YAZ-5078): three made-up vaults of the checker's own, 40 actions each, through the Mac's host and the
+// Checker round 3 (YAZ-5078): one new made-up vault (based on round 2's harness); earlier: three made-up vaults of the checker's own, 40 actions each, through the Mac's host and the
 // phone's host. The due list (with its ORDER), the counts, and the bytes of every file must be the same.
 import { withCardFix } from '@shared/cardLine'
 import { act, createElement } from 'react'
@@ -145,6 +145,8 @@ async function desktopRun(files: Record<string, string>): Promise<Run> {
   }
   reindex()
   const source = { get records() { return records }, folders: [] as IndexRecord[], letters: undefined, subscribe: (l: () => void) => (listeners.add(l), () => void listeners.delete(l)) }
+  // (builder, YAZ-5078) The phone's Undo takes back Archive card (a decision for the phone only; the Mac says no). To
+  // compare ONE logic, the Mac's run here says yes too: the same hook path, the Mac's own file writes.
   const host: ReviewHost = desktopReviewHost
   const m = mount(source, host, ROOT, settingsOf(files))
   const settle = async () => {
@@ -189,12 +191,12 @@ async function phoneRun(files: Record<string, string>) {
   return { run, t }
 }
 
-type Action = 'good' | 'again' | 'hard' | 'easy' | 'undo' | 'archive' | 'next' | 'unnext' | 'fix' | 'add-new' | 'add-next' | 'f-all' | 'f-new' | 'f-due' | 'f-next'
+type Action = 'p-archive-undo' | 'p-next-undo' | 'p-fix-undo' | 'p-archive-answer-undo' | 'good' | 'again' | 'hard' | 'easy' | 'undo' | 'archive' | 'next' | 'unnext' | 'fix' | 'add-new' | 'add-next' | 'f-all' | 'f-new' | 'f-due' | 'f-next'
 const SCRIPT_A: Action[] = ['good', 'again', 'undo', 'good', 'next', 'good', 'fix', 'again', 'again', 'undo', 'undo', 'good', 'archive', 'f-new', 'good', 'again', 'f-due', 'good', 'f-all', 'add-new', 'good', 'undo', 'good', 'add-next', 'again', 'good', 'unnext', 'good', 'fix', 'good', 'again', 'again', 'good', 'good', 'add-new', 'good', 'undo', 'undo', 'good', 'good']
 const SCRIPT_B: Action[] = ['f-next', 'good', 'good', 'f-new', 'good', 'again', 'undo', 'f-all', 'again', 'good', 'add-new', 'good', 'good', 'add-next', 'good', 'undo', 'good', 'again', 'archive', 'good', 'next', 'good', 'add-new', 'again', 'good', 'good', 'undo', 'fix', 'good', 'good', 'good', 'add-next', 'good', 'again', 'again', 'good', 'good', 'good', 'add-new', 'good']
 const SCRIPT_C: Action[] = ['hard', 'easy', 'again', 'undo', 'good', 'hard', 'archive', 'fix', 'easy', 'again', 'again', 'undo', 'next', 'good', 'f-new', 'easy', 'f-due', 'hard', 'f-next', 'good', 'f-all', 'add-new', 'easy', 'again', 'undo', 'undo', 'good', 'hard', 'add-next', 'good', 'good', 'good', 'again', 'good', 'good', 'easy', 'good', 'good', 'add-new', 'good']
 
-async function play(run: Run, script: Action[], settings: ReviewSettings): Promise<string[]> {
+async function play(run: Run, script: Action[], settings: ReviewSettings, phone = false): Promise<string[]> {
   const seen: string[] = []
   const look = (what: string) => {
     const r = run.review()
@@ -224,6 +226,9 @@ async function play(run: Run, script: Action[], settings: ReviewSettings): Promi
           if (cc !== null) await rr.answer(a, 5 + i)
           break
         case 'undo': await rr.undo(); break
+        case 'p-archive-undo': if (phone && cc !== null) { await rr.turnOff() } break
+        case 'p-next-undo': if (phone && cc !== null) { const on = cc.page?.next !== true; await rr.setNext(cc.path, cc.id, on); await rr.setNext(cc.path, cc.id, !on) } break
+        case 'p-fix-undo': if (phone && cc !== null) { const on = cc.page?.fix !== true; await run.setFix(cc.path, cc.id, on); await run.setFix(cc.path, cc.id, !on) } break
         case 'archive': if (cc !== null) await rr.turnOff(); break
         case 'next': if (cc !== null) await rr.setNext(cc.path, cc.id, true); break
         case 'unnext': if (cc !== null) await rr.setNext(cc.path, cc.id, false); break
@@ -237,6 +242,7 @@ async function play(run: Run, script: Action[], settings: ReviewSettings): Promi
       }
     })
     await run.settle()
+    if (phone && a === 'p-archive-undo' && c !== null) { await act(async () => { await run.review().undo() }); await run.settle() }
     look(`${i + 1}:${a}${c === null ? '' : `@${c.id}`}`)
   }
   return seen
@@ -249,33 +255,39 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers())
 
 
-const R2 = (id: string, extra = '') => `\`\`\`card\nR2 ${id} front {{a ${id}}} and {{b ${id}}}\n---\nback of ${id} {{c ${id}}}\n\`\`\`\n<!-- card: ${id}${extra} -->`
-const VR2: Record<string, string> = {
-  '.yaseendocs/review.json': '{"newPerDay": 3, "upNextPerDay": 2}',
-  'zoo/animals.md': `---\ntitle: Animal facts\n---\n\n# Animals\n\n${R2('RT-1', ', 2026-10-01T08:00Z good, 2026-10-05T08:00Z good')}\n\n${R2('RT-2')}\n\n${R2('RT-3', ', next')}\n\n${R2('RT-4', ', 2026-11-12T09:00Z again')}\n`,
-  'cards/rt-5.md': `---\nkind: card\n---\n\n${R2('RT-5', ', title "Card five", 2026-09-01T08:00Z good')}\n`,
-  'cards/rt-6.md': `---\nkind: card\n---\n\n${R2('RT-6', ', title "Card six"')}\n`,
-  'notes/mixed.md': `---\ntitle: Mixed\n---\n\n${R2('RT-7', ', off')}\n\n${R2('RT-8', ', 2026-10-20T08:00Z hard, 2026-11-01T08:00Z good')}\n\n${R2('RT-9')}\n\n![[cards/rt-5]]\n`,
+const R3 = (id: string, front: string, extra = '') => `\`\`\`card\n${front}\n---\nR3 back of ${id}: {{x ${id}}}\n---\nlast side {{y ${id}}} and {{z ${id}}}\n\`\`\`\n<!-- card: ${id}${extra} -->`
+const VR3P: Record<string, string> = {
+  '.yaseendocs/review.json': '{"newPerDay": 2, "upNextPerDay": 1, "fuzz": false}',
+  'garden/plants.md': `---\ntitle: Plant notes (round 3)\n---\n\n# Plants\n\nSome text before the cards.\n\n${R3('PL-1', 'What is a fern?', ', 2026-09-20T08:00Z good, 2026-10-10T08:00Z good')}\n\n${R3('PL-2', 'Moss or lichen?')}\n\n${R3('PL-3', 'Which tree loses leaves?', ', next')}\n\n${R3('PL-4', 'Cactus water?', ', 2026-11-12T09:00Z again, 2026-11-13T07:00Z hard')}\n\n${R3('PL-5', 'Secret title\nWhat is a {{bulb}}?', ', notitle, 2026-10-25T08:00Z good')}\n`,
+  'cards/pl-6.md': `---\nkind: card\ntitle: Oak\n---\n\n${R3('PL-6', 'How old can an oak get?', ', 2026-08-01T08:00Z easy, 2026-09-15T08:00Z good')}\n`,
+  'cards/pl-7.md': `---\nkind: card\ntitle: Ivy\n---\n\n${R3('PL-7', 'Does ivy climb?', ', next')}\n`,
+  'garden/more.md': `---\ntitle: More\n---\n\n${R3('PL-8', 'Archived one?', ', off, 2026-10-01T08:00Z good')}\n\n${R3('PL-9', 'Rose thorns?', ', fix')}\n\n${R3('PL-10', 'Tulip from?')}\n\n${R3('PL-11', 'Daisy?', ', 2026-11-01T08:00Z good')}\n\n![[cards/pl-6]]\n\n![[PL-7]]\n`,
 }
-const SCRIPT_R2: Action[] = ['good', 'again', 'good', 'undo', 'next', 'good', 'f-new', 'good', 'again', 'undo', 'undo', 'f-due', 'good', 'archive', 'f-all', 'fix', 'good', 'again', 'unnext', 'good', 'add-new', 'good', 'undo', 'add-next', 'f-next', 'good', 'f-all', 'again', 'again', 'good', 'next', 'archive', 'good', 'undo', 'good', 'f-new', 'good', 'add-new', 'good', 'good']
-const CASES: [string, Record<string, string>, Action[]][] = [
-  ['V1 language vault', V1, SCRIPT_A],
-  ['V2 limit spent elsewhere', V2, SCRIPT_B],
-  ['V3 four buttons', V3, SCRIPT_C],
-  ['R2 checker round 2 vault', VR2, SCRIPT_R2],
-]
+const SCRIPT_R3P: Action[] = ['again', 'good', 'undo', 'good', 'next', 'good', 'f-new', 'again', 'good', 'undo', 'undo', 'f-next', 'good', 'f-due', 'archive', 'good', 'fix', 'f-all', 'add-new', 'good', 'again', 'add-next', 'good', 'unnext', 'good', 'undo', 'good', 'again', 'again', 'next', 'good', 'p-archive-undo', 'p-next-undo', 'f-new', 'good', 'add-new', 'p-fix-undo', 'good', 'again', 'good']
 
-describe('checker 4B r2: the same answers as the Mac, three vaults, 40 actions each', () => {
+
+const C4 = (id: string, front: string, extra = '', back = `{{a ${id}}}`) => `\`\`\`card\n${front}\n---\n${back}\n\`\`\`\n<!-- card: ${id}${extra} -->`
+const V4: Record<string, string> = {
+  '.yaseendocs/review.json': '{"newPerDay": 3, "upNextPerDay": 2, "fuzz": false, "buttons": 4}',
+  'lang/words.md': `---\ntitle: Words (round 4)\n---\n\n# Words\n\nText first.\n\n${C4('WD-1', 'casa?', ', 2026-10-20T08:00Z good, 2026-11-01T08:00Z good')}\n\n${C4('WD-2', 'perro?')}\n\n${C4('WD-3', 'gato?', ', next, 2026-11-10T08:00Z again')}\n\n${C4('WD-4', 'Hidden title\\nlibro?', ', notitle, fix, 2026-10-05T08:00Z hard')}\n\n${C4('WD-5', 'agua?', ', 2026-11-13T08:00Z again')}\n\n${C4('WD-6', 'sol?', ', 2026-09-01T08:00Z easy, 2026-10-01T08:00Z good')}\n\n${C4('WD-7', 'luna?')}\n`,
+  'cards/wd-8.md': `---\nkind: card\ntitle: Tree\n---\n\n${C4('WD-8', 'arbol?', ', 2026-10-25T08:00Z good')}\n`,
+  'cards/wd-9.md': `---\nkind: card\ntitle: Sea\n---\n\n${C4('WD-9', 'mar?', ', next')}\n`,
+  'lang/more.md': `---\ntitle: More\n---\n\n${C4('WD-10', 'old?', ', off, 2026-10-01T08:00Z good')}\n\n${C4('WD-11', 'rojo?', ', 2026-11-02T08:00Z good')}\n\n${C4('WD-12', 'verde?')}\n\n![[cards/wd-8]]\n\n![[WD-9]]\n`,
+}
+const SCRIPT_4: Action[] = ['p-archive-undo', 'good', 'p-next-undo', 'again', 'p-fix-undo', 'hard', 'undo', 'easy', 'next', 'p-archive-undo', 'good', 'fix', 'p-fix-undo', 'again', 'archive', 'p-next-undo', 'good', 'f-new', 'good', 'p-archive-undo', 'undo', 'f-all', 'add-new', 'good', 'unnext', 'p-next-undo', 'good', 'again', 'add-next', 'p-archive-undo', 'good', 'undo', 'undo', 'p-fix-undo', 'good', 'archive', 'f-due', 'good', 'f-all', 'good']
+const CASES: [string, Record<string, string>, Action[]][] = [['R4 four buttons, marks and their Undos', V4, SCRIPT_4], ['R3 vault with phone-only mark Undos', VR3P, SCRIPT_R3P]]
+
+describe('the real Mac host and the phone host, 40 actions, phone-only mark Undos', () => {
   for (const [name, files, script] of CASES) {
     it(name, async () => {
       const settings = settingsOf(files)
       const mac = await desktopRun(files)
-      const macSeen = await play(mac, script, settings)
+      const macSeen = await play(mac, script, settings, false)
       const macFiles = await mac.files()
       mac.stop()
       vi.setSystemTime(NOW)
       const { run: phone, t } = await phoneRun(files)
-      const phoneSeen = await play(phone, script, settings)
+      const phoneSeen = await play(phone, script, settings, true)
       const phoneFiles = await phone.files()
       // Then the phone gets a signal and sends: GitHub's bytes must be the Mac's bytes too.
       t.s.github.offline = false
@@ -285,11 +297,11 @@ describe('checker 4B r2: the same answers as the Mac, three vaults, 40 actions e
       const remote = await t.s.git.filesAt(t.s.git.branches.get(BRANCH)!)
       phone.stop()
       const diffs = macSeen.map((m, i) => (m === phoneSeen[i] ? null : `#${i}\n  mac:   ${m}\n  phone: ${phoneSeen[i]}`)).filter(Boolean)
-      console.log(`[parity ${name}] steps ${macSeen.length}; first: ${macSeen[0]}\n  last: ${macSeen.at(-1)}\n  diffs: ${diffs.length}\n${diffs.slice(0, 4).join('\n')}`)
+      console.log(`[parity3 ${name}] steps ${macSeen.length}; first: ${macSeen[0]}\n  last: ${macSeen.at(-1)}\n  diffs: ${diffs.length}\n${diffs.slice(0, 4).join('\n')}`)
       const fileDiffs = Object.keys(files).filter((p) => macFiles[p] !== phoneFiles[p] || macFiles[p] !== remote[p])
-      for (const p of fileDiffs) console.log(`[parity ${name}] FILE ${p}\n--mac--\n${macFiles[p]}\n--phone view--\n${phoneFiles[p]}\n--github--\n${remote[p]}`)
+      for (const p of fileDiffs) console.log(`[parity3 ${name}] FILE ${p}\n--mac--\n${macFiles[p]}\n--phone view--\n${phoneFiles[p]}\n--github--\n${remote[p]}`)
       const changed = Object.keys(files).filter((p) => macFiles[p] !== files[p])
-      console.log(`[parity ${name}] files changed by the script: ${changed.join(', ')}; waiting after send: ${t.answers.waiting().length}; lost: ${t.answers.state().lost.length}`)
+      console.log(`[parity3 ${name}] files changed by the script: ${changed.join(', ')}; waiting after send: ${t.answers.waiting().length}; lost: ${t.answers.state().lost.length}`)
       expect(phoneSeen).toEqual(macSeen)
       expect(fileDiffs).toEqual([])
     })

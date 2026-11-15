@@ -9,7 +9,7 @@ import { cardOf, drawCard, embedName, resolveSourceOf } from './pageLook'
 import { boardKindOf } from '../drawing/boardFiles'
 
 /**
- * What a drawn page or card does once it is on screen (YAZ-5079): its pictures and sounds get their bytes
+ * What a drawn page or card does once it is on screen: its pictures and sounds get their bytes
  * (`watchMedia`, `media/ui/vaultMedia.ts`), its embedded cards are read and drawn in place (`fillCardEmbeds`, round 15 item 1), and a tap on a link opens what it
  * names (`onPageTap`). Every element here is made by the app; the page's text reaches the screen only through
  * `renderPage` or `renderCard`, which clean it first.
@@ -17,11 +17,11 @@ import { boardKindOf } from '../drawing/boardFiles'
 
 /**
  * Each `![[ID]]` box of `root` with its card, read from the stored file (round 15, item 1), drawn as the Mac's embed
- * (`cardEmbed.ts`, YAZ-5437): the head `↗ Embedded from "<name>" · ID` (· "Archived"), whose first part opens the card
+ * (`cardEmbed.ts`): the head `↗ Embedded from "<name>" · ID` (· "Archived"), whose first part opens the card
  * alone; under it the card's title band (off its card line; none for a card with no title); then the card, drawn by
  * `renderCard`. No Edit card and no ⋯ in stage one.
  */
-/** Each filled embed's card as its file reads it (YAZ-5508: its strip's reviews and properties, `cardStrip/pageStrips.tsx`). */
+/** Each filled embed's card as its file reads it (its strip's reviews and properties, `cardStrip/pageStrips.tsx`). */
 export const embedReads = new WeakMap<HTMLElement, CardAtPage>()
 
 export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: VaultStore, door: LinkDoor, live: () => boolean = () => true): Promise<void> {
@@ -84,7 +84,7 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
 }
 
 /**
- * What a tap on the page asks for (YAZ-5455): open a page (at a heading) or a card; a file; land on a heading of this
+ * What a tap on the page asks for: open a page (at a heading) or a card; a file; land on a heading of this
  * page; `none`: a link to a missing page, which does nothing (it shows plain and dim). null: not the app's (a web link).
  */
 export type Tap = { kind: 'go'; target: LinkTarget } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'none' } | null
@@ -100,9 +100,9 @@ export function tapOf(target: EventTarget | null, data: VaultData): Tap {
   if (open === 'heading') return heading === undefined ? { kind: 'none' } : { kind: 'heading', heading }
   if (open === 'page' && path !== undefined) return { kind: 'go', target: { kind: 'page', path, ...(heading !== undefined && { heading }) } }
   if (open === 'card' && path !== undefined) return { kind: 'go', target: { kind: 'card', path, id: (el as HTMLElement).dataset.card ?? '' } }
-  // YAZ-5550: a link to a folder opens its folder's page, through the one door.
+  // A link to a folder opens its folder's page, through the one door.
   if (open === 'folder' && path !== undefined) return { kind: 'go', target: { kind: 'folder', path } }
-  // YAZ-5473: a link to a drawing file opens the drawing (its own view, or a sheet), through the one door.
+  // A link to a drawing file opens the drawing (its own view, or a sheet), through the one door.
   if (open === 'file' && path !== undefined) return boardKindOf(path) !== null ? { kind: 'go', target: { kind: 'drawing', path } } : { kind: 'file', path }
   if (el.classList.contains('wikilink--unresolved') || el.classList.contains('page-pill--missing')) return { kind: 'none' }
   // A pill in a card (`renderCard`): its link, as the card's page reads it.

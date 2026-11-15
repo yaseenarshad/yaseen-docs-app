@@ -1,4 +1,4 @@
-/* The vault's link pills on the phone (YAZ-5455): the palette the Mac's pill colours name (`table.css`, YAZ-3817), which
+/* The vault's link pills on the phone: the palette the Mac's pill colours name (`table.css`), which
    `linkPillVars` reads (`--table-fill-solid-*` for a box, `--table-text-*` for a part), on the reader only. The pill's own
    rules are the Mac's `wikilink.css`. */
 .reader {

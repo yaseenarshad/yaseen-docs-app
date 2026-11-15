@@ -29,35 +29,35 @@ import { spliceCardLine } from './splice'
  */
 export type CardOp =
   /**
-   * An answer. `nth` (YAZ-5078): this is the person's nth review of the same time and rating on the line (the review
+   * An answer. `nth`: this is the person's nth review of the same time and rating on the line (the review
    * time is to the minute, so a new card that comes back at once gets two in one minute, as the Mac writes them).
    * Absent: the first. The send stays idempotent: the review goes on only while the line holds fewer than `nth`.
-   * YAZ-5514 (W4): a count alone cannot tell "my second copy never landed" from "both landed and the Mac took one
+   * A count alone cannot tell "my second copy never landed" from "both landed and the Mac took one
    * out", so a resend is settled by the action's own commit (`WaitingAnswer.commit`, `send.ts`), never by the count.
    */
   | { kind: 'review'; id: string; review: CardReview; nth?: number }
   /**
-   * Undo of a sent answer: names ONE review by its time and rating (YAZ-5181), and WHICH of the identical copies:
-   * `nth` (YAZ-5198), as `review` does. Absent: the first. It removes the nth copy while the line holds at least `nth`;
+   * Undo of a sent answer: names ONE review by its time and rating, and WHICH of the identical copies:
+   * `nth`, as `review` does. Absent: the first. It removes the nth copy while the line holds at least `nth`;
    * else the copy is gone already and it changes nothing, so a re-send after a lost reply removes nothing more.
    */
   | { kind: 'unreview'; id: string; at: string; rating: CardRating; nth?: number }
   | { kind: 'off'; id: string; on: boolean } // archive, unarchive
   /**
-   * Up next. `at` (YAZ-5409): the part place to put `next` back at, from `cardNextIndex` before the answer that took it
+   * Up next. `at`: the part place to put `next` back at, from `cardNextIndex` before the answer that took it
    * off; the Undo of a SENT answer gives it, as the Mac's Undo does. So `next` goes back where it was, in any order of
    * the line. Absent (Up next from the ⋯ menu, or a list stored before YAZ-5409): the writer's place.
    */
   | { kind: 'next'; id: string; on: boolean; at?: number }
-  | { kind: 'fix'; id: string; on: boolean } // Fix later (round 10, YAZ-5097)
+  | { kind: 'fix'; id: string; on: boolean } // Fix later (round 10)
   /**
-   * Title on the front (YAZ-5503): `on` hides the title on the review front (the line's `notitle`), off shows it again.
+   * Title on the front: `on` hides the title on the review front (the line's `notitle`), off shows it again.
    * The Mac's own change (`withCardNoTitle`): the word goes after the ID, the title and any `off` / `next`; Show takes it out.
    */
   | { kind: 'notitle'; id: string; on: boolean }
 
 /**
- * YAZ-5520: a new review goes at its TIME among the line's reviews: before the first review made later, else right
+ * A new review goes at its TIME among the line's reviews: before the first review made later, else right
  * after the last review. A new answer is the newest, so it goes where the Mac writes it (`withCardReview`); an older
  * one goes in time order, as the Mac's merge (`withCardReviews`) keeps them. The place depends only on the reviews,
  * never on the order in which one list added them.
@@ -80,11 +80,11 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
       return held >= (op.nth ?? 1) ? line : withReviewInTime(line, op.review)
     }
     case 'unreview': {
-      // YAZ-5181: the review at `at` WITH this rating, the last one (as `withoutCardReview` picks). Gone already: no
+      // The review at `at` WITH this rating, the last one (as `withoutCardReview` picks). Gone already: no
       // change, so an `unreview` sent again never takes a second review of the same minute. A list stored before the
       // rating was named (no `rating`) keeps the old reading.
       if ((op as { rating?: CardRating }).rating === undefined) return withoutCardReview(line, op.at)
-      // YAZ-5198: the nth copy of that name, only while the line holds at least `nth` of them.
+      // The nth copy of that name, only while the line holds at least `nth` of them.
       const key = cardReviewKey({ at: op.at, rating: op.rating })
       const copies = line.parts.flatMap((p, j) => (p.kind === 'review' && cardReviewKey(p.review) === key ? [j] : []))
       const i = copies[(op.nth ?? 1) - 1]
@@ -160,7 +160,7 @@ function withGaps(parts: readonly CardPart[], gone: ReadonlySet<CardPart>, after
 /**
  * Pure: `ops` applied, in their order, to a page's text (a page, or a card file: its properties stay byte for byte).
  * A card is found as `changeCard` finds it: the first card of the body whose line holds the ID (`pageCards`); the page
- * is read ONE time and written ONE time (each line spliced, YAZ-5409; each line keeps its own line end, YAZ-5514). An action whose card
+ * is read ONE time and written ONE time (each line spliced, YAZ-5409; each line keeps its own line end). An action whose card
  * this text does not hold (deleted, moved away, or only embedded here with `![[ID]]`) comes back in `lost`; it is
  * never dropped silently. No change at all gives back the same string.
  */
@@ -172,7 +172,7 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
     const id = cardIdOf(card.line)
     if (id !== null && !at.has(id.toLowerCase())) at.set(id.toLowerCase(), n)
   })
-  // YAZ-5514: a mark (archive, Up next, Fix later, title on the front) SETS a value, so only the last action of each
+  // A mark (archive, Up next, Fix later, title on the front) SETS a value, so only the last action of each
   // mark for a card counts. Off then on of a mark the line holds changes no byte, and the list applied to its own
   // result changes nothing (a mark taken out and put back would go to the writer's place, which can differ).
   const lastMark = new Map<string, CardOp>()
@@ -191,8 +191,8 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
   const lines = new Map<number, CardLine>([...byCard].map(([n, list]) => [n, applyCardOps(cards[n].line, list)]))
   const changed = [...lines].filter(([n, line]) => line !== cards[n].line)
   if (changed.length === 0) return { content, lost }
-  // YAZ-5409: each changed line is SPLICED (`spliceCardLine`): the parts the actions kept keep their bytes and places.
-  // YAZ-5514 (W1): on the RAW text, back to front, so each line keeps its OWN line end: a page that mixes `\n` and
+  // Each changed line is SPLICED (`spliceCardLine`): the parts the actions kept keep their bytes and places.
+  // On the RAW text, back to front, so each line keeps its OWN line end: a page that mixes `\n` and
   // `\r\n` (pasted from Windows) changes only its card lines, and each card line keeps the end it had.
   const { frontmatter, body } = splitFrontmatter(content)
   const rows = body.split('\n')
@@ -245,7 +245,7 @@ export function opsBetween(id: string, before: CardLine, after: CardLine): CardO
   if (isCardNext(before) !== isCardNext(after)) ops.push({ kind: 'next', id, on: isCardNext(after) })
   if (isCardFix(before) !== isCardFix(after)) ops.push({ kind: 'fix', id, on: isCardFix(after) })
   if (isCardNoTitle(before) !== isCardNoTitle(after)) ops.push({ kind: 'notitle', id, on: isCardNoTitle(after) })
-  // Reviews by name, counted (YAZ-5198: two identical copies are two): the copies taken out go last first, each naming
+  // Reviews by name, counted (two identical copies are two): the copies taken out go last first, each naming
   // its copy (`nth`), then the copies added, each naming its place among its name.
   const count = (line: CardLine) => {
     const out = new Map<string, CardReview[]>()

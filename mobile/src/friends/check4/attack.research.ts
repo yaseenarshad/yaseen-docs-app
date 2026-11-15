@@ -13,7 +13,7 @@ it(`check4 attack seeds ${FROM}..${FROM + COUNT - 1}`, async () => {
   const sum: Record<string, number> = {}
   const seeds: Record<string, number[]> = {}
   const first: Record<string, string[]> = {}
-  const t: Record<string, number> = { runs: 0, events: 0, crashes: 0, c409: 0, c422: 0, sends: 0, sendsSent: 0, oldRuns: 0, oldOps: 0, oldWrites: 0, oldBlocked: 0, oldHeadOverV2: 0, removesStarted: 0, removesFinished: 0, groupRuns: 0, zoneLost: 0, i6parked: 0, maxListFiles: 0, maxTombs: 0, cutRuns: 0 }
+  const t: Record<string, number> = { runs: 0, events: 0, crashes: 0, c409: 0, c422: 0, sends: 0, sendsSent: 0, removesStarted: 0, removesFinished: 0, groupRuns: 0, zoneLost: 0, i6parked: 0, maxListFiles: 0, maxTombs: 0, cutRuns: 0 }
   for (let s = FROM; s < FROM + COUNT; s++) {
     const p = plan(s)
     let m
@@ -31,11 +31,6 @@ it(`check4 attack seeds ${FROM}..${FROM + COUNT - 1}`, async () => {
     t.c422 += m.st4.c422
     t.sends += m.st4.sends
     t.sendsSent += m.st4.sendsSent
-    if (m.oldDev) t.oldRuns++
-    t.oldOps += m.st4.oldOps
-    t.oldWrites += m.st4.oldWrites
-    t.oldBlocked += m.st4.oldBlocked
-    t.oldHeadOverV2 += m.st4.oldHeadOverV2
     t.removesStarted += m.st.removesStarted
     t.removesFinished += m.st.removesFinished
     if (m.group) t.groupRuns++

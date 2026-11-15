@@ -21,10 +21,13 @@ vi.mock('../calendar', async (load) => {
 })
 import { bucketByDay, dateColumns } from '../calendar'
 import viewsCss from '../views.css?inline'
-import tableCss from '../../editor/table/table.css?inline'
+import cardTableCss from '../../editor/table/cardTable.css?inline'
+import editorTableCss from '../../editor/table/table.css?inline'
 import { setHeaderRowSetting } from '../../editor/table/timeFormatSetting'
 import { DEFAULT_HEADER_ROW } from '@shared/types'
 import { writeProperties, writeProperty } from '../writeProperty'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 const write = vi.mocked(writeProperty)
 

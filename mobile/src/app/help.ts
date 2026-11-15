@@ -4,8 +4,8 @@ import type { UnitText } from './unitWord'
 import type { ShellSyncState } from './syncPort'
 
 /**
- * Every problem on a screen has plain words AND a way forward (YAZ-5077). No raw error text or status code
- * reaches the screen (YAZ-5076). The words of the sign-in results are 3E's (`signInMessage`); this adds the step.
+ * Every problem on a screen has plain words AND a way forward. No raw error text or status code
+ * reaches the screen. The words of the sign-in results are 3E's (`signInMessage`); this adds the step.
  */
 export type Forward =
   /** Opens "Set up your phone" at the token steps. */
@@ -66,7 +66,7 @@ export function signInHelp(error: SignInError): Help {
     case 'rate-limited':
       return { message, forward: 'retry' }
     case 'unexpected':
-      // No status code on a screen (YAZ-5076, YAZ-5177): 3E's words keep it for logs; the screen gets plain words.
+      // No status code on a screen: 3E's words keep it for logs; the screen gets plain words.
       return { message: 'GitHub gave an answer we did not expect. Try again in a few minutes.', forward: 'retry' }
   }
 }
@@ -99,7 +99,7 @@ export function syncHelp(state: ShellSyncState, vault: PhoneVault, unit: UnitTex
       }
     case 'TREE_TRUNCATED':
       // Row F6: no partial vault.
-      return { message: unit(`${vault.repo} is too large for the phone. GitHub cut its list of files short, so the phone shows none of its pages.`), forward: 'settings' }
+      return { message: `${vault.repo}${unit(' is too large for the phone. GitHub cut its list of files short, so the phone shows none of its pages.')}`, forward: 'settings' }
     case 'STORAGE_FULL':
       return { message: 'This phone is full. Free some space, then try again.', forward: 'retry' }
   }

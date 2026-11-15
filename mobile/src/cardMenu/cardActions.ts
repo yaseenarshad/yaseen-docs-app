@@ -1,7 +1,7 @@
 import { withCardFix, withCardNext, withCardNoTitle, withCardOff, type CardLine } from '@shared/cardLine'
 
 /**
- * THE CARD'S SETTINGS ON THE PHONE (YAZ-5505, YAZ-5503, YAZ-5504): the rows of the Mac's card menu (`cardMenuSections`
+ * THE CARD'S SETTINGS ON THE PHONE: the rows of the Mac's card menu (`cardMenuSections`
  * in `client/src/review/cardPane.tsx`), in its order and with its words: Up next (the Mac's "Put at top of Inbox";
  * the phone's word, as Review's ⋯ and filter say it), Archive card, Fix later, Title on the front (Show / Hide: the
  * state now). Each one changes ONE word of the card line (`next`, `off`, `fix`, `notitle`), with the Mac's own change.

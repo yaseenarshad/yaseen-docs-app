@@ -85,7 +85,7 @@ function slowAdd(x: S, ms: number) {
   return () => void ((x.t.answers as { add: unknown }).add = add)
 }
 
-describe('check4: the 400 ms count from the drawing, when the OLD card is drawn again during the save or before the next card', () => {
+describe('the 400 ms count from the drawing, when the OLD card is drawn again during the save or before the next card', () => {
   for (const when of ['during the save', 'after the save, while the next card reads'] as const)
     it(`a sync pass changes the shown card ${when}: taps stay dropped until 400 ms after the NEXT card is on the screen`, async () => {
       s = await screen({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...cards(3)) })

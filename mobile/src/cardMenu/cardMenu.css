@@ -1,4 +1,4 @@
-/* The card actions (YAZ-5505): rows of a host menu; an armed row says "Tap again to …" in the accent colour. */
+/* The card actions: rows of a host menu; an armed row says "Tap again to …" in the accent colour. */
 .card-actions__row {
   display: flex;
   align-items: center;
@@ -33,7 +33,7 @@
   font-size: 15px;
 }
 
-/* A page card's ⋯ (YAZ-5504): at the right of the card's head, 44 pt to tap, a quiet grey glyph (drawn here, so the
+/* A page card's ⋯: at the right of the card's head, 44 pt to tap, a quiet grey glyph (drawn here, so the
    head's words stay the card's own). Its menu opens under it, in the card's box (over it, low on the screen: S6). */
 .card__head .card__more-box {
   position: relative;

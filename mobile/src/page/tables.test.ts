@@ -15,7 +15,7 @@ import { markTable, watchTables } from './useTables'
  * checked in headless Chrome (`publish/proveLayout.ts`, the `page-tables` fixture).
  */
 const sheet = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
-const SHEETS = ['../styles.css', '../../../client/src/editor/card/card.css', '../../../client/src/editor/table/table.css', './reader.css', './tables.css']
+const SHEETS = ['../styles.css', '../../../client/src/editor/card/card.css', '../../../client/src/editor/table/cardTable.css', './reader.css', './tables.css']
 
 const look: PageLook = {
   link: (inner) => ({ label: inner, open: { kind: 'page', path: `${inner}.md` } }),

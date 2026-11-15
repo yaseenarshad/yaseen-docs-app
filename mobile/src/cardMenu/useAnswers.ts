@@ -4,7 +4,7 @@ import type { Answers } from '../answers/answers'
 import type { VaultStore } from '../store'
 
 /**
- * The reader's way to the ONE answer list of the open vault (YAZ-5504), once the engine has loaded (`sync.review()`,
+ * The reader's way to the ONE answer list of the open vault, once the engine has loaded (`sync.review()`,
  * as the comments ask for it). Null before, or with a sync that has none (a fake): the card menu's rows then wait.
  */
 export function useAnswers(): Answers | null {

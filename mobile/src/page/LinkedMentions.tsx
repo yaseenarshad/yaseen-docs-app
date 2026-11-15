@@ -10,7 +10,7 @@ import { resolveSourceOf } from './pageLook'
 import './linkedMentions.css'
 
 /**
- * THE END OF A PAGE (YAZ-5455, YAZ-5535): "Linked mentions (N)", the pages that link to this one, as the Mac shows it
+ * THE END OF A PAGE: "Linked mentions (N)", the pages that link to this one, as the Mac shows it
  * under each page and under an Explore panel's page (`BacklinksSection.tsx`), with the Mac's own code (`backlinks.ts`:
  * `backlinksFor`, `mentionSnippets`). ONE component for both places on the phone: the full page (`PageView`) and an
  * Explore panel's page (`SheetPage`). It sits in the page's own column, so it scrolls with the page; it is never sticky.
@@ -71,7 +71,7 @@ export function LinkedMentions({ path, data, store, door }: { path: string; data
  */
 export const LINKED_MENTIONS_PAGE = 20
 
-/** YAZ-5521 (sweep2 nit 1): after the first 20, "Show more" draws 100 at a time (1,301 took 65 taps of 20). */
+/** After the first 20, "Show more" draws 100 at a time (1,301 took 65 taps of 20). */
 export const LINKED_MENTIONS_MORE = 100
 
 /** The "Show more" of `shown` of `total`: all that is left when 100 or fewer ("Show all 47"), else 100. Null: all shown. */

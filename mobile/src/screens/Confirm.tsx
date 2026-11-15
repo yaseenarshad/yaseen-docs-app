@@ -2,12 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 /**
  * An ask before a step that cannot be undone, in place under its button. The safe choice comes first and takes the
- * focus, so VoiceOver reads the question and a stray tap does nothing. Escape is Cancel (YAZ-5344). A question can
+ * focus, so VoiceOver reads the question and a stray tap does nothing. Escape is Cancel. A question can
  * be several short parts (one paragraph each). `extra` goes between the question and the buttons (a safer way).
  *
- * YAZ-5360: the ask fits the part of the screen that shows (between the top bar and the tab bar, safe areas included):
+ * The ask fits the part of the screen that shows (between the top bar and the tab bar, safe areas included):
  * it is never taller than its scrolling screen. A long question scrolls inside the ask; the buttons stay under it and
- * always show. The ask opens at its top (the loss comes first, YAZ-5344), never with its top hidden.
+ * always show. The ask opens at its top (the loss comes first), never with its top hidden.
  */
 export function fitAsk(box: HTMLElement): void {
   const screen = box.closest('.screen') ?? box.parentElement

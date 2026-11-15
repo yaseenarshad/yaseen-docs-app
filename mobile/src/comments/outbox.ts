@@ -1,9 +1,9 @@
 import type { VaultStore } from '../store'
-import { vaultLock } from '../sync/vaultLock'
+import { openStoredList } from '../answers/outbox'
 import type { TaskTick } from './taskWrite'
 
 /**
- * YAZ-5461: THE COMMENT LIST, the comments written on the phone that GitHub does not hold yet. It is the vault's
+ * THE COMMENT LIST, the comments written on the phone that GitHub does not hold yet. It is the vault's
  * phone-only state `COMMENTS_STATE`, kept in IndexedDB as the answer list is (`answers/outbox.ts`): every change is
  * written BEFORE its promise resolves, so a closed app, a restart or no signal loses no comment. A comment gets its id
  * (`newCommentId`) when it goes in, before any try: a retry that finds that id on the page adds nothing, so a comment
@@ -30,22 +30,22 @@ export interface WaitingComment {
   /** A send has put it in a commit: GitHub may hold it, so Undo can no longer take it back. */
   tried?: true
   /**
-   * YAZ-5513: the commit that try made, and its parent (GitHub made it; the branch may or may not have moved to it). A
+   * The commit that try made, and its parent (GitHub made it; the branch may or may not have moved to it). A
    * retry after a lost answer asks whether the branch holds it: a tick whose commit is there was done, and is not
    * written again.
    */
   commit?: { sha: string; parent: string }
   /** The fresh page refused it (`REFUSED_WORDS`): it is not sent again; the page shows it with Discard. */
-  /** YAZ-5521: `copies`: its page is gone from its path, and its `id` is on more than one page now (copied on the Mac). */
+  /** `copies`: its page is gone from its path, and its `id` is on more than one page now (copied on the Mac). */
   refused?: 'foreign' | 'invalid' | 'layout' | 'gone' | 'too-large' | 'changed' | 'copies'
   /**
-   * YAZ-5494: not a comment but a TICK of a task check box on the page (`taskWrite.ts`): what the box becomes, and how
+   * Not a comment but a TICK of a task check box on the page (`taskWrite.ts`): what the box becomes, and how
    * to find the same task again. It goes the comment's way (this list, the send, the dot); its `body` is empty and it
    * needs no `by`.
    */
   task?: TaskTick
   /**
-   * YAZ-5517: how to find the page again when the Mac moves it before the send: its file's blob SHA when no other file
+   * How to find the page again when the Mac moves it before the send: its file's blob SHA when no other file
    * of the vault had the same bytes, and its page `id`. Taken when the comment goes in (from the stored copy).
    */
   was?: { sha?: string; id?: string }
@@ -71,7 +71,7 @@ export interface CommentBox {
   noteCommit(ids: readonly string[], commit: { sha: string; parent: string }): Promise<void>
   /** After a send: `done` leave (GitHub holds them); `refused` stay, marked, never sent again. */
   settle(done: readonly string[], refused: readonly { id: string; why: NonNullable<WaitingComment['refused']> }[]): Promise<void>
-  /** YAZ-5517: the page moved (found again for sure): the comments go with it, to their new `path`. */
+  /** The page moved (found again for sure): the comments go with it, to their new `path`. */
   follow(moves: readonly { id: string; path: string }[]): Promise<void>
   /** Signs the comments that had no `by` yet (the account was not known when they were written). */
   sign(ids: readonly string[], by: string): Promise<void>
@@ -86,31 +86,17 @@ export async function waitingComments(store: VaultStore, vault: string): Promise
   return bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE)).waiting.filter((c) => c.refused === undefined).length
 }
 
-/** YAZ-5517: how many comments the stored list keeps, refused ones too: they load the sender, so the dot counts them. */
+/** How many comments the stored list keeps, refused ones too: they load the sender, so the dot counts them. */
 export async function keptComments(store: VaultStore, vault: string): Promise<number> {
   return bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE)).waiting.length
 }
 
-/** One change at a time, in every tab (Web Locks), as the answer list does; one queue per vault where they are missing. */
-const bookLock = <T>(vault: string, fn: () => Promise<T>): Promise<T> => vaultLock('notecards-comments', vault, fn)
-
 export async function openCommentBox(store: VaultStore, vault: string): Promise<CommentBox> {
-  let book = bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE))
-  const reread = async () => {
-    book = bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE))
-  }
-  // Each change starts from the STORED list (another tab's change is kept); a failed write leaves it as it was.
-  const change = <T>(edit: (b: CommentBook) => { next: CommentBook; out: T } | null, fallback: T): Promise<T> =>
-    bookLock(vault, async () => {
-      await reread()
-      const made = edit(book)
-      if (made === null) return fallback
-      await store.setState(vault, COMMENTS_STATE, made.next)
-      book = made.next
-      return made.out
-    })
+  // The answer list's stored list (`openStoredList`): one change at a time in every tab, each from the STORED list.
+  const list = await openStoredList<CommentBook>(store, vault, COMMENTS_STATE, 'notecards-comments', bookOf)
+  const { change } = list
   return {
-    waiting: () => book.waiting,
+    waiting: () => list.book().waiting,
     add: (comment) => change((b) => (b.waiting.some((c) => c.id === comment.id) ? null : { next: { ...b, waiting: [...b.waiting, comment] }, out: undefined }), undefined),
     remove: (id) =>
       change((b) => {
@@ -158,6 +144,6 @@ export async function openCommentBox(store: VaultStore, vault: string): Promise<
         if (!b.waiting.some((w) => want.has(w.id) && w.by === undefined)) return null
         return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.id) && w.by === undefined ? { ...w, by } : w)) }, out: undefined }
       }, undefined),
-    refresh: () => bookLock(vault, reread),
+    refresh: list.refresh,
   }
 }

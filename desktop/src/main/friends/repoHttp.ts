@@ -10,7 +10,7 @@
  * - A message holds the status only: never the token, a repo name or an address.
  */
 import { GistError, type GistErrorCode } from '@shared/friendGists'
-import { EMPTY_REPO, ListError, type RepoPort } from '@shared/friendListStore'
+import { EMPTY_REPO, ListError, NO_COMMIT, type RepoPort } from '@shared/friendListStore'
 import { GITHUB_API, REQUEST_TIMEOUT_MS, type FetchLike } from './gistsHttp'
 
 const REPO_RE = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/
@@ -116,9 +116,9 @@ export function macRepoPort(token: string, fetch: FetchLike, repo: string, branc
     async read(commit, path) {
       const res = await call(token, fetch, `${base}/contents/${enc(path)}?ref=${encodeURIComponent(commit)}`, { accept: 'application/vnd.github.raw+json' })
       if (res.status === 404) {
-        // YAZ-5398: GitHub's 404 "No commit found" is a commit its replica does not have yet, not a missing file.
+        // YAZ-5398: a commit GitHub's replica does not have yet, not a missing file.
         const said = ((await res.json().catch(() => null)) as { message?: unknown } | null)?.message
-        if (typeof said === 'string' && /^No commit found/.test(said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
+        if (typeof said === 'string' && NO_COMMIT.test(said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
         return null
       }
       if (await isEmptyRepo(res)) return null

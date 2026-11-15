@@ -15,7 +15,8 @@ import { commandsCtx, editorViewCtx } from '@milkdown/kit/core'
 import { TextSelection } from '@milkdown/kit/prose/state'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import appCss from '../../app.css?inline'
-import tableCss from '../table/table.css?inline'
+import cardTableCss from '../table/cardTable.css?inline'
+import editorTableCss from '../table/table.css?inline'
 import { hexOfRgb } from '../../lib/colour'
 import {
   caretIn,
@@ -40,6 +41,8 @@ import {
   type HighlightColor,
   type HighlightName,
 } from './highlight'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(unmountAll)
 

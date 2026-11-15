@@ -3,7 +3,8 @@
  * script reading the look of the vault that holds it (`tableLook.ts`), two vaults side by side. Made-up values.
  */
 import { afterEach, describe, expect, it } from 'vitest'
-import tableCss from './table.css?inline'
+import cardTableCss from './cardTable.css?inline'
+import editorTableCss from './table.css?inline'
 import { TABLE_LOOK_DEFAULTS, TABLE_LOOK_SETTINGS, appTableLook, sanitizeTableLook, tableLookFile, tableLookOf, tableLookSettings } from '@shared/tableLook'
 import {
   BLOCK_WIDTH_MAX,
@@ -23,6 +24,8 @@ import {
 } from '@shared/types'
 import { headerRowVars, setAppTableLook, setVaultTableLook, tableLookAt, tableLookKey, tableLookOfRoot, tableLookVars } from './tableLook'
 import { calendarDaySetting, headerRowSetting, stickyHeaderSetting, textInCellsSetting, timeFormatSetting } from './timeFormatSetting'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 afterEach(() => {
   setAppTableLook(TABLE_LOOK_DEFAULTS)

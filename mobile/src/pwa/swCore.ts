@@ -1,5 +1,5 @@
 /**
- * THE SERVICE WORKER (YAZ-5087), hand-written and small. `sw.ts` wires it to the worker's events; the build
+ * THE SERVICE WORKER, hand-written and small. `sw.ts` wires it to the worker's events; the build
  * (`publish/pwaPlugin.ts`) puts this build's file list in it. The rules:
  *
  * - It keeps the app's SHELL only: the page, the hashed JS and CSS (every chunk, also the lazy ones: the sync engine
@@ -19,7 +19,7 @@
  *   this rule), the active version is the chosen one.
  * - After a takeover it keeps the version before too, so a page that still runs the old version can load its lazy
  *   chunks, even when the host no longer has them. Older versions are deleted.
- * - DRAW.IO (YAZ-5533) is NOT in the shell: nothing about it downloads at install. Its files (`/drawio/<hash>/…`: the
+ * - DRAW.IO is NOT in the shell: nothing about it downloads at install. Its files (`/drawio/<hash>/…`: the
  *   viewer, the renderer page, one file per shape library and font family) are fetched from this site the first time
  *   a diagram asks for them, and kept from then on in a cache of their own (`notecards-drawio-<hash>`), which an app
  *   update keeps while the draw.io files are the same. Only this site's answer of the right kind is kept: the host's
@@ -37,22 +37,22 @@ export interface ShellBuild {
   /** The page's entry script (`/assets/index-….js`). The version check: the page fetched at install must name it. */
   entry: string
   /**
-   * YAZ-5286: each page of the shell and the script it must name (`/` its entry, `/friend` `/group` `/join` the landing
+   * Each page of the shell and the script it must name (`/` its entry, `/friend` `/group` `/join` the landing
    * script). A page that does not name it is another page (a captive portal, another deploy): the install refuses it.
    */
   pages: Record<string, string>
-  /** YAZ-5533: the draw.io folder of this build (`/drawio/<hash>/`); its files are kept on first use, not at install. */
+  /** The draw.io folder of this build (`/drawio/<hash>/`); its files are kept on first use, not at install. */
   drawio?: string
-  /** YAZ-5533: the app's own small diagram chunk and its stylesheet (`/assets/drawDiagram-….js`, `.css`): kept on first use with draw.io's files. */
+  /** The app's own small diagram chunk and its stylesheet (`/assets/drawDiagram-….js`, `.css`): kept on first use with draw.io's files. */
   drawioChunks?: string[]
 }
 
 export const CACHE_PREFIX = 'notecards-shell-'
 export const META_CACHE = 'notecards-meta'
 const ACTIVE_KEY = '/__notecards/active'
-/** YAZ-5303: which version each open page runs ({ clientId: version }), kept across worker restarts and versions. */
+/** Which version each open page runs ({ clientId: version }), kept across worker restarts and versions. */
 const PAGES_KEY = '/__notecards/pages'
-/** YAZ-5303: every version that was ever the active one: only such a version's cache may go (never a newer one). */
+/** Every version that was ever the active one: only such a version's cache may go (never a newer one). */
 const RETIRED_KEY = '/__notecards/were-active'
 /** YAZ-5555: the version the person runs: page opens get its page until a Restart chooses a newer one. */
 const CHOSEN_KEY = '/__notecards/chosen'
@@ -65,14 +65,14 @@ export interface WorkerState {
   chosen: string
 }
 export const cacheName = (version: string) => `${CACHE_PREFIX}${version}`
-/** YAZ-5533: the draw.io files a diagram fetched, one cache per draw.io folder (`/drawio/<hash>/`). */
+/** The draw.io files a diagram fetched, one cache per draw.io folder (`/drawio/<hash>/`). */
 export const DRAWIO_CACHE_PREFIX = 'notecards-drawio-'
 export const drawioCacheName = (base: string) => `${DRAWIO_CACHE_PREFIX}${base.split('/').filter(Boolean).pop() ?? ''}`
 const isDrawio = (path: string) => path.startsWith('/drawio/')
 /** The message from the page: "take over now" (the person tapped Restart: `safeMoment.ts`). */
 export const SKIP_WAITING = 'notecards:skip-waiting'
 /**
- * YAZ-5303: the message of a page that has started: the page it replaced (in the same tab) is gone now, so a version
+ * The message of a page that has started: the page it replaced (in the same tab) is gone now, so a version
  * that no open page runs any more can go. At the page open itself, the replaced page is often still there.
  */
 export const PAGE_READY = 'notecards:page-ready'
@@ -137,10 +137,10 @@ export function route(request: RequestLike, origin: string, build: ShellBuild): 
   if (url.origin !== origin) return PASS
   const path = url.pathname
   if (path === '/sw.js') return PASS
-  // YAZ-5533: a draw.io file (the renderer frame's page too): kept on first use, never the app page in its place.
+  // A draw.io file (the renderer frame's page too): kept on first use, never the app page in its place.
   if (isDrawio(path) || build.drawioChunks?.includes(path)) return { kind: 'drawio', key: path }
   if (request.mode === 'navigate') {
-    // The landing pages of the three shared links (YAZ-5290).
+    // The landing pages of the three shared links.
     const landing = /^\/(friend|group|join)(\/|\.html)?$/.exec(path)
     if (landing) return { kind: 'shell', key: `/${landing[1]}`, navigate: true }
     // Any other address of the site is the app (single-page), as the host's fallback does. A file name is not.
@@ -166,7 +166,7 @@ async function kept(caches: CacheStorageLike, version: string, key: string): Pro
 /**
  * The answer to a shell request: the kept copy; with none (an install still running), the network.
  *
- * YAZ-5283: a hashed file that no kept version has goes to the host with `cache: 'no-cache'` (never an old HTTP-cache
+ * A hashed file that no kept version has goes to the host with `cache: 'no-cache'` (never an old HTTP-cache
  * answer), and the host's app page for it (Cloudflare's single-page fallback: 200 `text/html`) becomes a 404. So the
  * page sees a failed load, never HTML as a script, and the next try asks the host again.
  */
@@ -180,7 +180,7 @@ export async function respond(scope: Pick<SwScope, 'caches' | 'fetch'>, build: S
   return answer
 }
 
-/** YAZ-5533: the kind each draw.io file must be: the renderer page (`render`) is HTML that loads the Mac's renderer. */
+/** The kind each draw.io file must be: the renderer page (`render`) is HTML that loads the Mac's renderer. */
 function drawioKind(path: string, response: Response, body: string | null): boolean {
   const type = response.headers.get('content-type') ?? ''
   if (/\/render$/.test(path)) return /text\/html/.test(type) && body !== null && body.includes('yaseen-render.js') && body.includes('phone-shim.js')
@@ -191,7 +191,7 @@ function drawioKind(path: string, response: Response, body: string | null): bool
 }
 
 /**
- * YAZ-5533: the answer to a draw.io file. The kept copy (any draw.io cache: an open page of an older version may use
+ * The answer to a draw.io file. The kept copy (any draw.io cache: an open page of an older version may use
  * an older folder); else this site, and when the answer is the file (200, its kind; never the host's app page for a
  * missing file), it is kept in this build's draw.io cache. With no signal and no kept copy: 503, and the diagram says
  * it needs the internet the first time.
@@ -226,7 +226,7 @@ async function plain(response: Response): Promise<Response> {
   return new Response(await response.blob(), { status: response.status, statusText: response.statusText, headers: response.headers })
 }
 
-/** YAZ-5286: the type each kind of shell file must have. A file of another kind is not precached. */
+/** The type each kind of shell file must have. A file of another kind is not precached. */
 const expectedType = (path: string): RegExp | null => {
   if (path.endsWith('.js')) return /javascript/
   if (path.endsWith('.css')) return /text\/css/
@@ -287,7 +287,7 @@ async function readPages(caches: CacheStorageLike): Promise<Record<string, strin
   }
 }
 
-/** YAZ-5303: a page open served by this version: that page runs this version. */
+/** A page open served by this version: that page runs this version. */
 export async function notePage(caches: CacheStorageLike, clientId: string, version: string): Promise<void> {
   if (!clientId) return
   const pages = await readPages(caches)
@@ -296,7 +296,7 @@ export async function notePage(caches: CacheStorageLike, clientId: string, versi
 }
 
 /**
- * YAZ-5303: a version's cache goes only when no open page runs that version. Each page open notes the version that
+ * A version's cache goes only when no open page runs that version. Each page open notes the version that
  * served it (`notePage`). A page that no worker noted (open since before this rule, or the note was lost) keeps EVERY
  * stored version, because its version is not known. With no page open, only this version stays.
  */
@@ -312,7 +312,7 @@ export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: S
   const keep = new Set([cacheName(build.version), cacheName(await chosenOf(scope.caches, build))])
   const alive: Record<string, string> = {}
   for (const page of open) {
-    // YAZ-5533: the hidden draw.io frame of a page is no page of its own.
+    // The hidden draw.io frame of a page is no page of its own.
     if (isDrawio(pathOf(page.url))) continue
     const version = page.id ? pages[page.id] : undefined
     if (version === undefined) return // a page of an unknown version: keep everything
@@ -324,7 +324,7 @@ export async function prune(scope: Pick<SwScope, 'caches' | 'clients'>, build: S
     if (!name.startsWith(CACHE_PREFIX) || keep.has(name) || !wereActive.has(name.slice(CACHE_PREFIX.length))) continue
     await scope.caches.delete(name)
   }
-  // YAZ-5533: an older draw.io folder goes once every open page runs this version (none can ask for it any more).
+  // An older draw.io folder goes once every open page runs this version (none can ask for it any more).
   if (Object.values(alive).every((v) => v === build.version)) {
     for (const name of await scope.caches.keys()) {
       if (name.startsWith(DRAWIO_CACHE_PREFIX) && (build.drawio === undefined || name !== drawioCacheName(build.drawio))) await scope.caches.delete(name)

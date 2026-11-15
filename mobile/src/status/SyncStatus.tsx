@@ -11,14 +11,14 @@ import { useDotAnswers } from './useDotAnswers'
 import { useOnline } from './useOnline'
 import './status.css'
 
-/** YAZ-5451: the sheet is a chunk of its own (the first load stays under its ceiling); it loads after the first paint. */
+/** The sheet is a chunk of its own (the first load stays under its ceiling); it loads after the first paint. */
 const loadSheet = () => import('./StatusSheet')
 const StatusSheet = lazyScreen(loadSheet, { waiting: false })
-/** YAZ-5469: the toast's words are a chunk of their own too. */
+/** The toast's words are a chunk of their own too. */
 const loadWords = () => import('./passWords')
 
 /**
- * The sync status in the top bar (decision 12; YAZ-5080; YAZ-5451). One button; VoiceOver reads its state in its name
+ * The sync status in the top bar (decision 12; YAZ-5080). One button; VoiceOver reads its state in its name
  * ("Sync status: Synced. Sync now").
  *  - Green, blue and grey: the DOT ONLY. A tap syncs now (`syncNow`); the dot is blue while it runs. The app still
  *    checks GitHub every 15 s on its own. YAZ-5469: after the tap's pass, a quiet toast under the bar says how it went
@@ -91,11 +91,11 @@ export function SyncStatus() {
   )
 }
 
-/** YAZ-5524: the forms of the loud dot, longest first. */
+/** The forms of the loud dot, longest first. */
 const FITS = ['full', 'short', 'count', 'dot'] as const
 
 /**
- * YAZ-5524 (sweep3 S-1): the dot's words never push the ⚙ (or the dot) off the screen, at any width, with or without a
+ * The dot's words never push the ⚙ (or the dot) off the screen, at any width, with or without a
  * page's ID chip, whatever the words. After each layout the bar is measured: while its controls overflow it, the button
  * takes the next shorter form (`data-fit`): the short words, the count alone ("2"), then the dot alone. The title gives
  * its room first (down to its `min-width`). The full words stay in the button's VoiceOver name and in the sheet.
@@ -134,11 +134,11 @@ function useFitWords(button: RefObject<HTMLButtonElement | null>, loud: boolean,
   }, [button, loud, dot.bar, dot.short, dot.count])
 }
 
-/** YAZ-5451: the states whose words stay in the top bar: the person must know (amber, red) or act ("Can't sync now"). */
+/** The states whose words stay in the top bar: the person must know (amber, red) or act ("Can't sync now"). */
 export const dotIsLoud = (dot: Dot): boolean => dot.state === 'pending' || dot.state === 'attention' || dot.reason === 'no-list'
 
 /**
- * The words next to the dot: one span, or the bar's words and the short form when they differ (YAZ-5216: CSS picks by
+ * The words next to the dot: one span, or the bar's words and the short form when they differ (CSS picks by
  * width). YAZ-5521: and the count alone, which a top bar with a page's ID chip shows in their place.
  */
 export function DotWords({ dot }: { dot: Dot }) {

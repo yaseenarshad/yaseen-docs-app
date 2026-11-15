@@ -109,7 +109,7 @@ export interface MediaAhead {
   /**
    * A screen no longer shows the URL that one `show` of `path` gave (its view closed, its element left the page:
    * YAZ-5200). Each ready `show` counts one user; when the last one lets go, the URL waits among the
-   * `MEDIA_URL_IDLE_CAP` most recent idle ones (a quick show again), then is revoked. `url` (optional, YAZ-5221): the URL
+   * `MEDIA_URL_IDLE_CAP` most recent idle ones (a quick show again), then is revoked. `url` (optional): the URL
    * that screen used, so a file that changed on GitHub meanwhile lets go of the right version.
    */
   releaseUrl(path: string, url?: string): void
@@ -124,14 +124,14 @@ interface SizesState {
 }
 
 /**
- * The failure memory (YAZ-5186): one small phone-only state row for each failed download, named this prefix and the
- * blob SHA (YAZ-5223: rows, written in batches of the changed ones only). Kept, so a restart does not try again at once.
+ * The failure memory: one small phone-only state row for each failed download, named this prefix and the
+ * blob SHA (rows, written in batches of the changed ones only). Kept, so a restart does not try again at once.
  * A new SHA (the file changed on GitHub) has no row, so it is tried at once. Only the window's SHAs keep a row, and at
  * most `MEDIA_FAILURES_MAX`: about 60 bytes a row, so at most about 0.6 MB.
  */
 export const MEDIA_FAILURE_PREFIX = 'mediaFailure:'
 export const MEDIA_FAILURES_MAX = 10_000
-/** The old single row of round 1 (YAZ-5186), removed when found. */
+/** The old single row of round 1, removed when found. */
 const OLD_FAILURES_STATE = 'mediaFailures'
 export interface MediaFailure {
   /** Failures in a row. */
@@ -141,7 +141,7 @@ export interface MediaFailure {
   /** An error that does not heal by waiting (403, a file GitHub will not give): only a new SHA or `show` tries again. */
   gaveUp: boolean
   /**
-   * For a 404 (YAZ-5222): the head commit it was given for. A blob that the tree names normally exists, so a 404 holds
+   * For a 404: the head commit it was given for. A blob that the tree names normally exists, so a 404 holds
    * only for that tree: a new head commit tries again.
    */
   commit?: string
@@ -183,7 +183,7 @@ const MIME: Record<string, string> = {
   pdf: 'application/pdf',
   md: 'text/markdown',
 }
-/** How many object URLs that no screen uses stay alive for a quick show again (YAZ-5200). */
+/** How many object URLs that no screen uses stay alive for a quick show again. */
 export const MEDIA_URL_IDLE_CAP = 24
 
 /** The MIME type of a file, from its extension. */
@@ -221,7 +221,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   let plan: { key: string; commit: string; wanted: string[]; tooLarge: string[]; sizesKnown: boolean } | null = null
   /** The last round of this plan left nothing to do (or the phone was full): wait for a new plan. */
   let complete = false
-  /** The failed downloads of the open vault, by blob SHA (YAZ-5186); loaded from its rows (`MEDIA_FAILURE_PREFIX`) at the plan. */
+  /** The failed downloads of the open vault, by blob SHA; loaded from its rows (`MEDIA_FAILURE_PREFIX`) at the plan. */
   let failures: Record<string, MediaFailure> | null = null
   /** The failure rows changed since they were last kept: SHA → its row, or undefined (the row goes). */
   const dirty = new Map<string, MediaFailure | undefined>()
@@ -229,8 +229,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   let resolver: { commit: string; resolve: (target: string, from?: string) => string | null } | null = null
   let settingsOf: { text: string | null; settings: ReviewSettings } | null = null
   /**
-   * The object URLs of each shown file, oldest first, each with its own count of screens that use it (YAZ-5200,
-   * YAZ-5221). The last one is the file's current version; an older one (the file changed on GitHub: R7) lives until its
+   * The object URLs of each shown file, oldest first, each with its own count of screens that use it (* YAZ-5221). The last one is the file's current version; an older one (the file changed on GitHub: R7) lives until its
    * last user lets go.
    */
   const urls = new Map<string, { sha: string | null; url: string; users: number }[]>()
@@ -263,7 +262,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
     dirty.clear()
     resolver = null
     revokeAll()
-    // YAZ-5188: the open vault's window as the last plan kept it, at once: the first pass of a session may need room
+    // The open vault's window as the last plan kept it, at once: the first pass of a session may need room
     // before this session's plan exists.
     void store.protectMedia(vault).catch(() => undefined)
     setState({ vault, done: 0, total: 0, tooLarge: 0, running: false, waiting: null, retryAt: null })
@@ -301,7 +300,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   }
 
   /**
-   * The sizes at `commit`: from the pass that just ran, or kept from an earlier round, or (YAZ-5187: the app closed
+   * The sizes at `commit`: from the pass that just ran, or kept from an earlier round, or (the app closed
    * between the checkpoint and the round, or the keep failed) from the file list again, with no lock. Null when they
    * cannot be known now: the plan then counts every size as unknown, so nothing downloads ahead past the size limit.
    */
@@ -466,7 +465,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
 
   /**
    * A file that waits (its failure's `nextAt`) comes back on a timer at that time, not at each pass: the round of each
-   * pass does nothing for it (YAZ-5186). A file that gave up comes back only with a new SHA or `show`.
+   * pass does nothing for it. A file that gave up comes back only with a new SHA or `show`.
    */
   function planRetry(gen: number) {
     if (gen !== generation || state.retryAt !== null) return
@@ -484,7 +483,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
   }
 
   /**
-   * One group: `parallel` downloads at a time with NO lock (YAZ-5186: a slow download never holds up a pass or the
+   * One group: `parallel` downloads at a time with NO lock (a slow download never holds up a pass or the
    * answer list), then ONE hold of the vault's lock for the writes. Under the lock the checkpoint is read again: a
    * file whose SHA moved meanwhile is not written (its new version comes in a later round). A failure of one file is
    * kept in the failure memory; "slow down", no token, or no answer stops the round after the downloads in flight.
@@ -616,7 +615,7 @@ export function createMediaAhead(options: MediaAheadOptions): MediaAhead {
       if (reader === null || reader.vault !== vault) return { status: 'missing', path, why: 'no-vault' }
       const bytes = await reader.remote.blob(sha)
       if (state.vault !== vault) return { status: 'missing', path, why: 'no-vault' }
-      // The person opened it: a file that gave up ahead (YAZ-5186) is in again.
+      // The person opened it: a file that gave up ahead is in again.
       setFailure(sha, undefined)
       keepFailures(vault)
       return { status: 'ready', path, url: urlFor(path, sha, bytes), type: mediaType(path), bytes: bytes.byteLength, kept: keep(vault, path, sha, bytes) }

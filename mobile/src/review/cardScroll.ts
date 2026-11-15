@@ -2,7 +2,7 @@ import { SHOW_GAP, leastScroll, type Span } from '@client/editor/find/leastScrol
 import { glideView, inRoom, readingScroll } from '@client/review/inboxScroll'
 
 /**
- * THE CARD'S READING SCROLL on the phone (YAZ-5415): the Mac Inbox's rules (`inboxScroll.ts`, YAZ-5049 rounds 2–6), on
+ * THE CARD'S READING SCROLL on the phone: the Mac Inbox's rules (`inboxScroll.ts`, YAZ-5049 rounds 2–6), on
  * the phone's card, which scrolls inside itself (the room is the card's own box).
  *
  *  - A tap never shows a part you cannot see: when the part the tap would show is not wholly in view, that tap only

@@ -10,8 +10,11 @@
  *   stood outside the panel.
  */
 import { describe, expect, it } from 'vitest'
-import tableCss from '../table.css?inline'
+import cardTableCss from '../cardTable.css?inline'
+import editorTableCss from '../table.css?inline'
 import superCss from './superTable.css?inline'
+/** The Mac's table look as it loads: `cardTable.css`, then `table.css` (`tableStyle.ts`). */
+const tableCss = cardTableCss + editorTableCss
 
 const rules = (css: string) =>
   [...css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({

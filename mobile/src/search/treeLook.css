@@ -1,7 +1,7 @@
 /*
- * In the lazy Search tree chunk (`treeLook.tsx` imports it), not the first load (YAZ-5377).
+ * In the lazy Search tree chunk (`treeLook.tsx` imports it), not the first load.
  *
- * YAZ-5506: STICKY FOLDERS, as the Mac sidebar's (YAZ-3440 D1, D10; `client/src/app.css` `.tree__row--sticky`). The
+ * STICKY FOLDERS, as the Mac sidebar's (`client/src/app.css` `.tree__row--sticky`). The
  * layer of stuck rows (`stickyFolders.ts`): a zero-height box that sticks at the scroller's top edge (`.screen` has
  * 12px of top padding, and a sticky box stops below it, so `top` takes it back, as the Mac's `--sidebar-pad-top`), over
  * the list, as wide as it. Each stuck row is a copy of its folder row, at its depth's slot, the shallower on top: the
@@ -33,7 +33,7 @@
 }
 
 /*
- * YAZ-5507: THE GUIDE LINES, the Mac sidebar's level lines (YAZ-3309 D1, D2; app.css `.tree[role='group']::before`):
+ * THE GUIDE LINES, the Mac sidebar's level lines (app.css `.tree[role='group']::before`):
  * one thin grey line (`--border`) below the chevron of each open folder, down past every row inside it. The Mac draws
  * one line on each nested list, at depth × 14 + 1 px from the tree's edge: the centre of the chevron of the folder
  * above (its row is indented 8 + depth × 14 px, the chevron 14 px wide). The phone's tree is one flat list, so a row

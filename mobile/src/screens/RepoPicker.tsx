@@ -8,7 +8,7 @@ import { vaultId } from '../store'
 import { Problem } from './Frame'
 
 /**
- * YAZ-5408: the repo picker. The token's repos, as a list to tap; a tap runs the existing sign-in (`addVault`, the
+ * The repo picker. The token's repos, as a list to tap; a tap runs the existing sign-in (`addVault`, the
  * check on save of 3E, unchanged). Its own chunk: it loads when the person taps "Show my repos".
  * - Likely vaults first: the app looks for `.yaseendocs/` in the first `LOOK_FIRST` repos (the most recent pushes)
  *   before it shows the list. Each other row is looked at when it comes on screen; its mark shows, and the order stays.
@@ -37,7 +37,7 @@ export default function RepoPicker({ token, onOtherToken, onTyped }: { token: st
   const alive = useRef(true)
   const asked = useRef(new Set<string>())
   const lastPick = useRef<string | null>(null)
-  /** YAZ-5441: set in the same turn as the tap (as `checking` in `SignIn.tsx`), so a second tap before the next render does nothing. */
+  /** Set in the same turn as the tap (as `checking` in `SignIn.tsx`), so a second tap before the next render does nothing. */
   const checking = useRef(false)
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export default function RepoPicker({ token, onOtherToken, onTyped }: { token: st
 
   /**
    * Looks at each repo once, at most `LOOKS_AT_ONCE` at a time: the first looks and the rows' looks go through ONE
-   * queue (YAZ-5442). `queued` gives the look's answer; `look` (a row on screen) sets its mark.
+   * queue. `queued` gives the look's answer; `look` (a row on screen) sets its mark.
    */
   const { look, queued } = useMemo(() => {
     const queue: { repo: TokenRepo; done: (found: VaultLook) => void }[] = []

@@ -12,15 +12,15 @@ import './reviewSlot.css'
 import { Search } from './Search'
 import { SignIn } from './SignIn'
 
-/** The reader (4C, YAZ-5079): a chunk of its own, with the Markdown renderer, so the tabs do not load it. */
+/** The reader (4C): a chunk of its own, with the Markdown renderer, so the tabs do not load it. */
 const routeWaiting = <div className="app" aria-busy="true" />
 const PageView = lazyScreen(() => import('../page/PageView'), { waiting: routeWaiting })
 const CardView = lazyScreen(() => import('../page/CardView'), { waiting: routeWaiting })
-/** A drawing file on its own (YAZ-5473): with the sheets' reader parts. */
+/** A drawing file on its own: with the sheets' reader parts. */
 const DrawingView = lazyScreen(() => import('../explore/DrawingView'), { waiting: routeWaiting })
-/** A folder's page and its views, read only (YAZ-5460): a chunk of its own, with the Mac's view engine. */
+/** A folder's page and its views, read only: a chunk of its own, with the Mac's view engine. */
 const FolderView = lazyScreen(() => import('../folders/FolderView'), { waiting: routeWaiting })
-/** "You vs <friend>" (4E4, YAZ-5085): in the friends chunk. */
+/** "You vs <friend>" (4E4): in the friends chunk. */
 const VsScreen = lazyScreen(() => import('../friends/ui/VsScreen'), { waiting: routeWaiting })
 /** "Set up your phone": a chunk of its own (YAZ-5446 keeps the first load under its ceiling). */
 const SetupGuide = lazyScreen(() => import('./SetupGuide'), { waiting: routeWaiting })
@@ -33,7 +33,7 @@ const Settings = lazyScreen<object>(() => import('./Settings').then((m) => ({ de
 const TAB_SCREENS: Record<Exclude<Tab, 'review'>, () => React.JSX.Element> = { friends: Friends, search: Search }
 
 /**
- * YAZ-5224: the Review tab KEEPS its session while the person looks away (a page or a card over the tabs, another tab,
+ * The Review tab KEEPS its session while the person looks away (a page or a card over the tabs, another tab,
  * Settings), as the Mac's Inbox tab stays mounted behind a page tab. Once opened, `Review` is ONE element at a fixed
  * place of the shell's tree, drawn through a portal into a box of its own (`host`); the Review tab puts that box on
  * the screen, any other screen takes it off. Off the screen the box is out of the document (no hidden text, no hidden
@@ -51,7 +51,7 @@ function ReviewSlot({ host }: { host: HTMLElement }) {
 }
 
 /**
- * The app (decision 21; YAZ-5077): sign-in when the phone has no vault (row F1), the first download (row F2), then
+ * The app (decision 21): sign-in when the phone has no vault (row F1), the first download (row F2), then
  * the three tabs with the gear. Screens that Settings opens stack over the tabs.
  */
 export function Shell() {
@@ -63,7 +63,7 @@ export function Shell() {
   useEffect(() => {
     if (tabsReady && route === null && app.nav.tab === 'review') setReviewKept(true)
   }, [tabsReady, route, app.nav.tab])
-  // YAZ-5436: the keyboard of a field (Search's box) can push the whole document up on iOS, and it stayed up: the next
+  // The keyboard of a field (Search's box) can push the whole document up on iOS, and it stayed up: the next
   // screen's finger then moved the frame. When a field lets go of the keyboard, and on each new screen, the document
   // goes back to its place (it never scrolls on its own: `styles.css`).
   useEffect(() => {
@@ -76,7 +76,7 @@ export function Shell() {
   }, [route])
   const reviewShown = route === null && app.nav.tab === 'review'
   // The kept Review, always the SECOND child of what the shell returns once the tabs are ready, so it never remounts.
-  // YAZ-5476: only while the open vault has Review on; another vault's Review is not kept.
+  // Only while the open vault has Review on; another vault's Review is not kept.
   const kept = tabsReady && app.tabs.review && (reviewKept || reviewShown) ? createPortal(<Review shown={reviewShown} />, reviewHost) : null
 
   if (app.phase === 'loading') return <div className="app" aria-busy="true" />

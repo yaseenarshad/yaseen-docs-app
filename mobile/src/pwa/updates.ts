@@ -1,14 +1,14 @@
 import { PAGE_READY, SKIP_WAITING, UPDATE_MARK, type WorkerState } from './swCore'
 
 /**
- * The page side of an update (YAZ-5087; YAZ-5555). The browser downloads a new version in the background (the worker
- * installs it whole, or not at all). This file notices it; the new version runs ONLY after the person taps Restart:
+ * The page side of an update. The browser downloads a new version in the background (the worker installs it whole,
+ * or not at all). This file notices it; the new version runs ONLY after the person taps Restart:
  * - `ready()` says a new version is there: one waits (installed), or it is active but not chosen (the browser activated
  *   it at a cold start; the worker still serves the chosen version: `swCore.ts`), or it took over this open page.
  * - `apply()` (the tap): the new version takes over and the page loads it, ONE time, with `UPDATE_MARK` in its address,
  *   which makes the worker choose it. The app is never half old and half new.
- * - Nothing here switches by itself: not at a cold start, not when the app comes back (YAZ-5555, Yaseen: "I'll always
- *   know when to restart"). At the start and at each return, the state is read again, so the line shows reliably.
+ * - Nothing here switches by itself: not at a cold start, not when the app comes back (Yaseen: "I'll always know when
+ *   to restart"). At the start and at each return, the state is read again, so the line shows reliably.
  */
 
 export const SW_URL = '/sw.js'
@@ -114,7 +114,7 @@ export function createUpdates(deps: {
       // when a page opens, but not at once.
       lastCheck = now()
       void reg.update().catch(() => {})
-      // YAZ-5303: this page has started, so the page it replaced is gone: the worker may remove a version no page runs.
+      // This page has started, so the page it replaced is gone: the worker may remove a version no page runs.
       container.controller?.postMessage?.({ type: PAGE_READY })
       hadController = container.controller !== null
       container.addEventListener('controllerchange', () => {

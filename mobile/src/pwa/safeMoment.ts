@@ -1,7 +1,7 @@
 /**
- * THE UPDATE RULE (YAZ-5087; YAZ-5555): when a new version may take over (the page loads it).
+ * THE UPDATE RULE: when a new version may take over (the page loads it).
  *
- * ONLY WHEN THE PERSON TAPS RESTART (YAZ-5555, Yaseen's decision: "I'll always know when to restart and I'll be able to
+ * ONLY WHEN THE PERSON TAPS RESTART (Yaseen's decision: "I'll always know when to restart and I'll be able to
  * manually select it"). Keep this, and keep the README's "Updates" note in step with it:
  * - NEVER by itself: not at a cold start (the worker keeps serving the version the person runs, even after the browser
  *   activated a newer one: `swCore.ts`, `CHOSEN_KEY`), not when the app comes back from the background, not after a
@@ -26,7 +26,7 @@ export interface AppMoment {
   downloading: boolean
   /** The open vault's answers that wait to be sent (the stored answer list). */
   answersWaiting: number
-  /** A Review session is in its middle, on any tab (YAZ-5269, `reviewInProgress()`). Absent: none. */
+  /** A Review session is in its middle, on any tab (`reviewInProgress()`). Absent: none. */
   reviewInProgress?: boolean
   /** YAZ-5555: a comment box holds words that are not sent (`hasAnyUnsentDraft`). Absent: none. */
   unsentText?: boolean

@@ -133,7 +133,7 @@ describe('the marks on a page (YAZ-5493)', () => {
 
   it('the line moves by transform only (no layout property), from `--table-now`', () => {
     const css = styles[2]!.textContent ?? ''
-    const rules = css.slice(css.indexOf('/* Calendar tables (YAZ-5493'), css.indexOf('/* Go to now'))
+    const rules = css.slice(css.indexOf('/* Calendar tables (`tableCalendar.ts`)'), css.indexOf('/* Go to now'))
     expect(rules).toContain('transform: translateY(calc(var(--table-now, 0) * 100%))')
     expect(rules).not.toMatch(/\b(top|height|margin-top)\s*:\s*calc\(var\(--table-now/)
   })

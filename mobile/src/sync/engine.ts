@@ -72,7 +72,7 @@ export interface SyncEngineOptions {
   /** The remote for a vault and its token. Default: `githubRemote` on 3E's `githubClient`. */
   /**
    * `onActivity`: give it to the client (`ClientOptions.onActivity`), so the engine's silence limit sees the bytes of a
-   * slow download (YAZ-5184). Without it, only each call's end counts as activity.
+   * slow download. Without it, only each call's end counts as activity.
    */
   makeRemote?: (vault: PhoneVault, token: string, onActivity?: () => void) => GithubRemote
   /**
@@ -111,7 +111,7 @@ export interface SyncEngine {
    */
   lane<T>(fn: (remote: GithubRemote, pass: () => Promise<PassResult>, vault: string) => Promise<T>): Promise<T>
   /**
-   * 3D (YAZ-5074): the open vault's remote for a READ at once, with no lock and no wait for a pass (a picture that a
+   * 3D: the open vault's remote for a READ at once, with no lock and no wait for a pass (a picture that a
    * screen shows now). Null with no vault open or no token. A write to the store still goes through `lane`.
    */
   reader(): Promise<{ vault: string; remote: GithubRemote } | null>
@@ -137,7 +137,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const listeners = new Set<(event: SyncEvent) => void>()
 
   let vault: PhoneVault | null = null
-  /** "Slow down" answers in a row: each one doubles the wait, up to MAX_RATE_WAIT_MS (YAZ-5169). A good pass resets it. */
+  /** "Slow down" answers in a row: each one doubles the wait, up to MAX_RATE_WAIT_MS. A good pass resets it. */
   let slowedInRow = 0
   /** Each `open` starts a new generation; a pass of an older one tells nobody and plans nothing. */
   let generation = 0
@@ -145,14 +145,14 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   let current: PhoneIndex | null = null
   /**
    * The pass of the open vault. A pass of a vault that was open before goes on to its end in `passes`, but nobody
-   * waits for it: opening another vault never waits for a download (YAZ-5171).
+   * waits for it: opening another vault never waits for a download.
    */
   let running: { gen: number; promise: Promise<void> } | null = null
   const passes = new Set<Promise<void>>()
   let timer: unknown = null
   /**
-   * One pass or lane of a vault at a time in THIS tab, also where the Web Lock is missing (YAZ-5073: a timer's pass
-   * must wait for 3C's send). One queue for each vault, so opening another vault never waits (YAZ-5171). The Web Lock
+   * One pass or lane of a vault at a time in THIS tab, also where the Web Lock is missing (a timer's pass
+   * must wait for 3C's send). One queue for each vault, so opening another vault never waits. The Web Lock
    * (`lock`) keeps other tabs out.
    */
   const turns = new Map<string, Promise<unknown>>()
@@ -182,7 +182,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   const plan = (at?: number) => {
     clearTimer()
     if (vault === null || !visible) return
-    // Never more than the longest wait: a browser timer over 2^31-1 ms fires at once (YAZ-5174).
+    // Never more than the longest wait: a browser timer over 2^31-1 ms fires at once.
     const delay = Math.min(MAX_RATE_WAIT_MS, Math.max(0, (at ?? clock.now() + POLL_MS) - clock.now()))
     timer = clock.setTimeout(() => {
       timer = null
@@ -191,7 +191,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
   }
 
   /**
-   * Each GitHub call of the engine has a SILENCE limit on the engine's clock (YAZ-5173, YAZ-5184), next to the client's
+   * Each GitHub call of the engine has a SILENCE limit on the engine's clock, next to the client's
    * own silence limit for each request. `lastAnswer` is when the engine last heard from GitHub: an answer, or a part of
    * a body (`heard`, through the client's `onActivity`). A call fails only when nothing came for the limit, so a slow
    * but live download goes on to its end. A pull to refresh after a long silence does not join a pass that hangs.
@@ -242,7 +242,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       head: (etag) => call(() => remote.head(etag)),
       tree: (commit) => call(() => remote.tree(commit)),
       blob: (sha) => call(() => remote.blob(sha)),
-      // A commit is up to 5 requests in a row, and its files go UP with no sign (YAZ-5199): the time they need at the
+      // A commit is up to 5 requests in a row, and its files go UP with no sign: the time they need at the
       // client's floor speed is added, as the client adds it for each request.
       commit: (parent, changes, message, made) => call(() => remote.commit(parent, changes, message, made), REQUEST_TIMEOUT_MS * 5 + uploadAllowanceMs(changeBytes(changes))),
       contains: (commit, head) => call(() => remote.contains(commit, head)),
@@ -263,7 +263,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     // The stored index counts only with its checkpoint: a first download that stopped shows no partial vault (F5, F6).
     if (saved === undefined || checkpoint === null || saved.commit !== checkpoint.commit) return
     if (current?.commit === saved.commit && ofTheseRules(current)) return
-    // An index of an older build's rules (YAZ-5309: the card titles of before YAZ-5308) is built again from the stored
+    // An index of an older build's rules (the card titles of before YAZ-5308) is built again from the stored
     // files before any screen reads it, and kept, so the next open reads it as it is.
     if (!ofTheseRules(saved)) {
       saved = await rebuiltIndex(store, id, saved)
@@ -286,7 +286,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     } else await loadIndex(id, gen) // another tab may have synced this vault (P4)
   }
 
-  // `session`: the store bound to the vault's generation at the start of the work (YAZ-5193): after a clear of the
+  // `session`: the store bound to the vault's generation at the start of the work: after a clear of the
   // vault (in any tab), every write of this pass is refused, so it can never mark a file done for the next open.
   const passOptions = (open: PhoneVault, id: string, token: string, gen: number, session: VaultStore) => ({
     remote: remoteOf(open, token),
@@ -304,7 +304,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
     const id = vaultId(open)
     lastAnswer = clock.now()
     try {
-      // Inside the `try` (YAZ-5170): a failed read of the token store (iOS: "connection lost") is a status, not a stop.
+      // Inside the `try`: a failed read of the token store (iOS: "connection lost") is a status, not a stop.
       const session = await store.session(id)
       const token = await tokens.read(id)
       if (gen !== generation) return
@@ -324,7 +324,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       const problem: SyncProblem = error instanceof GithubError ? error.code : error instanceof StorageFullError ? 'STORAGE_FULL' : 'FAILED'
       if (problem === 'RATE_LIMITED') {
         // GitHub's time (the client holds it between 1 minute and 1 hour), or more: each "slow down" in a row doubles
-        // the wait, up to 1 hour (YAZ-5169). Never under the floor, so a reset time in the past cannot loop.
+        // the wait, up to 1 hour. Never under the floor, so a reset time in the past cannot loop.
         slowedInRow++
         const retryAt = slowedUntil(error as GithubError, slowedInRow, clock.now())
         setState({ status: 'slowed', problem, retryAt, progress: null })
@@ -341,7 +341,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
 
   function syncNow(): Promise<void> {
     if (running !== null && running.gen === generation) {
-      // A pass that has heard nothing from GitHub for longer than the time limit hangs (YAZ-5173): end its calls (they
+      // A pass that has heard nothing from GitHub for longer than the time limit hangs: end its calls (they
       // fail as OFFLINE), let it end, then start a new pass. Else the request joins the running pass.
       if (outstanding.size > 0 && clock.now() - lastAnswer >= REQUEST_TIMEOUT_MS) {
         for (const fail of [...outstanding]) fail(tooLate())
@@ -382,7 +382,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       slowedInRow = 0
       const gen = generation
       // A pass of the vault that was open goes on to its end (its writes are its own vault's, under its own lock);
-      // nobody hears of it, and nobody waits for it (YAZ-5171): the new vault shows from storage at once (N1).
+      // nobody hears of it, and nobody waits for it: the new vault shows from storage at once (N1).
       running = null
       setState({ status: next === null ? 'idle' : state.status === 'idle' ? 'syncing' : state.status, vault: next === null ? null : vaultId(next), problem: null, retryAt: null, progress: null, lastSyncedAt: null, ready: false })
       if (next === null) return
@@ -414,7 +414,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       if (token === null) return null
       const remote = remoteOf(open, token)
       // The download runs with no lock (a pass need not wait for a slow picture). The WRITE runs under the vault's
-      // lock, and only when the checkpoint still names the SHA that came down (YAZ-5172): a pass that changed the
+      // lock, and only when the checkpoint still names the SHA that came down: a pass that changed the
       // picture meanwhile means "get the new one". So a stored file is always the checkpoint's version, and R7 holds.
       for (let tries = 0; tries < 3; tries++) {
         const sha = (await store.checkpoint(id))?.shas[path]

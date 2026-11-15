@@ -10,7 +10,7 @@ import { useEdgeBack } from './useEdgeBack'
 /**
  * The frame of every screen: the top bar, the screen, and (when a vault is open) the tab bar. The bars keep clear of
  * the notch and the home bar (safe areas, `styles.css`). Every control is at least 44 pt and has a VoiceOver name.
- * YAZ-5476: the bar holds the open vault's tabs (`tabsOf`) and Today; with Search alone it is not drawn (`showsTabBar`).
+ * The bar holds the open vault's tabs (`tabsOf`) and Today; with Search alone it is not drawn (`showsTabBar`).
  */
 export function Frame({
   title,
@@ -27,7 +27,7 @@ export function Frame({
   children,
 }: {
   title: string
-  /** Shows "←" (VoiceOver: "Back") before the title (YAZ-5451). */
+  /** Shows "←" (VoiceOver: "Back") before the title. */
   back?: () => void
   /** Shows the status slot (4D) and the gear. */
   gear?: boolean
@@ -35,27 +35,27 @@ export function Frame({
   /** A problem line under the top bar. */
   notice?: ReactNode
   /**
-   * The Review tab (YAZ-5415, as Mochi): ONE line — the Review screen's "▣ All cards ▾ 3 / 12" first (`reviewTop.ts`),
-   * then the sync dot (its words in its sheet) and the gear on the right, as on every other screen (YAZ-5501). The
+   * The Review tab (as Mochi): ONE line — the Review screen's "▣ All cards ▾ 3 / 12" first (`reviewTop.ts`),
+   * then the sync dot (its words in its sheet) and the gear on the right, as on every other screen. The
    * screen fills the space between the bars.
    */
   review?: boolean
-  /** A page or a card (YAZ-5436): no scroll bar; a soft fade at the bottom, as the Review card. */
+  /** A page or a card: no scroll bar; a soft fade at the bottom, as the Review card. */
   reader?: boolean
-  /** YAZ-5475: the kind of the open file, a small glyph just before the title (the Mac sidebar's; VoiceOver says it). */
+  /** The kind of the open file, a small glyph just before the title (the Mac sidebar's; VoiceOver says it). */
   kind?: FileKind
-  /** YAZ-5456: the page's tools (its "⋯"), before the dot. */
+  /** The page's tools (its "⋯"), before the dot. */
   tools?: ReactNode
-  /** After the title: the page's ID chip (YAZ-5450). */
+  /** After the title: the page's ID chip. */
   chip?: ReactNode
-  /** Over the tab bar: the page arrows (YAZ-5449). */
+  /** Over the tab bar: the page arrows. */
   foot?: ReactNode
   children: ReactNode
 }) {
   const app = useApp()
   const route = app.nav.stack.at(-1)
   const frame = useRef<HTMLDivElement>(null)
-  // YAZ-5435: a screen with Back also goes back on a swipe from the left edge (the Home Screen app only).
+  // A screen with Back also goes back on a swipe from the left edge (the Home Screen app only).
   useEdgeBack(frame, back)
   return (
     <div className="app" ref={frame}>
@@ -101,7 +101,7 @@ export function Frame({
   )
 }
 
-/** YAZ-5475: the kinds of file the reader opens, and their words. (The phone opens no drawing file alone: a drawing is in a page.) */
+/** The kinds of file the reader opens, and their words. (The phone opens no drawing file alone: a drawing is in a page.) */
 export type FileKind = 'page' | 'card' | 'card-file'
 export const KIND_WORD: Record<FileKind, string> = { page: 'page', card: 'card', 'card-file': 'card file' }
 

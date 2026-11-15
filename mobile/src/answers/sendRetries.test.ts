@@ -17,8 +17,8 @@ const withLine = (line: string) => ({ 'a.md': pageText('A', 'NC-1', ['NC-3']).re
 const hostOf = async (t: Setup) => phoneReviewHost({ answers: t.answers, days: await openPhoneDays(t.store, VAULT, t.clock.now), vaultName: () => 'v' })
 const isWrite = (init: RequestInit) => (init.method ?? 'GET') !== 'GET'
 
-describe('checker round 2: "tried" marks', () => {
-  it('probe: killed after "tried" is stored, before the commit: Undo sends unreview; the file ends byte for byte as before; the older review stays', async () => {
+describe('"tried" marks', () => {
+  it('killed after "tried" is stored, before the commit: Undo sends unreview; the file ends byte for byte as before; the older review stays', async () => {
     let failWrites = true
     const files = withLine(`<!-- card: NC-2, ${at(0)} good -->`)
     const t = await answersSetup({
@@ -48,7 +48,7 @@ describe('checker round 2: "tried" marks', () => {
     expect((await host.readCard('a.md', 'NC-2'))!.reviews.map((r) => r.at)).toEqual([at(0)])
   })
 
-  it('probe: killed after the commit, before the ref moved: Undo; GitHub ends with no new review', async () => {
+  it('killed after the commit, before the ref moved: Undo; GitHub ends with no new review', async () => {
     let dropPatch = true
     const t = await answersSetup({
       fetch: (s) => async (url, init) => {
@@ -74,7 +74,7 @@ describe('checker round 2: "tried" marks', () => {
     [401, { message: 'Bad credentials' }],
     [403, { message: 'Resource not accessible by personal access token' }],
   ] as const) {
-    it(`probe: a ${status} on the commit: the action stays tried; Undo, then a new sign-in: GitHub unchanged, list empty`, async () => {
+    it(`a ${status} on the commit: the action stays tried; Undo, then a new sign-in: GitHub unchanged, list empty`, async () => {
       let refuse = true
       const t = await answersSetup({
         fetch: (s) => async (url, init) => {
@@ -102,7 +102,7 @@ describe('checker round 2: "tried" marks', () => {
     })
   }
 
-  it('probe: Undo two times of a tried answer; an older review of another minute stays', async () => {
+  it('Undo two times of a tried answer; an older review of another minute stays', async () => {
     let dropPatchAnswer = true
     const t = await answersSetup({
       files: withLine(`<!-- card: NC-2, ${at(0)} good -->`),
@@ -126,7 +126,7 @@ describe('checker round 2: "tried" marks', () => {
     expect(await t.remoteReviews()).toEqual([at(0)])
   })
 
-  it('probe: Undo of a tried answer, then the same answer again in the same minute: one review', async () => {
+  it('Undo of a tried answer, then the same answer again in the same minute: one review', async () => {
     let dropPatchAnswer = true
     const t = await answersSetup({
       fetch: (s) => async (url, init) => {
@@ -149,7 +149,7 @@ describe('checker round 2: "tried" marks', () => {
     expect(await t.remoteReviews()).toEqual([at(1)])
   })
 
-  it('probe: Archive during a send, then un-archive: GitHub ends with no `off`', async () => {
+  it('Archive during a send, then un-archive: GitHub ends with no `off`', async () => {
     let release: () => void = () => {}
     let holding = false
     let hold = true
@@ -176,7 +176,7 @@ describe('checker round 2: "tried" marks', () => {
   })
 })
 
-describe('checker round 2: a review is named by its minute and its rating', () => {
+describe('a review is named by its minute and its rating', () => {
   // YAZ-5198: the phone writes both reviews, as the Mac does (`nth` on `review`, YAZ-5078), and Undo removes one.
   it('3C-D: two "again" answers to one card in one minute, Undo of the second after its send: GitHub must keep the first', async () => {
     const t = await answersSetup()
@@ -227,7 +227,7 @@ describe('checker round 2: a review is named by its minute and its rating', () =
     expect(cardRecords(twice).find((c) => c.id === 'NC-2')!.reviews).toHaveLength(0)
   })
 
-  it('probe: delete review uses the parsed line: the time with seconds (`12s`) and the rating name exactly that review', async () => {
+  it('delete review uses the parsed line: the time with seconds (`12s`) and the rating name exactly that review', async () => {
     const t = await answersSetup({ files: withLine(`<!-- card: NC-2, ${at(1)} hard 12s, ${at(1)} good 7s -->`) })
     const host = await hostOf(t)
     await host.deleteCardReview('a.md', 'NC-2', at(1)) // the last at 06:01: "good"
@@ -236,7 +236,7 @@ describe('checker round 2: a review is named by its minute and its rating', () =
     expect(await reviewsOf(t)).toEqual([{ at: at(1), rating: 'hard', seconds: 12 }])
   })
 
-  it('probe: a list stored before YAZ-5181 (an `unreview` with no rating) loads and sends; no crash', async () => {
+  it('a list stored before YAZ-5181 (an `unreview` with no rating) loads and sends; no crash', async () => {
     const t0 = await answersSetup({ files: withLine(`<!-- card: NC-2, ${at(0)} good, ${at(1)} good -->`) })
     await t0.store.setState(VAULT, ANSWERS_STATE, { v: 1, next: 2, waiting: [{ seq: 1, group: 1, op: { kind: 'unreview', id: 'NC-2', at: at(1) }, path: 'a.md', title: 'x', madeAt: 0 }], lost: [] })
     const box = await openOutbox(t0.store, VAULT)
@@ -252,7 +252,7 @@ describe('checker round 2: a review is named by its minute and its rating', () =
   })
 })
 
-describe('checker round 2: the Web Lock', () => {
+describe('the Web Lock', () => {
   const g = globalThis as { navigator?: { locks?: unknown } }
   const saved = g.navigator?.locks
   afterEach(() => {
@@ -283,7 +283,7 @@ describe('checker round 2: the Web Lock', () => {
     return { nested }
   }
 
-  it('probe: with Web Locks, two tabs add at once: both stay; a send under the engine lane takes the list lock inside it, never the other way', async () => {
+  it('with Web Locks, two tabs add at once: both stay; a send under the engine lane takes the list lock inside it, never the other way', async () => {
     const { nested } = installLocks()
     const t = await answersSetup()
     const a = await openOutbox(t.store, VAULT)
@@ -297,8 +297,8 @@ describe('checker round 2: the Web Lock', () => {
   })
 })
 
-describe('checker round 2: the backoff on a branch that keeps moving', () => {
-  it('probe: 20 answers during the wait go in the next try, in ONE commit, in order; hidden and signal-back do not send early; after a good send the wait starts at 1 minute again', async () => {
+describe('the backoff on a branch that keeps moving', () => {
+  it('20 answers during the wait go in the next try, in ONE commit, in order; hidden and signal-back do not send early; after a good send the wait starts at 1 minute again', async () => {
     let moving = true
     let moves = 0
     const t = await answersSetup({

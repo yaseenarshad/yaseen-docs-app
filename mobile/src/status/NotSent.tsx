@@ -4,13 +4,13 @@ import type { WaitingComment } from '../comments/outbox'
 import { Confirm } from '../screens/Confirm'
 
 /**
- * YAZ-5517: the comments and ticks the phone could not send, in the dot's sheet: each with its words, its page, why,
+ * The comments and ticks the phone could not send, in the dot's sheet: each with its words, its page, why,
  * Copy (the words, to keep them) and Discard (it asks first: they cannot come back). They stay until Discard, so a
  * write is never lost without a word, also when its page is gone and no page shows it. The sheet is its own chunk.
  */
 export const WHY_NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
   gone: 'Its page is gone (deleted or moved on the Mac).',
-  // YAZ-5521 (sweep2 nit 2): the page was copied on the Mac, its `id` with it: the phone cannot tell which one is it.
+  // The page was copied on the Mac, its `id` with it: the phone cannot tell which one is it.
   copies: 'Its page has a copy with the same ID.',
   changed: 'The task changed on the Mac.',
   foreign: 'The page uses "comments" for something else.',
@@ -44,7 +44,7 @@ function NotSentRow({ item, onDiscard }: { item: WaitingComment; onDiscard: () =
   const [asking, setAsking] = useState(false)
   const [busy, setBusy] = useState(false)
   const words = notSentWords(item)
-  // Sweep3 N-4 (YAZ-5524): the ask is an overlay of the app's one stack: a Back closes the ask only, not the sheet.
+  // Sweep3 N-4: the ask is an overlay of the app's one stack: a Back closes the ask only, not the sheet.
   useOverlay(asking, () => setAsking(false))
   const copy = () =>
     void navigator.clipboard?.writeText(words).then(
