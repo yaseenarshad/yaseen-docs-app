@@ -5,7 +5,7 @@ import { openFile } from '../explore/openFile'
 /**
  * THE ONE DOOR OF A LINK TAP IN THE READER (YAZ-5455). Every tap that opens a page, a card or a drawing from the reader
  * comes here: a `[[link]]` or a Markdown link in a page, a pill in a card (the page's own cards, an embedded card, the
- * card view), an embed's "Embedded from", a "Linked from" row, a properties link, a link in an Explore sheet.
+ * card view), an embed's "Embedded from", a "Linked mentions" row, a properties link, a link in an Explore sheet.
  *
  * It hands the route to the app's ONE door to open a file, `openFile` (YAZ-5472): the vault's "Clicking a link"
  * (`.yaseendocs/link-click.json`, the Mac's YAZ-4936) says how. `explore`: the file opens in a sheet over where you are;

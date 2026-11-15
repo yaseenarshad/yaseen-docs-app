@@ -11,7 +11,7 @@ import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { headingTarget, landingTop, landOn } from './headings'
-import { LinkedFrom } from './LinkedFrom'
+import { LinkedMentions } from './LinkedMentions'
 import { openLink, type LinkDoor } from './openLink'
 import { resolveSourceOf } from './pageLook'
 import { useVaultLook } from './vaultLook'
@@ -270,7 +270,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {tools.sheet}
         {cardMenu}
         <PropertiesTab record={record} data={data} door={door} />
-        {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
+        {data !== null && text !== undefined && <LinkedMentions path={path} data={data} store={store} door={door} />}
       </article>
     </Frame>
   )

@@ -1,10 +1,11 @@
-/* "Linked from" (YAZ-5455): the Mac's "Linked mentions" (`backlinks.css`) on the phone's tokens, at the end of the page. */
-.linked-from {
+/*
+ * "Linked mentions" (YAZ-5455, YAZ-5535): the Mac's (`backlinks.css`) on the phone's tokens, at the end of a page, on the
+ * full page and in an Explore panel. In the page's column, so it scrolls with it; as the Mac, no hairline of its own.
+ */
+.linked-mentions {
   margin: 28px 0 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
 }
-.linked-from__header {
+.linked-mentions__header {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -18,20 +19,20 @@
   text-align: left;
   cursor: pointer;
 }
-.linked-from__chevron {
+.linked-mentions__chevron {
   flex: none;
   transition: transform 120ms ease;
 }
-.linked-from__header[aria-expanded='false'] .linked-from__chevron {
+.linked-mentions__header[aria-expanded='false'] .linked-mentions__chevron {
   transform: rotate(-90deg);
 }
-.linked-from__title {
+.linked-mentions__title {
   font-weight: 600;
 }
-.linked-from__count {
+.linked-mentions__count {
   font-weight: 400;
 }
-.linked-from__list {
+.linked-mentions__list {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -39,13 +40,13 @@
   padding: 4px 0 0 20px;
   list-style: none;
 }
-.linked-from__entry {
+.linked-mentions__entry {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
 }
-.linked-from__page {
+.linked-mentions__page {
   min-height: 36px;
   padding: 2px 0;
   border: 0;
@@ -56,7 +57,7 @@
   text-align: left;
   cursor: pointer;
 }
-.linked-from__line {
+.linked-mentions__line {
   padding: 2px 0;
   border: 0;
   background: none;
@@ -67,7 +68,7 @@
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-.linked-from__more {
+.linked-mentions__more {
   min-height: var(--tap, 44px);
   margin: 4px 0 0 20px;
   padding: 0;
@@ -78,12 +79,12 @@
   text-align: left;
   cursor: pointer;
 }
-.linked-from__match {
+.linked-mentions__match {
   background: var(--accent-soft);
   color: var(--fg);
   border-radius: 3px;
 }
-.linked-from__wait {
+.linked-mentions__wait {
   width: 60%;
   height: 12px;
   margin: 4px 0;

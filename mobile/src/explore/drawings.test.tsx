@@ -129,8 +129,8 @@ describe('drawings first class (YAZ-5473)', () => {
     const sheet = () => [...document.querySelectorAll('.explore-sheet')].at(-1)!
     await waitFor(h, () => sheet().querySelector('[data-vault-drawing="garden.excalidraw"], .page-drawing, .page-media--board') !== null)
     expect(sheet().querySelector('[role="dialog"]')?.getAttribute('aria-label')).toBe('garden')
-    // "Garden plan" embeds it; "Links" links to it.
-    await waitFor(h, () => /^2 Backlinks · 0 References$/.test(sheet().querySelector('.explore-sheet__foot')?.textContent ?? ''))
+    // YAZ-5535: no sticky foot under a drawing's sheet either.
+    expect(sheet().querySelector('.explore-sheet__foot')).toBeNull()
     await act(async () => closeAll())
     await h.click('Links, page')
     await waitFor(h, () => (sheet()?.querySelector('.reader__body')?.textContent ?? '').includes('See'))

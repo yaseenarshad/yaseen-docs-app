@@ -24,7 +24,7 @@ import './cardStrip.css'
  *    at a time, YAZ-5349). The drawer slides open by its height; with Reduce Motion it opens at once.
  *  - Reviews: the phone's review table (Reviewed on, Answer, Next due). Properties: the card's own properties in the
  *    page properties panel's rows (YAZ-5459). Linked mentions / Embedded in: the Mac's list, one page a row, its name and
- *    its folder (`cardBacklinks`, `cardEmbedders`: the same lists "Linked from" reads, off the phone's index); a tap opens it.
+ *    its folder (`cardBacklinks`, `cardEmbedders`: the same lists "Linked mentions" reads, off the phone's index); a tap opens it.
  *
  * Where it shows, as on the Mac: the card view (a card file: all four parts; a card in a page: no "Embedded in", as the
  * Mac's card window), and a card in a page or a card embed (`pageStrips.tsx`: Reviews and Properties). Review off: none.

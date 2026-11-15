@@ -55,9 +55,13 @@ import { freePort } from './freePort'
  *    390 px: its words wrap, its buttons inside the screen.
  *  - a page card's ⋯ menu low on the screen (`#fixture=page-card-menu`, YAZ-5519 S6) at 375 and 430 px: inside the
  *    screen, above the page arrows and the tab bar; its first row on top.
+ *  - "Linked mentions" at the end of a page (`#fixture=explore-mentions`, `page-linked-from`, YAZ-5535), light and dark, at
+ *    375 px: in an Explore panel no foot under the body (the body is the box's last part, to its bottom), the section in
+ *    the page's scroll (not sticky: it moves when the body scrolls), collapsed with its count, a 44 px tap inside the
+ *    screen; a tap opens it in place, its rows inside the screen; the same section on the full page, open, then closed.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_MENTIONS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -805,6 +809,68 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-card-menu third card at ${w}x${h}: menu ${m.top}-${m.bottom} (${m.place}), the screen ${m.screenTop}-${m.screenBottom}; its first row ${m.hit ? 'is on top' : 'IS COVERED'}  ${shot}`)
   }
+}
+// YAZ-5535: "Linked mentions" at the end of a page, in an Explore panel (no sticky foot) and on the full page.
+const MENTIONS = (scope: string) => `(() => {
+  const root = document.querySelector(${JSON.stringify(scope)})
+  const s = root && root.querySelector('.linked-mentions')
+  if (!s) return { error: 'no section' }
+  const r = (el) => el.getBoundingClientRect()
+  const head = s.querySelector('.linked-mentions__header'), hb = r(head)
+  const box = document.querySelector('.explore-sheet:last-of-type .explore-sheet__box')
+  const body = box && box.querySelector('.explore-sheet__body')
+  const hit = document.elementFromPoint(hb.left + hb.width / 2, hb.top + hb.height / 2)
+  const scroller = body || document.querySelector('.screen--reader')
+  return {
+    words: head.textContent, open: head.getAttribute('aria-expanded'), position: getComputedStyle(s).position,
+    tap: Math.round(hb.height), inside: hb.left >= -0.5 && hb.right <= innerWidth + 0.5 && hb.top >= 0 && hb.bottom <= innerHeight, hit: !!hit && head.contains(hit),
+    rows: [...s.querySelectorAll('.linked-mentions__page')].map((b) => b.textContent),
+    rowsInside: [...s.querySelectorAll('.linked-mentions__page')].every((b) => r(b).right <= innerWidth + 0.5),
+    foot: box ? box.querySelector('.explore-sheet__foot') !== null : false,
+    bodyLast: box ? box.lastElementChild === body || box.lastElementChild?.previousElementSibling === body : true,
+    bodyToBottom: box ? Math.round(r(box).bottom - r(body).bottom) : 0,
+    wide: scroller ? scroller.scrollWidth > scroller.clientWidth + 1 : false,
+    top: Math.round(r(s).top),
+  }
+})()`
+if (process.env.LAYOUT_MENTIONS !== 'no') {
+  const shotTo = async (file: string) => writeFileSync(file, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+  const SHEET = '.explore-sheet:last-of-type .explore-sheet__body'
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    // In the panel: closed at the end of the page.
+    const file = await open('explore-mentions', 375, 667)
+    const closed = await evaluate(MENTIONS(SHEET))
+    const shot = file.replace('.png', `-${scheme}.png`)
+    await shotTo(shot)
+    // It scrolls with the page: 120 px up, the section 120 px lower.
+    await evaluate(`document.querySelector(${JSON.stringify(SHEET)}).scrollTop -= 120`)
+    await wait(150)
+    const moved = (await evaluate(MENTIONS(SHEET))).top - closed.top
+    await evaluate(`document.querySelector(${JSON.stringify(SHEET)}).scrollTop += 1000`)
+    await evaluate(`document.querySelector(${JSON.stringify(SHEET)} + ' .linked-mentions__header').click()`)
+    await wait(600)
+    await evaluate(`document.querySelector(${JSON.stringify(SHEET)}).scrollTop += 1000`)
+    await wait(200)
+    const opened = await evaluate(MENTIONS(SHEET))
+    await shotTo(shot.replace('.png', '-open.png'))
+    const ok = closed.error === undefined && closed.words === 'Linked mentions (2)' && closed.open === 'false' && !closed.foot && closed.bodyLast && closed.bodyToBottom === 0 && !['sticky', 'fixed'].includes(closed.position) && closed.tap >= 44 && closed.inside && closed.hit && moved === 120 && opened.open === 'true' && opened.rows.length === 2 && opened.rowsInside && !opened.wide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  explore-mentions ${scheme} at 375x667: "${closed.words}" ${closed.open === 'false' ? 'closed' : 'OPEN'}; ${closed.foot ? 'A FOOT' : 'no foot'}; body ${closed.bodyToBottom}px from the box's bottom; ${closed.position}; ${closed.tap}px tap ${closed.inside ? 'inside' : 'OUTSIDE'}, ${closed.hit ? 'on top' : 'COVERED'}; scrolls with the page: ${moved}px; open: ${JSON.stringify(opened.rows)} ${opened.wide ? 'SCROLLS SIDEWAYS' : ''}  ${shot}`)
+    // On the full page: the same section, opened by the fixture, then closed.
+    const pageFile = await open('page-linked-from', 375, 667)
+    const full = await evaluate(MENTIONS('.screen--reader'))
+    const pageShot = pageFile.replace('.png', `-${scheme}.png`)
+    await shotTo(pageShot)
+    await evaluate(`document.querySelector('.screen--reader .linked-mentions__header').click()`)
+    await wait(200)
+    const shut = await evaluate(MENTIONS('.screen--reader'))
+    await shotTo(pageShot.replace('.png', '-closed.png'))
+    const pageOk = full.error === undefined && full.words === 'Linked mentions (2)' && full.open === 'true' && full.rows.length === 2 && full.rowsInside && !['sticky', 'fixed'].includes(full.position) && full.tap >= 44 && !full.wide && shut.open === 'false' && shut.rows.length === 0
+    if (!pageOk) failed++
+    console.log(`${pageOk ? 'PASS' : 'FAIL'}  page-linked-from ${scheme} at 375x667: "${full.words}" open ${JSON.stringify(full.rows)}; ${full.position}; ${full.tap}px tap; closed: ${shut.rows.length} rows  ${pageShot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()
 server.close()

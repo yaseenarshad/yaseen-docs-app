@@ -8,9 +8,7 @@ import { useVaultData, type VaultData } from '../search/vaultData'
 import { folderOf } from '../page/pageLook'
 import { MenuTitle, isCut } from '../page/menuTitle'
 import { useCopyPath } from '../screens/copyPath'
-import { countWords, linkCounts, type LinkCounts } from './linkCounts'
 import { SheetContent, titleOf } from './SheetBody'
-import { SHEET_MS } from './sheetDrag'
 import { sheetMotion, type SheetMotion } from './sheetMotion'
 import { MAX_MOUNTED, closeAll, closeTop, dropSheet, keepScroll, setAnimatedClose, sheetStack, subscribeSheets, type Sheet, type SheetRoute } from './sheets'
 import './explore.css'
@@ -59,6 +57,9 @@ export default function SheetLayer() {
   )
 }
 
+/** A card's text is not needed by the sheet (its old foot counted the card's links, YAZ-5535). */
+const noText = () => {}
+
 /** A folder's name (YAZ-5460): its `.folder.md`'s title, else its last part (the tree's row says the same). */
 const folderName = (data: VaultData | null, dir: string): string => data?.folders.find((f) => f.folder === dir)?.title.trim() || dir.slice(dir.lastIndexOf('/') + 1)
 
@@ -82,8 +83,6 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
   const motion = useRef<SheetMotion | null>(null)
   const [menu, setMenu] = useState(false)
   const [cut, setCut] = useState(false)
-  const [cardText, setCardText] = useState<string | undefined>(undefined)
-  const [counts, setCounts] = useState<LinkCounts | null>(null)
   const isTop = depth === 0
   const isNew = useRef(sheet.scroll === 0)
   // YAZ-5518: the ⋯ menu is an overlay of its own: a Back closes it, and the sheet stays.
@@ -115,13 +114,6 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
       if (el !== null) keepScroll(sheet.id, el.scrollTop)
     }
   }, [sheet.id])
-
-  // The counts after the slide up (the map of every link is built once for the vault's data).
-  useEffect(() => {
-    if (data === null || sheet.route.kind === 'folder') return
-    const timer = setTimeout(() => setCounts(linkCounts(data, sheet.route, cardText)), isTop ? SHEET_MS : 0)
-    return () => clearTimeout(timer)
-  }, [data, sheet.route, cardText, isTop])
 
   const restore = () => {
     if (sheet.scroll > 0 && body.current !== null) body.current.scrollTop = sheet.scroll
@@ -173,11 +165,9 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
           </div>
           <div ref={body} className="explore-sheet__body">
             <div ref={mark} className="explore-sheet__top" aria-hidden="true" />
-            <SheetContent route={sheet.route} onDrawn={restore} onText={setCardText} />
+            {/* YAZ-5535: no sticky foot; a page's "Linked mentions" is at the end of its text (`SheetPage`), and scrolls. */}
+            <SheetContent route={sheet.route} onDrawn={restore} onText={noText} />
           </div>
-          <p className="explore-sheet__foot" aria-live="off">
-            {counts === null ? ' ' : countWords(counts)}
-          </p>
           {layer}
         </div>
       </div>
