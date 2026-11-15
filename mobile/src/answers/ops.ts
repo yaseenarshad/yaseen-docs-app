@@ -104,6 +104,11 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
     const id = cardIdOf(card.line)
     if (id !== null && !at.has(id.toLowerCase())) at.set(id.toLowerCase(), n)
   })
+  // YAZ-5514: a mark (archive, Up next, Fix later, title on the front) SETS a value, so only the last action of each
+  // mark for a card counts. Off then on of a mark the line holds changes no byte, and the list applied to its own
+  // result changes nothing (a mark taken out and put back would go to the writer's place, which can differ).
+  const lastMark = new Map<string, CardOp>()
+  for (const op of ops) if (op.kind !== 'review' && op.kind !== 'unreview') lastMark.set(`${op.id.toLowerCase()}\n${op.kind}`, op)
   const lines = new Map<number, CardLine>()
   const lost: CardOp[] = []
   for (const op of ops) {
@@ -112,6 +117,7 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
       lost.push(op)
       continue
     }
+    if (op.kind !== 'review' && op.kind !== 'unreview' && lastMark.get(`${op.id.toLowerCase()}\n${op.kind}`) !== op) continue
     lines.set(n, applyOp(lines.get(n) ?? cards[n].line, op))
   }
   const changed = [...lines].filter(([n, line]) => line !== cards[n].line)

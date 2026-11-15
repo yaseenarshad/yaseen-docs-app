@@ -139,6 +139,24 @@ describe('applyOps (decision 2): each kind of action, by card ID, on the newest 
     ])
   })
 
+  it('YAZ-5514: a mark set again later in one list counts once, as its last value: the list applied two times gives the same bytes', () => {
+    // From the answer and mark fuzz (seed 289): Up next off (the answer) and on again (the menu), with Show title.
+    const text = '# A\n\n```card\nQ\n```\n<!--card:NC-4 , notitle,off,\tfix , title "a &#44; b", fix  -->\n'
+    const ops: CardOp[] = [
+      { kind: 'review', id: 'nc-4', review: { at: '2026-11-14T06:00Z', rating: 'hard' } },
+      { kind: 'next', id: 'nc-4', on: false },
+      { kind: 'fix', id: 'NC-4', on: true },
+      { kind: 'next', id: 'NC-4', on: true },
+      { kind: 'notitle', id: 'nc-4', on: false },
+    ]
+    const once = applyOps(text, ops).content
+    expect(applyOps(once, ops).content).toBe(once)
+    // A card that holds Up next already keeps it in its place: off then on in one list changes no byte.
+    const held = applyOps(once, [{ kind: 'next', id: 'NC-4', on: false }, { kind: 'next', id: 'NC-4', on: true }])
+    expect(held.content).toBe(once)
+    expect(applyOps(text, [{ kind: 'off', id: 'NC-4', on: false }, { kind: 'off', id: 'NC-4', on: true }]).content).toBe(text)
+  })
+
   it('500 actions on one page: one read of the page, the right lines', () => {
     const ids = Array.from({ length: 100 }, (_, i) => `NC-${100 + i}`)
     const big = pageText('Big', 'NC-1', ids)
