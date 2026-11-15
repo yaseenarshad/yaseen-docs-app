@@ -8,10 +8,10 @@
  */
 
 /**
- * The phone app's address. Until Yaseen says "release", it is the preview, the only address the Worker serves
- * (`mobile/wrangler.jsonc`). At release, change this ONE line to `'https://docs.yaseenarshad.com'`.
+ * The phone app's address: the real one, docs.yaseenarshad.com (YAZ-5579), a custom domain of the Worker
+ * (`mobile/wrangler.jsonc`). Links made on the old preview addresses still paste (`SITES`).
  */
-export const PHONE_APP_ORIGIN = 'https://preview.docs.yaseenarshad.com'
+export const PHONE_APP_ORIGIN = 'https://docs.yaseenarshad.com'
 
 /** The friend link: the landing page of the app's site (5-) with the pointer ID after `#`, which no server log sees. */
 export const FRIEND_LINK_BASE = `${PHONE_APP_ORIGIN}/friend`

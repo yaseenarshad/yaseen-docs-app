@@ -2,7 +2,8 @@
 // item 14): Cloudflare Workers static assets, published by hand with `npm run mobile:publish:preview`
 // (mobile/README.md, "How to publish").
 // Static files only: no Worker script (`main`), no binding, no workers.dev address, no logs. The token never reaches it
-// (decision 13). The STABLE site (docs.yaseenarshad.com) is NOT here: it is added when Yaseen says "release".
+// (decision 13). YAZ-5579: the real address, docs.yaseenarshad.com, is a custom domain of this same Worker (Yaseen:
+// "lets just do everything on the real address").
 // YAZ-5476: two addresses of the SAME Worker. preview.docs.yaseenarshad.com is the new one; preview.notecard.yaseenarshad.com
 // stays, because Yaseen's installed app and its data live there (phone storage belongs to the address) until he moves.
 // The first route is the one `publish/keepPrevious.ts` reads the live build from: the old address, live since YAZ-5087.
@@ -14,7 +15,8 @@
   "preview_urls": false,
   "routes": [
     { "pattern": "preview.notecard.yaseenarshad.com", "custom_domain": true },
-    { "pattern": "preview.docs.yaseenarshad.com", "custom_domain": true }
+    { "pattern": "preview.docs.yaseenarshad.com", "custom_domain": true },
+    { "pattern": "docs.yaseenarshad.com", "custom_domain": true }
   ],
   "assets": { "directory": "./dist", "not_found_handling": "single-page-application", "html_handling": "auto-trailing-slash" }
 }

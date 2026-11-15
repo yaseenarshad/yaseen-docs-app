@@ -95,7 +95,7 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     expect(parseAnyLink(`https://preview.notecard.yaseenarshad.com/join#${ID}-${ID}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
     expect(parseAnyLink(`https://notecard.yaseenarshad.com/group#${ID}`)).toEqual({ kind: 'group', id: ID })
     expect(parseFriendLink(`https://notecard.yaseenarshad.com/friend#${ID}`)).toEqual({ kind: 'ok', id: ID })
-    expect(groupLink(ID)).toBe(`https://preview.docs.yaseenarshad.com/group#${ID}`)
+    expect(groupLink(ID)).toBe(`https://docs.yaseenarshad.com/group#${ID}`)
     // A NEW gist says the app's name on github.com (a gist made before keeps its words).
     expect(Object.values(DESCRIPTIONS).every((d) => d.startsWith('Yaseen Docs: '))).toBe(true)
   })

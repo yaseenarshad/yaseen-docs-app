@@ -156,10 +156,11 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
     expect(config.account_id).toBe('06ed69083fae875c626d37f9c05405a3')
     expect(config.workers_dev).toBe(false)
     expect(config.preview_urls).toBe(false)
-    // YAZ-5476: the new address and the old one, on the same Worker; never the stable docs.yaseenarshad.com before "release".
+    // YAZ-5579: the real address, docs.yaseenarshad.com, on the same Worker as the two preview addresses (for now).
     expect(config.routes).toEqual([
       { pattern: 'preview.notecard.yaseenarshad.com', custom_domain: true },
       { pattern: 'preview.docs.yaseenarshad.com', custom_domain: true },
+      { pattern: 'docs.yaseenarshad.com', custom_domain: true },
     ])
     expect(config.assets).toEqual({ directory: './dist', not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
     expect(config.main).toBeUndefined()

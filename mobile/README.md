@@ -219,8 +219,8 @@ Wrangler is not a dependency of the repo; `npx` fetches that exact version. To s
 sending it: `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc --dry-run`.
 
 The Worker has no script: Cloudflare serves the files of `dist/` and applies `_headers`. No request reaches code of
-ours, so nothing logs an address. The stable site `docs.yaseenarshad.com` is NOT in this config: it is added when
-Yaseen says "release" (decision 8, round 10 item 16; YAZ-5476).
+ours, so nothing logs an address. The real address `docs.yaseenarshad.com` is a custom domain of the same Worker
+(YAZ-5579).
 
 ## If a bad version ships
 
