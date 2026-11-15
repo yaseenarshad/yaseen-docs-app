@@ -8,8 +8,10 @@ import { READER_FILES, READER_NOT_STORED, cardBlock, seedReaderVault } from './r
 import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
-import { FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
+import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
+import { setCalendarClock } from '../page/tableCalendar'
 import { READING_LOOK_PAGE } from './readingLookFixture'
+import { TASKS_PAGE } from './taskFixtures'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
@@ -27,8 +29,13 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
 
  * YAZ-5480: `page-table-frozen` a tall table whose file freezes 2 rows and 1 column; `page-table-frozen-full` it full screen.
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
+ * YAZ-5493: `page-calendar` a made-up day plan as a calendar table, the clock frozen at 9:40 am (`CALENDAR_NOW`): the now
+ * line a third down the 9:30 row, the rows before it dimmed; `page-calendar-chip` the same (`proveLayout.ts` scrolls it past the now
+ * row: the Now pill at the bottom); `page-calendar-full` the table full screen.
+ * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
+ * tap ticks (44 px around it), the card's box a glyph.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -137,6 +144,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
           ? { 'Table shapes.md': `---\ntitle: Table shapes\n---\n\n${TABLE_PAGE}\n` }
         : name === 'page-table-frozen' || name === 'page-table-frozen-full'
           ? { 'Frozen table.md': `---\ntitle: Frozen table\n---\n\n${FROZEN_PAGE}\n` }
+        : name === 'page-tasks'
+          ? { 'home/Weekend jobs.md': TASKS_PAGE }
+        : name === 'page-calendar' || name === 'page-calendar-chip' || name === 'page-calendar-full'
+          ? { 'Day plan.md': `---\ntitle: Day plan\n---\n\n${CALENDAR_PAGE}\n` }
         : name === 'page-table-look'
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
         : name === 'page-drawing'
@@ -422,6 +433,23 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await wait(200)
       break
     }
+    case 'page-calendar':
+    case 'page-calendar-chip':
+    case 'page-calendar-full': {
+      setCalendarClock(() => CALENDAR_NOW)
+      await typed('day plan')
+      await open(/^Day plan/, '.reader__body .table-now-row')
+      if (name === 'page-calendar-full') {
+        document.querySelector<HTMLElement>('.reader__body [data-table-open]')?.click()
+        await until(() => document.querySelector('.table-view') !== null)
+      }
+      await wait(300)
+      break
+    }
+    case 'page-tasks':
+      await typed('weekend jobs')
+      await open(/^Weekend jobs/, '.reader__body .page-task[data-task]')
+      break
     case 'page-table-look':
       await typed('table look')
       await open(/^Table look/, '.reader__body .page-table-box')

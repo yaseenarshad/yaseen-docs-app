@@ -12,6 +12,8 @@ const NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
   ...REFUSED_WORDS,
   gone: 'This page is no longer in the vault (it was moved or deleted), so your comment was not added.',
   'too-large': 'This page is too large for the phone to change, so your comment was not added. Comment on the Mac.',
+  // A check box tick's refusal (YAZ-5494); ticks are not shown here (`taskTicks.ts` says it).
+  changed: 'This page changed, so your comment was not added.',
 }
 
 export interface CommentsViewProps {
@@ -69,7 +71,8 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
   const refused = shape === 'foreign' || shape === 'invalid' ? named(REFUSED_WORDS[shape], noun) : null
   void version
   const held = new Set(comments.map((c) => c.id))
-  const pending = (port?.waiting(path) ?? []).filter((c) => !held.has(c.id))
+  // A check box tick (YAZ-5494) waits in the same list, but it is no comment.
+  const pending = (port?.waiting(path) ?? []).filter((c) => !held.has(c.id) && c.task === undefined)
 
   const onFocus = () => {
     setFocused(true)

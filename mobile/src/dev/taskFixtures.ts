@@ -1,0 +1,40 @@
+/**
+ * YAZ-5494: a made-up page of tasks in every shape the Mac reads (`- [ ]`, `* [ ]`, `+ [ ]`, `1. [ ]`, `2) [x]`,
+ * `[X]`, nested and indented, in a quote), with a card block whose boxes stay the card's, a code fence whose boxes are
+ * text, and two tasks that read the same. For the tests (`comments/taskWrite.test.ts`, `page/taskTicks.test.tsx`) and
+ * the screen fixture `page-tasks` (`readerFixtures.tsx`).
+ */
+export const TASKS_PAGE = [
+  '---',
+  'title: Weekend jobs',
+  'tags: [home,garden]',
+  '---',
+  '# Weekend jobs',
+  '',
+  '- [ ] Buy seeds',
+  '- [x] Mow the lawn',
+  '  - [ ] Sharpen the blade',
+  '  - [X] Empty the box',
+  '* [ ] Call Sam about the fence',
+  '+ [ ] Water the beans',
+  '',
+  '1. [ ] Sweep the shed',
+  '2) [x] Oil the hinges',
+  '',
+  '> - [ ] Ask Ana for the ladder',
+  '> - [x] Return the drill',
+  '',
+  '- [ ] Water the beans',
+  '',
+  '```card',
+  'Q: What needs the most water?',
+  '- [ ] Beans',
+  '```',
+  '',
+  '```',
+  '- [ ] not a task, code',
+  '```',
+  '',
+  'The end.',
+  '',
+].join('\n')

@@ -15,7 +15,7 @@ export interface DotInput {
    * 3C's answer list, counted as the person counts (`answersPart`). `loaded`: the list has read its stored answers for
    * the open vault (YAZ-5297). Before that, the counts are not known, so the dot cannot say green.
    */
-  answers: { loaded: boolean; waiting: number; lost: number; sending: boolean; problem: string | null; stuck?: 'store' | 'list' | null; comments?: number }
+  answers: { loaded: boolean; waiting: number; lost: number; sending: boolean; problem: string | null; stuck?: 'store' | 'list' | null; comments?: number; ticks?: number }
   /** The phone's own signal (`navigator.onLine`). The engine learns it only at its next poll. */
   online: boolean
   /** The token's end date (3E, round 10 item 18). */
@@ -110,10 +110,12 @@ function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short'
     return { state: 'off', words: 'Checking…', reason: 'checking' }
   }
   if (answers.lost > 0) return { state: 'pending', words: `${plural(answers.lost, 'answer', 'answers')} could not be saved`, reason: 'lost' }
-  // YAZ-5461: `waiting` counts the comments too (`comments` of them); the words name what waits.
+  // YAZ-5461: `waiting` counts the comments too (`comments` of them), and those the check box ticks (`ticks`, YAZ-5494);
+  // the words name what waits when it is one kind.
   const comments = answers.comments ?? 0
+  const ticks = answers.ticks ?? 0
   const answered = answers.waiting - comments
-  const waiting = (comments === 0 ? plural(answered, 'answer', 'answers') : answered === 0 ? plural(comments, 'comment', 'comments') : answers.waiting) + ' waiting'
+  const waiting = (comments === 0 ? plural(answered, 'answer', 'answers') : answered > 0 ? answers.waiting : ticks === 0 ? plural(comments, 'comment', 'comments') : ticks === comments ? plural(ticks, 'check box', 'check boxes') : answers.waiting) + ' waiting'
   if (!online || sync.status === 'off')
     return answers.waiting > 0 ? { state: 'pending', words: `${waiting} · no signal`, reason: 'waiting-offline' } : { state: 'off', words: 'No signal', reason: 'offline' }
   if (sync.status === 'syncing' || answers.sending) return { state: 'syncing', words: 'Syncing…', reason: 'syncing' }
@@ -172,7 +174,7 @@ export function lostRows(lost: readonly LostAnswer[]): LostRow[] {
 export function answersPart(state: AnswersState | null, waiting: readonly WaitingAnswer[], noList = false, stuck: 'store' | 'list' | null = null): DotInput['answers'] {
   if (state === null) return { loaded: noList, stuck, waiting: 0, lost: 0, sending: false, problem: null }
   const comments = state.comments ?? 0
-  return { loaded: true, waiting: waitingCount(waiting) + comments, lost: lostRows(state.lost).length, sending: state.sending, problem: state.problem, comments }
+  return { loaded: true, waiting: waitingCount(waiting) + comments, lost: lostRows(state.lost).length, sending: state.sending, problem: state.problem, comments, ticks: state.ticks ?? 0 }
 }
 
 const MIN = 60_000

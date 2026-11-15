@@ -21,7 +21,8 @@ import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
-import { PageComments, PageCommentsCount } from './comments/PageComments'
+import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
+import { useTaskTicks } from './taskTicks'
 import { useTables } from './useTables'
 
 /**
@@ -62,6 +63,10 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const door: LinkDoor = { go: app.go, vaultKey: app.vaultKey, click: look?.click }
   const doorRef = useRef(door)
   doorRef.current = door
+  // YAZ-5494: a tap on a task's box ticks it in the file, on the comments' safe path.
+  const ticks = useTaskTicks(host, path, text, useCommentsPort(), setNotice)
+  const ticksRef = useRef(ticks)
+  ticksRef.current = ticks
   // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk).
   const tools = usePageTools(host)
   const record = data?.byPath[path]
@@ -125,6 +130,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         if (!live) return
         el.replaceChildren(...into.childNodes)
       }
+      ticksRef.current.paint()
       const head = el.firstElementChild
       setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
       if (scroller !== null && !first) scroller.scrollTop = top

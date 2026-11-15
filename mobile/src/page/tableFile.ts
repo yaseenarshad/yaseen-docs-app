@@ -102,6 +102,13 @@ export function applyTableFile(table: HTMLTableElement, body: string): TableStyl
   const { rows, cols } = freezeOf(style, grid.rows, grid.cols)
   table.setAttribute('data-freeze-rows', String(rows))
   if (cols > 0) table.setAttribute('data-freeze-cols', String(cols))
+  // YAZ-5493: a calendar table (`calendar 15m | 30m | 60m`): its slot length, `nonow` (no Now button) and the rows it
+  // never dims (`nodim`, the rows' indexes with the header row as 0, the Mac's). `tableCalendar.ts` draws now from them.
+  if (style.calendar) {
+    table.setAttribute('data-calendar', String(style.calendar))
+    if (style.nonow) table.setAttribute('data-nonow', '')
+    for (const r of style.nodim ?? []) table.rows[r]?.setAttribute('data-nodim', '')
+  }
 
   if (style.widths.some((w) => w !== null)) table.setAttribute('data-widths', style.widths.map((w) => w ?? 'auto').join(' '))
   if (style.stripes) table.setAttribute('data-stripes', '')

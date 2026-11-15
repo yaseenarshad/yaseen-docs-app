@@ -1,4 +1,5 @@
 import { useEffect, type RefObject } from 'react'
+import { watchCalendars, type CalendarOptions } from './tableCalendar'
 import { layoutTables } from './tableLayout'
 
 /**
@@ -8,7 +9,8 @@ import { layoutTables } from './tableLayout'
  *  - its frame says which side has more to see (`data-more-left`, `data-more-right`): the soft shadows;
  *  - a tap on ⤢ opens the table full screen (`tableView.ts`, a chunk of its own, loaded on the first tap);
  *  - a table that comes later (an embedded card, filled after the page) gets its widths and frame (`layoutTables`);
- *  - its frozen rows and columns are measured (YAZ-5480, `measureFreeze`) with it, never on a scroll.
+ *  - its frozen rows and columns are measured (YAZ-5480, `measureFreeze`) with it, never on a scroll;
+ *  - a calendar table shows now (YAZ-5493, `tableCalendar.ts`): its now line, its past rows dimmed, each minute.
  * The full-screen view closes with the page.
  */
 export interface TableWatch {
@@ -113,7 +115,7 @@ function pinByScript(host: HTMLElement, scroller: HTMLElement): { measure(): voi
 
 type Load = () => Promise<{ showTable(box: HTMLElement, back?: HTMLElement | null): { close(): void } }>
 
-export function watchTables(host: HTMLElement, load: Load = () => import('./tableView')): TableWatch {
+export function watchTables(host: HTMLElement, load: Load = () => import('./tableView'), calendar: CalendarOptions = {}): TableWatch {
   const boxes = () => host.querySelectorAll<HTMLElement>('.page-table-box')
   // The page's scroll box (`.screen`); the frozen rows stay at its top.
   const scroller = host.closest<HTMLElement>('.screen')
@@ -133,6 +135,7 @@ export function watchTables(host: HTMLElement, load: Load = () => import('./tabl
   // Text above a table that changes height moves it: its place, for the script's frozen rows.
   if (script !== null) sizes?.observe(host)
   const seen = new WeakSet<Element>()
+  const calendars = watchCalendars(host, calendar)
   const take = () => {
     // A table that came without its frame (a card filled in later).
     if (host.querySelector('table:not([data-cols]):not([data-sized])') !== null) layoutTables(host)
@@ -143,7 +146,9 @@ export function watchTables(host: HTMLElement, load: Load = () => import('./tabl
       sizes?.observe(box)
       fresh = true
     }
-    if (fresh) measure()
+    if (!fresh) return
+    measure()
+    calendars.refresh()
   }
   take()
   const added = typeof MutationObserver === 'undefined' ? null : new MutationObserver(() => take())
@@ -167,6 +172,8 @@ export function watchTables(host: HTMLElement, load: Load = () => import('./tabl
     void load().then((m) => {
       if (stopped || !box.isConnected) return
       view = m.showTable(box, button as HTMLElement)
+      // The copy shows now too, and moves with the page's tables.
+      calendars.refresh()
     })
   }
   host.addEventListener('click', tapped)
@@ -178,6 +185,7 @@ export function watchTables(host: HTMLElement, load: Load = () => import('./tabl
       sizes?.disconnect()
       added?.disconnect()
       script?.stop()
+      calendars.stop()
       host.removeEventListener('scroll', scrolled, { capture: true })
       window.removeEventListener('resize', measure)
       host.removeEventListener('click', tapped)

@@ -60,8 +60,8 @@ export function PageCommentsCount({ text }: { text: string }) {
   return <CommentsCount comments={comments} />
 }
 
-/** The open vault's comment list, once the engine has loaded (`review()` gives the one answer list). */
-function useCommentsPort(): CommentsPort | null {
+/** The open vault's comment list, once the engine has loaded (`review()` gives the one answer list). The check box ticks use it too (YAZ-5494). */
+export function useCommentsPort(): CommentsPort | null {
   const { sync } = useApp().services
   const [port, setPort] = useState<CommentsPort | null>(null)
   useEffect(() => {
