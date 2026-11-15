@@ -130,6 +130,8 @@ export async function mount(options: { phone?: { store: VaultStore; tokens: Toke
       await settle()
     },
     async scan(text) {
+      // "Scan a code" is a lazy screen (YAZ-5461): its chunk may still load when the test scans.
+      for (const end = Date.now() + 3000; !scanner.on && Date.now() < end; ) await settle()
       await act(async () => scanner.read(text))
       await settle()
     },

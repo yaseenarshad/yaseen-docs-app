@@ -12,7 +12,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-comments'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -63,6 +63,23 @@ const THREE_CARDS = [
   cardBlock('DEMO-53', 'Which river runs through Vienna?\n---\nThe Danube', ['title "River of Vienna"', 'notitle', 'off']),
 ].join('\n\n')
 
+/** YAZ-5461: a page with comments (made-up): a thread with a reply, a resolved one, and a hand-written one. */
+const COMMENTED = [
+  '---',
+  'title: Review notes',
+  'comments:',
+  '  - {id: demo0001, n: 1, at: "2026-11-10T09:00:00Z", by: demo, body: "Can we add the May dates?"}',
+  '  - {id: demo0002, n: 1, at: "2026-11-10T09:30:00Z", by: sam, reply_to: demo0001, body: "Added."}',
+  '  - {id: demo0003, n: 2, at: "2026-11-11T08:00:00Z", by: demo, title: Budget, resolved: "2026-11-12T08:00:00Z", body: "Check the hotel price."}',
+  '  - {by: agent, body: "Approved"}',
+  '---',
+  '',
+  '# Review notes',
+  '',
+  'The trip, for review.',
+  '',
+].join('\n')
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
@@ -74,7 +91,9 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-drawing'
           ? DRAWING_FILES
-          : {}
+          : name === 'page-comments'
+            ? { 'Review notes.md': COMMENTED }
+            : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -164,6 +183,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'search-clear':
       document.querySelector<HTMLInputElement>('input[name="search"]')?.focus()
       await typed('spa')
+      break
+    case 'page-comments':
+      await open(/^Review notes/, '.page-comments')
+      document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
       break
     case 'page-tricks':
       await typed('parser')

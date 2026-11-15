@@ -1,0 +1,171 @@
+/* YAZ-5461: a page's comments on the phone, read only, after the Mac's comment block (`client/src/comments/comments.css`),
+   and the Comment button with its box. On the app's tokens (`styles.css`). */
+
+.page-comments {
+  margin: 28px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.page-comments__head {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.page-comments__thread {
+  margin: 0 0 6px;
+}
+
+.page-comments__item {
+  padding: 8px 0;
+}
+
+/* Replies: one level in, as the Mac's thread. */
+.page-comments__item--reply {
+  margin-left: 18px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+}
+
+.page-comments__item--resolved {
+  opacity: 0.7;
+}
+
+.page-comments__item--pending .page-comments__body {
+  color: var(--fg-muted);
+}
+
+.page-comments__item--refused {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg-side);
+}
+
+.page-comments__meta {
+  margin: 0 0 2px;
+  font-size: 13px;
+}
+
+.page-comments__n {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.page-comments__who {
+  font-weight: 600;
+}
+
+.page-comments__muted {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.page-comments__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.page-comments__body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.page-comments__problem {
+  margin: 6px 0 0;
+  color: var(--danger);
+  font-size: 14px;
+}
+
+.page-comments__resolved {
+  margin-top: 4px;
+}
+
+/* The dock: it floats at the bottom right of the page's scroll area, over the reader's bottom fade, so it never covers
+   a bar under the page (the page arrows) or the tab bar. */
+.page-comments__dock {
+  position: sticky;
+  bottom: 32px;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  pointer-events: none;
+}
+
+.page-comments__dock > * {
+  pointer-events: auto;
+}
+
+.page-comments__fab {
+  min-height: var(--tap);
+  padding: 0 18px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+
+.page-comments__fab:disabled {
+  opacity: 0.55;
+}
+
+.page-comments__composer {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.16);
+}
+
+.page-comments__chips {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.page-comments__chip {
+  min-height: var(--tap);
+  padding: 0 16px;
+  border: 1px solid var(--accent);
+  border-radius: 22px;
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.page-comments__undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--tap);
+  margin: 0 0 8px;
+  color: var(--fg-muted);
+}
+
+/* 16 px: iOS does not zoom into the box when it takes the focus. */
+.page-comments__box {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 16px;
+  resize: none;
+}
+
+.page-comments__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}

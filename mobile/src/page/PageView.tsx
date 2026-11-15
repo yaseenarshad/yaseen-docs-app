@@ -12,6 +12,7 @@ import { openFile } from '../media/ui/vaultMedia'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { renderPage } from './pageRender'
+import { PageComments } from './comments/PageComments'
 
 /**
  * A PAGE, READ ONLY (YAZ-5079, 4C; decision 1: stage one reads pages). The page's text from the phone's storage, drawn
@@ -151,6 +152,8 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
         {gone && <p className="muted">{record === undefined ? app.unit('This page is not on the phone.') : app.unit('This page is too large to show on the phone. Open it on the Mac.')}</p>}
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
+        {/* YAZ-5461: the page's comments, and its Comment button (`comments/`). */}
+        {typeof text === 'string' && <PageComments path={path} text={text} />}
       </article>
     </Frame>
   )

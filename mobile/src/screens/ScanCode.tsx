@@ -13,7 +13,7 @@ import { Frame, Problem } from './Frame'
  *
  * `vault` set: the code must be for that vault, and only its token is used (row N6, "Sign in again").
  */
-export function ScanCode({ vault }: { vault?: string }) {
+export default function ScanCode({ vault }: { vault?: string }) {
   const app = useApp()
   const video = useRef<HTMLVideoElement>(null)
   const session = useRef<ScanSession | null>(null)
