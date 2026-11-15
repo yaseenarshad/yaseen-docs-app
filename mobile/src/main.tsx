@@ -10,7 +10,7 @@ import { cameraScanner } from './scan/camera'
 import { openPhoneStorage } from './store'
 import './styles.css'
 
-// YAZ-5209: every card the phone draws (the reader, Review) loads nothing from another host (`localOnly.ts`).
+// Every card the phone draws (the reader, Review) loads nothing from another host (`localOnly.ts`).
 onlyLocalMedia()
 
 const root = createRoot(document.getElementById('root')!)
@@ -20,7 +20,7 @@ const root = createRoot(document.getElementById('root')!)
 if (import.meta.env.MODE === 'fixtures' && location.hash.startsWith('#fixture')) void import('./dev/fixtures').then((m) => m.mountFixture(root, location.hash))
 else void boot(root)
 
-// YAZ-5087: a new version that waits starts now, before the app runs (nothing is open; the answer list is stored).
+// A new version that waits starts now, before the app runs (nothing is open; the answer list is stored).
 async function boot(root: Root) {
   if (await swapWaitingVersion()) return
   await start(root)
@@ -35,9 +35,9 @@ async function start(root: Root) {
     return
   }
   const { store, tokens } = storage
-  // 3B's engine (YAZ-5072), loaded when a vault opens. 3D's media (YAZ-5074) is made with the engine once it loads, in a
-  // chunk of its own (`lazyMedia`): the reader and Review show pictures, sounds and files through it (YAZ-5079).
-  // Friends (4E, YAZ-5085): the list gist, the sender (on the engine's passes), Cheer and Nudge, in a chunk of their own.
+  // 3B's engine, loaded when a vault opens. 3D's media is made with the engine once it loads, in a
+  // chunk of its own (`lazyMedia`): the reader and Review show pictures, sounds and files through it.
+  // Friends (4E): the list gist, the sender (on the engine's passes), Cheer and Nudge, in a chunk of their own.
   const sync = lazySync(store, tokens)
   const friends = lazyFriends(store, tokens, sync.loaded())
   const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends, scanner: cameraScanner() }

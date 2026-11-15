@@ -6,7 +6,7 @@ import { ExploreHost } from './explore/ExploreHost'
 
 /**
  * Yaseen Docs: the app state (`AppProvider`) around the shell. `main.tsx` passes the real services; tests pass fakes.
- * `updates` (YAZ-5087): the service worker's update, for the "A new version is ready" line; none in dev and tests.
+ * `updates`: the service worker's update, for the "A new version is ready" line; none in dev and tests.
  */
 export function App({ services, updates }: { services: AppServices; updates?: Updates | null }) {
   return (
@@ -19,7 +19,7 @@ export function App({ services, updates }: { services: AppServices; updates?: Up
 }
 
 /** The browser gives no storage (Private Browsing, or blocked site data): the app cannot keep a vault. */
-/** The words when the phone's store cannot open (also the dot's end state for a store that stops answering, YAZ-5302). */
+/** The words when the phone's store cannot open (also the dot's end state for a store that stops answering). */
 export const NO_STORAGE_MESSAGE = 'This browser does not let Yaseen Docs keep your vault on the phone. Turn off Private Browsing, or open Yaseen Docs from the Home Screen.'
 
 export function NoStorage() {
