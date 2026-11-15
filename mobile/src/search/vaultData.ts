@@ -59,6 +59,8 @@ export async function readJson(store: VaultStore, vault: string, path: string): 
 }
 
 let versions = 0
+/** YAZ-5596 (6): the index object each data was made from (the engine's, or a store read). */
+const madeFrom = new WeakMap<VaultData, PhoneIndex>()
 
 /** The vault's data as the phone holds it now. `index`: the index the caller already has (3B's event), else the stored one. */
 export async function loadVaultData(store: VaultStore, vault: string, repoName: string, index?: PhoneIndex): Promise<VaultData> {
@@ -73,7 +75,7 @@ export async function loadVaultData(store: VaultStore, vault: string, repoName: 
   }
   const records = Object.values(byPath)
   const idsConfig = await readJson(store, vault, IDS_PATH)
-  return {
+  const data: VaultData = {
     vault,
     commit: held?.commit ?? null,
     byPath,
@@ -85,6 +87,8 @@ export async function loadVaultData(store: VaultStore, vault: string, repoName: 
     review: sanitizeReviewSettings(await readJson(store, vault, REVIEW_PATH)),
     version: ++versions,
   }
+  if (held !== null) madeFrom.set(data, held)
+  return data
 }
 
 /**
@@ -97,13 +101,17 @@ export const heldVaultData = (store: VaultStore, vault: string): VaultData | nul
   const data = held.get(store)
   return data !== undefined && data.vault === vault ? data : null
 }
-/** The same vault's data (every part but `version`). */
-export const sameVaultData = (a: VaultData, b: VaultData): boolean =>
-  a.vault === b.vault &&
-  a.commit === b.commit &&
-  a.records.length === b.records.length &&
-  a.files.length === b.files.length &&
-  JSON.stringify([a.byPath, a.folders, a.files, a.letters, a.ids, a.review]) === JSON.stringify([b.byPath, b.folders, b.files, b.letters, b.ids, b.review])
+/**
+ * The same vault's data (every part but `version`). YAZ-5596 (6): two data made from the SAME index object (the sync
+ * engine's, which the screens share) have the same records: only the file list and the small settings are compared,
+ * never the records serialised twice (about 2 x 1.9 MB in a big vault). Else every part is compared.
+ */
+export const sameVaultData = (a: VaultData, b: VaultData): boolean => {
+  if (a.vault !== b.vault || a.commit !== b.commit || a.records.length !== b.records.length || a.files.length !== b.files.length) return false
+  const index = madeFrom.get(a)
+  if (index === undefined || index !== madeFrom.get(b)) return JSON.stringify([a.byPath, a.folders, a.files, a.letters, a.ids, a.review]) === JSON.stringify([b.byPath, b.folders, b.files, b.letters, b.ids, b.review])
+  return a.files.every((f, i) => f === b.files[i]) && JSON.stringify([a.letters, a.ids, a.review]) === JSON.stringify([b.letters, b.ids, b.review])
+}
 /** `next`, or the held data when it is the same: the one object the screens share, and remembered. */
 function hold(store: VaultStore, next: VaultData): VaultData {
   const last = heldVaultData(store, next.vault)
@@ -134,7 +142,8 @@ export function useVaultData(): VaultData | null {
         if (live && mine === generation) setData(kept)
       })
     }
-    load()
+    // YAZ-5596 (5): the index the sync engine holds, when it has it: no read of a copy of the stored index.
+    load(sync.index?.(vaultKey) ?? undefined)
     const off = sync.subscribe((event) => {
       if (event.type === 'changed' && event.vault === vaultKey) load(event.index)
     })

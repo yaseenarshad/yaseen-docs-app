@@ -55,6 +55,11 @@ export interface ShellSync {
   review?(): Promise<ReviewLink | null>
   /** Resolves when no pass runs, also a pass of a vault that was open before (the erase waits for it). */
   idle(): Promise<void>
+  /**
+   * YAZ-5596 (5): the index the sync engine holds for `vault` when it is the open vault, else null (the engine has
+   * not loaded, or not read it yet). A screen uses it instead of reading its own copy of the stored index.
+   */
+  index?(vault: string): PhoneIndex | null
 }
 
 export const IDLE: ShellSyncState = Object.freeze({ status: 'idle', vault: null, problem: null, retryAt: null, progress: null, ready: false })

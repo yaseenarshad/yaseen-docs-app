@@ -37,6 +37,21 @@ export class StaleWriteError extends Error {
   }
 }
 
+/**
+ * YAZ-5596 (1): the phone's storage did not answer in time. iOS can leave an IndexedDB request or open with no answer
+ * at all after the phone wakes; the backend ends the wait, drops that connection, and the next call opens a new one.
+ * Callers treat it as a failed call: nothing was written that they can count on, and what waits stays waiting.
+ */
+export class StorageTimeoutError extends Error {
+  constructor(what = 'request') {
+    super(`The phone's storage did not answer in time (${what})`)
+    this.name = 'StorageTimeoutError'
+  }
+}
+
+/** True for `StorageTimeoutError`, also across a copy of the class (by its name). */
+export const isStorageTimeout = (error: unknown): boolean => error instanceof Error && error.name === 'StorageTimeoutError'
+
 /** The table an op touches. */
 export const tableOf = (op: Op): Table => ('put' in op ? op.put : 'del' in op ? op.del : 'check' in op ? op.check : op.clear)
 

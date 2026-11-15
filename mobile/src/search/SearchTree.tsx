@@ -39,6 +39,23 @@ export const kindWord = (kind: TreeRow['kind'], page: string): string => (kind =
  * folder opens and closes with a tap, to any depth; the open folders stay open while the app runs. A page opens in the
  * reader, a card file in the card view. Only the rows of open folders are drawn, `shown` at a time (the tab's "Show more", kept while a page is open).
  */
+/**
+ * YAZ-5596 (13): the vault's tree and its folder rows, built once for each vault data (a new object when the index,
+ * the commit or the settings change): a return to Search, or another draw, builds nothing again.
+ */
+const trees = new WeakMap<VaultData, ReturnType<typeof buildTree>>()
+const treeOf = (data: VaultData) => {
+  let tree = trees.get(data)
+  if (tree === undefined) trees.set(data, (tree = buildTree(recordsWithBoards(data), data.folders)))
+  return tree
+}
+const folderRowsCache = new WeakMap<VaultData, SearchCandidate[]>()
+const folderRowsFor = (data: VaultData) => {
+  let rows = folderRowsCache.get(data)
+  if (rows === undefined) folderRowsCache.set(data, (rows = folderRowsOf(data)))
+  return rows
+}
+
 export default function SearchTree({ data, cards, shown, onMore, scope }: { data: VaultData; cards: boolean; shown: number; onMore: () => void; scope: Scope | null }) {
   // A list filter on (Favorites): that list, as the Mac's tab of it draws it.
   if (scope !== null) return <ListTree data={data} cards={cards} shown={shown} onMore={onMore} scope={scope} />
@@ -58,7 +75,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
   const { hold, layer } = useFolderHold()
   // The vault's own icons and colours (icons.json).
   const icons = useTreeIcons(app.services.store, data)
-  const tree = useMemo(() => buildTree(recordsWithBoards(data), data.folders), [data])
+  const tree = treeOf(data)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => visibleRows(tree, open, cards ? undefined : (r) => r.kind !== 'card'), [tree, open, cards, turn])
   const toggle = useCallback(
@@ -125,7 +142,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   useFolds()
   const flipped = flipsOf(key)
   const vault = vaultNodes(data)
-  const folderRows = useMemo(() => folderRowsOf(data), [data])
+  const folderRows = folderRowsFor(data)
   // With a list on, the folders of that list only (`rows` came already cut to it, `Search.tsx`).
   const folders = useMemo(() => folderHits(scope === null ? folderRows : folderRows.filter((r) => scope.has(r.path)), query, type), [folderRows, query, type, scope])
   const found = foundTreeOf(vault, rows, folders, query)

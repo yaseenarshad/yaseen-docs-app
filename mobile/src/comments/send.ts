@@ -17,6 +17,8 @@ export interface CommentSendOptions {
   box: CommentBox
   /** One sync pass that brings the stored copy to the newest head (the engine's pass inside its lane). */
   pass: () => Promise<unknown>
+  /** YAZ-5596 (5): the index the sync engine holds (no read of the stored one when it is of the checkpoint's commit). */
+  index?: () => PhoneIndex | null
   now?: () => number
 }
 
@@ -65,7 +67,7 @@ export async function sendComments(options: CommentSendOptions): Promise<Comment
       await box.refresh()
       const list = due()
       if (list.length === 0) return report
-      const plan = await planComments(store, vault, list, await landedTicks(remote, store, vault, list, notLanded))
+      const plan = await planComments(store, vault, list, await landedTicks(remote, store, vault, list, notLanded), options.index)
       if (plan.changes.length > 0) {
         // From here GitHub may hold them: Undo can no longer take them back. One that Undo took meanwhile: plan again.
         const marked = await box.markTried(plan.added.map((c) => c.id))
@@ -180,7 +182,7 @@ async function landedTicks(remote: GithubRemote, store: VaultStore, vault: strin
 }
 
 /** Step 2 and 3 on the stored copy, which the pass just brought to the head. `landed`: ticks done already (W3). */
-async function planComments(store: VaultStore, vault: string, list: readonly WaitingComment[], landed: ReadonlySet<string> = new Set()): Promise<CommentPlan> {
+async function planComments(store: VaultStore, vault: string, list: readonly WaitingComment[], landed: ReadonlySet<string> = new Set(), heldIndex?: () => PhoneIndex | null): Promise<CommentPlan> {
   const checkpoint = await store.checkpoint(vault)
   if (checkpoint === null) throw new Error('The phone has no full copy of the vault yet')
   const plan: CommentPlan = { parent: checkpoint.commit, changes: [], added: [], already: [], refused: [], moved: [] }
@@ -193,7 +195,8 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
     let path = c.path
     if (checkpoint.shas[path] === undefined && c.was !== undefined) {
       if (index === undefined) {
-        const saved = await store.getState<PhoneIndex>(vault, INDEX_STATE)
+        const held = heldIndex?.() ?? null
+        const saved = held !== null && held.commit === checkpoint.commit ? held : await store.getState<PhoneIndex>(vault, INDEX_STATE)
         index = saved !== undefined && saved.commit === checkpoint.commit ? saved : null
       }
       const to = movedTo(c.was, checkpoint.shas, index)

@@ -1,6 +1,7 @@
 /** What only the IndexedDB backend has to do: open again after iOS drops the connection, and survive a newer schema. */
 import { IDBFactory, IDBKeyRange, forceCloseDatabase } from 'fake-indexeddb'
 import { describe, expect, it } from 'vitest'
+import { StorageTimeoutError } from './backend'
 import { idbBackend } from './idbBackend'
 import { openVaultStore } from './vaultStore'
 
@@ -78,3 +79,55 @@ describe('idbBackend: a database from a newer app (its schema number is higher)'
   })
 })
 
+
+/** A request or transaction that never fires an event: what iOS gives after a wake (WebKit's lost connection family). */
+function silentTransaction() {
+  const silent = () => new EventTarget()
+  const tx = new EventTarget() as EventTarget & { objectStore: () => unknown; abort: () => void; aborted: boolean }
+  tx.aborted = false
+  tx.objectStore = () => ({ get: silent, getAll: silent, getAllKeys: silent, put: silent, delete: silent, clear: silent })
+  tx.abort = () => void (tx.aborted = true)
+  return tx
+}
+
+describe('idbBackend: a call with no answer (YAZ-5596 item 1)', () => {
+  it('a read that never answers fails with StorageTimeoutError, and the next call opens a new connection and works', async () => {
+    const { factory, opened } = watchedFactory()
+    const backend = idbBackend({ factory, keyRange: IDBKeyRange, timeoutMs: 50 })
+    const store = await openVaultStore(backend)
+    await store.setState(A, 'answers', [1])
+    const db = opened[0]
+    const real = db.transaction.bind(db)
+    db.transaction = (() => silentTransaction()) as unknown as typeof db.transaction
+    await expect(store.getState(A, 'answers')).rejects.toBeInstanceOf(StorageTimeoutError)
+    db.transaction = real
+    // The stuck connection was dropped: the next call opened a new one, and the stored value is there.
+    expect(await store.getState(A, 'answers')).toEqual([1])
+    expect(opened).toHaveLength(2)
+  })
+
+  it('a write that never answers fails, is aborted, and the value is written on the next try', async () => {
+    const { factory, opened } = watchedFactory()
+    const store = await openVaultStore(idbBackend({ factory, keyRange: IDBKeyRange, timeoutMs: 50 }))
+    await store.setState(A, 'answers', [1])
+    const db = opened[0]
+    const silent = silentTransaction()
+    db.transaction = (() => silent) as unknown as typeof db.transaction
+    await expect(store.setState(A, 'answers', [1, 2])).rejects.toBeInstanceOf(StorageTimeoutError)
+    expect(silent.aborted).toBe(true)
+    await store.setState(A, 'answers', [1, 2])
+    expect(await store.getState(A, 'answers')).toEqual([1, 2])
+  })
+
+  it('an open that never answers fails, and the next call opens again', async () => {
+    const factory = new IDBFactory()
+    const open = factory.open.bind(factory)
+    let silent = true
+    factory.open = (name: string, version?: number) => (silent ? (new EventTarget() as unknown as IDBOpenDBRequest) : open(name, version))
+    const backend = idbBackend({ factory, keyRange: IDBKeyRange, timeoutMs: 50 })
+    await expect(backend.get('meta', 'format')).rejects.toBeInstanceOf(StorageTimeoutError)
+    silent = false
+    await backend.apply([{ put: 'meta', key: 'x', value: 1 }])
+    expect(await backend.get('meta', 'x')).toBe(1)
+  })
+})

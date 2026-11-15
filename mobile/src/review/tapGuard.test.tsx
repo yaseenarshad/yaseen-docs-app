@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { SEEN_MS, guardStep, type GuardState } from './tapGuard'
+import { SAVE_LIMIT_MS, SEEN_MS, guardStep, type GuardState } from './tapGuard'
 import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 /** YAZ-5266: the tap guard is a small state machine; every path out of "answering" comes back to "ready". */
@@ -154,5 +154,40 @@ describe('the guard on the screen (YAZ-5266)', () => {
     await press(h, 'Undo')
     expect(h.head()).toBe('GD-1')
     expect(reviews(h)).toEqual([])
+  })
+})
+
+describe('YAZ-5596 item 2: a save with no answer (iOS storage after a wake)', () => {
+  it('after SAVE_LIMIT_MS the card stays and takes taps again; the save goes on, and when it lands the answer counts once', async () => {
+    // The 10 s limit, made short for the test (the other timers keep their times).
+    const realSetTimeout = globalThis.setTimeout
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => realSetTimeout(fn, ms === SAVE_LIMIT_MS ? 60 : ms, ...rest)) as typeof setTimeout)
+    try {
+      h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...cards(2)) })
+      const add = h.answers.add.bind(h.answers)
+      let release: () => void = () => {}
+      ;(h.answers as { add: unknown }).add = (entries: Parameters<typeof add>[0]) => new Promise((resolve, reject) => (release = () => void add(entries).then(resolve, reject)))
+      await press(h, 'Remembered')
+      expect(guarded(h)).toBe(true)
+      await real(120)
+      // The save has no answer: the taps act again, the card stays, and the screen says so.
+      expect(guarded(h)).toBe(false)
+      expect(h.head()).toBe('GD-1')
+      expect(h.host.querySelector('.review__notice')?.textContent).toBe('That did not save yet. It will try again.')
+      const before = h.cardText()
+      await act(async () => h!.host.querySelector<HTMLElement>('.review__card')!.click())
+      await h.settle()
+      expect(h.cardText()).not.toBe(before)
+      // The storage answers: the answer lands once, and the next card shows.
+      ;(h.answers as { add: unknown }).add = add
+      await act(async () => release())
+      await h.settle()
+      await real(SEEN_MS + 50)
+      expect(reviews(h)).toEqual(['GD-1'])
+      expect(h.head()).toBe('GD-2')
+      expect(h.host.querySelector('.review__notice')).toBeNull()
+    } finally {
+      spy.mockRestore()
+    }
   })
 })

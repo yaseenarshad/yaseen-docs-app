@@ -53,9 +53,31 @@ function laterDay(now: number, days: number): number {
  * in 8 days is out. The window moves at local midnight. Each card once, by holder and place.
  */
 export function cardsAhead(records: Readonly<Record<string, IndexRecord>>, settings: ReviewSettings, now: number, options: AheadOptions = {}): AheadCard[] {
-  if (!settings.enabled) return []
-  const pages = Object.values(records)
+  const window = aheadWindow(records, settings, now, options)
+  for (const r of window.pages) window.take(r)
+  return window.out
+}
+
+/** How many files the due pass reads between two slices (YAZ-5596 item 8). */
+const PAGES_PER_SLICE = 50
+
+/** `cardsAhead` with a slice after each `PAGES_PER_SLICE` files: no long task on a new day in a big vault (YAZ-5596 item 8). */
+async function cardsAheadSliced(records: Readonly<Record<string, IndexRecord>>, settings: ReviewSettings, now: number, options: AheadOptions, slice?: () => Promise<void>): Promise<AheadCard[]> {
+  const window = aheadWindow(records, settings, now, options)
+  await slice?.()
+  let n = 0
+  for (const r of window.pages) {
+    window.take(r)
+    if (++n % PAGES_PER_SLICE === 0) await slice?.()
+  }
+  return window.out
+}
+
+/** Today's queue taken; `take` adds one file's cards due in the window. */
+function aheadWindow(records: Readonly<Record<string, IndexRecord>>, settings: ReviewSettings, now: number, options: AheadOptions) {
   const out: AheadCard[] = []
+  if (!settings.enabled) return { pages: [] as IndexRecord[], out, take: (_: IndexRecord) => {} }
+  const pages = Object.values(records)
   const seen = new Set<string>()
   const add = (path: string, index: number, id: string) => {
     const key = `${path}\n${index}`
@@ -65,14 +87,14 @@ export function cardsAhead(records: Readonly<Record<string, IndexRecord>>, setti
   }
   for (const c of cardPlan(pages, settings, now, '', undefined, options.letters, options.upNextTaken ?? [], options.added ?? NOTHING_ADDED).queue) add(c.path, c.index, c.id)
   const horizon = laterDay(now, options.days ?? MEDIA_AHEAD_DAYS)
-  for (const r of pages) {
+  const take = (r: IndexRecord) => {
     r.cards?.forEach((card, index) => {
       if (card.off || card.id === null || card.reviews.length === 0) return
       // `isCardDue` at the window's last day: due before its local midnight. A new card's due is NaN: never here.
       if (isCardDue(cardDueAt(card.reviews, settings), horizon)) add(r.path, index, card.id)
     })
   }
-  return out
+  return { pages, out, take }
 }
 
 export interface AheadInput extends AheadOptions {
@@ -113,7 +135,7 @@ export async function aheadPlan(input: AheadInput): Promise<AheadPlan> {
       for (const card of r.cards) if (card.reviews.length > 0) cardDueAt(card.reviews, input.settings)
       await input.slice?.()
     }
-  const cards = cardsAhead(input.records, input.settings, input.now, input)
+  const cards = await cardsAheadSliced(input.records, input.settings, input.now, input, input.slice)
   await input.slice?.()
   const resolve = makeAssetResolver([...input.sizes.keys()])
   await input.slice?.()

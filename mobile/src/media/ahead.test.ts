@@ -88,6 +88,8 @@ interface Options {
   parallel?: number
   /** The browser's own `URL.createObjectURL` and `URL.revokeObjectURL` (3D6 counts them). */
   realUrls?: boolean
+  /** The idle moment the round after a pass waits for. Default here: at once. */
+  whenIdle?: (fn: () => void) => void
 }
 
 async function setup(files: Record<string, string | Uint8Array>, options: Options = {}) {
@@ -165,6 +167,8 @@ async function setup(files: Record<string, string | Uint8Array>, options: Option
     store,
     clock,
     yieldToUi: async () => {},
+    // The round at once after a pass (the app waits for an idle moment: its own test below).
+    whenIdle: options.whenIdle ?? ((fn) => fn()),
     parallel: options.parallel,
     ...(options.realUrls === true
       ? {}
@@ -210,6 +214,24 @@ const DEMO = {
   'fifth.mp3': png(3),
   'unused.png': png(4),
 }
+
+describe('YAZ-5596 item 7: the round after a pass waits for an idle moment', () => {
+  it('no download with the pass; the round starts when the browser is idle, and idle() waits for it', async () => {
+    const waiting: (() => void)[] = []
+    const t = await setup(DEMO, { whenIdle: (fn) => void waiting.push(fn) })
+    await t.engine.open(MAIN)
+    await t.engine.idle()
+    expect(t.engine.state().status).toBe('synced')
+    expect(waiting).toHaveLength(1)
+    expect(t.pictureBlobs()).toBe(0)
+    expect(await t.has('flags/fr.png')).toBe(false)
+    const done = t.media.idle()
+    waiting.shift()!()
+    await done
+    await t.media.idle()
+    expect(await t.has('flags/fr.png')).toBe(true)
+  })
+})
 
 describe('3D: media ahead of time (decision 6)', () => {
   it('the test`s reviews: NEAR is due inside 7 days, FAR outside', () => {

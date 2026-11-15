@@ -6,7 +6,9 @@ import { POLL_MS, SEND_AFTER_MS } from '../sync/cadence'
 import { createSyncEngine } from '../sync/engine'
 import { githubRemote } from '../sync/githubRemote'
 import { VAULT, fakeClock, pageText } from '../sync/testing'
+import { StorageTimeoutError } from '../store'
 import { createAnswers } from './answers'
+import { ANSWERS_STATE } from './outbox'
 import { VAULT_ROW, answer, answersSetup, at } from './testing'
 
 describe('when the list is sent (decision 4)', () => {
@@ -339,3 +341,46 @@ describe('YAZ-5073 checker gap 7: a send that needs the person does not repeat b
   }
 })
 
+
+describe('YAZ-5596 item 1: the phone storage that did not answer (iOS after a wake)', () => {
+  it('a send that fails on storage keeps the answer waiting, and the engine\'s next good poll sends it', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    const real = t.store.setState.bind(t.store)
+    let fail = true
+    t.store.setState = async (scope, name, value) => {
+      if (fail && name === ANSWERS_STATE) {
+        fail = false
+        throw new StorageTimeoutError()
+      }
+      return real(scope, name, value)
+    }
+    await t.tick(SEND_AFTER_MS)
+    expect(t.answers.state()).toMatchObject({ waiting: 1, problem: 'FAILED' })
+    await t.tick(POLL_MS)
+    expect(t.commits()).toBe(1)
+    expect(t.answers.state()).toMatchObject({ waiting: 0, problem: null })
+  })
+
+  it('the stored list that did not load at the start loads at the next answer, and its waiting answers stay', async () => {
+    const t = await answersSetup()
+    await t.add(answer('NC-2', 1))
+    t.engine.setVisible(false)
+    // A new start of the app: the first read of the list has no answer.
+    const real = t.store.getState.bind(t.store)
+    let fail = true
+    t.store.getState = (async (scope: string, name: string) => {
+      if (fail && name === ANSWERS_STATE) {
+        fail = false
+        throw new StorageTimeoutError()
+      }
+      return real(scope, name)
+    }) as typeof t.store.getState
+    const again = createAnswers({ store: t.store, engine: t.engine, clock: t.clock, yieldToUi: async () => {} })
+    await again.idle()
+    expect(again.state().waiting).toBe(0)
+    await again.add([{ op: answer('NC-3', 2), path: 'a.md', title: 'Title NC-3' }])
+    expect(again.waiting().map((w) => w.op.id)).toEqual(['NC-2', 'NC-3'])
+    again.stop()
+  })
+})

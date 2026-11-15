@@ -4,7 +4,7 @@ import type { Scope } from '../search/lists'
 import { useApp } from '../app/AppState'
 import { buildRows, findRows, typeTest, type PhoneType } from '../search/searchRun'
 import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../search/searchState'
-import { useVaultData } from '../search/vaultData'
+import { useVaultData, type VaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import '../search/search.css'
 import { recordsWithBoards } from '../drawing/boardFiles'
@@ -39,6 +39,16 @@ const STEP = 100
  * A Type on shows its rows in that same result tree, with text or not, in a list too (Favorites + Cards):
  * the parents of each row open, so the folder it sits in shows. The fold button folds that tree.
  */
+/**
+ * YAZ-5596 (13): the search rows of the last vault data, and the last search's result, kept for the next mount of
+ * Search (a tab switch, a return to the app): no rebuild and no search again while the data (a new object when the
+ * index, the commit or the settings change), the list, the query and the Type are the same.
+ */
+let builtRows: { data: VaultData; rows: SearchCandidate[] } | null = null
+let lastFound: { pool: readonly SearchCandidate[]; query: string; kind: string; found: SearchCandidate[] } | null = null
+const rowsFor = (data: VaultData | null) => (data !== null && builtRows?.data === data ? builtRows.rows : null)
+const foundFor = (pool: readonly SearchCandidate[] | null, query: string, kind: PhoneType) => (pool !== null && lastFound !== null && lastFound.pool === pool && lastFound.query === query && lastFound.kind === kind.join('+') ? lastFound.found : null)
+
 export function Search() {
   const app = useApp()
   const { unit, vaultKey } = app
@@ -47,8 +57,8 @@ export function Search() {
   const [query, setQuery] = useState(held.query)
   const [type, setType] = useState<PhoneType>(held.type)
   const [scope, setScope] = useState<Scope | null>(null)
-  const [rows, setRows] = useState<SearchCandidate[] | null>(null)
-  const [found, setFound] = useState<SearchCandidate[] | null>(null)
+  const [rows, setRows] = useState<SearchCandidate[] | null>(() => rowsFor(data))
+  const [found, setFound] = useState<SearchCandidate[] | null>(() => foundFor(rowsFor(data), held.query, held.type))
   const [shown, setShown] = useState(held.shown ?? STEP)
   /** The query and Type the rows shown are for: a new one starts the list again at its top. */
   const listOf = useRef(`${held.query}\n${held.type.join('+')}`)
@@ -68,8 +78,11 @@ export function Search() {
   // The rows, built again when the index changes (R4: a new page is in search after the pass that brings it).
   useEffect(() => {
     if (data === null) return
+    const kept = rowsFor(data)
+    if (kept !== null) return setRows(kept)
     let live = true
     void buildRows({ records: recordsWithBoards(data), letters: data.letters, cards: data.review.enabled }, uiSlicer(), () => live).then((built) => {
+      if (built !== null) builtRows = { data, rows: built }
       if (live && built !== null) setRows(built)
     })
     return () => {
@@ -86,8 +99,11 @@ export function Search() {
       keepPlace(STEP, 0)
     }
     if (pool === null || query.trim() === '') return setFound(null)
+    const kept = foundFor(pool, query, kind)
+    if (kept !== null) return setFound(kept)
     let live = true
     void findRows(pool, query, kind, uiSlicer(), () => live).then((next) => {
+      if (next !== null) lastFound = { pool, query, kind: kind.join('+'), found: next }
       if (live && next !== null) setFound(next)
     })
     return () => {
