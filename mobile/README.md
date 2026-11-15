@@ -164,8 +164,13 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
   open page of an old version still loads its lazy chunks; with no page of it left, the next open removes it.
 * **Updates** (`src/pwa/updates.ts`, `safeMoment.ts`, `UpdateLine.tsx`): a new version downloads in the background.
   It takes over at the next open, before the app runs (`main.tsx`), or after "A new version is ready." → Restart, or
-  when the app comes back after 5 minutes away; never while answers wait to be sent, never on the Review tab or over
-  a form unless the person taps Restart.
+  by itself when the app is idle (YAZ-5555): the first time it comes back to the foreground after 30 s or more hidden,
+  once the new version took over, and only when nothing is unsaved. The rule is written once, at the top of
+  `safeMoment.ts`; keep this paragraph in step with it. Held (no restart by itself; it waits for the next return):
+  answers, comments, ticks or friends removes that wait to be written; words in a comment box not sent; the Review
+  tab or a review in progress; a screen or form over the tabs; the first download. Restart (the active case) still
+  works on the Review tab, over waiting comments; never while answers wait, a comment box holds words, or the first
+  download runs. Settings shows the running build at its top ("Build 8432fd9 · 15 Nov, 14:02").
   **Keep this.** It is how an installed home-screen app gets each new build: a person never has to delete and add the
   app again. Every publish must keep `UpdateLine.tsx` ("A new version is ready." → Restart), the `no-cache` rule on
   `sw.js`, and `updateViaCache: "none"`. To test it: publish, close the app, open it again; the line shows, then Restart.

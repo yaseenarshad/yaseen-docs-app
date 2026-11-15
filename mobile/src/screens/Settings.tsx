@@ -3,7 +3,7 @@ import { useApp } from '../app/AppState'
 import { deviceZone, isTimeZone } from '@shared/timeZone'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
-import { BUILD, versionWords } from '../settings/buildInfo'
+import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
 import { vaultId, type PhoneVault } from '../store'
 import { Confirm } from './Confirm'
 import { eraseQuestion, unsentOnPhone, waitingRemoves } from './eraseWords'
@@ -13,6 +13,8 @@ import { lazyScreen } from './LazyScreen'
 
 /** YAZ-5446: the list of What's new, its own chunk: it loads when the person first opens it, never in the first load. */
 const WhatsNewList = lazyScreen(() => import('../settings/WhatsNewList'), { waiting: <p className="muted" aria-busy="true">Loading…</p> })
+/** YAZ-5559: Vault health, read only, its own chunk (with the shared list of the vault's settings files). */
+const VaultHealth = lazyScreen(() => import('../settings/VaultHealth'), { waiting: <p className="muted" aria-busy="true">Vault health…</p> })
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19): the vaults (switch, add, replace the token, reset the
@@ -46,6 +48,8 @@ export function Settings() {
 
   return (
     <Frame title="Settings" back={() => app.go({ type: 'back' })} tabs={app.phase === 'ready'}>
+      {/* YAZ-5555: which build runs, seen at once (the Version row below has the whole words). */}
+      <p className="muted settings__build">{buildLine(BUILD)}</p>
       <InstallHint />
       <h2 className="section">Vaults</h2>
       <ul className="rows" aria-label="Vaults">
@@ -56,6 +60,7 @@ export function Settings() {
       <button type="button" className="btn btn--wide" style={{ marginTop: 10 }} onClick={() => app.go({ type: 'open', route: { kind: 'add-vault' } })}>
         Add vault
       </button>
+      {app.vaultKey !== null && <VaultHealth />}
 
       <FriendsPart />
 

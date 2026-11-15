@@ -13,3 +13,6 @@ export function keepDraft(path: string, words: string): void {
 
 /** Does the box of `path` hold words not sent? */
 export const hasUnsentDraft = (path: string): boolean => drafts.has(path)
+
+/** YAZ-5555: does ANY comment box hold words not sent? Then a new version never restarts the app by itself. */
+export const hasAnyUnsentDraft = (): boolean => drafts.size > 0

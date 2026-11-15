@@ -90,6 +90,11 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     }
     await saveVaultList(store, { vaults: name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1), open: vaultId(VAULTS[0]) })
   }
+  // YAZ-5559: the open vault's settings files, made up: all but the table look and the icons, and a link clicks file
+  // that is not JSON (Vault health then says "Using defaults: link clicks, table look, icons").
+  if (name === 'settings-health')
+    for (const { file, label } of (await import('@shared/vaultSettingsFiles')).VAULT_SETTINGS_FILES)
+      if (label !== 'table look' && label !== 'icons') await store.write(vaultId(VAULTS[0]), `.yaseendocs/${file}`, label === 'link clicks' ? '{ not json' : '{"version":1}')
   const sync = fakeSync({ download: name === 'download' })
   const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
   root.render(<App services={services} />)
@@ -138,6 +143,15 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       for (let i = 0; i < 100 && document.querySelector('.settings__version') === null; i++) await wait(20)
       if (name === 'erase') press('Sign out and erase this phone')
       break
+    case 'settings-health': {
+      // YAZ-5559: Settings › Vault health, its list open.
+      press('Settings')
+      for (let i = 0; i < 100 && document.querySelector('.vault-health__toggle') === null; i++) await wait(20)
+      document.querySelector<HTMLButtonElement>('.vault-health__toggle')?.click()
+      for (let i = 0; i < 100 && document.querySelector('#vault-health-list') === null; i++) await wait(20)
+      document.querySelector('.vault-health')?.scrollIntoView({ block: 'start' })
+      break
+    }
   }
   await wait(50)
   document.documentElement.dataset.fixtureReady = name
