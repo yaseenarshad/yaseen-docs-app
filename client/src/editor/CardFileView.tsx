@@ -428,9 +428,11 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               }
             />
           )}
-          {/* YAZ-5466: the page's comments block, under the card and its strip; the file's front matter is its store. */}
-          {commentsOrder !== undefined && onChangeCommentsOrder !== undefined && <CommentsSection file={{ path, content }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />}
         </div>
+        {/* YAZ-5466: the page's comments block, under the card and its strip; the file's front matter is its store. Round 3:
+            it sits where a page has it, in the scroller after the column (as after `.editor-instance`), in its own
+            column: the page's left edge, width and room above, never the card's width. */}
+        {commentsOrder !== undefined && onChangeCommentsOrder !== undefined && <CommentsSection file={{ path, content }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} />}
       </div>
     </>
   )

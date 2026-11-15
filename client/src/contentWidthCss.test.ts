@@ -48,6 +48,7 @@ describe('content-width CSS contract (YAZ-1176)', () => {
     expect(zoomRules).toHaveLength(1)
     expect(zoomRules[0]![1]!.split(',').map((s) => s.trim())).toEqual([
       '.editor-host > :not(.editor-mount) > *',
+      '.card-file > * > *',
       '.editor-instance .milkdown > .ProseMirror',
       '.card-inbox__panel',
     ])

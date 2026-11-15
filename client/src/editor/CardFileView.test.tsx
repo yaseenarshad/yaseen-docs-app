@@ -868,7 +868,7 @@ describe('comments on a card file (YAZ-5466)', () => {
     'comments:\n  - id: aaaaaaaa\n    n: 1\n    at: 2026-11-14T10:00:00Z\n    body: Is Paris right?\n  - id: bbbbbbbb\n    n: 2\n    at: 2026-11-14T11:00:00Z\n    body: Check the spelling\n'
   const WITH = `---\nkind: card\n${ENTRIES}---\n${CARD}`
   const cardPart = (content: string) => content.slice(content.indexOf('```card'))
-  const block = () => el.querySelector<HTMLElement>('.card-file__page > section.comments')
+  const block = () => el.querySelector<HTMLElement>('.card-file > section.comments')
   const open = () => {
     const header = block()!.querySelector<HTMLButtonElement>('button.comments__header')!
     if (header.getAttribute('aria-expanded') !== 'true') act(() => header.click())
@@ -890,12 +890,18 @@ describe('comments on a card file (YAZ-5466)', () => {
   const asks = () => el.querySelector('.read-only-chip__ask p')?.textContent ?? null
   const answer = (label: string) => act(() => [...el.querySelectorAll<HTMLButtonElement>('.read-only-chip__ask button')].find((b) => b.textContent === label)!.click())
 
-  it('the block sits under the card and its strip, in the tab`s column: the page`s own component, its header "Comments (2)"', async () => {
+  it('the block sits under the card and its strip, where a page has it: the page`s own component, its header "Comments (2)"', async () => {
     await mount(WITH, { comments: 'oldest' })
     expect(block()).not.toBeNull()
-    // After the card and after its strip, in the tab's column; the last thing in it.
+    // After the card and after its strip; the last thing in the tab's scroller.
     for (const before of ['.card-screen', '.card-reviews--strip']) expect(el.querySelector(before)!.compareDocumentPosition(block()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(block()!.nextElementSibling).toBeNull()
+    // Round 3 (Yaseen: "not to the left and looking exactly like pages"): a page's shape, scroller › column, then the
+    // comments in their own page column (`Editor`: `.editor-host` › `.editor-instance`, then `.comments`). Never inside
+    // the card's column, where Card width capped it and centred it.
+    expect(block()!.parentElement!.matches('.card-file[data-card-file-body]')).toBe(true)
+    expect(block()!.previousElementSibling!.matches('.card-file__page')).toBe(true)
+    expect(el.querySelector('.card-file__page section.comments')).toBeNull()
     expect(block()!.querySelector('.comments__title')?.textContent).toBe('Comments (2)')
     expect(items().map((a) => a.querySelector('.comments__summary')?.textContent)).toEqual(['Is Paris right?', 'Check the spelling'])
     // Not in the card itself, nor in the strip.

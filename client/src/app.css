@@ -200,6 +200,9 @@ button {
    CrepeHost appends its `.editor-instance`, and — for markdown files — the comment stream and the
    "Linked mentions" section (Links D, GRO-2193; styled by links/backlinks.css), all of which
    therefore scroll WITH the page. A folder's tab reuses it for the folder view (YAZ-2290). */
+/* A card file's tab (YAZ-5037, `CardFileView.tsx`) is the same scroller (YAZ-5466 round 3): the same tail under its
+   last block, so its comments end where a page's do. */
+.card-file,
 .editor-host {
   flex: 1;
   min-height: 0;
@@ -236,6 +239,7 @@ button {
    and its card's frame (`.card-inbox__panel`: text, title band, sides, pictures, spacing) scales; its bar, the row above
    the card and the buttons stay at 100%, as a page's chrome does. The card's width grows with it (cardScreens.css). */
 .editor-host > :not(.editor-mount) > *,
+.card-file > * > *,
 .editor-instance .milkdown > .ProseMirror,
 .card-inbox__panel {
   zoom: var(--document-zoom, 1);
@@ -631,7 +635,10 @@ button {
   cursor: default;
 }
 
-/* Content column: centred, wide on large windows, fills the host on narrow ones (GRO-2007). */
+/* Content column: centred, wide on large windows, fills the host on narrow ones (GRO-2007). A card file's column
+   (`.card-file__page`, YAZ-5466 round 3) is this same column: the card at the page text's left edge, and the comments
+   under it as far below as under a page's text. */
+.card-file__page,
 .editor-instance {
   width: 100%;
   max-width: var(--content-max-width);

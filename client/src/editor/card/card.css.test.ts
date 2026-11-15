@@ -276,7 +276,29 @@ it('YAZ-5144 round 3: Card width is ONE rule for a card in a page (written there
   // No other place sets it: the window only centres; a card in a page keeps its left edge.
   expect(rules(screens, '.explore__body--card').some((r) => /max-width/.test(r.body))).toBe(false)
   expect(rules(cardCss, '.milkdown .card').some((r) => /margin-inline:\s*auto/.test(r.body))).toBe(false)
-  expect(rules(read('../cardFileView.css'), '.card-file__page').find((r) => r.selector === '.card-file__page')?.body).toMatch(/max-width:\s*var\(--content-max-width\)/)
+  // A card file's column is a page's column (YAZ-5466 round 3): the one `.editor-instance` rule, not a copy.
+  expect(rules(read('../../app.css'), '.card-file__page').find((r) => r.selector.split(/,\s*/).includes('.card-file__page'))?.selector.split(/,\s*/)).toEqual(['.card-file__page', '.editor-instance'])
+})
+
+it('YAZ-5466 round 3: a card file`s comments sit exactly as a page`s: the page`s scroller, its column, its comments column, its tail; no rule of the card file moves them', () => {
+  const app = read('../../app.css')
+  const fileCss = read('../cardFileView.css')
+  const selectorsOf = (css: string, sel: string) => rules(css, sel).find((r) => r.selector.split(/,\s*/).includes(sel))?.selector.split(/,\s*/)
+  // The scroller: `.editor-host`'s own rule, its 64 px tail with it.
+  expect(selectorsOf(app, '.card-file')).toEqual(['.card-file', '.editor-host'])
+  // The column: `.editor-instance`'s, its 48 px sides and its 120 px room under the text; the card file adds only the
+  // folder path's room on top.
+  const column = rules(app, '.card-file__page').find((r) => r.selector.includes('.editor-instance'))!
+  expect(column.body).toMatch(/max-width:\s*var\(--content-max-width\)/)
+  expect(column.body).toMatch(/padding:\s*0 48px 120px/)
+  const own = rules(fileCss, '.card-file__page').map((r) => r.body.replace(/\/\*[\s\S]*?\*\//g, '').trim())
+  expect(own).toEqual(['padding-top: 8px;'])
+  // No card-file rule reaches the comments block: it keeps `comments.css`'s page column (and Card width never caps it).
+  expect(rules(fileCss, '.comments')).toEqual([])
+  expect(rules(cardCss, '.comments')).toEqual([])
+  // The zoom, as a page's: on what is inside each shell (scroller › shell › content), never on a shell.
+  expect(rules(app, '.card-file > * > *').some((r) => /zoom:\s*var\(--document-zoom, 1\)/.test(r.body))).toBe(true)
+  expect(rules(fileCss, '.card-file__page > *')).toEqual([])
 })
 
 it('YAZ-5145 round 3: a page locked by Read only (`data-read-only`, a page tab with its caret) shows the card\'s Edit card, which asks first; a preview (no caret) hides it', () => {

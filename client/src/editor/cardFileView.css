@@ -3,18 +3,14 @@
  * folder path small and muted, then the card as a page shows it (YAZ-5392: its top bar, its title band, its sides;
  * `card.css`), its Reviews, "Linked mentions" and "Embedded in". Light and dark from the app's tokens.
  */
+/* The scroller is a page's (`.editor-host` in app.css: its tail too); the column is a page's (`.editor-instance`),
+   with the folder path's room on top. Card width caps what is in the column (`card.css`, YAZ-5144 round 3). The
+   comments block (YAZ-5466 round 3) is the column's sibling, in its own page column (`comments.css`), as in a page. */
 .card-file {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
   outline: none;
 }
-.card-file__page {
-  width: 100%;
-  /* A page's column; Card width caps what is in it (`card.css`, YAZ-5144 round 3). */
-  max-width: var(--content-max-width);
-  margin: 0 auto;
-  padding: 8px 48px 64px;
+.card-file > .card-file__page {
+  padding-top: 8px;
 }
 .card-file__path {
   display: flex;
@@ -40,12 +36,4 @@
 }
 .card-file__outside p + p {
   margin-top: 8px;
-}
-/* The top bar's zoom (YAZ-5102), as a page's: on the content, never on the column shell (app.css, YAZ-1710 D14). */
-.card-file__page > * {
-  zoom: var(--document-zoom, 1);
-}
-/* The comments block (YAZ-5466, `comments.css`): the column's own padding is the block's; it adds none of its own here. */
-.card-file__page > .comments {
-  padding: 0;
 }
