@@ -10,7 +10,7 @@ import { cardMoreButton } from '../cardMenu/moreButton'
 import { applyTableFile, readTableComment } from './tableFile'
 import { applyTableLook, type PhoneTableLook } from './tableLook'
 import { layoutTables } from './tableLayout'
-import { BLOCK_MATH, markTasks, pageMarked, withoutBom, type PageLinkToken, type TaskItem } from './pageMarked'
+import { BLOCK_MATH, markTasks, pageMarked, readerText, type PageLinkToken, type TaskItem } from './pageMarked'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -462,7 +462,7 @@ function drawCallouts(root: DocumentFragment): void {
  */
 export function pieceHtml(text: string, firstLine = 0): { html: string; cards: Parse['cards'] } {
   parse = { cards: [] }
-  const own = withoutBom(text)
+  const own = readerText(text)
   const tokens = markdown.lexer(own)
   markTasks(tokens, own, firstLine)
   joinTableComments(tokens)

@@ -1,3 +1,4 @@
+import { escapeSameLineOrderedMarkers, mapOutsideFences } from '@client/editor/outsideFences'
 import { Marked, Tokenizer, type Token, type TokenizerExtension, type Tokens } from 'marked'
 
 /**
@@ -266,9 +267,26 @@ function endsInCode(item: Tokens.ListItem): boolean {
 
 /** The tasks of `text` (a page's body, its properties left out), as the reader draws them. */
 export function pageTasks(text: string): PageTask[] {
-  const own = withoutBom(text)
+  const own = readerText(text)
   return markTasks(pageMarked.lexer(own), own)
 }
 
 /** The text the reader parses: a byte order mark at its start is no text (as the Mac reads it). Its lines stay. */
 export const withoutBom = (text: string): string => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text)
+
+/**
+ * A task whose text starts with a number (`- [ ] 1) text`, `1. [x] 2. text`): remark (the Mac) reads `1) text` as the
+ * task's text; `marked` reads what follows a box as blocks, so a numbered list in the task, its line empty.
+ */
+const TASK_NUMBER = /^([ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[[ xX]\][ \t]+\d{1,9})([.)])(?=[ \t\r]|$)/
+
+/**
+ * The text the reader parses, read as the Mac's editor loads it: no byte order mark, and YAZ-1329 (YAZ-5568 on the
+ * phone): `* 1) text` / `* 1. text` is bullet text, never a bullet holding a numbered list. The Mac's own rule
+ * (`escapeSameLineOrderedMarkers`) makes that number's `)` or `.` literal, outside code fences; and so does the number
+ * at the start of a task's text (`TASK_NUMBER`), which the Mac reads as text without it. Each line stays one line (a
+ * tick's line is the same in the file; the box comes before the number, so its place in the line too), and a real
+ * numbered line (`1. text`) stays a numbered list.
+ */
+export const readerText = (text: string): string =>
+  mapOutsideFences(escapeSameLineOrderedMarkers(withoutBom(text)), (line) => line.replace(TASK_NUMBER, '$1\\$2'))

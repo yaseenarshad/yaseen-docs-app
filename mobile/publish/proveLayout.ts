@@ -57,6 +57,9 @@ import { freePort } from './freePort'
  *  - sticky headings (`#fixture=page-sticky`, `sheet-sticky`, `page-sticky-off`, YAZ-5591), light and dark, at 375 and
  *    320 px: under the top bar, each under its parent, as its heading, full width, at most 40%, each a tap; a tap lands it.
  *  - Settings › This vault on mobile (`#fixture=settings-mobile`, YAZ-5592), light and dark, at 375 and 320 px.
+ *  - numbered text in bullets (`#fixture=page-folds-numbered`, `-folded`, `-all`, YAZ-5568), light and dark, at 375 px:
+ *    a bullet whose text starts `1) ` is bullet text (the Mac's rule), each line's words shown with its dot; folded: gone;
+ *    Collapse all then the parent opened (the report): its four lines whole.
  *  - a link to a heading (`#fixture=page-links`, YAZ-5519 S2) at 320 and 375 px: the heading lands whole under the top
  *    bar, a small gap between.
  *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
@@ -2132,6 +2135,61 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const ok = m.title === 'This vault on mobile' && rows.length === 2 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings-mobile ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.title}": ${rows.map((x) => `${x.label} ${x.on ? 'on' : 'off'}${x.enabled ? '' : ' DISABLED'} ${x.h}px${x.inside ? '' : ' OUTSIDE'}`).join(', ')}; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5568 (numbered text): the reported shape (`#fixture=page-folds-numbered`, `-folded`), light and dark, at 375 px.
+// A bullet whose text starts "1) " / "1. " is bullet text, as on the Mac (never a numbered list in a bullet): each line
+// shows its own words, on screen, with its square or circle; open = all the text, folded = the four lines gone.
+const NUMBERED_BULLETS_CHECK = `(() => {
+  const own = (li) => { let t = ''; for (const n of li.childNodes) { if (n.nodeType === 1 && (n.matches('ul, ol, .fold-btn'))) continue; t += n.textContent } return t.replace(/\\s+/g, ' ').trim() }
+  const lis = [...document.querySelectorAll('.reader__body li')]
+  const want = ['1) click into bullets', '2) use the mouse', '3) highlight colours', '4) keys to expand', '1. start with the list', '(1) in brackets', 'a) a letter', 'i. a roman one', '10) ten and up']
+  const line = (words) => {
+    const li = lis.find((e) => own(e).startsWith(words))
+    if (!li) return 'missing'
+    if (li.offsetParent === null) return 'hidden'
+    const range = document.createRange()
+    const text = [...li.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim() !== '') ?? [...li.childNodes].find((n) => n.nodeType === 1 && !n.matches('ul, ol, .fold-btn'))
+    if (!text) return 'no text'
+    range.selectNodeContents(text)
+    const r = range.getBoundingClientRect()
+    const marker = getComputedStyle(li, '::before')
+    return r.width > 20 && r.height > 8 ? 'shown ' + (marker.content !== 'none' ? 'dot' : 'no dot') + ' ' + Math.round(r.left) : 'squashed'
+  }
+  return { lines: Object.fromEntries(want.map((w) => [w, line(w)])), ol: document.querySelectorAll('.reader__body ol').length, parent: line('934am'), next: line('933am') }
+})()`
+if (process.env.LAYOUT_FOLDS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['page-folds-numbered', 'page-folds-numbered-folded', 'page-folds-numbered-all'] as const) {
+      const file = await open(name, 375, 667)
+      // The reported lines in view: the parent with the link at the top.
+      await evaluate(`(() => { const b = document.querySelector('.reader__body .fold-btn[data-fold-label^="934am"]'); const s = document.querySelector('.screen'); if (b && s) s.scrollTop += b.getBoundingClientRect().top - 140 })()`)
+      await wait(150)
+      const shot = file.replace('.png', `-${scheme}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(FOLDS_CHECK)
+      const n = await evaluate(NUMBERED_BULLETS_CHECK)
+      type Row = { label: string; expanded: string; size: string; arrowIn: boolean; hit: boolean; dot: boolean | null; tick: boolean | null }
+      const rows = m.rows as Row[]
+      const each = rows.every((x) => x.size === '44x44' && x.arrowIn && x.hit && x.dot !== false && x.tick !== false)
+      const lines = n.lines as Record<string, string>
+      const four = ['1) click into bullets', '2) use the mouse', '3) highlight colours', '4) keys to expand']
+      const shownLine = (v: string) => v.startsWith('shown dot')
+      const folded = rows.filter((x) => x.expanded === 'false').map((x) => x.label)
+      const ok =
+        !m.pageWide && each && n.ol === 0 && shownLine(n.parent) && shownLine(n.next) &&
+        !rows.some((x) => x.label === 'bullet' || /^[1-4]\) /.test(x.label)) &&
+        Object.entries(lines).every(([w, v]) => (name === 'page-folds-numbered-folded' && four.includes(w) ? v === 'hidden' : name === 'page-folds-numbered-all' && !four.includes(w) ? v === 'hidden' : shownLine(v))) &&
+        (name === 'page-folds-numbered'
+          ? folded.length === 0
+          : name === 'page-folds-numbered-folded'
+            ? folded.length === 1 && folded[0]!.startsWith('934am')
+            : !folded.some((l) => l.startsWith('934am') || l === 'Morning') && folded.some((l) => l.startsWith('933am')))
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 375x667, ${scheme}: ${rows.length} arrows (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}`).join('; ')}); numbered lists ${n.ol}; 934am ${n.parent}; 933am ${n.next}; ${Object.entries(lines).map(([w, v]) => `"${w}" ${v}`).join(', ')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
