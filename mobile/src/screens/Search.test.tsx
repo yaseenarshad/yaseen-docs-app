@@ -65,9 +65,9 @@ describe('the Search tab (YAZ-5079)', () => {
   it('N5 (sweep1): an empty vault that is synced says it is empty, not that pages come with the next sync', async () => {
     h = await openSearch({})
     await waitFor(h, () => h!.text().includes('No pages here.'))
-    // The box's chunk has landed before the test ends (a lazy import cut off by the unmount left the next tests' lazy
-    // screens undefined in the full run).
-    await waitFor(h, () => h!.host.querySelector('input[type="search"]') !== null)
+    // The filter bar's chunk has landed before the test ends (a lazy import cut off by the unmount left the next tests'
+    // lazy parts undefined in the full run).
+    await waitFor(h, () => h!.host.querySelector('.search__bar[aria-label="Filters"]') !== null)
     expect(h.text()).not.toContain('They come with the next sync')
   })
   it('the empty box shows the Mac\'s sidebar tree (YAZ-5438): folders first, then pages, by name; the keyboard opens only here', async () => {
