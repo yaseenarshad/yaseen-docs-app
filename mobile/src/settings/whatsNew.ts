@@ -1,5 +1,5 @@
 /**
- * YAZ-5446: Settings › What's new. Newest first, in plain short words, one entry for each version. Its own chunk: it
+ * Settings › What's new. Newest first, in plain short words, one entry for each version. Its own chunk: it
  * loads when the person first opens What's new (never in the first load). The newest entry's version is the version of
  * `mobile/package.json` (a test checks it): add an entry when the version goes up.
  */

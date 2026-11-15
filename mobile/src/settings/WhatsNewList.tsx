@@ -2,7 +2,7 @@ import { Fragment } from 'react'
 import { WHATS_NEW, entryDay } from './whatsNew'
 
 /**
- * YAZ-5446: the list behind Settings › What's new, its own chunk (`lazyScreen`). Each version: a heading with its
+ * The list behind Settings › What's new, its own chunk (`lazyScreen`). Each version: a heading with its
  * version and day, its items as short bullets, and a line between versions.
  */
 export default function WhatsNewList() {

@@ -1,5 +1,5 @@
 /**
- * YAZ-5446: which build this phone runs. Vite sets the three values at build time (`buildDefine` in `vite.config.ts`):
+ * Which build this phone runs. Vite sets the three values at build time (`buildDefine` in `vite.config.ts`):
  * the version of `mobile/package.json`, the build's time (ISO, UTC) and its short commit.
  */
 declare const __NOTECARDS_VERSION__: string | undefined
