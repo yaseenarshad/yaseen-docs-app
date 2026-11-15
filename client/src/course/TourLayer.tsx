@@ -32,16 +32,16 @@
  *   step or when the steps cannot run here (no Course Cards folder: the line shows, and the course goes on).
  * - `visible` false (the course fills the window): the layer keeps its logic and draws nothing.
  */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react'
 import type { CourseChapter } from './script'
 import type { TourStep } from './tour'
 import type { CourseHost } from './courseHost'
 import type { TourResult } from './courseTour'
 import { readEscapeFacts } from '../lib/escapeOrder'
-import { currentStep, coachPlace, dimPath, exampleSafe, holeOf, offersShowMe, shownStep, startTour, tourStep, type Box, type TourAction, type TourState } from './tourEngine'
+import { ARROW, arrowPlace, currentStep, coachPlace, dimHoles, exampleSafe, holeOf, offersShowMe, shownStep, startTour, tourStep, type ArrowPlace, type Box, type TourAction, type TourState } from './tourEngine'
 import { checkTour, inFolder, TARGET_HELP } from './tourHelp'
 import { COURSE_CARDS } from './courseCards'
-import { listenTour, setTourPlaces, showTourPlace, type TourPlace } from './tourBus'
+import { listenTour, setTourCardsFirst, setTourPlaces, showTourPlace, type TourPlace } from './tourBus'
 import { canFillExample, fillExample, USE_AN_EXAMPLE } from './tourExample'
 import { courseArea, setLitBox } from './dockArea'
 import './tour.css'
@@ -68,14 +68,34 @@ export const HINT_AFTER_MS = 600
 /** A finished tour shows its last line this long, then the course comes back. */
 export const FINISH_MS = 1600
 
-/** What shows over the app that the dim must not cover: menus, pickers, the editor's toolbar and `/` menu. */
-const POPUPS = '.ctx-menu, [role="menu"], [role="listbox"], .milkdown-toolbar, .milkdown-slash-menu'
+/**
+ * What shows over the app that the dim must not cover (YAZ-5403): menus, pickers, popovers, tooltips, the editor's
+ * selection toolbar, `/` menu and its colour boxes. Besides these, every popup portaled to `document.body` is left lit
+ * (`openPopups`), so a menu with none of these names is not dimmed either.
+ */
+const POPUPS = [
+  '.ctx-menu',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[role="tooltip"]',
+  '.view-popover',
+  '.wikilink-picker',
+  '.milkdown-toolbar',
+  '.milkdown-slash-menu',
+  '.highlight-panel',
+  '.table-colour-box',
+].join(', ')
+/** A box on `document.body` this big is a scrim or a window of its own, not a popup: it stays dimmed. */
+const POPUP_MAX_SHARE = 0.5
 const FOCUSABLE = 'button, a[href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
 const NO_SIDEBAR = { aside: null, searchShown: false, canClose: false }
 const COACH_SIZE = { width: 300, height: 170 }
 /** The places a show step may bring into view by itself: they open nothing that changes data (YAZ-5366). */
 const SAFE_SHOW: ReadonlySet<TourPlace['kind']> = new Set(['sidebar', 'folder', 'settings'])
 const isDoStep = (step: TourStep | null): boolean => step !== null && step.done !== 'show'
+/** The steps about a link to a card: while one waits, the `[[` picker lists cards first (YAZ-5407). */
+const CARD_LINK_EVENTS: ReadonlySet<string> = new Set(['link-picker-open', 'card-link-added'])
+const aboutCardLinks = (step: TourStep | null): boolean => step !== null && typeof step.done === 'object' && CARD_LINK_EVENTS.has(step.done.event)
 
 const shows = (el: HTMLElement): boolean => {
   if (el.dataset.show === 'false' || el.closest('[hidden]') !== null) return false
@@ -88,6 +108,54 @@ const boxOf = (el: Element): Box => {
   return { left: r.left, top: r.top, width: r.width, height: r.height }
 }
 const inView = (b: Box, view: { width: number; height: number }): boolean => b.left + b.width > 0 && b.top + b.height > 0 && b.left < view.width && b.top < view.height
+
+/**
+ * The open popups the dim leaves lit (YAZ-5403): the known menus, pickers and toolbars wherever they are, and any
+ * floating box portaled straight into `document.body` (a fixed or absolute child of the body that is not the app's
+ * root, not the tour, and not a scrim the size of the window).
+ */
+export function openPopups(layer: Element | null, view: { width: number; height: number }): Box[] {
+  const mine = (el: Element): boolean => layer !== null && (layer.contains(el) || el.contains(layer))
+  const known = [...document.querySelectorAll<HTMLElement>(POPUPS)]
+  const floating = [...document.body.children].filter((el): el is HTMLElement => {
+    if (!(el instanceof HTMLElement) || el.id === 'root' || el.matches(POPUPS)) return false
+    const position = getComputedStyle(el).position
+    return position === 'fixed' || position === 'absolute'
+  })
+  return [...known, ...floating]
+    .filter((p) => !mine(p) && shows(p))
+    .map((p) => round(holeOf(boxOf(p), view, 0)))
+    .filter((b) => b.width > 0 && b.height > 0 && b.width * b.height < POPUP_MAX_SHARE * view.width * view.height)
+}
+
+/** The dim: the window, with the holes cut by a mask, so overlapping holes stay lit (YAZ-5403). */
+function Dim({ view, holes }: { view: { width: number; height: number }; holes: readonly Box[] }) {
+  const id = `course-tour-dim-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`
+  return (
+    <svg className="course-tour__dim" aria-hidden="true" width={view.width || undefined} height={view.height || undefined}>
+      <defs>
+        <mask id={id} maskUnits="userSpaceOnUse" x={0} y={0} width={view.width} height={view.height}>
+          <rect x={0} y={0} width={view.width} height={view.height} fill="white" />
+          {dimHoles(holes).map((h, i) => (
+            <rect key={i} className="course-tour__hole" x={h.x} y={h.y} width={h.width} height={h.height} rx={h.r} ry={h.r} fill="black" />
+          ))}
+        </mask>
+      </defs>
+      <rect className="course-tour__dim-fill" x={0} y={0} width={view.width} height={view.height} mask={`url(#${id})`} />
+    </svg>
+  )
+}
+
+/** The red arrow (YAZ-5405): it sits outside the lit control and points at it. It takes no pointer. */
+function Arrow({ place }: { place: ArrowPlace }) {
+  return (
+    <div className="course-tour__arrow" data-side={place.side} aria-hidden="true" style={{ left: place.left, top: place.top, width: place.width, height: place.height }}>
+      <svg className="course-tour__arrow-shape" viewBox={`0 0 ${ARROW.length} ${ARROW.thick}`} width={ARROW.length} height={ARROW.thick}>
+        <path d="M2 10H26V3L42 14L26 25V18H2Z" />
+      </svg>
+    </div>
+  )
+}
 
 /** The step's control: the first mark that shows, one in the window first. Never one inside the tour. */
 function findTarget(name: string, layer: Element | null): HTMLElement | null {
@@ -258,7 +326,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
       }
       // The holes for open menus matter only under a dim: a live show step, or no step, has none.
       const dimmed = !live || isDoStep(step)
-      const popups = !dimmed ? [] : [...document.querySelectorAll<HTMLElement>(POPUPS)].filter((p) => !(layer.current?.contains(p) ?? false) && shows(p)).map((p) => round(holeOf(boxOf(p), view, 0)))
+      const popups = !dimmed ? [] : openPopups(layer.current, view)
       const target = onScreen && box !== null ? round(holeOf(box, view)) : null
       // The lit control, for a docked corner to move away from; the docked course, left out of the dim.
       setLitBox(target)
@@ -288,6 +356,10 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
 
   // ---- the end ----
   const s = tour.current
+  // The `[[` picker lists cards first while the person is on a step about a card link (YAZ-5407).
+  const cardLinks = aboutCardLinks(currentStep(s))
+  useEffect(() => setTourCardsFirst(cardLinks), [cardLinks])
+  useEffect(() => () => setTourCardsFirst(false), [])
   const back = useRef<HTMLButtonElement>(null)
   // Live: the course goes on once no do step is left, or when the steps cannot run (the line stays on screen).
   const doLeft = s.status === 'running' && s.steps.slice(s.index).some((st) => st.done !== 'show')
@@ -328,7 +400,8 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
   const canShow = step !== null && (help?.show !== undefined || findTarget(step.target, layer.current) !== null)
   const waitsForNext = step !== null && typeof step.done === 'object' && step.done.event === 'tour-next'
   const hint = step === null || !seen.hint ? null : seen.stuck && help?.stuck !== undefined ? help.stuck.say : help === undefined ? null : inFolder(help.where, folderTitle)
-  const place = coachPlace(seen.target, seen.coach, seen.view.width > 0 ? seen.view : { width: window.innerWidth, height: window.innerHeight }, seen.course)
+  const view = seen.view.width > 0 ? seen.view : { width: window.innerWidth, height: window.innerHeight }
+  const place = coachPlace(seen.target, seen.coach, view, seen.course)
   const line =
     s.status === 'checking' ? 'Getting ready…'
     : s.status === 'blocked' ? (s.blocked ?? '')
@@ -339,16 +412,16 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
     const doing = isDoStep(step)
     const blocked = s.status === 'blocked' && visible
     const coachShows = blocked || (step !== null && (doing || step.say !== ''))
+    // The red arrow (YAZ-5405): on every lit step, a "light only" step too; off the coach card, the course and open menus.
+    const others = seen.holes.slice(seen.target === null ? 0 : 1)
+    const arrow = seen.target === null || step === null ? null : arrowPlace(seen.target, view, [...(coachShows ? [{ ...place, ...seen.coach }] : []), ...others])
     return (
       <div ref={layer} className="course-tour course-tour--live" data-reduced-motion={reducedMotion ? 'true' : undefined} data-live-step={step === null ? undefined : doing ? 'do' : 'show'}>
-        {doing && (
-          <svg className="course-tour__dim" aria-hidden="true" width={seen.view.width || undefined} height={seen.view.height || undefined}>
-            <path d={dimPath(seen.view.width > 0 ? seen.view : { width: window.innerWidth, height: window.innerHeight }, seen.holes)} />
-          </svg>
-        )}
+        {doing && <Dim view={view} holes={seen.holes} />}
         {seen.target !== null && step !== null && (
           <div className="course-tour__ring" aria-hidden="true" style={{ left: seen.target.left, top: seen.target.top, width: seen.target.width, height: seen.target.height }} />
         )}
+        {arrow !== null && <Arrow place={arrow} />}
         {coachShows && (
           <section ref={coach} className="course-tour__coach" aria-label="In the app" style={{ left: place.left, top: place.top }} onMouseDown={(e) => e.preventDefault()}>
             <p className="course-tour__where">In the app · {chapter.title}</p>
@@ -385,9 +458,7 @@ export function TourLayer({ chapter, steps, host, alive, onEnd, variant = 'tour'
 
   return (
     <div ref={layer} className="course-tour" data-reduced-motion={reducedMotion ? 'true' : undefined}>
-      <svg className="course-tour__dim" aria-hidden="true" width={seen.view.width || undefined} height={seen.view.height || undefined}>
-        <path d={dimPath(seen.view.width > 0 ? seen.view : { width: window.innerWidth, height: window.innerHeight }, seen.holes)} />
-      </svg>
+      <Dim view={view} holes={seen.holes} />
       {seen.target !== null && step !== null && (
         <div className="course-tour__ring" aria-hidden="true" style={{ left: seen.target.left, top: seen.target.top, width: seen.target.width, height: seen.target.height }} />
       )}

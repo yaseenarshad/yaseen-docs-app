@@ -9,6 +9,8 @@
   z-index: 2147483000; /* over the app, its menus and Settings: the tour is the top layer, and it blocks nothing */
   pointer-events: none;
   color: var(--fg);
+  /* The red arrow (YAZ-5405): a clear red in both themes, with an outline in the page's colour. */
+  --course-tour-arrow: #e0201b;
 }
 
 .course-tour__dim {
@@ -18,18 +20,27 @@
   height: 100%;
 }
 
-.course-tour__dim path {
+/* The dim is one rect under a mask: each hole (the lit control, an open menu, the docked course) is cut out of it, and
+   holes that overlap stay lit (YAZ-5403). */
+.course-tour__dim-fill {
   fill: rgba(20, 20, 30, 0.42);
-  fill-rule: evenodd;
 }
 
-:root[data-theme='dark'] .course-tour__dim path {
+:root[data-theme='dark'] .course-tour__dim-fill {
   fill: rgba(0, 0, 0, 0.58);
 }
 
+:root[data-theme='dark'] .course-tour {
+  --course-tour-arrow: #ff4a42;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .course-tour__dim path {
+  :root:not([data-theme='light']) .course-tour__dim-fill {
     fill: rgba(0, 0, 0, 0.58);
+  }
+
+  :root:not([data-theme='light']) .course-tour {
+    --course-tour-arrow: #ff4a42;
   }
 }
 
@@ -38,6 +49,12 @@
   border-radius: 8px;
   box-shadow: 0 0 0 2px var(--accent), 0 0 0 6px var(--accent-soft);
   transition: left 180ms ease, top 180ms ease, width 180ms ease, height 180ms ease;
+}
+
+/* A live step's ring is red, as its arrow (YAZ-5405): on a "light only" step, with no dim, the ring and the arrow are
+   all that points at the control, so they must stand out. A do step's ring is red too, so the two kinds look alike. */
+.course-tour--live .course-tour__ring {
+  box-shadow: 0 0 0 2px var(--course-tour-arrow), 0 0 0 6px color-mix(in srgb, var(--course-tour-arrow) 28%, transparent);
 }
 
 .course-tour__coach {
@@ -128,16 +145,74 @@
   filter: brightness(1.08);
 }
 
-/* Reduce motion: the ring and the card jump to their place, with no slide and no fade. */
+/* The red arrow (YAZ-5405): outside the lit control, pointing at it, with a small nudge toward it. It takes no pointer
+   (the layer takes none). The shape is drawn pointing right; each side turns it to face the control. */
+.course-tour__arrow {
+  position: absolute;
+  pointer-events: none;
+  transition: left 180ms ease, top 180ms ease;
+  animation: course-tour-nudge 1100ms ease-in-out infinite;
+}
+
+.course-tour__arrow[data-side='left'] {
+  --course-tour-nudge: translateX(6px);
+  --course-tour-turn: rotate(0deg);
+}
+
+.course-tour__arrow[data-side='right'] {
+  --course-tour-nudge: translateX(-6px);
+  --course-tour-turn: rotate(180deg);
+}
+
+.course-tour__arrow[data-side='top'] {
+  --course-tour-nudge: translateY(6px);
+  --course-tour-turn: rotate(90deg);
+}
+
+.course-tour__arrow[data-side='bottom'] {
+  --course-tour-nudge: translateY(-6px);
+  --course-tour-turn: rotate(-90deg);
+}
+
+.course-tour__arrow-shape {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  overflow: visible;
+  transform: translate(-50%, -50%) var(--course-tour-turn);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.course-tour__arrow-shape path {
+  fill: var(--course-tour-arrow);
+  stroke: var(--bg);
+  stroke-width: 1.5px;
+  stroke-linejoin: round;
+}
+
+@keyframes course-tour-nudge {
+  0%,
+  100% {
+    transform: none;
+  }
+
+  50% {
+    transform: var(--course-tour-nudge);
+  }
+}
+
+/* Reduce motion: the ring, the card and the arrow jump to their place, with no slide, no fade and no nudge. */
 .course-tour[data-reduced-motion='true'] .course-tour__ring,
-.course-tour[data-reduced-motion='true'] .course-tour__coach {
+.course-tour[data-reduced-motion='true'] .course-tour__coach,
+.course-tour[data-reduced-motion='true'] .course-tour__arrow {
   transition: none;
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .course-tour__ring,
-  .course-tour__coach {
+  .course-tour__coach,
+  .course-tour__arrow {
     transition: none;
     animation: none;
   }

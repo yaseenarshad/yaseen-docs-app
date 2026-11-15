@@ -116,6 +116,7 @@ const click = (b: Element | undefined) => act(() => (b as HTMLElement).click())
 const ring = () => document.querySelector<HTMLElement>('.course-tour--live .course-tour__ring')
 const coachSay = () => document.querySelector('.course-tour--live .course-tour__say')?.textContent ?? null
 const live = () => document.querySelector<HTMLElement>('.course-tour--live')
+const arrow = () => document.querySelector<HTMLElement>('.course-tour--live .course-tour__arrow')
 const seconds = (clip: { text: string }) => clipSeconds({ id: '', ...clip }, null)
 
 /** A real-looking control in the app, with a box (jsdom lays nothing out). */
@@ -168,13 +169,29 @@ describe('live steps (YAZ-5366)', () => {
     await play(seconds(SHOW) * 0.4)
     expect(caption()).toBe(SHOW.text)
     expect(ring()).toBeNull()
+    expect(arrow()).toBeNull()
     await play(seconds(SHOW) * 0.2)
     expect(ring()).not.toBeNull()
     expect(ring()!.style.top).toBe('116px')
-    // A show step: the light alone, no dim and no coach card.
+    // A show step ("light only"): the ring and the red arrow (YAZ-5405), no dim and no coach card.
     expect(live()!.dataset.liveStep).toBe('show')
     expect(document.querySelector('.course-tour--live .course-tour__dim')).toBeNull()
     expect(coachSay()).toBeNull()
+    expect(arrow()).not.toBeNull()
+    expect(arrow()!.getAttribute('aria-hidden')).toBe('true')
+    // The arrow sits outside the lit row and points at it: its line goes through the row's middle (116 + 34 / 2).
+    const a = arrow()!
+    const side = a.dataset.side
+    expect(['left', 'right']).toContain(side)
+    expect(Number.parseFloat(a.style.top) + Number.parseFloat(a.style.height) / 2).toBe(133)
+    // In full size the course draws nothing in the app: no ring, no arrow.
+    click(button('Full size'))
+    await play(0.2)
+    expect(ring()).toBeNull()
+    expect(arrow()).toBeNull()
+    click(button('Side panel'))
+    await play(0.2)
+    expect(arrow()).not.toBeNull()
     // The course does not wait for a show step.
     await play(seconds(SHOW) * 0.5 + GAP_SECONDS + 0.2)
     expect(caption()).toBe(SHOW_TOO.text)
@@ -193,6 +210,11 @@ describe('live steps (YAZ-5366)', () => {
     expect(live()!.dataset.liveStep).toBe('do')
     expect(document.querySelector('.course-tour--live .course-tour__dim')).not.toBeNull()
     expect(ring()!.style.top).toBe('116px')
+    // A do step has the red arrow too, off the coach card (YAZ-5405).
+    expect(arrow()).not.toBeNull()
+    const box = (el: HTMLElement) => ({ left: Number.parseFloat(el.style.left), top: Number.parseFloat(el.style.top), width: Number.parseFloat(el.style.width) || 300, height: Number.parseFloat(el.style.height) || 170 })
+    const [a, c] = [box(arrow()!), box(document.querySelector<HTMLElement>('.course-tour--live .course-tour__coach')!)]
+    expect(a.left < c.left + c.width && c.left < a.left + a.width && a.top < c.top + c.height && c.top < a.top + a.height).toBe(false)
     // The voice ends; the course holds at the end of the words, and never runs ahead.
     await play(seconds(DO) + 3)
     expect(caption()).toBe(DO.text)

@@ -8,6 +8,7 @@
  *   put `data-tour` on their rows. Null outside a tour.
  * - `showTourPlace(place)`: "Show me". App brings the place into view with its own navigation (`onTourShow`).
  * - `setTourTyper(dom, typer)`: an editor gives the tour its own way to type (YAZ-5125, "Use an example").
+ * - `tourCardsFirst()`: the `[[` picker lists cards before pages while a step about a card link runs (YAZ-5407).
  */
 
 /** The app events a tour step can wait for (`TourStep.done.event` in `script.ts`). */
@@ -64,6 +65,16 @@ export function setTourPlaces(next: TourPlaces | null): void {
   if (value.folder === places.folder && value.page === places.page) return
   places = value
   placeWatchers.forEach((fn) => fn())
+}
+
+/**
+ * Cards first in the `[[` picker (YAZ-5407): on while a course step is about a link to a card (the picker opens, then
+ * the person clicks the card's row), so the cards are in the list's first rows; off otherwise (pages first, YAZ-5030).
+ */
+let cardsFirst = false
+export const tourCardsFirst = (): boolean => cardsFirst
+export function setTourCardsFirst(on: boolean): void {
+  cardsFirst = on
 }
 
 /** Where "Show me" takes the person. */

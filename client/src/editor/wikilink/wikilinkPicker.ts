@@ -67,7 +67,7 @@ import { createFromLink } from './createFromLink'
 import type { WikilinkNav } from './wikilinkClick'
 import { linkPageName, type LinkLook, type WikilinkResolveSource } from './wikilinkPlugin'
 import './wikilinkPicker.css'
-import { tourEvent } from '../../course/tourBus'
+import { tourCardsFirst, tourEvent } from '../../course/tourBus'
 
 export const WIKILINK_PICKER_CLASS = 'wikilink-picker'
 export const WIKILINK_PICKER_ITEM_CLASS = 'wikilink-picker__item'
@@ -181,8 +181,10 @@ function findContext(state: EditorState): { from: number; to: number; fragment: 
  * this name": `q4 meeting pages` finds `Meeting pages Q4` and still offers to create its own page. An exact name ranks
  * first (tier 0), so it is among the matches whenever one exists.
  */
-export function rowsFor(fragment: string, candidates: readonly LinkCandidate[], was?: readonly string[]): PickerRow[] {
-  const matches = matchLinks(candidates, fragment, was)
+export function rowsFor(fragment: string, candidates: readonly LinkCandidate[], was?: readonly string[], cardsFirst = false): PickerRow[] {
+  // Cards first (YAZ-5407, the course's step on card links): within each rank a card comes before a page.
+  const ordered = cardsFirst ? [...candidates.filter((c) => c.card === true), ...candidates.filter((c) => c.card !== true)] : candidates
+  const matches = matchLinks(ordered, fragment, was)
   // A view-only file reads as the sidebar names it (YAZ-3778 S14): `LN Scenarios Diagram.drawio` → `LN Scenarios Diagram`.
   const rows = matches.map(({ label, insert, path, card }): PickerRow => ({ label: isViewOnly(insert) ? fileLabel(label) : label, insert, create: false, path, ...(card === true && { card }) }))
   const typed = fragment.trim().toLowerCase()
@@ -220,7 +222,7 @@ function session(state: EditorState, prev: PickerState | null, tr: Transaction |
   // passes anyway, and when it did not the positions are already comparable.
   const sameOpen = prev?.session != null && prev.session.from === ctx.from
   if (!sameOpen && tr?.docChanged !== true) return { session: null, dismissed }
-  const rows = rowsFor(ctx.fragment, source.candidates, links.letters)
+  const rows = rowsFor(ctx.fragment, source.candidates, links.letters, tourCardsFirst())
   if (rows.length === 0) return { session: null, dismissed }
   const held =
     prev?.session != null && tr !== null && !tr.docChanged && prev.session.from === ctx.from && prev.session.fragment === ctx.fragment

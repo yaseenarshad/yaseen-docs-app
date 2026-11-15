@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TourStep } from './tour'
 import { COURSE } from './script'
-import { coachPlace, currentStep, dimPath, eventCounts, exampleSafe, holeOf, lookingFor, offersShowMe, SETTLE_MS, SHOW_ME_AFTER_MS, shownStep, startTour, tourStep, type TourAction, type TourState } from './tourEngine'
+import { ARROW, arrowPlace, coachPlace, currentStep, dimHoles, eventCounts, exampleSafe, holeOf, lookingFor, offersShowMe, SETTLE_MS, SHOW_ME_AFTER_MS, shownStep, startTour, tourStep, type TourAction, type TourState } from './tourEngine'
 import { tourStepsOf } from './live'
 
 const STEPS: TourStep[] = [
@@ -215,9 +215,19 @@ describe('the geometry of the dim and the coach card', () => {
 
   it('the hole is padded and kept in the window; the dim has a hole per box', () => {
     expect(holeOf({ left: 2, top: 10, width: 100, height: 20 }, view)).toEqual({ left: 0, top: 6, width: 106, height: 28 })
-    const d = dimPath(view, [holeOf({ left: 100, top: 100, width: 50, height: 20 }, view), { left: 0, top: 0, width: 0, height: 0 }])
-    expect(d.startsWith('M0 0H1200V800H0Z')).toBe(true)
-    expect(d.match(/M/g)).toHaveLength(2)
+    const holes = dimHoles([holeOf({ left: 100, top: 100, width: 50, height: 20 }, view), { left: 0, top: 0, width: 0, height: 0 }])
+    expect(holes).toEqual([{ x: 96, y: 96, width: 58, height: 28, r: 8 }])
+    // A small hole has a smaller corner: never more than half its side.
+    expect(dimHoles([{ left: 0, top: 0, width: 10, height: 6 }])[0].r).toBe(3)
+  })
+
+  it('YAZ-5403: overlapping holes are each kept whole (the layer unions them with a mask)', () => {
+    const lit = { left: 10, top: 10, width: 400, height: 300 }
+    const menu = { left: 40, top: 40, width: 200, height: 150 }
+    expect(dimHoles([lit, menu]).map((h) => [h.x, h.y, h.width, h.height])).toEqual([
+      [10, 10, 400, 300],
+      [40, 40, 200, 150],
+    ])
   })
 
   it('the coach card sits near the target and never over it; with no target, in the bottom right corner', () => {
@@ -236,5 +246,46 @@ describe('the geometry of the dim and the coach card', () => {
     const narrow = coachPlace({ left: 0, top: 0, width: 360, height: 700 }, coach, { width: 380, height: 760 })
     expect(narrow.left).toBeGreaterThanOrEqual(12)
     expect(narrow.top + coach.height).toBeLessThanOrEqual(760)
+  })
+})
+
+describe('the red arrow (YAZ-5405)', () => {
+  const view = { width: 1200, height: 800 }
+  const inside = (p: { left: number; top: number; width: number; height: number }) => p.left >= 0 && p.top >= 0 && p.left + p.width <= view.width && p.top + p.height <= view.height
+  const overlap = (a: { left: number; top: number; width: number; height: number }, b: { left: number; top: number; width: number; height: number }) =>
+    a.left < b.left + b.width && b.left < a.left + a.width && a.top < b.top + b.height && b.top < a.top + a.height
+
+  it('sits outside the target, on the side with the most room, and points at it', () => {
+    // A sidebar row at the left: the most room is to its right; the arrow points left, at the row, centred on it.
+    const row = { left: 6, top: 96, width: 208, height: 36 }
+    const a = arrowPlace(row, view)!
+    expect(a.side).toBe('right')
+    expect(a.left).toBe(row.left + row.width + ARROW.gap)
+    expect(a.top + a.height / 2).toBe(row.top + row.height / 2)
+    expect(overlap(a, row)).toBe(false)
+    // A control at the bottom right: above it, or to its left, never off the window.
+    const low = arrowPlace({ left: 1100, top: 740, width: 80, height: 40 }, view)!
+    expect(['left', 'top']).toContain(low.side)
+    expect(inside(low)).toBe(true)
+    // A tall target (the card editor) with room on its left: the arrow is beside it, pointing in.
+    const tall = arrowPlace({ left: 600, top: 0, width: 500, height: 800 }, view)!
+    expect(tall.side).toBe('left')
+    expect(tall.width).toBe(ARROW.length)
+    expect(tall.height).toBe(ARROW.thick)
+  })
+
+  it('stays off the coach card, the docked course and an open menu when another side allows', () => {
+    const row = { left: 6, top: 96, width: 208, height: 36 }
+    const coach = { left: 230, top: 60, width: 300, height: 170 }
+    const a = arrowPlace(row, view, [coach])!
+    expect(overlap(a, coach)).toBe(false)
+    expect(a.side).toBe('bottom')
+    // Every side blocked: the roomiest side that fits, rather than no arrow.
+    const everywhere = { left: 0, top: 0, width: 1200, height: 800 }
+    expect(arrowPlace(row, view, [everywhere])!.side).toBe('right')
+  })
+
+  it('no side fits (a target that fills the window): no arrow, the ring alone', () => {
+    expect(arrowPlace({ left: 0, top: 0, width: 1200, height: 800 }, view)).toBeNull()
   })
 })

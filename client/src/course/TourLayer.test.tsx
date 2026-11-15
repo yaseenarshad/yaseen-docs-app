@@ -12,7 +12,7 @@ import { onTourShow, tourEvent, tourPlaces, type TourPlace } from './tourBus'
 import { TARGET_HELP } from './tourHelp'
 import { CreateInline } from '../sidebar/CreateInline'
 import { COURSE } from './script'
-import { setTourTyper } from './tourBus'
+import { setTourTyper, tourCardsFirst } from './tourBus'
 import { litBox, setCourseArea } from './dockArea'
 import { tourStepsOf } from './live'
 
@@ -95,6 +95,8 @@ async function mount(props: Partial<TourLayerProps> = {}): Promise<TourLayerProp
 const coach = () => document.querySelector<HTMLElement>('.course-tour__coach')!
 const say = () => document.querySelector('.course-tour__say')!.textContent
 const ring = () => document.querySelector<HTMLElement>('.course-tour__ring')
+/** The dim's holes, as `x y width height` (the mask's black rects). */
+const holes = () => [...document.querySelectorAll('.course-tour__dim .course-tour__hole')].map((r) => ['x', 'y', 'width', 'height'].map((a) => r.getAttribute(a)).join(' '))
 const button = (name: string) => [...coach().querySelectorAll('button')].find((b) => b.textContent === name)
 const key = (target: EventTarget, k: string) => {
   const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })
@@ -126,7 +128,7 @@ describe('the tour layer (YAZ-5123)', () => {
     place(row, { left: 10, top: 300, width: 200, height: 28 })
     frames(1)
     expect(ring()!.style.top).toBe('296px')
-    expect(document.querySelector('.course-tour__dim path')!.getAttribute('d')).toContain('M14 296')
+    expect(holes()).toContain('6 296 208 36')
     // The coach card sits below it, not over it.
     expect(Number.parseFloat(coach().style.top)).toBeGreaterThanOrEqual(296 + 36)
   })
@@ -251,7 +253,54 @@ describe('the tour layer (YAZ-5123)', () => {
     place(menu, { left: 400, top: 200, width: 180, height: 120 })
     document.body.appendChild(menu)
     frames(1)
-    expect(document.querySelector('.course-tour__dim path')!.getAttribute('d')).toContain('M408 200')
+    expect(holes()).toContain('400 200 180 120')
+  })
+
+  it('YAZ-5403: a menu over the lit control stays lit where they overlap: the holes are a union cut by a mask', async () => {
+    // The `/` menu opens inside the lit card editor; "New card" lights up inside the open folder menu.
+    control('div', 'sidebar-course-cards', { left: 10, top: 100, width: 400, height: 300 })
+    await mount()
+    const slash = document.createElement('div')
+    slash.className = 'milkdown-slash-menu'
+    slash.dataset.show = 'true'
+    place(slash, { left: 40, top: 140, width: 220, height: 180 })
+    app.appendChild(slash)
+    frames(1)
+    expect(holes()).toEqual(['6 96 408 308', '40 140 220 180'])
+    // The dim is one rect under a mask (no even-odd path, which filled the overlap again).
+    const dim = document.querySelector('.course-tour__dim')!
+    expect(dim.querySelector('path')).toBeNull()
+    const fill = dim.querySelector('.course-tour__dim-fill')!
+    const mask = dim.querySelector('mask')!
+    expect(fill.getAttribute('mask')).toBe(`url(#${mask.id})`)
+    expect(mask.querySelector('rect')!.getAttribute('fill')).toBe('white')
+    expect([...mask.querySelectorAll('.course-tour__hole')].every((r) => r.getAttribute('fill') === 'black')).toBe(true)
+  })
+
+  it('YAZ-5403: every kind of open popup is left lit: the selection toolbar, the [[ picker, a popover, a tooltip, any menu on the body', async () => {
+    Object.assign(window, { innerWidth: 1024, innerHeight: 768 })
+    await mount()
+    const add = (className: string, box: { left: number; top: number; width: number; height: number }, attrs: Record<string, string> = {}, parent: Element = app): HTMLElement => {
+      const el = document.createElement('div')
+      el.className = className
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v)
+      place(el, box)
+      parent.appendChild(el)
+      return el
+    }
+    add('milkdown-toolbar', { left: 100, top: 10, width: 240, height: 34 }, { 'data-show': 'true' })
+    add('wikilink-picker', { left: 100, top: 60, width: 200, height: 160 }, { role: 'listbox' })
+    add('view-popover', { left: 400, top: 60, width: 200, height: 100 }, { role: 'dialog' })
+    add('hover-tip', { left: 650, top: 60, width: 90, height: 24 }, { role: 'tooltip' }, document.body)
+    // A menu with none of the known names, portaled to the body (the card's ⋯ menu, a picker): lit too.
+    add('some-new-menu', { left: 700, top: 300, width: 160, height: 90 }, { style: 'position: fixed' }, document.body)
+    // Hidden ones are not: a toolbar that is not shown, and a scrim the size of the window stays dimmed.
+    add('milkdown-slash-menu', { left: 10, top: 600, width: 100, height: 100 }, { 'data-show': 'false' })
+    add('confirm-overlay', { left: 0, top: 0, width: 1024, height: 768 }, { style: 'position: fixed' }, document.body)
+    frames(1)
+    expect(holes()).toEqual(expect.arrayContaining(['100 10 240 34', '100 60 200 160', '400 60 200 100', '650 60 90 24', '700 300 160 90']))
+    expect(holes()).not.toContain('10 600 100 100')
+    expect(holes()).not.toContain('0 0 1024 768')
   })
 })
 
@@ -321,6 +370,77 @@ describe('"Use an example" on a step that asks for typing (YAZ-5125)', () => {
   })
 })
 
+describe('the `[[` picker lists cards first during a step about card links (YAZ-5407)', () => {
+  it('on while the step waits for the picker or the card row; off for other steps and when the layer goes', async () => {
+    control('div', 'card-editor', { left: 10, top: 120, width: 300, height: 120 })
+    await mount({
+      steps: [
+        { target: 'card-editor', say: 'Type two square brackets.', done: { event: 'link-picker-open' } },
+        { target: 'link-picker', say: 'Click the row with the card icon.', done: { event: 'card-link-added' } },
+        { target: 'card-editor', say: 'Done.', done: { event: 'card-edit-done' } },
+      ],
+    })
+    expect(tourCardsFirst()).toBe(true)
+    act(() => tourEvent('link-picker-open'))
+    frames(1)
+    expect(tourCardsFirst()).toBe(true)
+    act(() => tourEvent('card-link-added'))
+    frames(1)
+    expect(tourCardsFirst()).toBe(false)
+    act(() => root.unmount())
+    root = createRoot(host)
+    expect(tourCardsFirst()).toBe(false)
+  })
+
+  it('a step about something else leaves the picker as it is (pages first)', async () => {
+    control('button', 'sidebar-course-cards', { left: 10, top: 100, width: 200, height: 28 })
+    await mount()
+    expect(tourCardsFirst()).toBe(false)
+  })
+})
+
+describe('the red arrow on a live step (YAZ-5405)', () => {
+  it('points at the lit control from outside it, takes no pointer, and follows the control', async () => {
+    Object.assign(window, { innerWidth: 1024, innerHeight: 768 })
+    const row = control('button', 'sidebar-course-cards', { left: 10, top: 100, width: 200, height: 28 })
+    await mount({ variant: 'live', steps: [{ target: 'sidebar-course-cards', say: '', done: 'show' }], reached: () => 1 })
+    frames(1)
+    const arrow = () => document.querySelector<HTMLElement>('.course-tour__arrow')
+    expect(arrow()).not.toBeNull()
+    expect(arrow()!.getAttribute('aria-hidden')).toBe('true')
+    expect(arrow()!.dataset.side).toBe('right')
+    // Outside the ring's box (6 96 208 36), on the line through its middle.
+    expect(Number.parseFloat(arrow()!.style.left)).toBeGreaterThan(6 + 208)
+    expect(Number.parseFloat(arrow()!.style.top) + Number.parseFloat(arrow()!.style.height) / 2).toBe(114)
+    // The control moves: the arrow goes with it.
+    place(row, { left: 10, top: 400, width: 200, height: 28 })
+    frames(1)
+    expect(Number.parseFloat(arrow()!.style.top) + Number.parseFloat(arrow()!.style.height) / 2).toBe(414)
+    // Reduced motion is the layer's: the CSS turns the nudge off under it.
+    expect(document.querySelector('.course-tour--live')!.contains(arrow())).toBe(true)
+  })
+
+  it('draws nothing while the course fills the window', async () => {
+    control('button', 'sidebar-course-cards', { left: 10, top: 100, width: 200, height: 28 })
+    await mount({ variant: 'live', steps: [{ target: 'sidebar-course-cards', say: '', done: 'show' }], reached: () => 1, visible: false })
+    frames(1)
+    expect(document.querySelector('.course-tour__arrow')).toBeNull()
+    expect(document.querySelector('.course-tour__ring')).toBeNull()
+  })
+
+  it('the arrow, its colour and its nudge: red in both themes, no pointer, no motion under reduced motion', async () => {
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync(`${__dirname}/tour.css`, 'utf8')
+    expect(css).toMatch(/\.course-tour__arrow \{[^}]*pointer-events: none/)
+    expect(css).toMatch(/--course-tour-arrow: #e0201b/)
+    expect(css).toMatch(/:root\[data-theme='dark'\] \.course-tour \{\s*--course-tour-arrow: #ff4a42/)
+    expect(css).toMatch(/\.course-tour\[data-reduced-motion='true'\] \.course-tour__arrow \{\s*transition: none;\s*animation: none;/)
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[^}]*\.course-tour__arrow \{\s*transition: none;\s*animation: none;/)
+    // A live step's ring is red too (the "light only" steps have no dim, so the ring must stand out).
+    expect(css).toMatch(/\.course-tour--live \.course-tour__ring \{\s*box-shadow: 0 0 0 2px var\(--course-tour-arrow\)/)
+  })
+})
+
 describe('the tour layer with a docked course (YAZ-5365)', () => {
   it('leaves the course out of the dim, keeps the coach card off it, and tells the course where the light is', async () => {
     Object.assign(window, { innerWidth: 1024, innerHeight: 768 })
@@ -333,7 +453,7 @@ describe('the tour layer with a docked course (YAZ-5365)', () => {
       const left = Number.parseFloat(coach().style.left)
       expect(left + 300).toBeLessThanOrEqual(side.left)
       // The course is a hole in the dim (its top-left corner, rounded), so it stays bright and usable.
-      expect(document.querySelector('.course-tour__dim path')!.getAttribute('d')).toContain('M684 0H1016')
+      expect(holes()).toContain('676 0 348 768')
       expect(litBox()).toEqual({ left: 496, top: 296, width: 158, height: 36 })
     } finally {
       setCourseArea(null)
