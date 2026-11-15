@@ -55,6 +55,7 @@ export function signInHelp(error: SignInError): Help {
     case 'no-contents':
     case 'read-only':
     case 'no-repos':
+    case 'other-account':
       return { message, forward: 'token-guide' }
     case 'branch-not-found':
     case 'no-vault':

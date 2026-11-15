@@ -2,7 +2,7 @@ import { askToKeepStorage, type KeepStorage } from '../store/persist'
 import type { TokenStore } from '../store/tokenStore'
 import type { VaultStore } from '../store/vaultStore'
 import { addVault, forgetVault, loadVaultList, openVaultOf, saveVaultList, vaultId, type VaultList } from '../store/vaults'
-import { saveAccount, type VaultAccount } from './account'
+import { loadAccount, saveAccount, type VaultAccount } from './account'
 import { checkSignIn, type CheckDeps, type SignInError, type SignInInput } from './check'
 
 /** The sign-in logic for the screens (4A): what to show at start, add a vault, sign in again, sign out. */
@@ -65,6 +65,8 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
  * Row N6: the vault's token stopped working (`UNAUTHORIZED`, red status). A new token is checked against the same
  * repo and branch, then replaces the old one. The local copy, the checkpoint and the waiting answers stay. When the
  * check fails, nothing changes. `expiresAt`: the token's end date, from the Mac's code ("Scan a code").
+ * A token of another GitHub account than the one the vault was signed in with is refused, and nothing changes
+ * (YAZ-5092 D5). GitHub logins ignore case. A vault with no stored account takes any account.
  */
 export async function signInAgain(vault: string, token: string, deps: SignInDeps, expiresAt?: string | null): Promise<SignInOutcome> {
   const known = (await loadVaultList(deps.store)).vaults.find((v) => vaultId(v) === vault)
@@ -72,6 +74,10 @@ export async function signInAgain(vault: string, token: string, deps: SignInDeps
   // The end date that a scanned code holds is kept with the new token, as at a first sign-in.
   const checked = await checkSignIn({ repo: known.repo, branch: known.branch, token, expiresAt }, deps)
   if (!checked.ok) return checked
+  const before = await loadAccount(deps.store, vault)
+  const login = checked.vault.account.login
+  if (before !== undefined && before.login.toLowerCase() !== login.toLowerCase())
+    return { ok: false, error: { kind: 'other-account', login, expected: before.login } }
   await deps.tokens.write(vault, checked.token)
   await saveAccount(deps.store, vault, checked.vault.account)
   return { ok: true, vault, account: checked.vault.account }

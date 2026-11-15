@@ -19,7 +19,9 @@ const CLASSIC = 'ghp_' + 'c'.repeat(36)
 const WORK = 'github_pat_11WORKWORK0workworkworkwo_' + 'w'.repeat(59)
 const NO_CONTENTS = 'github_pat_11NOCONTENT0nocontentsnoconten_' + 'm'.repeat(59)
 const WRONG = 'github_pat_11WRONGWRONG0wrongwrongwron_' + 'x'.repeat(59)
-const ALL_TOKENS = [NO_CONTENTS, GOOD, NO_GISTS, READ_ONLY, OTHER_REPO, CLASSIC, WORK, WRONG]
+const OTHER_LOGIN = 'github_pat_11OTHERLOGIN0otherloginothe_' + 'q'.repeat(59)
+const SAME_LOGIN_CASE = 'github_pat_11SAMELOGIN0sameloginsamel_' + 's'.repeat(59)
+const ALL_TOKENS = [NO_CONTENTS, GOOD, NO_GISTS, READ_ONLY, OTHER_REPO, CLASSIC, WORK, WRONG, OTHER_LOGIN, SAME_LOGIN_CASE]
 
 let github: FakeGithub
 let store: VaultStore
@@ -38,6 +40,8 @@ beforeEach(async () => {
       [CLASSIC]: { login: 'yaseen', kind: 'classic', repos: { 'yaseen/vault': 'write' }, gists: true },
       [NO_CONTENTS]: { login: 'yaseen', repos: { 'yaseen/vault': 'none' }, gists: true },
       [WORK]: { login: 'yaseen-work', repos: { 'acme/pages': 'write' }, gists: true },
+      [OTHER_LOGIN]: { login: 'other', repos: { 'yaseen/vault': 'write' }, gists: true },
+      [SAME_LOGIN_CASE]: { login: 'Yaseen', repos: { 'yaseen/vault': 'write' }, gists: true },
     },
     repos: [
       { fullName: 'yaseen/vault', branches: ['main', 'phone'] },
@@ -350,6 +354,29 @@ describe('N6: the token is cancelled while in use', () => {
     github.calls.length = 0
     expect(await startState(store, tokens)).toEqual({ kind: 'sign-in-again', vault: 'yaseen/vault@main' })
     expect(github.calls).toEqual([])
+  })
+
+  it('YAZ-5092 D5: a token of another GitHub account is refused; the old token and account stay, with words naming both', async () => {
+    await signIn({ repo: 'yaseen/vault', token: GOOD }, deps)
+    const before = await loadAccount(store, 'yaseen/vault@main')
+    // The other account can write the repo, so every other check passes.
+    const result = await signInAgain('yaseen/vault@main', OTHER_LOGIN, deps)
+    expect(result).toEqual({ ok: false, error: { kind: 'other-account', login: 'other', expected: 'yaseen' } })
+    expect(await tokens.read('yaseen/vault@main')).toBe(GOOD)
+    expect(await loadAccount(store, 'yaseen/vault@main')).toEqual(before)
+    if (!result.ok)
+      expect(signInMessage(result.error)).toBe('This token is for @other. This vault uses @yaseen. Make a token while signed in as @yaseen.')
+    // GitHub logins ignore case: the same account in other letters is taken.
+    expect(await signInAgain('yaseen/vault@main', SAME_LOGIN_CASE, deps)).toMatchObject({ ok: true, account: { login: 'Yaseen' } })
+    expect(await tokens.read('yaseen/vault@main')).toBe(SAME_LOGIN_CASE)
+  })
+
+  it('YAZ-5092 D5: a vault with no stored account takes the token of any account', async () => {
+    await signIn({ repo: 'yaseen/vault', token: GOOD }, deps)
+    await store.setState('yaseen/vault@main', 'account', undefined)
+    expect(await loadAccount(store, 'yaseen/vault@main')).toBeUndefined()
+    expect(await signInAgain('yaseen/vault@main', OTHER_LOGIN, deps)).toMatchObject({ ok: true, account: { login: 'other' } })
+    expect(await tokens.read('yaseen/vault@main')).toBe(OTHER_LOGIN)
   })
 
   it('signInAgain for a vault that is not on the phone is refused', async () => {

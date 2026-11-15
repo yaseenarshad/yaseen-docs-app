@@ -57,6 +57,11 @@ export type SignInError =
   /** The token can read but not write (the row "only read access"), or the repo is archived. */
   | { kind: 'read-only'; repo: string }
   | { kind: 'already-added'; repo: string; branch: string }
+  /**
+   * "Sign in again" with a token of another GitHub account (YAZ-5092 D5): `login` is the new token's, `expected` the
+   * login the vault was signed in with. The old token stays.
+   */
+  | { kind: 'other-account'; login: string; expected: string }
   /** The token's list of repos (`GET /user/repos`) is empty. The token was given no repo. */
   | { kind: 'no-repos' }
   | { kind: 'offline' }
@@ -198,6 +203,8 @@ export function signInMessage(error: SignInError): string {
       return `Your token can read ${error.repo} but not change it. Make a token with Contents: Read and write on this repo.`
     case 'already-added':
       return `${error.repo} (${error.branch}) is already on this phone.`
+    case 'other-account':
+      return `This token is for @${error.login}. This vault uses @${error.expected}. Make a token while signed in as @${error.expected}.`
     case 'no-repos':
       return "This token can't see any repository. On GitHub, edit the token and choose the repository of your vault."
     case 'offline':
