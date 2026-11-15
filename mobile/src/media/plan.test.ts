@@ -121,3 +121,18 @@ describe('aheadPlan: the files the window needs', () => {
     expect(plan.wanted).toEqual([])
   })
 })
+
+describe('YAZ-5596 item 8: the due pass of the plan gives the UI thread back', () => {
+  it('a vault of 1,000 files: the pass over them slices (no one long task); the plan is the same as with no slices', async () => {
+    const files: Record<string, string> = {}
+    for (let i = 0; i < 1000; i++) files[`notes/n${i}.md`] = page(`Note ${i}`, [], 'Made-up words.\n')
+    files['cards.md'] = page('Cards', [block('NC-1', 'Q ![](a.png)', REVIEW)])
+    const v = vault(files)
+    let slices = 0
+    const sizes = new Map<string, number | undefined>([['a.png', 10]])
+    const sliced = await aheadPlan({ ...v, sizes, settings: S, now: DUE, slice: async () => void slices++ })
+    expect(slices).toBeGreaterThanOrEqual(20)
+    expect(sliced).toEqual(await aheadPlan({ ...v, sizes, settings: S, now: DUE }))
+    expect(sliced.wanted).toEqual(['a.png'])
+  })
+})
