@@ -141,6 +141,22 @@ describe("the file's look on the phone (YAZ-5482)", () => {
     view.close()
   })
 
+  it('clipTable_columnsFitHeaderWords_whenRoom (sweep3 N-6): Clip on a narrow table cuts nothing that fits: its headers stay whole', async () => {
+    const t = await one('| Fruit | Count | Ripe |\n| --- | --- | --- |\n| Apple | 12 | yes |\n| Pear | 3 | no |\n\n<!-- table: header blue strong, nowrap -->')
+    expect([...t.rows[0]!.cells].every((c) => c.hasAttribute('data-clip'))).toBe(true)
+    // Every column is short (FIT): as wide as its text, so no cell is cut, the headers least of all.
+    expect(columnsOf(t).map((c) => c.kind)).toEqual(['fit', 'fit', 'fit'])
+    expect(t.querySelectorAll('.page-table__clip')).toHaveLength(0)
+    expect([...t.rows[0]!.cells].map((c) => c.textContent)).toEqual(['Fruit', 'Count', 'Ripe'])
+    // A header of two words in a clipped column is one line: the column is as wide as all of it.
+    const two = await one('| Ripe date | N |\n| --- | --- |\n| May | 1 |\n\n<!-- table: nowrap -->')
+    expect(two.querySelectorAll('th .page-table__clip')).toHaveLength(0)
+    expect(columnsOf(two)[0]!.max).toBeCloseTo(1.5 + 0.62 + 3 * 0.5 + 0.5 + 4 * 0.5, 1)
+    // A text truly longer than its column is still cut (one line, "…").
+    const long = await one(`${LOOK_CLIP}\n\n${LOOK_CLIP_COMMENT}`)
+    expect(long.rows[1]!.cells[0]!.querySelector('.page-table__clip')).not.toBeNull()
+  })
+
   it('a table with no comment looks as before', async () => {
     const t = await one(TWO_LONG)
     for (const name of ['data-widths', 'data-stripes', 'data-border', 'data-height', 'data-valign', 'data-header-strength']) expect(t.hasAttribute(name)).toBe(false)

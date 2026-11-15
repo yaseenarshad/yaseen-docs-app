@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NO_STORAGE_MESSAGE } from '../App'
 import { useApp } from '../app/AppState'
 import { useOverlay } from '../app/browserHistory'
@@ -42,6 +42,17 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
   const notSent = (answers.list?.comments?.waiting() ?? []).filter((c) => c.refused !== undefined)
   const listWait = dot.reason === 'waiting' ? waitWords(answers, now) : null
   const said = listWait !== null ? null : why(dot, sync.status === 'slowed' ? sync.retryAt : null)
+  // YAZ-5524 (sweep3 S-2): the state under a lost answer or a change not sent: its own group, never hidden.
+  const then = dot.then
+  const thenSaid = then === null ? null : why(then, sync.status === 'slowed' ? sync.retryAt : null)
+  const down = sync.status === 'off' && sync.problem === 'GITHUB_DOWN' && navigator.onLine
+  // YAZ-5524: a loud sheet can ask for a sync (and a send) now, unless it has its own way (Try now, red) or GitHub asked to wait.
+  const [syncing, setSyncing] = useState(false)
+  const canSync = dot.state === 'pending' && listWait === null && sync.status !== 'slowed' && dot.reason !== 'slowed'
+  const syncNow = () => {
+    setSyncing(true)
+    void Promise.allSettled([app.services.sync.syncNow(), answers.list?.sendNow()]).then(() => setSyncing(false))
+  }
   const red = dot.state === 'attention' && app.vault !== null ? (syncHelp({ ...sync, problem: sync.status === 'attention' ? sync.problem : (answers.state?.problem ?? null) }, app.vault, app.unit, false) ?? null) : null
 
   return (
@@ -56,6 +67,16 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
           {lastAt !== null && `, at ${clockTime(lastAt)}`}
         </p>
         {said !== null && <p>{said}</p>}
+        {then !== null && (
+          <div className="status-sheet__then">
+            <p className="status-sheet__head">
+              <span className={`sync-dot sync-dot--${then.state}`} aria-hidden="true" />
+              <strong>{then.words}</strong>
+            </p>
+            {thenSaid !== null && <p>{thenSaid}</p>}
+          </div>
+        )}
+        {down && <p>GitHub is down. The phone tries again at the next sync. Nothing is lost.</p>}
         {listWait !== null && (
           <div className="stack">
             <p>{listWait}</p>
@@ -119,6 +140,12 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
         )}
 
         <NotSentRows items={notSent} onDiscard={(id) => answers.list?.comments?.discard(id) ?? Promise.resolve()} />
+
+        {canSync && (
+          <button type="button" className="btn btn--wide" disabled={syncing} onClick={syncNow}>
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </button>
+        )}
 
         <button ref={close} type="button" className="btn btn--wide" onClick={onClose}>
           Close

@@ -28,6 +28,8 @@ export function useCopyPath(copy: (text: string) => Promise<void> = clipboard): 
         say(`Copied: ${path}`)
         return true
       } catch {
+        // Sweep3 N-3 (YAZ-5524): one message at a time: the dialog takes the place of an earlier copy's toast.
+        say(null)
         setByHand(path)
         return false
       }

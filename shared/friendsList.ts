@@ -29,7 +29,7 @@ import {
   type WriteOptions,
 } from './friendGists'
 import { BrokenList, ListError, NewerList, findFriendsIndex, latestList, listErrorCode, openFriendsList, updateList, writeList } from './friendListHome'
-import { FRIEND_LINK_BASE, LINK_ID, isOurSite } from './friendLinks'
+import { FRIEND_LINK_BASE, LINK_ID, isOurSite, linkPath } from './friendLinks'
 import { LIST_PATH } from './friendListStore'
 import { mayUpdate, recordUpdate, sendGap, type GistBudget } from './friendSend'
 
@@ -101,7 +101,7 @@ export function parseFriendLink(text: string): LinkRead {
       continue
     }
     const host = url.hostname.toLowerCase()
-    const parts = url.pathname.split('/').filter(Boolean)
+    const parts = linkPath(url)
     let id: string | null = null
     if (isOurSite(host)) {
       id = url.hash.replace(/^#/, '').replace(/\/+$/, '') || url.searchParams.get('id') || (parts[0] === 'friend' ? (parts[1] ?? null) : null)

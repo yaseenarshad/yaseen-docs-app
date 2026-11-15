@@ -228,6 +228,37 @@ describe('the inline box at the end of the comments (YAZ-5478)', () => {
     expect(box.selectionStart).toBe('Approved - ship it'.length)
   })
 
+  it('approved_thenSystemUndo_doesNotDuplicateDraft: the fill is ONE native edit (insertText), so the system Undo takes it back whole (sweep3 N-1)', async () => {
+    const f = fakePort()
+    await mount(f.port, 'Body')
+    const box = host.querySelector('textarea')!
+    await type('Keep me')
+    act(() => box.focus())
+    box.setSelectionRange(7, 7)
+    // A browser's insertText: the edit goes in at the selection, as typing would (one step on the Undo stack).
+    const calls: [string, string | undefined, number, number][] = []
+    const real = document.execCommand
+    document.execCommand = (command: string, _ui?: boolean, value?: string) => {
+      calls.push([command, value, box.selectionStart, box.selectionEnd])
+      box.setRangeText(value ?? '', box.selectionStart, box.selectionEnd, 'end')
+      box.dispatchEvent(new Event('input', { bubbles: true }))
+      return true
+    }
+    try {
+      await click('Approved')
+    } finally {
+      document.execCommand = real
+    }
+    expect(calls).toEqual([['insertText', ' Approved', 7, 7]])
+    expect(box.value).toBe('Keep me Approved')
+    expect(box.selectionStart).toBe('Keep me Approved'.length)
+    // The system Undo (the browser puts the value back and says so): the box and the draft are the typed words, once.
+    box.setRangeText('', 7, 16, 'end')
+    box.dispatchEvent(new Event('input', { bubbles: true }))
+    await type('Keep meX')
+    expect(box.value).toBe('Keep meX')
+  })
+
   it('a page whose comments is not a comment list: Comment says so and nothing is added', async () => {
     const f = fakePort()
     await mount(f.port, '---\ncomments: see the doc\n---\nBody')

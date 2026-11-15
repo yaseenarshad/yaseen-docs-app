@@ -319,6 +319,41 @@ describe('a page, read only (YAZ-5079)', () => {
     expect(h.host.querySelector('.reader__notice')?.textContent).toBe('"Trip plan" was deleted on the Mac. Your comment is not sent: copy it before you leave this page.')
   })
 
+  it('deletedWithDraft_pageReturns_drawsAgainAndSends (sweep3 N-2): the Mac brings the page back: it draws again, and a comment goes through', async () => {
+    h = await openSearch()
+    // A comment list that keeps what it is given (the send itself is the sender's, tested in comments/).
+    const added: { path: string; body: string }[] = []
+    const port = { ready: async () => {}, waiting: () => [], add: async (c: { path: string; body: string }) => (added.push({ path: c.path, body: c.body }), { id: 'abcd1234', path: c.path, body: c.body, at: '2026-11-15T09:00:00Z', madeAt: 0, notBefore: 0 }), undo: async () => false, discard: async () => true, subscribe: () => () => {} }
+    ;(h.sync as unknown as { review?: () => Promise<unknown> }).review = async () => ({ answers: { state: () => ({ vault: READER_ID, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }), subscribe: () => () => {}, waiting: () => [], comments: port } })
+    await openPage(h, 'Trip plan')
+    const field = () => h!.host.querySelector<HTMLTextAreaElement>('textarea.page-comments__box')!
+    await waitFor(h, () => h!.host.querySelector('textarea.page-comments__box') !== null)
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(field(), 'Half a thought')
+      field().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const files = { ...READER_FILES }
+    delete files['Trip plan.md']
+    await h.store.remove(READER_ID, 'Trip plan.md')
+    let index = await writeVaultFiles(h.store, files, {}, 'c2')
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: [], diff: { added: [], changed: [], removed: ['Trip plan.md'], renamed: [] }, index })
+    await waitFor(h, () => /deleted on the Mac/.test(h!.host.querySelector('.reader__notice')?.textContent ?? ''))
+    // The Mac brings it back, with an edit.
+    const back = { ...files, 'Trip plan.md': READER_FILES['Trip plan.md'].toString().replace('Madrid, May 3 to 10.', 'Madrid, May 4 to 11.') }
+    index = await writeVaultFiles(h.store, back, {}, 'c3')
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: [], diff: { added: ['Trip plan.md'], changed: [], removed: [], renamed: [] }, index })
+    await waitFor(h, () => h!.text().includes('Madrid, May 4 to 11.'))
+    expect(h.host.querySelector('.reader__notice')).toBeNull()
+    expect(field().value).toBe('Half a thought')
+    // And it follows the Mac again: a later edit shows.
+    index = await writeVaultFiles(h.store, { ...back, 'Trip plan.md': back['Trip plan.md'].replace('May 4 to 11', 'May 5 to 12') }, {}, 'c4')
+    await h.syncEmit({ type: 'changed', vault: READER_ID, settings: [], diff: { added: [], changed: ['Trip plan.md'], removed: [], renamed: [] }, index })
+    await waitFor(h, () => h!.text().includes('Madrid, May 5 to 12.'))
+    // The comment goes to the page at its path.
+    await h.click('Comment')
+    expect(added).toEqual([{ path: 'Trip plan.md', body: 'Half a thought' }])
+  })
+
   it('the box and the Type are kept while a page is open', async () => {
     h = await openSearch()
     await typeQuery(h, 'trip')

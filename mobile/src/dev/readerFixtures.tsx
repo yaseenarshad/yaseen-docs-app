@@ -54,8 +54,11 @@ import { fixtureAnswers } from './fixtureAnswers'
  * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
  * YAZ-5521 (sweep2 S-B): `page-not-sent`, `page-waiting`, `page-long-id-not-sent`, `page-long-id-waiting`: `page` and
  * `page-long-id` with the dot amber: one comment not sent (its page gone), or two comments waiting.
+ * YAZ-5524 (sweep3 S-1): `page-no-id` a page with a long title and NO ID chip; `-waiting1-offline` "1 comment waiting ·
+ * no signal", `-waiting2-offline` "2 waiting · no signal" (a comment and a tick), `-waiting`, `-not-sent`. YAZ-5524 S-2:
+ * `-mixed-offline` (also on `page`, with the ID chip): one comment not sent AND two waiting, no signal.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -163,8 +166,11 @@ const STRIP_CARD = COMMENTED_CARD.replace(
 
 export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Promise<void> {
   // YAZ-5521: the amber dot's variants are their page's fixture, with a made-up answer list's state under the dot.
-  const dotKind = /-(not-sent|waiting)$/.exec(fixture)?.[1] as 'not-sent' | 'waiting' | undefined
-  const name = (dotKind === undefined ? fixture : fixture.slice(0, -dotKind.length - 1)) as ReaderFixture
+  // YAZ-5524: `-offline` after it: the engine has no signal.
+  const dotMatch = /-(not-sent|waiting1|waiting2|waiting|mixed)(-offline)?$/.exec(fixture)
+  const dotKind = dotMatch?.[1] as 'not-sent' | 'waiting1' | 'waiting2' | 'waiting' | 'mixed' | undefined
+  const dotOffline = dotMatch?.[2] !== undefined
+  const name = (dotMatch === null ? fixture : fixture.slice(0, dotMatch.index)) as ReaderFixture
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
@@ -248,6 +254,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
                 'garden/Garden plan.md': '---\ntitle: A very long garden plan for the whole back yard, the shed and the raised beds\nid: GARDN-1234567\n---\n\n# Beds\n\nTomatoes.\n',
                 '.yaseendocs/ids.json': '{"enabled": true, "letters": "GARDN"}',
               }
+          : name === 'page-no-id'
+            ? { 'notes/Very long words about the whole trip and the plans for every day.md': '---\ntitle: Very long words about the whole trip and the plans for every day\n---\n\n# Words\n\nMade-up words.\n' }
           : name === 'card-strip'
             ? { 'cards/river-of-seville-demo-45.md': STRIP_CARD, 'trips/Seville.md': '---\ntitle: Seville\nid: DEMO-46\n---\n\nThe river card: [[DEMO-45]].\n' }
             : {}
@@ -277,10 +285,12 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
   }
   if (dotKind !== undefined) {
-    const state = { vault: READER_ID, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null, comments: dotKind === 'waiting' ? 2 : 0, ticks: 0, notSent: dotKind === 'not-sent' ? { n: 1, ticks: 0, gone: 1 } : undefined }
+    const waitingComments = { waiting: 2, waiting1: 1, waiting2: 2, mixed: 2, 'not-sent': 0 }[dotKind]
+    const notSent = dotKind === 'not-sent' || dotKind === 'mixed'
+    const state = { vault: READER_ID, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null, comments: waitingComments, ticks: dotKind === 'waiting2' ? 1 : 0, notSent: notSent ? { n: 1, ticks: 0, gone: 1 } : undefined }
     // The comment not sent holds a long URL (sweep2 S-C: the Discard ask must wrap it).
     const lost = { id: 'a1b2c3d4', path: 'garden/Old plan.md', body: 'See https://example.com/a/very/long/path/that/does/not/wrap/nicely/at/all/Supercalifragilisticexpialidocious', at: '2026-11-15T09:00:00Z', madeAt: 0, notBefore: 0, refused: 'gone' as const }
-    const comments = { ready: async () => {}, waiting: (path?: string) => (dotKind === 'not-sent' && (path === undefined || path === lost.path) ? [lost] : []), add: async () => lost, undo: async () => false, discard: async () => true, subscribe: () => () => {} }
+    const comments = { ready: async () => {}, waiting: (path?: string) => (notSent && (path === undefined || path === lost.path) ? [lost] : []), add: async () => lost, undo: async () => false, discard: async () => true, subscribe: () => () => {} }
     const answers = { state: () => state, subscribe: () => () => {}, waiting: () => [], comments }
     sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
   }
@@ -396,6 +406,10 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       break
     case 'page-pills':
       await open(/^Spanish words/, '.reader__body h1')
+      break
+    case 'page-no-id':
+      await typed('very long words')
+      await open(/^Very long words/, '.reader__body h1')
       break
     case 'page-long-id':
       await typed('very long garden')
@@ -649,6 +663,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       await open(/^Two cards in one/, '.card-view__card *')
       break
   }
+  // YAZ-5524: no signal (the engine's state, as after a failed poll).
+  if (dotOffline) sync.set({ status: 'off', problem: 'OFFLINE' })
   await wait(100)
   document.documentElement.dataset.fixtureReady = fixture
 }

@@ -57,6 +57,12 @@ export interface Dot {
   /** YAZ-5521: the number the amber dot says alone where room is short (a page's ID chip in the bar); null with no number. */
   count: number | null
   reason: DotReason
+  /**
+   * YAZ-5524 (sweep3 S-2): under a state that needs a tap (a lost answer, a change not sent), the state the dot would
+   * say without it ("3 waiting · no signal"), so neither hides the other: the bar adds its count, the sheet its group.
+   * Null when nothing else is to say, and on every other state.
+   */
+  then: Dot | null
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -81,6 +87,7 @@ const RED: Record<string, { reason: DotReason; words: string }> = {
  *    a full phone. Never for no signal, GitHub down, "slow down" or a failed read: those pass by themselves.
  * 2. amber "N answers could not be saved": a lost answer needs a tap (Discard). It stays until then.
  *    YAZ-5517: so does a comment or a tick the phone could not send ("1 comment couldn't be sent: its page is gone").
+ *    YAZ-5524: it never hides rules 3 to 9: `then` is what they say, and the bar adds its count ("1 not sent · 3 waiting").
  * 3. no signal (the phone's or the engine's): amber "N answers waiting · no signal" when answers wait, else grey.
  * 4. blue "Syncing…": a pass or a send runs.
  * 5. amber "N answers waiting" (also while GitHub asked to wait); "1 comment waiting" for a page's comment (YAZ-5461).
@@ -92,11 +99,18 @@ const RED: Record<string, { reason: DotReason; words: string }> = {
 export function syncDot(input: DotInput): Dot {
   const dot = dotWords(input)
   const short = shortWords(dot, input)
-  return { ...dot, short, bar: dot.reason === 'not-sent' ? short : dot.words, count: countOf(dot, input) }
+  const bar = dot.reason === 'not-sent' ? short : dot.words
+  const one = { ...dot, short, bar, count: countOf(dot, input), then: null }
+  if (dot.reason !== 'not-sent' && dot.reason !== 'lost') return one
+  // YAZ-5524: the rest, as if nothing needed a tap. The bar names it by its count: "1 not sent · 3 waiting".
+  const then = syncDot({ ...input, answers: { ...input.answers, lost: 0, notSent: undefined } })
+  if (then.reason === 'synced' || then.reason === 'syncing' || then.reason === 'starting') return one
+  const more = then.count === null ? '' : ` · ${then.count} waiting`
+  return { ...one, then, bar: bar + more, short: dot.reason === 'not-sent' ? short + more : short }
 }
 
 /** YAZ-5521: what the dot counts, for its smallest form (the dot and a number). */
-function countOf(dot: Omit<Dot, 'short' | 'bar' | 'count'>, { answers }: DotInput): number | null {
+function countOf(dot: Omit<Dot, 'short' | 'bar' | 'count' | 'then'>, { answers }: DotInput): number | null {
   if (dot.reason === 'waiting' || dot.reason === 'waiting-offline') return answers.waiting
   if (dot.reason === 'not-sent') return answers.notSent?.n ?? null
   if (dot.reason === 'lost') return answers.lost
@@ -104,14 +118,14 @@ function countOf(dot: Omit<Dot, 'short' | 'bar' | 'count'>, { answers }: DotInpu
 }
 
 /** YAZ-5216: the short form keeps each fact of the words; only the long words of two states change. */
-function shortWords(dot: Omit<Dot, 'short' | 'bar' | 'count'>, { answers }: DotInput): string {
+function shortWords(dot: Omit<Dot, 'short' | 'bar' | 'count' | 'then'>, { answers }: DotInput): string {
   if (dot.reason === 'waiting-offline') return `${answers.waiting} waiting · offline`
   if (dot.reason === 'not-sent') return `${answers.notSent!.n} not sent`
   if (dot.reason === 'lost') return `${plural(answers.lost, 'answer', 'answers')} not saved`
   return dot.words
 }
 
-function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short' | 'bar' | 'count'> {
+function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short' | 'bar' | 'count' | 'then'> {
   const red =
     token.kind === 'ended'
       ? RED.UNAUTHORIZED

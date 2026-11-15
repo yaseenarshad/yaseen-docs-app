@@ -271,3 +271,24 @@ describe('YAZ-5517: comments and ticks that could not be sent', () => {
     expect(of({ n: 1, ticks: 1, gone: 1 }, { token: ENDED }).state).toBe('attention')
   })
 })
+
+describe('YAZ-5524 (sweep3 S-2): what could not be sent never hides the rest', () => {
+  const base: DotInput = { sync: { status: 'synced', problem: null }, answers: { loaded: true, waiting: 0, lost: 0, sending: false, problem: null }, online: true, token: NONE }
+  const notSent = { n: 1, ticks: 0, gone: 1 }
+  it('dot_notSent_plusWaitingOffline_saysBoth_andSheetListsWaiting: the most urgent state, then the count of the others', () => {
+    const d = syncDot({ ...base, online: false, answers: { ...base.answers, waiting: 3, comments: 3, notSent } })
+    expect(d).toMatchObject({ state: 'pending', reason: 'not-sent', words: "1 comment couldn't be sent: its page is gone", bar: '1 not sent · 3 waiting', short: '1 not sent · 3 waiting', count: 1 })
+    expect(d.then).toMatchObject({ reason: 'waiting-offline', words: '3 comments waiting · no signal', count: 3 })
+    // GitHub down (the engine is off, the phone has a signal): the waiting comment shows too.
+    const down = syncDot({ ...base, sync: { status: 'off', problem: 'GITHUB_DOWN' }, answers: { ...base.answers, waiting: 1, comments: 1, notSent } })
+    expect(down.bar).toBe('1 not sent · 1 waiting')
+    expect(down.then?.reason).toBe('waiting-offline')
+    // Nothing else: the urgent state alone, and nothing under it.
+    expect(syncDot({ ...base, answers: { ...base.answers, notSent } })).toMatchObject({ bar: '1 not sent', then: null })
+  })
+  it('a lost answer says the waiting ones too', () => {
+    const d = syncDot({ ...base, answers: { ...base.answers, waiting: 2, lost: 1 } })
+    expect(d).toMatchObject({ reason: 'lost', bar: '1 answer could not be saved · 2 waiting', short: '1 answer not saved' })
+    expect(d.then).toMatchObject({ reason: 'waiting', words: '2 answers waiting' })
+  })
+})

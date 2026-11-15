@@ -207,6 +207,22 @@ describe('YAZ-5450: the page ID chip', () => {
     expect(h.host.querySelector('.copy-by-hand')).toBeNull()
   })
 
+  it('copyPath_byHandDialog_clearsTheToast (sweep3 N-3): a copy that worked, then one the clipboard refuses: only the dialog shows', async () => {
+    h = await openSearch()
+    await openRow(h, /^Spanish words, page/, '.reader__body')
+    await h.click('DEMO-1. Copy the path')
+    expect(h.host.querySelector('.toast')?.textContent).toBe('Copied: Spanish words.md')
+    write.mockRejectedValue(new DOMException('Not allowed', 'NotAllowedError'))
+    await h.click('DEMO-1. Copy the path')
+    expect(h.host.querySelector('.copy-by-hand')).not.toBeNull()
+    expect(h.host.querySelector('.toast')).toBeNull()
+    // And the other way: the dialog goes when a later copy works and its toast shows.
+    write.mockResolvedValue(undefined)
+    await h.click('DEMO-1. Copy the path')
+    expect(h.host.querySelector('.copy-by-hand')).toBeNull()
+    expect(h.host.querySelector('.toast')?.textContent).toBe('Copied: Spanish words.md')
+  })
+
   it('no clipboard at all (an old browser): the same by-hand path', async () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
     h = await openSearch()

@@ -53,6 +53,15 @@ describe('the friend link of 5- and the paste box of 4E2', () => {
     expect(parseAnyLink(`${j.text} ${j.url}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
   })
 
+  it('parseAnyLink_pathCaseInsensitive (sweep3 N-5): a capital in the path (an app that capitalises a pasted word) still pastes', () => {
+    expect(parseAnyLink(`https://NOTECARD.yaseenarshad.com/GROUP#${ID}`)).toEqual({ kind: 'group', id: ID })
+    expect(parseAnyLink(`https://docs.yaseenarshad.com/Group/${ID}`)).toEqual({ kind: 'group', id: ID })
+    expect(parseAnyLink(`https://preview.docs.yaseenarshad.com/Join#${ID}-${ID}`)).toEqual({ kind: 'join', group: ID, pointer: ID })
+    expect(parseAnyLink(`https://docs.yaseenarshad.com/FRIEND#${ID}`)).toEqual({ kind: 'friend', id: ID })
+    expect(parseFriendLink(`https://docs.yaseenarshad.com/Friend/${ID}`)).toEqual({ kind: 'ok', id: ID })
+    expect(parseAnyLink(`https://api.github.com/Gists/${ID}`)).toEqual({ kind: 'id', id: ID })
+  })
+
   it('YAZ-5290: the paste box reads each kind of link from the preview, and the code each landing page copies', () => {
     const preview = 'https://preview.notecard.yaseenarshad.com'
     expect(parseAnyLink(ownSiteLink(groupLink(ID), preview))).toEqual({ kind: 'group', id: ID })
