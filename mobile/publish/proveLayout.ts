@@ -1656,7 +1656,9 @@ if (process.env.LAYOUT_APPEARANCE !== 'no') {
 // YAZ-5568: folding (option A), light and dark, at 375 and 320 px. Each arrow drawn inside the screen; each a 44 px
 // button whose arrow's middle is the button (`elementFromPoint`); a bullet's button holds its dot too; a task's ends at
 // its box, so the box's middle is still the box (a tick); folded: the arrow turned, the lines under it gone; Collapse
-// all leaves the headings, turned; `folding: false`: no arrow; the page never scrolls sideways.
+// all leaves the headings, turned; `folding: false`: no arrow; the page never scrolls sideways. A task's button stops
+// where its box's 44 px tap area starts (`clear`), and on a top-level task the part of it on the screen (`room`, the
+// arrow's tap target) is 14 px wide at least (the top-level lists' `--list-edge`).
 const FOLDS_CHECK = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const buttons = [...document.querySelectorAll('.reader__body .fold-btn')].filter((b) => b.offsetParent !== null)
@@ -1671,6 +1673,7 @@ const FOLDS_CHECK = `(() => {
     if (li && !task) { const be = getComputedStyle(li, '::before'); const lr = r(li); dot = { x: lr.left + parseFloat(be.left) + parseFloat(be.width) / 2, y: lr.top + parseFloat(be.top) + parseFloat(be.height) / 2 } }
     const inside = (p) => p.x >= box.left && p.x <= box.right && p.y >= box.top && p.y <= box.bottom
     const tb = task && r(task)
+    const tapLeft = tb ? tb.left + tb.width / 2 - 22 : 0
     return {
       label: b.dataset.foldLabel,
       expanded: b.getAttribute('aria-expanded'),
@@ -1679,6 +1682,9 @@ const FOLDS_CHECK = `(() => {
       hit: !onScreen(cy) || document.elementFromPoint(cx, cy)?.closest('.fold-btn') === b,
       dot: dot === null ? null : inside(dot),
       tick: tb ? (!onScreen(tb.top) || document.elementFromPoint(tb.left + tb.width / 2, tb.top + tb.height / 2) === task) : null,
+      clear: tb ? box.right <= tapLeft + 0.5 : null,
+      room: tb ? Math.round((Math.min(box.right, tapLeft, innerWidth) - Math.max(box.left, 0)) * 10) / 10 : null,
+      top: tb ? li.parentElement.closest('li') === null : null,
       arrowX: Math.round(cx),
     }
   })
@@ -1698,9 +1704,10 @@ if (process.env.LAYOUT_FOLDS !== 'no') {
         if (name === 'page-folds-folded') await evaluate(`document.querySelector('.screen').scrollTop = 0`)
         writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
         const m = await evaluate(FOLDS_CHECK)
-        type Row = { label: string; expanded: string; size: string; arrowIn: boolean; hit: boolean; dot: boolean | null; tick: boolean | null; arrowX: number }
+        type Row = { label: string; expanded: string; size: string; arrowIn: boolean; hit: boolean; dot: boolean | null; tick: boolean | null; clear: boolean | null; room: number | null; top: boolean | null; arrowX: number }
         const rows = m.rows as Row[]
-        const each = rows.every((x) => x.size === '44x44' && x.arrowIn && x.hit && x.dot !== false && x.tick !== false)
+        const each = rows.every((x) => x.size === '44x44' && x.arrowIn && x.hit && x.dot !== false && x.tick !== false && x.clear !== false && (x.top !== true || (x.room ?? 0) >= 14))
+        const topTask = rows.some((x) => x.top === true)
         const folded = new Set(rows.filter((x) => x.expanded === 'false').map((x) => x.label))
         const ok =
           !m.pageWide &&
@@ -1708,12 +1715,12 @@ if (process.env.LAYOUT_FOLDS !== 'no') {
             ? m.all === 0
             : each &&
               (name === 'page-folds'
-                ? rows.length === 10 && folded.size === 0 && m.beans === false
+                ? rows.length === 10 && folded.size === 0 && m.beans === false && topTask
                 : name === 'page-folds-folded'
                   ? folded.has('South bed') && folded.has('Watering') && folded.has('Dig the beds') && m.beans === true && m.water === true && m.first === true
                   : rows.length === 4 && folded.size === 4))
         if (!ok) failed++
-        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${hgt}, ${scheme}: ${m.all} arrows, ${rows.length} shown (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.arrowIn ? '' : ' ARROW OFF SCREEN'}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}${x.tick === false ? ' BOX TAKEN' : ''} @${x.arrowX}`).join('; ')}); hidden: Beans ${m.beans}, Water ${m.water}, North bed first ${m.first}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${hgt}, ${scheme}: ${m.all} arrows, ${rows.length} shown (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.arrowIn ? '' : ' ARROW OFF SCREEN'}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}${x.tick === false ? ' BOX TAKEN' : ''}${x.clear === false ? ' OVER THE BOX\'S TAP AREA' : ''}${x.room === null ? '' : ` (${x.top ? 'top-level' : 'nested'} task: ${x.room}px on screen${x.top && x.room < 14 ? ', UNDER 14' : ''})`} @${x.arrowX}`).join('; ')}); hidden: Beans ${m.beans}, Water ${m.water}, North bed first ${m.first}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
       }
     }
   }

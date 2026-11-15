@@ -48,6 +48,10 @@
   --list-label-gap: var(--page-bullet-gap, 10px);
   --list-indent: var(--page-bullet-indent, 2.15em);
   --list-gutter: calc(2.15em - 10px);
+  /* YAZ-5568 (the phone only): a top-level list starts this much further in, so a top-level task's fold arrow has a
+     tap strip left of its box's 44 px tap area (gutter / 2 - 6px + this, from the screen's edge: 14 px at 16 px text;
+     the max keeps 14 px at smaller text). Not in a table cell (YAZ-5567's cell spacing) or a card (the card's own). */
+  --list-edge: max(8px, calc(25px - 1.075em));
   --list-bullet-size: 0.42em;
   --list-ring-border: max(1px, 0.094em);
   --list-marker-color: color-mix(in srgb, currentColor 78%, transparent);
@@ -278,6 +282,13 @@
 }
 .reader__body ol > li {
   padding-left: 0.3em;
+}
+/* A top-level list (not inside an item, a table or a card) starts `--list-edge` further in (YAZ-5568). */
+.reader__body :is(ul, ol):not(li *, table *, .card *) {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) + var(--list-edge));
+}
+.reader__body ol:not(li *, table *, .card *) {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) - 0.3em + var(--list-edge));
 }
 .reader__body ol > li::marker {
   color: var(--list-marker-color);
@@ -645,7 +656,7 @@
    margin on its first line (it runs over the first letters; a tap there folds), a bullet's one step left of its dot,
    the arrow and the dot together. A task's stops where its box's 44 px tap area starts (YAZ-5568: a tap on or near
    the box always ticks it), so it only has the room left of that: on a top-level task the strip from the screen's
-   edge, on a nested one up to 44 px. No count. A hidden block is `display: none`: off the screen and out of
+   edge (top-level lists start `--list-edge` further in for it), on a nested one up to 44 px. No count. A hidden block is `display: none`: off the screen and out of
    VoiceOver's reading order. */
 .reader__body [data-fold-hidden] {
   display: none !important;
