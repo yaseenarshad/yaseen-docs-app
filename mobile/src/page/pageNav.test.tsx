@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { READER_FILES, seedReaderVault } from '../dev/readerVault'
@@ -174,6 +176,20 @@ describe('YAZ-5450: the page ID chip', () => {
     expect(h.host.querySelector('[role="status"].page-toast')?.textContent).toBe('Copied: git/Git cheat sheet.md')
     await act(async () => void (await new Promise((r) => setTimeout(r, 2100))))
     expect(h.host.querySelector('.page-toast')).toBeNull()
+  })
+
+  it('topBar_allControlsInsideViewport_at320_withIdChip: the chip gives way, its letters first, never the dot or the ⚙ (S3)', async () => {
+    // jsdom has no layout: the measured check is proveLayout's "top bar" (320, 375, 430 px). Here: the parts it needs.
+    h = await openSearch()
+    await openRow(h, /^Git cheat sheet, page/, '.reader__body')
+    const chip = h.host.querySelector('.topbar .page-id')!
+    expect(chip.querySelector('.page-id__prefix')?.textContent).toBe('DEMO-')
+    expect(chip.querySelector('.page-id__number')?.textContent).toBe('2')
+    expect(chip.getAttribute('aria-label')).toBe('DEMO-2. Copy the path')
+    const css = readFileSync(join(__dirname, 'pageNav.css'), 'utf8').replace(/\s+/g, ' ')
+    expect(css).toMatch(/\.page-id \{ flex: 0 1 auto;[^}]*min-width: 0;/)
+    expect(css).toMatch(/\.page-id__prefix \{ flex: 0 1000 auto; min-width: 0;/)
+    expect(css).toMatch(/\.topbar:has\(\.page-id\) \.topbar__title \{ min-width: 2\.5em; \}/)
   })
 
   it('the clipboard says no: the path shows, selected, to copy by hand; Close closes it', async () => {

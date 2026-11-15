@@ -46,11 +46,14 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The ID chip in the top bar: a small pill, never cut (the page's title gives room); its box is 44 pt tall to tap. */
+/* The ID chip in the top bar: a small pill; its box is 44 pt tall to tap. YAZ-5519 S3: the dot and the ⚙ never leave
+   the screen. The page's title gives room first (cut with "…", down to 2.5em, 2em at 320 px), then the chip: its
+   letters (`__prefix`, "DEMO-") shrink and go; its number is cut only when nothing else is left. */
 .page-id {
-  flex: none;
+  flex: 0 1 auto;
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   min-height: var(--tap);
   padding: 0;
   border: 0;
@@ -59,11 +62,47 @@
 }
 
 .page-id__pill {
+  display: inline-flex;
+  min-width: 0;
+  overflow: hidden;
   padding: 6px 8px;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
   font: 12px/1 ui-monospace, 'SF Mono', Menlo, monospace;
+  white-space: nowrap;
+}
+
+/* The letters give way long before the number (a shrink 1000 times the number's). */
+.page-id__prefix {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-id__number {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar:has(.page-id) .topbar__title {
+  min-width: 2.5em;
+}
+
+/* An iPhone SE or mini in Zoomed display (320 px): the bar's gaps and the pill's sides a little tighter. */
+@media (max-width: 359px) {
+  .topbar:has(.page-id) {
+    gap: 4px;
+  }
+  .topbar:has(.page-id) .topbar__title {
+    min-width: 2em;
+  }
+  .page-id__pill {
+    padding: 6px;
+  }
 }
 
 /* Dark: the accent on its soft fill is under 4.5:1; the text takes the page's colour. */

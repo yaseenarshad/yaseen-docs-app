@@ -45,9 +45,11 @@ import { join } from 'node:path'
  *    the card, a 44 px tap, its centre the count's own; a tap brings the comments under the card up.
  *  - a link to a heading (`#fixture=page-links`, YAZ-5519 S2) at 320 and 375 px: the heading lands whole under the top
  *    bar, a small gap between.
+ *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
+ *    control inside the screen, the dot clear of the ⚙; the title cut first, then the ID's letters; its number shows.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -701,6 +703,37 @@ if (process.env.LAYOUT_HEADING !== 'no') {
     const ok = m.error === undefined && m.top >= m.bar + 8 && m.top <= m.bar + 48
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-links heading at ${w}x${h}: "Places" top at ${m.top}, the top bar ends at ${m.bar} (${m.top - m.bar}px under it)  ${shot}`)
+  }
+}
+// YAZ-5519 S3: the top bar of a page with an ID chip at 320, 375 and 430 px (`#fixture=page` "Spanish words" DEMO-1;
+// `page-long-id`: a long title, the ID GARDN-1234567): every control inside the screen, the dot clear of the ⚙, the ⚙
+// whole; the title gives room first (cut with "…"), then the chip's letters; the chip's number always shows.
+const TOPBAR_FITS = `(() => {
+  const bar = document.querySelector('.topbar')
+  const box = (el) => el ? el.getBoundingClientRect() : null
+  const parts = { back: '.back', kind: '.topbar__kind', title: '.topbar__title', chip: '.page-id', tools: '.page-tools', dot: '.sync-status', gear: '.topbar__gear' }
+  const at = {}
+  for (const [k, s] of Object.entries(parts)) { const b = box(bar.querySelector(s)); at[k] = b ? [Math.round(b.left), Math.round(b.right)] : null }
+  const inside = Object.values(at).every((v) => v !== null && v[0] >= -0.5 && v[1] <= innerWidth + 0.5)
+  const range = document.createRange()
+  range.selectNodeContents(bar.querySelector('.topbar__gear'))
+  const gear = range.getBoundingClientRect()
+  const dot = box(bar.querySelector('.sync-dot'))
+  const pill = box(bar.querySelector('.page-id__pill'))
+  const numberEl = bar.querySelector('.page-id__number')
+  const number = numberEl && numberEl.scrollWidth <= numberEl.clientWidth ? box(numberEl) : null
+  const title = bar.querySelector('.topbar__title')
+  return { at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5, titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
+})()`
+if (process.env.LAYOUT_TOPBAR !== 'no') {
+  for (const [w, h] of [[320, 568], [375, 667], [430, 932]] as const) {
+    for (const name of ['page', 'page-long-id']) {
+      const file = await open(name, w, h)
+      const m = await evaluate(TOPBAR_FITS)
+      const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}  ${file}`)
+    }
   }
 }
 chrome.kill()

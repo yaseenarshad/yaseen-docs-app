@@ -53,7 +53,7 @@ import { fixtureAnswers } from './fixtureAnswers'
  * folders stuck at the top (`STICKY_FILES`).
  * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-jump', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -237,6 +237,12 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
             ? { 'cards/river-of-seville-demo-45.md': COMMENTED_CARD }
           : name.startsWith('folder-')
             ? { ...FOLDER_FILES, ...(name === 'folder-sheet' && { '.yaseendocs/link-click.json': '{"click":"explore"}' }) }
+          : name === 'page-long-id'
+            ? {
+                // YAZ-5519 S3: a long title and the longest ID letters (5) with a long number, for the top bar at 320 px.
+                'garden/Garden plan.md': '---\ntitle: A very long garden plan for the whole back yard, the shed and the raised beds\nid: GARDN-1234567\n---\n\n# Beds\n\nTomatoes.\n',
+                '.yaseendocs/ids.json': '{"enabled": true, "letters": "GARDN"}',
+              }
           : name === 'card-strip'
             ? { 'cards/river-of-seville-demo-45.md': STRIP_CARD, 'trips/Seville.md': '---\ntitle: Seville\nid: DEMO-46\n---\n\nThe river card: [[DEMO-45]].\n' }
             : {}
@@ -377,6 +383,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       break
     case 'page-pills':
       await open(/^Spanish words/, '.reader__body h1')
+      break
+    case 'page-long-id':
+      await typed('very long garden')
+      await open(/^A very long garden plan/, '.reader__body h1')
       break
     case 'page-links':
       await typed('links')

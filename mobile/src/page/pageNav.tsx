@@ -160,7 +160,10 @@ export function PageIdChip({ id, path, copy = (text) => navigator.clipboard.writ
   return (
     <>
       <button type="button" className="page-id" aria-label={`${id}. Copy the path`} onClick={() => void tap()}>
-        <span className="page-id__pill">{id}</span>
+        <span className="page-id__pill" aria-hidden="true">
+          <span className="page-id__prefix">{id.slice(0, id.lastIndexOf('-') + 1)}</span>
+          <span className="page-id__number">{id.slice(id.lastIndexOf('-') + 1)}</span>
+        </span>
       </button>
       {said?.kind === 'copied' && (
         <p className="page-toast" role="status">
