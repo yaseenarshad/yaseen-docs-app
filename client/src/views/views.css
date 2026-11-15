@@ -2285,7 +2285,6 @@
 /* A month's 1st says its month ("Dec 1", YAZ-5608: in every scale): the month and its 1 in the accent colour. */
 .view-cal__date--first {
   font-weight: 600;
-  color: var(--accent);
 }
 
 .view-cal__date-month {
@@ -2379,6 +2378,13 @@
   font-weight: 600;
   color: var(--accent);
   box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+/* A month's 1st (YAZ-5608): its 1 takes the accent colour with its month, also on another month's day. After the
+   date's own colour rules so it wins over them. */
+.view-cal__date.view-cal__date--first,
+.view-cal__day--other .view-cal__date.view-cal__date--first {
+  color: var(--accent);
 }
 
 /* The day's "+" (S10): shown on the hovered or focused day, so the grid stays quiet. */
