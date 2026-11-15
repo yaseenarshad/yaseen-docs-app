@@ -12,13 +12,16 @@ export function Toast({ text, top = false }: { text: string; top?: boolean }) {
   )
 }
 
-/** The words a toast shows, and `say` to show new ones; they go after `ms`. A new `say` starts the time again. */
-export function useToast(ms = 2000): [string | null, (text: string) => void] {
+/**
+ * The words a toast shows, and `say` to show new ones; they go after `ms`. A new `say` starts the time again; `say(null)`
+ * takes the toast away now (YAZ-5524: a dialog that replaces it).
+ */
+export function useToast(ms = 2000): [string | null, (text: string | null) => void] {
   const [said, setSaid] = useState<{ text: string } | null>(null)
   useEffect(() => {
     if (said === null) return
     const timer = setTimeout(() => setSaid(null), ms)
     return () => clearTimeout(timer)
   }, [said, ms])
-  return [said?.text ?? null, useCallback((text: string) => setSaid({ text }), [])]
+  return [said?.text ?? null, useCallback((text: string | null) => setSaid(text === null ? null : { text }), [])]
 }
