@@ -1,4 +1,4 @@
-import { ListError, type RepoPort } from '@shared/friendListStore'
+import { EMPTY_REPO, FILE_THERE, ListError, type RepoPort } from '@shared/friendListStore'
 import { GithubError, repoPath, type GithubClient } from '../github/client'
 import { githubRemote } from '../sync/githubRemote'
 
@@ -8,10 +8,15 @@ import { githubRemote } from '../sync/githubRemote'
  * ref `PATCH` with `force: false`; a moved branch is `STALE_HEAD`. Reads: the branch head with its ETag (a free 304),
  * and one file at one commit (`contents` with `ref`, raw: the file's bytes, never a base64 copy).
  * - 404 or 403 on the repo itself: `NO_LIST_ACCESS` (the token cannot read or write that vault).
+ * - YAZ-5464: a repo with NO commit (GitHub's 409 "Git Repository is empty", `EMPTY_REPO`): its head is
+ *   `sha: null` and its list file is not there; the first commit is a `PUT contents/<path>` with no `sha` (the git
+ *   data calls all answer 409 there), which writes only while the file is missing (else `STALE_HEAD`).
  * - Every other failure keeps 3E's code (`OFFLINE`, `RATE_LIMITED`, `UNAUTHORIZED`, …), as the gist calls do.
  */
 export function listRepo(client: GithubClient, repo: string, branch: string): RepoPort {
   const remote = githubRemote(client, repo, branch)
+  // YAZ-5464: GitHub's 409 "Git Repository is empty" (and only that 409; the client gives it as `UNEXPECTED`).
+  const empty = (err: unknown): boolean => err instanceof GithubError && err.status === 409 && EMPTY_REPO.test(err.said)
   const noAccess = (err: unknown): never => {
     // YAZ-5399: a 404 on the repo is "gone" (deleted, or this token has no access at all: GitHub hides a private repo).
     if (err instanceof GithubError && err.code === 'NOT_FOUND') throw Object.assign(new ListError('NO_LIST_ACCESS', 'The vault of the friends list is not on GitHub for this token'), { gone: true })
@@ -25,6 +30,7 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
       try {
         return await remote.head(etag ?? undefined)
       } catch (err) {
+        if (empty(err)) return { sha: null, etag: null }
         return noAccess(err)
       }
     },
@@ -37,6 +43,7 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
         if (err instanceof GithubError && err.code === 'NOT_FOUND' && /^No commit found/.test(err.said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
         // The file is not there at that commit (the commit itself was just read: the repo is there).
         if (err instanceof GithubError && err.code === 'NOT_FOUND') return null
+        if (empty(err)) return null
         return noAccess(err)
       }
     },
@@ -51,6 +58,7 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
       }
     },
     async commit(parent, path, text, message) {
+      if (parent === null) return firstCommit(path, text, message)
       try {
         // Never a delete: GitHub refuses `sha: null` for a path that the base tree does not have (round 5).
         return await remote.commit(parent, [{ path, content: text }], message)
@@ -59,5 +67,26 @@ export function listRepo(client: GithubClient, repo: string, branch: string): Re
         return noAccess(err)
       }
     },
+  }
+
+  /** YAZ-5464: the first commit of an empty repo, by the Contents API (it makes the branch); only while `path` is missing. */
+  async function firstCommit(path: string, text: string, message: string): Promise<string> {
+    try {
+      const bytes = new TextEncoder().encode(text)
+      let raw = ''
+      for (let i = 0; i < bytes.length; i += 0x8000) raw += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+      const res = await client.request(repoPath(repo, 'contents', path), { method: 'PUT', body: { message, content: btoa(raw), branch }, allow: [409, 422] })
+      const said = (res.data as { message?: unknown } | null)?.message
+      // The file is there by now (another device, or a push): read again (the CAS rule of every list write).
+      if (res.status === 409 || res.status === 422) {
+        if (typeof said === 'string' && FILE_THERE.test(said)) throw new ListError('STALE_HEAD', 'The list file is there by now')
+        throw new GithubError('UNEXPECTED', res.status, `GitHub answered ${res.status}`, null, typeof said === 'string' ? said : '')
+      }
+      const sha = (res.data as { commit?: { sha?: unknown } } | null)?.commit?.sha
+      if (typeof sha !== 'string') throw new GithubError('UNEXPECTED', res.status, 'GitHub gave no commit for the new file')
+      return sha
+    } catch (err) {
+      return noAccess(err)
+    }
   }
 }

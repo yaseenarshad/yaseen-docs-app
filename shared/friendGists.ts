@@ -96,6 +96,12 @@ export interface GistListItem {
 export interface GistsApi {
   /** All of the user's own gists (secret too), every page. */
   list(): Promise<GistListItem[]>
+  /**
+   * YAZ-5464 (nit): EVERY gist of mine, page by page, up to `maxPages` pages of 100 (`list` reads the newest 1,000 only).
+   * More than that throws an error with the code `TOO_MANY_GISTS`: a caller that must see each gist (the way out) then
+   * changes nothing. Optional: an adapter without it gives every gist in `list`.
+   */
+  listAll?(maxPages: number): Promise<GistListItem[]>
   /** One gist by its ID; with `etag`, an unchanged gist is `'unchanged'` (a free 304 with a token). */
   read(id: string, etag?: string | null): Promise<GistDoc | 'unchanged'>
   /** A new SECRET gist. */

@@ -20,6 +20,13 @@ import { fakeRepoWorld, type FakeRepoWorld } from './friendRepoFake'
  * - each version of a gist is kept (`revisions`): a reader with the ID can read every old one.
  * With `repos`, the vault repos of the accounts answer at `/repos/…` (`shared/friendRepoFake.ts`), and `api(token)`
  * gives the account's repos as the list's ports.
+ *
+ * YAZ-5492 (nit): each answer to a token also carries GitHub's `core` count (`x-ratelimit-resource: core`, its
+ * `x-ratelimit-reset`), as GitHub sends it, unless the answer has its own (`gist_update`). The core hour of an account
+ * starts at its first call after the last one ended; the first one started `coreSince` before the account's first call
+ * (default 50 minutes: a phone that already used GitHub this hour). A browser cannot read GitHub's `Date` header (CORS),
+ * so the phone's fake `fetch` drops it (`mobile/src/friends/testing.ts`) and the phone learns GitHub's time only from
+ * this reset (a lower bound, up to an hour behind), as on a real phone.
  */
 export interface FakeGistAccount {
   login: string
@@ -108,7 +115,7 @@ export const GIST_FILE_LIMIT = 300
 /** A file over this size reads cut (`truncated: true`). */
 const FILE_LIMIT = 1024 * 1024
 
-export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>; start?: number; now?: () => number; repos?: FakeRepoWorld | null }): FakeGistWorld {
+export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>; start?: number; now?: () => number; repos?: FakeRepoWorld | null; coreSince?: number }): FakeGistWorld {
   const accounts = new Map(Object.entries(setup.accounts))
   const gists = new Map<string, FakeGist>()
   const patchTimes = new Map<string, number[]>()
@@ -181,6 +188,23 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
       'x-ratelimit-used': String(times.length),
       'x-ratelimit-reset': String(Math.ceil(reset / 1000)),
     }
+  }
+  /** YAZ-5492: the start of each account's `core` hour. */
+  const coreStart = new Map<string, number>()
+  const coreRate = (login: string): Record<string, string> => {
+    const t = now()
+    let start = coreStart.get(login) ?? t - (setup.coreSince ?? 50 * 60_000)
+    if (t >= start + HOUR) start = t
+    coreStart.set(login, start)
+    return { 'x-ratelimit-resource': 'core', 'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': '4900', 'x-ratelimit-used': '100', 'x-ratelimit-reset': String(Math.floor((start + HOUR) / 1000)) }
+  }
+  /** Every answer to a known token carries the `core` count, unless it has its own resource's (`gist_update`). */
+  const withCore = (a: FakeHttpAnswer | undefined, token: string | null): FakeHttpAnswer | undefined => {
+    const login = token === null ? undefined : accounts.get(token)?.login
+    if (a === undefined || login === undefined || a.headers['x-ratelimit-resource'] !== undefined) return a
+    // An answer's own count (a rate-limited answer's `remaining: 0` and reset) stays as it is.
+    a.headers = { ...coreRate(login), ...a.headers }
+    return a
   }
   // Each answer carries GitHub's time in `date` (YAZ-5238: the sweep measures age with it, never with a device clock).
   const answer = (status: number, body: unknown = null, headers: Record<string, string> = {}): FakeHttpAnswer => ({ status, body, headers: { date: new Date(now()).toUTCString(), ...headers } })
@@ -261,7 +285,7 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
         const who = token === null ? undefined : accounts.get(token)
         if (token !== null && who === undefined) return { status: 401, body: { message: 'Bad credentials' }, headers: { date: new Date(now()).toUTCString() } }
         const a = await world.repos.http(method, path, query, token, body, etag, accept)
-        return a === undefined ? undefined : { status: a.status, body: a.raw ?? a.body, headers: { ...a.headers, ...(a.raw !== undefined && { 'x-raw': '1' }) } }
+        return withCore(a === undefined ? undefined : { status: a.status, body: a.raw ?? a.body, headers: { ...a.headers, ...(a.raw !== undefined && { 'x-raw': '1' }) } }, token)
       }
       if (rng !== null) await new Promise((done) => setTimeout(done, Math.floor(rng!() * 4)))
       else await Promise.resolve()
@@ -273,7 +297,7 @@ export function fakeGistWorld(setup: { accounts: Record<string, FakeGistAccount>
       const done = (a: FakeHttpAnswer | undefined) => {
         call.answer = a?.status ?? 0
         if (a !== undefined && a.headers.date === undefined) a.headers = { date: new Date(now()).toUTCString(), ...a.headers }
-        return a
+        return withCore(a, token)
       }
       if (world.offline) return done(undefined)
       const who = token === null ? undefined : accounts.get(token)

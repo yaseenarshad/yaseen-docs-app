@@ -1,5 +1,5 @@
 import { GistError } from './friendGists'
-import { ListError, type RepoPort } from './friendListStore'
+import { EMPTY_REPO, FILE_THERE, ListError, type RepoPort } from './friendListStore'
 
 /**
  * TEST HELP ONLY (YAZ-5083): a fake GitHub repo (the git data calls) in memory, as STRICT as the real one, for the
@@ -25,6 +25,11 @@ import { ListError, type RepoPort } from './friendListStore'
  * - a tree entry `sha: null` for a path that the base tree does not have: 422 "GitRPC::BadObjectState" (seen live).
  * - `rename` (a renamed or transferred repo): the old name answers 301 with the repo's `/repositories/<id>` address,
  *   for every path under it; `remove` (a deleted repo): every call is 404.
+ *
+ * Round 7 (YAZ-5464), as GitHub's docs: `createEmpty` is a repo with NO commit (made on github.com with no README).
+ * Its branch read, its `contents`, and every git data call (blobs, trees, commits, refs) answer 409 "Git Repository is
+ * empty."; the repo itself answers 200. Its first commit is a `PUT contents/<path>` (the Contents API), which makes the
+ * branch. That `PUT` with no `sha` over a file that is there is 422 "\"sha\" wasn't supplied." (on any repo).
  */
 export interface StaleMode {
   /** The chance that one head read gives an older head (0 to 1). */
@@ -39,6 +44,8 @@ export interface FakeRepoWorld {
   owned(login: string): string[]
   /** Makes a repo with one commit (the files given), owned by `owner`. */
   create(fullName: string, owner: string, files?: Record<string, string>, branch?: string): void
+  /** YAZ-5464: makes a repo with NO commit at all (GitHub's "Git Repository is empty"), owned by `owner`. */
+  createEmpty(fullName: string, owner: string): void
   /** Gives a token's login access to a repo of another owner. */
   grant(fullName: string, login: string, access: 'read' | 'write'): void
   head(fullName: string, branch?: string): string | null
@@ -169,10 +176,15 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
     offline: false,
     calls: [],
     create(full, owner, files = {}, branch = 'main') {
-      const r: Repo = { id: nextId++, full: full.toLowerCase(), history: new Map(), owner, access: new Map(), refs: new Map(), commits: new Map(), trees: new Map(), blobs: new Map() }
-      repos.set(full.toLowerCase(), r)
+      world.createEmpty(full, owner)
+      const r = get(full)!
       const t = tree(r, new Map(Object.entries(files).map(([p, text]) => [p, blob(r, text)])))
       moveRef(r, branch, commit(r, t, [], 'first'))
+    },
+    createEmpty(full, owner) {
+      const r: Repo = { id: nextId++, full: full.toLowerCase(), history: new Map(), owner, access: new Map(), refs: new Map(), commits: new Map(), trees: new Map(), blobs: new Map() }
+      repos.set(full.toLowerCase(), r)
+      deleted.delete(full.toLowerCase())
     },
     grant(full, login, access) {
       get(full)!.access.set(login.toLowerCase(), access)
@@ -191,15 +203,16 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
     parents: (full, c) => get(full)?.commits.get(c)?.parents ?? [],
     push(full, files, branch = 'main', message = 'push') {
       const r = get(full)!
-      const head = r.refs.get(branch)!
-      const entries = new Map(r.trees.get(r.commits.get(head)!.tree)!)
+      // YAZ-5464: the first push into an empty repo has no parent.
+      const head = r.refs.get(branch)
+      const entries = new Map(head === undefined ? [] : r.trees.get(r.commits.get(head)!.tree)!)
       for (const [p, text] of Object.entries(files)) {
         if (text === null) entries.delete(p)
         else entries.set(p, blob(r, text))
       }
-      const c = commit(r, tree(r, entries), [head], message)
+      const c = commit(r, tree(r, entries), head === undefined ? [] : [head], message)
       moveRef(r, branch, c)
-      world.observe?.({ repo: full.toLowerCase(), branch, from: head, to: c, parent: head, token: null, path: null })
+      world.observe?.({ repo: full.toLowerCase(), branch, from: head ?? '', to: c, parent: head ?? '', token: null, path: null })
       return c
     },
     async http(method, path, query, token, body, etag, accept) {
@@ -236,8 +249,29 @@ export function fakeRepoWorld(setup: { logins: (token: string) => string | null;
       if (r === undefined || access === undefined) return record(notFound())
       const rest = parts.slice(3)
       const b = (body ?? {}) as Record<string, unknown>
-      if (method === 'GET' && rest.length === 0) return record(json(200, { id: r.id, full_name: r.full, private: true, default_branch: r.refs.has('main') ? 'main' : [...r.refs.keys()][0] }))
+      if (method === 'GET' && rest.length === 0) return record(json(200, { id: r.id, full_name: r.full, private: true, default_branch: r.refs.has('main') || r.refs.size === 0 ? 'main' : [...r.refs.keys()][0] }))
       if (method !== 'GET' && access !== 'write') return record(json(403, { message: 'Resource not accessible by personal access token' }))
+      // YAZ-5464: the Contents API's write: the only call that can make the first commit of an empty repo.
+      if (method === 'PUT' && rest[0] === 'contents' && rest.length > 1) {
+        const p = rest.slice(1).join('/')
+        if (typeof b.content !== 'string' || typeof b.message !== 'string') return record(json(422, { message: 'Invalid request.' }))
+        const branch = typeof b.branch === 'string' ? b.branch : 'main'
+        const head = r.refs.get(branch)
+        if (head === undefined && r.refs.size > 0) return record(json(404, { message: `Branch ${branch} not found` }))
+        const entries = new Map(head === undefined ? [] : r.trees.get(r.commits.get(head)!.tree)!)
+        const there = entries.get(p)
+        if (there !== undefined && b.sha === undefined) return record(json(422, { message: 'Invalid request.\n\n"sha" wasn\'t supplied.', documentation_url: 'https://docs.github.com/rest/repos/contents#create-or-update-file-contents', status: '422' }))
+        if (there !== b.sha && b.sha !== undefined) return record(json(409, { message: `${p} does not match ${String(b.sha)}`, status: '409' }))
+        const text = decodeURIComponent(escape(atob(b.content)))
+        const bsha = blob(r, text)
+        entries.set(p, bsha)
+        const c = commit(r, tree(r, entries), head === undefined ? [] : [head], b.message)
+        moveRef(r, branch, c)
+        world.observe?.({ repo: full, branch, from: head ?? '', to: c, parent: head ?? '', token, path: p })
+        return record(json(there === undefined ? 201 : 200, { content: { path: p, sha: bsha }, commit: { sha: c, parents: head === undefined ? [] : [{ sha: head }] } }))
+      }
+      // YAZ-5464: a repo with no commit: GitHub's 409 for its branch, its files and every git data call.
+      if (r.refs.size === 0 && (rest[0] === 'git' || rest[0] === 'contents')) return record(json(409, { message: 'Git Repository is empty.', documentation_url: 'https://docs.github.com/rest/git/refs#get-a-reference', status: '409' }))
       if (method === 'GET' && rest[0] === 'git' && rest[1] === 'ref' && rest[2] === 'heads') {
         let head = r.refs.get(rest.slice(3).join('/'))
         if (head === undefined) return record(notFound())
@@ -349,6 +383,8 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
     if (a === undefined) throw new GistError('OFFLINE', 'No connection to GitHub')
     return a
   }
+  /** YAZ-5464: GitHub's 409 for a repo with no commit (and only that 409). */
+  const empty = (a: { status: number; body: unknown }) => a.status === 409 && EMPTY_REPO.test((a.body as { message?: string } | null)?.message ?? '')
   const fail = (status: number): never => {
     // YAZ-5399: a 404 on the repo is "gone" (deleted, or no access at all); a 403 is a token with too little permission.
     if (status === 404) throw Object.assign(new ListError('NO_LIST_ACCESS', `GitHub answered ${status}`), { gone: true })
@@ -363,6 +399,7 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
     async head(etag) {
       const a = await call('GET', `${base}/git/ref/heads/${branch}`, {}, undefined, etag ?? null)
       if (a.status === 304) return 'unchanged'
+      if (empty(a)) return { sha: null, etag: null }
       if (a.status !== 200) return fail(a.status)
       return { sha: (a.body as { object: { sha: string } }).object.sha, etag: a.headers.etag ?? null }
     },
@@ -370,7 +407,7 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
       const a = await call('GET', `${base}/contents/${path}`, { ref: commit }, undefined, null, 'application/vnd.github.raw+json')
       // YAZ-5398: GitHub's 404 for a commit that its replica does not have yet is not a missing file.
       if (a.status === 404 && /^No commit found/.test((a.body as { message?: string } | null)?.message ?? '')) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
-      if (a.status === 404) return null
+      if (a.status === 404 || empty(a)) return null
       if (a.status !== 200) return fail(a.status)
       return a.raw ?? ''
     },
@@ -380,6 +417,13 @@ function memoryPort(world: FakeRepoWorld, token: string, full: string, branch: s
       return String((a.body as { full_name: string }).full_name).toLowerCase()
     },
     async commit(parent, path, text, message) {
+      if (parent === null) {
+        // YAZ-5464: the first commit of an empty repo (the Contents API; only while the file is missing).
+        const put = await call('PUT', `${base}/contents/${path}`, {}, { message, content: btoa(unescape(encodeURIComponent(text))), branch })
+        if ((put.status === 422 || put.status === 409) && FILE_THERE.test((put.body as { message?: string } | null)?.message ?? '')) throw new ListError('STALE_HEAD', 'The file is there by now')
+        if (put.status !== 201) return fail(put.status)
+        return (put.body as { commit: { sha: string } }).commit.sha
+      }
       const c = await call('GET', `${base}/git/commits/${parent}`)
       if (c.status !== 200) return fail(c.status)
       const t = await call('POST', `${base}/git/trees`, {}, { base_tree: (c.body as { tree: { sha: string } }).tree.sha, tree: [{ path, mode: '100644', type: 'blob', content: text }] })

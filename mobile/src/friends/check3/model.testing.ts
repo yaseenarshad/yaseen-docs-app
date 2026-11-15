@@ -159,14 +159,33 @@ export class Model {
     const note = this.world.owned(LOGIN[a]).find((x) => INDEX_FILE in x.files)
     return r.kind === 'ok' ? { id: note?.id ?? '', index: r.value, raw: r.raw } : null
   }
-  /** The list files of a login's vault at a commit (null: the branch head), or null when there is no list file. */
-  repoFiles(login: string, commit: string | null): Record<string, string> | null {
+  /**
+   * The list files of a login's vault at a commit (null: the branch head), or null when there is no list file.
+   * BUILDER CHANGE (YAZ-5492): the vault is the one the login's note names (after a way out into another vault, the
+   * list lives there), else `<login>/vault`; `full` names the repo of a call.
+   */
+  repoFiles(login: string, commit: string | null, full = this.homeOf(login)): Record<string, string> | null {
     const repos = this.world.repos!
-    const full = `${login}/vault`
     const text = commit === null ? repos.file(full, LIST_PATH) : repos.fileAt(full, commit, LIST_PATH)
     if (text === null) return null
     const f = parseListFile(text)
     return f.kind === 'ok' ? f.files : null
+  }
+  /** The vault that a login's note names (YAZ-5492), else `<login>/vault`. */
+  homeOf(login: string): string {
+    // The app's order of list gists: GitHub's `created_at` (whole seconds), then the ID.
+    const key = (g: { createdAt: number; id: string }) => `${String(Math.floor(g.createdAt / 1000)).padStart(14, '0')}${g.id}`
+    const note = this.world
+      .owned(login)
+      .filter((x) => INDEX_FILE in x.files)
+      .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))[0]
+    try {
+      const o = note === undefined ? null : (JSON.parse(note.files[INDEX_FILE]) as { v?: unknown; home?: unknown })
+      if (o !== null && o.v === 3 && typeof o.home === 'string') return o.home
+    } catch {
+      /* an old list gist */
+    }
+    return `${login}/vault`
   }
   /** Gist IDs inside group files, and the group files: what a group exposes (a known, recorded fact). */
   groupIds(): Set<string> {
@@ -229,7 +248,7 @@ export class Model {
       if (method === 'PATCH' && path.startsWith('/gists/') && (m.rateBlock[LOGIN[d.actor]] ?? -1) > m.step) {
         return new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
           status: 403,
-          headers: { 'content-type': 'application/json', 'x-ratelimit-resource': 'gist_update', 'x-ratelimit-remaining': '0', 'x-ratelimit-limit': '100', 'x-ratelimit-reset': String(Math.ceil((m.clock.now() + 600_000) / 1000)), date: new Date(m.clock.now()).toUTCString() },
+          headers: { 'content-type': 'application/json', 'x-ratelimit-resource': 'gist_update', 'x-ratelimit-remaining': '0', 'x-ratelimit-limit': '100', 'x-ratelimit-reset': String(Math.ceil((m.clock.now() + 600_000) / 1000)) },
         })
       }
       return m.forward(d, inner, url, init, method, body, id)
@@ -267,14 +286,15 @@ export class Model {
     const refMove = method === 'PATCH' ? /^\/repos\/([^/]+)\/([^/]+)\/git\/refs\/heads\//.exec(new URL(url).pathname) : null
     const refBody = refMove !== null && typeof init.body === 'string' ? (JSON.parse(init.body) as { sha?: string }) : null
     const login = refMove?.[1] ?? ''
-    const before = refMove === null ? null : this.repoFiles(login, null)
-    const head = refMove === null ? null : this.world.repos!.head(`${login}/vault`)
+    const full = refMove === null ? '' : `${refMove[1]}/${refMove[2]}`.toLowerCase()
+    const before = refMove === null ? null : this.repoFiles(login, null, full)
+    const head = refMove === null ? null : this.world.repos!.head(full)
     const res = await inner(url, init as never)
     if (refMove !== null && res.status === 200 && refBody?.sha !== undefined) {
-      const after = this.repoFiles(login, refBody.sha)
+      const after = this.repoFiles(login, refBody.sha, full)
       if (JSON.stringify(before) !== JSON.stringify(after)) {
         this.st.listWrites++
-        const parent = this.world.repos!.parents(`${login}/vault`, refBody.sha)[0] ?? ''
+        const parent = this.world.repos!.parents(full, refBody.sha)[0] ?? ''
         if (parent !== head) this.st.i7.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n}'s list write is not a fast forward of the head`)
         const readParent = d.repoReads?.has(parent) === true
         if (d.repoSha !== parent && !readParent) this.st.i7.push(`seed ${this.seed} step ${this.step}: ${d.actor}${d.n} wrote the list on ${parent.slice(0, 6)}, but last read it at ${d.repoSha?.slice(0, 6) ?? 'nothing'} (a lost update)`)
@@ -287,13 +307,14 @@ export class Model {
       d.repoSha = refBody.sha
       this.noteRead(d, refBody.sha, after)
     }
-    if (method === 'GET' && /\/contents\/\.yaseendocs\/friends\.json$/.test(new URL(url).pathname)) {
+    const contents = method === 'GET' ? /^\/repos\/([^/]+)\/([^/]+)\/contents\/\.yaseendocs\/friends\.json$/.exec(new URL(url).pathname) : null
+    if (contents !== null) {
       const ref = new URL(url).searchParams.get('ref')
       // YAZ-5398: a 404 "No commit found" is a replica that lags (the app reads again), not a read of the list.
       const lag = res.status === 404 && /No commit found/.test(await res.clone().text())
       if ((res.status === 200 || res.status === 404) && !lag) {
         d.repoSha = ref
-        d.repoList = res.status === 200 ? this.repoFiles(LOGIN[d.actor], ref) : null
+        d.repoList = res.status === 200 ? this.repoFiles(LOGIN[d.actor], ref, `${contents[1]}/${contents[2]}`.toLowerCase()) : null
         if (ref !== null) this.noteRead(d, ref, d.repoList)
       }
     }

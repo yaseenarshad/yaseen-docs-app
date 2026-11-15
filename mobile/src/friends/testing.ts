@@ -30,10 +30,13 @@ export function gistsFetch(world: FakeGistWorld): GistsFetch {
         answer = await world.http(method, next.pathname, next.searchParams, token, body, headers.get('if-none-match'), headers.get('accept'))
       }
       if (answer === undefined) throw new TypeError('Load failed')
+      // YAZ-5492 (nit): as in a browser. GitHub's CORS answer does not expose `Date` (not a safelisted header, not in
+      // its `Access-Control-Expose-Headers`), so a page never reads it; the `x-ratelimit-*` headers it does expose.
+      const { date: _hidden, ...seen } = answer.headers
       const noBody = answer.status === 204 || answer.status === 304
       // YAZ-5083: a raw file of the vault repo (`contents` with the raw media type) is the file's bytes, not JSON.
       if (answer.headers['x-raw'] === '1') return new Response(String(answer.body), { status: answer.status, headers: { 'content-type': 'application/vnd.github.raw+json' } })
-      return new Response(noBody ? null : JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json', ...answer.headers } })
+      return new Response(noBody ? null : JSON.stringify(answer.body), { status: answer.status, headers: { 'content-type': 'application/json', ...seen } })
     },
   }
 }

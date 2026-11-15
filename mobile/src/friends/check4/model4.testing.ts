@@ -164,7 +164,7 @@ export class Model4 extends Model {
         const busy = (this.inflight.get(id) ?? 0) > 0
         if ((busy && this.rng() < 0.6) || this.rng() < this.p409) {
           this.st4.c409++
-          return new Response(JSON.stringify({ message: 'Gist cannot be updated.' }), { status: 409, headers: { 'content-type': 'application/json', date: new Date(this.clock.now()).toUTCString() } })
+          return new Response(JSON.stringify({ message: 'Gist cannot be updated.' }), { status: 409, headers: { 'content-type': 'application/json' } })
         }
         // GitHub (live, round 4): a PATCH that sets a file to null that the gist does not have is refused whole, 422.
         if (process.env.G422 === '1') {
@@ -172,7 +172,7 @@ export class Model4 extends Model {
           const body = typeof init.body === 'string' ? (JSON.parse(init.body) as { files?: Record<string, unknown> }) : {}
           if (g !== undefined && Object.entries(body.files ?? {}).some(([n, f]) => f === null && !(n in g.files))) {
             this.st4.c422++
-            return new Response(JSON.stringify({ message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] }), { status: 422, headers: { 'content-type': 'application/json', date: new Date(this.clock.now()).toUTCString() } })
+            return new Response(JSON.stringify({ message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] }), { status: 422, headers: { 'content-type': 'application/json' } })
           }
         }
         const mark = { d }
@@ -715,7 +715,13 @@ export function plan(seed: number): Plan {
 
 export async function runPlan(p: Plan): Promise<Model4> {
   const m = new Model4(p.seed)
+  // BUILDER CHANGE (YAZ-5492): the setup is the world before the order, not a step of it: the model's random 409 on a
+  // gist PATCH is off there (as `runPlan6` does; seed 9302520's setup stopped at B's group create when three random
+  // 409s in a row met it). The draws of the random source stay the same.
+  const p409 = m.p409
+  m.p409 = 0
   await m.setup4(...p.setup)
+  m.p409 = p409
   m.bPairedEver = false
   for (const e of p.events) {
     await m.run(e)

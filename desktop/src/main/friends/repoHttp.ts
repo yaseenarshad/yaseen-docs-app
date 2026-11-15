@@ -5,11 +5,12 @@
  * - READ ONLY: the Mac never writes the list (YAZ-5086, "the Mac only sends"). `commit` refuses before any call.
  * - The token goes in the Authorization header only, to `api.github.com` only. A redirect is followed only when it
  *   stays on `api.github.com` (a renamed or transferred repo, YAZ-5399); never to another host.
- * - 404 or 403 on the repo: `NO_LIST_ACCESS`. A missing list file at a commit: null. Other failures: the gist codes.
+ * - 404 or 403 on the repo: `NO_LIST_ACCESS`. A missing list file at a commit: null. YAZ-5464: a repo with no commit
+ *   (409 "Git Repository is empty"): a head of `sha: null`, and no file. Other failures (other 409s too): the gist codes.
  * - A message holds the status only: never the token, a repo name or an address.
  */
 import { GistError, type GistErrorCode } from '@shared/friendGists'
-import { ListError, type RepoPort } from '@shared/friendListStore'
+import { EMPTY_REPO, ListError, type RepoPort } from '@shared/friendListStore'
 import { GITHUB_API, REQUEST_TIMEOUT_MS, type FetchLike } from './gistsHttp'
 
 const REPO_RE = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/
@@ -61,6 +62,13 @@ async function callOnce(token: string, fetch: FetchLike, url: string, init: { ac
   }
 }
 
+/** YAZ-5464: GitHub's 409 "Git Repository is empty" (a repo with no commit), and only that 409. */
+async function isEmptyRepo(res: Response): Promise<boolean> {
+  if (res.status !== 409) return false
+  const said = ((await res.clone().json().catch(() => null)) as { message?: unknown } | null)?.message
+  return typeof said === 'string' && EMPTY_REPO.test(said)
+}
+
 function failure(response: Response): Error {
   const { status, headers } = response
   const code: GistErrorCode =
@@ -97,6 +105,8 @@ export function macRepoPort(token: string, fetch: FetchLike, repo: string, branc
     async head(etag) {
       const res = await call(token, fetch, `${base}/git/ref/heads/${enc(await branchNow())}`, { etag })
       if (res.status === 304) return 'unchanged'
+      // YAZ-5464: a repo with no commit has no list file (the shared reader takes it as "missing").
+      if (await isEmptyRepo(res)) return { sha: null, etag: null }
       if (res.status !== 200) throw failure(res)
       const data = (await res.json().catch(() => null)) as { object?: { sha?: unknown } } | null
       const sha = data?.object?.sha
@@ -111,6 +121,7 @@ export function macRepoPort(token: string, fetch: FetchLike, repo: string, branc
         if (typeof said === 'string' && /^No commit found/.test(said)) throw new ListError('STALE_READ', 'GitHub does not have that commit yet')
         return null
       }
+      if (await isEmptyRepo(res)) return null
       if (res.status !== 200) throw failure(res)
       return res.text()
     },

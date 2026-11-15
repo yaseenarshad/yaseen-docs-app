@@ -425,6 +425,8 @@ export const homeGoneMessage = (home: string, fileGone = false): string =>
 /** YAZ-5400: the words when an old list gist has more than 300 files (GitHub gives the app only 300 of them). */
 export const LIST_CUT =
   'Your old friends list on GitHub has more than 300 files. GitHub gives the app only 300 of them, so the app cannot read the whole list or move it. Nothing was changed, and no new list was started.'
+/** YAZ-5464: the way out could not see every gist (it would miss a friend link): it changed nothing. */
+export const TOO_MANY_GISTS = `You have more than ${30 * 100} gists on GitHub, and GitHub lists only that many to the app. The app could miss a friend link, so it changed nothing. Delete gists you do not need on gist.github.com, then try again.`
 /** YAZ-5399: the way out, as a button. */
 export const restartAction = (vault: string): string => `Start the friends list again in ${vault}`
 /** YAZ-5399: what the way out does, said before it runs (its privacy effect). */
@@ -1155,6 +1157,35 @@ export async function remakeNumbers(api: GistsApi, handle: IndexHandle, budget: 
   } catch (err) {
     return pauseOn(err, handle, budget, now)
   }
+}
+
+/**
+ * YAZ-5492: a list whose numbers gist is GONE heals itself: a new generation (`remakeNumbers`: the same saga as a
+ * remove, so one generation, never two; each pointer of the list moves to it). Two phones' way outs into two vaults at
+ * the same moment could each delete the other's new numbers gist; the list that the note names then pointed at nothing
+ * for good, and each friend added after it read "no update yet". One read of the numbers gist (an ETag read, free when
+ * it is there). `null`: nothing to heal (the gist is there, a remove waits and makes its own, or GitHub did not answer).
+ */
+export async function healNumbers(api: GistsApi, handle: IndexHandle, budget: GistBudget, opts: ListOptions): Promise<RemoveResult | null> {
+  const stats = handle.index.stats
+  if (handle.store === undefined || stats === null || pendingRemove(handle) !== null || (handle.state?.pending.length ?? 0) > 0) return null
+  try {
+    await api.read(stats)
+    return null
+  } catch (err) {
+    if (gistErrorCode(err) !== 'NOT_FOUND') return null
+  }
+  // The list read AGAIN after the 404: a remove on another device that just finished made a new generation and then
+  // deleted the old gist (the one this copy names). Only a list that still names the gone gist, with no remove
+  // waiting, gets a new one (else this would make a second generation over another device's).
+  let fresh: IndexHandle
+  try {
+    fresh = await latestList(handle)
+  } catch {
+    return null
+  }
+  if (fresh.index.stats !== stats || pendingRemove(fresh) !== null || (fresh.state?.pending.length ?? 0) > 0) return null
+  return remakeNumbers(api, fresh, budget, opts)
 }
 
 /** Reads the list (read only), for a caller that holds no handle yet. */

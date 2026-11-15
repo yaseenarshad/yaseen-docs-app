@@ -132,7 +132,7 @@ it.runIf(live)('YAZ-5083 live: two list commits at once compose (one 422), the f
     say(`gist writes ${gistWrites}; test gists left after the deletes (list call): ${left.length}`)
     // 5. The demo vault as it was: ONE commit.
     const now = await port.head()
-    if (now !== 'unchanged') {
+    if (now !== 'unchanged' && now.sha !== null) {
       const text = await port.read(now.sha, LIST_PATH)
       // The list port never deletes (YAZ-5083 round 5: GitHub refuses `sha: null` for a path that is not there); the reset
       // of a file that IS there goes through 3B's commit itself.

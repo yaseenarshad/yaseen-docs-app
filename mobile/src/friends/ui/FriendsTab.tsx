@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { LIST_NEEDS_REPAIR } from '@shared/friendGists'
-import { LIST_CUT, NO_LIST_ACCESS, homeGoneMessage, listElsewhereMessage, pasteMessage, restartAction, restartWarning, type PasteResult } from '@shared/friendsList'
+import { LIST_CUT, NO_LIST_ACCESS, TOO_MANY_GISTS, homeGoneMessage, listElsewhereMessage, pasteMessage, restartAction, restartWarning, type PasteResult } from '@shared/friendsList'
 import { useApp } from '../../app/AppState'
 import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
@@ -137,7 +137,7 @@ function HomeGone({ message, vaults, service, refresh }: { message: string; vaul
     setBusy(true)
     try {
       const r = await service.restart(asking)
-      setSaid(r.kind === 'done' ? null : r.kind === 'home-is-there' ? 'Your friends list can be read again. Nothing was changed.' : (UNAVAILABLE_WORDS[r.kind as Unavailable['kind']] ?? 'Something went wrong. Try again.'))
+      setSaid(r.kind === 'done' ? null : r.kind === 'home-is-there' ? 'Your friends list can be read again. Nothing was changed.' : r.kind === 'too-many-gists' ? TOO_MANY_GISTS : (UNAVAILABLE_WORDS[r.kind as Unavailable['kind']] ?? 'Something went wrong. Try again.'))
     } finally {
       setBusy(false)
       setAsking(null)

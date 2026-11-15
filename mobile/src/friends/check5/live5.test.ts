@@ -39,7 +39,7 @@ it.runIf(live)('round 5 live: reads right after my own writes, and a whole remov
   const branch = meta.default_branch
   const raw = listRepo(client, REPO, branch)
   const start = await raw.head()
-  if (start === 'unchanged') throw new Error('head')
+  if (start === 'unchanged' || start.sha === null) throw new Error('head')
   const startTree = ((await client.request(repoPath(REPO, 'git', 'commits', start.sha))).data as { tree: { sha: string } }).tree.sha
   if (process.env.OUT !== undefined) writeFileSync(`${process.env.OUT}/live5-start.json`, JSON.stringify({ head: start.sha, tree: startTree, branch }))
   say(`start: branch ${branch}; head ${start.sha.slice(0, 7)}; list file: ${(await readRepoList(raw)).kind}`)
@@ -53,7 +53,7 @@ it.runIf(live)('round 5 live: reads right after my own writes, and a whole remov
     async head(e) {
       const h = await raw.head(e)
       reads.all++
-      if (mine !== null && h !== 'unchanged') {
+      if (mine !== null && h !== 'unchanged' && h.sha !== null) {
         reads.afterWrite++
         if (h.sha !== mine) {
           const parents = ((await client.request(repoPath(REPO, 'git', 'commits', mine))).data as { parents: { sha: string }[] }).parents.map((p) => p.sha)

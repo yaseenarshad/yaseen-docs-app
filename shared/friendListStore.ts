@@ -53,16 +53,24 @@ export interface RepoPort {
   /** `owner/name`, lower case. */
   readonly repo: string
   readonly branch: string
-  /** The branch head; with `etag`, an unchanged branch is `'unchanged'` (a free 304). */
-  head(etag?: string | null): Promise<{ sha: string; etag: string | null } | 'unchanged'>
+  /**
+   * The branch head; with `etag`, an unchanged branch is `'unchanged'` (a free 304). YAZ-5464: `sha: null` is a repo
+   * with NO commit at all (made again on github.com with no README: GitHub answers 409 "Git Repository is empty" for
+   * its branch and its files). Such a repo has no list file; the first write there is `commit(null, …)`.
+   */
+  head(etag?: string | null): Promise<{ sha: string | null; etag: string | null } | 'unchanged'>
   /** The text of `path` at `commit`, or null when the file is not there. */
   read(commit: string, path: string): Promise<string | null>
   /**
    * ONE commit on `parent` that writes `path`, then the ref `PATCH` with `force: false`. It never deletes a path: GitHub
    * refuses `sha: null` for a path that the base tree does not have (422 "GitRPC::BadObjectState"), and the list app
    * never needs a delete (a list is never taken out of the vault).
+   * YAZ-5464: `parent: null` is the FIRST commit of an empty repo (a head read gave `sha: null`). GitHub's git data
+   * calls answer 409 "Git Repository is empty" there (no blob, tree or commit can be made, so no ref either), so the
+   * port makes it with the Contents API (`PUT contents/<path>` with no `sha`): it creates the branch, and it writes ONLY
+   * while `path` is missing (a file that is there by then is GitHub's 422, `STALE_HEAD`: read again).
    */
-  commit(parent: string, path: string, text: string, message: string): Promise<string>
+  commit(parent: string | null, path: string, text: string, message: string): Promise<string>
   /**
    * YAZ-5399: the repo's name as GitHub gives it now (`full_name`, lower case). A renamed or transferred repo answers its
    * old name with a redirect, which the read follows; this says the new name. Optional (a port without it: unknown).
@@ -86,6 +94,17 @@ export class ListError extends Error {
     this.name = 'ListError'
   }
 }
+/**
+ * YAZ-5464: GitHub's message of its 409 for a repo with NO commit (made with no README): "Git Repository is empty." for
+ * the branch, the files and every git data call. Only a 409 with this message is "empty" (every other 409 is not).
+ * (The phone's GitHub client keeps it `UNEXPECTED` with the message in `said`: the friends adapter reads it, so the
+ * first-load bundle does not grow, YAZ-5377.)
+ */
+export const EMPTY_REPO = /^Git Repository is empty/
+
+/** YAZ-5464: GitHub's answers of a `PUT contents` with no `sha` (or an old one) over a file that is there by now. */
+export const FILE_THERE = /"sha" wasn't supplied|does not match/
+
 export const listErrorCode = (err: unknown): ListErrorCode | null => {
   const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined
   return code === 'STALE_HEAD' || code === 'NO_LIST_ACCESS' || code === 'STALE_READ' ? code : null
@@ -213,7 +232,8 @@ export interface RepoListSnapshot {
   rev: number
 }
 
-export type RepoListRead = { kind: 'ok'; snap: RepoListSnapshot } | { kind: 'missing'; sha: string; etag: string | null } | { kind: 'newer' } | { kind: 'unreadable'; why: string }
+/** `missing` with `sha: null` (YAZ-5464): the repo has no commit at all (an empty repo), so no list file either. */
+export type RepoListRead = { kind: 'ok'; snap: RepoListSnapshot } | { kind: 'missing'; sha: string | null; etag: string | null } | { kind: 'newer' } | { kind: 'unreadable'; why: string }
 
 /**
  * YAZ-5398: ONE RULE FOR EVERY READ OF THE LIST. GitHub does not promise read-after-write for the ref API: for a short
@@ -298,7 +318,8 @@ export async function readGuarded(
     if (have.known !== undefined && head.sha === have.known) return { kind: 'unchanged', etag: head.etag }
     let read: RepoListRead | null = null
     try {
-      read = await readAt(port, head.sha, head.etag)
+      // YAZ-5464: an empty repo (no commit) has no list file: "missing", under the same rule as any missing file.
+      read = head.sha === null ? { kind: 'missing', sha: null, etag: null } : await readAt(port, head.sha, head.etag)
     } catch (err) {
       if (listErrorCode(err) !== 'STALE_READ') throw err
     }

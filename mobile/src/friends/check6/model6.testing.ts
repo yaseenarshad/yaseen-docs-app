@@ -6,19 +6,29 @@
  *
  * The step:
  * 1. (sometimes) "Start the friends list again" while the list file is still there: it must change nothing (I9).
- * 2. The file goes. 11 minutes later (past the stale window) one A phone opens Friends: it must offer the way out in the
+ * 2. The file goes (deleted; the vault made again with a page; or, round 7, YAZ-5464, the vault made again EMPTY: no
+ *    commit at all). 11 minutes later (past the stale window) one A phone opens Friends: it must offer the way out in the
  *    home vault itself, and the way out must run (a few tries 11 minutes apart under the faults, then once with the
  *    faults off). A dead end (no `home-gone` with `fileGone`, or the way out never done) is I10.
  * 3. After the way out every friend is removed: the model's I1 then asserts at every step that B reaches none of A's
  *    current numbers, until A adds B again.
  *
  * New invariants: I9 the way out never replaces a list file that can be read, and deletes nothing then; I10 a list file
- * gone for good always has a way out that ends B's access. The round 5 set (I1..I8, I1 on done, wrong deletes, throws)
+ * gone for good always has a way out that ends B's access.
+ *
+ * Round 8 (YAZ-5492): in about a third of the orders with two or more A phones, the step is the TWO-VAULT race instead:
+ * A's phone 0 has a second vault `ali/notes`, phone 1 `ali/other`; the home goes (the repo deleted, or its list file),
+ * and both phones run the way out AT THE SAME MOMENT, each into its own other vault. I11: after it (and one more open
+ * of Friends on each phone) there is one note, the list it names has its numbers gist, no list in my vaults keeps a
+ * `wayOut` mark, and B's pointers are gone (I1 asserts from there on, as for the one-phone way out). The round 5 set (I1..I8, I1 on done, wrong deletes, throws)
  * still asserts. After the way out I2 and I2 strict's "C is still in A's list" do not apply to C (A removed every friend
  * by it).
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { LIST_PATH } from '@shared/friendListStore'
+import { INDEX_FILE, POINTER_FILE, readListFiles } from '@shared/friendGists'
+import { LIST_PATH, parseListFile } from '@shared/friendListStore'
+import { saveAccount } from '../../auth/account'
+import { loadVaultList, saveVaultList, vaultId } from '../../store'
 import { mulberry, type Ev } from '../check3/model.testing'
 import { randomEvent4, type Model4 } from '../check4/model4.testing'
 import { KEYS5, Model5, violations5, type Knobs } from '../check5/model5.testing'
@@ -27,7 +37,7 @@ const HOME = 'ali/vault'
 
 export class Model6 extends Model5 {
   g6: () => number
-  st6 = { fileGone: 0, wayOut: 0, refusedWhileThere: 0, tries: 0, i9: [] as string[], i10: [] as string[] }
+  st6 = { fileGone: 0, wayOut: 0, refusedWhileThere: 0, tries: 0, how: { deleted: 0, remade: 0, empty: 0, gone: 0 }, finishedByOpen: 0, twoVaults: 0, i9: [] as string[], i10: [] as string[], i11: [] as string[] }
   restarted = false
   constructor(seed: number, knobs: Knobs) {
     super(seed, knobs)
@@ -47,6 +57,8 @@ export class Model6 extends Model5 {
     }
     this.st6.fileGone++
     const devs = this.devs.A as any[]
+    // YAZ-5492: the two-vault race (two A phones' way outs at the same moment into two other vaults).
+    if (devs.length >= 2 && this.g6() < 0.35) return this.twoVaults()
     const d = devs[(ev.dev ?? 0) % devs.length]
     // 1. I9: the way out over a list that is there.
     if (this.g6() < 0.4) {
@@ -61,16 +73,29 @@ export class Model6 extends Model5 {
     // A's pointers for B now (friend entries and links given to B): each must be gone after the way out.
     const sharedToB = (this.listOf('A')?.index.shared ?? []).filter((x) => this.linksGivenToB.has(x.mine)).map((x) => x.mine)
     const bMines = [...this.bEntries().map((e) => e.mine), ...sharedToB]
-    // 2. The file goes, in one of two ways.
-    const how = this.g6() < 0.5 ? 'deleted' : 'remade'
+    const oldStats = this.listOf('A')?.index.stats ?? null
+    // 2. The file goes, in one of three ways (round 7, YAZ-5464: the vault made again EMPTY, with no commit at all:
+    // GitHub answers 409 "Git Repository is empty" for its branch, its files and every git data call).
+    const x = this.g6()
+    const how = x < 0.4 ? 'deleted' : x < 0.7 ? 'remade' : 'empty'
+    this.st6.how[how]++
     if (how === 'deleted') repos.push(HOME, { [LIST_PATH]: null }, 'main', 'a person deleted the list file on github.com')
     else {
       repos.remove(HOME)
-      repos.create(HOME, 'ali', { 'a.md': '# A page\n' })
+      if (how === 'remade') repos.create(HOME, 'ali', { 'a.md': '# A page\n' })
+      else repos.createEmpty(HOME, 'ali')
     }
     this.clock.advance(11 * 60_000)
     let done = false
     let last = ''
+    let started = false
+    /** The list at the home now: its numbers gist, and whether it carries a way out that is not finished (YAZ-5462). */
+    const homeList = () => {
+      const text = repos.file(HOME, LIST_PATH)
+      const f = text === null ? null : parseListFile(text)
+      const r = f === null || f.kind !== 'ok' ? null : readListFiles(f.files)
+      return r === null || r.kind !== 'ok' ? null : { stats: r.value.stats, marked: f !== null && f.kind === 'ok' && 'wayOut' in f.extra }
+    }
     for (let t = 0; t < 6 && !done; t++) {
       if (t === 5) {
         // The last try: no fault, the phone is online (the model's `offline` step may hold it offline still), and no
@@ -82,6 +107,15 @@ export class Model6 extends Model5 {
       this.st6.tries++
       const rows = await this.act(d, 'rows', (x) => x.rows())
       last = rows === 'crash' ? 'crash' : rows.kind
+      // YAZ-5462 (round 7): the way out writes its new list FIRST; a run that stopped after it is finished by the next
+      // open of the list (its `wayOut` mark), which then answers `ok`: that is the way out done too.
+      const now = homeList()
+      if (started && rows !== 'crash' && rows.kind === 'ok' && now !== null && !now.marked && now.stats !== oldStats) {
+        done = true
+        this.st6.finishedByOpen++
+        last = 'ok (the next open finished the way out)'
+        break
+      }
       if (rows === 'crash' || rows.kind !== 'home-gone') {
         // The fake's stale reads are not bound in time: one can give the head from before the delete (with the list)
         // even now, and a list seen means "maybe a lag" for the next 10 minutes. The person tries again later.
@@ -96,6 +130,7 @@ export class Model6 extends Model5 {
       this.cut = true
       this.cutDone = false
       this.st.removesStarted++
+      started = true
       const r = await this.act(d, 'restart', (x) => x.restart(HOME))
       last = `home-gone, restart ${r === 'crash' ? 'crash' : r.kind}`
       if (r !== 'crash' && r.kind === 'done') done = true
@@ -111,6 +146,111 @@ export class Model6 extends Model5 {
       for (const g of this.world.owned('ali')) for (const m of bMines) if (g.id === m) this.st6.i10.push(`seed ${this.seed} step ${this.step}: B's pointer ${m.slice(0, 6)} is still there after the way out`)
     }
     this.log.push(`${String(this.step).padStart(2)} fileGone A${d.n} ${how}: ${last}`)
+    await this.check()
+  }
+
+  /**
+   * YAZ-5492: two A phones run the way out at the same moment, phone 0 into `ali/notes`, phone 1 into `ali/other` (each
+   * its own vault; neither phone has the other's). The home goes first: the repo deleted (GitHub answers 404 at once) or
+   * its list file deleted (offered after the stale window). The person tries again on each phone that still offers the
+   * way out (a few tries 11 minutes apart under the faults, the last with the faults off), then opens Friends once more on
+   * each phone. I10: the way out ends B's access; I11: one note, its list's numbers gist is there, no mark left.
+   */
+  async twoVaults(): Promise<void> {
+    const repos = this.world.repos!
+    const [d0, d1] = this.devs.A as any[]
+    this.st6.twoVaults++
+    for (const [d, repo] of [
+      [d0, 'ali/notes'],
+      [d1, 'ali/other'],
+    ] as const) {
+      if (!repos.owned('ali').includes(repo)) repos.create(repo, 'ali', { 'a.md': '# A page\n' })
+      const v = { repo, branch: 'main', addedAt: this.clock.now() }
+      const list = await loadVaultList(d.store)
+      await saveVaultList(d.store, { vaults: [...list.vaults, v], open: list.open })
+      await d.tokens.write(vaultId(v), `github_pat_11CHECK3_${'ali'.padEnd(70, '0')}`)
+      await saveAccount(d.store, vaultId(v), { login: 'ali', name: 'ALI', avatarUrl: '', gists: 'yes', expiresAt: null, checkedAt: this.clock.now() })
+      d.list = this.newList(d)
+    }
+    const sharedToB = (this.listOf('A')?.index.shared ?? []).filter((x) => this.linksGivenToB.has(x.mine)).map((x) => x.mine)
+    const bMines = [...this.bEntries().map((e) => e.mine), ...sharedToB]
+    const oldStats = this.listOf('A')?.index.stats ?? null
+    // The repo deleted (`gone`: GitHub answers 404, the way out is offered at once), or its list file deleted.
+    const how = this.g6() < 0.5 ? 'deleted' : 'gone'
+    this.st6.how[how]++
+    if (how === 'deleted') repos.push(HOME, { [LIST_PATH]: null }, 'main', 'a person deleted the list file on github.com')
+    else repos.remove(HOME)
+    this.clock.advance(11 * 60_000)
+    const target = new Map<any, string>([
+      [d0, 'ali/notes'],
+      [d1, 'ali/other'],
+    ])
+    let done = false
+    let started = false
+    const last: string[] = []
+    for (let t = 0; t < 6 && !done; t++) {
+      if (t === 5) {
+        this.armed = false
+        for (const d of [d0, d1]) {
+          d.offlineUntil = -1
+          d.crashAt = null
+        }
+      }
+      this.st6.tries++
+      const steps = await Promise.all(
+        [d0, d1].map(async (d) => {
+          const rows = await this.act(d, 'rows', (x) => x.rows())
+          if (rows === 'crash') return 'crash'
+          if (rows.kind !== 'home-gone') return rows.kind
+          if (!this.cut) {
+            this.cut = true
+            this.cutDone = false
+            this.st.removesStarted++
+          }
+          started = true
+          const r = await this.act(d, 'restart', (x) => x.restart(target.get(d)!))
+          return `restart ${r === 'crash' ? 'crash' : r.kind}`
+        }),
+      )
+      last.splice(0, last.length, ...steps)
+      const l = this.listOf('A')
+      if (started && steps.every((x) => x === 'ok' || x === 'restart done') && l !== null && l.index.stats !== oldStats) done = true
+      else this.clock.advance(11 * 60_000)
+    }
+    this.armed = true
+    this.log.push(`${String(this.step).padStart(2)} fileGone two vaults (${how}): ${last.join(' | ')}`)
+    if (!done) {
+      this.st6.i10.push(`seed ${this.seed} step ${this.step}: two-vault way out (${how}): not done (last: ${last.join(' | ')})`)
+      await this.check()
+      return
+    }
+    this.st6.wayOut++
+    this.i2Kept = this.st.i2.length
+    this.restarted = true
+    for (const m of bMines) this.bMinesTargeted.add(m)
+    for (const m of bMines) if (this.gist(m) !== undefined) this.st6.i10.push(`seed ${this.seed} step ${this.step}: two-vault way out: B's pointer ${m.slice(0, 6)} is still there`)
+    // The person opens Friends again later on each phone (a new start of the app, no fault): then the state is whole.
+    this.armed = false
+    for (const d of [d0, d1]) {
+      d.list = this.newList(d)
+      await this.act(d, 'rows', (x) => x.rows())
+    }
+    this.armed = true
+    const notes = this.world.owned('ali').filter((g) => INDEX_FILE in g.files)
+    const l = this.listOf('A')
+    const why: string[] = []
+    if (notes.length !== 1) why.push(`${notes.length} notes`)
+    if (l === null) why.push('no list where the note says')
+    else if (l.index.stats === null || this.gist(l.index.stats) === undefined) why.push(`the list names a numbers gist that is gone (${l.index.stats?.slice(0, 6)})`)
+    for (const repo of [HOME, 'ali/notes', 'ali/other']) {
+      const text = repos.file(repo, LIST_PATH)
+      const f = text === null ? null : parseListFile(text)
+      if (f !== null && f.kind === 'ok' && 'wayOut' in f.extra) why.push(`${repo} keeps a wayOut mark`)
+    }
+    // A pointer of A that names a numbers gist that is gone while the list names another: a friend of the new list
+    // would read nothing (none is expected here: no friend was added yet).
+    for (const g of this.world.owned('ali')) if (POINTER_FILE in g.files && bMines.includes(g.id)) why.push(`B's pointer ${g.id.slice(0, 6)} is back`)
+    if (why.length > 0) this.st6.i11.push(`seed ${this.seed} step ${this.step}: two-vault way out (${how}): ${why.join('; ')}`)
     await this.check()
   }
 
@@ -181,5 +321,5 @@ export async function runPlan6(seed: number, knobs: Knobs, keep?: number[]): Pro
   return m
 }
 
-export const KEYS6 = [...KEYS5, 'I9', 'I10'] as const
-export const violations6 = (m: Model6): Record<string, string[]> => ({ ...violations5(m), I9: m.st6.i9, I10: m.st6.i10 })
+export const KEYS6 = [...KEYS5, 'I9', 'I10', 'I11'] as const
+export const violations6 = (m: Model6): Record<string, string[]> => ({ ...violations5(m), I9: m.st6.i9, I10: m.st6.i10, I11: m.st6.i11 })
