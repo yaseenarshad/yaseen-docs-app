@@ -1,4 +1,5 @@
 import { writeFileSync } from 'node:fs'
+import { researchOut } from '../researchOut.testing'
 import { it } from 'vitest'
 import { noRealWaits } from '../check4/run4.testing'
 import { KEYS5, runPlan5, violations5, type Knobs } from './model5.testing'
@@ -43,6 +44,6 @@ it(`check5 orders ${FROM}..${FROM + COUNT - 1}`, async () => {
     }
   }
   const out = { from: FROM, count: COUNT, knobs: KN, ...tot, violations: count, bad }
-  if (process.env.OUT) writeFileSync(`${process.env.OUT}/check5-${FROM}-${COUNT}-${process.env.C5_TAG ?? 'x'}.json`, JSON.stringify(out, null, 1))
+  if (process.env.OUT) writeFileSync(`${researchOut()}/check5-${FROM}-${COUNT}-${process.env.C5_TAG ?? 'x'}.json`, JSON.stringify(out, null, 1))
   console.log(JSON.stringify({ ...out, bad: bad.slice(0, 8) }))
 }, 7_200_000)

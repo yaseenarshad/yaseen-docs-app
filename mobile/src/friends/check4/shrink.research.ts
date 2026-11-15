@@ -1,5 +1,6 @@
 import { it } from 'vitest'
 import { writeFileSync } from 'node:fs'
+import { researchOut } from '../researchOut.testing'
 import { plan, runPlan, violations, type Plan } from './model4.testing'
 const real = globalThis.setTimeout
 globalThis.setTimeout = ((fn: () => void, ms?: number, ...a: unknown[]) => real(fn, ms === 1000 || ms === 2000 ? 0 : ms, ...a)) as typeof setTimeout
@@ -55,5 +56,5 @@ it('check4 shrink', async () => {
     const m = await runPlan(p)
     out.push(`seed ${seed} ${KEY}: ${p.events.length} events, setup ${JSON.stringify(p.setup)}\n  ${(await fails(p)) ?? ''}\n  events ${JSON.stringify(p.events)}\n  ${m.log.join('\n  ')}`)
   }
-  writeFileSync(`${process.env.OUT ?? '.'}/shrink-${KEY}-${seeds[0] ?? 0}.txt`, out.join('\n\n'))
+  writeFileSync(`${researchOut()}/shrink-${KEY}-${seeds[0] ?? 0}.txt`, out.join('\n\n'))
 }, 3_600_000)
