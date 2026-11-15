@@ -21,9 +21,12 @@ const storedNothing = async (store: VaultStore, x: Harness) => {
 }
 
 describe('first open (row F1) and the typed sign-in (decision 13)', () => {
-  it('shows the sign-in: two fields, one button, the guide link and Scan a code; no tabs and no call to GitHub', async () => {
+  it('shows the sign-in: the token, one button, the typed fallback, the guide link and Scan a code; no tabs and no call to GitHub', async () => {
     h = await mount()
-    expect(h.text()).toContain('Connect the GitHub repo that holds your vault.')
+    // YAZ-5408: the token first; the repo comes from the token's list. The typed repo is the fallback.
+    expect(h.text()).toContain('Paste your GitHub token. Then choose the repo of your vault.')
+    expect(h.button('Show my repos')).not.toBeNull()
+    await h.click('Type the repo name')
     expect(h.host.querySelector('input[name="repo"]')?.getAttribute('placeholder')).toBe('owner/repo')
     expect(h.host.querySelector('input[name="token"]')?.getAttribute('type')).toBe('password')
     expect(h.button('Connect vault')).not.toBeNull()
@@ -131,7 +134,7 @@ describe('each sign-in result has plain words and a way forward', () => {
     expect(text).toContain('Gists: Read and write')
     expect(text).toContain('Add to Home Screen')
     await h.click('‹ Back')
-    expect(h.button('Connect vault')).not.toBeNull()
+    expect(h.button('Show my repos')).not.toBeNull()
   })
 })
 
@@ -177,8 +180,8 @@ describe('Scan a code (round 11, item 23), with a fake camera', () => {
     h.scanner.failWith = 'denied'
     await h.click('Scan a code')
     expect(h.text()).toContain('Notecard may not use the camera.')
-    await h.click('Type the repo and token')
-    expect(h.button('Connect vault')).not.toBeNull()
+    await h.click('Paste a token')
+    expect(h.button('Show my repos')).not.toBeNull()
   })
 })
 
@@ -231,7 +234,7 @@ describe('Settings: vaults (decision 7)', () => {
     await h.click('More for yaseen/vault')
     await h.click('Remove from this phone')
     await h.click('Remove')
-    expect(h.button('Connect vault')).not.toBeNull()
+    expect(h.button('Show my repos')).not.toBeNull()
     expect(h.sync.opened.at(-1)).toBeNull()
   })
 
@@ -339,7 +342,7 @@ describe('Sign out and erase this phone (row N7)', () => {
     expect(await h.store.getState('yaseen/vault@main', 'answers')).toBeUndefined()
     expect(await h.store.getState(PHONE, 'friendsSettings')).toBeUndefined()
     expect((await loadVaultList(h.store)).vaults).toEqual([])
-    expect(h.button('Connect vault')).not.toBeNull()
+    expect(h.button('Show my repos')).not.toBeNull()
     expect(h.sync.opened.at(-1)).toBeNull()
   })
 })
@@ -510,6 +513,7 @@ describe('checker round 1 (YAZ-5177, YAZ-5178)', () => {
 
   it('a double tap on Connect vault runs ONE check', async () => {
     h = await mount()
+    await h.click('Type the repo name')
     await h.type('Repo', 'yaseen/vault')
     await h.type('Token', GOOD)
     const btn = h.button('Connect vault')!
@@ -537,7 +541,7 @@ describe('the erase waits for a running pass (YAZ-5175)', () => {
     await erasing
     await h.settle()
     expect(await h.tokens.read('yaseen/vault@main')).toBeNull()
-    expect(h.button('Connect vault')).not.toBeNull()
+    expect(h.button('Show my repos')).not.toBeNull()
   })
 })
 
@@ -554,7 +558,7 @@ describe('another tab erased the phone (YAZ-5194)', () => {
     await new Promise((r) => setTimeout(r, 30))
     await h.settle()
     expect(h.sync.opened.at(-1)).toBeNull()
-    expect(h.button('Connect vault')).not.toBeNull()
+    expect(h.button('Show my repos')).not.toBeNull()
   })
 })
 

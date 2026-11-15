@@ -18,6 +18,9 @@ export const GOOD = 'github_pat_11GOODGOOD0goodgoodgood_' + 'g'.repeat(59)
 export const SECOND = 'github_pat_11SECONDXX0secondsecondse_' + 's'.repeat(59)
 export const READ_ONLY = 'github_pat_11READONLY0readonlyreadonl_' + 'r'.repeat(59)
 export const NO_CONTENTS = 'github_pat_11NOCONTENT0nocontentnocont_' + 'c'.repeat(59)
+/** YAZ-5408: a token that reaches no repo, and one that reaches 12 (the picker's search box). */
+export const NO_REPOS = 'github_pat_11NOREPOSXX0noreposnorepos_' + 'n'.repeat(59)
+export const MANY = 'github_pat_11MANYMANYX0manymanymanyma_' + 'm'.repeat(59)
 export const WRONG = 'github_pat_11WRONGWRONG0wrongwrongwron_' + 'x'.repeat(59)
 
 export const TOKENS: Record<string, FakeToken> = {
@@ -25,8 +28,15 @@ export const TOKENS: Record<string, FakeToken> = {
   [SECOND]: { login: 'yaseen', name: 'Yaseen', repos: { 'yaseen/second': 'write' }, gists: true },
   [READ_ONLY]: { login: 'yaseen', repos: { 'yaseen/vault': 'read' }, gists: true },
   [NO_CONTENTS]: { login: 'yaseen', repos: { 'yaseen/vault': 'none' }, gists: true },
+  [NO_REPOS]: { login: 'yaseen', repos: {}, gists: true },
+  [MANY]: { login: 'yaseen', repos: Object.fromEntries([...Array.from({ length: 10 }, (_, i) => [`yaseen/project-${i + 1}`, 'write']), ['yaseen/vault', 'write'], ['yaseen/second', 'write']]), gists: true },
 }
-export const REPOS: FakeRepo[] = [{ fullName: 'yaseen/vault', branches: ['main', 'phone'] }, { fullName: 'yaseen/second' }, { fullName: 'yaseen/code', vault: false }]
+export const REPOS: FakeRepo[] = [
+  { fullName: 'yaseen/vault', branches: ['main', 'phone'], pushedAt: '2026-11-01T00:00:00Z' },
+  { fullName: 'yaseen/second', pushedAt: '2026-10-01T00:00:00Z' },
+  { fullName: 'yaseen/code', vault: false, pushedAt: '2026-11-10T00:00:00Z' },
+  ...Array.from({ length: 10 }, (_, i): FakeRepo => ({ fullName: `yaseen/project-${i + 1}`, vault: false, pushedAt: `2026-09-${String(i + 10)}T00:00:00Z` })),
+]
 
 export interface Harness {
   host: HTMLElement
@@ -47,6 +57,8 @@ export interface Harness {
   syncEmit(event: Parameters<FakeSync['emit']>[0]): Promise<void>
   /** The fake camera reads a code with this text. */
   scan(text: string): Promise<void>
+  /** Waits (at most 3 s) until the screen's text holds `text`: for a lazy chunk. */
+  waitText(text: string): Promise<void>
   /** Lets the app's promises and renders finish. */
   settle(): Promise<void>
   button(name: string | RegExp): HTMLButtonElement | null
@@ -102,6 +114,13 @@ export async function mount(options: { phone?: { store: VaultStore; tokens: Toke
       await act(async () => el.click())
       await settle()
     },
+    async waitText(want) {
+      const end = Date.now() + 3000
+      while (!(host.textContent ?? '').replace(/\s+/g, ' ').includes(want)) {
+        if (Date.now() > end) throw new Error(`No "${want}" on: ${host.textContent}`)
+        await settle()
+      }
+    },
     async syncSet(next) {
       await act(async () => sync.set(next))
       await settle()
@@ -131,6 +150,8 @@ export async function mount(options: { phone?: { store: VaultStore; tokens: Toke
 
 /** Signs in a vault through the form, as a person does. */
 export async function signInWithForm(h: Harness, repo: string, token: string): Promise<void> {
+  // YAZ-5408: the typed repo is the fallback under the token; it opens with "Type the repo name".
+  if (h.host.querySelector('input[name="repo"]') === null) await h.click('Type the repo name')
   await h.type('Repo', repo)
   await h.type('Token', token)
   await h.click('Connect vault')

@@ -72,7 +72,7 @@ export function formatScanCode(code: ScanCode): string {
 export function scanCodeMessage(error: ScanCodeError): string {
   switch (error) {
     case 'not-ours':
-      return 'This is not a Notecard code. On your Mac, open Settings › Review › Connect your phone, and scan the code there.'
+      return 'This is not a Notecard code. On your Mac, open Settings › Cards › Connect your phone, and scan the code there.'
     case 'newer-app':
       return 'This code is from a newer Notecard. Reload the app to update it, then scan again.'
     case 'bad-repo':

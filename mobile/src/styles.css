@@ -381,6 +381,42 @@ a {
   font-size: 14px;
 }
 
+/* YAZ-5408: the repo picker. One row for each repo the token reaches; the name wraps at 320 px. Only "Vault" has colour. */
+.repo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.repo-row:disabled {
+  cursor: default;
+}
+
+.repo-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.repo-row__meta {
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.repo-row__mark {
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.repo-picker__ways {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
 .check {
   width: 22px;
   height: 22px;

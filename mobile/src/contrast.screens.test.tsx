@@ -47,6 +47,10 @@ const loadedBy = new Map<string, string[]>()
 const FIXTURES = [
   'sign-in',
   'sign-in-error',
+  'sign-in-typed',
+  'repo-pick',
+  'repo-pick-many',
+  'repo-none',
   'guide',
   'scan',
   'download',
