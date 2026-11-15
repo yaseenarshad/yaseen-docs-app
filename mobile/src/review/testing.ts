@@ -57,11 +57,22 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
   const seen = async () => {
     for (let i = 0; i < 100 && host.querySelector('[data-guard]') !== null; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 20))))
   }
-  const click = async (name: string | RegExp) => {
+  /**
+   * A tap on the button named `name`. The ⋯'s card actions (YAZ-5505) are a lazy chunk: it waits for them to draw.
+   * A card action needs two taps (`data-two-tap`): `click` gives both, as a person who means it does; `once` only the first.
+   */
+  const click = async (name: string | RegExp, options: { once?: boolean } = {}) => {
     if (host.querySelector('[data-guard]') !== null && (button(name)?.closest('.review__answers') != null)) await seen()
+    for (let i = 0; i < 100 && button(name) === null && host.querySelector('[role="menu"] [aria-busy="true"]') !== null; i++) await settle()
     const b = button(name)
     if (b === null) throw new Error(`No button "${name}" on: ${host.textContent}`)
+    const action = b.dataset.twoTap !== undefined && b.dataset.armed === undefined ? b.dataset.action : undefined
     await act(async () => b.click())
+    await settle()
+    if (action === undefined || options.once === true) return
+    const again = host.querySelector<HTMLButtonElement>(`[data-action="${action}"][data-armed]`)
+    if (again === null) throw new Error(`The row "${name}" did not arm on: ${host.textContent}`)
+    await act(async () => again.click())
     await settle()
   }
   /** The text of the card on show, spaces collapsed; hidden words that do not show are left out. */

@@ -9,7 +9,7 @@ import { reviewDuration, todayCards, todayDuration } from '@client/review/review
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
-import { cardIdOf, isCardFix, pageCards, withCardFix, type CardRating } from '@shared/cardLine'
+import { cardIdOf, isCardFix, pageCards, withCardFix, withCardNoTitle, type CardRating } from '@shared/cardLine'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -32,6 +32,7 @@ import { glideCard, moreBelow, tapMove, type TapTarget } from './cardScroll'
 import { readNewFrom, saveNewFrom } from './newFromPick'
 import { ReviewSheet } from './ReviewSheet'
 import { DueEnd } from './DueEnd'
+import { CardActions } from '../cardMenu/lazy'
 import './review.css'
 
 /**
@@ -697,24 +698,18 @@ function SessionScreen({
               <button type="button" role="menuitem" className="review__menu-row" disabled={!canUndo} onClick={undo}>
                 Undo last answer
               </button>
-              <button
-                type="button"
-                role="menuitem"
-                className="review__menu-row"
-                disabled={page === null}
-                onClick={() => {
-                  const on = page?.next !== true
-                  act(on ? 'Marked: Up next' : 'Removed: Up next', () => review.setNext(card.path, card.id, on), () => review.setNext(card.path, card.id, !on))
+              {/* YAZ-5503/5505: the shared card actions (Up next, Archive card, Fix later, Title on the front), two taps each. */}
+              <CardActions
+                marks={page === null ? null : { off: false, next: page.next === true, fix: fixed, notitle: page.notitle === true }}
+                upNext
+                rowClassName="review__menu-row"
+                onAction={(a) => {
+                  if (a.kind === 'off') return archive()
+                  if (a.kind === 'fix') return toggleFix()
+                  if (a.kind === 'next') return act(a.done, () => review.setNext(card.path, card.id, a.on), () => review.setNext(card.path, card.id, !a.on))
+                  act(a.done, () => host.changeCardLine(card.path, card.id, a.change), () => host.changeCardLine(card.path, card.id, (l) => withCardNoTitle(l, !a.on)))
                 }}
-              >
-                {page?.next === true ? 'Remove from Up next' : 'Up next'}
-              </button>
-              <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={toggleFix}>
-                {fixed ? 'Remove Fix later' : 'Fix later'}
-              </button>
-              <button type="button" role="menuitem" className="review__menu-row" disabled={page === null} onClick={archive}>
-                Archive card
-              </button>
+              />
               <button
                 type="button"
                 role="menuitem"
