@@ -19,3 +19,12 @@ describe('rebaseCardLine with seconds (YAZ-5033)', () => {
     expect(rebase('WIKI-1, 2026-11-12T14:05Z good 13s', 'WIKI-1, 2026-11-12T14:05Z good', 'WIKI-1')).toBe('<!-- card: WIKI-1 -->')
   })
 })
+
+describe('rebaseCardLine and `fix` (YAZ-5097)', () => {
+  it('a Fix later step lays `fix` on the newest line; its undo takes it off; an answer that landed in between stays', () => {
+    expect(rebase('WIKI-1, 2026-11-12T14:05Z again 13s', 'WIKI-1', 'WIKI-1, fix')).toBe('<!-- card: WIKI-1, fix, 2026-11-12T14:05Z again 13s -->')
+    expect(rebase('WIKI-1, fix, 2026-11-12T14:05Z again 13s', 'WIKI-1, fix', 'WIKI-1')).toBe('<!-- card: WIKI-1, 2026-11-12T14:05Z again 13s -->')
+    // A step that did not touch `fix` leaves the phone's mark where it is.
+    expect(rebase('WIKI-1, fix', 'WIKI-1', 'WIKI-1, off')).toBe('<!-- card: WIKI-1, off, fix -->')
+  })
+})

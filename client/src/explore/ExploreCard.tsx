@@ -161,6 +161,7 @@ export function ExploreCard({ path, cardId, index, pageName, vault, onOpenPage, 
         {id !== null && <CardId id={id} onNotice={onNotice} />}
         {card?.next === true && <CardNextChip onRemove={card.id === null ? undefined : () => changeLine((l) => withCardNext(l, false))} />}
         {card?.notitle === true && <span className="card__state card__notitle">Hidden in review</span>}
+        {card?.fix === true && <span className="card__state card__fix">To fix</span>}
         {/* The head's room (the title is in the card's band, YAZ-5308 A3): the part that grows, so a narrow layer folds. */}
         <span ref={titleRef} className="explore__title" aria-hidden />
         {/* ↗ folds into ⋯ in a narrow layer (YAZ-4986); the card ID, the title and × stay. */}

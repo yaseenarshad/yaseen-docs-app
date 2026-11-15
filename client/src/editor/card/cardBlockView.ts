@@ -43,7 +43,8 @@
  * the card window, so it works read only and in Explore's read layer too.
  *
  * THE ⋯ MENU (D13): Put at top of Inbox / Remove from top of Inbox (`withCardNext`, YAZ-4999 D3), Archive card /
- * Unarchive card (`withCardOff`, YAZ-5046: the line's `off`), Reset history (`withoutCardReviews`), Copy card ID, Open card, and
+ * Unarchive card (`withCardOff`, YAZ-5046: the line's `off`), Fix later / Remove Fix later (`withCardFix`, YAZ-5097: the
+ * line's `fix`; the head says "To fix"), Reset history (`withoutCardReviews`), Copy card ID, Open card, and
  * with the host's convert door Move to its own file (YAZ-5037: a card file in the page's folder, `![[GEO-140]]` in its
  * place; a card with no ID yet is not offered). Each line change is ONE transaction on the node's `cardLine` attribute (`changeCardLineAt`): one ⌘Z, saved as
  * any edit. The ID at insert (`cardRow`) is a transaction out of the undo history, saved by `CARD_ID_META`.
@@ -62,7 +63,7 @@ import type { Decoration, DecorationSource, EditorView, NodeView, NodeViewConstr
 import { clearTextInCurrentBlockCommand, setBlockTypeCommand } from '@milkdown/kit/preset/commonmark'
 import { $prose, $shortcut, $view } from '@milkdown/kit/utils'
 import { askResetHistory } from './askResetHistory'
-import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleOf, formatCardLine, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
+import { cardIdOf, cardPropertiesOf, cardReviewsOf, cardTitleOf, formatCardLine, isCardFix, isCardNext, isCardNoTitle, isCardOff, settleCardCopy, withCardFix, withCardId, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardId, withoutCardReviews, type CardLine } from '@shared/cardLine'
 import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
@@ -236,6 +237,8 @@ export class CardBlockView implements NodeView {
   private readonly state: HTMLElement
   /** "Title hidden in review" (YAZ-5030): shown while the line holds `notitle`; quiet, as "Archived" is. */
   private readonly notitle: HTMLElement
+  /** "To fix" (YAZ-5097): shown while the line holds `fix`; quiet, as "Archived" is. */
+  private readonly fix: HTMLElement
   /** The "Up next" chip (YAZ-4999 D3): shown while the line holds `next`; its × removes the mark. */
   private readonly next: HTMLElement
   private readonly editButton: HTMLButtonElement
@@ -278,6 +281,9 @@ export class CardBlockView implements NodeView {
     this.notitle = document.createElement('span')
     this.notitle.className = 'card__state card__notitle'
     this.notitle.textContent = 'Title hidden in review'
+    this.fix = document.createElement('span')
+    this.fix.className = 'card__state card__fix'
+    this.fix.textContent = 'To fix'
     this.next = document.createElement('span')
     this.next.className = 'card__next'
     this.next.append('Up next', button('card__next-remove', 'Remove from top of Inbox', '×'))
@@ -285,7 +291,7 @@ export class CardBlockView implements NodeView {
     // Preview (YAZ-5152): in Edit card's head, beside Done — the card as the Inbox shows it, with what is typed.
     this.previewButton = button('card__preview', 'Preview card', 'Preview')
     this.more = button('card__more', 'Card menu', '⋯')
-    head.append(this.idButton, this.state, this.notitle, this.next, this.previewButton, this.editButton, this.more)
+    head.append(this.idButton, this.state, this.notitle, this.fix, this.next, this.previewButton, this.editButton, this.more)
     // The title band under the head (YAZ-5308 A3): the body never repeats the title.
     this.title = deps.host?.onEditDone === undefined ? mountCardTitle() : null
     this.body = document.createElement('div')
@@ -344,6 +350,7 @@ export class CardBlockView implements NodeView {
     this.idButton.hidden = id === null
     this.state.textContent = isCardOff(line) ? 'Archived' : ''
     this.notitle.hidden = !isCardNoTitle(line)
+    this.fix.hidden = !isCardFix(line)
     this.dom.classList.toggle('card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
     drawEditButton(this.editButton, this.editing)
@@ -680,6 +687,7 @@ export class CardBlockView implements NodeView {
       ...(move === null ? [] : [move]),
       { label: isCardNext(line) ? 'Remove from top of Inbox' : 'Put at top of Inbox', disabled: !editable, divider: true, run: () => this.change((l) => withCardNext(l, !isCardNext(l))) },
       { label: isCardOff(line) ? 'Unarchive card' : 'Archive card', disabled: !editable, run: () => this.change((l) => withCardOff(l, !isCardOff(l))) },
+      { label: isCardFix(line) ? 'Remove Fix later' : 'Fix later', disabled: !editable, run: () => this.change((l) => withCardFix(l, !isCardFix(l))) },
       // ONE toggle row (YAZ-5030): its hint is the state now; a click turns it to the other.
       { label: 'Title on the front', hint: isCardNoTitle(line) ? 'Hide' : 'Show', disabled: !editable, run: () => this.change((l) => withCardNoTitle(l, !isCardNoTitle(l))) },
       { label: 'Copy card ID', disabled: id === null, divider: true, run: () => id !== null && copyText(id, 'card ID', onNotice, undefined, true) },
