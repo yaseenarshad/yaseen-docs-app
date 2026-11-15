@@ -17,6 +17,8 @@ import './status.css'
  *    tap syncs now); amber and red keep their words.
  *  - `dot-<state>`: the whole app with that state; `dot-<state>-sheet`: the same, after a tap on the dot;
  *    `dot-lost-ask`: the ask of the first Discard.
+ *  - YAZ-5469: `dot-toast`: the quiet toast after a tap on the green dot ("Synced · 3 pages updated");
+ *    `dot-toast-off`: the same tap with no signal ("No signal · will sync later").
  */
 const VAULT: PhoneVault = { repo: 'demo/demo-vault', branch: 'main', addedAt: 1 }
 const MIN = 60_000
@@ -114,13 +116,22 @@ export async function mountDotFixture(root: Root, name: string): Promise<void> {
     case 'attention':
       sync.set({ status: 'attention', problem: 'UNAUTHORIZED' })
       break
+    case 'toast':
+      sync.syncNow = async () => {
+        const diff = { added: ['Notes/alpha.md', 'Notes/beta.md'], changed: ['Notes/gamma.md'], removed: [], renamed: [] }
+        sync.emit({ type: 'changed', vault: vaultId(VAULT), settings: [], diff })
+      }
+      break
+    case 'toast-off':
+      sync.set({ status: 'off', problem: 'OFFLINE' })
+      break
     case 'lost':
       answers.set({ lost: [lostAnswer(5), lostAnswer(6, "Ohm's law", 'again', 'NC-2')] })
       break
   }
   await wait(50)
-  if (sheet) document.querySelector<HTMLButtonElement>('.sync-status')?.click()
-  await wait(50)
+  if (sheet || state.startsWith('toast')) document.querySelector<HTMLButtonElement>('.sync-status')?.click()
+  await wait(state.startsWith('toast') ? 300 : 50)
   if (ask) document.querySelector<HTMLButtonElement>('.discard-answer')?.click()
   await wait(50)
   document.documentElement.dataset.fixtureReady = name

@@ -49,6 +49,13 @@ const shown = (x: Harness) => {
   const inBar = b.querySelector('.sync-status__words--full, .sync-status__words')?.textContent ?? null
   return { colour: [...dot.classList].find((c) => c.startsWith('sync-dot--'))!.slice('sync-dot--'.length), words: inBar ?? label!.replace(/^Sync status: /, '').replace(/\. Sync now$/, ''), inBar: inBar !== null, label }
 }
+async function until(ok: () => boolean, ms = 1000) {
+  const end = Date.now() + ms
+  while (!ok()) {
+    if (Date.now() > end) throw new Error('timed out')
+    await act(async () => new Promise((r) => setTimeout(r, 20)))
+  }
+}
 const answersDo = async (x: Harness, fn: () => void) => {
   await act(async () => fn())
   await x.settle()
@@ -157,6 +164,63 @@ describe('YAZ-5451: a tap on a green, blue or grey dot syncs now', () => {
     const calls = h.sync.syncNowCalls
     await h.click('Sync status: No signal. Sync now')
     expect(h.sync.syncNowCalls).toBe(calls + 1)
+  })
+})
+
+describe('YAZ-5469: a quiet toast after a tap on the dot', () => {
+  const toast = (x: Harness) => x.host.querySelector('.toast')
+  const diff = (added: string[], changed: string[] = []) => ({ added, changed, removed: [], renamed: [] })
+
+  it('"Synced · 3 pages updated" with the files of the pass; role="status"; under the bar; gone after about 2 s', async () => {
+    ;({ h } = await signedIn())
+    h.sync.syncNow = async () => {
+      h!.sync.emit({ type: 'changed', vault: 'yaseen/vault@main', settings: [], diff: diff(['Words/a.md', 'Words/b.md'], ['Notes/c.md']) })
+    }
+    await h.click('Sync status: Synced. Sync now')
+    await until(() => toast(h!) !== null)
+    expect(toast(h)!.textContent).toBe('Synced · 3 pages updated')
+    expect(toast(h)!.getAttribute('role')).toBe('status')
+    expect(toast(h)!.className).toBe('toast toast--top')
+    await until(() => toast(h!) === null, 3000)
+  })
+
+  it('"Synced · up to date" when nothing came in; another vault\'s changes do not count', async () => {
+    ;({ h } = await signedIn())
+    h.sync.syncNow = async () => {
+      h!.sync.emit({ type: 'changed', vault: 'other/vault@main', settings: [], diff: diff(['x.md']) })
+    }
+    await h.click('Sync status: Synced. Sync now')
+    await until(() => toast(h!) !== null)
+    expect(toast(h)!.textContent).toBe('Synced · up to date')
+  })
+
+  it('"No signal · will sync later" when the pass fails with no signal (grey dot)', async () => {
+    ;({ h } = await signedIn())
+    await h.syncSet({ status: 'off', problem: 'OFFLINE' })
+    await h.click('Sync status: No signal. Sync now')
+    await until(() => toast(h!) !== null)
+    expect(toast(h)!.textContent).toBe('No signal · will sync later')
+  })
+
+  it('the problem in a few words when GitHub is down or the token stopped working', async () => {
+    ;({ h } = await signedIn())
+    h.sync.syncNow = async () => h!.sync.set({ status: 'off', problem: 'GITHUB_DOWN' })
+    await h.click('Sync status: Synced. Sync now')
+    await until(() => toast(h!) !== null)
+    expect(toast(h)!.textContent).toBe('GitHub is down · will sync later')
+    await h.syncSet({ status: 'synced', problem: null })
+    h.sync.syncNow = async () => h!.sync.set({ status: 'attention', problem: 'UNAUTHORIZED' })
+    await h.click('Sync status: Synced. Sync now')
+    await until(() => toast(h!)?.textContent === 'Not synced · sign in again')
+  })
+
+  it('the automatic pass says nothing', async () => {
+    ;({ h } = await signedIn())
+    await h.syncSet({ status: 'syncing' })
+    await act(async () => h!.sync.emit({ type: 'changed', vault: 'yaseen/vault@main', settings: [], diff: diff(['a.md']) }))
+    await h.syncSet({ status: 'synced' })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(toast(h)).toBeNull()
   })
 })
 

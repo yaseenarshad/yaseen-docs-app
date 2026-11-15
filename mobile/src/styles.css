@@ -708,3 +708,44 @@ body:has(.app--swiping) {
   margin: 0;
   max-width: 32ch;
 }
+
+/* YAZ-5469: THE quiet toast (`screens/Toast.tsx`). A few words that fade after about 2 s; `--top` sits under the top
+   bar. It never takes a tap: the screen under it still works. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 120px);
+  z-index: 25;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: toast-fade 2s ease-in forwards;
+}
+
+.toast--top {
+  top: calc(env(safe-area-inset-top, 0px) + 60px);
+  bottom: auto;
+}
+
+@keyframes toast-fade {
+  0%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
