@@ -363,7 +363,7 @@ describe('"+ Add" (decision 20)', () => {
     })
     await act(async () => ([...h!.host.querySelectorAll('.fr-panel button')].find((b) => b.textContent === 'Share my link') as HTMLButtonElement).click())
     await h.settle()
-    expect((h.host.querySelector('.fr-panel input') as HTMLInputElement).value).toContain('notecard.yaseenarshad.com/friend#')
+    expect((h.host.querySelector('.fr-panel input') as HTMLInputElement).value).toContain('preview.docs.yaseenarshad.com/friend#')
   })
 
   it('Paste: the clipboard is refused, so the field takes the link; after an add that is not paired, "Send my link back"', async () => {

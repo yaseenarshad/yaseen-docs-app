@@ -22,6 +22,7 @@ import {
 import { BrokenList, ListError, NewerList, latestList, listErrorCode, openFriendsList, writeList } from './friendListHome'
 import { Elsewhere, HomeGone, pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
 import type { GistBudget } from './friendSend'
+import { GROUP_LINK_BASE, JOIN_LINK_BASE, LINK_ID, isOurSite } from './friendLinks'
 import type { FriendDay, FriendStats } from './friendStatsFormat'
 
 /**
@@ -47,23 +48,13 @@ import type { FriendDay, FriendStats } from './friendStatsFormat'
  */
 
 export const GROUP_FILE = 'notecards-group.json'
-export const GROUP_LINK_BASE = 'https://notecard.yaseenarshad.com/group'
-export const JOIN_LINK_BASE = 'https://notecard.yaseenarshad.com/join'
+export { GROUP_LINK_BASE, JOIN_LINK_BASE } from './friendLinks'
 /** The longest group name the admin can type (one line). */
 export const GROUP_NAME_MAX = 60
 /** A text read from a gist is cut to this for the screens (the file keeps it whole). */
 const SHOWN_MAX = 100
 /** A gist that no list names is deleted by `sweepOrphans` only when it is older than this: another device may be at work. */
 export const ORPHAN_AGE_MS = 60 * 60_000
-
-/**
- * The app's sites (the stable one and its preview). Yaseen, 2026-11-14: the address is `notecard.yaseenarshad.com`. A
- * link shared before that names `notecards.yaseenarshad.com`; the paste box still reads it (it carries the same code).
- */
-// YAZ-5476: the app is Yaseen Docs, at `docs.yaseenarshad.com` (now its preview, `preview.docs.yaseenarshad.com`).
-const SITES = ['docs.yaseenarshad.com', 'notecard.yaseenarshad.com', 'notecards.yaseenarshad.com']
-const isOurSite = (host: string) => SITES.some((site) => host === site || host.endsWith(`.${site}`))
-const LINK_ID = /^[0-9a-f]{20,40}$/i
 
 export interface GroupMember {
   /** The member's GitHub login, from their numbers (`FriendStats.login`). A text: never drawn as HTML. */
