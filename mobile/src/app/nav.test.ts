@@ -14,6 +14,13 @@ describe('the shell navigation (decision 21)', () => {
     expect(openingTab(false, { review: false, daily: true })).toBe('search')
   })
 
+  it('YAZ-5499: swap puts a screen in place of the top one (the page arrows), in one step; Back goes to the screen under', () => {
+    let s: NavState = { tab: 'search', stack: [{ kind: 'page', path: 'a.md' }] }
+    s = navigate(s, { type: 'swap', route: { kind: 'page', path: 'b.md' } })
+    expect(s.stack).toEqual([{ kind: 'page', path: 'b.md' }])
+    expect(navigate(s, { type: 'back' }).stack).toEqual([])
+  })
+
   it('stacks screens over the tabs; Back closes the top one; a tab closes all', () => {
     let s: NavState = { tab: 'review', stack: [] }
     s = navigate(s, { type: 'open', route: { kind: 'settings' } })

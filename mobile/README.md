@@ -172,6 +172,10 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
 * **Headless check:** `npx vite-node mobile/publish/proveOffline.ts` (after the build). Chrome with no window opens the
   build on a local copy of the host (`publish/serve.ts`): zero CSP violations, the worker installs, the app opens with
   the host down, a new version takes over at the next open, a broken deploy never installs.
+* **Edge Back check (YAZ-5499):** `npm run mobile:prove-edge-back` (it runs inside `mobile:publish:preview`, before the
+  upload). Chrome with no window, at an iPhone's 390 x 844 with touch: a real swipe from x = 5 to x = 200 on a page and
+  a card (on the text, under the top bar, on the page arrows). In the Home Screen app the swipe goes back; in a Safari
+  tab it does nothing, and the browser's Back (Safari's own edge swipe) shows the screen under. A failure stops the publish.
 
 ## How to publish
 
