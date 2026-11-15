@@ -3565,6 +3565,12 @@ export interface AppState {
    * (`shared/courseState.ts`). Additive within version 1: a file without it loads the default, and an old build drops the key.
    */
   course: CourseState
+  /**
+   * The vault settings move (YAZ-5491 and the rows after it; scoping section 6): for each vault root, the
+   * `.yaseendocs/` files this Mac has seeded from its app values, or found there. A file that is in the list is never
+   * seeded again, so one a person deleted on purpose does not come back. Per machine. Absent is none; an old build drops the key.
+   */
+  seededVaultConfig?: Record<string, string[]>
 }
 
 /** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */

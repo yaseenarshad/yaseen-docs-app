@@ -4,7 +4,7 @@
  * bare name only when no other file has it. `api` mocked like scaffold.test.ts.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { boardFileName, createBoardForPage, DRAWINGS_DIR, EMPTY_SCENE, EMPTY_SCENE_JSON } from './createDrawing'
+import { boardFileName, createBoardForPage, DRAWINGS_DIR, EMPTY_SCENE, EMPTY_SCENE_JSON, setNewBoardFolderOf } from './createDrawing'
 
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
@@ -53,6 +53,18 @@ describe('createBoardForPage', () => {
     await expect(createBoardForPage(place, 'diagram')).resolves.toBe('Plan diagram.drawio')
     expect(createDir.mock.calls.map((c) => c[0].path)).toEqual(['/v/assets', `/v/${DRAWINGS_DIR}`])
     expect(createBoard).toHaveBeenCalledWith({ root: '/v', path: `/v/${DRAWINGS_DIR}/Plan diagram.drawio` })
+  })
+
+  it('YAZ-5486: each vault\'s own place (its new-places.json, as App hands it over): two vaults keep two values', async () => {
+    setNewBoardFolderOf((root) => (root === '/w' ? 'assets' : 'page'))
+    try {
+      await createBoardForPage(place, 'drawing')
+      expect(createBoard).toHaveBeenLastCalledWith({ root: '/v', path: '/v/Projects/Plan drawing.excalidraw' })
+      await createBoardForPage({ ...place, root: '/w', pagePath: '/w/Plan.md' }, 'drawing')
+      expect(createBoard).toHaveBeenLastCalledWith({ root: '/w', path: `/w/${DRAWINGS_DIR}/Plan drawing.excalidraw` })
+    } finally {
+      setNewBoardFolderOf(() => storage.getSettings().newBoardFolder)
+    }
   })
 
   it('a name some other file has: the embed gets the vault-relative path, so it names this file alone', async () => {

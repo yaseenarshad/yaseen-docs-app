@@ -2,7 +2,7 @@ import { createContext, lazy, memo, Suspense, useCallback, useContext, useEffect
 import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
-import type { TextFormatting } from '@shared/textFormatting'
+import { sanitizeSpacing, spacingOf, spacingVars, type PageSpacing, type TextFormatting } from '@shared/textFormatting'
 import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, subheaderRowAttrs, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
@@ -92,6 +92,9 @@ import { DEFAULT_NEW_PAGE_TITLE, plainEntryName, renderTitleTemplate } from './s
 import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuRequest, Sidebar } from './sidebar/Sidebar'
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyPageName } from '@shared/dailyPage'
+import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
+import { newPlacesOfSettings, vaultNewPlacesFields } from '@shared/newPlaces'
+import { setNewBoardFolderOf } from './drawings/createDrawing'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
@@ -309,7 +312,8 @@ function layerStyleOf(formatting: TextFormatting, pills: LinkPills): CSSProperti
   if (byPills === undefined) layerStyles.set(formatting, (byPills = new WeakMap()))
   let style = byPills.get(pills)
   if (style === undefined) {
-    style = { ...textVars(formatting), ...linkPillVars(pills) } as CSSProperties
+    // YAZ-5485: the vault's page spacing too; a vault with no `spacing` sets none, and its layers read `.app`'s app values.
+    style = { ...textVars(formatting), ...spacingVars(formatting.spacing), ...linkPillVars(pills) } as CSSProperties
     byPills.set(pills, style)
   }
   return style
@@ -459,10 +463,12 @@ export function App() {
   }, [previewPath])
   const [resizing, setResizing] = useState(false)
   const [windowWidth, setWindowWidth] = useState(() => window.innerWidth)
-  const [settings, setSettings] = useState(storage.getSettings)
+  // The app's settings as stored. `settings` (below, once the vaults are known) is this with the window's daily pages
+  // over it (YAZ-5491): those four fields come from the vault's `daily-pages.json`, the one source.
+  const [appSettings, setSettings] = useState(storage.getSettings)
   /** The user's keys (YAZ-3397 D2) for the window listeners below, read at key time so a change needs no new listener. */
-  const hotkeysRef = useRef(settings.hotkeys)
-  hotkeysRef.current = settings.hotkeys
+  const hotkeysRef = useRef(appSettings.hotkeys)
+  hotkeysRef.current = appSettings.hotkeys
   // Deep links (E1, GRO-2171): a routed link behaves like a sidebar click (Tabs rule 10) —
   // it activates the file's tab when already open, else opens it in the PREVIEW tab (YAZ-2648 D1);
   // a link that could not open shows a transient notice — unobtrusive, never a dialog.
@@ -476,7 +482,7 @@ export function App() {
   const notify = useCallback((text: string, icon: NoticeKind = 'info', type?: NoticeType, action?: Notice['action']) => showNotice({ text, icon, type, ...(action !== undefined && { action }) }), [showNotice])
   // Focus and Favorites of the window's vaults (YAZ-3264 D1): here, not in the sidebar, which unmounts
   // when it is hidden. The sidebar draws them; a tab's menu toggles them too, and jumps nowhere (D3).
-  const lists = useVaultListsHere(roots, notify, settings.workspaceLists)
+  const lists = useVaultListsHere(roots, notify, appSettings.workspaceLists)
   // The new tab page's Favorites column (YAZ-4450): the tab's own list, kept by value so the page cuts its columns only on a change.
   // Its favorite folders too (YAZ-4470, 11): each folder's items that this window shows.
   const favoriteFolders = lists.favoritesTab.folders
@@ -486,7 +492,7 @@ export function App() {
   )
   // The vaults' own icons (YAZ-3440 D8, D9; D11, YAZ-3471): here too, so the tabs, the search results and Recents show a
   // row's icon with the sidebar hidden. The sidebar's tree reads the same object.
-  const vaultIcons = useVaultIcons(roots, settings.sidebarIconRules, settings.sidebarFolderIcons === 'named', notify)
+  const vaultIcons = useVaultIcons(roots, appSettings.sidebarIconRules, appSettings.sidebarFolderIcons === 'named', notify)
   // The toast's clock is the toast's own (`NoticeToast`, YAZ-3303 D9): App only says how long and closes it.
   const closeNotice = useCallback(() => setNotice(null), [])
   // The box after a drag out to Finder (YAZ-3254 D9B): its own slot, so the toast above never hides it.
@@ -522,7 +528,7 @@ export function App() {
    * and the app writes nothing into it. Settings never shows it as "this vault": `active` is a vault of the person.
    */
   const [cardSkill] = useState(storage.getCardSkill)
-  const skillLoads = cardSkill !== null && settings.cardSkillInSidebar && root !== null
+  const skillLoads = cardSkill !== null && appSettings.cardSkillInSidebar && root !== null
   const skillScope = useVaultScope(skillLoads ? cardSkill : null, notify)
   const skillShown = skillLoads && vaults.some((vault) => vault?.reviewSettings.settings.enabled === true)
   const live = useRef({ roots, vaults, first, skill: skillLoads ? skillScope : null })
@@ -669,9 +675,29 @@ export function App() {
    * The window's vaults for the place picker (YAZ-3556 D6): the active tab's first, then the others in the window's order.
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
    */
+  // Settings › Appearance › Spacing's Vault dropdown (YAZ-5485): the vault it shows; null is the active tab's.
+  const [spacingRoot, setSpacingRoot] = useState<string | null>(null)
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
-  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings })
-  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings }
+  /**
+   * The window's daily pages (YAZ-5491): the vault's `daily-pages.json` is the one source. The first vault, the active
+   * tab's first, whose file says on; else off when any vault has a file; else the app value (no file yet: the one-time
+   * move has not reached this window). Every reader below (the footer button, ⌘D, Go to, the hotkeys row, Settings)
+   * reads it through `settings`; `dailyRoot` is the vault of the file, null for the app value.
+   */
+  const dailyHere = windowDailyPages(placeVaults.map((v) => ({ root: v.root, file: vaults[roots.indexOf(v.root)]?.dailyPages.file ?? null })), dailyPagesOfSettings(appSettings), active.root)
+  const dailyKey = JSON.stringify(dailyHere.settings)
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `dailyKey` is the value of `dailyHere.settings`
+  // YAZ-5486: where new pages and boards go are the ACTIVE tab's vault's (`new-places.json`) in `settings` (Settings, ⌘N);
+  // a new [[link]] page and a new board ask their own vault's (`newPlacesOf`).
+  const activeNewPlaces = active.newPlaces.value
+  const settings = useMemo(() => withDailyPages(vaultNewPlacesFields(appSettings, activeNewPlaces), dailyHere.settings), [appSettings, activeNewPlaces, dailyKey])
+  /** Where new things go in the vault that holds `path` (YAZ-5486): its file's keys over the app's values. */
+  const newPlacesOf = (path: string) => vaultNewPlacesFields(appSettings, scopeOf(path).newPlaces.value)
+  const newPlacesOfRef = useRef(newPlacesOf)
+  newPlacesOfRef.current = newPlacesOf
+  useEffect(() => setNewBoardFolderOf((root) => newPlacesOfRef.current(root).newBoardFolder), [])
+  const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings })
+  placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings }
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
   // frontmatter write (YAZ-2174): the page editor's autosave registers with the bridge itself.
   useEffect(() => api.window.onFlush(flushWindow), [])
@@ -778,9 +804,19 @@ export function App() {
     [sidebarWidth, toggleSidebar],
   )
 
+  // YAZ-5491: a change of the four daily pages fields goes to the vault's file (`saveDaily`), never to the app value,
+  // which stays as it was: the fallback. A window with no vault has no file to write, so there it is the app value.
+  const saveDailyRef = useRef<(next: DailyPagesSettings) => void>(() => undefined)
   const changeSettings = useCallback((next: SettingsState) => {
-    storage.setSettings(next)
-    setSettings(next)
+    const { vaults: here, settings: shown, appSettings: stored, vault: activeRoot } = placeInputs.current
+    const app = here.length === 0 ? next : withDailyPages(vaultNewPlacesFields(next, newPlacesOfSettings(stored)), dailyPagesOfSettings(stored))
+    const daily = dailyPagesOfSettings(next)
+    if (here.length > 0 && !sameDailyPages(daily, dailyPagesOfSettings(shown))) saveDailyRef.current(daily)
+    // YAZ-5486: where new things go are the active tab's vault's `new-places.json`; the app value stays (the fallback).
+    const places = newPlacesOfSettings(next)
+    if (activeRoot !== null && here.length > 0 && JSON.stringify(places) !== JSON.stringify(newPlacesOfSettings(shown))) live.current.vaults[live.current.roots.indexOf(activeRoot)]?.newPlaces.save(places)
+    storage.setSettings(app)
+    setSettings(app)
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
@@ -864,7 +900,8 @@ export function App() {
   newPageFolderInputs.current = { settings }
   const newPageFolderFor = useCallback((sourcePath: string) => {
     const vault = scopeOf(sourcePath).root
-    return vault === null ? '' : newPageBase(newPageFolderInputs.current.settings, vault, sourcePath)
+    // YAZ-5486: the vault's own place (`new-places.json`), never another vault's folder.
+    return vault === null ? '' : newPageBase(newPlacesOfRef.current(sourcePath), vault, sourcePath)
   }, [scopeOf])
   // The comment stream's order toggle (YAZ-1515) writes the setting through the same ref-backed,
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render
@@ -993,6 +1030,24 @@ export function App() {
    * Settings › Text formatting (YAZ-3068 D15): every vault of the window, in its order, and the active
    * tab's vault, where the "Vault" dropdown starts. None in the Welcome window, so the group is not there.
    */
+  /**
+   * Settings' page spacing (YAZ-5485): the picked vault's `spacing` in text-formatting.json; until it has one, the app's
+   * values (what its pages draw, from `.app`), and the first change writes them all into the vault.
+   */
+  const spacingScope = (spacingRoot !== null && roots.includes(spacingRoot) ? vaults[roots.indexOf(spacingRoot)] : null) ?? active
+  const settingsPageSpacing =
+    root === null || spacingScope.root === null
+      ? undefined
+      : {
+          vaults: placeVaults,
+          root: spacingScope.root,
+          choose: setSpacingRoot,
+          value:
+            spacingScope.textFormatting.formatting.spacing !== undefined
+              ? spacingOf(spacingScope.textFormatting.formatting.spacing)
+              : { line: appSettings.lineSpacing, blockGap: appSettings.blockGap, bulletIndent: appSettings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent, bulletGap: appSettings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap },
+          save: (next: Required<PageSpacing>) => spacingScope.textFormatting.save({ ...spacingScope.textFormatting.formatting, spacing: sanitizeSpacing(next) ?? {} }),
+        }
   const settingsTextFormatting =
     root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
 
@@ -1399,10 +1454,11 @@ export function App() {
     return { vault, tree: trees.find((t) => t.root === vault)!.tree }
   }, [])
   const openDailyPage = useCallback((background = false) => {
-    const { vaults, settings: now } = placeInputs.current
+    const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     const title = dailyPageName(now.dailyPageFormat, new Date()).trim()
-    void dailyVault(vaults, now.dailyPageFolder)
+    // YAZ-5491: the vault of the file that says on; with no file yet, the first that holds the folder (D2).
+    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(async ({ vault, tree }): Promise<string | null> => {
         const index = scopeOf(vault).wikilinks
         // Until the index lands the vault's kind is not known (YAZ-2523 🔒 V5), and it decides what is written.
@@ -1445,6 +1501,36 @@ export function App() {
       )
   }, [scopeOf, dailyVault, toggleSidebar, revealInFiles, notify, allowFileAction])
 
+  /**
+   * Settings › Daily pages writes the vault's file (YAZ-5491). The vault: `picked` (a folder chosen in another vault moves
+   * the daily pages there, and the old vault's file says off); else the vault of the window's file; else, with no file
+   * yet, the vault that holds the app's folder (the one the button opened), else the active tab's.
+   */
+  const saveDaily = useCallback(
+    (next: DailyPagesSettings, picked?: string) => {
+      const { vaults: here, vault: activeRoot, dailyRoot, settings: now } = placeInputs.current
+      if (here.length === 0) return
+      const fallback = activeRoot ?? here[0]
+      const holderOf = (vault: string) => live.current.vaults[live.current.roots.indexOf(vault)]?.dailyPages
+      const target: Promise<string> =
+        picked !== undefined
+          ? Promise.resolve(picked)
+          : dailyRoot !== null
+            ? Promise.resolve(dailyRoot)
+            : now.dailyPages
+              ? dailyVault(here, now.dailyPageFolder).then(({ vault }) => vault, () => fallback)
+              : Promise.resolve(fallback)
+      void target.then((vault) => {
+        if (dailyRoot !== null && dailyRoot !== vault && now.dailyPages) holderOf(dailyRoot)?.save({ ...dailyPagesOfSettings(now), enabled: false })
+        holderOf(vault)?.save(next)
+      })
+    },
+    [dailyVault],
+  )
+  saveDailyRef.current = saveDaily
+  /** The folder row's picker (YAZ-5491): the folder is of the vault it was picked in, and Daily pages are on there. */
+  const pickDailyFolder = useCallback((folder: string, vault: string) => saveDaily({ ...dailyPagesOfSettings(placeInputs.current.settings), enabled: true, folder }, vault), [saveDaily])
+
   // ⌘D (YAZ-3556 D9): the place of `settings.goTo`, in the active tab's vault. A tab shows. A folder shows in Files, open,
   // with the keyboard on its row. A file opens as a sidebar click opens it, and its row shows. A hidden sidebar shows
   // first; a path the vault does not have says so. The Welcome window has no vault: the key does nothing there.
@@ -1481,6 +1567,10 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
   const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
+  // Spacing's Vault dropdown starts on the active tab's vault at each open (YAZ-5485).
+  useEffect(() => {
+    if (!settingsOpen) setSpacingRoot(null)
+  }, [settingsOpen])
   const openSettings = useCallback(() => {
     setSettingsPage(undefined)
     setSettingsOpen(true)
@@ -1577,10 +1667,10 @@ export function App() {
   // missing one is made empty first. The sidebar hides a "." file, so this is the way to it. Settings closes first.
   // The folder is the one the daily page uses: in the first vault of the window that holds it (`dailyPageVault`).
   const openDailyTemplate = useCallback(() => {
-    const { vaults, settings: now } = placeInputs.current
+    const { vaults, settings: now, dailyRoot } = placeInputs.current
     if (vaults.length === 0) return
     let path = ''
-    void dailyVault(vaults, now.dailyPageFolder)
+    void dailyVault(dailyRoot === null ? vaults : [dailyRoot], now.dailyPageFolder)
       .then(({ vault }) => {
         path = `${placePath(vault, now.dailyPageFolder)}/.template.md`
         return api.readFile(path)
@@ -3966,7 +4056,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), pickDailyFolder: root === null ? undefined : pickDailyFolder, dailyPagesVault: roots.length > 1 ? (vaults[roots.indexOf(dailyHere.root ?? active.root ?? '')]?.name ?? undefined) : undefined, settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, pageSpacing: settingsPageSpacing, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
       {courseOpen !== null && (
         <Suspense fallback={null}>
           <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />

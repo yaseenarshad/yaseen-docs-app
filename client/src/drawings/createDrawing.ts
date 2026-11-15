@@ -14,6 +14,7 @@
 import { api, BridgeRequestError } from '../api'
 import { storage } from '../lib/storage'
 import { ensureFolder } from '../views/scaffold'
+import type { NewBoardFolder } from '@shared/types'
 
 /** The `'assets'` choice of `newBoardFolder`: the drawings' home under the vault root. */
 export const DRAWINGS_DIR = 'assets/drawings'
@@ -42,13 +43,19 @@ export interface NewBoardPlace {
   nameTaken?: (name: string) => boolean
 }
 
+/** Where a new board goes in the vault at a root (YAZ-5486: that vault's `new-places.json`); App sets it. The app value until then. */
+let newBoardFolderOf: (root: string) => NewBoardFolder = () => storage.getSettings().newBoardFolder
+export function setNewBoardFolderOf(of: (root: string) => NewBoardFolder): void {
+  newBoardFolderOf = of
+}
+
 /** Makes one empty board for the page; resolves the embed's target (see the module doc). */
 export async function createBoardForPage(place: NewBoardPlace, kind: NewBoardKind): Promise<string> {
   const { root, pagePath, title } = place
   const pageDir = pagePath.slice(0, Math.max(pagePath.lastIndexOf('/'), 0))
   // A10: inside the vault means the root itself or under `root/`; `/a/Vault 2/` is not inside `/a/Vault`.
   const inVault = pageDir === root || pageDir.startsWith(`${root}/`)
-  const dir = storage.getSettings().newBoardFolder === 'assets' || !inVault ? await ensureFolder(root, DRAWINGS_DIR) : pageDir
+  const dir = newBoardFolderOf(root) === 'assets' || !inVault ? await ensureFolder(root, DRAWINGS_DIR) : pageDir
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const name = boardFileName(title, kind, attempt)
     // Asked before the write: after it, the index holds this file too.

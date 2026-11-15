@@ -1675,6 +1675,19 @@ describe('createStore: loading', () => {
     expect(createStore(file).get().vaultSets.map((s) => s.id)).toEqual(Array.from({ length: MAX_VAULT_SETS }, (_, i) => `s${i}`))
   })
 
+  it('YAZ-5491 seededVaultConfig: the marks load and save; junk roots and names drop; none is no key', async () => {
+    await seed(valid({ seededVaultConfig: { '/v': ['daily-pages.json', 'new-places.json#newPage', 'a/b.json', 7], rel: ['x.json'], '/w': 'x' } }))
+    const store = createStore(file)
+    expect(store.get().seededVaultConfig).toEqual({ '/v': ['daily-pages.json', 'new-places.json#newPage'] })
+    expect(store.seededConfig('/v', 'daily-pages.json')).toBe(true)
+    expect(store.seededConfig('/w', 'daily-pages.json')).toBe(false)
+    store.markSeededConfig('/w', 'daily-pages.json')
+    store.markSeededConfig('/w', 'daily-pages.json')
+    expect(store.get().seededVaultConfig?.['/w']).toEqual(['daily-pages.json'])
+    await store.flush()
+    expect(createStore(file).seededConfig('/w', 'daily-pages.json')).toBe(true)
+  })
+
   it('unknown top-level keys are dropped', async () => {
     await seed(valid({ extra: 1 }))
     expect(createStore(file).get()).toEqual(defaultAppState())

@@ -54,6 +54,16 @@ describe('mergeConfigFile', () => {
     expect(mergeConfigFile(null, '{x', '{y')).toEqual({ text: '{x', clashes: [], dropped: 'both' })
   })
 
+  it('YAZ-5491 daily-pages.json: one Mac moves the folder, the other changes the style: both kept', () => {
+    const base = { version: 1, enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false }
+    expect(merge(base, { ...base, folder: 'Journal' }, { ...base, format: 'MM_DD' })).toEqual({ value: { ...base, folder: 'Journal', format: 'MM_DD' }, clashes: [], dropped: null })
+  })
+
+  it('YAZ-5486 new-places.json: one Mac edits a shortcut, the other where new pages go: both kept', () => {
+    const base = { version: 1, places: [null, null, null], newPage: { location: 'folder', folder: 'Inbox' } }
+    expect(merge(base, { ...base, places: ['Notes', null, null] }, { ...base, newPage: { location: 'root' } }).value).toEqual({ version: 1, places: ['Notes', null, null], newPage: { location: 'root' } })
+  })
+
   it('a malformed base merges as if the file were new', () => {
     expect(mergeConfigFile('{oops', json({ a: 1 }), json({ b: 2 })).text).toBe(json({ a: 1, b: 2 }))
   })

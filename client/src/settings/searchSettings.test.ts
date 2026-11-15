@@ -43,6 +43,7 @@ describe('settingCandidates', () => {
       'vaultOpensOn',
       'theme',
       'contentWidth',
+      'spacingVault',
       'lineSpacing',
       'blockGap',
       'pageSpacingPreview',
@@ -321,7 +322,7 @@ describe('searchSettings', () => {
   it('matches on the group title: "section indent" finds the two rows of that group, "spacing" the two of Spacing', () => {
     expect(ids(searchSettings(settingCandidates(ctx()), 'section indent'))).toEqual(['sectionStep', 'sectionLines'])
     // The page's bullet spacing (the YAZ-3818 demo) says "spacing" too.
-    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
+    expect(ids(searchSettings(settingCandidates(ctx()), 'spacing'))).toEqual(['spacingVault', 'lineSpacing', 'blockGap', 'pageSpacingPreview', 'pageBulletIndent', 'pageBulletGap'])
   })
 
   it('matches on the group hint too: "guide lines" finds the three guide line rows of Outline (YAZ-4094); "threading" finds the three threading rows and the two Section indent rows, whose hint names Bullet threading (and the line style of the sidebar, whose hint does too, YAZ-3309 D7)', () => {

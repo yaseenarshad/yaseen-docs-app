@@ -21,7 +21,8 @@
  * "Duplicate IDs" (YAZ-2677 🔒 D7) is beside it while the vault uses IDs, and calls `ids.check`.
  * "ID letters" (🔒 D5) and "Old IDs" (🔒 D6) follow it (`IdLettersControl.tsx`): `ids.reletter`, `ids.backfill`.
  */
-import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
+import { spacingVars, type PageSpacing } from '@shared/textFormatting'
 import { COURSE_SETTINGS_GROUP } from '../course/courseSettings'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
@@ -44,7 +45,7 @@ import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
-import { Segmented, Stepper } from './controls'
+import { Segmented, Select, Stepper } from './controls'
 import { UnitWordControl } from './UnitWordControl'
 import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
@@ -389,6 +390,17 @@ export interface SettingsCtx {
   vaultRoot?: string
   /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
+  /**
+   * Page spacing (YAZ-5485): the vault's `spacing` in `text-formatting.json`, for the rows of Appearance › Spacing and
+   * Editor › Outline's bullets. `vaults` and `choose` are the Vault dropdown (the D15 control, as Text formatting has);
+   * `value` is what the vault draws (its spacing, else the app's values until it has one). Absent with no vault: the
+   * rows then edit the app's values.
+   */
+  pageSpacing?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: Required<PageSpacing>; save: (next: Required<PageSpacing>) => void }
+  /** Daily pages › Change… (YAZ-5491): App writes the folder to the file of the vault it was picked in. Absent with no vault. */
+  pickDailyFolder?: (folder: string, vault: string) => void
+  /** The vault whose `daily-pages.json` Settings › Daily pages shows (YAZ-5491); named only where the window has two or more. */
+  dailyPagesVault?: string
   /** Review › Card course › "Open the course" (YAZ-5120): App closes Settings and opens the course. */
   openCourse?: () => void
 }
@@ -423,6 +435,8 @@ export interface SettingsGroup {
   hint?: string
   /** Its rows are ONE vault's (YAZ-2602 R10): the group names that vault where the window has two or more. */
   vault?: true
+  /** The vault the group acts on, when it is not the active tab's (Daily pages, YAZ-5491); undefined names the active one. */
+  vaultOf?: (ctx: SettingsCtx) => string | undefined
   items: readonly SettingDef[]
   /** Drawn above the rows in place of the plain title (Settings › Hotkeys' key cards, YAZ-3564); the title still names the group in search. */
   header?: (ctx: SettingsCtx) => ReactNode
@@ -507,18 +521,37 @@ const reviewOn = ({ review }: SettingsCtx): boolean => review?.settings.enabled 
 const CardSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.CardSpacingPreview })))
 const PageSpacingPreview = lazy(() => import('./SpacingPreview').then((m) => ({ default: m.PageSpacingPreview })))
 /** A preview row: bare (the preview is its own label), found by "preview" and the spacing words. */
-const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean): SettingDef => ({
+const previewRow = (id: string, label: string, keywords: readonly string[], Preview: typeof CardSpacingPreview, available?: (ctx: SettingsCtx) => boolean, varsOf?: (ctx: SettingsCtx) => Record<string, string>): SettingDef => ({
   id,
   label,
   keywords: [...keywords, 'preview', 'sample'],
   bare: true,
   ...(available && { available }),
-  render: () => (
+  // `varsOf` (YAZ-5485): the picked vault's look over `.app`'s; `display: contents` adds no box.
+  render: (ctx) => (
     <Suspense fallback={null}>
-      <Preview />
+      {varsOf === undefined ? <Preview /> : (
+        <div style={{ display: 'contents', ...varsOf(ctx) } as CSSProperties}>
+          <Preview />
+        </div>
+      )}
     </Suspense>
   ),
 })
+
+/** Page spacing as the rows show it (YAZ-5485): the picked vault's, else the app's values (no vault in the window). */
+const pageSpacingOf = (ctx: SettingsCtx): Required<PageSpacing> =>
+  ctx.pageSpacing?.value ?? { line: ctx.settings.lineSpacing, blockGap: ctx.settings.blockGap, bulletIndent: ctx.settings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent, bulletGap: ctx.settings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap }
+/** A page spacing row's change: the vault's file, or the app's values with no vault. */
+function setPageSpacing(ctx: SettingsCtx, patch: Partial<PageSpacing>): void {
+  if (ctx.pageSpacing !== undefined) return ctx.pageSpacing.save({ ...ctx.pageSpacing.value, ...patch })
+  const next = { ...ctx.settings }
+  if (patch.line !== undefined) next.lineSpacing = patch.line
+  if (patch.blockGap !== undefined) next.blockGap = patch.blockGap
+  if (patch.bulletIndent !== undefined) next.pageBulletIndent = patch.bulletIndent
+  if (patch.bulletGap !== undefined) next.pageBulletGap = patch.bulletGap
+  ctx.onChange(next)
+}
 /** Card spacing's own four rows (YAZ-5050): only with Custom. */
 const cardSpacingCustom = (ctx: SettingsCtx): boolean => reviewOn(ctx) && ctx.settings.cardSpacing === 'custom'
 
@@ -805,27 +838,37 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         ],
       },
       {
+        // YAZ-5485: the vault's page spacing (`text-formatting.json` › `spacing`), with its own Vault dropdown where the
+        // window has two or more (the D15 control, as Text formatting); the phone's reader follows it.
         title: 'Spacing',
         items: [
+          {
+            id: 'spacingVault',
+            label: 'Vault',
+            keywords: ['spacing', 'vault'],
+            available: (ctx) => (ctx.pageSpacing?.vaults.length ?? 0) > 1,
+            render: ({ pageSpacing }) =>
+              pageSpacing && <Select options={pageSpacing.vaults.map((v) => ({ label: v.name, value: v.root }))} value={pageSpacing.root} onChange={pageSpacing.choose} ariaLabel="Vault" />,
+          },
           {
             id: 'lineSpacing',
             label: 'Line spacing',
             keywords: ['line height'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={LINE_SPACING_PRESETS} value={settings.lineSpacing} onChange={(lineSpacing) => onChange({ ...settings, lineSpacing })} ariaLabel="Line spacing" />
+            render: (ctx) => (
+              <Segmented options={LINE_SPACING_PRESETS} value={pageSpacingOf(ctx).line} onChange={(line) => setPageSpacing(ctx, { line })} ariaLabel="Line spacing" />
             ),
           },
           {
             id: 'blockGap',
             label: 'Space between blocks',
             keywords: ['gap', 'paragraph'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={BLOCK_GAP_PRESETS} value={settings.blockGap} onChange={(blockGap) => onChange({ ...settings, blockGap })} ariaLabel="Space between blocks" />
+            render: (ctx) => (
+              <Segmented options={BLOCK_GAP_PRESETS} value={pageSpacingOf(ctx).blockGap} onChange={(blockGap) => setPageSpacing(ctx, { blockGap })} ariaLabel="Space between blocks" />
             ),
           },
           // YAZ-5050 round 2 (Yaseen: "add that preview of what the spacing on the text would be like ... in appearance
           // spacing"): sample text in the page's own classes, redrawn as the two rows above change.
-          previewRow('pageSpacingPreview', 'Preview', ['spacing', 'line spacing', 'line height', 'space between blocks', 'gap', 'paragraph'], PageSpacingPreview),
+          previewRow('pageSpacingPreview', 'Preview', ['spacing', 'line spacing', 'line height', 'space between blocks', 'gap', 'paragraph'], PageSpacingPreview, undefined, (ctx) => (ctx.pageSpacing === undefined ? {} : spacingVars(ctx.pageSpacing.value))),
         ],
       },
       {
@@ -872,7 +915,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-4615 D10: one line at the top of each new page, so an agent knows where comments go.
             id: 'commentsHint',
             label: (ctx) => unit(ctx, 'Add the comment hint to new pages'),
-            hint: 'Each new page gets one hidden line that tells an agent how to add a comment.',
+            // YAZ-5490: the active tab's vault's (`new-places.json`): it writes into the vault's pages.
+            hint: 'Each new page gets one hidden line that tells an agent how to add a comment. Saved in this vault.',
             keywords: ['comment hint', 'agent', 'ai', 'new page', 'yaml'],
             render: (ctx) => (
               <Segmented options={ON_OFF_OPTIONS} value={ctx.settings.commentsHint} onChange={(commentsHint) => ctx.onChange({ ...ctx.settings, commentsHint })} ariaLabel={unit(ctx, 'Add the comment hint to new pages')} />
@@ -1116,21 +1160,22 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // The YAZ-3818 demo: the page's bullets, as the cells' have their own (Settings › Tables › All tables).
             id: 'pageBulletIndent',
             label: 'Bullet indent',
-            hint: 'How far each child level steps in.',
+            // YAZ-5485: the vault's, with Line spacing (the vault picked in Appearance › Spacing).
+            hint: 'How far each child level steps in. Saved in the vault, with its spacing.',
             keywords: ['bullet', 'indent', 'spacing', 'list', 'nested', 'child', 'outline'],
-            render: ({ settings, onChange }) => (
-              <PxSetting name="Bullet indent" value={settings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent} fallback={DEFAULT_SETTINGS.pageBulletIndent}
-                min={PAGE_BULLET_INDENT_MIN} max={PAGE_BULLET_INDENT_MAX} step={2} onSet={(pageBulletIndent) => onChange({ ...settings, pageBulletIndent })} />
+            render: (ctx) => (
+              <PxSetting name="Bullet indent" value={pageSpacingOf(ctx).bulletIndent} fallback={DEFAULT_SETTINGS.pageBulletIndent}
+                min={PAGE_BULLET_INDENT_MIN} max={PAGE_BULLET_INDENT_MAX} step={2} onSet={(bulletIndent) => setPageSpacing(ctx, { bulletIndent })} />
             ),
           },
           {
             id: 'pageBulletGap',
             label: 'Bullet gap',
-            hint: 'The space between a bullet and its text; a bigger gap moves the text, not the bullet.',
+            hint: 'The space between a bullet and its text; a bigger gap moves the text, not the bullet. Saved in the vault, with its spacing.',
             keywords: ['bullet', 'gap', 'spacing', 'list', 'text', 'outline'],
-            render: ({ settings, onChange }) => (
-              <PxSetting name="Bullet gap" value={settings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap} fallback={DEFAULT_SETTINGS.pageBulletGap}
-                min={PAGE_BULLET_GAP_MIN} max={PAGE_BULLET_GAP_MAX} step={1} onSet={(pageBulletGap) => onChange({ ...settings, pageBulletGap })} />
+            render: (ctx) => (
+              <PxSetting name="Bullet gap" value={pageSpacingOf(ctx).bulletGap} fallback={DEFAULT_SETTINGS.pageBulletGap}
+                min={PAGE_BULLET_GAP_MIN} max={PAGE_BULLET_GAP_MAX} step={1} onSet={(bulletGap) => setPageSpacing(ctx, { bulletGap })} />
             ),
           },
         ],
@@ -1664,7 +1709,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3556 D3: the New… box uses it too, for pages, drawings and diagrams.
             hint: ({ settings }) => {
               const key = menuKey('newItem', settings)
-              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
+              // YAZ-5486: the active tab's vault's (`new-places.json`).
+              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page. Saved in this vault.`
             },
             keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
             // A plain label-left / dropdown-right row, until the folder input needs the width.
@@ -1717,7 +1763,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3943 demo 2: new boards only; a board's own cog still moves its pictures. Demo round 3: a folder you pick.
             id: 'newBoardPictures',
             label: 'New boards keep pictures',
-            hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures.',
+            // YAZ-5486: the active tab's vault's (`new-places.json`).
+            hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures. Saved in this vault.',
             keywords: ['pictures', 'images', 'assets', 'drawing', 'board', 'folder', 'pictures folder'],
             // A plain row, until the chosen folder and "Choose…" need the width (the new-page folder's rule).
             wide: ({ settings }) => settings.newBoardPictures === 'folder',
@@ -1738,7 +1785,11 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
       {
         // YAZ-3607 D8: today's page, for the footer button, File › Open Today's Daily Page and ⌘D on "Today's daily page".
         // One switch (`dailyPages`); the other rows show while it is on.
+        // YAZ-5491: the vault's `.yaseendocs/daily-pages.json`, the one source (the phone reads it too). App writes the
+        // file of the vault that holds the daily pages (`saveDaily`); the line under the title names it.
         title: 'Daily pages',
+        vault: true,
+        vaultOf: (ctx) => ctx.dailyPagesVault,
         items: [
           {
             id: 'dailyPages',
@@ -1757,7 +1808,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             keywords: ['daily', 'folder', 'template', 'journal'],
             available: ({ settings }) => settings.dailyPages,
             wide: () => true,
-            render: ({ settings, onChange, places, openDailyTemplate }) => <DailyPageFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} />,
+            render: ({ settings, onChange, places, openDailyTemplate, pickDailyFolder }) => <DailyPageFolderControl settings={settings} onChange={onChange} vaults={places} onOpenTemplate={openDailyTemplate} onPickFolder={pickDailyFolder} />,
           },
           {
             id: 'dailyPageFormat',

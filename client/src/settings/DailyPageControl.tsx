@@ -23,9 +23,11 @@ interface DailyPageControlProps {
   vaults?: readonly PlaceVault[]
   /** "Open template" (D6): App's `openDailyTemplate`; absent in a window with no vault. */
   onOpenTemplate?: () => void
+  /** The folder picked, with the vault it is in (YAZ-5491: that vault's file); absent: `onChange`. */
+  onPickFolder?: (folder: string, vault: string) => void
 }
 
-export function DailyPageFolderControl({ settings, onChange, vaults, onOpenTemplate }: DailyPageControlProps) {
+export function DailyPageFolderControl({ settings, onChange, vaults, onOpenTemplate, onPickFolder }: DailyPageControlProps) {
   const [picking, setPicking] = useState(false)
   const folder = settings.dailyPageFolder
   return (
@@ -48,7 +50,8 @@ export function DailyPageFolderControl({ settings, onChange, vaults, onOpenTempl
           label="Choose the daily pages folder"
           onPick={(path, vault) => {
             setPicking(false)
-            onChange({ ...settings, dailyPageFolder: placeRel(vault, path) })
+            if (onPickFolder !== undefined) onPickFolder(placeRel(vault, path), vault)
+            else onChange({ ...settings, dailyPageFolder: placeRel(vault, path) })
           }}
           onClose={() => setPicking(false)}
         />

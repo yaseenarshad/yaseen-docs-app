@@ -11,6 +11,7 @@
  * renderer's question (it has the list): an unknown one reads as no pick.
  */
 import { isRecord } from './guards'
+import { mergeConfigFile } from './configMerge'
 
 export const ICONS_FILE = 'icons.json'
 /** The keys this build's writer owns (YAZ-5483): every other key of the file (a later version's) is kept on a save. */
@@ -125,16 +126,25 @@ export function remapIconPaths(paths: Readonly<Record<string, string>>, map: (ab
  * Two machines' `icons.json` after both changed it (sync): the picks merge per path (a pick either side changed
  * or removed since `base` takes that side's answer; both changed, ours). Answers the file's text, or null when a
  * side is not an icons file.
+ *
+ * YAZ-5488 (before the rules and colours join the file as version 2): every OTHER top-level key merges too, key by
+ * key by the YAZ-5483 rule (`mergeConfigFile`: one side's change wins, a clash takes the remote's), so a sync never
+ * drops a key a newer build wrote. A file of a later version (any whole `version` of 1 or more) is an icons file
+ * here, and the merge keeps the higher version.
  */
 export function mergeIconsFile(base: string | null, theirs: string, mine: string): string | null {
-  const parse = (text: string): IconsConfig | null => {
+  const parse = (text: string): { version: number; paths: Record<string, string>; rest: Record<string, unknown> } | null => {
     try {
-      return parseIconsConfig(JSON.parse(text))
+      const v: unknown = JSON.parse(text)
+      if (!isRecord(v) || typeof v.version !== 'number' || !Number.isInteger(v.version) || v.version < 1) return null
+      if (v.paths !== undefined && !isRecord(v.paths)) return null
+      const { version: _v, paths: _p, ...rest } = v
+      return { version: v.version, paths: cleanIconPaths(v.paths, isSafeRelPath), rest }
     } catch {
       return null
     }
   }
-  const [b, t, m] = [base === null ? { version: 1 as const, paths: {} } : parse(base), parse(theirs), parse(mine)]
+  const [b, t, m] = [base === null ? { version: 1, paths: {}, rest: {} } : parse(base), parse(theirs), parse(mine)]
   if (b === null || t === null || m === null) return null
   const paths: Record<string, string> = {}
   for (const p of new Set([...Object.keys(b.paths), ...Object.keys(t.paths), ...Object.keys(m.paths)])) {
@@ -142,5 +152,6 @@ export function mergeIconsFile(base: string | null, theirs: string, mine: string
     const pick = my !== was ? my : their
     if (pick !== undefined) paths[p] = pick
   }
-  return `${JSON.stringify({ version: 1, paths }, null, 2)}\n`
+  const rest = JSON.parse(mergeConfigFile(base === null ? null : JSON.stringify(b.rest), JSON.stringify(t.rest), JSON.stringify(m.rest)).text) as Record<string, unknown>
+  return `${JSON.stringify({ version: Math.max(t.version, m.version), paths, ...rest }, null, 2)}\n`
 }

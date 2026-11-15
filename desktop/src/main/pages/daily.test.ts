@@ -11,7 +11,7 @@ import path from 'node:path'
 import { IDS_FILE } from '@shared/pageId'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import { appDataDir } from '../vaultIndex/mint'
-import { dailyPage, type DailySettings } from './daily'
+import { dailyPage, vaultDailySettings, type DailySettings } from './daily'
 import { LOCK_DIR } from '../fs/lock'
 
 const TUE = new Date(2026, 10, 3)
@@ -180,5 +180,19 @@ describe('dailyPage (D2)', () => {
 
     await expect(dailyPage(root, { ...FLAT, dailyPages: false }, TUE, true)).rejects.toThrow('Daily pages are off')
     await expect(dailyPage(root, { ...FLAT, dailyPageFolder: 'journal' }, TUE, true)).rejects.toThrow('has no folder "journal"')
+  })
+})
+
+describe('vaultDailySettings (YAZ-5491: the vault file is the one source)', () => {
+  it('the file wins over the app value; no file is the app value; a file that is not JSON is refused', async () => {
+    const root = await vault(false)
+    const app = { ...FLAT, commentsHint: true }
+    expect(await vaultDailySettings(root, app)).toBe(app)
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'daily-pages.json'), JSON.stringify({ version: 1, enabled: true, folder: 'journal', format: 'YYYY-MM-DD', dayFolder: true }))
+    expect(await vaultDailySettings(root, app)).toEqual({ ...app, dailyPageFolder: 'journal', dailyPageFormat: 'YYYY-MM-DD', dailyPageDayFolder: true })
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'daily-pages.json'), JSON.stringify({ enabled: false }))
+    await expect(dailyPage(root, await vaultDailySettings(root, app), TUE, true)).rejects.toThrow('Daily pages are off in this vault')
+    await writeFile(path.join(root, VAULT_CONFIG_DIR, 'daily-pages.json'), '{ nope')
+    await expect(vaultDailySettings(root, app)).rejects.toThrow('not valid JSON')
   })
 })

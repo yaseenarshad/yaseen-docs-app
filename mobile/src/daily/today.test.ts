@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dailyPageDate, dailyPageName } from '@shared/dailyPage'
-import { sanitizeDailyPages, type VaultDailyPages } from '@shared/dailyPagesFile'
+import { dailyPagesFile, readDailyPagesFile, sanitizeDailyPages, type VaultDailyPages } from '@shared/dailyPagesFile'
 import { phoneRecord } from '../sync/phoneIndex'
 import { todayOrLatest } from './today'
 
@@ -15,6 +15,12 @@ describe('the vault file `.yaseendocs/daily-pages.json` (on, off)', () => {
     expect(sanitizeDailyPages({ enabled: true })).toEqual({ folder: '', format: 'YYYY-MM-DD', dayFolder: false })
     for (const off of [undefined, null, 'x', [], {}, { enabled: false, folder: 'Daily' }, { enabled: 'yes' }, { enabled: true, format: 'YYYY' }, { enabled: true, format: 7 }, { enabled: true, folder: '../x' }])
       expect(sanitizeDailyPages(off)).toBeNull()
+  })
+
+  it('YAZ-5491: the file the Mac writes from Settings reads here as it did; one the Mac reads as off is off here', () => {
+    const mac = dailyPagesFile({ enabled: true, folder: 'Journal', format: 'MMM D, YYYY', dayFolder: true })
+    expect(sanitizeDailyPages({ ...mac, later: { x: 1 } })).toEqual({ folder: 'Journal', format: 'MMM D, YYYY', dayFolder: true })
+    expect(sanitizeDailyPages(dailyPagesFile({ ...readDailyPagesFile(mac), enabled: false }))).toBeNull()
   })
 })
 
