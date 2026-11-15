@@ -460,7 +460,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
                     <button
                       type="button"
                       className="btn"
-                      onClick={() => ask('Cancel this link? A friend who has it cannot add you with it.', 'Cancel link', () => service.remove(s.mine))}
+                      onClick={() => ask('Cancel this link? A friend who has it cannot add you with it.', 'Cancel link', () => service.remove(s.mine, 'shared'))}
                     >
                       Cancel link
                     </button>

@@ -555,7 +555,8 @@ export class Model {
         const s = l?.index.shared ?? []
         if (s.length === 0) break
         const m = this.pick(s).mine
-        const r = await this.act(d, 'cancel', (x) => x.remove(m))
+        // Round 5: the cancel of a LINK (as the tab's "Cancel link" asks it).
+        const r = await this.act(d, 'cancel', (x) => x.remove(m, 'shared'))
         out = `${m.slice(0, 6)}:${r === 'crash' ? 'crash' : r.kind}`
         break
       }

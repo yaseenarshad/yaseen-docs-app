@@ -35,7 +35,9 @@ export async function runPlans5(from: number, count: number, knobs: Knobs = STAL
   for (let s = from; s < from + count; s++) {
     let m
     try {
-      m = await runPlan5(s, knobs)
+      // I2 strict is the state AFTER the faults stop (every kept pointer names the current numbers): the end phase runs
+      // with no stale read, 502 or secondary limit, as the round 4 model's end phase does. I1 to I8 hold at every step.
+      m = await runPlan5(s, knobs, undefined, undefined, true)
     } catch (err) {
       out.bad.push(`seed ${s}: the model stopped: ${(err as Error).message}`.slice(0, 300))
       continue

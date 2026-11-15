@@ -1,3 +1,4 @@
+import type { EntryKind } from '@shared/friendGists'
 import { WHAT_FRIENDS_SEE, type FriendRow, type PasteResult } from '@shared/friendsList'
 import { numbersFor } from '@shared/friendSend'
 import { parseFriendStats, type FriendMark, type FriendStats } from '@shared/friendStats'
@@ -68,7 +69,7 @@ export interface FriendsService {
   board(): Promise<Board>
   share(): Promise<ShareResult | Unavailable>
   paste(text: string): Promise<PasteAnswer>
-  remove(mine: string): Promise<{ kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'not-found' } | Unavailable>
+  remove(mine: string, asked?: EntryKind): Promise<{ kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'not-found' } | Unavailable>
   /** YAZ-5399: the way out when the home vault is gone (`FriendsList.restart`). */
   restart?(vault: string): ReturnType<FriendsList['restart']>
   mark(mine: string, kind: MarkKind): Promise<MarkSend>
@@ -279,7 +280,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
     },
     share: () => list.share(),
     paste: async (text) => cleanAnswer(await list.pasteAny(text)),
-    remove: (mine) => list.remove(mine),
+    remove: (mine, asked) => list.remove(mine, asked),
     restart: (vault) => list.restart(vault),
     mark: (mine, kind) => marks.send(mine, kind, pointerCount),
     see: (seen) => marks.see(seen),

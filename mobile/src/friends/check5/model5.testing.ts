@@ -199,7 +199,8 @@ export function plan5(seed: number) {
   return { seed, setup, events }
 }
 
-export async function runPlan5(seed: number, knobs: Knobs, cut?: number, keep?: number[]): Promise<Model5> {
+/** `calmEnd`: the faults (stale reads, 502, the secondary limit) stop for the end phase, as I2 strict means it. */
+export async function runPlan5(seed: number, knobs: Knobs, cut?: number, keep?: number[], calmEnd = process.env.C5_CALM_END !== undefined && process.env.C5_CALM_END !== ''): Promise<Model5> {
   const p0 = plan5(seed)
   const p = keep === undefined ? p0 : { ...p0, events: keep.map((i) => p0.events[i]) }
   const m = new Model5(p.seed, knobs)
@@ -210,7 +211,7 @@ export async function runPlan5(seed: number, knobs: Knobs, cut?: number, keep?: 
     await m.run(e)
     await m.settle()
   }
-  if (process.env.C5_CALM_END) m.armed = false
+  if (calmEnd) m.armed = false
   await m.endPhase()
   m.st5.stale = m.world.repos!.staleGiven
   return m

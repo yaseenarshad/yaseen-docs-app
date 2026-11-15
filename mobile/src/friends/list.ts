@@ -107,7 +107,11 @@ export interface FriendsList {
   share(): Promise<ShareResult | Unavailable>
   paste(text: string): Promise<PasteResult | Unavailable>
   /** Remove by my pointer for them (`FriendRow.mine`, a shared link's `mine`). `paused`: it finishes later by itself. */
-  remove(mine: string): Promise<{ kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'not-found' } | Unavailable>
+  /**
+   * `asked` (round 5): the kind of row the person tapped ("Cancel link": `shared`). A shared link that a friend took
+   * meanwhile (another device healed the pair) is that friend's pointer now: a cancel of the LINK never removes the friend.
+   */
+  remove(mine: string, asked?: EntryKind): Promise<{ kind: 'done' } | { kind: 'paused'; why: string; retryAt: number | null } | { kind: 'not-found' } | Unavailable>
   /** The friends' rows and my shared links; reads each friend (ETags: an unchanged friend costs nothing). */
   rows(): Promise<({ kind: 'ok' } & ListRows) | Unavailable>
   /** 4A's port, on the list gist. */
@@ -604,7 +608,7 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         await remember(r.handle)
         return { kind: 'done' as const, vault: r.handle.store!.port.repo }
       }),
-    remove: (mine) =>
+    remove: (mine, asked) =>
       withApi(async (api, login, vault) => {
         const h0 = await list(api, login, false)
         if (h0 === null) return { kind: 'not-found' as const }
@@ -619,7 +623,10 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
           h = h0
         }
         if (!isHandle(h)) return h
-        const kind = kindOf(h.index, mine)
+        const now = kindOf(h.index, mine)
+        // Round 5 (seed 7209657 of the full run): a cancel of a link that is a friend's pointer by now is no cancel.
+        if (asked !== undefined && now !== null && now !== asked && pendingRemove(h) === null) return { kind: 'not-found' as const }
+        const kind = asked ?? now
         if (kind === null && pendingRemove(h) === null) return { kind: 'not-found' as const }
         return mapRemove(await removeFriend(api, h, mine, await budget(), opts, kind === null ? {} : { kinds: { [mine]: kind } }), vault, kind === null ? undefined : { mine, kind })
       }),

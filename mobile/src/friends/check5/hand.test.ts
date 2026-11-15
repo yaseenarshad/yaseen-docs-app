@@ -299,3 +299,20 @@ it('H6 (shrunk): A removes B; ONE stale branch read right after the tombstone co
   // Expected: `done` only when nothing waits and B cannot reach the current numbers.
   expect(r.kind === 'done' ? waits === 0 && !reach.hit : true).toBe(true)
 })
+
+it('H7 (round 5, seed 7209657 of the full run): "Cancel link" on a link that a friend took meanwhile (another phone healed the pair) never removes the friend', async () => {
+  const m = await world(2)
+  const [a0, a1] = m.devs.A as any[]
+  const b = m.devs.B[0] as any
+  // A shares a NEW link; B (already a friend) pastes it: B's pointer for A now reads that link.
+  const s = await a0.list.share()
+  expect((await b.list.paste(s.link)).kind).not.toBe('failed')
+  const link = s.link.split('#')[1]
+  // The person sees the link as an unused one and taps "Cancel link" on the other phone; the first phone heals the
+  // pair at the same moment (the link becomes B's pointer).
+  await a0.list.rows()
+  const r = await a1.list.remove(link, 'shared')
+  expect(r.kind).toBe('not-found')
+  expect(m.bEntries().length).toBe(1)
+  expect(m.gist(m.bEntries()[0].mine)).toBeDefined()
+})
