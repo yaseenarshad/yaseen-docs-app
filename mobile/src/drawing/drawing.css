@@ -1,0 +1,83 @@
+/* YAZ-5440: a drawing in a page (`drawingBox.ts`, `watchDrawings.ts`) and its full-screen view. */
+.page-drawing {
+  display: block;
+  margin: 12px 0;
+  padding: 0;
+  max-width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.page-drawing--wait {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  animation: page-drawing-breathe 1.6s ease-in-out infinite;
+}
+.page-drawing__wait {
+  font-size: 14px;
+}
+.page-drawing__img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  cursor: zoom-in;
+}
+@keyframes page-drawing-breathe {
+  50% {
+    opacity: 0.6;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .page-drawing--wait {
+    animation: none;
+  }
+}
+
+.drawing-view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+}
+.drawing-view__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(env(safe-area-inset-top) + 8px) 12px 8px;
+}
+.drawing-view__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+.drawing-view__close {
+  min-width: 44px;
+  min-height: 44px;
+  font-size: 20px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.drawing-view__pane {
+  flex: 1;
+  display: flex;
+  overflow: auto;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.drawing-view__pane img {
+  display: block;
+  flex: none;
+  margin: auto;
+  max-width: none;
+}

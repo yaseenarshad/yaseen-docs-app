@@ -21,7 +21,11 @@ build's import guard: tests are never bundled (`testConfig.test.ts` checks this)
 ## The rule: no Electron, no Node
 
 `mobile/` never imports Electron or Node, and the phone bundle never carries the desktop app, the drawing engine or
-the code editor. Three checks hold the rule:
+the code editor. One exception (YAZ-5440): the drawing engine lives in ONE lazy chunk, `src/drawing/engine/`, which
+draws a page's Excalidraw drawings with the Mac's own picture code (`client/src/drawings/drawingPicture.ts`), in memory
+only (nothing is saved). Only that folder may import it; `src/drawingWall.test.ts` proves it in the build (not in the
+first load, the reader's chunk or Review), and `drawingChunkTrim` in `vite.config.ts` keeps the engine's editor extras
+(Mermaid, the WebAssembly font cutter, the languages) off the phone. Three checks hold the rule:
 
 * `mobile/tsconfig.json` has browser types only. `process`, `Buffer` or `require` in `src/` fail the typecheck.
 * `importRules.ts` lists what is forbidden. The build fails on it (`phoneImportGuard` in `vite.config.ts`), for

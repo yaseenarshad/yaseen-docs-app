@@ -30,6 +30,7 @@ import { isDiagram } from '@shared/fileKind'
 import type { DiagramDarkColors, WatchEvent } from '@shared/types'
 import { api, BridgeRequestError } from '../../api'
 import { renderDiagramPage, type BoardBounds, type DiagramPageRef } from '../../diagrams/renderDiagram'
+import { DRAWING_PADDING, drawingSvg, framesOf, type BoardFrame, type SceneElement } from '../../drawings/drawingPicture'
 import { readDrawingForPicture } from '../../drawings/drawingScene'
 import { createPreviewCache } from '../../lib/previewCache'
 import { storage } from '../../lib/storage'
@@ -37,7 +38,9 @@ import { appliedTheme } from '../../lib/theme'
 import { diagramLinkSpots, drawingLinkSpots, type BoardLinkSpot } from './boardLinks'
 import { setEmbedPictureStats } from './pictureStats'
 
-export type { BoardBounds, DiagramPageRef }
+export type { BoardBounds, BoardFrame, DiagramPageRef }
+// YAZ-5440: the drawing's picture is drawn by `drawingPicture.ts`, which the phone shares; its names stay here too.
+export { DRAWING_PADDING, framesOf }
 
 /** How many pictures the cache keeps (D5). */
 export const PICTURE_LIMIT = 24
@@ -45,20 +48,8 @@ export const PICTURE_LIMIT = 24
 export const PICTURE_MAX_BYTES = 64 * 1024 * 1024
 /** Pictures inside a drawing load at most this big (item 14). */
 export const IMAGE_MAX_PX = 2400
-/** The engine's `DEFAULT_EXPORT_PADDING`, which `exportToSvg` adds around the board. */
-export const DRAWING_PADDING = 10
 /** An idle callback waits at most this long (item 26): a busy page still gets its picture. */
 const IDLE_TIMEOUT_MS = 2000
-
-/** A drawing's frame (item 1): "Frame ▸" fits the window to it. Board units. */
-export interface BoardFrame {
-  id: string
-  name: string
-  x: number
-  y: number
-  width: number
-  height: number
-}
 
 /** One settled picture, as a window shows it. `url` is `''` and `bounds` null for an empty board or page. */
 export interface BoardPicture {
@@ -129,44 +120,15 @@ async function drawDiagram(root: string, path: string, theme: 'light' | 'dark', 
   return { svg: drawn.picture, bounds: drawn.picture === '' ? null : drawn.bounds, pages: drawn.pages, page: drawn.page, frames: [], links }
 }
 
-interface SceneElement {
-  id: string
-  type: string
-  x: number
-  y: number
-  width: number
-  height: number
-  name?: string | null
-  frameId?: string | null
-  text?: string
-  link?: string | null
-}
-
-/** The frames of a drawing, in scene order (item 1); a frame with no name gets the engine's default. */
-export function framesOf(elements: readonly SceneElement[]): BoardFrame[] {
-  return elements
-    .filter((e) => e.type === 'frame' || e.type === 'magicframe')
-    .map((e) => ({ id: e.id, name: e.name ?? (e.type === 'magicframe' ? 'AI Frame' : 'Frame'), x: e.x, y: e.y, width: e.width, height: e.height }))
-}
-
 async function drawDrawing(root: string, path: string, theme: 'light' | 'dark'): Promise<Drawn> {
   const read = await readDrawingForPicture(root, path, IMAGE_MAX_PX)
   const { engine, appState, files } = read
   const elements = read.elements as SceneElement[]
   if (elements.length === 0) return { svg: '', bounds: null, pages: [], page: null, frames: [] }
   await whenIdle()
-  const svgEl = await engine.exportToSvg({
-    elements: elements as never,
-    appState: { ...appState, exportBackground: true, exportWithDarkMode: theme === 'dark', exportPadding: DRAWING_PADDING } as never,
-    files: files as never,
-  })
+  const { svgEl, bounds, frames } = await drawingSvg(engine, { elements, appState, files }, theme)
   const svg = new XMLSerializer().serializeToString(svgEl)
-  // The engine's canvas size (`getCanvasSize`): the common bounds of the root elements, plus the padding each side.
-  const frameIds = new Set(elements.filter((e) => e.type === 'frame' || e.type === 'magicframe').map((e) => e.id))
-  const roots = elements.filter((e) => frameIds.has(e.id) || !e.frameId || !frameIds.has(e.frameId))
-  const [, , maxX, maxY] = engine.getCommonBounds(roots as never)
-  const [, , width, height] = (svgEl.getAttribute('viewBox') ?? '0 0 0 0').split(/\s+/).map(Number)
-  return { svg, bounds: { x: maxX + DRAWING_PADDING - width, y: maxY + DRAWING_PADDING - height, width, height }, pages: [], page: null, frames: framesOf(elements), links: drawingLinkSpots(elements) }
+  return { svg, bounds, pages: [], page: null, frames, links: drawingLinkSpots(elements) }
 }
 
 /** Each settled key's facts; an entry leaves with its picture. */

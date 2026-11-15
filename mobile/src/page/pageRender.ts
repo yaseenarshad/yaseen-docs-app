@@ -3,6 +3,7 @@ import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/loc
 import { parseAlt } from '@client/editor/image/imageSrc'
 import { cardIdOf, parseCardLine } from '@shared/cardLine'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
+import { drawingBox, onMacWords } from '../drawing/drawingBox'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (YAZ-5079, 4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -24,7 +25,7 @@ import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
  *  - `[[link]]`: what `look.link` says: a page, a card or a file opens; a broken link keeps its text, marked missing.
  *  - `![[ID]]` of a card: a box the page view fills with the card (round 15, item 1); an ID no card has: "Missing card ·
  *    ID", as the Mac. A picture or a sound waits for its bytes (`data-vault-src`, `data-vault-sound`): the address is
- *    never one the browser fetches. A drawing: "Open it on the Mac" (C3). A picture from the web: a calm line, because
+ *    never one the browser fetches. A drawing: a picture the phone draws (`drawing/`, YAZ-5440); a plain draw.io file: "Open it on the Mac" (C3). A picture from the web: a calm line, because
  *    the page's CSP loads none (decision 8, round 12 item 13).
  *  - The page's own card (a `card` fence): drawn read only by `look.card` (`renderCard`); its card line is out of sight.
  *  - Web links open in Safari (`target="_blank"`); a link to a vault file opens it (`data-open`).
@@ -53,7 +54,7 @@ export type EmbedShow =
   | { kind: 'missing-card'; id: string }
   | { kind: 'picture'; path: string; alt: string }
   | { kind: 'sound'; path: string }
-  | { kind: 'drawing'; name: string }
+  | { kind: 'drawing'; name: string; path?: string | null }
   | { kind: 'file'; path: string; name: string }
   | { kind: 'text'; text: string }
 
@@ -348,7 +349,8 @@ function drawEmbeds(root: DocumentFragment, look: PageLook): void {
         el = sound(show.path)
         break
       case 'drawing':
-        el = mediaLine('board', `Drawing · ${show.name} · Open it on the Mac`)
+        // YAZ-5440: an Excalidraw drawing is drawn on the phone (`drawing/`); any other board keeps its line.
+        el = drawingBox(show.path ?? null, show.name) ?? mediaLine('board', onMacWords(show.name))
         break
       case 'file': {
         const a = document.createElement('a')
@@ -362,9 +364,9 @@ function drawEmbeds(root: DocumentFragment, look: PageLook): void {
         el = document.createTextNode(show.text)
         break
     }
-    // A card box is a block: alone in its paragraph, it takes the paragraph's place.
+    // A card box (and a drawing's, YAZ-5440) is a block: alone in its paragraph, it takes the paragraph's place.
     const p = span.parentElement
-    if (show.kind.endsWith('card') && p?.tagName === 'P' && p.childNodes.length === 1) p.replaceWith(el)
+    if ((show.kind.endsWith('card') || (el as Element).tagName === 'FIGURE') && p?.tagName === 'P' && p.childNodes.length === 1) p.replaceWith(el)
     else span.replaceWith(el)
   }
 }

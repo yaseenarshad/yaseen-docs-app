@@ -53,7 +53,8 @@ describe('the rules of mobile/', () => {
     const bad: string[] = []
     for (const f of files.filter((f) => !isTest(f.path))) {
       for (const m of f.text.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+)['"]([^'"]+)['"]/g)) {
-        const why = forbiddenImport(m[1])
+        // YAZ-5440: the importer counts: the drawing chunk (`drawing/engine/`) alone may import the engine.
+        const why = forbiddenImport(m[1], join(SRC, f.path))
         if (why) bad.push(`${f.path}: ${m[1]} (${why})`)
       }
     }

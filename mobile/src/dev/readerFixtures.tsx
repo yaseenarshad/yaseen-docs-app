@@ -5,13 +5,14 @@ import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 import { fakeFriends, fakeScanner, fakeSync } from './fakes'
 import { READER_FILES, READER_NOT_STORED, seedReaderVault } from './readerVault'
+import { DRAWING_FILES } from './drawingVault'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 
 /**
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-drawing'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -57,7 +58,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
-  await seedReaderVault(store, tokens, name === 'page-tricks' ? { ...READER_FILES, 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` } : READER_FILES)
+  await seedReaderVault(
+    store,
+    tokens,
+    name === 'page-tricks' ? { ...READER_FILES, 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` } : name === 'page-drawing' ? { ...READER_FILES, ...DRAWING_FILES } : READER_FILES,
+  )
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
   const online: VaultMedia = {
@@ -67,7 +72,16 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       return { status: 'ready', path, url: URL.createObjectURL(new Blob([bytes as BlobPart], { type: fileType(path) })), type: fileType(path) }
     },
   }
-  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }) }
+  // `page-drawing` (YAZ-5440): the stored files with their real type, as 3D gives them (an SVG is `image/svg+xml`).
+  const typedMedia: VaultMedia = {
+    async show(path) {
+      const shown = await stored.show(path)
+      if (shown.status !== 'ready' || !/\.svg$/i.test(path)) return shown
+      const file = await store.read('yaseen/vault@main', path)
+      return file === null ? shown : { ...shown, url: URL.createObjectURL(new Blob([file.content as BlobPart], { type: 'image/svg+xml' })), type: 'image/svg+xml' }
+    },
+  }
+  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
   root.render(<App services={services} />)
   await until(() => document.querySelector('[role="tab"]') !== null)
   press('Search')
@@ -108,6 +122,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await open(/^Spanish words/, '.reader__body h1')
       document.querySelector('.reader__body blockquote:not(.page-callout)')?.scrollIntoView({ block: 'start' })
       await wait(400)
+      break
+    case 'page-drawing':
+      await typed('garden')
+      await open(/^Garden plan/, '.reader__body h1')
+      await until(() => document.querySelector('.page-drawing__img') !== null && !document.querySelector('.page-drawing--wait'), 15000)
       break
     case 'card':
       await typed('la bib')

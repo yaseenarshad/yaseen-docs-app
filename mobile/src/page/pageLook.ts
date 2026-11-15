@@ -6,6 +6,7 @@ import type { CardLink } from '@shared/cardLinks'
 import { fileKind } from '@shared/fileKind'
 import { makeResolver } from '@shared/linkResolver'
 import { vaultPageId } from '@shared/pageId'
+import { isDiagramPicture } from '../drawing/drawingBox'
 import { drawLocalCard } from '../media/ui/cardDraw'
 import type { VaultData } from '../search/vaultData'
 import type { EmbedShow, LinkShow, PageLook } from './pageRender'
@@ -133,8 +134,10 @@ export function pageLook(data: VaultData, holder: string): PageLook {
       const page = linkPageName(inner, source)
       const card = linkCard(inner, source)
       if (card !== null) return { kind: 'card', id: card.id }
-      if (isBoardRef(inner)) return { kind: 'drawing', name: page.slice(page.lastIndexOf('/') + 1) }
       const file = assetsOf(data)(page.split('|')[0].trim(), folderOf(holder))
+      // YAZ-5440: a drawing names its file, which the reader draws; a `.drawio.svg` is a picture already.
+      if (isBoardRef(inner)) return { kind: 'drawing', name: page.slice(page.lastIndexOf('/') + 1), path: file }
+      if (file !== null && isDiagramPicture(file)) return { kind: 'picture', path: file, alt: page.slice(page.lastIndexOf('/') + 1) }
       if (file !== null && isAudioRef(file)) return { kind: 'sound', path: file }
       if (file !== null && fileKind(file) === 'image') return { kind: 'picture', path: file, alt: page.slice(page.lastIndexOf('/') + 1) }
       if (file !== null && fileKind(file) !== 'markdown') return { kind: 'file', path: file, name: file.slice(file.lastIndexOf('/') + 1) }

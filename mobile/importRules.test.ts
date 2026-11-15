@@ -11,6 +11,15 @@ describe('forbiddenImport: what the phone bundle never takes in', () => {
       expect(forbiddenImport(id)).not.toBeNull()
   })
 
+  // YAZ-5440: the drawing chunk (`mobile/src/drawing/engine/`) may import the engine, and the engine its own files.
+  it('the drawing engine from the drawing chunk only', () => {
+    expect(forbiddenImport('@excalidraw/excalidraw', '/repo/mobile/src/drawing/engine/drawPicture.ts')).toBeNull()
+    expect(forbiddenImport('./chunk-X.js', '/repo/engine/packages/excalidraw/dist/prod/index.js')).toBeNull()
+    expect(forbiddenImport('/repo/engine/packages/excalidraw/fonts/Virgil/Virgil-Regular.woff2?inline', '/repo/mobile/src/drawing/engine/fonts.ts')).toBeNull()
+    for (const importer of ['/repo/mobile/src/drawing/watchDrawings.ts', '/repo/mobile/src/page/pageRender.ts', '/repo/mobile/src/review/ReviewView.tsx', '/repo/client/src/drawings/drawingPicture.ts', undefined])
+      expect(forbiddenImport('@excalidraw/excalidraw', importer)).toBe('the drawing engine')
+  })
+
   // YAZ-5158 (3A3): the desktop bridge and the app's storage wrapper are forbidden by path too.
   it('the desktop bridge (client/src/api) and the app storage wrapper (client/src/lib/storage), by alias or by path', () => {
     for (const id of ['@client/api', '@client/api.ts', '/repo/client/src/api.ts', '/repo/client/src/api', '@client/lib/storage', '/repo/client/src/lib/storage.ts'])

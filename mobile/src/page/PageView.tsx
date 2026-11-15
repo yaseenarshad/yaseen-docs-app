@@ -5,6 +5,7 @@ import { Frame } from '../screens/Frame'
 import { setSearchNotice } from '../search/searchState'
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
+import { useDrawings } from '../drawing/useDrawings'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
@@ -40,6 +41,8 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
   const media = useVaultMedia()
   // Pictures and sounds come as they near the screen; a new piece or an embedded card is watched too.
   useMediaWatch(host, media)
+  // YAZ-5440: its drawings, drawn on the phone when they near the screen; nothing is saved.
+  useDrawings(host, media)
 
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')

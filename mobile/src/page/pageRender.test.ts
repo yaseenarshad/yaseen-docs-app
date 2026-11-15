@@ -40,7 +40,8 @@ const look: PageLook = {
     if (inner === 'DEMO-77') return { kind: 'missing-card', id: 'DEMO-77' }
     if (inner === 'pic.png') return { kind: 'picture', path: 'assets/pic.png', alt: 'pic.png' }
     if (inner === 'song.mp3') return { kind: 'sound', path: 'assets/song.mp3' }
-    if (inner.endsWith('.excalidraw')) return { kind: 'drawing', name: inner }
+    if (inner.endsWith('.excalidraw')) return { kind: 'drawing', name: inner, path: inner === 'gone.excalidraw' ? null : `boards/${inner}` }
+    if (inner.endsWith('.drawio')) return { kind: 'drawing', name: inner, path: `boards/${inner}` }
     return { kind: 'text', text: `![[${inner}]]` }
   },
   asset: (src) => (src === 'pic.png' || src === 'assets/pic.png' ? 'assets/pic.png' : src === 'Guide.pdf' ? 'docs/Guide.pdf' : src === 'Trip%20plan.md' ? 'Trip plan.md' : null),
@@ -227,12 +228,19 @@ describe('a page, read only, with no editor (YAZ-5079)', () => {
     expect([...el.querySelectorAll('.wikilink--unresolved')][1].getAttribute('aria-label')).toBe('Missing page · DEMO-99')
   })
 
-  it('embeds: a card in place, a missing card as the Mac says it, a sound, a drawing to open on the Mac', async () => {
-    const el = await draw('![[DEMO-40]]\n\n![[DEMO-77]]\n\n![[song.mp3]]\n\n![[board.excalidraw]]\n\n![[Some page]]')
+  it('embeds: a card in place, a missing card as the Mac says it, a sound, a drawing to draw, a draw.io file to open on the Mac', async () => {
+    const el = await draw('![[DEMO-40]]\n\n![[DEMO-77]]\n\n![[song.mp3]]\n\n![[board.excalidraw]]\n\n![[plan.drawio]] and ![[gone.excalidraw]]\n\n![[Some page]]')
     expect(el.querySelector('[data-card-embed]')?.getAttribute('data-card-embed')).toBe('DEMO-40')
     expect(el.querySelector('.card-embed--missing')?.textContent).toBe('Missing card · DEMO-77')
     expect(el.querySelector('[data-vault-sound]')?.getAttribute('data-vault-sound')).toBe('assets/song.mp3')
-    expect(el.querySelector('.page-media--board')?.textContent).toBe('Drawing · board.excalidraw · Open it on the Mac')
+    // YAZ-5440: an Excalidraw drawing is a box the page fills with its picture (`drawing/watchDrawings.ts`), a block.
+    const box = el.querySelector('figure[data-vault-drawing]')
+    expect(box?.getAttribute('data-vault-drawing')).toBe('boards/board.excalidraw')
+    expect(box?.parentElement?.tagName).not.toBe('P')
+    expect(box?.textContent).toBe('Drawing · board.excalidraw')
+    // A plain draw.io file: the line. A drawing the vault does not have: "Missing".
+    expect([...el.querySelectorAll('.page-media--board')].map((e) => e.textContent)).toEqual(['Drawing · plan.drawio · Open it on the Mac'])
+    expect(el.querySelector('.page-media--missing')?.textContent).toBe('Missing drawing · gone.excalidraw')
     expect(el.textContent).toContain('![[Some page]]')
   })
 
