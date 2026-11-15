@@ -9,10 +9,11 @@
  * `keep`, and no fold ever removes or renames one.
  */
 import { folderValues, setFolderValue } from './folderValues'
-import { parseFrontmatter, renameFrontmatterKey, setFrontmatterIn, splitFrontmatter } from './frontmatter'
+import { parseFrontmatter, renameFrontmatterKey, setFrontmatterIn } from './frontmatter'
+import { keyFold, splitFrontmatter } from './frontmatterSplit'
 
-/** The form two keys are compared in: `Dessert Column`, ` dessert column ` and `DESSERT COLUMN` are one key. */
-export const keyFold = (key: string): string => key.trim().toLowerCase()
+/** The form two keys are compared in (lives in `./frontmatterSplit`, no imports, YAZ-5509). */
+export { keyFold }
 
 /** Are `a` and `b` the same key? */
 export const sameKey = (a: string, b: string): boolean => a === b || keyFold(a) === keyFold(b)

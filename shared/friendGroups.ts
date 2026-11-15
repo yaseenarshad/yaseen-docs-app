@@ -22,7 +22,7 @@ import {
 import { BrokenList, ListError, NewerList, latestList, listErrorCode, openFriendsList, writeList } from './friendListHome'
 import { Elsewhere, HomeGone, pinPointer, pendingRemove, removeFriend, type ListCache, type ListOptions, type RemoveResult } from './friendsList'
 import type { GistBudget } from './friendSend'
-import type { FriendDay, FriendStats } from './friendStats'
+import type { FriendDay, FriendStats } from './friendStatsFormat'
 
 /**
  * GROUPS RUN BY AN ADMIN (YAZ-5084, 4E3; decision 18; round 14: remove, leave, "Delete group"; round 16: one pointer

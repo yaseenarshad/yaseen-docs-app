@@ -1,8 +1,7 @@
-import { splitFrontmatter } from './frontmatter'
+import { keyFold, splitFrontmatter } from './frontmatterSplit'
 import { closesFence, fenceOf } from './fences'
 import { canonicalPageId, isNumberId } from './pageId'
 import { inLineEnds, withLf } from './lineEnds'
-import { keyFold } from './propertyKeys'
 
 /**
  * PAGE CARDS (YAZ-4946, YAZ-4959 D3): a card is a ```` ```card ```` fence in a Markdown page, and its ONE card line

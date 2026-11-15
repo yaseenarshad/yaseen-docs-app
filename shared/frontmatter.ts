@@ -1,4 +1,5 @@
 import { type Document, Scalar, isMap, isScalar, parse, parseDocument } from 'yaml'
+import { splitFrontmatter } from './frontmatterSplit'
 
 /**
  * Frontmatter handling rule (locked in GRO-1961):
@@ -7,28 +8,11 @@ import { type Document, Scalar, isMap, isScalar, parse, parseDocument } from 'ya
  * strips the leading frontmatter block BEFORE loading markdown into Crepe and
  * re-prepends it byte-identically on save (`frontmatter + body`).
  *
- * A frontmatter block is: file starts with `---\n` (or `---\r\n`), followed by
- * any lines (possibly none — `---\n---\n` is the empty block a delete of the
- * last key leaves behind, GRO-2216), terminated by a line that is exactly
- * `---` (or `...`).
+ * The block rule and `splitFrontmatter` live in `./frontmatterSplit` (no imports, YAZ-5509).
  *
  * Shared with the main process's Bases index (GRO-2127), which parses the block via `parseFrontmatter`.
  */
-export interface SplitMarkdown {
-  /** The raw frontmatter block including both `---` fences and trailing newline; '' if none. */
-  frontmatter: string
-  /** Everything after the frontmatter block. */
-  body: string
-}
-
-const FM_RE = /^(---\r?\n(?:[\s\S]*?\r?\n)?(?:---|\.\.\.)[ \t]*(?:\r?\n|$))/
-
-export function splitFrontmatter(markdown: string): SplitMarkdown {
-  const m = FM_RE.exec(markdown)
-  if (!m) return { frontmatter: '', body: markdown }
-  const frontmatter = m[1]
-  return { frontmatter, body: markdown.slice(frontmatter.length) }
-}
+export { splitFrontmatter, type SplitMarkdown } from './frontmatterSplit'
 
 const OPEN_FENCE_RE = /^---[ \t]*\r?\n/
 const CLOSE_FENCE_RE = /(?:^|\r?\n)(?:---|\.\.\.)[ \t]*(?:\r?\n)?$/

@@ -30,7 +30,7 @@ import { gistErrorCode, gistErrorResetAt, pointersOf, readListGist, type GistsAp
 import { BrokenList, NewerList, findFriendsIndex, latestList, listErrorCode } from '@shared/friendListHome'
 import { ListError, type RepoPort } from '@shared/friendListStore'
 import { PUBLISH_EVERY_MS, emptyBudget, numbersFor, numbersKey, reserveFor, sendGap, sendGate, sendNumbers, type GistBudget, type SendReason } from '@shared/friendSend'
-import { dayIn, type FriendStats, type FriendVault } from '@shared/friendStats'
+import { dayIn, type FriendStats, type FriendVault } from '@shared/friendStatsFormat'
 import type { ClosedVault } from './closedVaults'
 import { COUNT_LIMIT_MS, ClosedVaultsUnreadable, countPayloadSliced } from './countJob'
 import { pendingRemove } from '@shared/friendsList'

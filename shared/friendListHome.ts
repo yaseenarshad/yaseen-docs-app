@@ -23,7 +23,7 @@ import {
   type IndexHandle,
   type WriteOptions,
 } from './friendGists'
-import { isTimeZone, type FriendStats } from './friendStats'
+import { isTimeZone, type FriendStats } from './friendStatsFormat'
 import {
   BrokenList,
   LIST_PATH,

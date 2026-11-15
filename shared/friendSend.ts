@@ -1,6 +1,6 @@
 import { NUMBERS_FILE, gistErrorCode, gistErrorRate, gistErrorResetAt, readStatsFile, type GistDoc, type GistRate, type GistsApi } from './friendGists'
-import type { FriendDay, FriendStats } from './friendStats'
-import { FRIEND_DAYS } from './friendStats'
+import type { FriendDay, FriendStats } from './friendStatsFormat'
+import { FRIEND_DAYS } from './friendStatsFormat'
 
 /**
  * THE SEND OF THE NUMBERS (YAZ-5082, 4E1): pure rules that the phone (4E1) and the Mac (4E5) share. The HTTP calls are
