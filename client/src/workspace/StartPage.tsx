@@ -16,6 +16,7 @@ import { focusOpenDocument } from '../lib/focusHandoff'
 import type { NoticeKind } from '../lib/notice'
 import { pageLabel, useLatestTrees, type PathTitles } from '../lib/pageLabel'
 import { NameEnding } from '../sidebar/FileIcon'
+import { PlaceName } from '../sidebar/PlaceName'
 import { dirname, relTo } from '../lib/paths'
 import { shortRelativeTime } from '../lib/relativeTime'
 import { storage } from '../lib/storage'
@@ -418,7 +419,7 @@ export function StartPage({ roots, favorites, openTabs = NO_TABS, titles, onOpen
                           {!folder && <NameEnding path={row.path} always />}
                         </span>
                         {/* The folder the row is in, as the tab board names it; a row at the top of its vault names none. */}
-                        {top && dir !== stripSlash(vault) && <span className="start__where">{relTo(vault, dir).split('/').join(' / ')}</span>}
+                        {top && dir !== stripSlash(vault) && <PlaceName className="start__where" path={dir} kind="folder" label={relTo(vault, dir).split('/').join(' / ')} />}
                         {/* S20: the tag of a top row of the Favorites tab (YAZ-2631 D4), by what the app calls the vault. */}
                         {top && roots.length > 1 && <span className="tree__vault">{row.vault.name}</span>}
                         {row.last !== undefined && <span className="start__when">{shortRelativeTime(row.last, now)}</span>}

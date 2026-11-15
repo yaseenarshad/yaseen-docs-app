@@ -13,6 +13,7 @@ import { relTo, dirname } from '../lib/paths'
 import { idNeedle, marked } from '../search/marked'
 import type { SearchCandidate } from '../search/searchCandidates'
 import { FileIcon, NameEnding } from '../sidebar/FileIcon'
+import { PlaceName } from '../sidebar/PlaceName'
 import { useResultKeys } from '../sidebar/hooks/useSidebarSearch'
 import { FolderIcon } from '../views/view/icons'
 import { exploreRows } from './exploreRows'
@@ -211,10 +212,11 @@ export function ExploreSearch({ candidates, link, markedRow, recent, rowOf, root
                   {id !== null && <span className="explore__id">{marked(id, idNeedle(r, query))}</span>}
                 </span>
                 {r.snippet !== undefined && <span className="explore__snippet">{marked(r.snippet, needle)}</span>}
-                {/* A card inside a page (YAZ-5164): its page, quietly, where a page's folder stands. */}
-                {r.page !== undefined && <span className="search-results__folder">{rowOf?.(r.page)?.label ?? nameOf(r.page)}</span>}
-                {r.page === undefined && r.folder !== '' && <span className="search-results__folder">{r.folder}</span>}
-                {r.page === undefined && r.folder === '' && r.kind === 'file' && <span className="search-results__folder">{basename(r.path) === r.label ? '' : 'Vault root'}</span>}
+                {/* A card inside a page (YAZ-5164): its page, quietly, where a page's folder stands. YAZ-5402: the icon says
+                    which the slot holds, the page's or the folder's (the vault's top too). */}
+                {r.page !== undefined && <PlaceName className="search-results__folder" path={r.page} kind="page" label={rowOf?.(r.page)?.label ?? nameOf(r.page)} />}
+                {r.page === undefined && r.folder !== '' && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label={r.folder} />}
+                {r.page === undefined && r.folder === '' && r.kind === 'file' && basename(r.path) !== r.label && <PlaceName className="search-results__folder" path={dirname(r.path)} kind="folder" label="Vault root" />}
                 {at !== undefined && <span className="explore__time">{ago(at, now)}</span>}
               </li>
               </Fragment>

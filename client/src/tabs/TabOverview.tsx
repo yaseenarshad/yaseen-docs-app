@@ -21,6 +21,8 @@ import { autoWindowLabel, windowLabel } from './windowLabel'
 import { AsleepIcon } from '../views/view/icons'
 import './tabs.css'
 import { useUnit } from '../vault/unitWord'
+import { PlaceName } from '../sidebar/PlaceName'
+import { dirname } from '../lib/paths'
 
 export { SETTLE_MS, TOOLBAR_INSET } from './useCamera'
 
@@ -303,7 +305,8 @@ const Card = memo(function Card(p: CardProps) {
           {p.asleep && <AsleepIcon className="taboverview__asleep" />}
         </span>
       )}
-      {p.folder !== null && <span className="taboverview__folder">{p.folder}</span>}
+      {/* YAZ-5402: the folder icon before the folder. */}
+      {p.folder !== null && <PlaceName className="taboverview__folder" path={dirname(p.path)} kind="folder" label={p.folder} />}
       {p.named && <span className="taboverview__pagename">{unit('Page')}: {p.page}</span>}
       {p.picture && p.root !== null ? (
         <span className="taboverview__shot">

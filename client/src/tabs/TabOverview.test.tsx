@@ -33,6 +33,7 @@ vi.mock('../sidebar/BoardPreview', () => ({ default: ({ node }: { node: { path: 
 import { setStripTarget } from './stripDrop'
 import tabsCss from './tabs.css?inline'
 import { api } from '../api'
+import { placeOf as placeNameOf } from '../test-placeName'
 const readHeads = vi.mocked(api.readHeads)
 
 /** The canvas as `storage` holds it (YAZ-3343 D1), for these tests: a patch lands at once, by the shared rule. */
@@ -935,6 +936,8 @@ describe('TabOverview', () => {
     const { el } = await mount()
     expect(el.querySelectorAll('.taboverview__island, .taboverview__vault-name').length).toBe(0)
     const faces = (win: string) => [...el.querySelectorAll<HTMLElement>(`.taboverview__page[data-win="${win}"]`)].map((c) => [c.querySelector('.taboverview__title')?.textContent, c.querySelector('.taboverview__folder')?.textContent])
+    // YAZ-5402: each card's folder with the folder icon, the kind and the path in its tooltip.
+    expect(placeNameOf(el.querySelector('.taboverview__page[data-win="me"] .taboverview__folder'))).toEqual({ kind: 'folder', icon: 'folder', title: 'Folder: Pages' })
     // This window has two vaults: the vault's name leads; its top level is the vault's name alone.
     expect(faces('me')).toEqual([
       ['a', 'Pages'],
@@ -1092,10 +1095,11 @@ describe('TabOverview', () => {
     await settled()
     // The TARGET window's vaults: both of w3's (it was opened on this window's two).
     expect(texts(search, '.search-results__label')).toEqual(expect.arrayContaining([expect.stringContaining('Quarterly'), expect.stringContaining('Quiet')]))
-    // Each result shows its file's icon (YAZ-3440 D11); the board's cards keep their pictures and get none.
+    // Each result shows its file's icon (YAZ-3440 D11); the board's cards keep their pictures and get none (their folder line's
+    // folder icon, YAZ-5402, is the place's, not the card's).
     expect([...search.querySelectorAll<HTMLElement>('.search-results__label > .file-icon')].map((icon) => icon.dataset.icon)).toEqual(expect.arrayContaining(['markdown']))
     expect(search.querySelectorAll('.search-results__label > .file-icon')).toHaveLength(search.querySelectorAll('[role="option"]').length)
-    expect([...el.querySelectorAll('.file-icon')].every((icon) => search.contains(icon))).toBe(true)
+    expect([...el.querySelectorAll('.file-icon:not(.place-name__icon)')].every((icon) => search.contains(icon))).toBe(true)
     act(() => [...search.querySelectorAll<HTMLElement>('[role="option"]')].find((row) => row.textContent?.includes('Quarterly'))!.click())
     expect(moveTo).toHaveBeenCalledExactlyOnceWith('w3', '/w/quarterly.md', { background: true })
     // Its card is kept in the frame's grid where it was placed.
