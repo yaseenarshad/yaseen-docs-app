@@ -46,4 +46,12 @@ describe('new-places.json (YAZ-4252 D3)', () => {
     expect(await failure(setNewPlaces(root, [null, null, null]))).toMatchObject({ code: 'INVALID_CONFIG' })
     expect(await readFile(file(root), 'utf8')).toBe('{ nope')
   })
+
+  it('YAZ-5483: a save keeps a key of a later build (an older Mac never erases it)', async () => {
+    const root = await makeVault()
+    await mkdir(path.join(root, VAULT_CONFIG_DIR), { recursive: true })
+    await writeFile(file(root), JSON.stringify({ version: 1, places: [null, null, null], drawings: 'Boards', comments: { hint: true } }))
+    await setNewPlaces(root, [path.join(root, 'Pages'), null, null])
+    expect(JSON.parse(await readFile(file(root), 'utf8'))).toEqual({ version: 1, places: ['Pages', null, null], drawings: 'Boards', comments: { hint: true } })
+  })
 })

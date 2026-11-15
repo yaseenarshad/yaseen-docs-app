@@ -90,6 +90,9 @@ export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = Object.freeze({
   weights: [...DEFAULT_CARD_WEIGHTS],
 }) as ReviewSettings
 
+/** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
+export const REVIEW_SETTINGS_KEYS: readonly string[] = Object.keys(DEFAULT_REVIEW_SETTINGS)
+
 const wholeIn = (v: unknown, min: number, max: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max
 const isWeights = (v: unknown): v is number[] => Array.isArray(v) && [17, 19, 21].includes(v.length) && v.every((n) => typeof n === 'number' && Number.isFinite(n))
 

@@ -55,7 +55,8 @@ const DEFAULT_POLL_MS = 60_000
 
 export interface GitSyncHost {
   readConfig(root: string, name: string): Promise<unknown>
-  writeConfig(root: string, name: string, value: unknown): Promise<void>
+  /** `known`: the keys this writer owns; every other key of the file stays (YAZ-5483, `vaultConfig.writeConfig`). */
+  writeConfig(root: string, name: string, value: unknown, known?: readonly string[]): Promise<void>
   subscribeVault(root: string, listener: (ev: WatchEvent) => void): () => void
   subscribeConfig(root: string, listener: (change: VaultConfigChange) => void): () => void
   onStatus(status: GithubSyncStatus): void
@@ -416,7 +417,7 @@ export function createGitSync(host: GitSyncHost): GitSyncManager {
     },
 
     async setEnabled(root, enabled) {
-      await host.writeConfig(root, GITHUB_SYNC_FILE, { enabled } satisfies { enabled: boolean })
+      await host.writeConfig(root, GITHUB_SYNC_FILE, { enabled } satisfies { enabled: boolean }, ['enabled'])
       if (!enabled) {
         drop(root)
         const off: GithubSyncStatus = { root, state: 'off', enabled: false }

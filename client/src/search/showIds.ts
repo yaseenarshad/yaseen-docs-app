@@ -12,7 +12,7 @@
  * `id`; a title or a files-list row reads the index's cached path map, never the file.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { DEFAULT_SHOW_IDS, SHOW_IDS_FILE, idInFiles, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type ShowIdsSettings } from '@shared/showIds'
+import { DEFAULT_SHOW_IDS, SHOW_IDS_FILE, SHOW_IDS_KEYS, idInFiles, sanitizeShowIds, type IdsInFiles, type IdsInSearch, type ShowIdsSettings } from '@shared/showIds'
 import { api } from '../api'
 import { pathInfo } from '../editor/wikilink/linkPillLook'
 import type { WikilinkResolveSource } from '../editor/wikilink/wikilinkPlugin'
@@ -59,7 +59,7 @@ export function useShowIds(root: string | null): ShowIdsState {
       if (root === null) return
       const clean = sanitizeShowIds(next)
       setSettings(clean)
-      api.vaultConfig.write(root, SHOW_IDS_FILE, clean).catch(() => api.vaultConfig.read(root, SHOW_IDS_FILE).then((raw) => setSettings(sanitizeShowIds(raw)), () => undefined))
+      api.vaultConfig.write(root, SHOW_IDS_FILE, clean, SHOW_IDS_KEYS).catch(() => api.vaultConfig.read(root, SHOW_IDS_FILE).then((raw) => setSettings(sanitizeShowIds(raw)), () => undefined))
     },
     [root],
   )

@@ -46,6 +46,16 @@ describe('icons.json (YAZ-3440 D8)', () => {
     expect(await getIcons(root)).toEqual({ paths: { [path.join(root, 'ok')]: 'python' } })
   })
 
+  it('YAZ-5483: a save and a rename carry-over keep the keys of a later build (`rules`, `colours`)', async () => {
+    const root = await makeVault()
+    const later = { rules: [{ match: 'src', kind: 'folder', icon: 'folder-src' }], colours: { Docs: 'red' } }
+    await seed(root, JSON.stringify({ version: 1, paths: { old: 'python' }, ...later }))
+    await setIcons(root, { paths: { [path.join(root, 'Docs')]: 'folder-docs' } })
+    expect(await onDisk(root)).toEqual({ version: 1, paths: { Docs: 'folder-docs' }, ...later })
+    await renamePath([root], path.join(root, 'Docs'), path.join(root, 'Notes'))
+    expect(await onDisk(root)).toEqual({ version: 1, paths: { Notes: 'folder-docs' }, ...later })
+  })
+
   it('a pick outside the vault is refused', async () => {
     const root = await makeVault()
     await expect(setIcons(root, { paths: { '/elsewhere/x.md': 'python' } })).rejects.toMatchObject({ code: 'BAD_REQUEST' })

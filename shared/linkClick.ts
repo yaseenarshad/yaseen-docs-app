@@ -9,6 +9,8 @@ export interface LinkClickSettings {
   click: LinkClick
 }
 export const DEFAULT_LINK_CLICK: LinkClickSettings = { click: 'open' }
+/** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
+export const LINK_CLICK_KEYS: readonly string[] = Object.keys(DEFAULT_LINK_CLICK)
 
 /** What the file holds, or the default for anything else. */
 export function sanitizeLinkClick(raw: unknown): LinkClickSettings {

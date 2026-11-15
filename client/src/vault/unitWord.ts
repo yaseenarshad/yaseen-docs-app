@@ -21,7 +21,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { api } from '../api'
-import { DEFAULT_UNIT_WORD, SAME_WORD, sanitizeUnitWord, UNIT_WORD_FILE, unitTextOf, unitWordOf, type UnitText, type UnitWord, type UnitWordSettings } from './unitWordText'
+import { DEFAULT_UNIT_WORD, SAME_WORD, sanitizeUnitWord, UNIT_WORD_FILE, UNIT_WORD_KEYS, unitTextOf, unitWordOf, type UnitText, type UnitWord, type UnitWordSettings } from './unitWordText'
 
 // The pure half lives in `unitWordText.ts` (the phone imports it with no bridge); every name stays importable from here.
 export * from './unitWordText'
@@ -119,7 +119,7 @@ export function useVaultUnitWord(root: string | null): UnitWordState {
       if (root === null) return
       const clean = sanitizeUnitWord(next)
       setSettings(clean)
-      api.vaultConfig.write(root, UNIT_WORD_FILE, clean).catch(() => api.vaultConfig.read(root, UNIT_WORD_FILE).then((raw) => setSettings(sanitizeUnitWord(raw)), () => undefined))
+      api.vaultConfig.write(root, UNIT_WORD_FILE, clean, UNIT_WORD_KEYS).catch(() => api.vaultConfig.read(root, UNIT_WORD_FILE).then((raw) => setSettings(sanitizeUnitWord(raw)), () => undefined))
     },
     [root],
   )

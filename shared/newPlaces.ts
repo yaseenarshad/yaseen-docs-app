@@ -17,6 +17,9 @@ export interface NewPlacesConfig {
   places: Array<string | null>
 }
 
+/** The keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. */
+export const NEW_PLACES_KEYS: readonly string[] = ['version', 'places']
+
 /** A stored place: '' (the vault) or a relative path with no `..` segment, no leading `/` and no NUL. */
 export const isPlaceRel = (p: unknown): p is string => typeof p === 'string' && !p.startsWith('/') && !p.includes('\0') && !p.split('/').includes('..')
 

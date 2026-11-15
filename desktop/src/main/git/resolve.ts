@@ -5,6 +5,7 @@ import path from 'node:path'
 import { mergeBoards } from '@shared/boardMerge'
 import { mergePageComments, pageRest } from '@shared/commentMerge'
 import { uniteCardLines } from '@shared/cardMerge'
+import { mergeConfigFile } from '@shared/configMerge'
 import { parseFrontmatter, splitFrontmatter } from '@shared/frontmatter'
 import { titleOf } from '@shared/pageName'
 import { isBoard, isDiagram, isDrawing, isMarkdown } from '@shared/fileKind'
@@ -40,9 +41,14 @@ import { FRIENDS_LIST } from './friendsListRule'
  *    a conflicted copy". A page still never gets a `<<<<<<<` marker.) A `.folder.md` is a page here.
  *    Before all of that, a CARD both sides answered or marked takes the same line on both sides (YAZ-5089,
  *    `shared/cardMerge.ts`): the union of its reviews, a three-way result for its marks — so a review clash makes no copy;
- *  - the vault's `people.json` (YAZ-4615 D1) merges card by card, the newer card winning.
+ *  - the vault's `people.json` (YAZ-4615 D1) merges card by card, the newer card winning;
+ *  - every OTHER settings file straight in the vault's `.yaseendocs/` (YAZ-5483: `text-formatting.json`,
+ *    `link-pills.json`, `review.json`, `new-places.json`, `daily-pages.json`, …, and each one to come) merges KEY BY
+ *    KEY (`shared/configMerge.ts`): one side's change wins, a clash takes the remote's value and is logged, and a side
+ *    that is not valid JSON is dropped for the valid one. So no settings file stops the vault's sync. Not by key:
+ *    the files above with their own merge, and `NOT_BY_KEY` (page IDs, property declarations).
  *
- * Everything else — any other file, any other `.yaseendocs/` config — is NOT settled here: one such
+ * Everything else — any other file — is NOT settled here: one such
  * conflict at a stop aborts the whole rebase before anything is written, exactly as Docs did before
  * (`attention/conflict`, "the same lines changed on two machines — nothing was lost, but this needs
  * a human").
@@ -80,6 +86,26 @@ const FAVORITES_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_FILE}`
 const FAVORITES_WORKSPACE_PATH = `${VAULT_CONFIG_DIR}/${FAVORITES_WORKSPACE_FILE}`
 const ICONS_PATH = `${VAULT_CONFIG_DIR}/${ICONS_FILE}`
 const PEOPLE_PATH = `${VAULT_CONFIG_DIR}/${PEOPLE_FILE}`
+
+/**
+ * The `.yaseendocs/` files that are not settings and must never merge key by key (YAZ-5483): a vault's ID letters
+ * (`letters`, `was` and `kept` hold together, and a page's ID depends on them), a backfill plan (each old ID to ONE
+ * number: a key-by-key merge could give two pages one number), and the property declarations (their own strict
+ * `version` rule: a newer file is never written by an older build).
+ */
+const NOT_BY_KEY: ReadonlySet<string> = new Set(['ids.json', 'ids-backfill.json', 'properties.json'])
+
+/**
+ * A settings file AutoSync merges key by key (YAZ-5483): a `<name>.json` straight in the vault's `.yaseendocs/`
+ * (the vault-config door's only shape), by RULE, so a file added later is covered too. Files in a subfolder (per-Mac
+ * ID counters) and the files with their own merge are not.
+ */
+export const mergesByKey = (rel: string): boolean => {
+  if (!rel.startsWith(`${VAULT_CONFIG_DIR}/`)) return false
+  const name = rel.slice(VAULT_CONFIG_DIR.length + 1)
+  if (name.includes('/') || !name.endsWith('.json') || name === '.json' || NOT_BY_KEY.has(name)) return false
+  return rel !== FRIENDS_LIST && rel !== SHARES_PATH && rel !== FAVORITES_PATH && rel !== FAVORITES_WORKSPACE_PATH && rel !== ICONS_PATH && rel !== PEOPLE_PATH
+}
 
 /**
  * The file's new contents with every entry of `entries` present, or null when it already has them
@@ -310,7 +336,7 @@ function pageTitle(rel: string, text: string): string {
 
 /** Whether sync may settle a conflict on `rel` at all: a board, a page (YAZ-4615 D4, D9), or one of the per-entry list files. */
 const settles = (rel: string): boolean =>
-  rel === FRIENDS_LIST || isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH
+  rel === FRIENDS_LIST || isBoard(rel) || isMarkdown(rel) || rel === SHARES_PATH || rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH || rel === ICONS_PATH || rel === PEOPLE_PATH || mergesByKey(rel)
 
 /**
  * The merge a file knows how to do, or null for keep-both. `clashes: null` marks a merge nobody
@@ -324,6 +350,13 @@ function mergeText(rel: string, base: string | null, theirs: string, mine: strin
   if (rel === FAVORITES_PATH || rel === FAVORITES_WORKSPACE_PATH) return quiet(mergeFavoritesFile(base, theirs, mine))
   if (rel === ICONS_PATH) return quiet(mergeIconsFile(base, theirs, mine))
   if (rel === PEOPLE_PATH) return quiet(mergePeopleFile(base, theirs, mine))
+  if (mergesByKey(rel)) {
+    const merged = mergeConfigFile(base, theirs, mine)
+    // Logged, not shown: a setting is not a page, and the remote's value is the one every other machine already has.
+    if (merged.clashes.length > 0) console.warn(`[git-sync] ${rel}: both machines changed ${merged.clashes.join(', ')}; the remote's value kept`)
+    if (merged.dropped !== null) console.warn(`[git-sync] ${rel}: ${merged.dropped === 'both' ? "neither side is" : `the ${merged.dropped === 'mine' ? 'local' : 'remote'} side is not`} valid JSON; ${merged.dropped === 'theirs' ? "the local side" : "the remote's side"} kept`)
+    return quiet(merged.text)
+  }
   return null
 }
 

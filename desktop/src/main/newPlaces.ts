@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { NEW_PLACE_SLOTS, NEW_PLACES_FILE, parseNewPlaces, type NewPlacesConfig } from '@shared/newPlaces'
+import { NEW_PLACE_SLOTS, NEW_PLACES_FILE, NEW_PLACES_KEYS, parseNewPlaces, type NewPlacesConfig } from '@shared/newPlaces'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { toAbs, toRel, under } from './favorites'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
@@ -47,7 +47,7 @@ export async function setNewPlaces(root: string, places: unknown): Promise<void>
     const raw = await readRaw(r)
     if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'new-places.json is malformed; fix or delete it', { path: raw.file })
     const value: NewPlacesConfig = { version: 1, places: (places as Array<string | null>).map((p) => (p === null ? null : toRel(r, p))) }
-    await writeConfig(r, NEW_PLACES_FILE, value)
+    await writeConfig(r, NEW_PLACES_FILE, value, NEW_PLACES_KEYS)
   })
 }
 

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
+import { DEFAULT_REVIEW_SETTINGS, REVIEW_SETTINGS_FILE, REVIEW_SETTINGS_KEYS, sanitizeReviewSettings, type ReviewSettings } from '@shared/reviews'
 import { isRecord } from '@shared/guards'
 import { BridgeRequestError, api } from '../api'
 import type { NoticeKind } from '../lib/notice'
@@ -97,7 +97,7 @@ export function useReviewSettings(root: string | null, onNotice: (text: string, 
       const changed = Object.fromEntries(Object.entries(clean).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(before[key as keyof ReviewSettings])))
       setSettings(clean)
       held.current = { ...held.current, ...changed }
-      api.vaultConfig.write(root, REVIEW_SETTINGS_FILE, held.current).catch(() =>
+      api.vaultConfig.write(root, REVIEW_SETTINGS_FILE, held.current, REVIEW_SETTINGS_KEYS).catch(() =>
         api.vaultConfig.read(root, REVIEW_SETTINGS_FILE).then(
           (raw) => setSettings(sanitizeReviewSettings(raw)),
           () => undefined,

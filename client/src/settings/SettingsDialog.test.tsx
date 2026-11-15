@@ -468,7 +468,7 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Images', []],
       ['Files & Links', []],
       ['Folder pages', []],
-      ['Cards', [['settings-cards', "These settings are saved in this vault's .yaseendocs folder and sync with it."]]],
+      ['Cards', [['settings-cards', "These settings are saved in this vault's .yaseendocs folder and sync with it, except the ones marked For the whole app."]]],
       ['Sync', [['settings-sync', "These settings are saved in this vault's .yaseendocs folder, not app-wide."]]],
       ['Memory', [['settings-memory', 'The app frees memory by itself. A tab that you do not use goes to sleep. A window that gets too big reloads. You do not need to do anything here.']]],
       ['Hotkeys', []],
@@ -495,16 +495,41 @@ describe('SettingsDialog: a page for each section (YAZ-2709, amending the one lo
       ['Images', []],
       ['Files & Links', [{ text: 'Vault: Work', under: 'This vault', className: 'settings-group__hint' }]],
       ['Folder pages', []],
-      ['Cards', [{ text: 'Vault: Work', under: 'Cards', className: 'settings-section__note' }]],
+      // YAZ-5483: Cards names the vault on each group saved in review.json, not on the page (Card look is the app's).
+      [
+        'Cards',
+        [
+          { text: 'Vault: Work', under: undefined, className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'Daily limits', className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'Answers', className: 'settings-group__hint' },
+          { text: 'Vault: Work', under: 'Scheduling', className: 'settings-group__hint' },
+        ],
+      ],
       ['Sync', [{ text: 'Vault: Work', under: 'Sync', className: 'settings-section__note' }]],
       ['Memory', []],
       ['Hotkeys', []],
     ])
     clickNav(el, 'Cards')
-    expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(['Vault: Work', "These settings are saved in this vault's .yaseendocs folder and sync with it."])
+    expect([...el.querySelectorAll('.settings-section__note')].map((n) => n.textContent)).toEqual(["These settings are saved in this vault's .yaseendocs folder and sync with it, except the ones marked For the whole app."])
     unmount()
     const one = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false })
     expect(lines(one.el).flatMap(([, found]) => found)).toEqual([])
+  })
+
+  it("YAZ-5483: Cards says which rows are the vault's and which are for the whole app — Card look and the Inbox O row are the app's", () => {
+    const { el } = mount({ ...DEFAULT_SETTINGS }, status(), REVIEW_ON, { enabled: true, held: false }, 'Work')
+    clickNav(el, 'Cards')
+    const groups = [...el.querySelectorAll<HTMLElement>('#settings-cards .settings-group')].map((g) => ({
+      title: g.querySelector('.settings-group__title')?.textContent,
+      vault: [...g.querySelectorAll('.settings-group__hint')].some((h) => h.textContent === 'Vault: Work'),
+      wholeApp: [...g.querySelectorAll('.settings-group__hint')].some((h) => h.textContent?.startsWith('For the whole app') === true),
+    }))
+    expect(groups.find((g) => g.title === 'Card look')).toEqual({ title: 'Card look', vault: false, wholeApp: true })
+    for (const title of [undefined, 'Daily limits', 'Answers', 'Scheduling']) expect(groups.find((g) => g.title === title), String(title)).toMatchObject({ vault: true, wholeApp: false })
+    expect(el.querySelector('#settings-cards [data-setting="inboxOpenAt"] .setting__hint')?.textContent).toMatch(/For the whole app\.$/)
+    // A Card look row's own hint does not repeat it: its group says it.
+    expect(el.querySelector('#settings-cards [data-setting="shownHiddenWords"] .setting__hint')?.textContent).not.toContain('whole app')
+    unmount()
   })
 
   it('Hotkeys is a page like the others, under the divider: clicking it swaps the pane for its groups, one row per key, and takes aria-current="page"', () => {

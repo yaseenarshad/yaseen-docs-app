@@ -277,6 +277,12 @@ export function sanitizeLinkPills(raw: unknown): LinkPills {
   return sanitizeV2(raw)
 }
 
+/**
+ * The top-level keys this build's writer owns (YAZ-5483): every other key of the file is kept on a save. The version 1
+ * fields are owned too: a save converts them (`fromV1`), so they leave the file.
+ */
+export const LINK_PILLS_KEYS: readonly string[] = ['version', 'format', 'box', 'parts', 'vault', ...V1_FIELDS]
+
 /** What `vaultConfig.write` stores: the version, then the fields. */
 export const linkPillsFile = (pills: LinkPills): Record<string, unknown> => ({ version: LINK_PILLS_VERSION, ...sanitizeLinkPills(pills) })
 

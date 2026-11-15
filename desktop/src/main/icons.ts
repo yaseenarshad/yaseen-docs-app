@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { VAULT_CONFIG_DIR } from '@shared/types'
-import { cleanIconPaths, ICONS_FILE, parseIconsConfig, remapIconPaths, type IconsConfig, type VaultIcons } from '@shared/vaultIcons'
+import { cleanIconPaths, ICONS_FILE, ICONS_KEYS, parseIconsConfig, remapIconPaths, type IconsConfig, type VaultIcons } from '@shared/vaultIcons'
 import { BridgeFailure, createRootChain, requireAbsPath } from './fs/fsUtils'
 import { deletedAt, owningRoot, renamedTo, toAbs, toRel, under } from './favorites'
 import { readConfigDetailed, subscribeConfig, writeConfig } from './vaultConfig'
@@ -56,7 +56,7 @@ export async function setIcons(root: string, icons: unknown): Promise<void> {
   await chained(r, async () => {
     const raw = await readRaw(r)
     if (raw.state === 'bad') throw new BridgeFailure('INVALID_CONFIG', 'icons.json is malformed; fix or delete it', { path: raw.file })
-    await writeConfig(r, ICONS_FILE, toConfig(r, { paths: v.paths as Record<string, string> }))
+    await writeConfig(r, ICONS_FILE, toConfig(r, { paths: v.paths as Record<string, string> }), ICONS_KEYS)
   })
 }
 
@@ -77,7 +77,7 @@ function repair(roots: readonly string[], p: string, map: (abs: string) => strin
     const icons = toVault(root, raw.config)
     const next = remapIconPaths(icons.paths, map)
     if (next === null) return
-    await writeConfig(root, ICONS_FILE, toConfig(root, { paths: next }))
+    await writeConfig(root, ICONS_FILE, toConfig(root, { paths: next }), ICONS_KEYS)
   })
 }
 
