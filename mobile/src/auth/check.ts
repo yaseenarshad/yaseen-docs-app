@@ -48,7 +48,7 @@ export type SignInError =
   | { kind: 'no-access'; repo: string }
   /**
    * The token sees the repo (Metadata) but may not read its files: Contents is "No access", GitHub's default
-   * (YAZ-5165). A 403 on the branch read or the `.yaseendocs` read.
+   *. A 403 on the branch read or the `.yaseendocs` read.
    */
   | { kind: 'no-contents'; repo: string }
   | { kind: 'branch-not-found'; repo: string; branch: string }
@@ -57,7 +57,7 @@ export type SignInError =
   /** The token can read but not write (the row "only read access"), or the repo is archived. */
   | { kind: 'read-only'; repo: string }
   | { kind: 'already-added'; repo: string; branch: string }
-  /** YAZ-5408: the token's list of repos (`GET /user/repos`) is empty. The token was given no repo. */
+  /** The token's list of repos (`GET /user/repos`) is empty. The token was given no repo. */
   | { kind: 'no-repos' }
   | { kind: 'offline' }
   | { kind: 'github-down' }
@@ -157,7 +157,7 @@ async function gistsAccess(client: GithubClient, userHeaders: Headers): Promise<
   }
 }
 
-/** A GitHub failure that is not about one repo, as a sign-in result (also for the token's list of repos, YAZ-5408). */
+/** A GitHub failure that is not about one repo, as a sign-in result (also for the token's list of repos). */
 export function fromGithub(error: GithubError): SignInError {
   switch (error.code) {
     case 'UNAUTHORIZED':

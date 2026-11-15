@@ -45,7 +45,7 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
   if (list.vaults.some((v) => vaultId(v) === id)) return { ok: false, error: { kind: 'already-added', repo, branch } }
 
   const now = deps.now ?? Date.now
-  // The vault may have left the phone earlier in this session; the store refuses its writes until now (YAZ-5175).
+  // The vault may have left the phone earlier in this session; the store refuses its writes until now.
   deps.store.admit(id)
   await deps.tokens.write(id, checked.token)
   try {
@@ -69,7 +69,7 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
 export async function signInAgain(vault: string, token: string, deps: SignInDeps, expiresAt?: string | null): Promise<SignInOutcome> {
   const known = (await loadVaultList(deps.store)).vaults.find((v) => vaultId(v) === vault)
   if (known === undefined) throw new Error(`${vault} is not on this phone`)
-  // YAZ-5281: the end date that a scanned code holds is kept with the new token, as at a first sign-in.
+  // The end date that a scanned code holds is kept with the new token, as at a first sign-in.
   const checked = await checkSignIn({ repo: known.repo, branch: known.branch, token, expiresAt }, deps)
   if (!checked.ok) return checked
   await deps.tokens.write(vault, checked.token)
