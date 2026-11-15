@@ -12,7 +12,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * The screen fixtures of 4C (YAZ-5079): Search, a page and a card on the made-up vault of `readerVault.ts`, for the
  * screenshots (`#fixture=page`). Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-code'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -63,6 +63,17 @@ const THREE_CARDS = [
   cardBlock('DEMO-53', 'Which river runs through Vienna?\n---\nThe Danube', ['title "River of Vienna"', 'notitle', 'off']),
 ].join('\n\n')
 
+/** YAZ-5448: a page with long code lines (a code block, a card's code block, a long inline code and URL): each wraps. */
+const LONG_CODE = 'const answer = someVeryLongFunctionName(firstArgument, secondArgument, thirdArgument, fourthArgument)'
+const LONG_URL = 'https://example.com/a/very/long/path/that/never/stops/with-no-spaces-at-all-1234567890abcdef'
+const CODE_PAGE = [
+  '# Code notes',
+  'A block with a long line:',
+  ['```ts', 'function show() {', `  if (ready) {`, `    ${LONG_CODE}`, '  }', '}', '```'].join('\n'),
+  `A long inline code: \`${LONG_CODE.replace(/ /g, '')}\`, and a long address: ${LONG_URL}`,
+  cardBlock('DEMO-61', ['What does {{show}} print?', '', '```js', `    ${LONG_CODE}`, '```', '---', `It prints \`${LONG_URL}\``].join('\n'), ['title "Long code"']),
+].join('\n\n')
+
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
@@ -72,9 +83,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       ? { 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` }
       : name === 'page-cards' || name === 'search-tree' || name === 'search-found'
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
-        : name === 'page-drawing'
-          ? DRAWING_FILES
-          : {}
+        : name === 'page-code'
+          ? { 'Code notes.md': `---\ntitle: Code notes\n---\n\n${CODE_PAGE}\n` }
+          : name === 'page-drawing'
+            ? DRAWING_FILES
+            : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -164,6 +177,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'search-clear':
       document.querySelector<HTMLInputElement>('input[name="search"]')?.focus()
       await typed('spa')
+      break
+    case 'page-code':
+      await typed('code notes')
+      await open(/^Code notes/, '.reader__body pre')
       break
     case 'page-tricks':
       await typed('parser')
