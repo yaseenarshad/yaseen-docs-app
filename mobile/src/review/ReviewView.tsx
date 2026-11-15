@@ -296,7 +296,7 @@ function SessionScreen({
   // The end of the card (YAZ-5415; the Mac's end cue, YAZ-5049 round 3): one more tap when every part shows makes ✕
   // and ✓ bounce once with a soft ring. Two names, so each new tap plays it again.
   const [nudge, setNudge] = useState<{ key: string | null; n: number }>({ key: null, n: 0 })
-  // The part a step just showed: it flashes once, and VoiceOver hears it.
+  // The part a step just showed: VoiceOver hears it (YAZ-5538: no flash; it simply shows).
   const lastShown = useRef<number | null>(null)
   const advance = () => {
     if (page === null || guarded) return
@@ -330,9 +330,7 @@ function SessionScreen({
     lastStep.current = step
     if (before.key !== step.key || (step.open.length === 0 && step.sides === 1)) return setRevealed('')
     const body = cardBox.current?.querySelector('.phone-card__body')
-    // The part that shows flashes once (the drawing is in: the card draws in its own effect, before this one).
     const word = step.open.length > before.open.length ? lastShown.current : null
-    if (word !== null) body?.querySelector(`[data-hidden="${word}"]`)?.classList.add('review__flash')
     const id = setTimeout(() => {
       if (body == null) return
       if (step.sides > before.sides) {

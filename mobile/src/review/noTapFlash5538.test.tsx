@@ -7,8 +7,9 @@ import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing
 
 /**
  * YAZ-5538: no flash on a tap on the card. The card had a press look (`.review__stage:active .review__card`: the
- * accent mixed in, with a 0.12 s fade) that flashed purple on each tap. It is gone, as the Mac's card has none, and the
- * phone's own tap highlight stays off. The tap still does its work: the next hidden word, else ✕ and ✓ ring. Made-up data.
+ * accent mixed in, with a 0.12 s fade) that flashed purple on each tap, a hidden word had a press tint, and the word a
+ * tap showed flashed once (`.review__flash`). All gone ("no flash: just reveal the words"); the phone's own tap
+ * highlight stays off. The tap still does its work: the next hidden word, else ✕ and ✓ ring. Made-up data.
  */
 const css = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'review.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 /** Each rule of the sheet: its selector and its body. */
@@ -32,6 +33,9 @@ describe('YAZ-5538: no flash on a tap on the card', () => {
     const card = rules.filter((r) => r.sel === '.review__card')
     expect(card.length).toBeGreaterThan(0)
     for (const r of card) expect(r.body).not.toMatch(/transition/)
+    // No press tint on a hidden word, and no flash of the word a tap shows: no rule, no keyframes.
+    expect(rules.filter((r) => /\.card__blank[^,]*:active/.test(r.sel)).map((r) => r.sel)).toEqual([])
+    expect(css).not.toMatch(/review__flash|review-flash/)
     // The browser's own tap highlight stays off on the whole screen.
     expect(rules.find((r) => r.sel === '.review--mochi')?.body).toMatch(/-webkit-tap-highlight-color: transparent;/)
   })
@@ -43,6 +47,11 @@ describe('YAZ-5538: no flash on a tap on the card', () => {
     expect(h.cardText()).toBe('Q? _ _')
     await h.tap()
     expect(h.cardText()).toBe('Q? one _')
+    // The word simply shows: nothing on it plays (no class, no animation).
+    const word = h.host.querySelector('.phone-card__body [data-hidden="0"]')!
+    expect(word.className).not.toMatch(/flash/)
+    expect(h.host.querySelector('.phone-card__body [class*="flash"]')).toBeNull()
+    expect(h.host.querySelector('.phone-card__body .review__flash')).toBeNull()
     await h.tap()
     expect(h.cardText()).toBe('Q? one two')
     expect(h.host.querySelector('.review__answers')?.hasAttribute('data-nudge')).toBe(false)

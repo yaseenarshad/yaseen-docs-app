@@ -498,20 +498,7 @@
   }
 }
 
-.review__card .card__blank:active {
-  background: var(--review-hide-on);
-}
-
-/* The part that just showed flashes once. */
-.review__flash {
-  animation: review-flash 0.5s ease;
-}
-
-@keyframes review-flash {
-  from {
-    box-shadow: inset 0 0 0 3px var(--accent);
-  }
-}
+/* YAZ-5538: a part that shows simply shows: no press tint on the hidden word, no flash once it is shown. */
 
 /* More of the card below: a soft fade at its foot and a small "↓ more"; both go at the end. */
 .review__fade {
@@ -775,9 +762,6 @@
   }
   .review__answers[data-nudge='b'] .review__answer {
     animation: review-ring-b 0.7s ease-out;
-  }
-  .review__flash {
-    animation: none;
   }
   .review__fade,
   .review__more-cue {
