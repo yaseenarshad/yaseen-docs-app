@@ -862,6 +862,16 @@ describe('cards over several days (YAZ-4858)', () => {
     }
   }
 
+  it('the bars follow the view\'s sort (YAZ-5603): a shorter bar that sorts first takes the top lane; no sort, the longer one does', () => {
+    const bars = [rec('Long', { due: '2026-12-14', end: '2026-12-17', order: 9 }), rec('Short', { due: '2026-12-14', end: '2026-12-15', order: 1 })]
+    const laneOf = (el: ParentNode, title: string) => barsOf(el, title)[0].style.gridRow
+    const sortedView = mount(`${SPAN}    sort:\n      - property: note.order\n        direction: ASC\n`, { records: bars })
+    expect([laneOf(sortedView.el, 'Short'), laneOf(sortedView.el, 'Long')]).toEqual(['2', '3'])
+    act(() => root?.unmount())
+    const plain = mount(SPAN, { records: bars })
+    expect([laneOf(plain.el, 'Long'), laneOf(plain.el, 'Short')]).toEqual(['2', '3'])
+  })
+
   it('a card that ends after its start is one bar over its days, in the week row, not in a day', () => {
     const { el } = mount(SPAN, { records })
     const [bar] = barsOf(el, 'Trip')
