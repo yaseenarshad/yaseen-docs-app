@@ -42,8 +42,15 @@ describe('content-width CSS contract (YAZ-1176)', () => {
   })
 
   it('document zoom sits on the CONTENT, never on a shell (YAZ-1710 D14): the scroller carries the variable, the content selectors read it, the runner adds the measured slack (D15)', () => {
-    const zoomRule = appCss.match(/\.editor-host > :not\(\.editor-mount\) > \*,\s*\.editor-instance \.milkdown > \.ProseMirror\s*\{([^}]*)\}/s)?.[1]
-    expect(zoomRule).toMatch(/zoom:\s*var\(--document-zoom, 1\);/)
+    // The ONE rule that reads `--document-zoom`, and exactly its selectors: the page's content (the blocks inside each shell,
+    // and ProseMirror itself) and the Inbox card's frame (YAZ-5372 reuses this rule). A shell added here fails.
+    const zoomRules = [...appCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*zoom:\s*var\(--document-zoom, 1\);[^{}]*)\}/g)]
+    expect(zoomRules).toHaveLength(1)
+    expect(zoomRules[0]![1]!.split(',').map((s) => s.trim())).toEqual([
+      '.editor-host > :not(.editor-mount) > *',
+      '.editor-instance .milkdown > .ProseMirror',
+      '.card-inbox__panel',
+    ])
     // The `display: contents` properties panel already passes the zoom to its pieces; a second rule
     // on them zoomed the chip twice (6B1).
     expect(appCss).not.toMatch(/\.frontmatter-panel > \*/)
