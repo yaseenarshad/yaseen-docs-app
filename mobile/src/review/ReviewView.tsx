@@ -882,7 +882,7 @@ function LostAnswers({ answers, link }: { answers: AnswersState; link: ReviewLin
       <p className="review__lost-title">{lostTitle(rows.length)}</p>
       {rows.map((row) => {
         const title = row.title === '' ? row.id : row.title
-        const what = `${row.answer} · ${title}`
+        const what = `${row.answer} · ${title}${row.note === undefined ? '' : ` · ${row.note}`}`
         return (
           <div key={row.id} className="review__lost-row">
             <span className="review__lost-what">{what}</span>

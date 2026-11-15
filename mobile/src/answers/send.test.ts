@@ -360,3 +360,124 @@ describe('YAZ-5073 checker gap 6: an action the file does not hold after all', (
   })
 })
 
+describe('YAZ-5514 W2: two files share a card ID (a copied page the Mac has not renumbered yet)', () => {
+  const SHARED = { 'a copy.md': pageText('Copy', 'NC-1', ['NC-2']), 'b.md': pageText('B', 'NC-1', ['NC-2']), 'c.md': pageText('C', 'NC-7', []) }
+  const made = (p: Awaited<ReturnType<typeof phone>>, path: string, ...ops: CardOp[]) => p.box.add(ops.map((op) => ({ op, path, title: `Title ${op.id}` })), 0)
+
+  it('an answer goes to the file it was made in while that file still holds the card', async () => {
+    const t = await setup(SHARED)
+    const p = await phone(t.s)
+    await made(p, 'b.md', answer('NC-2', 1), { kind: 'off', id: 'NC-2', on: true })
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2, lost: 0, files: ['b.md'] })
+    expect(await t.reviewsOf('b.md', 'NC-2')).toEqual([at(1)])
+    expect(await t.reviewsOf('a copy.md', 'NC-2')).toEqual([])
+    expect((await t.remoteFiles())['a copy.md']).toBe(SHARED['a copy.md'])
+  })
+
+  it('its file no longer holds the card and ONE other file does: it follows the card there', async () => {
+    const t = await setup(SHARED)
+    const p = await phone(t.s)
+    await made(p, 'c.md', answer('NC-2', 1))
+    await t.s.git.push({ 'a copy.md': pageText('Copy', 'NC-1', ['NC-8']) }) // the Mac renumbered the copy
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 1, lost: 0 })
+    expect(await t.reviewsOf('b.md', 'NC-2')).toEqual([at(1)])
+  })
+
+  it('its file no longer holds the card and TWO others do: refused (lost, with why), nothing written', async () => {
+    const t = await setup(SHARED)
+    const p = await phone(t.s)
+    await made(p, 'c.md', answer('NC-2', 1))
+    const before = t.head()
+    expect(await p.send()).toMatchObject({ result: 'nothing', sent: 0, lost: 1, commit: null })
+    expect(t.head()).toBe(before)
+    expect(p.box.lost()).toMatchObject([{ op: answer('NC-2', 1), why: 'two-files' }])
+  })
+})
+
+describe('YAZ-5514 W3: a resend after a lost reply never undoes a later Mac change', () => {
+  /** The ref move reaches GitHub, its answer is lost; `then` runs before the phone hears (the Mac pulls and changes). */
+  const lostReply = (t: Awaited<ReturnType<typeof setup>>, then: () => Promise<unknown>): FetchLike => {
+    let lose = true
+    return async (url, init) => {
+      const res = await t.s.github.fetch(url, init)
+      if ((init.method ?? 'GET') === 'PATCH' && lose) {
+        lose = false
+        await then()
+        throw new TypeError('Load failed')
+      }
+      return res
+    }
+  }
+
+  it('after a lost reply, a retry whose commit is already in the branch history writes nothing (the Mac removed the review)', async () => {
+    const t = await setup(FILES)
+    const p = await phone(t.s, lostReply(t, () => t.s.git.push({ 'a.md': FILES['a.md'] })))
+    await p.add(answer('NC-2', 1))
+    expect(await p.send()).toMatchObject({ result: 'offline' })
+    const before = t.head()
+    const writes = t.s.count('write')
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 1, commit: null })
+    expect(t.s.count('write')).toBe(writes)
+    expect(t.head()).toBe(before)
+    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([])
+    expect(p.box.waiting()).toEqual([])
+  })
+
+  it('after a lost reply, the Mac unarchived the card: the retry does not archive it again', async () => {
+    const t = await setup(FILES)
+    const p = await phone(t.s, lostReply(t, () => t.s.git.push({ 'a.md': FILES['a.md'] })))
+    await p.add({ kind: 'off', id: 'NC-3', on: true }, { kind: 'next', id: 'NC-2', on: true })
+    expect(await p.send()).toMatchObject({ result: 'offline' })
+    const before = t.head()
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2 })
+    expect(t.head()).toBe(before)
+    expect((await t.remoteFiles())['a.md']).toBe(FILES['a.md'])
+  })
+
+  it('a commit that never reached the branch (the ref move refused or never sent) is still sent, on the newest text', async () => {
+    const t = await setup(FILES)
+    let drop = true
+    const dies: FetchLike = async (url, init) => {
+      if ((init.method ?? 'GET') === 'PATCH' && drop) {
+        drop = false
+        await t.s.git.push({ 'b.md': pageText('B', 'NC-4', ['NC-5'], 'A Mac edit.\n\n') })
+        throw new TypeError('Load failed')
+      }
+      return t.s.github.fetch(url, init)
+    }
+    const p = await phone(t.s, dies)
+    await p.add(answer('NC-2', 1), { kind: 'off', id: 'NC-3', on: true })
+    expect(await p.send()).toMatchObject({ result: 'offline' })
+    expect(p.box.waiting().every((w) => w.tried === true)).toBe(true)
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2 })
+    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([at(1)])
+    expect((await t.remoteFiles())['a.md']).toContain('<!-- card: NC-3, off -->')
+    expect((await t.remoteFiles())['b.md']).toContain('A Mac edit.')
+  })
+})
+
+describe('YAZ-5514 W4: a second identical answer never doubles', () => {
+  it('two answers of one minute and rating (`nth: 2`), a lost reply, the Mac removes the first copy: the retry adds nothing', async () => {
+    const t = await setup(FILES)
+    let lose = true
+    const lossy: FetchLike = async (url, init) => {
+      const res = await t.s.github.fetch(url, init)
+      if ((init.method ?? 'GET') === 'PATCH' && lose) {
+        lose = false
+        const now = (await t.remoteFiles())['a.md']
+        expect(cardRecords(now).find((c) => c.id === 'NC-2')!.reviews).toHaveLength(2)
+        await t.s.git.push({ 'a.md': now.replace(`${at(1)} good, `, '') }) // the Mac takes one copy out
+        throw new TypeError('Load failed')
+      }
+      return res
+    }
+    const p = await phone(t.s, lossy)
+    await p.add(answer('NC-2', 1), { ...answer('NC-2', 1), nth: 2 } as CardOp)
+    expect(await p.send()).toMatchObject({ result: 'offline' })
+    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([at(1)])
+    const before = t.head()
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2 })
+    expect(t.head()).toBe(before)
+    expect(await t.reviewsOf('a.md', 'NC-2')).toEqual([at(1)])
+  })
+})

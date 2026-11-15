@@ -27,6 +27,12 @@ export interface WaitingAnswer {
    * move can still be on its way. Such an action is never removed by Undo; Undo adds an `unreview` instead.
    */
   tried?: true
+  /**
+   * YAZ-5514 (W3): the commit of the last send that put this action in one, kept BEFORE its ref move. After a lost
+   * answer, the next send asks GitHub whether the branch holds it: then the action is done, and nothing is written
+   * again (a write again would undo what the Mac changed since). A commit the branch never took is sent again.
+   */
+  commit?: string
 }
 
 /** An action whose card was gone at the send (round 12 item 9): never sent again, kept until the person discards it. */
@@ -37,7 +43,12 @@ export interface LostAnswer {
   title: string
   /** When the send found the card gone. */
   lostAt: number
+  /** Why, when the card is not simply gone (YAZ-5514): `two-files`, two other files hold its ID, so the send cannot tell which. */
+  why?: LostWhy
 }
+
+/** Why a send refused an action whose card it still finds. */
+export type LostWhy = 'two-files'
 
 /** The stored shape. Raise `v` when it changes. */
 export interface AnswerBook {
@@ -63,8 +74,10 @@ export interface Outbox {
    * meanwhile is not there, and the send must plan again (YAZ-5180).
    */
   markTried(seqs: readonly number[]): Promise<number[]>
-  /** After a send: the actions `done` (GitHub has them) leave; the actions `lost` move to the lost list. */
-  settle(done: readonly number[], lost: readonly number[], now: number): Promise<void>
+  /** YAZ-5514: the commit these actions are in, before its ref move. Resolves with the ones it marked. */
+  markCommit(seqs: readonly number[], commit: string): Promise<number[]>
+  /** After a send: the actions `done` (GitHub has them) leave; the actions `lost` move to the lost list (with `why`, when given). */
+  settle(done: readonly number[], lost: readonly number[], now: number, why?: ReadonlyMap<number, LostWhy>): Promise<void>
   /** The person tapped Discard on a lost action. False when it was not there. */
   discard(seq: number): Promise<boolean>
   /** Reads the stored list again (another tab of the app may have changed it, row P4). */
@@ -135,12 +148,20 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
         return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.seq) ? { ...w, tried: true as const } : w)) }, out: marked }
       }, [] as number[])
     },
-    settle(done, lost, now) {
+    markCommit(seqs, commit) {
+      return change((b) => {
+        const want = new Set(seqs)
+        const marked = b.waiting.filter((w) => want.has(w.seq)).map((w) => w.seq)
+        if (marked.length === 0) return { next: b, out: marked }
+        return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.seq) ? { ...w, commit } : w)) }, out: marked }
+      }, [] as number[])
+    },
+    settle(done, lost, now, why) {
       return change((b) => {
         const leave = new Set([...done, ...lost])
         const isLost = new Set(lost)
         if (!b.waiting.some((w) => leave.has(w.seq))) return null
-        const newlyLost = b.waiting.filter((w) => isLost.has(w.seq)).map((w): LostAnswer => ({ seq: w.seq, op: w.op, path: w.path, title: w.title, lostAt: now }))
+        const newlyLost = b.waiting.filter((w) => isLost.has(w.seq)).map((w): LostAnswer => ({ seq: w.seq, op: w.op, path: w.path, title: w.title, lostAt: now, ...(why?.has(w.seq) && { why: why.get(w.seq) }) }))
         return { next: { ...b, waiting: b.waiting.filter((w) => !leave.has(w.seq)), lost: [...b.lost, ...newlyLost] }, out: undefined }
       }, undefined)
     },

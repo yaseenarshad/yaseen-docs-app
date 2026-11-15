@@ -19,7 +19,7 @@ import {
   type CardReview,
 } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { inLineEnds } from '@shared/lineEnds'
+import { lineEndOf } from '@shared/lineEnds'
 import { spliceCardLine } from './splice'
 
 /**
@@ -31,6 +31,8 @@ export type CardOp =
    * An answer. `nth` (YAZ-5078): this is the person's nth review of the same time and rating on the line (the review
    * time is to the minute, so a new card that comes back at once gets two in one minute, as the Mac writes them).
    * Absent: the first. The send stays idempotent: the review goes on only while the line holds fewer than `nth`.
+   * YAZ-5514 (W4): a count alone cannot tell "my second copy never landed" from "both landed and the Mac took one
+   * out", so a resend is settled by the action's own commit (`WaitingAnswer.commit`, `send.ts`), never by the count.
    */
   | { kind: 'review'; id: string; review: CardReview; nth?: number }
   /**
@@ -90,7 +92,7 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
 /**
  * Pure: `ops` applied, in their order, to a page's text (a page, or a card file: its properties stay byte for byte).
  * A card is found as `changeCard` finds it: the first card of the body whose line holds the ID (`pageCards`); the page
- * is read ONE time and written ONE time (as `rewritePageCards`: the page's line end kept; each line spliced, YAZ-5409). An action whose card
+ * is read ONE time and written ONE time (each line spliced, YAZ-5409; each line keeps its own line end, YAZ-5514). An action whose card
  * this text does not hold (deleted, moved away, or only embedded here with `![[ID]]`) comes back in `lost`; it is
  * never dropped silently. No change at all gives back the same string.
  */
@@ -102,6 +104,11 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
     const id = cardIdOf(card.line)
     if (id !== null && !at.has(id.toLowerCase())) at.set(id.toLowerCase(), n)
   })
+  // YAZ-5514: a mark (archive, Up next, Fix later, title on the front) SETS a value, so only the last action of each
+  // mark for a card counts. Off then on of a mark the line holds changes no byte, and the list applied to its own
+  // result changes nothing (a mark taken out and put back would go to the writer's place, which can differ).
+  const lastMark = new Map<string, CardOp>()
+  for (const op of ops) if (op.kind !== 'review' && op.kind !== 'unreview') lastMark.set(`${op.id.toLowerCase()}\n${op.kind}`, op)
   const lines = new Map<number, CardLine>()
   const lost: CardOp[] = []
   for (const op of ops) {
@@ -110,24 +117,34 @@ export function applyOps(content: string, ops: readonly CardOp[]): { content: st
       lost.push(op)
       continue
     }
+    if (op.kind !== 'review' && op.kind !== 'unreview' && lastMark.get(`${op.id.toLowerCase()}\n${op.kind}`) !== op) continue
     lines.set(n, applyOp(lines.get(n) ?? cards[n].line, op))
   }
   const changed = [...lines].filter(([n, line]) => line !== cards[n].line)
   if (changed.length === 0) return { content, lost }
   // YAZ-5409: each changed line is SPLICED (`spliceCardLine`): the parts the actions kept keep their bytes and places.
-  // As `rewritePageCards` does otherwise: one read, one write, the page's line end kept, back to front.
-  const out = inLineEnds(content, (page) => {
-    const { frontmatter, body } = splitFrontmatter(page)
-    const rows = body.split('\n')
-    for (const [n, line] of changed.sort((a, b) => b[0] - a[0])) {
-      const card = cards[n]
-      const written = card.lineAt === null ? formatCardLine(line) : spliceCardLine(rows[card.lineAt], card.line, line)
-      const row = written === null ? [] : [card.lineAt === null ? card.indent + written : written]
-      if (card.lineAt !== null) rows.splice(card.lineAt, 1, ...row)
-      else rows.splice(card.close + 1, 0, ...row)
+  // YAZ-5514 (W1): on the RAW text, back to front, so each line keeps its OWN line end: a page that mixes `\n` and
+  // `\r\n` (pasted from Windows) changes only its card lines, and each card line keeps the end it had.
+  const { frontmatter, body } = splitFrontmatter(content)
+  const rows = body.split('\n')
+  for (const [n, line] of changed.sort((a, b) => b[0] - a[0])) {
+    const card = cards[n]
+    if (card.lineAt !== null) {
+      const raw = rows[card.lineAt]
+      const cr = raw.endsWith('\r') ? '\r' : ''
+      const written = spliceCardLine(raw.slice(0, raw.length - cr.length), card.line, line)
+      rows.splice(card.lineAt, 1, ...(written === null ? [] : [written + cr]))
+    } else {
+      // A card with no line yet (no ID, so no action names it today): the new line takes its fence's line end.
+      const written = formatCardLine(line)
+      if (written === null) continue
+      const fence = rows[card.close]
+      const cr = fence.endsWith('\r') || (card.close === rows.length - 1 && lineEndOf(content) === '\r\n') ? '\r' : ''
+      if (card.close === rows.length - 1 && cr !== '' && !fence.endsWith('\r')) rows[card.close] = fence + cr
+      rows.splice(card.close + 1, 0, card.indent + written + (card.close + 1 < rows.length ? cr : ''))
     }
-    return frontmatter + rows.join('\n')
-  })
+  }
+  const out = frontmatter + rows.join('\n')
   return { content: out, lost }
 }
 

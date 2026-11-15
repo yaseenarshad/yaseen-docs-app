@@ -194,6 +194,24 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
           const bytes = body.encoding === 'base64' ? fromBase64(body.content) : new TextEncoder().encode(body.content)
           return json(201, { sha: await repo.git.addBlob(bytes) })
         }
+        // YAZ-5514: `compare/{base}...{head}`, as GitHub answers it: `status` is how `head` stands to `base`.
+        if (method === 'GET' && rest[0] === 'compare' && rest.length === 2 && repo.git !== undefined) {
+          const [base, head] = rest[1].split('...')
+          const git = repo.git
+          if (!git.commits.has(base) || !git.commits.has(head)) return json(404, { message: 'Not Found', documentation_url: 'https://docs.github.com/rest/commits/commits#compare-two-commits' })
+          const ancestors = (from: string) => {
+            const seen = new Set<string>()
+            for (const queue = [from]; queue.length > 0; ) {
+              const next = queue.pop()!
+              if (seen.has(next)) continue
+              seen.add(next)
+              queue.push(...(git.commits.get(next)?.parents ?? []))
+            }
+            return seen
+          }
+          const status = base === head ? 'identical' : ancestors(head).has(base) ? 'ahead' : ancestors(base).has(head) ? 'behind' : 'diverged'
+          return json(200, { status })
+        }
         if (rest[0] === 'git' && repo.git !== undefined) return gitRoute(repo.git, method, rest.slice(1), access, init, body, url, json)
       }
       return notFound()

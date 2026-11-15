@@ -1,12 +1,12 @@
-import { cardsById } from '@shared/cardLinks'
 import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, rateLimitedUntil, type GithubErrorCode } from '../github/client'
 import type { VaultStore } from '../store'
 import { SEND_AFTER_MS } from '../sync/cadence'
 import type { Clock, SyncEngine } from '../sync/engine'
-import { phoneRecord, type PhoneIndex } from '../sync/phoneIndex'
+import { INDEX_STATE, phoneRecord, type PhoneIndex } from '../sync/phoneIndex'
 import { applyOps, type CardOp } from './ops'
 import { openOutbox, type LostAnswer, type Outbox, type WaitingAnswer } from './outbox'
 import { sendOutbox } from './send'
+import { cardHolders, cardTarget } from './target'
 import { withComments, type CommentsPort } from '../comments/bridge'
 
 /** Why the last send did not end well: a `GithubErrorCode`, or `FAILED` (anything else). Never a message with a secret. */
@@ -118,7 +118,7 @@ function createAnswerList(options: AnswersOptions): Answers {
   let timer: unknown = null
   let stopped = false
   /** Actions GitHub has, but the stored copy not yet (the pass after the commit failed): shown until the next pass. */
-  let afterglow: CardOp[] = []
+  let afterglow: { op: CardOp; path: string }[] = []
   /** "Slow down" answers to a send in a row: each one doubles the wait, up to 1 hour, as the engine does (YAZ-5169). */
   let slowedInRow = 0
   /** Sends in a row that ended in `STALE_HEAD` (the branch kept moving): each one doubles the wait (YAZ-5183). */
@@ -130,6 +130,15 @@ function createAnswerList(options: AnswersOptions): Answers {
    * write, so the view does too. The same text keeps its mtime (the cache hits); a new text gets a newer one.
    */
   let shownAt = new Map<string, { text: string; mtime: number }>()
+  /** The last index the view read (YAZ-5514): `text` finds an action's file in it without a store read. */
+  let lastIndex: PhoneIndex | undefined
+  /** Each index's card holders, built once (an index is never changed in place: a pass writes a new one). */
+  const holdersCache = new WeakMap<PhoneIndex, Map<string, string[]>>()
+  const holdersOf = (index: PhoneIndex) => {
+    let holders = holdersCache.get(index)
+    if (holders === undefined) holdersCache.set(index, (holders = cardHolders(Object.values(index.records))))
+    return holders
+  }
 
   const emit = (event: AnswersEvent) => {
     for (const listener of [...listeners]) listener(event)
@@ -167,6 +176,7 @@ function createAnswerList(options: AnswersOptions): Answers {
   function forgetVaultState() {
     afterglow = []
     shownAt = new Map()
+    lastIndex = undefined
     slowedInRow = 0
     staleInRow = 0
     state = { ...state, problem: null, retryAt: null, lastSentAt: null }
@@ -224,7 +234,7 @@ function createAnswerList(options: AnswersOptions): Answers {
         if (!report.stored) {
           const still = new Set(own.waiting().map((w) => w.seq))
           const lost = new Set(own.lost().map((l) => l.seq))
-          afterglow = [...afterglow, ...before.filter((w) => !still.has(w.seq) && !lost.has(w.seq)).map((w) => w.op)]
+          afterglow = [...afterglow, ...before.filter((w) => !still.has(w.seq) && !lost.has(w.seq))]
         }
         setState({ problem: null, retryAt: null, ...(report.sent > 0 && { lastSentAt: clock.now() }) })
       } catch (error) {
@@ -260,13 +270,30 @@ function createAnswerList(options: AnswersOptions): Answers {
     return running
   }
 
-  async function text(path: string): Promise<string | null> {
+  /**
+   * The actions that file `path` shows: each one whose card goes to `path` at the send (`cardTarget`, YAZ-5514 W2), so
+   * an answer made in one of two files that share a card ID shows in that file only. The index is read only when an
+   * action was made in another file.
+   */
+  async function shownOps(id: string, path: string, given?: PhoneIndex): Promise<CardOp[]> {
+    const all = [...afterglow, ...(box?.waiting() ?? [])]
+    if (all.every((w) => w.path === path)) return all.map((w) => w.op)
+    const index = given ?? lastIndex ?? (await store.getState<PhoneIndex>(id, INDEX_STATE))
+    if (index === undefined) return all.map((w) => w.op)
+    const holders = holdersOf(index)
+    const here = (w: { op: CardOp; path: string }) => {
+      const target = cardTarget(holders, w.op.id, w.path)
+      return 'path' in target && target.path === path
+    }
+    return all.filter((w) => w.path === path || here(w)).map((w) => w.op)
+  }
+
+  async function text(path: string, index?: PhoneIndex): Promise<string | null> {
     await loading
     if (vault === null) return null
     const file = await store.read(vault, path)
     if (file === null || typeof file.content !== 'string') return null
-    const ops = [...afterglow, ...(box?.waiting().map((w) => w.op) ?? [])]
-    return applyOps(file.content, ops).content
+    return applyOps(file.content, await shownOps(vault, path, index)).content
   }
 
   return {
@@ -305,17 +332,18 @@ function createAnswerList(options: AnswersOptions): Answers {
     text,
     async view(index) {
       await loading
-      const ops = [...afterglow, ...(box?.waiting().map((w) => w.op) ?? [])]
-      if (ops.length === 0) return index
-      const byId = cardsById(Object.values(index.records))
+      lastIndex = index
+      const all = [...afterglow, ...(box?.waiting() ?? [])]
+      if (all.length === 0) return index
+      const holders = holdersOf(index)
       const paths = new Set<string>()
-      for (const op of ops) {
-        const link = byId.get(op.id.toLowerCase())
-        if (link !== undefined) paths.add(link.path)
+      for (const w of all) {
+        const target = cardTarget(holders, w.op.id, w.path)
+        if ('path' in target) paths.add(target.path)
       }
       const records = { ...index.records }
       for (const path of paths) {
-        const shown = await text(path)
+        const shown = await text(path, index)
         const old = records[path]
         if (shown === null || old === undefined || vault === null) continue
         const stored = await store.read(vault, path)

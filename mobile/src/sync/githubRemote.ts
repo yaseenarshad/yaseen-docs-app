@@ -15,7 +15,7 @@ export interface RemoteTree extends Map<string, string> {
   readonly bytes: ReadonlyMap<string, number>
 }
 
-/** The phone's whole conversation with GitHub: five calls, no git on the device. */
+/** The phone's whole conversation with GitHub: six calls, no git on the device. */
 export interface GithubRemote {
   /** Branch head; passing the last `etag` makes an unchanged answer free (HTTP 304). */
   head(etag?: string): Promise<{ sha: string; etag: string } | 'unchanged'>
@@ -24,12 +24,18 @@ export interface GithubRemote {
   blob(sha: string): Promise<Uint8Array>
   /**
    * One atomic commit; rejects `STALE_HEAD` when GitHub has moved past `parent`. Resolves with the new commit SHA.
-   * `made` hears the commit's SHA once GitHub made it, BEFORE the branch moves to it (YAZ-5513: so a try whose answer
-   * is lost knows which commit it was).
+   * `made` hears the new commit's SHA once GitHub made it, BEFORE the branch moves to it, and the move waits for it
+   * (YAZ-5513, YAZ-5514): a caller keeps the SHA, so after a lost answer it can ask whether the branch took that commit
+   * (`contains`, or `parents` of the head).
    */
   commit(parent: string, changes: Change[], message: string, made?: (sha: string) => Promise<void>): Promise<string>
-  /** A commit's parents. */
+  /** A commit's parents (YAZ-5513). */
   parents(commit: string): Promise<string[]>
+  /**
+   * YAZ-5514: does the history of `head` hold `commit` (the head itself, or one of its ancestors)? False for a commit
+   * that never reached the branch, or that GitHub does not know. One request (`GET compare/{commit}...{head}`).
+   */
+  contains(commit: string, head: string): Promise<boolean>
 }
 
 /** GitHub's answer when the ref `PATCH` (force: false) is refused because the branch moved (proof 1B, YAZ-5063). */
@@ -54,6 +60,7 @@ interface TreeEntry {
  * - tree: `GET git/trees/{commit}?recursive=1` (the commit SHA works, so no `GET git/commits` first);
  * - blob: `GET git/blobs/{sha}` with the raw media type (bytes, not base64);
  * - parents: `GET git/commits/{commit}` (YAZ-5513: is a try's commit in the branch, after a lost answer);
+ * - contains: `GET compare/{commit}...{head}` (YAZ-5514: does the branch hold an answer's commit, after a lost answer);
  * - commit: `GET git/commits/{parent}` for its tree, `POST git/blobs` for bytes only, `POST git/trees` with
  *   `base_tree` (text inline: a Markdown commit is 3 writes, not 5), `POST git/commits`, then `PATCH git/refs/heads/
  *   {branch}` with `force: false`. GitHub refuses a moved branch with 422 "Update is not a fast forward": `STALE_HEAD`.
@@ -95,6 +102,15 @@ export function githubRemote(client: GithubClient, repo: string, branch: string)
       const parents = (res.data as { parents?: { sha?: unknown }[] } | null)?.parents
       if (!Array.isArray(parents)) throw new GithubError('UNEXPECTED', res.status, 'GitHub gave no parents for the commit')
       return parents.map((p) => p.sha).filter((sha): sha is string => typeof sha === 'string')
+    },
+
+    async contains(commit, head) {
+      if (commit === head) return true
+      const res = await client.request(repoPath(repo, 'compare', `${commit}...${head}`), { allow: [404] })
+      if (res.status === 404) return false
+      const status = (res.data as { status?: unknown } | null)?.status
+      // `ahead`: head is ahead of the commit (holds it); `identical`: the same. `behind` / `diverged`: it does not.
+      return status === 'ahead' || status === 'identical'
     },
 
     async commit(parent, changes, message, made) {
