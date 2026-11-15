@@ -25,9 +25,10 @@ function chain(depth: number, files = 3): { depth: number; open?: boolean; name:
 const names = (rows: { depth: number; open?: boolean; name: string }[], y: number, cap = 7) => stuckRows(treeShape(rows), y, H, cap).map((s) => rows[s.index].name)
 
 describe('the Mac sidebar settings Search reads (YAZ-5506)', () => {
-  it("are the Mac's defaults, read through one function: 7 sticky levels", () => {
-    expect(MAC_SIDEBAR_DEFAULTS.sidebarStickyLevels).toBe(DEFAULT_SETTINGS.sidebarStickyLevels)
-    expect(sidebarLook().sidebarStickyLevels).toBe(7)
+  it("are the Mac's defaults, read through one function: 7 sticky levels; guide lines on hover, plain", () => {
+    for (const key of Object.keys(MAC_SIDEBAR_DEFAULTS) as (keyof typeof MAC_SIDEBAR_DEFAULTS)[]) expect([key, MAC_SIDEBAR_DEFAULTS[key]]).toEqual([key, DEFAULT_SETTINGS[key]])
+    expect(Object.keys(MAC_SIDEBAR_DEFAULTS).sort()).toEqual(['sidebarLineStyle', 'sidebarLines', 'sidebarStickyLevels', 'sidebarThreadColor'])
+    expect(sidebarLook()).toEqual({ sidebarStickyLevels: 7, sidebarLines: 'hover', sidebarLineStyle: 'plain', sidebarThreadColor: null })
   })
 })
 
@@ -133,5 +134,28 @@ describe('the stuck rows’ look (treeLook.css), the Mac’s (app.css `.tree__ro
     expect(row).toMatch(/background: var\(--bg\);/)
     expect(row).toMatch(/box-shadow: 0 1px 0 var\(--border\);/)
     expect(row).toMatch(/border-radius: 0;/)
+  })
+})
+
+// YAZ-5507: the guide lines (`guideLines.ts` says when they show).
+describe('where they are drawn (treeLook.css), the Mac’s (app.css `.tree[role=group]::before`)', () => {
+  const css = readFileSync(new URL('./treeLook.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const mac = readFileSync(new URL('../../../client/src/app.css', import.meta.url), 'utf8')
+  const line = /\.search \.tree > li > \.tree__row::before \{([^}]*)\}/.exec(css)?.[1] ?? ''
+  it('one 1 px grey line for each level above the row, 14 px apart, the first at 15 px: the chevron centres', () => {
+    // The Mac: a row is indented 8 + depth × 14 px, its chevron 14 px wide; a level's line at depth × 14 + 1 px.
+    expect(mac).toMatch(/left: calc\(var\(--tree-depth\) \* 14px \+ 1px\);/)
+    expect(line).toMatch(/left: 15px;/)
+    expect(line).toMatch(/width: calc\(var\(--tree-depth, 0\) \* 14px\);/)
+    expect(line).toMatch(/background: repeating-linear-gradient\(to right, var\(--border\) 0 1px, transparent 1px 14px\);/)
+    expect(line).toMatch(/top: 0;[\s\S]*bottom: 0;/)
+    expect(line).toMatch(/pointer-events: none;/)
+    expect(line).toMatch(/opacity: 0;/)
+  })
+  it('they show by `data-lines` (and `data-touch` for "hover") on the list, never on a stuck row', () => {
+    expect(css).toMatch(/\.tree\[data-lines='always'\] > li > \.tree__row::before,\s*\.tree\[data-lines='hover'\]\[data-touch\] > li > \.tree__row::before \{\s*opacity: 1;/)
+    // Only the list's own rows (`.tree > li >`): the stuck copies stand in their layer, not in the list.
+    expect(css).not.toMatch(/tree__row--stuck::before/)
+    expect(/\.tree__stuck \{([^}]*)\}/.exec(css)?.[1]).toMatch(/z-index: 2;/)
   })
 })

@@ -21,9 +21,11 @@ import { join } from 'node:path'
  *  - sticky folders in Search's tree (`#fixture=search-sticky`, YAZ-5506), light and dark, at 375 px: the open
  *    folders stuck at the top, flush, one row apart, the shallower on top, opaque, the open chevron, at most the cap;
  *    a tap on a stuck folder scrolls back to it, landing under the rows stuck above it.
+ *  - the guide lines of Search's tree (`#fixture=search-lines`, YAZ-5507), light and dark, at 375 px: with a finger on
+ *    the list they show, each at the centre of the chevron of the folder above; the stuck rows cover them.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_STICKY=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_STICKY=no, LAYOUT_LINES=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -341,6 +343,37 @@ if (process.env.LAYOUT_STICKY !== 'no') {
       writeFileSync(file.replace('.png', '-tapped.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       console.log(`${tapOk ? 'PASS' : 'FAIL'}  search-sticky tap on the stuck "${t.name}": its row at ${t.at}px (under the 2 rows stuck above it: ${t.want}px), still ${t.open === 'true' ? 'open' : 'CLOSED'}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5507: the guide lines (`search-lines`: a finger on the list, three folders stuck).
+const LINES = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const rows = [...document.querySelectorAll('ul.tree > li > .tree__row')]
+  const deep = rows.find((b) => b.querySelector('.tree__label')?.textContent === 'Seville note 1')
+  const line = getComputedStyle(deep, '::before')
+  const shown = Number(line.opacity) === 1
+  // Each level's line, at the centre of the chevron of that level's folder.
+  const left = r(deep).left + parseFloat(line.left)
+  const chevrons = ['Atlas', 'Europe', 'Spain', 'Andalusia'].map((n) => rows.find((b) => b.querySelector('.tree__label')?.textContent === n).querySelector('.tree__chevron')).map((c) => r(c).left + r(c).width / 2)
+  const lines = chevrons.map((_, k) => left + 14 * k + 0.5)
+  const centred = chevrons.every((c, k) => Math.abs(c - lines[k]) <= 1)
+  // Over a stuck row, at a line's x, the stuck row is on top.
+  const stuck = [...document.querySelectorAll('.tree__row--stuck')]
+  const covered = stuck.length > 0 && stuck.every((s) => { const y = r(s).top + r(s).height / 2; return document.elementFromPoint(lines[0], y)?.closest('.tree__stuck') !== null })
+  return { shown, centred, covered, stuck: stuck.length, color: line.backgroundImage.slice(0, 60), chevrons: chevrons.map(Math.round), lines: lines.map(Math.round) }
+})()`
+if (process.env.LAYOUT_LINES !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    await send('Page.navigate', { url: 'about:blank' }, page)
+    const file = await open('search-lines', 375, 667)
+    const m = await evaluate(LINES)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.shown && m.centred && m.covered
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  search-lines ${scheme} at 375x667: lines ${m.shown ? 'show' : 'HIDDEN'} with a finger on the list; at x ${m.lines.join(',')}, the chevrons at ${m.chevrons.join(',')} (${m.centred ? 'centred' : 'OFF CENTRE'}); ${m.stuck} stuck rows ${m.covered ? 'cover them' : 'DO NOT COVER them'}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

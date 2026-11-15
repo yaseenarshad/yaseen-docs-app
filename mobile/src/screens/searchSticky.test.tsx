@@ -169,4 +169,21 @@ describe('sticky folders in Search’s tree (YAZ-5506)', () => {
     await under(h, 'Seville note 1', 3)
     expect(stuck(h).map((s) => s.name)).toEqual(['Spain', 'Andalusia', 'Seville'])
   })
+
+  it('YAZ-5507: the guide lines: each tree (empty box, found, Favorites) is "hover", and a finger on it shows them; a fold keeps them', async () => {
+    h = await openSearch({ '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['Atlas'] }) })
+    const list = () => h!.host.querySelector<HTMLElement>('ul.tree')!
+    expect(list().dataset.lines).toBe('hover')
+    list().dispatchEvent(new Event('touchstart'))
+    expect(list().hasAttribute('data-touch')).toBe(true)
+    await h.click('Expand all folders')
+    expect(list().hasAttribute('data-touch')).toBe(true)
+    await typeQuery(h, 'number 12 note 4')
+    await waitFor(h, () => h!.host.querySelector('.search__found') !== null)
+    expect(list().dataset.lines).toBe('hover')
+    await typeQuery(h, '')
+    await h.click('Favorites')
+    await waitFor(h, () => h!.host.querySelector('[role="tree"][aria-label="Favorites"]') !== null)
+    expect(list().dataset.lines).toBe('hover')
+  })
 })

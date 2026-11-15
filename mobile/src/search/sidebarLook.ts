@@ -1,13 +1,15 @@
 import type { SettingsState } from '@shared/types'
 
 /** The Mac's sidebar settings that Search's tree reads: Mac APP settings (they stay on each Mac), not the vault's. */
-export type SidebarLook = Pick<SettingsState, 'sidebarStickyLevels'>
+export type SidebarLook = Pick<SettingsState, 'sidebarStickyLevels' | 'sidebarLines' | 'sidebarLineStyle' | 'sidebarThreadColor'>
 
 /**
  * The Mac's defaults (`DEFAULT_SETTINGS`, `shared/types.ts`), copied so the Search chunk does not carry the Mac's whole
- * settings object (`sidebarLook.test.ts` holds them equal): `sidebarStickyLevels` 7 (YAZ-3440 D2).
+ * settings object (`stickyFolders.test.ts` holds them equal): `sidebarStickyLevels` 7 (YAZ-3440 D2); the guide lines
+ * (YAZ-3309 D3, D7, D9) `sidebarLines` "hover" (they show while the list is in use), `sidebarLineStyle` "plain" (thin
+ * grey lines), `sidebarThreadColor` null (the thread's colour, for the "thread" style only).
  */
-export const MAC_SIDEBAR_DEFAULTS: SidebarLook = { sidebarStickyLevels: 7 }
+export const MAC_SIDEBAR_DEFAULTS: SidebarLook = { sidebarStickyLevels: 7, sidebarLines: 'hover', sidebarLineStyle: 'plain', sidebarThreadColor: null }
 
 /**
  * THE ONE PLACE Search's tree reads the Mac sidebar's look (YAZ-5506). These are Mac app settings, not in the vault

@@ -31,3 +31,33 @@
   position: absolute;
   inset: -15px -8px -15px -10px;
 }
+
+/*
+ * YAZ-5507: THE GUIDE LINES, the Mac sidebar's level lines (YAZ-3309 D1, D2; app.css `.tree[role='group']::before`):
+ * one thin grey line (`--border`) below the chevron of each open folder, down past every row inside it. The Mac draws
+ * one line on each nested list, at depth × 14 + 1 px from the tree's edge: the centre of the chevron of the folder
+ * above (its row is indented 8 + depth × 14 px, the chevron 14 px wide). The phone's tree is one flat list, so a row
+ * `--tree-depth` d deep draws the d lines of the levels above it: one gradient, a 1 px line each 14 px from 15 px in.
+ * Rows of the same folder are one row tall each and touch, so their pieces join into one line. No target (D5): the
+ * tap goes to the row. A stuck row (above) is opaque and stands over the list, so the lines pass behind it.
+ * `data-lines` on the list says when they show (`guideLines.ts`).
+ */
+.search .tree > li > .tree__row {
+  position: relative;
+}
+.search .tree > li > .tree__row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 15px;
+  width: calc(var(--tree-depth, 0) * 14px);
+  background: repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 14px);
+  opacity: 0;
+  transition: opacity 160ms ease;
+  pointer-events: none;
+}
+.tree[data-lines='always'] > li > .tree__row::before,
+.tree[data-lines='hover'][data-touch] > li > .tree__row::before {
+  opacity: 1;
+}

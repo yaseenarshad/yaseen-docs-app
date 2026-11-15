@@ -29,8 +29,9 @@ import { READING_LOOK_PAGE } from './readingLookFixture'
  * YAZ-5482: `page-table-look` tables whose comments set every part of the look (`LOOK_PAGE`).
  * YAZ-5506: `search-sticky` a made-up tree nine folders deep, every folder open, scrolled to its deepest pages: the open
  * folders stuck at the top (`STICKY_FILES`).
+ * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'search-sticky'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-properties', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'search-sticky', 'search-lines'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -141,7 +142,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
           ? { 'Frozen table.md': `---\ntitle: Frozen table\n---\n\n${FROZEN_PAGE}\n` }
         : name === 'page-table-look'
           ? { 'Table look.md': `---\ntitle: Table look\n---\n\n${LOOK_PAGE}\n` }
-        : name === 'search-sticky'
+        : name === 'search-sticky' || name === 'search-lines'
           ? STICKY_FILES
         : name === 'page-drawing'
           ? DRAWING_FILES
@@ -365,6 +366,22 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       if (screen !== null && li != null) screen.scrollTop += li.getBoundingClientRect().top - screen.getBoundingClientRect().top
       await until(() => document.querySelectorAll('.tree__row--stuck').length > 0)
       await wait(150)
+      break
+    }
+    case 'search-lines': {
+      // YAZ-5507: every folder open, a finger on the list ("On hover", the Mac's default: the lines show while it is
+      // there), and the list scrolled so Spain's pages pass under three stuck folders.
+      await until(() => document.querySelector('[aria-label="Expand all folders"]') !== null)
+      press('Expand all folders')
+      await until(() => document.querySelector('[aria-label="Number 12 note 2, page"]') !== null)
+      await wait(300)
+      const screen = document.querySelector<HTMLElement>('.screen')
+      const list = document.querySelector<HTMLElement>('ul.tree')
+      list?.dispatchEvent(new Event('touchstart'))
+      const li = document.querySelector('[aria-label="Andalusia, folder"]')?.closest('li')
+      if (screen !== null && li != null) screen.scrollTop += li.getBoundingClientRect().top - screen.getBoundingClientRect().top - 2 * 44 + 20
+      await until(() => document.querySelectorAll('.tree__row--stuck').length > 0)
+      await wait(250)
       break
     }
     case 'search-found':
