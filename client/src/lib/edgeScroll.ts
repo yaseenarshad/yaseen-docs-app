@@ -16,8 +16,12 @@ export interface EdgeScroller {
   stop: () => void
 }
 
-/** `axis` 'y' scrolls up and down, for the folder table's drag select (YAZ-4612 S47); `at` then takes the pointer's y. */
-export function edgeScroller(strip: () => HTMLElement | null, onScroll?: () => void, axis: 'x' | 'y' = 'x'): EdgeScroller {
+/**
+ * `axis` 'y' scrolls up and down, for the folder table's drag select (YAZ-4612 S47); `at` then takes the pointer's y.
+ * `zone` gives the ends in screen px when they are not the strip's own box: Rolling's page scroller (YAZ-5588 round 3),
+ * whose top end is under the calendar's sticky day names and whose bottom end is the window's.
+ */
+export function edgeScroller(strip: () => HTMLElement | null, onScroll?: () => void, axis: 'x' | 'y' = 'x', zone?: () => { start: number; end: number } | null): EdgeScroller {
   const horizontal = axis === 'x'
   const get = (el: HTMLElement) => (horizontal ? el.scrollLeft : el.scrollTop)
   const set = (el: HTMLElement, to: number) => {
@@ -53,7 +57,8 @@ export function edgeScroller(strip: () => HTMLElement | null, onScroll?: () => v
     const box = strip()?.getBoundingClientRect()
     // No box, or one not laid out (a zero size): no end zone.
     if (box === undefined || (horizontal ? box.width : box.height) === 0) return
-    const [start, end] = horizontal ? [box.left, box.right] : [box.top, box.bottom]
+    const ends = zone?.() ?? null
+    const [start, end] = ends !== null ? [ends.start, ends.end] : horizontal ? [box.left, box.right] : [box.top, box.bottom]
     // How far into an end zone the pointer is, in px: negative at the start, positive at the end, 0 between.
     const depth = x < start + EDGE_PX ? x - (start + EDGE_PX) : x > end - EDGE_PX ? x - (end - EDGE_PX) : 0
     pull = Math.max(-1, Math.min(1, depth / EDGE_PX))
