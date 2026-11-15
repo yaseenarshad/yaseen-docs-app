@@ -18,9 +18,12 @@ import { join } from 'node:path'
  *    line, no column is too narrow to read, the page never scrolls sideways.
  *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
  *    the page; the page never scrolls sideways.
+ *  - sticky folders in Search's tree (`#fixture=search-sticky`, YAZ-5506), light and dark, at 375 px: the open
+ *    folders stuck at the top, flush, one row apart, the shallower on top, opaque, the open chevron, at most the cap;
+ *    a tap on a stuck folder scrolls back to it, landing under the rows stuck above it.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_STICKY=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -279,6 +282,65 @@ if (process.env.LAYOUT_LOOK !== 'no') {
     const ok = m.blocks > 20 && !m.wide
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-look ${scheme} at 375x667: ${m.blocks} blocks, ${m.height}px tall; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}; ${shots.length} pictures  ${shots[0]}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5506: sticky folders in Search's tree (`search-sticky`: nine folders deep, scrolled to the deepest pages).
+const STICKY = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const screen = document.querySelector('.screen')
+  const top = r(screen).top + screen.clientTop
+  const stuck = [...document.querySelectorAll('.tree__stuck .tree__row--stuck')].sort((a, b) => r(a).top - r(b).top)
+  const h = r(document.querySelector('.tree > li')).height
+  const label = (el) => el.querySelector('.tree__label')?.textContent
+  const style = (el) => getComputedStyle(el)
+  return {
+    names: stuck.map(label),
+    tops: stuck.map((el) => Math.round(r(el).top - top)),
+    h, view: screen.clientHeight,
+    depths: stuck.map((el) => Number(el.style.getPropertyValue('--tree-depth'))),
+    z: stuck.map((el) => Number(style(el).zIndex)),
+    opaque: stuck.every((el) => /^rgb\\(/.test(style(el).backgroundColor)),
+    line: stuck.every((el) => style(el).boxShadow.includes('1px')),
+    open: stuck.every((el) => el.querySelector('.tree__chevron--open') !== null),
+    wide: screen.scrollWidth > screen.clientWidth + 1,
+  }
+})()`
+const STICKY_TAP = `(async () => {
+  const r = (el) => el.getBoundingClientRect()
+  const screen = document.querySelector('.screen')
+  const top = r(screen).top + screen.clientTop
+  const stuck = [...document.querySelectorAll('.tree__stuck .tree__row--stuck')].sort((a, b) => r(a).top - r(b).top)
+  const pick = stuck[2]
+  const name = pick.querySelector('.tree__label').textContent
+  pick.querySelector('.tree__label').click()
+  await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)))
+  const row = [...document.querySelectorAll('.tree > li > .tree__row')].find((b) => b.querySelector('.tree__label')?.textContent === name)
+  const h = r(row).height
+  return { name, at: Math.round(r(row).top - top), want: Math.round(2 * h), open: row.closest('li').getAttribute('aria-expanded') }
+})()`
+if (process.env.LAYOUT_STICKY !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    // A fresh load for each scheme: the same URL again would only change the hash, and keep the tapped list.
+    await send('Page.navigate', { url: 'about:blank' }, page)
+    const file = await open('search-sticky', 375, 667)
+    const m = await evaluate(STICKY)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    // The cap: the setting (7), cut to the rows that fit in 40% of the list (the Mac's `stickyCap`).
+    const cap = Math.min(7, Math.floor((0.4 * m.view) / m.h))
+    const flush = m.tops.every((t: number, i: number) => Math.abs(t - i * m.h) <= 1)
+    const ok = m.names.length === cap && flush && m.depths.every((d: number, i: number) => d === i) && m.z.every((z: number, i: number) => i === 0 || z < m.z[i - 1]) && m.opaque && m.line && m.open && !m.wide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  search-sticky ${scheme} at 375x667: ${m.names.length} stuck (cap ${cap}: 7 levels, ${Math.round(m.view)}px list): ${m.names.join(' / ')}; tops ${m.tops.join(',')} (row ${m.h}px); ${m.opaque ? 'opaque' : 'SEE-THROUGH'}, ${m.line ? 'line under' : 'NO LINE'}, ${m.open ? 'open chevrons' : 'CLOSED CHEVRON'}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+    if (scheme === 'light') {
+      const t = await evaluate(STICKY_TAP)
+      const tapOk = Math.abs(t.at - t.want) <= 1 && t.open === 'true'
+      if (!tapOk) failed++
+      writeFileSync(file.replace('.png', '-tapped.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      console.log(`${tapOk ? 'PASS' : 'FAIL'}  search-sticky tap on the stuck "${t.name}": its row at ${t.at}px (under the 2 rows stuck above it: ${t.want}px), still ${t.open === 'true' ? 'open' : 'CLOSED'}`)
+    }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

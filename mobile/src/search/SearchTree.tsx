@@ -16,6 +16,7 @@ import { bumpFolds, useFolds } from './folds'
 import { rowId, useIdsForm } from './showIds'
 import { openFile } from '../explore/openFile'
 import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
+import { TreeLook } from './treeLook'
 
 export { SearchBar } from './SearchBar'
 export { FoldButton } from './folds'
@@ -60,11 +61,14 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
     },
     [open],
   )
+  // YAZ-5506: the open folders stick at the top while their rows scroll under them.
+  const drawn = rows.slice(0, shown)
   return (
     <>
       <h2 className="section">{app.unit('Pages')}</h2>
+      <TreeLook rows={drawn} />
       <ul className="tree" role="tree" aria-label={app.unit('Pages')}>
-        {rows.slice(0, shown).map((row) => (
+        {drawn.map((row) => (
           <li key={row.path} role="treeitem" aria-expanded={row.kind === 'folder' ? row.open : undefined}>
             <button
               type="button"
@@ -156,6 +160,8 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   const found = useMemo(() => foundTree(vault, rows, folders, query), [vault, rows, folders, query])
   const drawn = useMemo(() => foundRows(vault, found, flipped, data.review.enabled), [vault, found, flipped, data])
   const needle = readNeedle(query)
+  // YAZ-5506: the found tree's open folders stick too, as on the Mac's Search tab.
+  const shownRows = drawn.slice(0, shown)
   const toggle = (path: string) => {
     flips = { key, open: new Set(flipped.has(path) ? [...flipped].filter((p) => p !== path) : [...flipped, path]) }
     setTurn((n) => n + 1)
@@ -168,8 +174,9 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
   }
   return (
     <>
+      <TreeLook rows={shownRows} />
       <ul className="tree search__found" role="tree" aria-label="Results">
-        {drawn.slice(0, shown).map((row) => {
+        {shownRows.map((row) => {
           const hit = row.hit
           // `ID — ` in front of a row the search found by its ID (the Mac's "Only when it matches"), its digits marked.
           const id = hit?.id !== undefined && hit.label.startsWith(`${hit.id} — `) ? hit.id : null

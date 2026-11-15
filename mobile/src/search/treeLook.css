@@ -1,0 +1,33 @@
+/*
+ * In the lazy Search tree chunk (`treeLook.tsx` imports it), not the first load (YAZ-5377).
+ *
+ * YAZ-5506: STICKY FOLDERS, as the Mac sidebar's (YAZ-3440 D1, D10; `client/src/app.css` `.tree__row--sticky`). The
+ * layer of stuck rows (`stickyFolders.ts`): a zero-height box that sticks at the scroller's top edge (`.screen` has
+ * 12px of top padding, and a sticky box stops below it, so `top` takes it back, as the Mac's `--sidebar-pad-top`), over
+ * the list, as wide as it. Each stuck row is a copy of its folder row, at its depth's slot, the shallower on top: the
+ * side's colour (the screen's, on the phone), opaque, so no row or line shows through, and the thin line under it.
+ */
+.tree__stuck {
+  position: sticky;
+  top: -12px;
+  z-index: 2;
+  height: 0;
+  margin: 0 -8px;
+}
+.search .tree__stuck .tree__row--stuck {
+  position: absolute;
+  left: 0;
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: 0 1px 0 var(--border);
+}
+/* A press shows on it as on any row. */
+.search .tree__stuck .tree__row--stuck:active {
+  background: var(--bg-side);
+}
+/* A finger's room on the chevron of a stuck row, which closes its folder (the rest of the row scrolls back to it). */
+.tree__row--stuck .tree__chevron::after {
+  content: '';
+  position: absolute;
+  inset: -15px -8px -15px -10px;
+}
