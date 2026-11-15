@@ -64,7 +64,10 @@ function controls(host: HTMLElement): void {
 }
 
 export interface TaskTicks {
-  /** After a draw: the boxes become controls, and the ticks still waiting show their state. */
+  /**
+   * After a draw, or a read of the stored file that found the same text: the boxes become controls, each shows what
+   * the text says (YAZ-5521), and the ticks still waiting show their state over it.
+   */
   paint(): void
 }
 
@@ -72,15 +75,35 @@ export interface TaskTicks {
  * The ticks of the page `path` drawn in `host`, from its stored `text` (front matter and all). `port` is the comment
  * list (null until the engine has loaded); `say` shows a short line on the page.
  */
-export function useTaskTicks(host: RefObject<HTMLElement | null>, path: string, text: string | null | undefined, port: CommentsPort | null, say: (words: string) => void): TaskTicks {
-  const latest = useRef({ path, text, port, say })
-  latest.current = { path, text, port, say }
+export function useTaskTicks(
+  host: RefObject<HTMLElement | null>,
+  path: string,
+  text: string | null | undefined,
+  port: CommentsPort | null,
+  say: (words: string) => void,
+  /**
+   * YAZ-5521 (sweep2 S-D): a tick of this page left the list with no refusal (written, or found done already after a
+   * lost reply, W3): the page reads its stored file again and paints (`paint`) or draws from it. A tick settled with no
+   * write (the Mac unticked after it) changes no byte, so no sync event redraws the page: its box kept the tap's state.
+   */
+  onSettled?: () => void,
+): TaskTicks {
+  const latest = useRef({ path, text, port, say, onSettled })
+  latest.current = { path, text, port, say, onSettled }
 
   const paint = () => {
     const el = host.current
-    const { port: p, path: at } = latest.current
+    const { port: p, path: at, text: t } = latest.current
     if (el === null) return
     controls(el)
+    // Each box as the text says (YAZ-5521: a tick that settled leaves no tap state behind), then the waiting ticks.
+    if (typeof t === 'string') {
+      const lines = new Map(taskLines(t).map((l) => [`${l.line}\u0000${l.core}`, l.checked]))
+      for (const box of el.querySelectorAll<HTMLElement>(BOX)) {
+        const own = lines.get(`${box.dataset.taskLine}\u0000${box.dataset.task}`)
+        if (own !== undefined && (box.dataset.checked === 'true') !== own) showBox(box, own)
+      }
+    }
     for (const c of p?.waiting(at) ?? []) if (c.task !== undefined && c.refused === undefined) {
       const box = typeof latest.current.text === 'string' ? boxOf(el, latest.current.text, c.task) : null
       if (box !== null) showBox(box, c.task.checked)
@@ -88,10 +111,15 @@ export function useTaskTicks(host: RefObject<HTMLElement | null>, path: string, 
   }
 
   // A refused tick: the short line, the box back to the page's own state, and the tick leaves the list.
+  // YAZ-5521: a tick that leaves the list unrefused (settled): the page reads its stored file again.
   useEffect(() => {
     if (port === null) return
+    let ticked = new Set<string>()
     const refused = () => {
       const { path: at, text: t, say: tell } = latest.current
+      const now = new Set(port.waiting(at).filter((c) => c.task !== undefined && c.refused === undefined).map((c) => c.id))
+      const settled = [...ticked].some((id) => !now.has(id) && !port.waiting(at).some((c) => c.id === id))
+      ticked = now
       const gone = port.waiting(at).filter((c): c is WaitingComment & { task: TaskTick } => c.task !== undefined && c.refused !== undefined)
       for (const c of gone) {
         tell(c.refused === 'changed' ? TASK_REFUSED_WORDS.changed : TASK_REFUSED_WORDS.gone)
@@ -101,6 +129,7 @@ export function useTaskTicks(host: RefObject<HTMLElement | null>, path: string, 
         if (box !== null && own !== undefined) showBox(box, own.checked)
       }
       paint()
+      if (settled) latest.current.onSettled?.()
     }
     refused()
     return port.subscribe(refused)
