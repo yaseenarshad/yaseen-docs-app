@@ -3,7 +3,7 @@ import { fileKind, isBoard, isViewOnly } from '@shared/fileKind'
 import type { GestureAction, KeyScope } from '@shared/keys'
 import type { LinkPills } from '@shared/linkPills'
 import type { TextFormatting } from '@shared/textFormatting'
-import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, headerRowAttrs, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, subheaderRowAttrs, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
+import { BETWEEN_VAULTS, DEFAULT_SETTINGS, DEFAULT_SIDEBAR_LENS, folderRowBandOn, hoverOn, MAIN_WORKSPACE_MIN_W, MAX_SESSIONS, MAX_SESSION_TABS, MAX_WINDOW_ROOTS, SIDEBAR_MAX_W, SIDEBAR_MIN_W, rootOfPath, sameVaults, stepSidebarZoom, stripSlash, type CanvasPanelState, type CanvasPrefs, type CommentsOrder, type DeleteResponse, type InboxCarry, type MovedTab, type PageView, type PopOutCarry, type ScreenPoint, type SettingsState, type SidebarTab, type TableOfContents, type TabAction, type TabRef, type TreeNode, type ZoomStep, type FilesAction } from '@shared/types'
 import type { SearchType } from './search/searchFilter'
 import { api, BridgeRequestError } from './api'
 import { applyCrepeTheme } from './editor/crepeTheme'
@@ -62,9 +62,11 @@ import { fetchTree, latestTree, onTree } from './lib/treeFeed'
 import { flushWindow } from './lib/windowFlush'
 import { ConfirmSheet } from './components/ConfirmSheet'
 import { setLanguageHelpers } from './code/languageHelpers'
-import { setCalendarDaySetting, setCellNoteButtonSetting, setHeaderRowSetting, setSlotTimeSetting, setStickyHeaderSetting, setStickySubheadersSetting, setSubheaderRowSetting, setTextInCellsSetting, setTimeFormatSetting } from './editor/table/timeFormatSetting'
+import { setCellNoteButtonSetting } from './editor/table/timeFormatSetting'
+import { setAppTableLook, setVaultTableLook, tableLookKey, tableLookVars } from './editor/table/tableLook'
+import { appTableLook, type TableLookSettings } from '@shared/tableLook'
 import { requestGoToNow } from './editor/table/goToNowRequest'
-import { setAllNotesOpensAt, setCellNotePinnedAtStart, setCellNoteTemplate } from './editor/table/cellNoteCard'
+import { setAllNotesOpensAt, setCellNotePinnedAtStart } from './editor/table/cellNoteCard'
 import { dropPageWindowsAt, renamePageWindows } from './views/view/PageWindow'
 import { moveExploreRecent, rememberExploreRecent } from './explore/exploreRecents'
 import type { ExploreRequest } from './explore/layers'
@@ -303,18 +305,40 @@ const RetainedEditor = memo(Editor)
  * the same formatting hands React the same style, and a change costs one style update on the
  * layers of that vault only.
  */
-const layerStyles = new WeakMap<TextFormatting, WeakMap<LinkPills, CSSProperties>>()
-/** The vault's link pills look rides the same style (YAZ-4924): the `--pill-*` variables, cached by both objects. */
-function layerStyleOf(formatting: TextFormatting, pills: LinkPills): CSSProperties {
+const layerStyles = new WeakMap<TextFormatting, WeakMap<LinkPills, WeakMap<CSSProperties, CSSProperties>>>()
+/** The vault's link pills look rides the same style (YAZ-4924): the `--pill-*` variables; and (YAZ-5487) its table look (`tableVars`), cached by the three objects. */
+function layerStyleOf(formatting: TextFormatting, pills: LinkPills, tableVars: CSSProperties = NO_TABLE_VARS): CSSProperties {
   let byPills = layerStyles.get(formatting)
   if (byPills === undefined) layerStyles.set(formatting, (byPills = new WeakMap()))
-  let style = byPills.get(pills)
+  let byTable = byPills.get(pills)
+  if (byTable === undefined) byPills.set(pills, (byTable = new WeakMap()))
+  let style = byTable.get(tableVars)
   if (style === undefined) {
-    style = { ...textVars(formatting), ...linkPillVars(pills) } as CSSProperties
-    byPills.set(pills, style)
+    style = { ...textVars(formatting), ...linkPillVars(pills), ...tableVars } as CSSProperties
+    byTable.set(tableVars, style)
   }
   return style
 }
+/**
+ * A vault's table look as its surfaces' variables (YAZ-5487): `--table-look` names the vault (the editor's script reads
+ * its look by it, `tableLookAt`), and with a table-look.json its whole look (`initial` where it sets none); with none,
+ * only the name: its tables read `.app`'s, the app's look. Cached on the look object (one per file read).
+ */
+const tableVarsCache = new WeakMap<TableLookSettings, CSSProperties>()
+const tableKeyVars = new Map<string, CSSProperties>()
+function tableVarsOf(root: string, look: TableLookSettings | null): CSSProperties {
+  const key = tableLookKey(root)
+  if (look === null) {
+    let vars = tableKeyVars.get(key)
+    if (vars === undefined) tableKeyVars.set(key, (vars = Object.freeze({ '--table-look': key }) as CSSProperties))
+    return vars
+  }
+  let vars = tableVarsCache.get(look)
+  if (vars === undefined) tableVarsCache.set(look, (vars = { '--table-look': key, ...tableLookVars(look, true) } as CSSProperties))
+  return vars
+}
+/** A surface with no vault (YAZ-5487): no table variable, it reads `.app`'s, the app's look. */
+const NO_TABLE_VARS: CSSProperties = Object.freeze({})
 
 /**
  * Keeps the current-page navigation function stable for the lifetime of one retained right
@@ -378,8 +402,6 @@ function keyPlaceOf(file: string | null): KeyScope | null {
   const kind = fileKind(file)
   return kind === 'markdown' ? 'page' : kind === 'drawing' ? 'drawing' : kind === 'diagram' ? 'diagram' : kind === 'text' ? 'code' : null
 }
-/** A band colour setting as CSS (the YAZ-3818 demo): the accent, a table colour's swatch, or the picked colour. */
-const bandColour = (value: string): string => (value === 'accent' ? 'var(--accent)' : value.startsWith('#') ? value : `var(--table-fill-solid-${value})`)
 
 export function App() {
   /**
@@ -675,6 +697,8 @@ export function App() {
    * The window's vaults for the place picker (YAZ-3556 D6): the active tab's first, then the others in the window's order.
    * ⌘N and ⌘D read the vault, the page on show and the settings of the moment through `placeInputs`, at key time.
    */
+  // Settings › Tables (YAZ-5487): the vault its Vault dropdown shows; null is the active tab's.
+  const [tableLookRoot, setTableLookRoot] = useState<string | null>(null)
   const placeVaults: PlaceVault[] = roots.map((vault, i) => ({ root: vault, name: vaults[i].name ?? storage.vaultName(vault) })).sort((a, b) => Number(b.root === active.root) - Number(a.root === active.root))
   const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings })
   placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings }
@@ -790,27 +814,18 @@ export function App() {
   }, [])
   // "Jump across files" (YAZ-3500): every code tab of this page follows the switch (`code/languageHelpers.ts`).
   useEffect(() => setLanguageHelpers(settings.codeLanguageHelpers === true), [settings.codeLanguageHelpers])
-  // The time format (YAZ-4163 D15): "/Calendar table", "Time slots" and "Current time" read it at the click.
-  useEffect(() => setTimeFormatSetting(settings.tableTimeFormat), [settings.tableTimeFormat])
-  useEffect(() => setCalendarDaySetting(settings.tableDayStart, settings.tableDayEnd), [settings.tableDayStart, settings.tableDayEnd])
-  // YAZ-4774: absent from settings a main process older than the field sent: the default.
-  const headerRow = settings.tableHeaderRow ?? DEFAULT_SETTINGS.tableHeaderRow
-  useEffect(() => setHeaderRowSetting(headerRow), [headerRow])
-  // YAZ-4899: the subheader rows' default look and whether they stick; absent from an older main process.
-  const subheaderRow = settings.tableSubheaderRow ?? DEFAULT_SETTINGS.tableSubheaderRow
-  const stickySubheaders = settings.tableStickySubheaders ?? DEFAULT_SETTINGS.tableStickySubheaders
-  useEffect(() => setSubheaderRowSetting(subheaderRow), [subheaderRow])
-  useEffect(() => setStickySubheadersSetting(stickySubheaders), [stickySubheaders])
-  // YAZ-4899 round 2: the header row frozen by default; a table's own choice or freeze wins.
-  const stickyHeader = settings.tableStickyHeader ?? DEFAULT_SETTINGS.tableStickyHeader
-  useEffect(() => setStickyHeaderSetting(stickyHeader), [stickyHeader])
-  // YAZ-4900: every page table's Wrap or Clip; the page reads it from `.app` (`data-table-text`), the menus as their Default.
-  const textInCells = settings.tableTextInCells ?? DEFAULT_SETTINGS.tableTextInCells
-  useEffect(() => setTextInCellsSetting(textInCells), [textInCells])
+  // YAZ-5487: the 21 table settings (the look and the new-table defaults) as the APP's look, the fallback for a vault
+  // with no table-look.json and a window with no vault: the editor reads it in script (`tableLookAt`: the time format,
+  // the calendar day, the header and subheader rows, sticky, text in cells, the cell note template, new tables' style).
+  // A setting absent from an older main process is the default (`appTableLook`).
+  const appTable = useMemo(() => appTableLook(settings), [settings])
+  useEffect(() => setAppTableLook(appTable), [appTable])
+  // Each vault's own look (its table-look.json), for the editor's script on its surfaces (`tableLookAt`); none: the app's.
+  // Every render: a few map writes; a sticky default that changed tells the editors (`setVaultTableLook`).
+  useEffect(() => {
+    roots.forEach((at, i) => setVaultTableLook(at, vaults[i]?.tableLook.settings ?? null))
+  })
   useEffect(() => setCellNoteButtonSetting(settings.tableCellNoteButton), [settings.tableCellNoteButton])
-  useEffect(() => setSlotTimeSetting(settings.tableSlotTime, settings.tableSlotSeconds), [settings.tableSlotTime, settings.tableSlotSeconds])
-  // The new cell note template (round 3 of the YAZ-3818 demo): read when a cell note is made. Absent from an older main process.
-  useEffect(() => setCellNoteTemplate(settings.tableCellNoteTemplate ?? ''), [settings.tableCellNoteTemplate])
   // A new tab's cell note card starts pinned (round 3 of the demo); an open tab keeps its own pin.
   useEffect(() => setCellNotePinnedAtStart(settings.tableCellNotePinned ?? true), [settings.tableCellNotePinned])
   // Arrows while typing (YAZ-4273 D8): an open page reads it at its next keystroke. Absent from an older main process.
@@ -957,21 +972,17 @@ export function App() {
     // Bullets in pages (the YAZ-3818 demo, bullets.css): only a changed value, so the default stays the page's 2.15em.
     ...((settings.pageBulletIndent ?? DEFAULT_SETTINGS.pageBulletIndent) !== DEFAULT_SETTINGS.pageBulletIndent ? { '--page-bullet-indent': `${settings.pageBulletIndent}px` } : {}),
     ...((settings.pageBulletGap ?? DEFAULT_SETTINGS.pageBulletGap) !== DEFAULT_SETTINGS.pageBulletGap ? { '--page-bullet-gap': `${settings.pageBulletGap}px` } : {}),
-    // Bullets in table cells and cell note cards (the YAZ-3818 demo, table.css). Absent from settings a main process
-    // older than these fields sent: the defaults.
-    '--cell-bullet-indent': `${settings.tableCellBulletIndent ?? DEFAULT_SETTINGS.tableCellBulletIndent}px`,
-    '--cell-bullet-gap': `${settings.tableCellBulletGap ?? DEFAULT_SETTINGS.tableCellBulletGap}px`,
-    // The row band's colour and strength (the YAZ-3818 demo, table.css): the accent, a table colour (its full
-    // strength, as a fill swatch), or a picked one.
-    '--table-band-colour': bandColour(settings.tableBandColour ?? DEFAULT_SETTINGS.tableBandColour),
-    '--table-band-strength': `${settings.tableBandStrength ?? DEFAULT_SETTINGS.tableBandStrength}%`,
+    // The table look (YAZ-5487, `editor/table/tableLook.ts`): the APP's values here, the fallback for a vault with no
+    // table-look.json; a vault's own look is on each surface of its pages. Bullets in cells, the row band's colour and
+    // strength (the YAZ-3818 demo), and what were attributes on `.app` (row band, bold first cell, now mark, dim past,
+    // text in cells, sticky subheaders, width, the header and subheader rows): variables now, so two vaults never clash.
+    ...tableLookVars(appTable),
     // Section indent (YAZ-2709): a plain number, sectionIndent.css needs it as one (`border-image-slice`).
     '--section-step-setting': settings.sectionStep,
     // Every code block's and every table's width (YAZ-4783 layer 3), with `data-code-block-width` / `data-table-width`
     // below: absent for "Text column" (and from a main process older than the fields), the look before. A CSS var, so
     // a change rebuilds no editor; a page's own width on its editor's mount wins (app.css).
     ...(settings.codeBlockWidth != null ? { '--code-block-width': `${settings.codeBlockWidth}px` } : {}),
-    ...(settings.tableWidth != null ? { '--table-width': `${settings.tableWidth}px` } : {}),
     // Absent → bulletThreading.css falls back to the app accent.
     ...(settings.threadColor !== null ? { '--thread-color': settings.threadColor } : {}),
     // Absent → app.css falls back to `--thread-color`, then the accent (YAZ-3309 D9).
@@ -995,13 +1006,24 @@ export function App() {
    * that shows it: two vaults in one window look different. Each variable is there only for a
    * changed field; app.css and bullets.css fall back to the app's look.
    */
-  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting, scopeOf(path).linkPills.pills)
+  /** The table look of the vault that holds `path` (YAZ-5487): its whole look, or only its name with no table-look.json. */
+  const tableVarsFor = (path: string): CSSProperties => {
+    const scope = scopeOf(path)
+    return scope.root === null ? NO_TABLE_VARS : tableVarsOf(scope.root, scope.tableLook.settings)
+  }
+  const textVarsFor = (path: string): CSSProperties => layerStyleOf(scopeOf(path).textFormatting.formatting, scopeOf(path).linkPills.pills, tableVarsFor(path))
   /**
    * Settings › Text formatting (YAZ-3068 D15): every vault of the window, in its order, and the active
    * tab's vault, where the "Vault" dropdown starts. None in the Welcome window, so the group is not there.
    */
   const settingsTextFormatting =
     root === null ? undefined : { vaults: vaults.map((vault, i) => ({ root: roots[i], name: vault.name ?? storage.vaultName(roots[i]), state: vault.textFormatting })), activeRoot: active.root ?? roots[0] }
+  /** Settings › Tables (YAZ-5487): the picked vault's table-look.json, the app's look until it has one (the first change writes it). */
+  const tableLookScope = (tableLookRoot !== null && roots.includes(tableLookRoot) ? vaults[roots.indexOf(tableLookRoot)] : null) ?? active
+  const settingsTableLook =
+    root === null || tableLookScope.root === null
+      ? undefined
+      : { vaults: placeVaults, root: tableLookScope.root, choose: setTableLookRoot, value: tableLookScope.tableLook.settings ?? appTable, save: tableLookScope.tableLook.save }
 
   // The URL hash mirrors the ACTIVE tab (GRO-2069; rule 17: on boot the hash already won as
   // the active tab in bootTabs, so this first run is a no-op re-write of the same hash).
@@ -1486,6 +1508,10 @@ export function App() {
   // open the ONE dialog — and it can open with the sidebar collapsed. `open`/`close` are stable
   // because `useMenuEvents` resubscribes whenever a callback identity changes.
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Settings › Tables' Vault dropdown starts on the active tab's vault at each open (YAZ-5487).
+  useEffect(() => {
+    if (!settingsOpen) setTableLookRoot(null)
+  }, [settingsOpen])
   // Which page the dialog opens on: the first, or Sharing from the Share dialog's "Open Settings › Sharing" (YAZ-3040).
   const [settingsPage, setSettingsPage] = useState<'sharing' | 'hotkeys' | 'cards' | undefined>(undefined)
   const openSettings = useCallback(() => {
@@ -3941,7 +3967,7 @@ export function App() {
     <PageActions.Provider value={linkActions}>
     <CommentPrefsContext.Provider value={commentPrefs}>
     <TitleIsName.Provider value={titleIsName}>
-    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-table-width={settings.tableWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-shown-hidden-words={settings.shownHiddenWords} {...nextHiddenAttrs(settings)} {...cardLookAttrs(settings)} data-toc-lines={settings.tocLines} data-table-row-band={settings.tableRowBand} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-band-bold={settings.tableBandBold === false ? 'off' : 'on'} data-table-now={settings.tableNowMark} data-table-dim-past={settings.tableDimPast} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} {...headerRowAttrs(headerRow)} {...subheaderRowAttrs(subheaderRow)} data-table-sticky-subheaders={stickySubheaders ? 'on' : 'off'} data-table-text={textInCells} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
+    <div className={filesWindow ? `app app--files${filesBoard || filesWant ? ' app--files-board' : ''}` : 'app'} style={settingsVars} data-content-width={settings.contentWidth} data-code-block-width={settings.codeBlockWidth != null ? '' : undefined} data-section-lines={settings.sectionLines} data-shown-hidden-words={settings.shownHiddenWords} {...nextHiddenAttrs(settings)} {...cardLookAttrs(settings)} data-toc-lines={settings.tocLines} data-folder-row-band={folderRowBandOn(settings) ? 'on' : 'off'} data-table-band-rows={settings.tableBandRows ?? 'both'} data-table-now-button={settings.tableNowButton ? 'on' : 'off'} data-sidebar-lines={settings.sidebarLines} data-sidebar-line-style={settings.sidebarLineStyle} data-sidebar-icon-set={settings.sidebarIconSet} data-sidebar-file-icons={settings.sidebarFileIcons} data-sidebar-folder-icons={settings.sidebarFolderIcons} data-icon-colors={iconColorKinds} data-sidebar-arrow={settings.sidebarArrowMotion} onDragEnterCapture={windowDragCapture} onDragOverCapture={windowDragCapture} onDropCapture={windowDragCapture} onDragOver={windowDragOver} onDrop={windowDrop}>
       {(glow || takeGlow) && <div className="window-glow" aria-hidden="true" />}
       {(notice !== null || dragOutAsk !== null) && (
         // The bottom-left corner (YAZ-3262): ONE column, so the box after a drag out always stands
@@ -3975,7 +4001,7 @@ export function App() {
       {/* YAZ-1679: unmounted when closed, never hidden. ONE useGithubSync per vault (its scope): the
           dialog's Sync page and the editor's chip read the same status, so they can never
           disagree about what this vault is doing. The pages for one vault are the ACTIVE vault's (YAZ-2602 R10). */}
-      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
+      {settingsOpen && <SettingsDialog ctx={{ openDailyTemplate: root === null ? undefined : openDailyTemplate, openCourse: () => openCourse(), settings, onChange: changeSettings, sync: { status: active.sync.status, setEnabled: active.sync.setEnabled }, review: root === null ? undefined : active.reviewSettings, linkClick: root === null ? undefined : active.linkClick, readOnlyVault: root === null ? undefined : active.readOnlyVault, showIds: root === null ? undefined : active.showIds, linkPills: root === null ? undefined : active.linkPills, unitWord: root === null ? undefined : active.unit, hasCards: root !== null && active.wikilinks.records.some((r) => (r.cards?.length ?? 0) > 0), ids: active.ids, vaultName: roots.length > 1 ? (active.name ?? undefined) : undefined, storage: active.root === null ? undefined : vaultStorage, sharing, textFormatting: settingsTextFormatting, tableLook: settingsTableLook, places: root === null ? undefined : placeVaults, vaultRoot: active.root ?? undefined }} initialPage={settingsPage} onClose={closeSettings} />}
       {courseOpen !== null && (
         <Suspense fallback={null}>
           <CardCourse key={courseOpen.n} chapter={courseOpen.chapter} vault={courseOpen.vault} onClose={closeCourse} courseVault={courseVault} lost={courseLost} />

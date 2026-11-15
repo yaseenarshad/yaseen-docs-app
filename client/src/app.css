@@ -1257,6 +1257,15 @@ button {
   width: var(--table-width);
   max-width: calc(100% + var(--block-room, 0px));
 }
+/* YAZ-5487: Settings › Tables › Width is the vault's (`table-look.json`) on its surface, the app's on `.app`: a style
+   query on `--table-width-set` (an attribute on `.app` would match under every vault). A page's own width wins
+   (its `--table-width` on its editor's mount is nearer). */
+@container style(--table-width-set: on) {
+  .editor-instance .milkdown .milkdown-table-block:not([data-table-sized]) {
+    width: var(--table-width);
+    max-width: calc(100% + var(--block-room, 0px));
+  }
+}
 
 /* Column resize (YAZ-3696 D2): the grip at a header cell's edge (YAZ-3800) takes the theme colour
    (prosemirror-tables draws it light blue). The table block's drop line (it has no "+" button since

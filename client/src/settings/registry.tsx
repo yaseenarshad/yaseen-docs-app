@@ -30,6 +30,7 @@ import { keyFor, keyInWords, type HotkeyId } from '@shared/hotkeyBindings'
 import { ASIDE_PLACES, keyRow, stepsAside } from '@shared/keys'
 import type { SystemHotkey } from '@shared/macosHotkeys'
 import { BLOCK_WIDTH_MAX, BLOCK_WIDTH_MIN, CARD_BLOCK_GAP_MAX, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, isCardWidth, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SCALE, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, isCardTextSize, isCardTitleSize, CARD_SPACING_CLEAN, DEFAULT_SETTINGS, GUIDE_LINE_DARKNESS_MAX, GUIDE_LINE_DARKNESS_MIN, GUIDE_LINE_DARKNESS_STEP, SIDEBAR_ICON_KINDS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, TABLE_BAND_STRENGTH_MAX, TABLE_BAND_STRENGTH_MIN, CELL_NOTE_TEMPLATE_MAX, NEW_PAGE_TITLE_MAX, TABLE_CELL_BULLET_GAP_MAX, TABLE_CELL_BULLET_GAP_MIN, TABLE_CELL_BULLET_INDENT_MAX, TABLE_CELL_BULLET_INDENT_MIN, TABLE_SHADE_MAX, TABLE_SHADE_MIN, TABLE_SHADE_STEP, DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, HEADER_ROW_CHOICES, HEADER_ROW_PARTS, headerRowAttrs, headerRowLabel, type HeaderRow, type GithubSyncStatus, type HoverPlace, type IdsState, type IndexResponse, type SettingsState, type SidebarIconKind } from '@shared/types'
+import { appTableLook, type TableLookSettings } from '@shared/tableLook'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import type { VaultStorageState } from '../hooks/useVaultStorage'
 import { SHARING_SECTION } from '../share/SharingPage'
@@ -44,7 +45,7 @@ import { CANVAS_SECTION } from './canvasSection'
 import { CODE_SECTION } from './codeSection'
 import { FOLDER_PAGES_SECTION } from './folderPagesSection'
 import { IMAGES_SECTION } from './imagesSection'
-import { Segmented, Stepper } from './controls'
+import { Segmented, Select, Stepper } from './controls'
 import { UnitWordControl } from './UnitWordControl'
 import { ProfileControl } from './ProfileControl'
 import { HOTKEYS_SECTION, type HotkeyFilter } from './hotkeysSection'
@@ -61,7 +62,7 @@ import { formatTime } from '@shared/timeFormat'
 import { CalendarDayControl } from './CalendarDayControl'
 import { TimeFormatControl } from './TimeFormatControl'
 import { DEFAULT_NEW_PAGE_TITLE, renderTitleTemplate } from '../sidebar/createEntry'
-import { capital, fillSwatch } from '../editor/table/colours'
+import { capital, fillSwatch, textSwatch } from '../editor/table/colours'
 import { TABLE_COLORS, type TableColor } from '../editor/table/tableComment'
 import type { PlaceVault } from '../sidebar/PlacePicker'
 import { IconRulesControl } from './IconRulesControl'
@@ -184,22 +185,25 @@ function BlockWidthSetting({ name, value, start, onSet, options = BLOCK_WIDTH_OP
   )
 }
 
-/** "Band colour" (the YAZ-3818 demo): the accent, the cell toolbar's ten Fill colours (their swatches), and Custom…. */
-function BandColourControl({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+/**
+ * "Band colour" (the YAZ-3818 demo): the accent, the cell toolbar's ten Fill colours (their swatches), and Custom….
+ * YAZ-5541's "Next slot colour" is the same control, its table colours shown as their text colours (`nextColour`).
+ */
+function BandColourControl({ value, onChange, label = 'Band colour', swatchOf = fillSwatch }: { value: string; onChange: (next: string) => void; label?: string; swatchOf?: typeof fillSwatch }) {
   const swatch = (colour: string) => <span className="settings__band-swatch" style={{ background: colour }} aria-hidden />
   return (
-    <span className="settings__band-colours" role="radiogroup" aria-label="Band colour">
+    <span className="settings__band-colours" role="radiogroup" aria-label={label}>
       <button type="button" role="radio" aria-checked={value === 'accent'} title="Accent" className="settings__band-colour" onClick={() => onChange('accent')}>
         {swatch('var(--accent)')}
       </button>
       {TABLE_COLORS.map((c) => (
         <button key={c} type="button" role="radio" aria-checked={value === c} title={capital(c)} className="settings__band-colour" onClick={() => onChange(c)}>
-          {swatch(fillSwatch(c))}
+          {swatch(swatchOf(c))}
         </button>
       ))}
       <label className={`settings__band-colour settings__band-custom${value.startsWith('#') ? ' settings__band-colour--on' : ''}`} title="Custom colour…">
         {value.startsWith('#') ? swatch(value) : 'Custom…'}
-        <input type="color" aria-label="Custom band colour" value={value.startsWith('#') ? value : '#3b82f6'} onChange={(event) => onChange(event.target.value)} />
+        <input type="color" aria-label={`Custom ${label.toLowerCase()}`} value={value.startsWith('#') ? value : '#3b82f6'} onChange={(event) => onChange(event.target.value)} />
       </label>
     </span>
   )
@@ -389,6 +393,11 @@ export interface SettingsCtx {
   vaultRoot?: string
   /** Daily pages › Open template (YAZ-3607): App opens the daily pages folder's `.template.md`, made empty first when missing. Absent with no vault. */
   openDailyTemplate?: () => void
+  /**
+   * The table look and new-table defaults (YAZ-5487): the picked vault's table-look.json as the 21 settings (`value`: the
+   * app's until the vault has a file), with the Vault dropdown as Spacing's. Absent with no vault: the rows edit the app's.
+   */
+  tableLook?: { vaults: readonly { root: string; name: string }[]; root: string; choose: (root: string) => void; value: TableLookSettings; save: (next: TableLookSettings) => void }
   /** Review › Card course › "Open the course" (YAZ-5120): App closes Settings and opens the course. */
   openCourse?: () => void
 }
@@ -518,6 +527,49 @@ const previewRow = (id: string, label: string, keywords: readonly string[], Prev
     </Suspense>
   ),
 })
+
+/**
+ * The Tables rows of the 21 vault settings (YAZ-5487): each reads and writes the picked vault's table-look.json
+ * (`ctx.tableLook`; the app's values until the vault has a file) through a ctx whose `settings` carry that look and whose
+ * `onChange` saves the 21 keys into the vault. The table habits (Rows it marks, Add button, Keep cell notes open, All
+ * notes opens at, Now button) stay this Mac's. With no vault in the window, the app's settings, as before.
+ */
+const TABLE_LOOK_ROWS: ReadonlySet<string> = new Set([
+  'tableHeaderRow', 'tableSubheaderRow', 'tableStickyHeader', 'tableStickySubheaders', 'tableWidth', 'tablePosition', 'tableTextInCells', 'tableNewStyle',
+  'tableRowBand', 'tableBandColour', 'tableBandStrength', 'tableBandBold', 'tableCellBulletIndent', 'tableCellBulletGap', 'tableCellNoteTemplate',
+  'tableNowMark', 'tableNextShade', 'tableNextColour', 'tableDimPast', 'tableShadeDarkness', 'tableCalendarDay', 'tableTimeFormat',
+])
+function tableLookCtx(ctx: SettingsCtx): SettingsCtx {
+  const look = ctx.tableLook
+  if (look === undefined) return ctx
+  // `next` carries the look's own keys too (YAZ-5602's Time in slot has no app setting), so a row keeps them.
+  return { ...ctx, settings: { ...ctx.settings, ...look.value }, onChange: (next) => look.save(appTableLook({ ...look.value, ...next })) }
+}
+function tableLookItems(items: readonly SettingDef[], vault = false): SettingDef[] {
+  const vaultRow: SettingDef = {
+    id: 'tableLookVault',
+    label: 'Vault',
+    keywords: ['table', 'tables', 'table look', 'vault'],
+    available: (ctx) => (ctx.tableLook?.vaults.length ?? 0) > 1,
+    render: ({ tableLook }) => tableLook && <Select options={tableLook.vaults.map((v) => ({ label: v.name, value: v.root }))} value={tableLook.root} onChange={tableLook.choose} ariaLabel="Vault" />,
+  }
+  const through = <T,>(f: T | ((ctx: SettingsCtx) => T)): T | ((ctx: SettingsCtx) => T) => (typeof f === 'function' ? (ctx: SettingsCtx) => (f as (ctx: SettingsCtx) => T)(tableLookCtx(ctx)) : f)
+  return [
+    ...(vault ? [vaultRow] : []),
+    ...items.map((def): SettingDef =>
+      !TABLE_LOOK_ROWS.has(def.id)
+        ? def
+        : {
+            ...def,
+            label: through(def.label),
+            ...(def.hint !== undefined && { hint: through(def.hint) }),
+            ...(def.available !== undefined && { available: (ctx: SettingsCtx) => def.available!(tableLookCtx(ctx)) }),
+            ...(def.wide !== undefined && { wide: through(def.wide) }),
+            render: (ctx) => def.render(tableLookCtx(ctx)),
+          },
+    ),
+  ]
+}
 /** Card spacing's own four rows (YAZ-5050): only with Custom. */
 const cardSpacingCustom = (ctx: SettingsCtx): boolean => reviewOn(ctx) && ctx.settings.cardSpacing === 'custom'
 
@@ -1364,7 +1416,10 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
         // YAZ-4167 D16 (YAZ-4159 D16 names the group): every table. The calendar rows have their own group below (the YAZ-4163 demo).
         // "All tables" since YAZ-4775: on the Tables page a second "Tables" read as "Tables › Tables".
         title: 'All tables',
-        items: [
+        // YAZ-5487: the table look and new-table defaults are the vault's (table-look.json, `tableLookItems`), with the
+        // Vault dropdown where the window has two or more; the phone reads them too. "Rows it marks" stays this Mac's.
+        hint: "Saved in the vault's table-look.json: each vault has its own, on this Mac and on the phone. Rows it marks is this Mac's.",
+        items: tableLookItems([
           {
             // YAZ-4774: one look for both kinds of table; a page table's "Header row ›" and a folder table's View tab can say otherwise.
             id: 'tableHeaderRow',
@@ -1519,12 +1574,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <CellBulletStepper settings={settings} onChange={onChange} field="tableCellBulletGap" name="Bullet gap in cells" min={TABLE_CELL_BULLET_GAP_MIN} max={TABLE_CELL_BULLET_GAP_MAX} step={1} />
             ),
           },
-        ],
+        ], true),
       },
       {
-        // Round 3 of the YAZ-3818 demo: what a new cell note starts with. In the app's settings, never in the file.
+        // Round 3 of the YAZ-3818 demo: what a new cell note starts with. The vault's since YAZ-5487 (table-look.json);
+        // the Add button, Keep cell notes open and All notes opens at stay this Mac's.
         title: 'Cell notes',
-        items: [
+        items: tableLookItems([
           {
             // YAZ-4790: every table's "+", off by default (the YAZ-4790 demo); a table's 6-dot "Cell note button" sets its own.
             id: 'tableCellNoteButton',
@@ -1563,12 +1619,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
               <Segmented options={ALL_NOTES_OPENS_AT_OPTIONS} value={settings.tableAllNotesOpensAt ?? 'cell'} onChange={(tableAllNotesOpensAt) => onChange({ ...settings, tableAllNotesOpensAt })} ariaLabel="All notes opens at" />
             ),
           },
-        ],
+        ]),
       },
       {
-        // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every page. Never in the file.
+        // YAZ-4162 D6, D14 and YAZ-4163 D15; a group of its own from the YAZ-4163 demo: how a calendar table looks and starts, for every page. Never in the
+        // page's file; the vault's table-look.json since YAZ-5487 (the Now button stays this Mac's).
         title: 'Calendar tables',
-        items: [
+        items: tableLookItems([
           {
             id: 'tableNowMark',
             label: 'Mark the current time',
@@ -1579,14 +1636,15 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // YAZ-5602 (Option A): a pill at the right end of the now line, and on the Now button.
+            // YAZ-5602 (Option A): a pill at the right end of the now line, and on the Now button. The vault's only (round 2:
+            // `look.slotTime` in table-look.json, no app setting): no row in a window with no vault.
             id: 'tableSlotTime',
             label: 'Time in slot',
             hint: 'In a calendar table, a pill on the red line says how long is left in the current time slot, or how long since it started.',
             keywords: ['calendar', 'now', 'slot', 'time left', 'countdown', 'count down', 'count up', 'timer', 'remaining', 'elapsed', 'table'],
-            render: ({ settings, onChange }) => (
-              <Segmented options={TABLE_SLOT_TIME_OPTIONS} value={settings.tableSlotTime} onChange={(tableSlotTime) => onChange({ ...settings, tableSlotTime })} ariaLabel="Time in slot" />
-            ),
+            available: ({ tableLook }) => tableLook !== undefined,
+            render: ({ tableLook }) =>
+              tableLook && <Segmented options={TABLE_SLOT_TIME_OPTIONS} value={tableLook.value.tableSlotTime} onChange={(tableSlotTime) => tableLook.save({ ...tableLook.value, tableSlotTime })} ariaLabel="Time in slot" />,
           },
           {
             // YAZ-5602: shows only while Time in slot counts, as Shade darkness shows only with "Grey text and shade".
@@ -1594,9 +1652,30 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             label: 'Show seconds',
             hint: 'The Time in slot pill counts the seconds too, or the minutes only.',
             keywords: ['calendar', 'slot', 'seconds', 'minutes', 'countdown', 'timer', 'table'],
-            available: ({ settings }) => settings.tableSlotTime !== 'off',
+            available: ({ tableLook }) => tableLook !== undefined && tableLook.value.tableSlotTime !== 'off',
+            render: ({ tableLook }) =>
+              tableLook && <Segmented options={ON_OFF_OPTIONS} value={tableLook.value.tableSlotSeconds} onChange={(tableSlotSeconds) => tableLook.save({ ...tableLook.value, tableSlotSeconds })} ariaLabel="Show seconds" />,
+          },
+          {
+            // YAZ-5541: a tint on the row after the now row, at the now tint's strength.
+            id: 'tableNextShade',
+            label: 'Shade the next time slot',
+            hint: 'In a calendar table, a light tint on the row after the current one.',
+            keywords: ['calendar', 'next', 'slot', 'upcoming', 'tint', 'shade', 'time', 'table'],
             render: ({ settings, onChange }) => (
-              <Segmented options={ON_OFF_OPTIONS} value={settings.tableSlotSeconds} onChange={(tableSlotSeconds) => onChange({ ...settings, tableSlotSeconds })} ariaLabel="Show seconds" />
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableNextShade ?? DEFAULT_SETTINGS.tableNextShade} onChange={(tableNextShade) => onChange({ ...settings, tableNextShade })} ariaLabel="Shade the next time slot" />
+            ),
+          },
+          {
+            // YAZ-5541: the band colour's choices; Red, the default, is the now mark's red.
+            id: 'tableNextColour',
+            label: 'Next slot colour',
+            hint: 'The app\'s own colour (the first), a table colour, or one you pick. Red is the current time\'s red.',
+            keywords: ['calendar', 'next', 'slot', 'colour', 'color', 'tint', 'table'],
+            available: ({ settings }) => settings.tableNextShade === true,
+            wide: () => true,
+            render: ({ settings, onChange }) => (
+              <BandColourControl label="Next slot colour" swatchOf={textSwatch} value={settings.tableNextColour ?? DEFAULT_SETTINGS.tableNextColour} onChange={(tableNextColour) => onChange({ ...settings, tableNextColour })} />
             ),
           },
           {
@@ -1659,7 +1738,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             wide: () => true,
             render: ({ settings, onChange }) => <TimeFormatControl settings={settings} onChange={onChange} />,
           },
-        ],
+        ]),
       },
     ],
   },

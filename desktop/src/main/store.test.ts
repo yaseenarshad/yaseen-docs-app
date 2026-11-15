@@ -3416,11 +3416,14 @@ describe('Settings › Tables › Header row (YAZ-4794): text colour and align',
 })
 
 
-describe('Settings › Calendar tables › Time in slot and Show seconds (YAZ-5602)', () => {
-  it('Off and seconds On by default; a saved value reads back; a value this build cannot read is the default, the other settings kept', () => {
-    expect(sanitizeSettings({})).toMatchObject({ tableSlotTime: 'off', tableSlotSeconds: true })
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).toMatchObject({ tableSlotTime: 'down', tableSlotSeconds: false })
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'up' })).toMatchObject({ tableSlotTime: 'up', tableSlotSeconds: true })
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableNowMark: 'both', tableSlotTime: 'both', tableSlotSeconds: 'yes' })).toMatchObject({ tableNowMark: 'both', tableSlotTime: 'off', tableSlotSeconds: true })
+describe('Time in slot and Show seconds left the app settings (YAZ-5602 round 2: table-look.json)', () => {
+  it('no app setting any more; a value an older build of today saved is read once at start, for the move into the vaults', async () => {
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).not.toHaveProperty('tableSlotTime')
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).not.toHaveProperty('tableSlotSeconds')
+    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false } }))
+    expect(createStore(file).slotTimeToMove()).toEqual({ tableSlotTime: 'down', tableSlotSeconds: false })
+    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableSlotTime: 'sideways', tableSlotSeconds: 'yes' } }))
+    expect(createStore(file).slotTimeToMove()).toEqual({})
+    expect(createStore(path.join(path.dirname(file), 'none.json')).slotTimeToMove()).toEqual({})
   })
 })

@@ -74,6 +74,7 @@ import {
   tableAround,
   touchesNotes,
 } from './cellNotes'
+import { appTableLookNow, setAppTableLook, tableLookAt } from './tableLook'
 import { calendarKey, minutesOf, nowPlace } from './tableCalendar'
 import { changedTables, typingOnly } from './tableStyle'
 
@@ -887,12 +888,13 @@ export function setCellNotePinnedAtStart(on: boolean): void {
 /** Whether a new card starts pinned: the folder table's note window reads it too (YAZ-4547). */
 export const cellNotePinnedAtStart = (): boolean => pinnedAtStart
 
-/** The new cell note template (Settings › Tables › All tables › New cell note starts with), as Markdown; App sets it. */
-let template = ''
-
-/** Set the new cell note template (round 3 of the demo): App, when the setting changes. */
+/**
+ * The new cell note template (Settings › Tables › All tables › New cell note starts with), as Markdown: the vault's
+ * (YAZ-5487, `table-look.json`), read for the editor that makes the note (`tableLookAt`); the app's with no file.
+ * This door sets the APP's (tests; App sets the whole look with `setAppTableLook`).
+ */
 export function setCellNoteTemplate(markdown: string): void {
-  template = markdown
+  setAppTableLook({ ...appTableLookNow(), tableCellNoteTemplate: markdown })
   setCellNoteTemplateJson(null)
 }
 
@@ -906,6 +908,7 @@ const parsers = new WeakMap<EditorView, (markdown: string) => ProseNode>()
  */
 function templateBlocks(view: EditorView): ProseNode[] | undefined {
   const parse = parsers.get(view)
+  const template = tableLookAt(view).tableCellNoteTemplate
   if (template.trim() === '' || parse === undefined) return undefined
   const blocks = cellBlocksOf(parse(template).children, view.state.schema)
   const note = view.state.schema.nodes.cell_note.createAndFill({ label: '' }, blocks)

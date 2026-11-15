@@ -181,6 +181,33 @@ describe('the calendar marker on a folded run', () => {
   })
 })
 
+describe('the next time slot on a folded run (YAZ-5541)', () => {
+  const times = ['5:00 pm', '5:30 pm', '6:00 pm', '6:30 pm', '7:00 pm']
+  const markdown = ['| Time | Plan |', '| --- | --- |', ...times.map((t) => `| ${t} | |`)].join('\n') + '\n\n<!-- table: fold 3-5, calendar 30m -->\n'
+  const next = (view: Parameters<typeof trs>[0]) => trs(view).flatMap((tr, i) => (tr.classList.contains('table-next-row') ? [i] : []))
+
+  it('the now row in a run: the next row is the row after the run, not a hidden row of it', async () => {
+    const { view } = await mountPage(markdown)
+    calendarTick(view, 18 * 60 + 15)
+    expect(next(view)).toEqual([5])
+  })
+
+  it('a run right after the now row: its bar is the next row', async () => {
+    const { view } = await mountPage(markdown)
+    calendarTick(view, 17 * 60 + 10)
+    expect(trs(view).map((tr) => tr.classList.contains('table-now-row'))).toEqual([false, true, false, false, false, false])
+    expect(next(view)).toEqual([2])
+  })
+
+  it('the run is the last rows and holds now: no next row', async () => {
+    const tail = ['| Time | Plan |', '| --- | --- |', ...times.map((t) => `| ${t} | |`)].join('\n') + '\n\n<!-- table: fold 5-7, calendar 30m -->\n'
+    const { view } = await mountPage(tail)
+    calendarTick(view, 18 * 60 + 40)
+    expect(trs(view).map((tr) => tr.classList.contains('table-now-row'))).toEqual([false, false, false, false, true, false])
+    expect(next(view)).toEqual([])
+  })
+})
+
 describe('"Go to now" on a folded now row', () => {
   it('opens the run in the same step and puts the caret in the now row', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })

@@ -2341,12 +2341,16 @@ export interface SettingsState {
   tablePosition: TablePosition
   /** Settings › Editor › Calendar tables › Mark the current time (YAZ-4162 D6): a calendar table's now row shows a red line, a red tint, or both. A look, never in the file: `data-table-now` on `.app`. */
   tableNowMark: TableNowMark
+  /**
+   * Settings › Editor › Calendar tables › Shade the next time slot (YAZ-5541): a calendar table's body row right after the
+   * now row gets a light tint, at the now tint's strength, in `tableNextColour`. Off by default. The vault's
+   * table-look.json (`look.nextShade`), as the now mark.
+   */
+  tableNextShade: boolean
+  /** Its colour (YAZ-5541): the band colour's choices (`isBandColour`: the accent, a table colour, `#rrggbb`). A table colour is its TEXT colour, so `red`, the default, is the now mark's red. */
+  tableNextColour: string
   /** Settings › Editor › Calendar tables › Now button (the YAZ-4163 demo): the "Now" chip under a calendar table whose now row is off the screen. A table's own `nonow` turns off its chip alone. `data-table-now-button` on `.app`. */
   tableNowButton: boolean
-  /** Settings › Editor › Calendar tables › Time in slot (YAZ-5602): a pill at the right end of the now line says the time left in the current slot (`down`), the time since it started (`up`), or nothing (`off`, the default). Also on the Now button. `data-table-slot-time` on `.app`; the clock reads it through `slotTimeSetting` (`timeFormatSetting.ts`). */
-  tableSlotTime: TableSlotTime
-  /** Settings › Editor › Calendar tables › Show seconds (YAZ-5602): the Time in slot pill counts seconds (`19:14 left`, ticks each second) or minutes only (`20 min left`, ticks each minute). On by default. */
-  tableSlotSeconds: boolean
   /** Settings › Tables › Cell notes › Add button (YAZ-4790): the "+" on the corner of a table cell that adds a cell note. Off by default (YAZ-4790 demo). A table's own `notebutton` / `nonotebutton` turns its button on or off alone. `data-cell-note-button` on `.app`. */
   tableCellNoteButton: boolean
   /** Settings › Tables › All tables › New tables start as (YAZ-4869 item 22): the slash menu's "Table" makes a plain table (default) or a Super table. Read at the click. */
@@ -2795,10 +2799,6 @@ export const calLine = (value: unknown): number => (typeof value === 'number' &&
 export type TableNowMark = 'line' | 'tint' | 'both'
 export const TABLE_NOW_MARKS: readonly TableNowMark[] = ['line', 'tint', 'both']
 
-/** Calendar tables (YAZ-5602): what the pill on the now line says of the current slot: nothing, the time left, or the time since it started. */
-export type TableSlotTime = 'off' | 'down' | 'up'
-export const TABLE_SLOT_TIMES: readonly TableSlotTime[] = ['off', 'down', 'up']
-
 /** Calendar tables (YAZ-4162 D14, the YAZ-4163 demo): how the rows before now look. */
 export type TableDimPast = 'off' | 'text' | 'shade'
 export const TABLE_DIM_PASTS: readonly TableDimPast[] = ['off', 'text', 'shade']
@@ -3073,9 +3073,9 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableTextInCells: 'wrap',
   tablePosition: 'left',
   tableNowMark: 'line',
+  tableNextShade: false,
+  tableNextColour: 'red',
   tableNowButton: true,
-  tableSlotTime: 'off',
-  tableSlotSeconds: true,
   tableCellNoteButton: false,
   tableNewStyle: 'plain',
   tableDimPast: 'shade',
@@ -3560,6 +3560,12 @@ export interface AppState {
    * (`shared/courseState.ts`). Additive within version 1: a file without it loads the default, and an old build drops the key.
    */
   course: CourseState
+  /**
+   * The vault settings move (YAZ-5487, the rule of YAZ-5491): for each vault root, the `.yaseendocs/` files (or
+   * `<file>#<part>`) this Mac has seeded from its app values, or found there. One in the list is never seeded again, so
+   * one a person deleted on purpose does not come back. Per machine. Absent is none; an old build drops the key.
+   */
+  seededVaultConfig?: Record<string, string[]>
 }
 
 /** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */

@@ -577,8 +577,12 @@ export const CONTRACT = {
   vaultConfig: {
     /** Parsed `<root>/.yaseendocs/<name>`, or null when the folder/file is missing; malformed JSON rejects `INVALID_CONFIG`. */
     read: invoke<[root: string, name: string], unknown>('vaultConfig:read', 2),
-    /** Creates `.yaseendocs/` on first write; atomic tmp+rename; pretty-printed JSON. `name` must be a plain `<stem>.json`. */
-    write: invoke<[root: string, name: string, value: unknown], void>('vaultConfig:write', 3),
+    /**
+     * Creates `.yaseendocs/` on first write; atomic tmp+rename; pretty-printed JSON. `name` must be a plain `<stem>.json`.
+     * `known` (YAZ-5483): the top-level keys this writer owns; every other top-level key of the file on disk is kept,
+     * so an older build never erases a newer build's key.
+     */
+    write: invoke<[root: string, name: string, value: unknown, known?: readonly string[]], void>('vaultConfig:write', 4),
     /** Fired in every window after any vault's config change. */
     onChange: push<VaultConfigChange>('vaultConfig:changed'),
   },

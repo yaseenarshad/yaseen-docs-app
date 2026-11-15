@@ -5,7 +5,8 @@
  * resolution, the folder for a new page). Moved here verbatim from sidebar/SettingsPanel.tsx.
  */
 import type { UnitText } from '../vault/unitWord'
-import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableSlotTime, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import { SECTION_STEPS, THREAD_WIDTHS, type AllNotesOpensAt, type CommentsOrder, type CommentsResolvedPlace, type ContentWidth, type DailyPageOpens, type DiagramDarkColors, type EmbedRestSeconds, type FindFolds, type GithubSyncStatus, type GuideLinesShow, type NewBoardFolder, type NewPageLocation, type NoticeLength, type OutsideChangeGlow, type CardSpacing, type SectionLines, type ShownHiddenWords, type SidebarArrowMotion, type SidebarFileIcons, type SidebarFolderIcons, type SidebarIconKind, type SidebarIconSet, type SidebarLineStyle, type SidebarStickyLevels, type StartupWindows, type TableBandRows, type TableDimPast, type TableNowMark, type TableNewStyle, type TableTextInCells, type TablePosition, type CardTablePosition, type TableOfContents, type TableRowBand, type TabSleepAfter, type Theme, type TocLines, type VaultOpensOn } from '@shared/types'
+import type { TableSlotTime } from '@shared/tableLook'
 
 export interface Option<T> {
   label: string
@@ -258,7 +259,7 @@ export const TABLE_NOW_MARK_OPTIONS: readonly Option<TableNowMark>[] = [
   { label: 'Both', value: 'both' },
 ]
 
-/** Calendar tables (YAZ-5602): what the pill on the now line says; table.css reads it as `data-table-slot-time` on `.app`. */
+/** Calendar tables (YAZ-5602): what the pill on the now line says; the vault's `look.slotTime` (table-look.json). */
 export const TABLE_SLOT_TIME_OPTIONS: readonly Option<TableSlotTime>[] = [
   { label: 'Off', value: 'off' },
   { label: 'Count down', value: 'down' },
