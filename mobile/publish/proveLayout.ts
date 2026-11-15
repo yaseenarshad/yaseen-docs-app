@@ -121,7 +121,8 @@ process.env.NOTECARDS_SERVE = 'no'
 const { serveDist } = await import('./serve')
 const server = await serveDist(DIST, PORT)
 // YAZ-5524: 28 more top-bar cases (pages with no ID chip): the budget grows with them. YAZ-5529: 6 properties cases.
-setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 420_000).unref()
+// YAZ-5092 C4: the checks outgrew 7 minutes (the first run by `npm run mobile:prove-layout` stopped after 186 passes).
+setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 1_200_000).unref()
 const profile = mkdtempSync(join(tmpdir(), 'notecards-layout-profile-'))
 const chrome = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${DEBUG}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' })
 let browserWs = ''
