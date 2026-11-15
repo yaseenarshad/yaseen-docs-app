@@ -381,6 +381,35 @@ a {
   font-size: 14px;
 }
 
+/* The install hint: a quiet card at the top of the sign-in and of Settings, only in a browser tab. */
+.install {
+  margin: 0 0 16px;
+  padding: 12px 14px 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-side);
+}
+
+.install__title {
+  margin: 0 0 4px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.install__text {
+  margin: 6px 0;
+}
+
+.install__steps {
+  margin: 6px 0;
+}
+
+.install__icon {
+  margin-left: 6px;
+  vertical-align: -4px;
+  color: var(--fg);
+}
+
 /* YAZ-5408: the repo picker. One row for each repo the token reaches; the name wraps at 320 px. Only "Vault" has colour. */
 .repo-row {
   display: flex;

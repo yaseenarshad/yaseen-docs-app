@@ -75,7 +75,10 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   const backend = memoryBackend()
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
-  const signedIn = !['sign-in', 'sign-in-error', 'sign-in-typed', 'guide', 'scan', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
+  // The install hint as Safari on an iPhone shows it (the steps, the ☰ picture, the data note).
+  if (name === 'sign-in-iphone')
+    Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1' })
+  const signedIn = !['sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'scan', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
   if (signedIn) {
     for (const v of name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1)) {
       await tokens.write(vaultId(v), FAKE_TOKEN)

@@ -6,6 +6,7 @@ import type { SignInOutcome } from '../auth/signIn'
 import { vaultId } from '../store'
 import { Confirm } from './Confirm'
 import { Frame, Problem } from './Frame'
+import { FormLine, InstallHint } from './InstallHint'
 import { lazyScreen } from './LazyScreen'
 
 /** YAZ-5408: the repo list loads as its own chunk when the person taps "Show my repos". */
@@ -99,6 +100,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
   const title = mode.kind === 'first' ? 'Notecard' : mode.kind === 'add' ? 'Add a vault' : 'Sign in again'
   return (
     <Frame title={title} back={mode.kind === 'first' || (mode.kind === 'again' && !ready) ? undefined : () => app.go({ type: 'back' })}>
+      {mode.kind !== 'again' && step === 'token' && <InstallHint />}
       {step === 'pick' && mode.kind !== 'again' ? (
         <RepoPicker token={token} onOtherToken={() => setStep('token')} onTyped={typed} />
       ) : (
@@ -120,6 +122,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
             spellCheck={false}
           />
         </label>
+        <FormLine />
         {step === 'typed' && mode.kind !== 'again' && (
           <label className="field">
             <span className="field__label">Repo</span>
