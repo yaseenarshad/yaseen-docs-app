@@ -14,13 +14,18 @@ import type { Scope } from './lists'
 import { ListTree } from './ListTree'
 import { rowId, useIdsForm } from './showIds'
 import { openFile } from '../explore/openFile'
+import { boardKindOf, recordsWithBoards } from '../drawing/boardFiles'
 
 export { SearchBar } from './SearchBar'
 
-/** Where a tree row opens: a page in the reader; a card file in the card view. */
+/** Where a tree row opens: a page in the reader; a card file in the card view; a drawing file in the drawing view (YAZ-5473). */
 export function treeRoute(row: TreeRow): Route {
+  if (row.kind === 'drawing' || row.kind === 'diagram') return { kind: 'drawing', path: row.path }
   return row.kind === 'card' ? { kind: 'card', path: row.path, id: row.id ?? '' } : { kind: 'page', path: row.path }
 }
+
+/** What VoiceOver says a row is. */
+export const kindWord = (kind: TreeRow['kind'], page: string): string => (kind === 'folder' || kind === 'card' || kind === 'drawing' || kind === 'diagram' ? kind : page)
 
 /**
  * THE SEARCH TAB'S TREE (YAZ-5438), a chunk of its own (the first load stays under its ceiling, YAZ-5377): the Mac's sidebar tree (`vaultTree.ts`), shown while the search box is empty. A
@@ -41,7 +46,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
   useEffect(forgetFlips, [])
   const open = openFoldersOf(app.vaultKey)
   const [turn, setTurn] = useState(0)
-  const tree = useMemo(() => buildTree(data.records, data.folders), [data])
+  const tree = useMemo(() => buildTree(recordsWithBoards(data), data.folders), [data])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => visibleRows(tree, open, cards ? undefined : (r) => r.kind !== 'card'), [tree, open, cards, turn])
   const toggle = useCallback(
@@ -63,7 +68,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
               className={`tree__row tree__row--${row.kind === 'folder' ? 'dir' : 'file'}`}
               data-kind={ICON_KIND[row.kind]}
               style={{ '--tree-depth': row.depth } as CSSProperties}
-              aria-label={`${row.label}, ${row.kind === 'folder' ? 'folder' : row.kind === 'card' ? 'card' : app.unit('page')}`}
+              aria-label={`${row.label}, ${kindWord(row.kind, app.unit('page'))}`}
               onClick={() => (row.kind === 'folder' ? toggle(row.path) : openFile(app, treeRoute(row)))}
             >
               <span className={row.kind === 'folder' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />
@@ -82,7 +87,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
 /** Where a row opens: a page read only; a card alone (a card file's card, or a card in its page). */
 function routeOf(row: SearchCandidate): Route {
   if (row.card === true) return { kind: 'card', path: row.page ?? row.path, id: row.id ?? '' }
-  return { kind: 'page', path: row.path }
+  return boardKindOf(row.path) !== null ? { kind: 'drawing', path: row.path } : { kind: 'page', path: row.path }
 }
 
 /** A result row: the Mac's icon (a page, or a card: a card file's or a card in a page), the name, a card's ID. */
@@ -90,9 +95,10 @@ function ResultRow({ row }: { row: SearchCandidate }) {
   const app = useApp()
   const card = row.card === true
   const side = card ? (row.id ?? '') : ''
+  const board = card ? null : boardKindOf(row.path)
   return (
-    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : app.unit('page')}`} onClick={() => openFile(app, routeOf(row))}>
-      <RowIcon kind={card ? 'card' : 'page'} />
+    <button type="button" className="row row__button search__row" aria-label={`${row.label}, ${card ? `card${row.id === undefined ? '' : ` ${row.id}`}` : (board ?? app.unit('page'))}`} onClick={() => openFile(app, routeOf(row))}>
+      <RowIcon kind={card ? 'card' : (board ?? 'page')} />
       <span className="row__main">{row.label}</span>
       {side !== '' && <span className="row__side">{side}</span>}
     </button>
@@ -165,7 +171,7 @@ export function ResultTree({ data, rows, query, type, shown, onMore, scope }: { 
           // `ID — ` in front of a row the search found by its ID (the Mac's "Only when it matches"), its digits marked.
           const id = hit?.id !== undefined && hit.label.startsWith(`${hit.id} — `) ? hit.id : null
           const side = hit?.card === true ? (hit.id ?? '') : ''
-          const what = row.kind === 'folder' ? 'folder' : row.kind === 'card' ? `card${side === '' ? '' : ` ${side}`}` : app.unit('page')
+          const what = row.kind === 'card' ? `card${side === '' ? '' : ` ${side}`}` : kindWord(row.kind, app.unit('page'))
           return (
             <li key={row.path} role="treeitem" aria-expanded={row.kind === 'folder' ? row.open : undefined}>
               <button

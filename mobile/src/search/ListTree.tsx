@@ -7,11 +7,12 @@ import { vaultNodes, type VaultNodes } from './foundTree'
 import type { ListFolder, ListKind, Scope } from './lists'
 import type { RecentEntry } from './recent'
 import { ICON_KIND, RowIcon } from './rowIcon'
-import { ShowMore, TreeId, treeRoute } from './SearchTree'
+import { ShowMore, TreeId, kindWord, treeRoute } from './SearchTree'
 import { rowId, useIdsForm } from './showIds'
 import type { VaultData } from './vaultData'
 import { fileKind, fileLabel, type TreeKind } from './vaultTree'
 import { openFile } from '../explore/openFile'
+import { fileRecord } from '../drawing/boardFiles'
 
 /** What a list is called, and its line when it holds nothing the phone can show. */
 const WORDS: Record<ListKind, { title: string; none: string }> = {
@@ -102,7 +103,7 @@ export function listRows(vault: VaultNodes, folders: readonly ListFolder[], top:
  */
 export function recentRows(data: VaultData, recent: readonly RecentEntry[], cards: boolean): ListRow[] {
   return recent.flatMap((e): ListRow[] => {
-    const record = data.byPath[e.path]
+    const record = fileRecord(data, e.path)
     if (record === undefined) return []
     const key = `${e.path}\0${e.id ?? ''}`
     if (e.id === undefined || record.kind === 'card') {
@@ -141,7 +142,7 @@ export function ListTree({ data, cards, shown, onMore, scope }: { data: VaultDat
               className={`tree__row tree__row--${row.kind === 'folder' || row.kind === 'group' ? 'dir' : 'file'}`}
               data-kind={row.kind === 'group' ? 'group' : ICON_KIND[row.kind]}
               style={{ '--tree-depth': row.depth } as CSSProperties}
-              aria-label={`${row.label}, ${row.kind === 'group' ? `${words.title.toLowerCase()} folder` : row.kind === 'folder' ? 'folder' : row.kind === 'card' ? 'card' : app.unit('page')}`}
+              aria-label={`${row.label}, ${row.kind === 'group' ? `${words.title.toLowerCase()} folder` : kindWord(row.kind, app.unit('page'))}`}
               onClick={() => (row.kind === 'folder' || row.kind === 'group' ? toggle(row.key) : openFile(app, treeRoute({ ...row, kind: row.kind })))}
             >
               <span className={row.kind === 'folder' || row.kind === 'group' ? `tree__chevron${row.open === true ? ' tree__chevron--open' : ''}` : 'tree__chevron tree__chevron--none'} aria-hidden />

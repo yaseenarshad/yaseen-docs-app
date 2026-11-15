@@ -1,6 +1,7 @@
 import { linkPath } from '@client/editor/wikilink/linkResolve'
 import type { VaultData } from '../search/vaultData'
-import { cardOf, resolveSourceOf } from '../page/pageLook'
+import { boardKindOf } from '../drawing/boardFiles'
+import { cardOf, pageLook, resolveSourceOf } from '../page/pageLook'
 import type { SheetRoute } from './sheets'
 
 /**
@@ -14,10 +15,14 @@ import type { SheetRoute } from './sheets'
 /** Where a link goes: a page's path, or `path#ID` for a card. */
 const keyOf = (path: string, id?: string) => (id === undefined ? path : `${path}#${id.toLowerCase()}`)
 
-function targetOf(data: VaultData, inner: string): string | null {
+function targetOf(data: VaultData, inner: string, holder: string): string | null {
   const card = cardOf(data, inner)
   if (card !== null) return keyOf(card.path, card.id)
-  return linkPath(inner, resolveSourceOf(data), undefined)
+  const page = linkPath(inner, resolveSourceOf(data), undefined)
+  if (page !== null) return page
+  // A file that is no page (a drawing, YAZ-5473): by the reader's asset rule, from the linking file's folder.
+  const open = pageLook(data, holder).link(inner).open
+  return open?.kind === 'file' && boardKindOf(open.path) !== null ? open.path : null
 }
 
 const maps = new WeakMap<VaultData, Map<string, Set<string>>>()
@@ -29,7 +34,7 @@ function backlinkMap(data: VaultData): Map<string, Set<string>> {
   map = new Map()
   for (const record of data.records)
     for (const inner of [...record.links, ...record.embeds]) {
-      const to = targetOf(data, inner)
+      const to = targetOf(data, inner, record.path)
       if (to === null) continue
       let from = map.get(to)
       if (from === undefined) map.set(to, (from = new Set()))
@@ -61,16 +66,17 @@ export function linkCounts(data: VaultData, route: SheetRoute, cardText?: string
   const record = data.byPath[self]
   const from = new Set<string>()
   const add = (key: string) => map.get(key)?.forEach((p) => p !== self && from.add(p))
-  if (route.kind === 'page') add(self)
+  if (route.kind !== 'card') add(self)
   else {
     add(keyOf(self, route.id))
     if (record?.kind === 'card') add(self)
   }
-  const inners = route.kind === 'card' && record?.kind !== 'card' ? linksInText(cardText ?? '') : [...(record?.links ?? []), ...(record?.embeds ?? [])]
+  // A drawing's links are inside its picture: none are counted (the Mac's index has none either).
+  const inners = route.kind === 'drawing' ? [] : route.kind === 'card' && record?.kind !== 'card' ? linksInText(cardText ?? '') : [...(record?.links ?? []), ...(record?.embeds ?? [])]
   const to = new Set<string>()
   const own = route.kind === 'card' ? keyOf(self, route.id) : self
   for (const inner of inners) {
-    const target = targetOf(data, inner)
+    const target = targetOf(data, inner, self)
     if (target !== null && target !== self && target !== own) to.add(target)
   }
   return { backlinks: from.size, references: to.size }

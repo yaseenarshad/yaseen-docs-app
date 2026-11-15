@@ -13,6 +13,7 @@ import { cardHead, titleBand } from '../media/ui/cardHead'
 import { fillCardEmbeds, tapOf } from '../page/pageDom'
 import { UNTITLED_CARD, drawCard, pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
+import { boardKindOf, boardLabel } from '../drawing/boardFiles'
 import { isSheetRoute, openSheet, type SheetRoute } from './sheets'
 
 /**
@@ -59,6 +60,8 @@ function useSheetTap(data: VaultData | null, say: (words: string) => void) {
     event.preventDefault()
     if (tap.kind === 'go') go(tap.action)
     else if (tap.kind === 'missing') say(tap.text)
+    // YAZ-5473: a link to a drawing file opens the drawing, on top.
+    else if (boardKindOf(tap.path) !== null) openSheet({ kind: 'drawing', path: tap.path })
     else {
       const words = await openMediaFile(media, tap.path)
       if (words !== null) say(words)
@@ -68,6 +71,7 @@ function useSheetTap(data: VaultData | null, say: (words: string) => void) {
 }
 
 export function titleOf(data: VaultData | null, path: string): string {
+  if (boardKindOf(path) !== null) return drawingTitle(path)
   return data?.byPath[path]?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
 }
 
@@ -181,7 +185,53 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
   )
 }
 
+/**
+ * A DRAWING FILE ON ITS OWN (YAZ-5473), in a sheet or full screen: drawn by THE SAME CODE as a drawing in a page
+ * (YAZ-5440): the reader draws `![[its name]]` from its own folder, so an Excalidraw drawing is drawn on the phone (it
+ * fits the width; a tap opens it full screen, with pinch zoom), a `.drawio.svg` shows as the picture it is, and a plain
+ * `.drawio` says "Open it on the Mac". Nothing is saved: the picture lives in memory while it shows.
+ */
+export function DrawingBody({ path, onDrawn }: { path: string; onDrawn(): void }) {
+  const app = useApp()
+  const data = useVaultData()
+  const host = useRef<HTMLDivElement>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const { onTap, media } = useSheetTap(data, setNotice)
+  useMediaWatch(host, media)
+  useDrawings(host, media)
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  const ready = data !== null
+  useEffect(() => {
+    const el = host.current
+    if (el === null || data === null) return
+    let live = true
+    void renderPage(`![[${name}]]`, pageLook(data, path), el, uiSlicer(), () => live).then(() => live && onDrawn())
+    return () => {
+      live = false
+    }
+    // Drawn once for its path; a new version of the vault's data does not draw it again (the picture stays).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, path])
+  const there = data === null || data.files.includes(path)
+  return (
+    <article className="reader explore-drawing" aria-label={drawingTitle(path)}>
+      <h2 className="reader__title">{drawingTitle(path)}</h2>
+      {notice !== null && (
+        <p className="reader__notice" role="status">
+          {notice}
+        </p>
+      )}
+      {!there && <p className="muted">{app.unit('This drawing is not in the vault.')}</p>}
+      <div className="reader__body" ref={host} hidden={!there} onClick={(e) => void onTap(e)} />
+    </article>
+  )
+}
+
+/** A drawing file's name, as its tree row says it. */
+export const drawingTitle = (path: string): string => boardLabel(path.slice(path.lastIndexOf('/') + 1))
+
 /** The sheet's body for its route. */
 export function SheetContent({ route, onDrawn, onText }: { route: SheetRoute; onDrawn(): void; onText(text: string): void }) {
+  if (route.kind === 'drawing') return <DrawingBody path={route.path} onDrawn={onDrawn} />
   return route.kind === 'page' ? <SheetPage path={route.path} at={route.at} onDrawn={onDrawn} /> : <SheetCard path={route.path} id={route.id} onDrawn={onDrawn} onText={onText} />
 }

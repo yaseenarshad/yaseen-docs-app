@@ -7,6 +7,7 @@ import { keepPlace, keepSearch, searchStateOf, takeSearchNotice } from '../searc
 import { useVaultData } from '../search/vaultData'
 import { uiSlicer } from '../sync/yieldToUi'
 import '../search/search.css'
+import { recordsWithBoards } from '../drawing/boardFiles'
 
 /** The tree (YAZ-5438): its own chunk, loaded when the box is empty. */
 const SearchTree = lazy(() => import('../search/SearchTree'))
@@ -64,7 +65,7 @@ export function Search() {
   useEffect(() => {
     if (data === null) return
     let live = true
-    void buildRows({ records: data.records, letters: data.letters, cards: data.review.enabled }, uiSlicer(), () => live).then((built) => {
+    void buildRows({ records: recordsWithBoards(data), letters: data.letters, cards: data.review.enabled }, uiSlicer(), () => live).then((built) => {
       if (live && built !== null) setRows(built)
     })
     return () => {

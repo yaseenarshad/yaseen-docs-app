@@ -1,4 +1,5 @@
 import type { IndexRecord } from '@shared/types'
+import { boardKindOf } from '../drawing/boardFiles'
 
 /**
  * THE MAC'S SIDEBAR TREE ON THE PHONE (YAZ-5438): the Files tree of the Mac (`client/src/sidebar/Tree.tsx`), cut to
@@ -16,7 +17,7 @@ import type { IndexRecord } from '@shared/types'
  * opened, then kept. `visibleRows` walks only the open folders, so a closed folder costs nothing.
  */
 
-export type TreeKind = 'folder' | 'page' | 'card'
+export type TreeKind = 'folder' | 'page' | 'card' | 'drawing' | 'diagram'
 
 export interface TreeFolder {
   path: string
@@ -70,7 +71,8 @@ export function buildTree(records: readonly IndexRecord[], folders: readonly Ind
 /** A page's or a card file's name: the Mac's `pageLabel` (the title, else the file name without its extension). */
 export const fileLabel = (record: IndexRecord): string => (record.title.trim() !== '' ? record.title : record.name.replace(/\.(md|markdown)$/i, ''))
 
-export const fileKind = (record: IndexRecord): TreeKind => (record.kind === 'card' ? 'card' : 'page')
+/** A page, a card file, or a drawing file (YAZ-5473: the Mac's drawing and diagram rows). */
+export const fileKind = (record: IndexRecord): TreeKind => (record.kind === 'card' ? 'card' : (boardKindOf(record.path) ?? 'page'))
 
 interface Level {
   folders: TreeFolder[]
