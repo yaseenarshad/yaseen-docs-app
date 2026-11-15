@@ -5,6 +5,7 @@ import { syncHelp } from '../app/help'
 import type { TokenEndWarning } from '../auth/expiry'
 import { DiscardAnswer } from '../screens/DiscardAnswer'
 import { ForwardButton } from '../screens/Frame'
+import { NotSentRows } from './NotSent'
 import { clockTime, dayDate, lastSyncWords, lostRows, nextTryWords, type Dot } from './dot'
 import type { DotAnswersView } from './useDotAnswers'
 
@@ -34,6 +35,8 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
 
   const sync = app.sync
   const lost = lostRows(answers.state?.lost ?? [])
+  // YAZ-5517: the comments and ticks that could not be sent, with their words (the list re-reads at each state).
+  const notSent = (answers.list?.comments?.waiting() ?? []).filter((c) => c.refused !== undefined)
   const listWait = dot.reason === 'waiting' ? waitWords(answers, now) : null
   const said = listWait !== null ? null : why(dot, sync.status === 'slowed' ? sync.retryAt : null)
   const red = dot.state === 'attention' && app.vault !== null ? (syncHelp({ ...sync, problem: sync.status === 'attention' ? sync.problem : (answers.state?.problem ?? null) }, app.vault, app.unit, false) ?? null) : null
@@ -111,6 +114,8 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
             </ul>
           </>
         )}
+
+        <NotSentRows items={notSent} onDiscard={(id) => answers.list?.comments?.discard(id) ?? Promise.resolve()} />
 
         <button ref={close} type="button" className="btn btn--wide" onClick={onClose}>
           Close

@@ -1,0 +1,83 @@
+import { useState } from 'react'
+import type { WaitingComment } from '../comments/outbox'
+import { Confirm } from '../screens/Confirm'
+
+/**
+ * YAZ-5517: the comments and ticks the phone could not send, in the dot's sheet: each with its words, its page, why,
+ * Copy (the words, to keep them) and Discard (it asks first: they cannot come back). They stay until Discard, so a
+ * write is never lost without a word, also when its page is gone and no page shows it. The sheet is its own chunk.
+ */
+const WHY: Record<NonNullable<WaitingComment['refused']>, string> = {
+  gone: 'Its page is gone (deleted or moved on the Mac).',
+  changed: 'The task changed on the Mac.',
+  foreign: 'The page uses "comments" for something else.',
+  invalid: "The page's properties do not read correctly.",
+  layout: "The phone can't add it without changing the page's properties.",
+  'too-large': 'The page is too large for the phone to change.',
+}
+
+/** What the person wrote: a comment's words, or the tick and its task ("Tick: Book hotel"). */
+export const notSentWords = (c: WaitingComment): string =>
+  c.task === undefined ? c.body : `${c.task.checked ? 'Tick' : 'Untick'}: ${c.task.core.replace(/^(?:[-*+]|\d{1,9}[.)])[ \t]+\[ \] ?/, '')}`
+
+const pageName = (path: string): string => (path.split('/').pop() ?? path).replace(/\.md$/i, '')
+
+export function NotSentRows({ items, onDiscard }: { items: readonly WaitingComment[]; onDiscard: (id: string) => Promise<unknown> }) {
+  if (items.length === 0) return null
+  return (
+    <>
+      <p>The phone could not send {items.length === 1 ? 'this' : 'these'}. Nothing was changed. Copy the words to keep them, then Discard.</p>
+      <ul className="rows">
+        {items.map((c) => (
+          <NotSentRow key={c.id} item={c} onDiscard={() => onDiscard(c.id)} />
+        ))}
+      </ul>
+    </>
+  )
+}
+
+function NotSentRow({ item, onDiscard }: { item: WaitingComment; onDiscard: () => Promise<unknown> }) {
+  const [copied, setCopied] = useState(false)
+  const [asking, setAsking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const words = notSentWords(item)
+  const copy = () =>
+    void navigator.clipboard?.writeText(words).then(
+      () => setCopied(true),
+      () => {},
+    )
+  return (
+    <li className="row not-sent">
+      <span className="row__main">
+        {words}
+        <br />
+        <span className="muted">
+          {pageName(item.path)} · {WHY[item.refused ?? 'gone']}
+        </span>
+      </span>
+      {asking ? (
+        <div className="discard-answer__ask">
+          <Confirm
+            question={`Discard "${words}"? It cannot be taken back.`}
+            yes="Discard"
+            busy={busy}
+            onNo={() => setAsking(false)}
+            onYes={() => {
+              setBusy(true)
+              void onDiscard().finally(() => setBusy(false))
+            }}
+          />
+        </div>
+      ) : (
+        <>
+          <button type="button" className="btn" aria-label={`Copy the words: ${words}`} onClick={copy}>
+            {copied ? 'Copied' : 'Copy'}
+          </button>
+          <button type="button" className="btn discard-answer" aria-label={`Discard: ${words}`} onClick={() => setAsking(true)}>
+            Discard
+          </button>
+        </>
+      )}
+    </li>
+  )
+}

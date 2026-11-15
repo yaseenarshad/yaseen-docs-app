@@ -3,8 +3,8 @@ import type { Answers, AnswersState } from '../answers/answers'
 import type { WaitingAnswer } from '../answers/outbox'
 import type { ShellSync } from '../app/syncPort'
 
-/** What the dot reads from 3C's answer list, and what its sheet does: Discard a lost answer, "Try now" (`sendNow`). */
-export type DotAnswers = Pick<Answers, 'state' | 'subscribe' | 'waiting' | 'discard' | 'sendNow'>
+/** What the dot reads from 3C's answer list, and what its sheet does: Discard a lost answer, "Try now" (`sendNow`); YAZ-5517: the comments not sent. */
+export type DotAnswers = Pick<Answers, 'state' | 'subscribe' | 'waiting' | 'discard' | 'sendNow' | 'comments'>
 
 /**
  * 4B (YAZ-5078) makes the ONE answer list of the open vault with the engine (`lazySync`) and gives it through

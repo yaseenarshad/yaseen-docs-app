@@ -4,7 +4,7 @@ import type { VaultStore } from '../store'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { openCommentBox, type CommentBox, type WaitingComment } from './outbox'
 import type { TaskTick } from './taskWrite'
-import { sendComments } from './send'
+import { pageMark, sendComments } from './send'
 import { commentSigner } from './signer'
 
 /**
@@ -20,6 +20,9 @@ export interface CommentsState {
   /** YAZ-5494: of `waiting`, the check box ticks. */
   ticks: number
   refused: number
+  /** YAZ-5517: of `refused`, the ticks, and those whose page is gone. */
+  refusedTicks: number
+  refusedGone: number
   sending: boolean
   problem: CommentProblem | null
   retryAt: number | null
@@ -87,13 +90,23 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
   let stopped = false
   let slowedInRow = 0
   let staleInRow = 0
-  let state: CommentsState = { vault: null, waiting: 0, ticks: 0, refused: 0, sending: false, problem: null, retryAt: null }
+  let state: CommentsState = { vault: null, waiting: 0, ticks: 0, refused: 0, refusedTicks: 0, refusedGone: 0, sending: false, problem: null, retryAt: null }
 
   const all = () => box?.waiting() ?? []
   const setState = (next: Partial<CommentsState>) => {
     const list = all()
     const waiting = list.filter((c) => c.refused === undefined)
-    state = { ...state, ...next, vault, waiting: waiting.length, ticks: waiting.filter((c) => c.task !== undefined).length, refused: list.filter((c) => c.refused !== undefined).length }
+    const refused = list.filter((c) => c.refused !== undefined)
+    state = {
+      ...state,
+      ...next,
+      vault,
+      waiting: waiting.length,
+      ticks: waiting.filter((c) => c.task !== undefined).length,
+      refused: refused.length,
+      refusedTicks: refused.filter((c) => c.task !== undefined).length,
+      refusedGone: refused.filter((c) => c.refused === 'gone').length,
+    }
     for (const l of [...listeners]) l({ ...state })
   }
   const clearTimer = () => {
@@ -228,6 +241,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
       await loading
       if (box === null || vault === null) throw new Error('No vault is open')
       const madeAt = clock.now()
+      const was = await pageMark(store, vault, input.path)
       const comment: WaitingComment = {
         id: newCommentId(),
         path: input.path,
@@ -237,6 +251,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         madeAt,
         notBefore: madeAt + Math.max(0, input.holdMs ?? 0),
         ...(input.task === undefined ? {} : { task: input.task }),
+        ...(was === undefined ? {} : { was }),
       }
       await box.add(comment)
       // A new comment from the person: a problem that waited for them is theirs to see again at the send.

@@ -42,6 +42,11 @@ export interface WaitingComment {
    * needs no `by`.
    */
   task?: TaskTick
+  /**
+   * YAZ-5517: how to find the page again when the Mac moves it before the send: its file's blob SHA when no other file
+   * of the vault had the same bytes, and its page `id`. Taken when the comment goes in (from the stored copy).
+   */
+  was?: { sha?: string; id?: string }
 }
 
 export interface CommentBook {
@@ -62,6 +67,8 @@ export interface CommentBox {
   noteCommit(ids: readonly string[], commit: { sha: string; parent: string }): Promise<void>
   /** After a send: `done` leave (GitHub holds them); `refused` stay, marked, never sent again. */
   settle(done: readonly string[], refused: readonly { id: string; why: NonNullable<WaitingComment['refused']> }[]): Promise<void>
+  /** YAZ-5517: the page moved (found again for sure): the comments go with it, to their new `path`. */
+  follow(moves: readonly { id: string; path: string }[]): Promise<void>
   /** Signs the comments that had no `by` yet (the account was not known when they were written). */
   sign(ids: readonly string[], by: string): Promise<void>
   refresh(): Promise<void>
@@ -73,6 +80,11 @@ const bookOf = (saved: CommentBook | undefined): CommentBook => (saved?.v === 1 
 /** How many comments wait to be sent (refused ones do not). The engine's chunk asks it at the start, with no writer. */
 export async function waitingComments(store: VaultStore, vault: string): Promise<number> {
   return bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE)).waiting.filter((c) => c.refused === undefined).length
+}
+
+/** YAZ-5517: how many comments the stored list keeps, refused ones too: they load the sender, so the dot counts them. */
+export async function keptComments(store: VaultStore, vault: string): Promise<number> {
+  return bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE)).waiting.length
 }
 
 /** One change at a time, in every tab (Web Locks), as the answer list does; one queue per vault where they are missing. */
@@ -133,6 +145,12 @@ export async function openCommentBox(store: VaultStore, vault: string): Promise<
         if (!b.waiting.some((w) => leave.has(w.id) || why.has(w.id))) return null
         const waiting = b.waiting.filter((w) => !leave.has(w.id)).map((w) => (why.has(w.id) ? { ...w, refused: why.get(w.id)! } : w))
         return { next: { ...b, waiting }, out: undefined }
+      }, undefined),
+    follow: (moves) =>
+      change((b) => {
+        const to = new Map(moves.map((m) => [m.id, m.path]))
+        if (!b.waiting.some((w) => to.has(w.id) && to.get(w.id) !== w.path)) return null
+        return { next: { ...b, waiting: b.waiting.map((w) => (to.has(w.id) ? { ...w, path: to.get(w.id)! } : w)) }, out: undefined }
       }, undefined),
     sign: (ids, by) =>
       change((b) => {

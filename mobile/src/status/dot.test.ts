@@ -249,3 +249,17 @@ describe('the time of the last sync (a tap on the dot)', () => {
     expect(lastSyncWords(NOW - 5 * 24 * 3_600_000, NOW)).toBe('Last synced 5 days ago')
   })
 })
+
+describe('YAZ-5517: comments and ticks that could not be sent', () => {
+  const base: DotInput = { sync: { status: 'synced', problem: null }, answers: { loaded: true, waiting: 0, lost: 0, sending: false, problem: null }, online: true, token: NONE }
+  const of = (notSent: { n: number; ticks: number; gone: number }, over: Partial<DotInput> = {}) => syncDot({ ...base, ...over, answers: { ...base.answers, notSent } })
+  it('names what could not be sent and why, amber, never green; short in the top bar', () => {
+    expect(of({ n: 1, ticks: 0, gone: 1 })).toMatchObject({ state: 'pending', words: "1 comment couldn't be sent: its page is gone", short: '1 not sent', reason: 'not-sent' })
+    expect(of({ n: 2, ticks: 2, gone: 2 }).words).toBe("2 check boxes couldn't be sent: their page is gone")
+    expect(of({ n: 3, ticks: 1, gone: 2 }).words).toBe("3 changes couldn't be sent")
+  })
+  it('it stays offline too, and red still wins', () => {
+    expect(of({ n: 1, ticks: 1, gone: 1 }, { online: false }).reason).toBe('not-sent')
+    expect(of({ n: 1, ticks: 1, gone: 1 }, { token: ENDED }).state).toBe('attention')
+  })
+})
