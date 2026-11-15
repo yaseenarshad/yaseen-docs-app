@@ -1,5 +1,5 @@
 /**
- * Is a GitHub token saved on this Mac? (YAZ-5098, Settings › Review › "Phone and friends"). The ONE answer the two rows
+ * Is a GitHub token saved on this Mac? (YAZ-5098, Settings › Cards › "Phone and friends"). The ONE answer the two rows
  * share: the token row writes, and "Connect your phone" waits for a token. It holds a yes or a no, never the token:
  * the token goes to main through `secrets:set` and no channel answers it back (`main/ipc/secrets.ts`).
  */
