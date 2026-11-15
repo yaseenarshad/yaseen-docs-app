@@ -6,7 +6,7 @@ import { friendsMessage } from '../../auth/friends'
 import { Confirm } from '../../screens/Confirm'
 import { Problem } from '../../screens/Frame'
 import type { Unavailable } from '../list'
-import { MARK_LINE, PERIODS, boardRows, gistText, markToShow, markWords, updatedLabel, type BoardEntry, type Period } from './board'
+import { MARK_LINE, PERIODS, boardRows, gistText, markToShow, markWords, sendLine, updatedLabel, type BoardEntry, type Period } from './board'
 import './friends.css'
 import {
   GROUP_NAME_MAX,
@@ -211,6 +211,8 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
 
   const group = board.groups.find((g) => g.kind !== 'not-found' && g.group === list) as Exclude<GroupView, { kind: 'not-found' }> | undefined
   const showGroup = list !== 'friends' && group !== undefined
+  /** This phone's send of my numbers, in one line (the Mac's Settings row says its own). */
+  const sent = board.sending === undefined ? null : sendLine(board.sending, now)
 
   const friendEntries: Entry[] = useMemo(() => {
     const me: Entry = {
@@ -357,6 +359,7 @@ function BoardView({ board, service, refresh }: { board: OkBoard; service: Frien
       {!nobody && (
         <>
           {board.offline && <p className="fr-line">No connection. These are the last numbers the app read.</p>}
+          {sent !== null && <p className="fr-line">{sent}</p>}
           {said !== null && (
             <p className="fr-line" role="status">
               {said}

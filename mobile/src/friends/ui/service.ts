@@ -11,7 +11,7 @@ import type { SyncEngine } from '../../sync/engine'
 import { createOwnNumbers, type OwnNumbers } from '../ownNumbers'
 import { queuedMines } from '../removeQueue'
 import { createFriendsList, type FriendsList, type ShareResult, type Unavailable } from '../list'
-import { createFriendsSender, type FriendsSender } from '../sender'
+import { createFriendsSender, type FriendsSendState, type FriendsSender } from '../sender'
 import { avatarUrl, gistText, type SeenMark } from './board'
 import type { GroupView, GroupsPort, JoinRequest, JoinResult } from './groups'
 import { createMarks, type MarkKind, type MarkSend, type Marks, type OutMark } from './marks'
@@ -58,6 +58,8 @@ export type Board =
       outbox: Record<string, OutMark>
       /** No answer from GitHub this time: the numbers are the last ones read. */
       offline: boolean
+      /** This phone's send of my numbers (`sender.ts`), as it is now. Absent until the sync engine loaded. */
+      sending?: FriendsSendState
       /** YAZ-5274: friends who added me back since the last read (their names): the tab says so one time. */
       newlyPaired?: string[]
     }
@@ -267,6 +269,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
           seen,
           outbox,
           offline,
+          ...(sender !== null && { sending: sender.state() }),
           newlyPaired: rows.rows.filter((r) => rows.newlyPaired.includes(r.mine)).map((r) => gistText(r.name) || 'Your friend'),
         }
       }
@@ -274,7 +277,7 @@ export function createFriendsService(options: ServiceOptions): FriendsService & 
         const copy = await loadCopy()
         const outbox = await marks.outbox()
         // YAZ-5292: a remove asked with no signal waits on the phone: its row says "Removing…" (also after a restart).
-        if (copy !== null) return { kind: 'ok', me: mine, ...copy, friends: copy.friends.map(removing(await queuedMines(store))), seen, outbox, offline: true }
+        if (copy !== null) return { kind: 'ok', me: mine, ...copy, friends: copy.friends.map(removing(await queuedMines(store))), seen, outbox, offline: true, ...(sender !== null && { sending: sender.state() }) }
       }
       return rows
     },

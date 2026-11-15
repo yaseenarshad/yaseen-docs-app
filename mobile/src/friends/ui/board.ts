@@ -1,6 +1,7 @@
-import { agoLabel, updatedAgo } from '@shared/friendGists'
+import { LIST_NEEDS_REPAIR, agoLabel, updatedAgo } from '@shared/friendGists'
 import { dailyMark as groupsDailyMark, localDay as sharedLocalDay } from '@shared/friendGroups'
 import { daysReviewed, rememberedPercent, type FriendDay, type FriendMark, type FriendStats } from '@shared/friendStats'
+import type { FriendsSendState } from '../sender'
 
 /**
  * THE RULES OF THE FRIENDS SCREENS (YAZ-5085, 4E4; decisions 21, 23, 24 and 25 on YAZ-5057; round 10, items 12 and 13).
@@ -332,6 +333,46 @@ export function seeMark(mark: FriendMark, seen: SeenMark | undefined, now: numbe
 export const MARK_LINE: Record<FriendMark['kind'], string> = {
   cheer: 'cheered you',
   nudge: 'nudged you',
+}
+
+/**
+ * The one line of this phone's send of my numbers (`FriendsSender.state()`), as the Mac's Settings row says its own
+ * (`client/src/settings/FriendsSendControl.tsx`). Null: nothing to say (no try yet, no friend, or no connection, which
+ * the board's own line says).
+ */
+export function sendLine(state: FriendsSendState, now: number): string | null {
+  const at = (t: number | null) => (t === null ? '' : ` Next try at ${new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`)
+  switch (state.status) {
+    case 'no-gists':
+      return 'Not sent: the token has no Gists permission. Add it on GitHub, then replace the token in Settings.'
+    case 'missing-vaults':
+      return 'Not sent: a vault that counts for friends is not on this phone. Add it on this phone, and the numbers go.'
+    case 'slowed':
+      return `Sent less often now: GitHub allows 100 changes an hour.${at(state.retryAt)}`
+    case 'needs-repair':
+      return `Not sent. ${LIST_NEEDS_REPAIR}`
+    case 'needs-newer-app':
+      return 'Not sent: your friends list is from a newer app. Update this app.'
+    case 'list-elsewhere':
+      return 'Not sent: your friends list is in another of your vaults. Add that vault on this phone, and the numbers go.'
+    case 'no-list-access':
+      return 'Not sent: the token cannot read the vault that holds your friends list. On GitHub, give it Contents (Read and write) on that vault.'
+    case 'sign-in-again':
+      return 'Not sent: GitHub does not accept the token. Sign in again in Settings.'
+    case 'failed':
+      return 'Not sent: something went wrong. The app tries again after the next sync.'
+    case 'idle':
+    case 'no-pass':
+    case 'no-account':
+    case 'no-friends':
+    case 'offline':
+      return null
+    default:
+      // `sent`, `unchanged`, `waiting`: the numbers go.
+      if (state.lastSentAt === null) return null
+      const ago = agoLabel(updatedAgo(state.lastSentAt, now))
+      return `Your numbers were last sent ${ago === 'now' ? 'just now' : ago}.`
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

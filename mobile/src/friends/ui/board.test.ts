@@ -13,6 +13,7 @@ import {
   markWords,
   periodNumbers,
   seeMark,
+  sendLine,
   todayOf,
   updatedLabel,
   vsBoard,
@@ -327,5 +328,24 @@ describe('strings from a gist', () => {
     expect(updatedLabel(NOW - 2 * 3600_000, NOW)).toBe('2h ago')
     expect(updatedLabel(null, NOW)).toBe('no update yet')
     expect(updatedLabel(NOW + 60_000, NOW)).toBe('now')
+  })
+})
+
+describe("this phone's send of my numbers, in one line", () => {
+  const at = (status: Parameters<typeof sendLine>[0]['status'], more: Partial<Parameters<typeof sendLine>[0]> = {}) => sendLine({ status, lastSentAt: null, retryAt: null, remade: false, ...more }, 10 * 60_000)
+  it('says why it is not sent', () => {
+    expect(at('no-gists')).toBe('Not sent: the token has no Gists permission. Add it on GitHub, then replace the token in Settings.')
+    expect(at('missing-vaults')).toContain('a vault that counts for friends is not on this phone')
+    expect(at('sign-in-again')).toContain('GitHub does not accept the token')
+    expect(at('slowed')).toBe('Sent less often now: GitHub allows 100 changes an hour.')
+    expect(at('slowed', { retryAt: 20 * 60_000 })).toMatch(/^Sent less often now: GitHub allows 100 changes an hour\. Next try at .+\.$/)
+    expect(at('needs-repair')).toMatch(/^Not sent\. /)
+    expect(at('failed')).toContain('something went wrong')
+  })
+  it('says when it was sent last, and nothing before a first try, with no friend, or with no connection', () => {
+    expect(at('sent', { lastSentAt: 10 * 60_000 })).toBe('Your numbers were last sent just now.')
+    expect(at('unchanged', { lastSentAt: 5 * 60_000 })).toBe('Your numbers were last sent 5m ago.')
+    expect(at('sent')).toBeNull()
+    for (const s of ['idle', 'no-pass', 'no-account', 'no-friends', 'offline'] as const) expect(at(s, { lastSentAt: 0 })).toBeNull()
   })
 })
