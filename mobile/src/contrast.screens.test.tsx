@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRoot } from 'react-dom/client'
@@ -237,6 +237,17 @@ describe('the contrast of every screen the phone draws (YAZ-5179, YAZ-5338 … Y
     // YAZ-5523: the sheets are portals into document.body, outside the app root. Each sheet fixture has audited items there.
     const sheetScreens = ['folder-sheet', 'explore-stack', 'explore-one', 'folder-hold', 'page-table-full']
     expect(sheetScreens.filter((n) => !(results.find((r) => r.name === n)!.outside > 0))).toEqual([])
+  })
+
+  it('every .css file under mobile/src (outside dev/) is in phoneStylesheets()', () => {
+    // YAZ-5523: a stylesheet nobody imports is in no screen's list, so no check would read it.
+    const src = resolve(REPO, 'mobile/src')
+    const onDisk = readdirSync(src, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.css') && !f.startsWith('dev/'))
+      .map((f) => relative(REPO, resolve(src, f)))
+    const listed = new Set(phoneStylesheets().map((f) => relative(REPO, f)))
+    expect(onDisk.length).toBeGreaterThan(20)
+    expect(onDisk.filter((f) => !listed.has(f)).sort()).toEqual([])
   })
 
   it('YAZ-5359: the engine read every colour value of every screen (none unresolved)', () => {
