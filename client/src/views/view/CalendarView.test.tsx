@@ -520,10 +520,11 @@ describe('hide weekends (YAZ-4595 S33)', () => {
     expect(mark(el, 'Sunday')).toBe('Sun')
   })
 
-  it('a weekend card dropped on its Friday keeps its date; dropped on another day it moves there and keeps its time', () => {
+  it('a weekend card dropped on its Friday moves to that Friday (YAZ-5604 item 2); dropped on another day it moves there; both keep its time', () => {
     const { el } = mount(HIDE, { records })
     drag(cardOf(el, 'Sunday'), day(el, '2026-12-04'))
-    expect(write).not.toHaveBeenCalled()
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Sunday.md', 'due', '2026-12-04 09:00')
+    write.mockClear()
     drag(cardOf(el, 'Sunday'), day(el, '2026-12-02'))
     expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Sunday.md', 'due', '2026-12-02 09:00')
     expect(mark(el, 'Sunday')).toBeNull()
@@ -544,9 +545,9 @@ describe('hide weekends (YAZ-4595 S33)', () => {
       expect(mark(el, 'First Sunday')).toBe('Sun')
       expect(titlesIn(day(el, '2026-11-06'))).toEqual(['Saturday', 'Sunday'])
       expect(titlesIn(q(el, '.view-cal__tray'))).toEqual([])
-      // A drop on its Monday is a drop on its own day: no write.
+      // A drop on its Monday moves it to that Monday (YAZ-5604 item 2): its real day is the Sunday.
       drag(cardOf(el, 'First Sunday'), day(el, '2026-11-02'))
-      expect(write).not.toHaveBeenCalled()
+      expect(write).toHaveBeenCalledExactlyOnceWith('/vault/First Sunday.md', 'due', '2026-11-02')
     })
 
     it('Month, Monday first: the same Sunday goes to the Friday before it, on the grid\'s first row', () => {
@@ -908,9 +909,10 @@ describe('cards over several days (YAZ-4858)', () => {
   it('Month: the bars on a day count in its 3 cards, and "+N more" counts the rest; Week shows them all', () => {
     const many = [...RECORDS, ...['W', 'X', 'Y', 'Z'].map((n) => rec(`Span ${n}`, { due: '2026-12-14', end: '2026-12-16' }))]
     const { el } = mount(SPAN, { records: many })
-    // Four bars over Dec 14–16 in four lanes: Month shows three, so Dec 15 shows no one-day card and "+6 more" (5 cards, 1 bar).
-    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(3)
-    expect(titlesIn(day(el, '2026-12-15'))).toEqual([])
+    // Four bars over Dec 14–16 in four lanes: Month shows two (YAZ-5604 item 7), so Dec 15 shows one one-day card and
+    // "+6 more" (4 cards, 2 bars).
+    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(2)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A'])
     expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('+6 more')
     click(q(day(el, '2026-12-15'), '.view-cal__more'))
     expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(4)
@@ -1101,7 +1103,8 @@ describe('cards over several days (YAZ-4858)', () => {
         const clipped = mount(`${SPAN}${scale}${fold}`, { records: long })
         if (scale.includes('week')) click(q(clipped.el, '[aria-label="Next week"]'))
         for (const bar of clipped.el.querySelectorAll<HTMLElement>('.view-cal__bar')) expect(isWrap(bar)).toBe(false)
-        for (const bar of barsOf(clipped.el, LONG)) expect(q(bar, '.view-cal__card-title').getAttribute('title')).toBe(LONG)
+        // The bar's own hover (YAZ-5604 item 8) names it and its days; its title span adds none of its own.
+        for (const bar of barsOf(clipped.el, LONG)) expect(bar.getAttribute('title')).toBe(`${LONG} · Dec 12 – Dec 15 · 4 days`)
         act(() => root?.unmount())
         container?.remove()
       }
@@ -1591,6 +1594,31 @@ describe('calendar Rolling scale (YAZ-5588; round 3: it scrolls with the page)',
     fire(day(el, '2026-12-20'), 'drop')
     expect(write).toHaveBeenLastCalledWith('/vault/Busy B.md', 'due', '2026-12-20')
   })
+
+  it('YAZ-5604 item 4: a stretch held near the window\'s bottom scrolls the page as a card drag does, and the day under the still pointer follows the scroll', () => {
+    let frame: FrameRequestCallback | null = null
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frame = cb
+      return 1
+    })
+    const { el } = open(`${ROLLING}    endDateProperty: note.end\n`)
+    const at = vi.spyOn(document, 'elementFromPoint').mockReturnValue(day(el, '2026-12-20'))
+    act(() => void q(cardOf(el, 'Busy A'), '.view-cal__edge--end').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })))
+    draw()
+    act(() => void window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 1, clientY: 595 })))
+    draw()
+    expect(frame).not.toBeNull()
+    // The page scrolls; the pointer does not move, so the day under it is the scroll's.
+    at.mockReturnValue(day(el, '2026-12-27'))
+    act(() => frame!(performance.now()))
+    draw()
+    expect(page.scrollTop).toBeGreaterThan(0)
+    fire(page, 'scroll')
+    act(() => void window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 })))
+    draw()
+    at.mockRestore()
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Busy A.md', 'end', '2026-12-27')
+  })
 })
 
 describe('a week row is the same in Month and Rolling, and grows to its tallest day (YAZ-5588 round 2)', () => {
@@ -1660,5 +1688,155 @@ describe('a week row is the same in Month and Rolling, and grows to its tallest 
       expect(row.style.gridTemplateRows).toMatch(/^auto( repeat\(\d+, auto\))? 1fr$/)
     }
     expect(cardOf(el, 'Busy E').classList.contains('view-cal__card--wrap')).toBe(true)
+  })
+})
+
+describe('the calendar audit (YAZ-5604)', () => {
+  const SPAN = `views:\n  - type: calendar\n    name: C\n    endDateProperty: note.end\n`
+  const mondayFirst = { folderPages: { ...DEFAULT_FOLDER_PAGES, weekStartsOn: 'monday' as const } }
+  const barsOf = (el: ParentNode, title: string) => [...el.querySelectorAll<HTMLElement>('.view-cal__bar')].filter((b) => b.querySelector('.view-cal__card-name')?.textContent === title)
+  const title = (el: ParentNode) => q(el, '.view-cal__month').textContent
+  const isToday = (el: ParentNode, key: string) => day(el, key).classList.contains('view-cal__day--today')
+
+  describe('item 1: the today ring moves at midnight', () => {
+    beforeEach(() => {
+      vi.useRealTimers()
+      vi.useFakeTimers()
+    })
+
+    it('with no click, the ring goes to the new day at midnight', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 23, 59))
+      const { el } = mount(CALENDAR)
+      expect(isToday(el, '2026-12-10')).toBe(true)
+      act(() => void vi.advanceTimersByTime(2 * 60_000))
+      expect(isToday(el, '2026-12-11')).toBe(true)
+      expect(isToday(el, '2026-12-10')).toBe(false)
+      expect(el.querySelectorAll('.view-cal__day--today')).toHaveLength(1)
+    })
+
+    it('a window that comes back after a sleep (no timer ran) moves the ring on focus and on visibility', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(CALENDAR)
+      // A sleep: the clock jumps two days and no timer fires.
+      vi.setSystemTime(new Date(2026, 11, 12, 8, 0))
+      act(() => void window.dispatchEvent(new Event('focus')))
+      expect(isToday(el, '2026-12-12')).toBe(true)
+      vi.setSystemTime(new Date(2026, 11, 13, 8, 0))
+      act(() => void document.dispatchEvent(new Event('visibilitychange')))
+      expect(isToday(el, '2026-12-13')).toBe(true)
+    })
+  })
+
+  it('item 2: with Hide weekends, a Saturday card shown on its Friday drops on that Friday and moves there', () => {
+    const records = [...RECORDS, rec('Saturday job', { due: '2026-12-05' }), rec('Sunday trip', { due: '2026-12-06', end: '2026-12-07' })]
+    const { el } = mount(`${CALENDAR}    hideWeekends: true\n`, { records, ...mondayFirst })
+    expect(titlesIn(day(el, '2026-12-04'))).toContain('Saturday job')
+    drag(cardOf(el, 'Saturday job'), day(el, '2026-12-04'))
+    expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Saturday job.md', 'due', '2026-12-04')
+    // A card on its own shown day still writes nothing on a drop there.
+    write.mockClear()
+    drag(cardOf(el, 'Bare'), day(el, '2026-12-03'))
+    expect(write).not.toHaveBeenCalled()
+  })
+
+  describe('item 7: Fold long days On keeps room for the one-day cards', () => {
+    it('Month: bars take at most 2 lanes; the third bar and up go into "+N more", and the day shows its one-day card', () => {
+      const bars = ['L1', 'L2', 'L3'].map((n) => rec(`Bar ${n}`, { due: '2026-12-14', end: '2026-12-18' }))
+      const { el } = mount(SPAN, { records: [...RECORDS, ...bars, rec('Daily log', { due: '2026-12-16' })] })
+      expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(2)
+      expect(titlesIn(day(el, '2026-12-16'))).toEqual(['Daily log'])
+      expect(q(day(el, '2026-12-16'), '.view-cal__more').textContent).toBe('+1 more')
+      const row = day(el, '2026-12-16').parentElement as HTMLElement
+      expect(row.style.gridTemplateRows).toBe('auto repeat(2, auto) 1fr')
+      // "+1 more" opens the day: every bar shows.
+      click(q(day(el, '2026-12-16'), '.view-cal__more'))
+      expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(3)
+    })
+
+    it('Off still shows every bar (no cap)', () => {
+      const bars = ['L1', 'L2', 'L3'].map((n) => rec(`Bar ${n}`, { due: '2026-12-14', end: '2026-12-18' }))
+      const { el } = mount(`${SPAN}    foldDays: false\n`, { records: [...RECORDS, ...bars] })
+      expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(3)
+    })
+  })
+
+  it('item 8: a bar\'s hover says its days, the whole span on each piece', () => {
+    const { el } = mount(SPAN, { records: [...RECORDS, rec('Trip', { due: '2026-12-12 09:00', end: '2026-12-15' })] })
+    const pieces = barsOf(el, 'Trip')
+    expect(pieces).toHaveLength(2)
+    for (const piece of pieces) expect(piece.getAttribute('title')).toBe('Trip · Dec 12 – Dec 15 · 4 days')
+    // A one-day card keeps its own tooltip (the title alone).
+    expect(cardOf(el, 'Bare').getAttribute('title')).toBeNull()
+  })
+
+  describe('item 13: hold a card or a stretch over ‹ or › to turn the month or the week', () => {
+    beforeEach(() => {
+      vi.useRealTimers()
+      vi.useFakeTimers()
+    })
+    const hold = (el: Element) => {
+      act(() => void el.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true })))
+      draw()
+    }
+
+    it('Month: a card held over › turns to the next month, and it drops on a day there', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(CALENDAR)
+      fire(cardOf(el, 'Busy A'), 'dragstart')
+      hold(q(el, '[aria-label="Next month"]'))
+      expect(title(el)).toBe('December 2026')
+      act(() => void vi.advanceTimersByTime(800))
+      expect(title(el)).toBe('January 2027')
+      // Still held: it turns on again.
+      act(() => void vi.advanceTimersByTime(800))
+      expect(title(el)).toBe('February 2027')
+      // Off the button, it stops.
+      fire(q(el, '[aria-label="Next month"]'), 'dragleave')
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(title(el)).toBe('February 2027')
+      hold(q(el, '[aria-label="Previous month"]'))
+      act(() => void vi.advanceTimersByTime(800))
+      expect(title(el)).toBe('January 2027')
+      fire(q(el, '[aria-label="Previous month"]'), 'dragleave')
+      // The card left the grid with December; its drag goes on, and the drop on a January day writes it.
+      fire(day(el, '2027-01-20'), 'dragover')
+      fire(day(el, '2027-01-20'), 'drop')
+      expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Busy A.md', 'due', '2027-01-20')
+    })
+
+    it('a pass over › that does not stay turns nothing; with no drag, nothing turns', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(CALENDAR)
+      hold(q(el, '[aria-label="Next month"]'))
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(title(el)).toBe('December 2026')
+      fire(cardOf(el, 'Busy A'), 'dragstart')
+      hold(q(el, '[aria-label="Next month"]'))
+      act(() => void vi.advanceTimersByTime(300))
+      fire(q(el, '[aria-label="Next month"]'), 'dragleave')
+      act(() => void vi.advanceTimersByTime(2000))
+      expect(title(el)).toBe('December 2026')
+    })
+
+    it('Week: a stretch held over › turns to the next week, and the release writes the day there', () => {
+      vi.setSystemTime(new Date(2026, 11, 10, 12, 0))
+      const { el } = mount(`${SPAN}    calendarScale: week\n`, { records: [...RECORDS, rec('Thu job', { due: '2026-12-10' })] })
+      const at = vi.spyOn(document, 'elementFromPoint')
+      const mouse = (target: EventTarget, type: string) => {
+        act(() => void target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: 1, clientY: 1 })))
+        draw()
+      }
+      mouse(q(cardOf(el, 'Thu job'), '.view-cal__edge--end'), 'mousedown')
+      at.mockReturnValue(q(el, '[aria-label="Next week"]'))
+      mouse(window, 'mousemove')
+      act(() => void vi.advanceTimersByTime(800))
+      expect(day(el, '2026-12-16')).not.toBeNull()
+      at.mockReturnValue(day(el, '2026-12-16'))
+      mouse(window, 'mousemove')
+      expect(barsOf(el, 'Thu job')[0].dataset.barDays).toBe('2026-12-13 2026-12-14 2026-12-15 2026-12-16')
+      mouse(window, 'mouseup')
+      at.mockRestore()
+      expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Thu job.md', 'end', '2026-12-16')
+    })
   })
 })

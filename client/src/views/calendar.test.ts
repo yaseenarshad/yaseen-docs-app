@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_FOLDER_PAGES, type IndexRecord, readColorStrength, writeColorStrength } from '@shared/types'
 import type { Row } from './engine'
 import { FileValue, fromYaml, render } from './expr'
-import { addDays, bucketByDay, calLineColor, calLineCss, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
+import { addDays, bucketByDay, calLineColor, calLineCss, calendarDateKey, calendarStartColumn, calendarEndKey, daysBetween, layoutWeek, spanDays, spanLabel, spanOf, type Span, dateColumns, dayOf, hideWeekendsDefault, hidesWeekends, monthStart, monthWeeks, movedDate, timeFirst, timeOf, dayLabel, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends } from './calendar'
 import type { ViewDef, ViewSet } from './viewSchema'
 
 const rec = (name: string, properties: Record<string, unknown>): IndexRecord => ({
@@ -361,6 +361,11 @@ describe('cards over several days (YAZ-4858)', () => {
       expect(spanLabel('2026-12-30', '2027-01-02')).toBe('Dec 30, 2026 – Jan 2, 2027')
       vi.setSystemTime(new Date(2025, 5, 1, 12, 0))
       expect(spanLabel('2026-12-03', '2026-12-05')).toBe('Dec 3 – Dec 5, 2026')
+      // A bar's hover (YAZ-5604 item 8): the days and how many, both ends counted.
+      vi.setSystemTime(new Date(2026, 10, 10, 12, 0))
+      expect(spanDays('2026-11-12', '2026-11-15')).toBe('Nov 12 – Nov 15 · 4 days')
+      expect(spanDays('2026-12-30', '2027-01-02')).toBe('Dec 30, 2026 – Jan 2, 2027 · 4 days')
+      expect(spanDays('2026-11-12', '2026-11-12')).toBe('Nov 12, 2026 · 1 day')
     } finally {
       vi.useRealTimers()
     }

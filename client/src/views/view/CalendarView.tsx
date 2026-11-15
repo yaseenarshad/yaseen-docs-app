@@ -4,7 +4,7 @@ import { holdFrames } from '../../lib/colResize'
 import { edgeScroller } from '../../lib/edgeScroll'
 import { type CardClick, openByKey, openCardByClick } from '../../lib/openGesture'
 import {
-  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanOf, timeFirst, timeOf,
+  type BarPlace, type CalendarScale, type DayKey, CALENDAR_SCALES, type Span, type SpanPreview, bucketByDay, addDays, calLineColor, calLineCss, calendarStartColumn, dayLabel, dayOf, daysBetween, layoutWeek, monthStart, monthWeeks, spanDays, spanOf, timeFirst, timeOf,
   todayKey, weekDays, weekendHomes, weekendOf, weekLabel, withoutWeekends,
 } from '../calendar'
 import { type ColorStrengthValue, type IndexRecord, calLine, headerRowAttrs } from '@shared/types'
@@ -104,6 +104,10 @@ const SUNDAY_FIRST = ['Sun', ...WEEKDAYS.slice(0, 6)]
 const WORKDAYS = WEEKDAYS.filter((d) => d !== 'Sat' && d !== 'Sun')
 /** Cards a day shows before "+N more" (D11); the bars on the day count first (YAZ-4858). */
 const DAY_CARDS = 3
+/** The lanes of bars a folded week row shows (YAZ-5604 item 7): fewer than `DAY_CARDS`, so a day under bars keeps room for a one-day card. */
+const DAY_BARS = 2
+/** ms a drag or a stretch holds over ‹ or › before the month or the week turns, and again for each next turn (YAZ-5604 item 13). */
+export const STEP_HOLD_MS = 700
 /** Cards the "No date" tray shows before "+N more" (YAZ-4544): a folder with no dates yet renders 20, not 1000, on each drag over. */
 const TRAY_CARDS = 20
 /** The drop id of the "No date" tray; a day's id is its key. */
@@ -163,6 +167,18 @@ function stuckLine(grid: HTMLElement, scroller: HTMLElement): number {
 /** A bar over a weekend alone (YAZ-4858): with the weekends hidden it has no day on the grid, so it is a one-day card on its start's home day. */
 const weekendOnly = (span: Span): boolean => daysBetween(span.start, span.end) <= 1 && weekendOf(span.start) !== null && weekendOf(span.end) !== null
 
+/** The ‹ or › under a drag (YAZ-5604 item 13): its step, -1 or 1; null elsewhere. */
+function stepAt(el: Element | null): number | null {
+  const button = el?.closest<HTMLElement>('[data-cal-step]')
+  return button === null || button === undefined ? null : Number(button.dataset.calStep)
+}
+
+/** The local midnight that starts the next day, in ms from now (YAZ-5604 item 1); a little after, so the clock has passed it. */
+function msToMidnight(): number {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime() + 50
+}
+
 /** An edge drag's span (YAZ-4858): the dragged edge on `day`, stopped at the other edge, so the end is never before the start. */
 const stretched = (span: { start: DayKey; end: DayKey }, edge: 'start' | 'end', day: DayKey): { start: DayKey; end: DayKey } =>
   edge === 'start' ? { start: day < span.end ? day : span.end, end: span.end } : { start: span.start, end: day > span.start ? day : span.start }
@@ -206,6 +222,29 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   const unitText = useUnit()
   // Month's cards and bar lanes per day before "+N more" (D11); with "Fold long days" off (YAZ-5586), no limit, so nothing folds.
   const dayCap = foldDays ? DAY_CARDS : Infinity
+  // The lanes of bars a folded row shows (YAZ-5604 item 7): the third bar and up go into "+N more", as the cards do.
+  const barCap = foldDays ? DAY_BARS : Infinity
+  /**
+   * Today's ring (S7) follows the clock (YAZ-5604 item 1): drawn again at the next midnight, and when the window comes
+   * back (focus, or the page shows again), since a Mac that slept runs no timer.
+   */
+  const [today, setToday] = useState<DayKey>(todayKey)
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const wake = () => {
+      setToday(todayKey())
+      clearTimeout(timer)
+      timer = setTimeout(wake, msToMidnight())
+    }
+    timer = setTimeout(wake, msToMidnight())
+    window.addEventListener('focus', wake)
+    document.addEventListener('visibilitychange', wake)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('focus', wake)
+      document.removeEventListener('visibilitychange', wake)
+    }
+  }, [])
   // The view's "Folder icon" (YAZ-4848), through the page's folder context; on outside a folder page.
   const folderIcons = useContext(FolderPages)?.folderIcons ?? true
   // The day whose month (or week) shows: today at first; Month's ‹ › set it to the 1st of a month.
@@ -295,13 +334,13 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     return new Map(weeks.flat().map((day) => [day, homes === null ? of(day) : [...of(day), ...(homes.get(day) ?? []).flatMap(of)]]))
   }, [allWeeks, weeks, singles, dateKey, hideWeekends])
   /**
-   * Month's budget per day (D11, YAZ-4858): a week row shows at most `dayCap` lanes of bars; a day then shows its
+   * Month's budget per day (D11, YAZ-4858): a week row shows at most `barCap` lanes of bars; a day then shows its
    * one-day cards in the room its shown bars leave, and "+N more" counts the rest, hidden bars too.
    */
   const budgets = useMemo(() => {
     const out = new Map<DayKey, { cards: number; hiddenBars: number }>()
     weeks.forEach((week, w) => {
-      const cap = Math.min(layouts[w].lanes, dayCap)
+      const cap = Math.min(layouts[w].lanes, barCap)
       week.forEach((day, c) => {
         let shownBars = 0
         let hiddenBars = 0
@@ -310,7 +349,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       })
     })
     return out
-  }, [weeks, layouts, dayCap])
+  }, [weeks, layouts, dayCap, barCap])
   // The page window (YAZ-4547 D24): day by day across the days on screen, a day's bars first (a bar once, on its first
   // day there), then its timed cards (every card, also those behind "+N more"), then "No date". Once per rows or page change.
   const windowOrder = useMemo(() => {
@@ -343,7 +382,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       for (const [w, layout] of layouts.entries())
         for (const bar of layout.bars) {
           if (bar.span.row.record.path !== current) continue
-          if (bar.lane < dayCap) return null
+          if (bar.lane < barCap) return null
           hidden ??= weeks[w][bar.col]
         }
       if (hidden !== null) return hidden
@@ -412,11 +451,35 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     [],
   )
   useEffect(() => () => rollEdges.stop(), [rollEdges])
+  /** The latest ‹ › step: a hold over a button calls it, so it reads this render's place. */
+  const stepRef = useRef<(by: number) => void>(() => undefined)
+  /**
+   * A drag or a stretch held over ‹ or › (YAZ-5604 item 13): after `STEP_HOLD_MS` the month or the week turns that way,
+   * and again each `STEP_HOLD_MS` while it stays; `hold(null)` (off the button, the drop, the release) stops it.
+   */
+  const stepHold = useMemo(() => {
+    let by: number | null = null
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const hold = (next: number | null) => {
+      if (next === by) return
+      clearTimeout(timer)
+      by = next
+      if (next === null) return
+      const tick = () => {
+        stepRef.current(next)
+        timer = setTimeout(tick, STEP_HOLD_MS)
+      }
+      timer = setTimeout(tick, STEP_HOLD_MS)
+    }
+    return { hold }
+  }, [])
+  useEffect(() => () => stepHold.hold(null), [stepHold])
 
   const clear = () => {
     setDrag(null)
     setOver(null)
     rollEdges.stop()
+    stepHold.hold(null)
   }
   // Esc cancels a drag, as on the board (`useGroupDrag`). A drag whose card left Rolling's window has no dragend of its
   // own (YAZ-5588): the document's ends it.
@@ -440,7 +503,6 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       </div>
     )
 
-  const today = todayKey()
   const isWeek = scale === 'week'
   /** Rolling's jump (YAZ-5588): a new window with `day`'s week at the top; the title names that week's month (its 4th day's, as the scroll's). */
   const rollTo = (day: DayKey) => {
@@ -450,6 +512,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
   // Rolling's ‹ › step a week from the week at the top.
   const step = (by: number) => (rolling ? rollTo(addDays(topWeek() ?? anchor, 7 * by)) : setAnchor((a) => (isWeek ? addDays(a, 7 * by) : monthStart(a, by))))
   const goToday = () => (rolling ? rollTo(todayKey()) : setAnchor(todayKey()))
+  stepRef.current = step
   const unit = isWeek || rolling ? 'week' : 'month'
   const title = isWeek ? weekLabel(weeks[0]) : `${MONTHS[month.m]} ${month.y}`
   // The "No date" tray shows every card by its "+N more", or while the mini window is on a hidden one (13J).
@@ -541,9 +604,17 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     }
   }
 
+  /** ‹ or › under a card drag (YAZ-5604 item 13): in Month and Week the hold turns the page; Rolling scrolls at its edges instead. */
+  const stepTarget = (by: number) =>
+    drag === null || rolling
+      ? {}
+      : {
+          onDragOver: () => stepHold.hold(by),
+          onDragLeave: () => stepHold.hold(null),
+        }
+
   /** The shown day at a point (YAZ-4858): a day cell of this calendar, or the part of a bar there. */
-  const dayAt = (x: number, y: number): DayKey | null => {
-    const el = document.elementFromPoint(x, y)
+  const dayAt = (x: number, y: number, el = document.elementFromPoint(x, y)): DayKey | null => {
     if (el === null || rootRef.current?.contains(el) !== true) return null
     const cell = el.closest<HTMLElement>('[data-day]')
     if (cell !== null) return cell.dataset.day ?? null
@@ -572,11 +643,23 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     const path = row.record.path
     let at: DayKey = edge === 'start' ? span.start : span.end
     setResize({ path, edge, ...span, day: at })
-    const move = (ev: MouseEvent) => {
-      const day = dayAt(ev.clientX, ev.clientY)
+    // Where the pointer is: a scroll under a still pointer (Rolling's edge scroll, a wheel) hit-tests there again.
+    let point: { x: number; y: number } | null = null
+    /** The day under the pointer; over ‹ or › in Month and Week, the hold that turns the month or the week (YAZ-5604 item 13). */
+    const track = () => {
+      if (point === null) return
+      const el = document.elementFromPoint(point.x, point.y)
+      stepHold.hold(rolling || el === null || rootRef.current?.contains(el) !== true ? null : stepAt(el))
+      const day = dayAt(point.x, point.y, el)
       if (day === null || day === at) return
       at = day
       setResize((r) => (r === null ? r : { ...r, day }))
+    }
+    const move = (ev: MouseEvent) => {
+      point = { x: ev.clientX, y: ev.clientY }
+      // Near Rolling's top or bottom the page scrolls, as for a card drag (YAZ-5604 item 4).
+      if (rolling) rollEdges.at(ev.clientY)
+      track()
     }
     const finish = (write: boolean) => {
       stopResize.current?.()
@@ -605,11 +688,15 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       window.removeEventListener('keydown', key, true)
+      window.removeEventListener('scroll', track, true)
+      rollEdges.stop()
+      stepHold.hold(null)
       holdFrames(false)
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
     window.addEventListener('keydown', key, true)
+    window.addEventListener('scroll', track, true)
     holdFrames(true)
   }
 
@@ -622,7 +709,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     // A card nothing here opens (a page's own switch) does not move; a vault-locked one does, and its write asks first (YAZ-5587).
     const locked = itemLock.fixed(path)
     const time = from === null && place === undefined ? null : timeOf(row.record.properties[dateKey])
-    // A weekend page on its Friday or Monday (YAZ-4595 S33, YAZ-4635 P3) says its day. A drop on that day is a drop on its own day: no write.
+    // A weekend page on its Friday or Monday (YAZ-4595 S33, YAZ-4635 P3) says its day. A drop on that day moves it there (YAZ-5604 item 2).
     const real = from === null ? null : dayOf(row.record.properties[dateKey]) ?? (endKey === null ? null : dayOf(row.record.properties[endKey]))
     const weekend = real === null || real === from ? null : weekendOf(real)
     // A card is small (YAZ-4857 item 3): an empty value is left out, and so is a line with nothing left on it.
@@ -630,10 +717,11 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       const items = line.filter((k) => canonicalKey(k) === 'file.name' || !isEmpty(row.values[k]))
       return items.length === 0 ? [] : [items]
     })
+    const bar = place?.bar
     const item = (key: string) =>
       canonicalKey(key) === 'file.name' ? (
-        // Clip shows the full title on a hover (D23); a wrapped title is all there.
-        <span key={key} className="view-cal__card-title" title={wrap ? undefined : row.record.title}>
+        // Clip shows the full title on a hover (D23); a wrapped title is all there. A bar's hover is the bar's own: its title and days.
+        <span key={key} className="view-cal__card-title" title={wrap || bar !== undefined ? undefined : row.record.title}>
           {/* A subfolder's row (YAZ-4579 D32) wears the folder icon here too, unless the view's "Folder icon" is off (YAZ-4848). */}
           {isFolderRow(row.record) && folderIcons && <FolderIcon size={12} className="view-folder-row__icon" />}
           {/* "Cross out when" (YAZ-4864) strikes the whole card's text (`view-cal__card--crossed`): the icon stays as it is. */}
@@ -642,7 +730,6 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       ) : (
         <CardProp key={key} def={def} view={view} row={row} field={key} resolve={resolve} />
       )
-    const bar = place?.bar
     // The edges (YAZ-4858): a dated card's two ends; a bar's ends where its row does not cut it. None on a read-only page.
     const edges = !locked && (from !== null || bar !== undefined)
     // Wrap (D23) wraps a bar's title too (YAZ-5600): its lane is an `auto` row, so it grows and the days' cards move down.
@@ -657,8 +744,9 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         onDragStart: (e: ReactDragEvent<HTMLElement>) => {
           e.dataTransfer?.setData('text/plain', path)
           if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
-          // A bar's drop shifts by the days from the day it was taken on (YAZ-4858); a card's from its own day.
-          const grabbed = place === undefined ? from : dayInBar(e.currentTarget, e.clientX)
+          // A bar's drop shifts by the days from the day it was taken on (YAZ-4858); a card's from its own day. A card
+          // leaves its real day, not the day it shows on: a Saturday card on its Friday drops on that Friday (YAZ-5604 item 2).
+          const grabbed = place === undefined ? real : dayInBar(e.currentTarget, e.clientX)
           setDrag({ path, row, from: grabbed, base: place === undefined ? real : grabbed })
         },
         onDragEnd: clear,
@@ -726,6 +814,8 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         {...props}
         style={{ gridColumn: `${place.bar.col + 1} / span ${place.bar.cols}`, gridRow: place.bar.lane + 2 } as CSSProperties}
         data-bar-days={place.days.join(' ')}
+        // Its hover says its days (YAZ-5604 item 8): the whole span on each piece, "Nov 12 – Nov 15 · 4 days".
+        title={`${row.record.title} · ${spanDays(place.bar.span.start, place.bar.span.end)}`}
         onDragOver={(e) => target(at(e)).onDragOver(e)}
         onDrop={(e) => target(at(e)).onDrop(e)}
       >
@@ -757,10 +847,11 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
       <div className="view-cal__nav">
         {/* The title alone at the left, the controls at the right (YAZ-3746 13M): views.css gives the title the room between. */}
         <h3 className="view-cal__month">{title}</h3>
-        <button type="button" className="view-toolbar__btn" aria-label={`Previous ${unit}`} title={`Previous ${unit}`} onClick={() => step(-1)}>
+        {/* A card held over ‹ or › turns the month or the week (YAZ-5604 item 13); a stretch does too (`startEdge`). */}
+        <button type="button" className="view-toolbar__btn" aria-label={`Previous ${unit}`} title={`Previous ${unit}`} onClick={() => step(-1)} data-cal-step={-1} {...stepTarget(-1)}>
           ‹
         </button>
-        <button type="button" className="view-toolbar__btn" aria-label={`Next ${unit}`} title={`Next ${unit}`} onClick={() => step(1)}>
+        <button type="button" className="view-toolbar__btn" aria-label={`Next ${unit}`} title={`Next ${unit}`} onClick={() => step(1)} data-cal-step={1} {...stepTarget(1)}>
           ›
         </button>
         <button type="button" className="view-toolbar__btn view-cal__today" aria-label="Today" onClick={goToday}>
@@ -807,9 +898,9 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
         </div>
         {weeks.map((week, w) => {
           const layout = layouts[w]
-          // Week shows every lane; Month at most `dayCap`, and every lane while one of its days is open (YAZ-4858).
+          // Week shows every lane; Month at most `barCap`, and every lane while one of its days is open (YAZ-4858).
           const open = week.some((day) => expanded === day || revealed === day)
-          const lanes = isWeek || open ? layout.lanes : Math.min(layout.lanes, dayCap)
+          const lanes = isWeek || open ? layout.lanes : Math.min(layout.lanes, barCap)
           return (
             <div key={week[0]} className="view-cal__week view-cal__week--days" role="row" data-week={rolling ? allWeeks[w][0] : undefined} style={{ gridTemplateRows: `auto${lanes > 0 ? ` repeat(${lanes}, auto)` : ''} 1fr` }}>
               {week.map((day, c) => {
@@ -820,7 +911,7 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
                 // Week shows every card (D22); Month shows the room the day's bars leave of `dayCap`, and "+N more".
                 const shown = isWeek || all ? list : list.slice(0, budget.cards)
                 const folded = list.length - Math.min(list.length, budget.cards) + budget.hiddenBars
-                const more = all ? 0 : folded - (lanes > dayCap ? budget.hiddenBars : 0)
+                const more = all ? 0 : folded - (lanes > barCap ? budget.hiddenBars : 0)
                 // Rolling has no other month (YAZ-5588): every day is plain, and a month's 1st says its month.
                 const inMonth = isWeek || rolling || Number(day.slice(5, 7)) === month.m + 1
                 const first = rolling && day.endsWith('-01')
