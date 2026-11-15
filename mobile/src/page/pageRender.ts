@@ -3,13 +3,13 @@ import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/loc
 import { parseAlt } from '@client/editor/image/imageSrc'
 import { headSpan, tailSpan, type PillEnd } from '@client/editor/wikilink/linkPillLook'
 import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
-import { Marked, Renderer, type Token, type TokenizerAndRendererExtension, type Tokens } from 'marked'
+import { Renderer, type RendererExtension, type Token, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
 import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
-import { taskCore } from '../comments/taskWrite'
 import { cardMoreButton } from '../cardMenu/moreButton'
 import { applyTableFile, readTableComment } from './tableFile'
 import { layoutTables } from './tableLayout'
+import { markTasks, pageMarked, type PageLinkToken, type TaskItem } from './pageMarked'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (YAZ-5079, 4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -104,101 +104,52 @@ let warm = false
 
 const escapeHtml = (text: string): string => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
-interface LinkToken extends Tokens.Generic {
-  inner: string
-  embed: boolean
-}
-
-/** `[[inner]]` and `![[inner]]`, as the card's tokenizer reads them (`cardRender.ts`): before marked's own links. */
-const wikilinks: TokenizerAndRendererExtension = {
-  name: 'pageLink',
-  level: 'inline',
-  start(src) {
-    const at = src.indexOf('[[')
-    return at < 0 ? undefined : at > 0 && src[at - 1] === '!' ? at - 1 : at
-  },
-  tokenizer(src) {
-    const m = /^(!?)\[\[([^[\]\n]+?)\]\]/.exec(src)
-    return m === null ? undefined : ({ type: 'pageLink', raw: m[0], inner: m[2], embed: m[1] === '!' } as LinkToken)
-  },
-  renderer(token) {
-    const { inner, embed } = token as LinkToken
-    return embed ? `<span ${localMark('page-embed')}="${escapeHtml(inner)}"></span>` : `<a ${localMark('page-link')}="${escapeHtml(inner)}"></a>`
-  },
-}
-
-/** `==text==`: the Mac's yellow highlight (`marks/highlight.ts`). */
-const highlight: TokenizerAndRendererExtension = {
-  name: 'highlight',
-  level: 'inline',
-  start(src) {
-    const at = src.indexOf('==')
-    return at < 0 ? undefined : at
-  },
-  tokenizer(src) {
-    const m = /^==(?=\S)([^=\n]*?\S)==/.exec(src)
-    return m === null ? undefined : { type: 'highlight', raw: m[0], text: m[1], tokens: this.lexer.inlineTokens(m[1]) }
-  },
-  renderer(token) {
-    return `<mark>${this.parser.parseInline(token.tokens ?? [])}</mark>`
-  },
-}
-
-/** `[^id]`: a footnote mark (as the Mac's GFM page). A table's cell note (`[^cell-N]`, YAZ-3818) is a small mark. */
-const footnoteRef: TokenizerAndRendererExtension = {
-  name: 'footnoteRef',
-  level: 'inline',
-  start(src) {
-    const at = src.indexOf('[^')
-    return at < 0 ? undefined : at
-  },
-  tokenizer(src) {
-    const m = /^\[\^([^\]\s]+)\](?!:)/.exec(src)
-    return m === null ? undefined : { type: 'footnoteRef', raw: m[0], id: m[1] }
-  },
-  renderer(token) {
-    const id = String(token.id)
-    if (/^cell-/i.test(id)) return '<sup class="page-cellnote" role="img" aria-label="Cell note">•</sup>'
-    return `<sup class="page-fnref"><a href="#fn-${escapeHtml(id)}">${escapeHtml(id)}</a></sup>`
-  },
-}
-
-/** `[^id]: text`: the note, where it is written (as the Mac's page). A cell note stays hidden under its table (YAZ-3818). */
-const footnoteDef: TokenizerAndRendererExtension = {
-  name: 'footnoteDef',
-  level: 'block',
-  start(src) {
-    return /^\[\^[^\]\s]+\]:/m.exec(src)?.index
-  },
-  tokenizer(src) {
-    const m = /^\[\^([^\]\s]+)\]:[ \t]*([^\n]*(?:\n(?![ \t]*\n)(?!\[\^)[^\n]*)*)(?:\n+|$)/.exec(src)
-    return m === null ? undefined : { type: 'footnoteDef', raw: m[0], id: m[1], tokens: this.lexer.inlineTokens(m[2]) }
-  },
-  renderer(token) {
-    const id = String(token.id)
-    if (/^cell-/i.test(id)) return ''
-    return `<div class="page-footnote" id="fn-${escapeHtml(id)}"><span class="page-footnote__label">${escapeHtml(id)}</span>${this.parser.parseInline(token.tokens ?? [])}</div>`
-  },
-}
-
 /**
- * `$$ … $$` alone: block math. The Mac draws no math (its Latex feature is off, YAZ-977: dollars are text), and a math
- * library is heavy: the phone shows the source in a code block. `$…$` inside a line stays text, as on the Mac.
+ * The renderers of the reader's own tokens (`pageMarked.ts` reads them: `[[link]]`, `![[embed]]`, `==highlight==`,
+ * `[^id]`, `[^id]: note`, `$$ math $$`).
  */
-const blockMath: TokenizerAndRendererExtension = {
-  name: 'blockMath',
-  level: 'block',
-  start(src) {
-    return /^\$\$/m.exec(src)?.index
+const ownTokens: RendererExtension[] = [
+  {
+    name: 'pageLink',
+    renderer(token) {
+      const { inner, embed } = token as PageLinkToken
+      return embed ? `<span ${localMark('page-embed')}="${escapeHtml(inner)}"></span>` : `<a ${localMark('page-link')}="${escapeHtml(inner)}"></a>`
+    },
   },
-  tokenizer(src) {
-    const m = /^\$\$([\s\S]+?)\$\$[ \t]*(?:\n+|$)/.exec(src)
-    return m === null ? undefined : { type: 'blockMath', raw: m[0], text: m[1].trim() }
+  {
+    // The Mac's yellow highlight (`marks/highlight.ts`).
+    name: 'highlight',
+    renderer(token) {
+      return `<mark>${this.parser.parseInline(token.tokens ?? [])}</mark>`
+    },
   },
-  renderer(token) {
-    return `<pre class="page-math"><code>${escapeHtml(String(token.text))}</code></pre>`
+  {
+    // A footnote mark (as the Mac's GFM page). A table's cell note (`[^cell-N]`, YAZ-3818) is a small mark.
+    name: 'footnoteRef',
+    renderer(token) {
+      const id = String(token.id)
+      if (/^cell-/i.test(id)) return '<sup class="page-cellnote" role="img" aria-label="Cell note">•</sup>'
+      return `<sup class="page-fnref"><a href="#fn-${escapeHtml(id)}">${escapeHtml(id)}</a></sup>`
+    },
   },
-}
+  {
+    // The note, where it is written (as the Mac's page). A cell note stays hidden under its table (YAZ-3818).
+    name: 'footnoteDef',
+    renderer(token) {
+      const id = String(token.id)
+      if (/^cell-/i.test(id)) return ''
+      return `<div class="page-footnote" id="fn-${escapeHtml(id)}"><span class="page-footnote__label">${escapeHtml(id)}</span>${this.parser.parseInline(token.tokens ?? [])}</div>`
+    },
+  },
+  {
+    // Block math: the Mac draws no math (its Latex feature is off, YAZ-977: dollars are text), and a math library is
+    // heavy: the phone shows the source in a code block. `$…$` inside a line stays text, as on the Mac.
+    name: 'blockMath',
+    renderer(token) {
+      return `<pre class="page-math"><code>${escapeHtml(String(token.text))}</code></pre>`
+    },
+  },
+]
 
 /** One parse: the page's own cards it met, in order, with what the card line under each says (`lined`: it has one). */
 interface Parse {
@@ -206,9 +157,10 @@ interface Parse {
 }
 let parse: Parse = { cards: [] }
 
-const markdown = new Marked({ gfm: true, breaks: true })
+/** THE reader's parser (`pageMarked.ts`): the tick finds its task with the same one. */
+const markdown = pageMarked
 /** The task item being drawn, for its box (`listitem`, `checkbox`). */
-let taskRaw: string | null = null
+let taskItem: TaskItem | null = null
 /** A table token with the body of the table comment after it (`table: …`; YAZ-5480, `tableFile.ts`). */
 type FiledTable = Tokens.Table & { fileComment?: string }
 
@@ -231,30 +183,25 @@ function joinTableComments(tokens: Token[]): void {
 }
 
 markdown.use({
-  extensions: [blockMath, footnoteDef, wikilinks, footnoteRef, highlight],
-  hooks: {
-    processAllTokens(tokens) {
-      joinTableComments(tokens)
-      return tokens
-    },
-  },
+  extensions: ownTokens,
   renderer: {
     table(token) {
       const html = Renderer.prototype.table.call(this, token)
       const comment = (token as FiledTable).fileComment
       return comment === undefined ? html : html.replace(/^<table>/, `<table ${localMark('table-file')}="${escapeHtml(comment)}">`)
     },
-    // YAZ-5494: a task's box carries its line (`data-task`, the core of its first line: `taskWrite.ts`), so a tap finds
-    // the same task in the file. `listitem` hands the item's line to its box: marked draws the box first.
+    // YAZ-5494, YAZ-5513: a task's box carries its core (`data-task`), as the parse found it (`markTasks`), so a tap
+    // finds the same task in the file with the same parser. `listitem` hands the item to its box: marked draws the box
+    // first.
     listitem(item) {
-      taskRaw = item.task ? item.raw : null
+      taskItem = item.task ? (item as TaskItem) : null
       return Renderer.prototype.listitem.call(this, item)
     },
     checkbox: ({ checked }) => {
-      const core = taskRaw === null ? null : taskCore(taskRaw.split('\n')[0]!)
-      taskRaw = null
-      const task = core === null ? '' : ` ${localMark('task')}="${escapeHtml(core)}"`
-      return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${task}></span> `
+      const task = taskItem?.pageTask
+      taskItem = null
+      const mark = task === undefined || task === null ? '' : ` ${localMark('task')}="${escapeHtml(task.core)}"`
+      return `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"${mark}></span> `
     },
     code(token) {
       if (token.lang?.trim() !== 'card') return false
@@ -502,11 +449,21 @@ function drawCallouts(root: DocumentFragment): void {
   }
 }
 
-/** One piece of a page as clean elements. */
-export function renderPiece(text: string, look: PageLook): DocumentFragment {
+/**
+ * One piece of a page as the parser draws it, before the cleaner: its HTML and its cards. `firstLine`: the line of the
+ * body the piece starts on (its boxes' `data-task-line`).
+ */
+export function pieceHtml(text: string, firstLine = 0): { html: string; cards: Parse['cards'] } {
   parse = { cards: [] }
-  const html = markdown.parse(text, { async: false })
-  const { cards } = parse
+  const tokens = markdown.lexer(text)
+  markTasks(tokens, text, firstLine)
+  joinTableComments(tokens)
+  return { html: markdown.parser(tokens), cards: parse.cards }
+}
+
+/** One piece of a page as clean elements; `firstLine`: the line of the body the piece starts on (its tasks' lines). */
+export function renderPiece(text: string, look: PageLook, firstLine = 0): DocumentFragment {
+  const { html, cards } = pieceHtml(text, firstLine)
   const root = clean(html)
   drawLinks(root, look)
   drawPictures(root, look)
@@ -592,7 +549,8 @@ export async function renderPage(body: string, look: PageLook, into: HTMLElement
   for (let from = 0; from < body.length; ) {
     const end = cutAt(body, from, size)
     const t0 = performance.now()
-    const piece = renderPiece(body.slice(from, end), look)
+    const text = body.slice(from, end)
+    const piece = renderPiece(text, look)
     // The first piece replaces the old page at once; the rest are added as they come.
     if (first) into.replaceChildren(piece)
     else into.append(piece)

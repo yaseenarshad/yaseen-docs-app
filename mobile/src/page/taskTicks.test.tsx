@@ -9,7 +9,7 @@ import type { WaitingComment } from '../comments/outbox'
 import type { NewCommentInput } from '../comments/sender'
 import { TASK_REFUSED_WORDS, applyTask, taskCore } from '../comments/taskWrite'
 import { TASKS_PAGE } from '../dev/taskFixtures'
-import { renderPage, type PageLook } from './pageRender'
+import { renderPage, renderPiece, type PageLook } from './pageRender'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { useTaskTicks } from './taskTicks'
@@ -216,5 +216,34 @@ describe('a tap ticks (YAZ-5494)', () => {
     const box = p.box('Buy seeds')
     await act(async () => void box.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })))
     expect(box.dataset.checked).toBe('true')
+  })
+})
+
+/** YAZ-5513: tap the `k`th box the reader drew; the line of the stored page (1-based) that the tick changes, or the refusal. */
+async function tapAndWrite(text: string, k = 0): Promise<number | string> {
+  const port = fakePort()
+  const p = await page(text, port)
+  const box = p.boxes()[k]
+  if (box === undefined) return 'no box'
+  await tap(box)
+  if (p.said.length > 0) return p.said.join(' ')
+  const out = applyTask(text, port.list[0]!.task!)
+  if (out.kind !== 'ticked') return out.kind
+  const at = [...text].findIndex((c, i) => c !== out.content[i])
+  return text.slice(0, at).split('\n').length
+}
+
+describe('a tap ticks the task the reader drew, found with the reader\'s own parser (YAZ-5513)', () => {
+  it('a tick finds its task as the renderer does: never a line inside a fence, an indented code block or an HTML block', async () => {
+    // T1 (N4): a closing line with an info string does not close the fence; the tap ticks line 7, not the code line 4.
+    expect(await tapAndWrite('```\n- [ ] Buy milk\n```js\n- [ ] Buy milk\n```\n\n- [ ] Buy milk\n')).toBe(7)
+    // N5: a fence opened on a list item line hides the task-looking code line 2.
+    expect(await tapAndWrite('- ```md\n  - [ ] Buy milk\n  ```\n- [ ] Buy milk\n')).toBe(4)
+    // N6: a 4-space indented "```" is code, not a fence: the task is line 2, and line 4 is in the real fence below.
+    expect(await tapAndWrite('    ```\n- [ ] Buy milk\n```\n- [ ] Buy milk\n```\n')).toBe(2)
+    // An indented code block and an HTML block hold task-looking lines; the tap ticks the real task.
+    expect(await tapAndWrite('    - [ ] Buy milk\n\n<div>\n- [ ] Buy milk\n</div>\n\n- [ ] Buy milk\n')).toBe(7)
+    // With CRLF line ends too.
+    expect(await tapAndWrite('```\r\n- [ ] Buy milk\r\n```js\r\n- [ ] Buy milk\r\n```\r\n\r\n- [ ] Buy milk\r\n')).toBe(7)
   })
 })
