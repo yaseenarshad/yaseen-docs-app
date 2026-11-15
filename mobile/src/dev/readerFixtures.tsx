@@ -47,7 +47,8 @@ import { fixtureAnswers } from './fixtureAnswers'
  * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
  * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (every day, "Earlier" open) its other views;
  * `folder-sheet` the page in a sheet over Search (the vault says "explore").
- * YAZ-5504: `card-menu` a card's own view with its ⋯ open, Archive card tapped once ("Tap again to archive");
+ * YAZ-5504: `card-menu` a card file's view (YAZ-5527: River of Seville) with the card's own ⋯ (on its head) open, Archive
+ * card tapped once ("Tap again to archive");
  * `page-card-menu` the page of three cards with the ⋯ of its first card open (a made-up answer list, `fixtureAnswers`).
  * YAZ-5506: `search-sticky` a made-up tree nine folders deep, every folder open, scrolled to its deepest pages: the open
  * folders stuck at the top (`STICKY_FILES`).
@@ -256,7 +257,7 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
               }
           : name === 'page-no-id'
             ? { 'notes/Very long words about the whole trip and the plans for every day.md': '---\ntitle: Very long words about the whole trip and the plans for every day\n---\n\n# Words\n\nMade-up words.\n' }
-          : name === 'card-strip'
+          : name === 'card-strip' || name === 'card-menu'
             ? { 'cards/river-of-seville-demo-45.md': STRIP_CARD, 'trips/Seville.md': '---\ntitle: Seville\nid: DEMO-46\n---\n\nThe river card: [[DEMO-45]].\n' }
             : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
@@ -574,10 +575,11 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
       break
     case 'card-menu':
-      await typed('la bib')
-      await open(/^la biblioteca/, '.card-view__card .card__body')
-      press('Card tools')
-      await until(() => document.querySelector('[data-action="off"]:not(:disabled)') !== null)
+      // YAZ-5527: a card FILE's view: the card's own ⋯ at the right of its head opens the card actions; one tap arms Archive card.
+      await typed('seville')
+      await open(/^River of Seville/, '.card-view__card .card__more')
+      press('Card actions: River of Seville')
+      await until(() => document.querySelector('.card-menu [data-action="off"]:not(:disabled)') !== null)
       press('Archive card')
       await wait(50)
       break

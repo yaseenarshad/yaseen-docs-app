@@ -66,6 +66,12 @@
 .phone-strip .card-view__table :is(th, td) {
   white-space: nowrap;
 }
+/* The Reviews drawer's last line (YAZ-5528, the Mac's): it wraps within the table, the chance on the right. */
+.phone-strip .card-view__table .card-reviews__next td {
+  padding-top: 8px;
+  border-bottom: 0;
+  white-space: normal;
+}
 .phone-strip .card-strip__none {
   margin: 4px 8px 12px;
   font-size: 14px;
@@ -104,11 +110,8 @@
 .card-view .phone-strip {
   margin-bottom: 4px;
 }
-.card-view .phone-strip + .card-view__facts {
-  margin-top: 10px;
-}
 
 /* The drawer's quiet words on the strip's fill, at 4.5:1 too (the app's muted colour reads 4.4:1 there in light). */
-.phone-strip :is(.card-strip__none, .card-view__table th, .card-backlinks__folder, .props__key) {
+.phone-strip :is(.card-strip__none, .card-view__table th, .card-reviews__next td, .card-backlinks__folder, .props__key) {
   color: color-mix(in srgb, var(--fg-muted) 80%, var(--fg));
 }

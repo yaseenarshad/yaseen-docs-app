@@ -9,8 +9,9 @@ import { saveVaultList } from '../store'
 import { BRANCH, REPO, VAULT } from '../sync/testing'
 
 /**
- * YAZ-5504: the card's ⋯ outside Review. The card view (a card opened from Search) has ⋯ in its top bar: the card
- * actions, then Find in card. A card in a page has a small ⋯ at the right of its head, with the same actions for THAT
+ * YAZ-5504: the card's ⋯ outside Review. YAZ-5527: the card view (a card opened from Search: a card file, or a card of
+ * a page) has the card's own ⋯ at the right of the card's head, as a card in a page: the card actions. The top bar's ⋯
+ * is the page's: Find in card (and the full title), no card actions. A card in a page has a small ⋯ at the right of its head, with the same actions for THAT
  * card. Two taps each (YAZ-5505); the card's look changes at once; the write is the phone's safe card-line write (the
  * real answer list on the fake GitHub). Made-up files.
  */
@@ -30,6 +31,7 @@ afterEach(() => {
   forgetSearch()
 })
 
+const wait = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 async function waitFor(done: () => boolean, ms = 5000): Promise<void> {
   const until = Date.now() + ms
   while (!done()) {
@@ -69,18 +71,43 @@ async function openCard(query: string, name: RegExp) {
   await h!.click(name)
   await waitFor(() => h!.host.querySelector('.card-view__card .card__body') !== null)
 }
-async function openMenu(label: string) {
-  await h!.click(label)
-  await waitFor(() => h!.host.querySelector('[data-action="off"]') !== null && !row(h!.host, 'off').disabled)
-  return h!.host.querySelector<HTMLElement>('[role="menu"]')!
+/** The card's own ⋯ on the card view's card head (YAZ-5527), open, its rows ready. */
+async function openMenu() {
+  await tap(h!.host.querySelector<HTMLElement>('.card-view__card .card__head .card__more')!)
+  await waitFor(() => h!.host.querySelector('.card-view__card .card-menu [data-action="off"]') !== null && !row(h!.host, 'off').disabled)
+  return h!.host.querySelector<HTMLElement>('.card-view__card .card-menu')!
 }
 
-describe('the card view\'s ⋯ (YAZ-5504)', () => {
-  it('the card actions, then Find in card; one tap only arms; two taps archive; the card shows Archived at once', async () => {
+describe('the card view\'s card ⋯ (YAZ-5504, YAZ-5527)', () => {
+  it('a card file: the ⋯ at the right of the card head holds the card actions; the top bar ⋯ has Find in card only', async () => {
+    await app()
+    await openCard('speed of light', /^Speed of light/)
+    const head = h!.host.querySelector('.card-view__card .card__head')!
+    // At the right of the head (its last thing), as a card in a page; the head's words stay the card's own.
+    expect(head.lastElementChild?.classList.contains('card__more-box')).toBe(true)
+    expect(head.textContent).toBe('RV-17')
+    expect(head.querySelector('.card__more')!.getAttribute('aria-label')).toBe('Card actions: Speed of light')
+    const menu = await openMenu()
+    expect(menu.getAttribute('aria-label')).toBe('Card actions: RV-17')
+    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title on the frontShow'])
+    // The ⋯ again closes it.
+    await tap(head.querySelector<HTMLElement>('.card__more')!)
+    expect(h!.host.querySelector('.card-menu')).toBeNull()
+
+    // The top bar's ⋯: the page's tools only.
+    await h!.click('Card tools')
+    const tools = h!.host.querySelector<HTMLElement>('.page-tools__menu')!
+    expect(rows(tools)).toEqual(['🔍 Find in card'])
+    expect(tools.querySelector('[data-action]')).toBeNull()
+    await wait(100)
+    expect(h!.host.querySelector('[data-action]')).toBeNull()
+  })
+
+  it('a card of a page, opened alone: the same ⋯; one tap only arms; two taps archive; the card shows Archived at once', async () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
-    const menu = await openMenu('Card tools')
-    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title on the frontShow', '🔍 Find in card'])
+    const menu = await openMenu()
+    expect(rows(menu)).toEqual(['Up next', 'Archive card', 'Fix later', 'Title on the frontShow'])
     expect(h!.button(/Headings/)).toBeNull()
 
     await tap(row(menu, 'off'))
@@ -96,21 +123,22 @@ describe('the card view\'s ⋯ (YAZ-5504)', () => {
     expect(h!.host.querySelector('.toast')?.textContent).toBe('Archived')
 
     // The menu reads the new marks: Unarchive card.
-    const again = await openMenu('Card tools')
+    const again = await openMenu()
     expect(rows(again)).toContain('Unarchive card')
   })
 
   it('Title on the front: two taps hide it ("Title hidden in review"); a tap outside cancels the first', async () => {
     const t = await app()
     await openCard('river of madrid', /^River of Madrid/)
-    let menu = await openMenu('Card tools')
+    let menu = await openMenu()
     await tap(row(menu, 'notitle'))
     expect(row(menu, 'notitle').textContent).toBe('Tap again to hide the title')
     await act(async () => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
     await h!.settle()
     // The tap outside cancels and (the reader's rule) closes the menu: nothing was written.
     expect(t.answers.waiting()).toEqual([])
-    menu = await openMenu('Card tools')
+    expect(h!.host.querySelector('.card-menu')).toBeNull()
+    menu = await openMenu()
     expect(row(menu, 'notitle').textContent).toBe('Title on the frontShow')
     await tap(row(menu, 'notitle'))
     await tap(row(menu, 'notitle'))
@@ -122,7 +150,7 @@ describe('the card view\'s ⋯ (YAZ-5504)', () => {
   it('a card file: Fix later goes on the card file\'s line; sent, GitHub has only that word, and the Mac reads it', async () => {
     const t = await app()
     await openCard('speed of light', /^Speed of light/)
-    const menu = await openMenu('Card tools')
+    const menu = await openMenu()
     await tap(row(menu, 'fix'))
     await tap(row(menu, 'fix'))
     await waitFor(() => t.answers.waiting().length === 1)

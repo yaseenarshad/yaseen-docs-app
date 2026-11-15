@@ -23,7 +23,7 @@ export interface CardMenuForProps {
 }
 
 /**
- * THE CARD ACTIONS FOR ONE CARD OUTSIDE REVIEW (YAZ-5504): the card view's ⋯ and a page card's ⋯. It reads the card's
+ * THE CARD ACTIONS FOR ONE CARD OUTSIDE REVIEW (YAZ-5504): the ⋯ on a card's head, in a page or in the card view (YAZ-5527). It reads the card's
  * marks as the phone shows them (`answers.text`: with the waiting actions) and writes each action with the phone's
  * safe card-line write (`changeCardLine`, the same one as Review's Fix later and Up next): only that word changes,
  * queued, sent later in one compare-and-swap commit. Lazy: its chunk comes with the first menu.

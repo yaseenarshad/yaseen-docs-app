@@ -41,7 +41,8 @@ import { freePort } from './freePort'
  *  - the guide lines of Search's tree (`#fixture=search-lines`, YAZ-5507), light and dark, at 375 px: with a finger on
  *    the list they show, each at the centre of the chevron of the folder above; the stuck rows cover them.
  *  - the card strip (`#fixture=card-strip`, `page-card-strip`, YAZ-5508), light and dark, at 375 px: closed under the
- *    card, each toggle a 44px tap, the bar inside the screen; a tap opens Reviews' drawer to its table (a picture of
+ *    card, each toggle a 44px tap, the bar inside the screen, no due line under it (YAZ-5528); a tap opens Reviews'
+ *    drawer to its table and its last line, the due words left and the chance right, inside the drawer (a picture of
  *    each); a page's card and a card embed with theirs; the page never scrolls sideways.
  *  - the comment count of a card file (`#fixture=card-strip`, YAZ-5511), light and dark, at 375 px: on the screen above
  *    the card, a 44 px tap, its centre the count's own; a tap brings the comments under the card up.
@@ -55,6 +56,8 @@ import { freePort } from './freePort'
  *    390 px: its words wrap, its buttons inside the screen.
  *  - a page card's ⋯ menu low on the screen (`#fixture=page-card-menu`, YAZ-5519 S6) at 375 and 430 px: inside the
  *    screen, above the page arrows and the tab bar; its first row on top.
+ *  - a card file's own ⋯ (`#fixture=card-menu`, YAZ-5527), light and dark, at 375 px: at the right of the card's head, a
+ *    44 px tap; its menu inside the screen; the top bar's ⋯ holds Find in card and no card action.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no skip a part).
@@ -636,7 +639,19 @@ const STRIP_CHECK = `(() => {
     short: toggles.filter((b) => r(b).height < 44 || r(b).width < 44).map((b) => b.textContent),
     outside: toggles.filter((b) => r(b).right > innerWidth + 0.5 || r(b).left < -0.5).map((b) => b.textContent),
     drawer: Math.round(r(drawer).height),
-    rows: s.querySelectorAll('.card-view__table tbody tr').length,
+    rows: s.querySelectorAll('.card-view__table tbody tr:not(.card-reviews__next)').length,
+    // YAZ-5528: the Reviews drawer's last line (the Mac's): the due words on the left, the chance on the right, inside
+    // the drawer; and no due line under the strip.
+    next: (() => {
+      const line = s.querySelector('.card-view__table tbody tr:last-child.card-reviews__next .card-reviews__next-line')
+      if (!line) return null
+      const due = line.querySelector('.card-reviews__due')
+      const chance = line.querySelector('.card-reviews__chance')
+      const box = r(drawer)
+      const inside = (el) => el === null || (r(el).left >= box.left - 0.5 && r(el).right <= box.right + 0.5)
+      return { due: due?.textContent ?? null, chance: chance?.textContent ?? null, dueLeft: due !== null && Math.abs(r(due).left - r(line).left) < 1, chanceRight: chance === null || Math.abs(r(chance).right - r(line).right) < 1, inside: inside(due) && inside(chance) }
+    })(),
+    factsLine: document.querySelector('.card-view__facts') !== null,
     wide: screen ? screen.scrollWidth > screen.clientWidth + 1 : true,
   }
 })()`
@@ -655,9 +670,11 @@ if (process.env.LAYOUT_STRIP !== 'no') {
     await wait(200)
     const opened = await evaluate(STRIP_CHECK)
     writeFileSync(shot.replace('.png', '-open.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
-    const ok = closed.error === undefined && closed.drawer === 0 && closed.rows === 0 && closed.short.length === 0 && closed.outside.length === 0 && !closed.wide && opened.drawer > 100 && opened.rows === 4 && !opened.wide
+    const n = opened.next
+    const nextOk = n !== null && /^Due /.test(n.due ?? '') && /^\d+% chance you remember it$/.test(n.chance ?? '') && n.dueLeft && n.chanceRight && n.inside
+    const ok = closed.error === undefined && closed.drawer === 0 && closed.rows === 0 && closed.short.length === 0 && closed.outside.length === 0 && !closed.wide && !closed.factsLine && opened.drawer > 100 && opened.rows === 4 && nextOk && !opened.wide
     if (!ok) failed++
-    console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip ${scheme} at 375x667: ${JSON.stringify(closed.tabs)}; closed drawer ${closed.drawer}px; short taps ${closed.short.length === 0 ? 'none' : closed.short.join(',')}; off screen ${closed.outside.length === 0 ? 'none' : closed.outside.join(',')}; open: ${opened.rows} rows, ${opened.drawer}px; ${closed.wide || opened.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+    console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip ${scheme} at 375x667: ${JSON.stringify(closed.tabs)}; closed drawer ${closed.drawer}px; short taps ${closed.short.length === 0 ? 'none' : closed.short.join(',')}; off screen ${closed.outside.length === 0 ? 'none' : closed.outside.join(',')}; ${closed.factsLine ? 'A DUE LINE UNDER THE STRIP' : 'no due line under the strip'}; open: ${opened.rows} rows, ${opened.drawer}px, last line ${n === null ? 'MISSING' : `"${n.due}" ${n.dueLeft ? 'left' : 'NOT LEFT'} / "${n.chance}" ${n.chanceRight ? 'right' : 'NOT RIGHT'}${n.inside ? '' : ' OUTSIDE THE DRAWER'}`}; ${closed.wide || opened.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
     const pageFile = await open('page-card-strip', 375, 667)
     const inPage = await evaluate(STRIP_CHECK)
     const pageShot = pageFile.replace('.png', `-${scheme}.png`)
@@ -783,6 +800,17 @@ if (process.env.LAYOUT_DISCARD !== 'no') {
 }
 // YAZ-5519 S6: a page card's ⋯ low on the screen (`#fixture=page-card-menu`, the third card, unscrolled) opens its menu
 // inside the screen, above the page arrows and the tab bar (upward); its first row is on top where a finger taps it.
+// YAZ-5527: the card view's card ⋯: the last thing in the head, inside the card box at its right (its 44 px tap may
+// reach a few px over the card's top edge, as a page card's: the head is shorter than a tap), a 44 px tap.
+const CARD_VIEW_MORE = `(() => {
+  const b = document.querySelector('.card-view__card .card__head .card__more')
+  if (!b) return { error: 'no card ⋯' }
+  const head = b.closest('.card__head')
+  const card = b.closest('.card-view__card').getBoundingClientRect()
+  const r = b.getBoundingClientRect()
+  const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+  return { last: head.lastElementChild === b.parentElement, inCard: r.left >= card.left - 0.5 && r.right <= card.right + 0.5 && r.top + r.height / 2 > card.top && r.top >= card.top - 8, rightGap: Math.round(card.right - r.right), tap: r.width >= 44 && r.height >= 44, hit: hit === b }
+})()`
 const CARD_MENU_PLACE = `(() => {
   const m = document.querySelector('.card-menu')
   if (!m) return { error: 'no menu' }
@@ -804,7 +832,27 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     const ok = m.error === undefined && m.top >= m.screenTop - 0.5 && m.bottom <= m.screenBottom + 0.5 && m.hit
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-card-menu third card at ${w}x${h}: menu ${m.top}-${m.bottom} (${m.place}), the screen ${m.screenTop}-${m.screenBottom}; its first row ${m.hit ? 'is on top' : 'IS COVERED'}  ${shot}`)
+  }  // YAZ-5527: a card file's view (`#fixture=card-menu`), light and dark, at 375 px: the card's own ⋯ at the right of its
+  // head (inside the card, a 44 px tap, its centre the ⋯ itself), its menu open (Archive card armed) inside the screen
+  // with its first row on top; the top bar's ⋯ has Find in card and no card action.
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('card-menu', 375, 667)
+    const more = await evaluate(CARD_VIEW_MORE)
+    const m = await evaluate(CARD_MENU_PLACE)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    await evaluate(`document.querySelector('.card-view__card .card__more').click()`)
+    await wait(200)
+    await evaluate(`document.querySelector('[aria-label="Card tools"]').click()`)
+    await wait(300)
+    const bar = await evaluate(`(() => { const t = document.querySelector('.page-tools__menu'); return t ? { rows: [...t.querySelectorAll('[role=menuitem]')].map((b) => b.textContent.trim()), actions: document.querySelectorAll('[data-action]').length } : { error: 'no top bar menu' } })()`)
+    writeFileSync(shot.replace('.png', '-top-bar.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = more.error === undefined && more.last && more.inCard && more.tap && more.hit && more.rightGap <= 8 && m.error === undefined && m.top >= m.screenTop - 0.5 && m.bottom <= m.screenBottom + 0.5 && m.hit && bar.error === undefined && bar.actions === 0 && bar.rows.length === 1 && /Find in card/.test(bar.rows[0])
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  card-menu ${scheme} at 375x667: the card ⋯ ${more.last ? 'last in the head' : 'NOT LAST IN THE HEAD'}, ${more.inCard ? 'in the card' : 'OUTSIDE THE CARD'}, ${more.rightGap}px from its right, ${more.tap ? '44px tap' : 'TAP TOO SMALL'}, ${more.hit ? 'its centre the ⋯' : 'COVERED'}; menu ${m.top}-${m.bottom}, the screen ${m.screenTop}-${m.screenBottom}, first row ${m.hit ? 'on top' : 'COVERED'}; top bar ⋯ ${JSON.stringify(bar.rows)}, ${bar.actions} card actions  ${shot}`)
   }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 chrome.kill()
 server.close()

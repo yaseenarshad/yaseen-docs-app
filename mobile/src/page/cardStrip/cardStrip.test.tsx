@@ -8,7 +8,8 @@ import { DRAWER_MS } from './CardStrip'
 
 /**
  * YAZ-5508: the Mac's card strip under the phone's card. Its parts in the Mac's order and words, closed by default; a
- * tap opens one drawer, a tap again (or another part) closes it; each drawer's content; the due line and a card file's
+ * tap opens one drawer, a tap again (or another part) closes it; each drawer's content (YAZ-5528: the Reviews drawer
+ * ends with the Mac's line, when it is due and the chance you remember it; no due line under the strip); a card file's
  * comments under it; the strip on a page's cards and card embeds (Reviews and Properties, as the Mac's); Review off:
  * none. Made-up files.
  */
@@ -26,6 +27,7 @@ const FILES: Record<string, string> = {
     'The capital is {{Madrid}}.',
     'GEO-3, title "Capital of Spain", tags "europe" "capitals", 2026-10-20T08:00Z good, 2026-10-24T08:00Z good, 2026-11-02T08:00Z hard'
   )}\n`,
+  'cards/tram-start-geo-4.md': `---\nkind: card\n---\n\n${block('Where does tram 28 start?\n---\nMartim Moniz', 'GEO-4, title "Tram start"')}\n`,
 }
 
 let h: Harness | null = null
@@ -79,7 +81,7 @@ const toggle = (s: HTMLElement, part: string) => s.querySelector(`.card-reviews_
 const wait = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 
 describe('the card strip on the phone (YAZ-5508)', () => {
-  it("a card file: the Mac's four parts, closed; one drawer at a time; the due line and the comments under it", async () => {
+  it("a card file: the Mac's four parts, closed; one drawer at a time; the comments under it", async () => {
     h = await open(FILES, 'capital of spain', /^Capital of Spain/)
     await waitFor(h, () => h!.host.querySelector('.page-comments') !== null)
     const s = strip(h)
@@ -94,11 +96,20 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     await tap(h, toggle(s, 'reviews'))
     expect(openPart(s)).toEqual(['reviews'])
     expect(drawer(s).hasAttribute('data-open')).toBe(true)
-    expect([...s.querySelectorAll('.card-view__table tbody tr')].map((r) => r.textContent)).toEqual([
+    const history = [...s.querySelectorAll('.card-view__table tbody tr:not(.card-reviews__next)')]
+    expect(history.map((r) => r.textContent)).toEqual([
       expect.stringMatching(/^Oct 20, 2026Remembered/),
       expect.stringMatching(/^Oct 24, 2026Remembered/),
       expect.stringMatching(/^Nov 2, 2026/),
     ])
+    // YAZ-5528: the table's last line is the Mac's: muted, across the table, the due words on the left and the chance
+    // on the right; it is the table's last row.
+    const next = s.querySelector('.card-view__table tbody tr:last-child')!
+    expect(next.classList.contains('card-reviews__next')).toBe(true)
+    expect(next.querySelector('td')?.colSpan).toBe(3)
+    expect([...next.querySelectorAll('.card-reviews__next-line > span')].map((x) => x.className)).toEqual(['card-reviews__due', 'card-reviews__chance card-strip__recall'])
+    expect(next.querySelector('.card-reviews__due')?.textContent).toMatch(/^Due (today|tomorrow|later today|in \d+ days?|\d+ days? ago|yesterday)/)
+    expect(next.querySelector('.card-reviews__chance')?.textContent).toMatch(/^\d+% chance you remember it$/)
     // A tap again closes it; the content goes once the drawer has slid shut.
     await tap(h, toggle(s, 'reviews'))
     expect(openPart(s)).toEqual([])
@@ -121,16 +132,30 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Geography')
   })
 
-  it('the order under the card: the strip, the due line, then the comments', async () => {
+  it('the order under the card: the strip, then the comments; no due line (YAZ-5528, as the Mac)', async () => {
     h = await open(FILES, 'capital of spain', /^Capital of Spain/)
     await waitFor(h, () => h!.host.querySelector('.page-comments') !== null)
     const view = h.host.querySelector('.card-view')!
-    const order = [...view.querySelectorAll('.card-view__card, .phone-strip, .card-view__facts, .page-comments')].map((el) =>
-      el.className.split(' ').find((c) => ['card-view__card', 'phone-strip', 'card-view__facts', 'page-comments'].includes(c))
+    const order = [...view.querySelectorAll('.card-view__card, .phone-strip, .page-comments')].map((el) =>
+      el.className.split(' ').find((c) => ['card-view__card', 'phone-strip', 'page-comments'].includes(c))
     )
-    expect(order).toEqual(['card-view__card', 'phone-strip', 'card-view__facts', 'page-comments'])
+    expect(order).toEqual(['card-view__card', 'phone-strip', 'page-comments'])
     expect(view.querySelector('.card-view__card')!.nextElementSibling).toBe(strip(h))
-    expect(view.querySelector('.card-view__facts')?.textContent).toMatch(/^Due .* chance you remember it$/)
+    expect(strip(h).nextElementSibling?.classList.contains('page-comments')).toBe(true)
+    // The strip closed: no due words and no chance anywhere on the view.
+    expect(view.querySelector('.card-view__facts')).toBeNull()
+    expect(view.textContent).not.toMatch(/chance you remember it|Due (in|today|tomorrow)/)
+  })
+
+  it("a new card: Reviews holds the Mac's header and its last line, \"Due today\", with no chance", async () => {
+    h = await open(FILES, 'tram', /^Tram start/)
+    const s = strip(h)
+    expect(tabs(s)).toEqual(['0 Reviews', 'Properties0', 'Linked mentions0', 'Embedded in0'])
+    await tap(h, toggle(s, 'reviews'))
+    expect([...s.querySelectorAll('.card-view__table th')].map((th) => th.textContent)).toEqual(['Reviewed on', 'Answer', 'Next due'])
+    expect([...s.querySelectorAll('.card-view__table tbody tr')].map((r) => r.textContent)).toEqual(['Due today'])
+    expect(s.querySelector('.card-reviews__chance')).toBeNull()
+    expect(s.textContent).not.toContain('No reviews yet')
   })
 
   it('a card in a page: Reviews, Properties, Linked mentions (no "Embedded in", as the Mac\'s card window)', async () => {
@@ -154,7 +179,8 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     expect(tabs(embed)).toEqual(['3 Reviews', 'Properties1'])
     expect(openPart(own)).toEqual([])
     await tap(h, toggle(embed, 'reviews'))
-    expect(embed.querySelectorAll('.card-view__table tbody tr')).toHaveLength(3)
+    expect(embed.querySelectorAll('.card-view__table tbody tr:not(.card-reviews__next)')).toHaveLength(3)
+    expect(embed.querySelector('.card-view__table tbody tr:last-child')?.classList.contains('card-reviews__next')).toBe(true)
     expect(h.host.querySelector('.reader__title')?.textContent).toBe('Geography')
   })
 
