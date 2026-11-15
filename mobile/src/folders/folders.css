@@ -366,3 +366,89 @@
   color: var(--fg-muted);
   font-size: 12px;
 }
+
+/* YAZ-5597: the calendar's header, the Mac's (title, ‹ ›, Today, then Month / Week / Rolling), stuck at the top of the
+   list so the arrows are in reach in a long month. The title and the arrows share a row (the title wraps above them
+   when it must); the switch is the row under, three equal parts. Each control a 44 px target. */
+.folder-cal__nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 4px;
+  margin: 0 -16px 8px;
+  padding: 4px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+/* The screen's 12 px top padding: stuck flush to its top edge, so no card shows above the header. */
+.screen .folder-cal__nav {
+  top: -12px;
+}
+.folder-cal__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.folder-cal__steps {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+.folder-cal__steps .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 15px;
+}
+.folder-cal__step {
+  width: var(--tap);
+  padding: 0;
+  font-size: 22px !important;
+  line-height: 1;
+}
+.folder-cal__steps .btn:disabled {
+  color: var(--fg-muted);
+}
+.folder-cal__modes {
+  display: flex;
+  flex: 1 0 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.folder-cal__modes button {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 15px;
+}
+.folder-cal__modes button + button {
+  border-left: 1px solid var(--border);
+}
+.folder-cal__modes button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-weight: 600;
+}
+/* Today's date ringed, as the Mac's day number. */
+.folder-agenda__day--today .folder-agenda__day-name {
+  display: inline-block;
+  padding: 1px 8px;
+  margin-left: -8px;
+  border: 1.5px solid var(--accent);
+  border-radius: 999px;
+}

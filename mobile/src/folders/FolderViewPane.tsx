@@ -16,7 +16,8 @@ export function FolderViewPane({ model, index, vault }: { model: FolderModel; in
   const count = `${pages} ${word}${run.result.folders > 0 ? ` · ${run.result.folders} ${run.result.folders === 1 ? 'folder' : 'folders'}` : ''}`
   return (
     <div className="folder-view" role="tabpanel" aria-label={run.view.name} data-type={run.view.type}>
-      <p className="folder-view__count">{count}</p>
+      {/* YAZ-5597: a calendar counts the pages its period shows of these ("12 of 930 pages"), over its header. */}
+      {(run.view.type !== 'calendar' || run.result.total === 0) && <p className="folder-view__count">{count}</p>}
       {run.result.errors.length > 0 && <p className="reader__notice">{run.result.errors[0].message}</p>}
       <ViewBody run={run} />
     </div>

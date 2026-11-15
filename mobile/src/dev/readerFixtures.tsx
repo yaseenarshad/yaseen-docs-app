@@ -7,7 +7,8 @@ import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
 import { READER_FILES, READER_ID, READER_NOT_STORED, STICKY_FILES, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES, FLOW_DRAWIO_SVG, GARDEN_SCENE } from './drawingVault'
 import { DIAGRAM_FILES } from './diagramVault'
-import { FOLDER_FILES } from './folderVault'
+import { FOLDER_FILES, calendarFiles } from './folderVault'
+import { todayKey } from '@client/views/calendar'
 import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
 import { remember } from '../search/recent'
 import { CALENDAR_NOW, CALENDAR_PAGE, FROZEN_PAGE, LOOK_PAGE, TABLE_PAGE } from './tableFixtures'
@@ -48,7 +49,8 @@ import { openSheet } from '../explore/sheets'
  * the box, in the number's place (the Mac's rule), then the text.
  * YAZ-5460: the folder page on the made-up `Projects` folder (`folderVault.ts`): `folder-hold` the menu of a held
  * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
- * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (every day, "Earlier" open) its other views;
+ * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (the month of today) its other views;
+ * YAZ-5597: `folder-calendar-month`, `-week`, `-rolling` the made-up `Events` calendar (`calendarFiles`) in each mode;
  * `folder-sheet` the page in a sheet over Search (the vault says "explore"), opened as a link in a page does (YAZ-5472 Q4).
  * YAZ-5504: `card-menu` a card file's view (YAZ-5527: River of Seville) with the card's own ⋯ (on its head) open, Archive
  * card tapped once ("Tap again to archive");
@@ -84,7 +86,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-calendar-month', 'folder-calendar-week', 'folder-calendar-rolling', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams', 'folder-table-look', 'page-text-size', 'page-sections', 'page-table-subheads', 'page-table-centre'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -299,6 +301,8 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
                 'Projects/.folder.md': (FOLDER_FILES['Projects/.folder.md'] as string).replace('      name: Table\n', '      name: Table\n      subfolders: rows\n'),
                 '.yaseendocs/folder-pages.json': '{"version": 1, "rowHeight": "tall", "folderCounts": true}',
               }
+          : name.startsWith('folder-calendar-')
+            ? calendarFiles(todayKey())
           : name.startsWith('folder-')
             ? { ...FOLDER_FILES, ...(name === 'folder-sheet' && { '.yaseendocs/link-click.json': '{"click":"explore"}' }) }
           : name === 'page-long-id'
@@ -436,9 +440,19 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     case 'folder-calendar':
       await hold('Projects')
       await folderTab({ 'folder-grouped': 'By status', 'folder-board': 'Board', 'folder-cards': 'Cards', 'folder-calendar': 'Calendar' }[name])
-      if (name === 'folder-calendar') press(/^Earlier/)
       await wait(150)
       document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
+      await wait(150)
+      break
+    // YAZ-5597: the Events calendar (made-up pages around today) in each mode: Month as it opens, Week, Rolling at today.
+    case 'folder-calendar-month':
+    case 'folder-calendar-week':
+    case 'folder-calendar-rolling':
+      await hold('Events')
+      await folderTab('')
+      if (name !== 'folder-calendar-month') press(name === 'folder-calendar-week' ? 'Week' : 'Rolling')
+      await wait(300)
+      if (name !== 'folder-calendar-rolling') document.querySelector('.folder-tabs')?.scrollIntoView({ block: 'start' })
       await wait(150)
       break
     case 'page-copied':

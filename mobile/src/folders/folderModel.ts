@@ -216,6 +216,8 @@ export interface ViewRun {
    * counts them. Null when the view shows no count.
    */
   inside: ((row: Row) => number) | null
+  /** YAZ-5597: the week's first day, Sunday: the Mac's Week starts on is personal (never in folder-pages.json), so its default. */
+  sundayFirst: boolean
 }
 
 /** A subfolder row's own folder as the index names it (the Mac's `folderOfRow`, `GroupHeader.tsx`). */
@@ -256,7 +258,7 @@ export function runFolderView(model: FolderModel, index: number, vaultName: stri
   const keys = propertyKeys(def, view, shown, pageColumnKeys(settings))
   const ctx: CellTextContext = { resolve, decls: settings.columns, pageFolder: model.dir, folderTitle: (d) => folderTitleOf(data.folders, d) }
   const inside = view.folderCounts !== false ? (row: Row) => rowsByFolder(data.records, data.folders).get(folderOfRow(row.record))?.length ?? 0 : null
-  return { view, def, result, keys, rows: shownRows(result.rows, groups), groups, ctx, settings, cards, input: shown, inside }
+  return { view, def, result, keys, rows: shownRows(result.rows, groups), groups, ctx, settings, cards, input: shown, inside, sundayFirst: model.defaults.weekStartsOn === 'sunday' }
 }
 
 /** Where a row of a view opens: a page; a subfolder's row, its folder's page; a card row, its card. */
