@@ -9,7 +9,8 @@
  * folder its folder page (`openPlace`, the folder chips' door), the page as O opens it. A long path gives way in the middle, "…".
  * On the right today's work across the vault, quiet ("Today: 31 cards · 9 min", YAZ-5033; the time hidden behind a
  * clock's hover box by default, YAZ-5130, `TodayWork`), then "3 of 12", which counts the filter's cards. Under it the progress bar (YAZ-5020, as
- * Mochi's): it fills as the session's cards are answered, a Forgot in red, a Remembered in grey.
+ * Mochi's): it fills as the filter's cards are answered, a Forgot in red, a Remembered in grey; only the tab on show
+ * counts (YAZ-5432, `filterProgress`), so Due today done fills it.
  *
  * Add more for today (YAZ-5042): the counts stay in this one menu. Round 2 (Yaseen: "2 and then its whatever the
  * total is? like / 5"): the Up next and New cards rows read "today / total" — "2 / 5", "10 / 48"; the total is every
@@ -30,7 +31,6 @@
  */
 import { Fragment, useRef, useState, type MouseEvent, type ReactElement, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
-import type { CardRating } from '@shared/cardLine'
 import type { AddKind } from '@shared/cardSchedule'
 import type { CardFilter, CardPlacePart, CardReviewApi, CardReviewSession } from './useCardReview'
 import { FileIcon } from '../sidebar/FileIcon'
@@ -61,18 +61,6 @@ export const CARD_FILTERS: readonly {
  * on show (its last card answered just now). One mark brings the row back.
  */
 export const inboxFilters = (session: Pick<CardReviewSession, 'upNext' | 'filter'>): typeof CARD_FILTERS => CARD_FILTERS.filter((f) => f.id !== 'next' || session.upNext || session.filter === 'next')
-
-/** The bar's parts (YAZ-5020): each run of the same answer as one part, so a long session draws a few boxes, not one per card. */
-export function progressRuns(answered: readonly CardRating[]): { missed: boolean; count: number }[] {
-  const runs: { missed: boolean; count: number }[] = []
-  for (const rating of answered) {
-    const missed = rating === 'again'
-    const last = runs.at(-1)
-    if (last !== undefined && last.missed === missed) last.count++
-    else runs.push({ missed, count: 1 })
-  }
-  return runs
-}
 
 interface CardInboxBarProps {
   session: CardReviewSession
@@ -247,14 +235,14 @@ export function CardInboxBar({ session, setFilter, addCards, resetCards, openPla
         )}
         {menu !== null && picker.picker}
       </div>
-      <div className="card-inbox__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.size} aria-valuenow={session.answered.length}>
-        {progressRuns(session.answered).map((run, i) => (
+      <div className="card-inbox__progress" role="progressbar" aria-label="Cards answered" aria-valuemin={0} aria-valuemax={session.progress.size} aria-valuenow={session.progress.done}>
+        {session.progress.runs.map((run, i) => (
           <span
             key={i}
             className="card-inbox__progress-part"
             data-missed={run.missed || undefined}
             style={{
-              width: `${(100 * run.count) / Math.max(1, session.size)}%`,
+              width: `${(100 * run.count) / Math.max(1, session.progress.size)}%`,
             }}
           />
         ))}

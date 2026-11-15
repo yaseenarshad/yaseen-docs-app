@@ -59,7 +59,7 @@ let props: CardInboxProps
 const TITLE = 'Capital of France'
 
 function sessionOf(text: string | null, over: Partial<CardReviewSession> = {}, title = TITLE): CardReviewSession {
-  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], size: 12, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, ...over }
+  return { label: 'Inbox', scope: 'vault', card: { path: PATH, index: 0, id: 'WIKI-9', due: 0, isNew: true, next: false, page: text === null ? null : { path: PATH, id: 'WIKI-9', text, title, reviews: [], off: false, next: false } }, position: 3, total: 12, answers: null, canUndo: false, canBack: false, canNext: false, filter: 'all', counts: { all: 12, next: 0, due: 9, new: 3 }, from: ['Vault'], place: [], answered: [], progress: { runs: [], done: 0, size: 12 }, today: { cards: 0, reviews: 0, seconds: 0 }, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 }, limited: { new: false, next: false }, canReset: { new: false, next: false }, upNext: true, lastAdd: null, newFrom: [], newFallback: false, end: null, ...over }
 }
 
 function render() {
@@ -795,23 +795,24 @@ describe('the Inbox screen (YAZ-4962)', () => {
     setInboxCardWidth(null)
   })
 
-  it('YAZ-5020: the progress bar under the top row — empty at start; a Remembered adds a grey part, a Forgot a red one, each 1/size wide; the same answers in a row draw one part', () => {
+  it('YAZ-5020, YAZ-5432: the progress bar under the top row draws the tab`s own progress — empty at start; each run a part, red for a Forgot, grey for a Remembered, run/size wide', () => {
     mount(TWO_SIDES)
     const bar = () => el.querySelector<HTMLElement>('.card-inbox__top > .card-inbox__progress')!
     const parts = () => [...bar().querySelectorAll<HTMLElement>('.card-inbox__progress-part')].map((p) => [p.dataset.missed === 'true' ? 'red' : 'grey', p.style.width])
     expect(el.querySelector('.card-inbox__top')?.firstElementChild?.className).toBe('card-inbox__bar')
     expect(parts()).toEqual([])
     expect(bar().getAttribute('aria-valuenow')).toBe('0')
-    session = { ...session, size: 8, answered: ['good'] }
+    session = { ...session, progress: { runs: [{ missed: false, count: 1 }], done: 1, size: 8 } }
     render()
     expect(parts()).toEqual([['grey', '12.5%']])
-    session = { ...session, answered: ['good', 'again'] }
-    render()
-    expect(parts()).toEqual([['grey', '12.5%'], ['red', '12.5%']])
-    session = { ...session, answered: ['good', 'again', 'again', 'easy', 'hard'] }
+    session = { ...session, progress: { runs: [{ missed: false, count: 1 }, { missed: true, count: 2 }, { missed: false, count: 2 }], done: 5, size: 8 } }
     render()
     expect(parts()).toEqual([['grey', '12.5%'], ['red', '25%'], ['grey', '25%']])
     expect([bar().getAttribute('aria-valuenow'), bar().getAttribute('aria-valuemax')]).toEqual(['5', '8'])
+    // Due today done (YAZ-5432): full.
+    session = { ...session, progress: { runs: [{ missed: false, count: 3 }, { missed: true, count: 1 }], done: 4, size: 4 } }
+    render()
+    expect(parts()).toEqual([['grey', '75%'], ['red', '25%']])
   })
 
   it('YAZ-5024: the key row folds the least important keys when it does not fit — ⌘↵ first, then O; Space and E stay', () => {
