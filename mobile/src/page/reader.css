@@ -283,11 +283,12 @@
 .reader__body ol > li {
   padding-left: 0.3em;
 }
-/* A top-level list (not inside an item, a table or a card) starts `--list-edge` further in (YAZ-5568). */
-.reader__body :is(ul, ol):not(li *, table *, .card *) {
+/* A top-level list (not inside an item, a quote, a table or a card) starts `--list-edge` further in (YAZ-5568). A
+   list in a quote moves with its quote (below). */
+.reader__body :is(ul, ol):not(li *, blockquote *, table *, .card *) {
   padding-left: calc(var(--list-gutter) + var(--list-label-gap) + var(--list-edge));
 }
-.reader__body ol:not(li *, table *, .card *) {
+.reader__body ol:not(li *, blockquote *, table *, .card *) {
   padding-left: calc(var(--list-gutter) + var(--list-label-gap) - 0.3em + var(--list-edge));
 }
 .reader__body ol > li::marker {
@@ -398,7 +399,8 @@
 }
 
 /* A quote (Crepe's): a 4px round bar at its left, inset by a gap, its text in the page's colour, one bullet's step in
-   (the Mac: 40px), so a quote's text lines up with a list's. A gap above and below. */
+   (the Mac: 40px), so a quote's text lines up with a list's. A gap above and below. A top-level quote (not in an item,
+   a table or a card) moves `--list-edge` in with the top-level lists, its bar too (YAZ-5568). A callout keeps its own. */
 .reader__body blockquote {
   position: relative;
   margin: var(--page-gap) 0;
@@ -413,6 +415,12 @@
   width: 4px;
   border-radius: 100px;
   background: var(--page-quote-bar);
+}
+.reader__body blockquote:not(.page-callout, li *, table *, .card *) {
+  padding-left: calc(var(--list-gutter) + var(--list-label-gap) + var(--list-edge));
+}
+.reader__body blockquote:not(.page-callout, li *, table *, .card *)::before {
+  left: var(--list-edge);
 }
 .reader__body .page-callout {
   margin: calc(var(--page-gap) * 2) 0;

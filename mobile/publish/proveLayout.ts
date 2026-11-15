@@ -1658,7 +1658,8 @@ if (process.env.LAYOUT_APPEARANCE !== 'no') {
 // its box, so the box's middle is still the box (a tick); folded: the arrow turned, the lines under it gone; Collapse
 // all leaves the headings, turned; `folding: false`: no arrow; the page never scrolls sideways. A task's button stops
 // where its box's 44 px tap area starts (`clear`), and on a top-level task the part of it on the screen (`room`, the
-// arrow's tap target) is 14 px wide at least (the top-level lists' `--list-edge`).
+// arrow's tap target) is 14 px wide at least (the top-level lists' `--list-edge`). A quote's text starts where a
+// top-level list's text starts (within 1 px; the quote moves in with the lists).
 const FOLDS_CHECK = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const buttons = [...document.querySelectorAll('.reader__body .fold-btn')].filter((b) => b.offsetParent !== null)
@@ -1690,7 +1691,18 @@ const FOLDS_CHECK = `(() => {
   })
   const own = (e) => [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim()
   const hidden = (words) => { const el = [...document.querySelectorAll('.reader__body li, .reader__body p')].find((e) => own(e).startsWith(words)); return el ? el.offsetParent === null : null }
-  return { rows, all: document.querySelectorAll('.reader__body .fold-btn').length, beans: hidden('Beans on the fence'), water: hidden('Water early'), first: hidden('North bed first'), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+  const textLeft = (el) => {
+    const t = el && [...el.childNodes].find((n) => n.nodeType === 3 && n.textContent.trim() !== '')
+    if (!t) return null
+    const rg = document.createRange()
+    rg.selectNodeContents(t)
+    const first = rg.getClientRects()[0]
+    return first ? first.left : null
+  }
+  const quoteAt = textLeft(document.querySelector('.reader__body > blockquote:not(.page-callout) > p'))
+  const listAt = textLeft([...document.querySelectorAll('.reader__body > ul > li')].find((li) => !li.querySelector(':scope > .page-task') && li.offsetParent !== null))
+  const quoteLine = quoteAt === null || listAt === null ? null : Math.round((quoteAt - listAt) * 10) / 10
+  return { rows, quoteLine, all: document.querySelectorAll('.reader__body .fold-btn').length, beans: hidden('Beans on the fence'), water: hidden('Water early'), first: hidden('North bed first'), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
 })()`
 if (process.env.LAYOUT_FOLDS !== 'no') {
   for (const scheme of ['light', 'dark'] as const) {
@@ -1715,12 +1727,12 @@ if (process.env.LAYOUT_FOLDS !== 'no') {
             ? m.all === 0
             : each &&
               (name === 'page-folds'
-                ? rows.length === 10 && folded.size === 0 && m.beans === false && topTask
+                ? rows.length === 10 && folded.size === 0 && m.beans === false && topTask && m.quoteLine !== null && Math.abs(m.quoteLine) <= 1
                 : name === 'page-folds-folded'
                   ? folded.has('South bed') && folded.has('Watering') && folded.has('Dig the beds') && m.beans === true && m.water === true && m.first === true
                   : rows.length === 4 && folded.size === 4))
         if (!ok) failed++
-        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${hgt}, ${scheme}: ${m.all} arrows, ${rows.length} shown (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.arrowIn ? '' : ' ARROW OFF SCREEN'}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}${x.tick === false ? ' BOX TAKEN' : ''}${x.clear === false ? ' OVER THE BOX\'S TAP AREA' : ''}${x.room === null ? '' : ` (${x.top ? 'top-level' : 'nested'} task: ${x.room}px on screen${x.top && x.room < 14 ? ', UNDER 14' : ''})`} @${x.arrowX}`).join('; ')}); hidden: Beans ${m.beans}, Water ${m.water}, North bed first ${m.first}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${hgt}, ${scheme}: ${m.all} arrows, ${rows.length} shown (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.arrowIn ? '' : ' ARROW OFF SCREEN'}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}${x.tick === false ? ' BOX TAKEN' : ''}${x.clear === false ? ' OVER THE BOX\'S TAP AREA' : ''}${x.room === null ? '' : ` (${x.top ? 'top-level' : 'nested'} task: ${x.room}px on screen${x.top && x.room < 14 ? ', UNDER 14' : ''})`} @${x.arrowX}`).join('; ')}); hidden: Beans ${m.beans}, Water ${m.water}, North bed first ${m.first}; quote text ${m.quoteLine === null ? 'not measured' : `${m.quoteLine}px from a top-level list's${Math.abs(m.quoteLine) > 1 ? ' (OFF)' : ''}`}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
       }
     }
   }
