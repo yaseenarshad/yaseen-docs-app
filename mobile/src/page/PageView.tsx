@@ -90,15 +90,24 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
     everDrawn.current = true
     drawn.current = { text, version: data.version }
     void (async () => {
-      await renderPage(splitFrontmatter(text).body, pageLook(data, path), el, uiSlicer(), () => live)
+      // YAZ-5436: a REDRAW (the sync changed the page or the vault) is drawn off the screen, its cards in place, then
+      // swapped in at once. Before, the page shrank to its first slice under the finger, the scroll place jumped, and
+      // the embedded cards came again one by one: the page "hung" while the person scrolled.
+      const into = first ? el : document.createElement('div')
+      await renderPage(splitFrontmatter(text).body, pageLook(data, path), into, uiSlicer(), () => live)
       if (!live) return
+      if (!first) {
+        await fillCardEmbeds(into, data, store, app.go, () => live)
+        if (!live) return
+        el.replaceChildren(...into.childNodes)
+      }
       const head = el.firstElementChild
       setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
       if (scroller !== null && !first) scroller.scrollTop = top
       // YAZ-5211: back on a page read before, at its reading place (a card asked for by `at` comes first).
       if (scroller !== null && first && at === undefined) scroller.scrollTop = readingPlace.get(`${vault}\n${path}`) ?? 0
       if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
-      await fillCardEmbeds(el, data, store, app.go, () => live)
+      if (first) await fillCardEmbeds(el, data, store, app.go, () => live)
     })()
     return () => {
       live = false
@@ -128,7 +137,7 @@ export default function PageView({ path: opened, at }: { path: string; at?: stri
 
   const gone = text === null && data !== null
   return (
-    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs>
+    <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader>
       <article className="reader" aria-label={title}>
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
         {notice !== null && (
