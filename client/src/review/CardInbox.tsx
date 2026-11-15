@@ -50,6 +50,9 @@
  *    answer, ← →, ⌘Z), a hidden Inbox and its close stop it. "P Play" is in the hint row only while a side that shows
  *    has a sound. A board's picture (YAZ-5015) opens the board on top; Esc there comes back to this card and step.
  *  - Under the card, OUTSIDE its frame, as in Mochi (YAZ-5002): the answer buttons; the key hint row last, at the bottom.
+ *    YAZ-5431 (as Mochi): that whole block — ← →, the buttons, ⋯, the last answer's line, the key row — is ONE band pinned
+ *    to the bottom of the Inbox, so it never moves for a short or long card, a Space, or the next card; a long card
+ *    scrolls above it and ends just over it. The end screens (YAZ-5043) keep their button in the card's place.
  *    No "Press Space" line over the buttons (YAZ-5021): the key row already says Space.
  *  - FAST ← → (YAZ-5029): the buttons are the setting's, always mounted, the same size from card to card; only their
  *    hover waits for the card's answers. The hook reads the cards around this one ahead and keeps the card before on show
@@ -58,7 +61,7 @@
  *    small row of icons, each with the app's hover box (its name and key): Undo last review (⌘Z), Archive card (YAZ-5046),
  *    Put at top of Inbox / Remove from top of Inbox, Open card. They are the hook's own actions.
  *  - THE LAST ANSWER'S LINE (YAZ-5025 round 2; no toast): one quiet line, centred under the answer buttons, "✓ Remembered ·
- *    DEMO-51 · back in 9 days · Undo ⌘Z" (a Forgot in red), in the button hover's words. It stays until the next answer
+ *    DEMO-51 · back in 9 days · Undo ⌘Z" (YAZ-5433: the card's title alone, its ID with no title; all grey, a Forgot's ✕ only red), in the button hover's words. It stays until the next answer
  *    replaces it; its Undo is the hook's own undo, as ⌘Z; an undo clears it. It shows only once the session counts the
  *    answer (`answered` one longer): a failed write shows its own error. The row keeps its height empty (YAZ-5029).
  *  - The hint row shows a key only while it does something; the digits are on the buttons. It is ONE line at any width
@@ -577,7 +580,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
         {card?.page != null && onLastSide && <CardStrip key={cardKey} reviews={card.page.reviews} settings={review.settings} properties={{ values: card.page.properties ?? {} }} />}
         {/* Under the card, outside its frame, as in Mochi (YAZ-5002): the answer buttons, then the keys. No "Press Space"
             line between them (YAZ-5021): the key row at the bottom already says Space. */}
-        {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them. */}
+        {/* YAZ-5049 round 2: the buttons and their line stay at the bottom of the view while a long card scrolls under them.
+            YAZ-5431 (Yaseen, as Mochi: "if the card is more or less it doesn't change or jump"): the band, keys and all, is
+            at the bottom of the Inbox for every card, short or long — under a short card too, with the room left above it. */}
         <div className="card-inbox__dock">
         {card !== null && (
           <div className="card-inbox__actions">
@@ -665,8 +670,9 @@ export function CardInbox({ shown = true, review, session, vaultOf, openPage: op
             )
           )}
         </div>
-        </div>
+        {/* YAZ-5431 (as Mochi): the key row is in the band too, so the whole block under the card stays at the bottom. */}
         <CardInboxHints hints={hints} />
+        </div>
       </div>
     </div>
   )

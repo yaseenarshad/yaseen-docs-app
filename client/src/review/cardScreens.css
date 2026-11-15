@@ -390,7 +390,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 16px 16px;
+  /* No bottom padding (YAZ-5431): the dock's own 16 px is the gap, so a short card's dock and a long card's stuck dock
+     end on the same line, the view's bottom edge. */
+  padding: 0 16px;
   overflow: auto;
   background: var(--bg-side);
   outline: none;
@@ -764,9 +766,11 @@
 /* The card's panel, then under it, outside its frame (YAZ-5002, as in Mochi): the Space hint, the buttons, the keys.
    YAZ-5049 round 2 (Yaseen: "with mochi, they dont have a scroll bar, they move the entire thing up and down it becomes
    a long page"): the column is as tall as its card — it does not shrink to the window — so the Inbox's own view
-   scrolls the whole card as one page, and the card has no scroll bar of its own. */
+   scrolls the whole card as one page, and the card has no scroll bar of its own.
+   YAZ-5431 (as Mochi): it is at least as tall as the view, so a short card leaves the room under it and the dock sits at
+   the view's bottom; a long card makes it taller and the view scrolls. */
 .card-inbox__column {
-  flex: none;
+  flex: 1 0 auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -922,13 +926,16 @@ body.card-inbox--sizing {
 [data-card-clean] {
   --inbox-card-pad: 44px;
 }
-/* The buttons and their line (YAZ-5049 round 2): at the bottom of the view while a long card scrolls under them, so
-   an answer is always one click away; under a short card, where they always were. The page colour, fading in at the
-   top, hides the card's text under them. */
+/* The buttons, their line and the key row (YAZ-5049 round 2, YAZ-5431): ONE band at the bottom of the view for every
+   card. A short card: the column fills the view and the band is pushed to its end (`margin-top: auto`). A long card:
+   the band sticks at the same bottom edge while the card scrolls under it, and at the scroll's end it sits right under
+   the card, so the card's last line is never under it. The page colour, fading in at the top, hides the card's text
+   under it. */
 .card-inbox__dock {
   position: sticky;
-  bottom: -16px;
+  bottom: 0;
   z-index: 2;
+  margin-top: auto;
   padding-bottom: 16px;
 }
 /* Its page colour reaches over the card's shadow (into the view's side padding), and fades out at its ends, so the
@@ -1075,7 +1082,7 @@ body.card-inbox--sizing {
 .card-inbox__answer[data-rating='easy'] .card-inbox__answer-icon {
   color: var(--ok);
 }
-/* The last answer's line (YAZ-5025 round 2): one quiet line, centred under the buttons; a Forgot in red. The row keeps
+/* The last answer's line (YAZ-5025 round 2): one quiet line, centred under the buttons, grey for every answer; only its mark has the answer's colour (YAZ-5433). The row keeps
    its height when empty, so nothing under it moves (YAZ-5029). */
 .card-inbox__last {
   display: flex;
@@ -1096,7 +1103,8 @@ body.card-inbox--sizing {
 .card-inbox__last[data-rating='hard'] .card-inbox__last-mark {
   color: var(--warn);
 }
-.card-inbox__last[data-rating='again'],
+/* YAZ-5433 (Yaseen: "it turns red and it becomes a little bit too noisy"): a Forgot line is the line's own grey, as a
+   Remembered one; only its small mark is red, as the ✓ is green. */
 .card-inbox__last[data-rating='again'] .card-inbox__last-mark {
   color: var(--danger);
 }
@@ -1218,7 +1226,8 @@ body.card-inbox--sizing {
   flex-wrap: nowrap;
   justify-content: center;
   gap: 16px;
-  margin-top: 26px;
+  /* In the bottom band (YAZ-5431): a little closer to the buttons, so the band takes less of a short window. */
+  margin-top: 14px;
   overflow: hidden;
   border-top: 0;
   white-space: nowrap;
@@ -1252,7 +1261,9 @@ body.card-inbox--sizing {
   inset: auto;
   flex: 1;
   min-height: 0;
+  /* No answer band here (nothing is saved): the view keeps its own 16 px under the card's end. */
   padding-top: 24px;
+  padding-bottom: 16px;
 }
 .card-preview__bar {
   flex: none;

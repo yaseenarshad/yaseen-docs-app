@@ -478,7 +478,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(panel.contains(reviews())).toBe(false)
     expect(reviews()?.classList.contains('card-reviews--strip')).toBe(true)
     expect(reviews()?.previousElementSibling).toBe(panel)
-    expect([...column.children].map((c) => c.className)).toEqual(['card-inbox__above', 'card-inbox__panel', 'card-reviews card-reviews--strip', 'card-inbox__dock', 'explore__foot card-inbox__hints'])
+    expect([...column.children].map((c) => c.className)).toEqual(['card-inbox__above', 'card-inbox__panel', 'card-reviews card-reviews--strip', 'card-inbox__dock'])
     expect(el.querySelector('.card-inbox__dock')?.contains(reviews())).toBe(false)
     expect(el.querySelectorAll('.card-inbox__dock .card-inbox__answer')).toHaveLength(2)
     // The same toggle as the card window's: closed until asked for; open, the table, with no delete in the Inbox.
@@ -541,9 +541,10 @@ describe('the Inbox screen (YAZ-4962)', () => {
     const answers = column.querySelector('.card-inbox__actions')!
     expect(answers.querySelectorAll('.card-inbox__answer')).toHaveLength(2)
     expect(panel.contains(answers)).toBe(false)
-    expect([...column.children].map((c) => c.className)).toEqual(['card-inbox__above', 'card-inbox__panel', 'card-inbox__dock', 'explore__foot card-inbox__hints'])
-    // YAZ-5049 round 2: the buttons and their line in one band, which stays at the bottom of the view.
-    expect([...column.querySelector('.card-inbox__dock')!.children].map((c) => c.className)).toEqual(['card-inbox__actions', 'card-inbox__last'])
+    expect([...column.children].map((c) => c.className)).toEqual(['card-inbox__above', 'card-inbox__panel', 'card-inbox__dock'])
+    // YAZ-5049 round 2: the buttons and their line in one band, which stays at the bottom of the view. YAZ-5431 (as
+    // Mochi): the key row is in that band too, so the whole block under the card is pinned to the bottom as one.
+    expect([...column.querySelector('.card-inbox__dock')!.children].map((c) => c.className)).toEqual(['card-inbox__actions', 'card-inbox__last', 'explore__foot card-inbox__hints'])
   })
 
   it('YAZ-5027: the state chip sits right above the card, outside its head and its frame; the head ends with the ID (YAZ-5132: no "in <page>"), for a new and a due card; the row stays with no card', () => {
@@ -883,8 +884,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(last().textContent).toBe('')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
-    // YAZ-5030: the card by its title, the ID after it.
-    expect(last().textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo (Cmd+Z)')
+    // YAZ-5030, YAZ-5433: the card by its title alone.
+    expect(last().textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
     expect(last().dataset.rating).toBe('good')
     expect(props.onNotice).not.toHaveBeenCalled()
     // Undo in the line: the hook's own undo; the session takes the answer off, and the line clears.
@@ -901,7 +902,7 @@ describe('the Inbox screen (YAZ-4962)', () => {
     // The next answer that lands: its line, in red (a Forgot).
     session = { ...session, answered: ['again'], canUndo: true }
     render()
-    expect(last().textContent).toBe('✕ Forgot · Capital of France (WIKI-9) · back later today · Undo (Cmd+Z)')
+    expect(last().textContent).toBe('✕ Forgot · Capital of France · back later today · Undo (Cmd+Z)')
     expect(last().dataset.rating).toBe('again')
     // ⌘Z is the same undo; once the session drops the answer, the line clears.
     press('z', { metaKey: true })
@@ -918,10 +919,13 @@ describe('the Inbox screen (YAZ-4962)', () => {
     expect(answerLine('hard', 'DEMO-51', 1, false, four)).toBe('~ Hard · DEMO-51 · back in 1 day')
     expect(answerLine('easy', 'DEMO-51', 20, false, four)).toBe('⇈ Easy · DEMO-51 · back in 20 days')
     expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS)).toBe('✓ Remembered · DEMO-51 · back in 9 days')
-    // YAZ-5030: by its title, the ID after it; a long title ends in "…", so "back in …" stays in sight.
-    expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS, 'Spanish verb 3')).toBe('✓ Remembered · Spanish verb 3 (DEMO-51) · back in 9 days')
+    // YAZ-5030, YAZ-5433 (Yaseen: "we can probably just have the title"): by its title only, no ID; a card with no
+    // title by its ID, its only name. A long title ends in "…", so "back in …" stays in sight.
+    expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS, 'Spanish verb 3')).toBe('✓ Remembered · Spanish verb 3 · back in 9 days')
+    expect(answerLine('again', 'DEMO-51', 0, true, DEFAULT_REVIEW_SETTINGS, 'Spanish verb 3')).toBe('✕ Forgot · Spanish verb 3 · back later today')
+    expect(answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS, '   ')).toBe('✓ Remembered · DEMO-51 · back in 9 days')
     const long = answerLine('good', 'DEMO-51', 9, false, DEFAULT_REVIEW_SETTINGS, 'A very long card title that goes on and on past the room it has')
-    expect(long).toBe(`✓ Remembered · ${'A very long card title that goes on and'}… (DEMO-51) · back in 9 days`)
+    expect(long).toBe(`✓ Remembered · ${'A very long card title that goes on and'}… · back in 9 days`)
   })
 
   it('YAZ-5017 round 2, YAZ-5132: the top row shows the CURRENT card`s place, vault › folders › page, the ONE breadcrumb, each part with its folder or page icon; it changes with the card; a folder opens through `openPlace`, the page as O does; the scope shows only when narrower than the vault', () => {
@@ -1009,7 +1013,7 @@ describe('the title on the front (YAZ-5030)', () => {
     press('2')
     session = { ...session, answered: ['good'], canUndo: true }
     render()
-    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France (WIKI-9) · back in 3 days · Undo (Cmd+Z)')
+    expect(el.querySelector('.card-inbox__last')?.textContent).toBe('✓ Remembered · Capital of France · back in 3 days · Undo (Cmd+Z)')
   })
 })
 
