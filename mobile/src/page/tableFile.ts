@@ -1,5 +1,6 @@
 import { cellAddress, parseTableComment, validMerges, type TableStyle } from '@client/editor/table/tableComment'
 import { stickyHeaderOf, type PhoneTableLook } from './tableLook'
+import { applySubheads } from './tableSubheads'
 
 /**
  * THE TABLE'S OWN SETTINGS, FROM THE FILE (YAZ-5480). The Mac keeps each table's settings in the file, in the comment
@@ -95,7 +96,8 @@ export const BORDER_PX_PHONE = 2
  *  - `align` and `valign`: each cell's own alignment (it wins over its column's); the table's vertical alignment;
  *  - `merge`: the merged cells, drawn with `colspan` and `rowspan` (the Mac's `validMerges`; the file's grid stays);
  *  - `header`: the header row's own colour, strength (`plain` is off), weight, text colour and alignment;
- *  - `stripes`, `border` (at most `BORDER_PX_PHONE`), `height`, `nowrap` / `wrap` and each column's `text`.
+ *  - `stripes`, `border` (at most `BORDER_PX_PHONE`), `height`, `nowrap` / `wrap` and each column's `text`;
+ *  - YAZ-5567: `subhead`, `subheader` and `stickysubheads` / `nostickysubheads` (`tableSubheads.ts`).
  */
 export function applyTableFile(table: HTMLTableElement, body: string, look: PhoneTableLook | null = null): TableStyle | null {
   const style = readTableComment(`<!-- ${body} -->`)
@@ -124,6 +126,8 @@ export function applyTableFile(table: HTMLTableElement, body: string, look: Phon
     table.style.setProperty('--table-border-dark', `${style.border.darkness}%`)
   }
   for (const [part, value] of Object.entries(style.header ?? {})) if (typeof value === 'string') table.setAttribute(`data-header-${part}`, value)
+  // YAZ-5567: the subheader rows (`subhead 5 12`), their own look and sticky choice (`tableSubheads.ts`).
+  applySubheads(table, style)
 
   // Each cell by its A1 address, in the file's grid (before the merges).
   const cells = new Map<string, HTMLTableCellElement>()

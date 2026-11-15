@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { linkPillVars } from '@client/editor/wikilink/linkPillLook'
-import { headingVars } from '@client/settings/headingStyles'
+import { textVars } from '@client/settings/headingStyles'
 import { DEFAULT_LINK_CLICK, LINK_CLICK_FILE, sanitizeLinkClick, type LinkClick } from '@shared/linkClick'
 import { LINK_PILLS_FILE, NO_LINK_PILLS, isDefaultLinkPills, sanitizeLinkPills, type LinkPills } from '@shared/linkPills'
 import { TEXT_FORMATTING_FILE, sanitizeTextFormatting, spacingVars } from '@shared/textFormatting'
 import { TABLE_LOOK_FILE, sanitizeTableLook, tableLookSettings } from '@shared/tableLook'
-import type { PhoneTableLook } from './tableLook'
+import { tableLookVars, type PhoneTableLook } from './tableLook'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
@@ -17,15 +17,17 @@ import './linkPills.css'
  *  - the link pills (`link-pills.json`, YAZ-4924): sanitised by the Mac's `sanitizeLinkPills`; the box and the parts'
  *    styles as the Mac's CSS variables (`linkPillVars`), the format's ends drawn on a page's links (`pageLook.ts`).
  *    No file, or a file that is not JSON: today's look (`NO_LINK_PILLS`), as the Mac.
- *  - the headings' sizes, weight and underline (`text-formatting.json`, `sanitizeTextFormatting`), as the Mac's
- *    `headingVars` (`--h1-size` …), which the reader's CSS reads. The text size and the lines stay the phone's.
+ *  - the text formatting (`text-formatting.json`, `sanitizeTextFormatting`) as the Mac's `textVars` (YAZ-5566): the Text
+ *    size (`--text-size`, the page's and a card's set to Same as pages), the headings' sizes, weight and underline
+ *    (`--h1-size` …) and the default line (`--line-default-*`, a `---` rule), which the reader's CSS reads.
  *  - the page spacing (`text-formatting.json` › `spacing`, YAZ-5485): line spacing, space between blocks, bullet
  *    indent and gap, as the Mac's `--edit-line-height`, `--edit-block-gap`, `--page-bullet-indent`, `--page-bullet-gap`
  *    (`spacingVars`), which `reader.css` reads. No `spacing`: the reader's own defaults (the Mac's defaults).
  *  - the card look (`card-look.json`, YAZ-5484, `cardLook.ts`): the Mac's card variables, so a card in a page and the
  *    card view draw with the vault's text and title size, hidden-word look, next mark and spacing. No file: none.
  *  - "Clicking a link" (`link-click.json`), for the link door (`openLink.ts`).
- *  - the table look (`table-look.json`, YAZ-5487): the page's tables' defaults (`tableLook.ts`). No file: null, the
+ *  - the table look (`table-look.json`, YAZ-5487): the page's tables' defaults (`tableLook.ts`), and (YAZ-5567) the
+ *    cell bullets' indent and gap and the Table position as the Mac's variables (`tableLookVars`). No file: null, the
  *    Mac's defaults.
  * Read once for each version of the vault's data (a sync that brings a new file makes a new version).
  */
@@ -61,7 +63,7 @@ export function loadVaultLook(store: VaultStore, data: VaultData): Promise<Vault
       const pills = isDefaultLinkPills(clean) ? NO_LINK_PILLS : clean
       const text = sanitizeTextFormatting(rawText)
       const table = rawTable === undefined ? null : tableLookSettings(sanitizeTableLook(rawTable))
-      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...headingVars(text), ...spacingVars(text.spacing), ...card }, table }
+      return { pills, click: sanitizeLinkClick(rawClick).click, style: { ...linkPillVars(pills), ...textVars(text), ...spacingVars(text.spacing), ...card, ...tableLookVars(table) }, table }
     })().catch(() => NO_LOOK)
     looks.set(data, held)
   }

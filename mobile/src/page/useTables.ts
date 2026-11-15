@@ -74,6 +74,36 @@ export function measureFreeze(box: HTMLElement, screen: number): void {
     table.style.setProperty('--pin-run', `${Math.max(0, table.offsetHeight - height)}px`)
     table.toggleAttribute('data-pin-rows-off', screen > 0 && height > screen * PIN_ROWS_MAX)
   }
+  measureSubheads(table, rows)
+}
+
+/**
+ * YAZ-5567: each sticky subheader row's run (`tableSubheads.ts`, the Mac's `SubheadPinner`), in layout px from the
+ * frame's top (no transform counts): it starts to move when the page has scrolled past the frame's top by its place less
+ * the frozen rows' bottom (`--sub-from`: then it is right under them), and moves until it meets the next subheader row
+ * or the table's end (`--pin-run`). Marked `data-sub-pin` only when it has a run; a table that is not sticky, none.
+ */
+function measureSubheads(table: HTMLTableElement, frozen: number): void {
+  const subs = [...table.querySelectorAll<HTMLTableRowElement>('tr.table-subhead-row')]
+  if (subs.length === 0) return
+  const sticky = table.getAttribute('data-sticky-subheaders') !== 'off'
+  const top = table.offsetTop
+  const pinned = frozen > 0 && !table.hasAttribute('data-pin-rows-off') ? table.rows[Math.min(frozen, table.rows.length) - 1] : undefined
+  const under = pinned === undefined ? 0 : top + pinned.offsetTop + pinned.offsetHeight
+  const end = top + table.offsetHeight
+  subs.forEach((row, i) => {
+    const at = top + row.offsetTop
+    const stop = Math.min(i + 1 < subs.length ? top + subs[i + 1]!.offsetTop : end, end) - row.offsetHeight
+    const run = stop - at
+    const from = at - under
+    if (!sticky || run <= 0 || row.rowIndex < frozen || from < 0) {
+      row.removeAttribute('data-sub-pin')
+      return
+    }
+    row.setAttribute('data-sub-pin', '')
+    row.style.setProperty('--sub-from', `${from}px`)
+    row.style.setProperty('--pin-run', `${run}px`)
+  })
 }
 
 /**
@@ -102,10 +132,13 @@ function pinByScript(host: HTMLElement, scroller: HTMLElement): { measure(): voi
       const base = scroller.getBoundingClientRect().top - scroller.scrollTop
       pins = [...host.querySelectorAll<HTMLElement>('.page-table-frame')].flatMap((el) => {
         const table = el.querySelector('table')
-        if (table === null || table.hasAttribute('data-pin-rows-off')) return []
+        if (table === null) return []
+        const frameTop = el.getBoundingClientRect().top - base
         const cells = [...table.querySelectorAll<HTMLElement>('[data-pin-row]')]
-        if (cells.length === 0) return []
-        return [{ cells, top: el.getBoundingClientRect().top - base, run: parseFloat(table.style.getPropertyValue('--pin-run')) || 0, at: -1 }]
+        const own = cells.length === 0 || table.hasAttribute('data-pin-rows-off') ? [] : [{ cells, top: frameTop, run: parseFloat(table.style.getPropertyValue('--pin-run')) || 0, at: -1 }]
+        // YAZ-5567: each sticky subheader row, from its own start, for its own run (`measureSubheads`).
+        const subs = table.getAttribute('data-sticky-subheaders') === 'off' ? [] : [...table.querySelectorAll<HTMLTableRowElement>('tr[data-sub-pin]')]
+        return [...own, ...subs.map((row) => ({ cells: [...row.cells] as HTMLElement[], top: frameTop + (parseFloat(row.style.getPropertyValue('--sub-from')) || 0), run: parseFloat(row.style.getPropertyValue('--pin-run')) || 0, at: -1 }))]
       })
       schedule()
     },

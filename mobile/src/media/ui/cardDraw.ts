@@ -6,6 +6,7 @@ import { urlOf } from '@client/editor/card/localOnly'
 import type { WikilinkResolveSource } from '@client/editor/wikilink/linkResolve'
 import { makeAssetResolver } from '@shared/assetLookup'
 import { CARD_LOOK_FILE, cardLookStyle, sanitizeCardLook } from '@shared/cardLook'
+import { TEXT_FORMATTING_FILE, sanitizeTextFormatting } from '@shared/textFormatting'
 import { VAULT_CONFIG_DIR } from '@shared/types'
 import type { VaultStore } from '../../store'
 import { vaultMediaPath, vaultMediaUrl } from './vaultMedia'
@@ -115,10 +116,26 @@ export function drawLocalCard(text: string, show: CardShow, place: { links: Wiki
  * phone's one card drawing, so no new chunk joins the first load's list.
  */
 export async function readCardLook(store: VaultStore, vault: string): Promise<Record<string, string>> {
-  const file = await store.read(vault, `${VAULT_CONFIG_DIR}/${CARD_LOOK_FILE}`).catch(() => null)
+  const [look, size] = await Promise.all([readVaultJson(store, vault, CARD_LOOK_FILE, (raw) => cardLookStyle(sanitizeCardLook(raw))), readVaultJson(store, vault, TEXT_FORMATTING_FILE, pageTextSize)])
+  return { ...size, ...look }
+}
+
+/**
+ * YAZ-5566: the vault's Text size (`text-formatting.json` › `text.size`) as the Mac's `--text-size`, which a card set to
+ * Same as pages reads (`cardScreens.css`: `var(--card-text-size, var(--text-size, 16px))`), so Review's card follows the
+ * pages as the Mac's review layer does. None set: none (16px).
+ */
+const pageTextSize = (raw: unknown): Record<string, string> => {
+  const size = sanitizeTextFormatting(raw).text?.size
+  return size === undefined ? {} : { '--text-size': `${size}px` }
+}
+
+/** A vault file of `.yaseendocs/` read through `read`; no file, or one that is not JSON: none. */
+async function readVaultJson(store: VaultStore, vault: string, name: string, read: (raw: unknown) => Record<string, string>): Promise<Record<string, string>> {
+  const file = await store.read(vault, `${VAULT_CONFIG_DIR}/${name}`).catch(() => null)
   if (file === null) return {}
   try {
-    return cardLookStyle(sanitizeCardLook(JSON.parse(typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content))))
+    return read(JSON.parse(typeof file.content === 'string' ? file.content : new TextDecoder().decode(file.content)))
   } catch {
     return {}
   }

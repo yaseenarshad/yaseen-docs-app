@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
@@ -22,6 +22,7 @@ import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
+import { markSections, pageSwitchAttrs } from './pageSwitches'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
 import { hasUnsentDraft } from './comments/unsentDrafts'
 import { useTaskTicks } from './taskTicks'
@@ -83,6 +84,9 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
   // YAZ-5456: "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
   const tools = usePageTools(host, { title, path })
+  // YAZ-5566: the page's own Guide lines and Section indent, from its frontmatter (`pageSwitches.ts`).
+  const switches = useMemo(() => (typeof text === 'string' ? pageSwitchAttrs(text) : {}), [text])
+  const sectionIndent = switches['data-section-indent'] === 'true'
   // YAZ-5529: the Mac's properties chip at the right of the title; the rows open under it, in the page.
   const props = usePageProperties({ path, record, data, door, slot: sameTitle ? propsSlot : null })
 
@@ -169,6 +173,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       const into = first ? el : document.createElement('div')
       await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, uiSlicer(), () => live)
       if (!live) return
+      markSections(into, sectionIndent)
       if (!first) {
         await fillCardEmbeds(into, data, store, doorRef.current, () => live)
         if (!live) return
@@ -221,7 +226,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       live = false
       drawn.current = null
     }
-  }, [text, data, look, path, at, heading, store, app.go, app.vault, title])
+  }, [text, data, look, path, at, heading, store, app.go, app.vault, title, sectionIndent])
 
   // YAZ-5211: the reading place of this page, kept as the person scrolls.
   useEffect(() => {
@@ -282,7 +287,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         )}
         {gone && <p className="muted">{record === undefined ? app.unit('This page is not on the phone.') : app.unit('This page is too large to show on the phone. Open it on the Mac.')}</p>}
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
-        <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
+        <div className="reader__body" {...switches} ref={host} onClick={(e) => void onTap(e)} />
         {/* YAZ-5461: the page's comments, and its Comment button (`comments/`). */}
         {typeof text === 'string' && <PageComments path={path} text={text} />}
         {tools.sheet}
