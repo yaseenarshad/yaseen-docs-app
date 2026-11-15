@@ -147,7 +147,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
           {title}
           <span className="card-view__id"> · {card?.id ?? id}</span>
         </h2>
-        {!isFile && record !== undefined && <p className="muted card-view__in">{app.unit(`in ${record.title}`)}</p>}
+        {!isFile && record !== undefined && <p className="muted card-view__in">{`in ${record.title}`}</p>}
         {shape !== null && shape.problem !== 'ok' && (
           <p className="problem problem--quiet" role="status">
             {NEEDS_A_FIX}

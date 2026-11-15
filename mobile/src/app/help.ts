@@ -99,7 +99,7 @@ export function syncHelp(state: ShellSyncState, vault: PhoneVault, unit: UnitTex
       }
     case 'TREE_TRUNCATED':
       // Row F6: no partial vault.
-      return { message: unit(`${vault.repo} is too large for the phone. GitHub cut its list of files short, so the phone shows none of its pages.`), forward: 'settings' }
+      return { message: `${vault.repo}${unit(' is too large for the phone. GitHub cut its list of files short, so the phone shows none of its pages.')}`, forward: 'settings' }
     case 'STORAGE_FULL':
       return { message: 'This phone is full. Free some space, then try again.', forward: 'retry' }
   }

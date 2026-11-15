@@ -107,7 +107,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
       <form className="stack" onSubmit={submit} noValidate>
         {mode.kind === 'first' && <p className="lead">Paste your GitHub token. Then choose the repo of your vault.</p>}
         {mode.kind === 'add' && <p className="lead">Paste a GitHub token. Then choose the repo.</p>}
-        {again !== null && <p className="lead">{app.unit(`GitHub needs a new token for ${again.repo}. The pages on this phone stay.`)}</p>}
+        {again !== null && <p className="lead">{`GitHub needs a new token for ${again.repo}.${app.unit(' The pages on this phone stay.')}`}</p>}
         <label className="field">
           <span className="field__label">Token</span>
           <input
@@ -173,7 +173,7 @@ export function SignIn({ mode }: { mode: SignInMode }) {
         <div>
           {asking ? (
             <Confirm
-              question={app.unit(`Remove ${again.repo} from this phone? Its pages on this phone go, and answers that are not sent yet are lost. The repo on GitHub does not change.`)}
+              question={`Remove ${again.repo} from this phone?${app.unit(' Its pages on this phone go, and answers that are not sent yet are lost. The repo on GitHub does not change.')}`}
               yes="Remove"
               onYes={() => void app.removeVault(mode.vault)}
               onNo={() => setAsking(false)}

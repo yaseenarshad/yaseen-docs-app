@@ -151,7 +151,7 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
         <div className="sheet">
           {asking === 'reset' ? (
             <Confirm
-              question={app.unit(`Reset the copy of ${vault.repo}? Its pages on this phone go, and the vault downloads again. The token stays.`)}
+              question={`Reset the copy of ${vault.repo}?${app.unit(' Its pages on this phone go, and the vault downloads again. The token stays.')}`}
               yes="Reset local copy"
               busy={busy}
               onYes={() => void run(() => app.resetCopy(id)).then(() => setAsking(null))}
@@ -159,7 +159,7 @@ function VaultRow({ vault, more, onMore, busy, run }: { vault: PhoneVault; more:
             />
           ) : asking === 'remove' ? (
             <Confirm
-              question={app.unit(`Remove ${vault.repo} from this phone? Its token and its pages on this phone go. Answers that are not sent yet are lost. The repo on GitHub does not change.`)}
+              question={`Remove ${vault.repo} from this phone?${app.unit(' Its token and its pages on this phone go. Answers that are not sent yet are lost. The repo on GitHub does not change.')}`}
               yes="Remove"
               busy={busy}
               onYes={() => void run(() => app.removeVault(id))}

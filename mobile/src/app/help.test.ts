@@ -66,4 +66,10 @@ describe('syncHelp: what a sync problem means for the person', () => {
     const doc = unitTextOf({ one: 'doc', many: 'docs' })
     expect(syncHelp(state('UNAUTHORIZED'), vault, doc, false)?.message).toContain('The docs on this phone stay readable.')
   })
+
+  it("puts the vault's word in the fixed words only, never in a repo's name", () => {
+    const doc = unitTextOf({ one: 'doc', many: 'docs' })
+    const message = syncHelp(state('TREE_TRUNCATED'), { ...vault, repo: 'ali/my-pages' }, doc, false)?.message
+    expect(message).toBe('ali/my-pages is too large for the phone. GitHub cut its list of files short, so the phone shows none of its docs.')
+  })
 })
