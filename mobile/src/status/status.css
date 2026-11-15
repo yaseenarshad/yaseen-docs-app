@@ -82,6 +82,31 @@
   display: inline;
 }
 
+/* YAZ-5524 (sweep3 S-1): the form the bar has room for (`useFitWords`): the short words, the count alone, the dot alone.
+   Any bar, with or without a page's ID chip: the ⚙ and the dot never leave the screen. */
+.sync-status[data-fit='short'] .sync-status__words--full {
+  display: none;
+}
+
+.sync-status[data-fit='short'] .sync-status__words--short {
+  display: inline;
+}
+
+.sync-status[data-fit='count'],
+.sync-status[data-fit='dot'] {
+  min-width: var(--tap);
+  justify-content: center;
+}
+
+.sync-status[data-fit='count'] .sync-status__words,
+.sync-status[data-fit='dot'] .sync-status__words {
+  display: none;
+}
+
+.sync-status[data-fit='count'] .sync-status__words--count {
+  display: inline;
+}
+
 .sync-dot {
   width: 10px;
   height: 10px;

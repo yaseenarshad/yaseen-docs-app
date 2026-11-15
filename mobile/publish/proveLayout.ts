@@ -49,6 +49,7 @@ import { freePort } from './freePort'
  *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
  *    control inside the screen, the dot clear of the ⚙; the title cut first, then the ID's letters; its number shows.
  *    YAZ-5521: the same with the dot amber (`page-not-sent`, `page-waiting`, and with the long ID), at 390 px too.
+ *    YAZ-5524: and a page with NO ID chip (`page-no-id-*`): the words cut down to a count, never the ⚙ off the screen.
  *  - the Discard ask of a comment not sent, holding a long URL (`#fixture=page-not-sent`, YAZ-5521) at 320, 375 and
  *    390 px: its words wrap, its buttons inside the screen.
  *  - a page card's ⋯ menu low on the screen (`#fixture=page-card-menu`, YAZ-5519 S6) at 375 and 430 px: inside the
@@ -721,7 +722,8 @@ const TOPBAR_FITS = `(() => {
   const parts = { back: '.back', kind: '.topbar__kind', title: '.topbar__title', chip: '.page-id', tools: '.page-tools', dot: '.sync-status', gear: '.topbar__gear' }
   const at = {}
   for (const [k, s] of Object.entries(parts)) { const b = box(bar.querySelector(s)); at[k] = b ? [Math.round(b.left), Math.round(b.right)] : null }
-  const inside = Object.values(at).every((v) => v !== null && v[0] >= -0.5 && v[1] <= innerWidth + 0.5)
+  const noId = bar.querySelector('.page-id') === null
+  const inside = Object.entries(at).every(([k, v]) => (v === null ? k === 'chip' && noId : v[0] >= -0.5 && v[1] <= innerWidth + 0.5))
   const range = document.createRange()
   range.selectNodeContents(bar.querySelector('.topbar__gear'))
   const gear = range.getBoundingClientRect()
@@ -731,13 +733,16 @@ const TOPBAR_FITS = `(() => {
   const number = numberEl && numberEl.scrollWidth <= numberEl.clientWidth ? box(numberEl) : null
   const title = bar.querySelector('.topbar__title')
   const words = [...bar.querySelectorAll('.sync-status__words')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.textContent).join('|')
-  return { words, at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5, titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
+  return { words, at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: noId || (number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5), titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
 })()`
 if (process.env.LAYOUT_TOPBAR !== 'no') {
   // YAZ-5521 (sweep2 S-B): also with the dot amber, one comment not sent or two waiting, at 390 too:
   // topBar_allControlsInsideViewport_withDotWords_1notSent_and_Nwaiting.
   for (const [w, h] of [[320, 568], [375, 667], [390, 844], [430, 932]] as const) {
-    for (const name of ['page', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting']) {
+    // YAZ-5524 (sweep3 S-1): topBar_allControlsInsideViewport_pageWithoutId_withWaitingWords: a page with NO ID chip and
+    // a long title, "1 comment waiting · no signal", "2 waiting · no signal", 2 comments waiting, 1 not sent; and S-2's
+    // "1 not sent · 2 waiting" with and without the chip.
+    for (const name of ['page', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline']) {
       const file = await open(name, w, h)
       const m = await evaluate(TOPBAR_FITS)
       const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways
