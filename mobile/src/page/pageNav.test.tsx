@@ -192,6 +192,17 @@ describe('YAZ-5450: the page ID chip', () => {
     expect(css).toMatch(/\.topbar:has\(\.page-id\) \.topbar__title \{ min-width: 2\.5em; \}/)
   })
 
+  it('idChip_numberOnly_below400 (YAZ-5522 N14): under 400 px the chip shows "#2", its name the whole ID; a tap still copies the path', async () => {
+    // jsdom has no media queries: proveLayout's "top bar" measures it (320, 375, 390: "#N"; 430: the whole ID).
+    const css = readFileSync(join(__dirname, 'pageNav.css'), 'utf8').replace(/\s+/g, ' ')
+    expect(css).toContain("@media (max-width: 399.98px) { .page-id__prefix { display: none; } .page-id__number::before { content: '#'; } }")
+    h = await openSearch()
+    await openRow(h, /^Git cheat sheet, page/, '.reader__body')
+    expect(h.host.querySelector('.topbar .page-id')!.getAttribute('aria-label')).toBe('DEMO-2. Copy the path')
+    await h.click('DEMO-2. Copy the path')
+    expect(write).toHaveBeenCalledWith('git/Git cheat sheet.md')
+  })
+
   it('the clipboard says no: the path shows, selected, to copy by hand; Close closes it', async () => {
     write.mockRejectedValue(new DOMException('Not allowed', 'NotAllowedError'))
     h = await openSearch()
