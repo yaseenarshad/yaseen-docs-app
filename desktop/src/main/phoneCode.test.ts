@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { decodeQR } from 'qr/decode.js'
 import { parseScanCode } from '@shared/scanCode'
+import { cleanToken, isBranchName, parseRepo } from '@shared/githubInput'
 import { paintQr, QR_QUIET } from '@shared/qrPaint'
 import type { PhoneCodeAnswer } from '@shared/types'
 import { GITHUB_TOKEN_SECRET } from '@shared/types'
@@ -111,6 +112,20 @@ describe('buildPhoneCode (YAZ-5098)', () => {
     expect(answer.branch).toBe('main')
     const text = decodeQR(pixelsOf(answer.grid), { format: 'RGBA' })
     expect(parseScanCode(text)).toEqual({ ok: true, code: { repo: 'yaseen/vault', branch: 'main', token: TOKEN, expiresAt: null } })
+  })
+
+  it("what the phone's \"Add a vault › Scan a code\" reads from the Mac's code passes the phone's own input rules (shared/githubInput)", async () => {
+    // The phone's scanCode.ts and input.ts re-export these shared files, so this is the phone's parser on the Mac's code.
+    for (const facts of [undefined, { isRepo: true, remoteUrl: 'git@github.com:my-org/my.vault-2.git', branch: 'notes/main-2' }]) {
+      const answer = await buildPhoneCode(deps(fakeSecrets({ [GITHUB_TOKEN_SECRET]: TOKEN }), facts), '/v')
+      if (!answer.ok) throw new Error(answer.problem)
+      const parsed = parseScanCode(decodeQR(pixelsOf(answer.grid), { format: 'RGBA' }))
+      if (!parsed.ok) throw new Error(parsed.error)
+      expect(parseRepo(parsed.code.repo)?.full).toBe(answer.repo)
+      expect(cleanToken(parsed.code.token)).toBe(TOKEN)
+      expect(isBranchName(parsed.code.branch)).toBe(true)
+      expect(parsed.code.branch).toBe(answer.branch)
+    }
   })
 
   it('a repo name with dots and dashes and a branch with a slash make the trip too', async () => {
