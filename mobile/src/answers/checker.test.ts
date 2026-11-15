@@ -139,7 +139,8 @@ describe('checker YAZ-5073: bytes the phone did not mean to change', () => {
     const changed = before.map((l, i) => (l === after[i] ? -1 : i)).filter((i) => i >= 0)
     expect(changed).toEqual([11])
     const line11 = new TextDecoder().decode(new Uint8Array(after[11].split(',').map(Number)))
-    expect(line11).toBe(`<!-- card: NC-2, zzz unknown, 2026-11-14T05:00Z good 3s, ${at(1)} good, off -->\r\n`)
+    // YAZ-5409: the phone splices its review in; every other byte of the line stays (`<!--card:`, the spaces).
+    expect(line11).toBe(`<!--card:NC-2,zzz unknown,   2026-11-14T05:00Z good 3s, ${at(1)} good,off-->\r\n`)
   })
 
   it('probe: a card ID inside a code block, and two cards with one ID: what the send writes', async () => {

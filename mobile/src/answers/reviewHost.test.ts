@@ -122,7 +122,7 @@ describe('YAZ-5409: each action and its Undo change only their own part of the c
   const page = (line: string) => `---\ntitle: P\n---\n\n# P\n\n\`\`\`card\nQ?\n---\nA\n\`\`\`\n${line}\n\nend\n`
   /** The parts of a card line as written (commas in quotes stay). */
   const pieces = (content: string): string[] => {
-    const body = /<!-- card: (.*) -->/.exec(content)![1]
+    const body = /<!--[ \t]*card:[ \t]*(.*?)[ \t]*-->/.exec(content)![1]
     return body.match(/(?:"(?:\\.|[^"\\])*"|[^,])+/g)!.map((x) => x.trim())
   }
   async function sentHost(line: string) {
@@ -144,6 +144,10 @@ describe('YAZ-5409: each action and its Undo change only their own part of the c
     `<!-- card: NC-1, title "x", tags "a", ${R0}, next -->`, // by hand
     `<!-- card: NC-1, title "x", tags "a", next, ${R0} -->`, // the writer's form
     `<!-- card: NC-1, fix, ${R0}, tags "a", next, title "x", off -->`, // a person's own order, every mark
+    // Parts the shared writer re-forms: a raw comma in a title and a value (an older build, a hand), small letters in
+    // the ID, odd spaces. The phone keeps them byte for byte; only the Mac's own writes give the app's form.
+    `<!-- card: nc-1, title "1,000 islands", level "A2, B1", next, ${R0} -->`,
+    `<!--card: NC-1, title "a, b", next, tags  "a"   "b", ${R0}-->`,
   ])('answer, a send, Undo: GitHub has the line back byte for byte: %s', async (line) => {
     const { host, sent } = await sentHost(line)
     const next = await host.writeCardAnswer('p.md', 'NC-1', R)
@@ -153,10 +157,21 @@ describe('YAZ-5409: each action and its Undo change only their own part of the c
     expect(await sent()).toBe(page(line))
   })
 
+  it('odd spaces around the commas: each other part keeps its bytes, its order and the spaces before it', async () => {
+    const line = `<!--card:NC-1 ,title "a, b",  next,tags  "a"   "b",${R0}-->`
+    const { host, sent } = await sentHost(line)
+    const next = await host.writeCardAnswer('p.md', 'NC-1', R)
+    expect(await sent()).toBe(page(`<!--card:NC-1 ,title "a, b",tags  "a"   "b",${R0}, ${R.at} good 7s-->`))
+    await host.undoCardAnswer('p.md', 'NC-1', R.at, next)
+    // `next` comes back at its place with the writer's comma: only its own comma and spaces differ.
+    expect(await sent()).toBe(page(`<!--card:NC-1 ,title "a, b", next,tags  "a"   "b",${R0}-->`))
+  })
+
   const ORDERS = {
     new: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", tags "a", off, next, fix, ${R0}`],
     older: [`NC-1, title "x", tags "a", ${R0}`, `NC-1, title "x", off, next, fix, tags "a", ${R0}`],
     own: [`${R0}, tags "a", title "x", NC-1`, `NC-1, fix, ${R0}, tags "a", next, title "x", off`],
+    raw: [`nc-1,title "a, b" ,level "A2, B1",${R0}`, `nc-1,title "a, b" ,off,next,fix,level "A2, B1",${R0}`],
   }
   const MARKS: [string, (l: CardLine, on: boolean) => CardLine][] = [
     ['off', withCardOff],
