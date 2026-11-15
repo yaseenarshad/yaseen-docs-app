@@ -45,7 +45,26 @@ let root: Root | null = null
 let container: HTMLElement | null = null
 let redraw: () => void = () => undefined
 
-function mount(text = VIEW) {
+/** The folder page's Read only as the views see it (YAZ-5411): a test answers the box with `answer`. */
+interface LockedVault {
+  on: boolean
+  answer: boolean
+  /** Pages with their own switch: never opened by the box. */
+  own: Set<string>
+  ask: ReturnType<typeof vi.fn>
+}
+function lockedVault(answer: boolean, own: string[] = []): LockedVault {
+  const state: LockedVault = { on: true, answer, own: new Set(own), ask: vi.fn() }
+  state.ask.mockImplementation(async () => {
+    if (!state.answer) return false
+    state.on = false
+    redraw()
+    return true
+  })
+  return state
+}
+
+function mount(text = VIEW, vault?: LockedVault, allowFileAction?: () => Promise<boolean>) {
   let parsed = parseViews(text)
   const wikilinks = createWikilinkResolveSource()
   wikilinks.update(null, [], [], true)
@@ -65,7 +84,14 @@ function mount(text = VIEW) {
           root="/vault"
           folderPath="/vault/Geo"
           records={RECORDS}
-          folder={testFolderHost({ wikilinks, vaultRecords: RECORDS, onNotice: vi.fn() })}
+          readOnly={vault === undefined ? undefined : vault.on ? new Set([...RECORDS.map((r) => r.path), ...vault.own]) : vault.own}
+          folder={testFolderHost({
+            wikilinks,
+            vaultRecords: RECORDS,
+            onNotice: vi.fn(),
+            ...(allowFileAction && { allowFileAction }),
+            ...(vault && { editLock: { locked: (page?: string) => vault.on && (page === undefined || !vault.own.has(page)), ask: () => vault.ask() } }),
+          })}
           onOpenFile={onOpenFile}
         />,
       ),
@@ -229,5 +255,119 @@ describe('YAZ-5349 follow-up: a Cards table acts on the cards, never on the page
     expect(createCardFile).toHaveBeenCalledOnce()
     expect(vi.mocked(createCardFile).mock.calls[0].slice(0, 2)).toEqual(['/vault/Geo', 'Title'])
     expect(onOpenFile).toHaveBeenCalledWith('/vault/Geo/GEO-9.md')
+  })
+})
+
+/**
+ * YAZ-5411: the Cards table's changes in a Read only vault ask the folder page's "Allow edits?" first, as the Pages
+ * table's do — through the one guard (`editGuard.ts`) — before any sheet or write. Allow: it goes on. Cancel: nothing.
+ */
+describe('YAZ-5411: a Cards table in a Read only vault asks "Allow edits?" first', () => {
+  const flush = async () => act(async () => void (await new Promise((r) => setTimeout(r, 0))))
+  const cellOf = (el: ParentNode, label: string): HTMLElement => q<HTMLElement>(el, `[data-cell="0:${headers(el).indexOf(label)}"]`)
+
+  it('Add column: Cancel adds nothing; Allow adds the card column with no second Save', async () => {
+    const vault = lockedVault(false)
+    const { el, def } = mount(VIEW, vault)
+    rightClick(th(el, 'Level'))
+    click(item(el, 'Add column to the right…'))
+    addColumn(q(el, '.ctx-menu'), 'Due')
+    await flush()
+    expect(vault.ask).toHaveBeenCalledOnce()
+    expect(def().views[0].cardView?.columns).toBeUndefined()
+    vault.answer = true
+    rightClick(th(el, 'Level'))
+    click(item(el, 'Add column to the right…'))
+    addColumn(q(el, '.ctx-menu'), 'Due')
+    await flush()
+    expect(def().views[0].cardView?.columns).toEqual({ Due: { kind: 'text' } })
+  })
+
+  it('Delete column: the ask comes before the sheet; Cancel opens no sheet and clears no card; Allow opens it and its Delete clears the cards', async () => {
+    const vault = lockedVault(false)
+    const { el } = mount(VIEW, vault)
+    rightClick(th(el, 'Level'))
+    click(item(el, 'Delete column…'))
+    await flush()
+    expect(vault.ask).toHaveBeenCalledOnce()
+    expect(document.querySelector('.confirm')).toBeNull()
+    expect(changeCardLine).not.toHaveBeenCalled()
+    vault.answer = true
+    rightClick(th(el, 'Level'))
+    click(item(el, 'Delete column…'))
+    await flush()
+    expect(document.querySelector('.confirm')).not.toBeNull()
+    click(q(document, '.confirm__btn--danger'))
+    await flush()
+    expect(changeCardLine).toHaveBeenCalledOnce()
+    const [, id, change] = vi.mocked(changeCardLine).mock.calls[0]
+    expect(id).toBe('GEO-1')
+    expect(formatCardLine(change(parseCardLine('<!-- card: GEO-1, level "A2" -->')!))).toBe('<!-- card: GEO-1 -->')
+  })
+
+  it('a card cell (Level): a double-click asks; Cancel opens nothing; Allow opens the editor and the card line is written', async () => {
+    const vault = lockedVault(false)
+    const { el } = mount(VIEW, vault)
+    act(() => void cellOf(el, 'Level').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    expect(vault.ask).toHaveBeenCalledOnce()
+    expect(cellOf(el, 'Level').querySelector('input, textarea')).toBeNull()
+    vault.answer = true
+    act(() => void cellOf(el, 'Level').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    const input = q<HTMLInputElement>(cellOf(el, 'Level'), 'input, textarea')
+    setValue(input, 'B1')
+    await act(async () => void input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    await flush()
+    const go = document.querySelector<HTMLButtonElement>('.change-ask__go')
+    if (go !== null) click(go)
+    await flush()
+    expect(changeCardLine).toHaveBeenCalledOnce()
+    expect(vi.mocked(changeCardLine).mock.calls[0].slice(0, 2)).toEqual([TRIP, 'GEO-1'])
+  })
+
+  it('Card status and Card up next: Enter on the locked cell asks first; Cancel writes nothing', async () => {
+    const vault = lockedVault(false)
+    const { el } = mount(VIEW, vault)
+    for (const label of ['Card status', 'Card up next']) {
+      press(cellOf(el, label), 'Enter')
+      await flush()
+    }
+    expect(vault.ask).toHaveBeenCalledTimes(2)
+    expect(changeCardLine).not.toHaveBeenCalled()
+  })
+
+  it('"+ New": the vault\'s file-action ask comes first; refused, no card file and no error line', async () => {
+    const allow = vi.fn(async () => false)
+    const { el } = mount(VIEW, lockedVault(false), allow)
+    await act(async () => void q<HTMLElement>(el, '.view-toolbar__new').click())
+    await flush()
+    expect(allow).toHaveBeenCalledOnce()
+    expect(createCardFile).not.toHaveBeenCalled()
+    expect(el.querySelector('.views-pane__error')).toBeNull()
+  })
+
+  it('nearby: a card inside a page with its own Read only switch never asks — its cell keeps the tip and writes nothing', async () => {
+    const vault = lockedVault(true, [TRIP])
+    vault.on = false
+    const { el } = mount(VIEW, vault)
+    act(() => void cellOf(el, 'Level').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    expect(vault.ask).not.toHaveBeenCalled()
+    expect(cellOf(el, 'Level').querySelector('input, textarea')).toBeNull()
+    expect(cellOf(el, 'Level').querySelector('[title]')?.getAttribute('title')).toMatch(/read only/i)
+  })
+
+  it('a view change of the Cards table (a hide, a sort) never asks', async () => {
+    const vault = lockedVault(false)
+    const { el, def } = mount(VIEW, vault)
+    rightClick(th(el, 'Card ID'))
+    click(item(el, 'Hide column'))
+    rightClick(th(el, 'Level'))
+    click(item(el, 'Sort'))
+    click([...el.querySelectorAll<HTMLElement>('.ctx-menu__sub [role="menuitem"]')].find((b) => b.textContent === 'Z to A')!)
+    await flush()
+    expect(vault.ask).not.toHaveBeenCalled()
+    expect(def().views[0].cardView?.sort).toEqual([{ property: 'note.level', direction: 'DESC' }])
   })
 })

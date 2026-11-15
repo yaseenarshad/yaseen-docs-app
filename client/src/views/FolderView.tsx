@@ -73,13 +73,15 @@ import { propertyLabel, type RunOptions } from './engine'
 import { mentionsColumns } from './mentionsColumn'
 import { addTiedColumn, removeTiedColumn, tiedKeyFor, tiedKeyOf, writeTiedCell, type PairWritten } from './relationPair'
 import { guardReadOnly, readOnlyPaths } from './readOnlyRows'
+import type { EditLock } from './editGuard'
+import { CHANGE_CANCELLED } from './confirmChanges'
 import { writeProperties, writeProperty, writeRouted, type PropertyWrite } from './writeProperty'
 import { byFolder, declarationOf, folderName, foldersTaking, pageColumns, readOnlyRefusal, selfAndAncestors, takesFrom, withOwnerSwitch, type ColumnSources } from './columnInheritance'
 import { mergeSeparateValues, restoreSeparateValues, separateCounts, separateHolders, type SeparateKeep } from './separateValues'
 import { isViewOnlyChange } from './viewOnlyChange'
 import { FOLDER_READ_ONLY_TIP, FolderPageChips, FolderToolbar, type FolderChipsState } from './FolderToolbar'
 import { useTimedUnlock } from '../editor/useTimedUnlock'
-import { VAULT_READ_ONLY_TIP, VaultReadOnly } from '../vault/readOnlyVault'
+import { VaultReadOnly } from '../vault/readOnlyVault'
 import { ViewFolder } from './view/GroupHeader'
 import { pageLinkOf } from './view/fills'
 import { OtherFiles, trayBackTarget } from './view/OtherFiles'
@@ -414,7 +416,8 @@ export function FolderView({
    * The read-only pages (YAZ-3076 D6), read off each page's OWN properties before `shown` swaps in the folder's values; a folder row's off its `.folder.md` (D32).
    * In a read-only vault (YAZ-4939) every row's cell is locked until this tab's unlock; each page's own switch then still holds.
    */
-  const locked = useMemo(() => (vaultLockedHere ? new Set([...rows, ...subfolders].map((r) => r.path)) : readOnlyPaths([...rows, ...subfolders])), [rows, subfolders, vaultLockedHere])
+  const ownLocked = useMemo(() => readOnlyPaths([...rows, ...subfolders]), [rows, subfolders])
+  const locked = useMemo(() => (vaultLockedHere ? new Set([...rows, ...subfolders].map((r) => r.path)) : ownLocked), [rows, subfolders, vaultLockedHere, ownLocked])
   /**
    * The shortcut doors of this page's rows (YAZ-4797 demo): where a shortcut lives, Go to it, Remove the shortcut, Add one
    * to another folder. Vaults with IDs only (a shortcut names its folder by id). Each write is the sidebar's own
@@ -492,6 +495,38 @@ export function FolderView({
     chips.set({ readOnly: pageEffective })
     if (!pageBase) setAskingUnlock(false)
   }, [chips, pageEffective, pageBase])
+  /**
+   * The table's "Allow edits?" (YAZ-5411, `editGuard.ts`): a change that writes files opens the chip's own box and waits.
+   * A choice (or Turn Read only off) settles it true once the unlock has rendered, so the change goes on through the
+   * unlocked doors; Cancel settles it false. Read live: a door that waited asks the lock as it is then.
+   */
+  const lockNow = useRef({ page: pageEffective, rows: vaultLockedHere, own: ownLocked })
+  lockNow.current = { page: pageEffective, rows: vaultLockedHere, own: ownLocked }
+  const waiting = useRef<((ok: boolean) => void)[]>([])
+  const settleAsks = useCallback((ok: boolean) => {
+    const now = waiting.current
+    waiting.current = []
+    for (const settle of now) settle(ok)
+  }, [])
+  const [editLock] = useState<EditLock>(() => ({
+    locked: (page) => (page === undefined ? lockNow.current.page : lockNow.current.rows && !lockNow.current.own.has(page)),
+    ask: () =>
+      new Promise<boolean>((settle) => {
+        waiting.current.push(settle)
+        setAskingUnlock(true)
+      }),
+  }))
+  /** "Turn Read only off" writes `.folder.md`: a change that waited goes on once that write has landed, never beside it. */
+  const turningOff = useRef<Promise<unknown> | null>(null)
+  useEffect(() => {
+    if (pageEffective) return
+    const after = turningOff.current
+    turningOff.current = null
+    if (after === null) settleAsks(true)
+    else after.then(() => settleAsks(true), () => settleAsks(false))
+  }, [pageEffective, settleAsks])
+  // A tab that closes while it asks: the change never runs.
+  useEffect(() => () => settleAsks(false), [settleAsks])
   /** Per app tab and never stored, as a page's (D35). */
   const [zoom, setZoom] = useState(100)
   /** The folder's writes in flight, and whether one of them failed: the save chip says 'saving' until all settle. */
@@ -539,9 +574,16 @@ export function FolderView({
   const [parsed, setParsed] = useState<ParsedViews | null>(() => (settings === null ? null : folderViewSet(settings, ids)))
   const [settingsError, setSettingsError] = useState<string | null>(null)
   const [columnError, setColumnError] = useState<string | null>(null)
+  /** A new write starts with no red line (YAZ-5411): a failed one is said once, and never keeps the page looking stuck. */
+  const clearErrors = (): void => {
+    setSettingsError(null)
+    setColumnError(null)
+  }
   /** The red line of a refused write goes when the page unlocks (YAZ-4939 round 3); a real write error stays. */
   useEffect(() => {
-    if (!pageEffective) setSettingsError((now) => (now === FOLDER_READ_ONLY_TIP ? null : now))
+    if (pageEffective) return
+    setSettingsError((now) => (now === FOLDER_READ_ONLY_TIP ? null : now))
+    setColumnError((now) => (now === FOLDER_READ_ONLY_TIP ? null : now))
   }, [pageEffective])
 
   /**
@@ -799,7 +841,7 @@ export function FolderView({
   }
   /** A key of the folder's own `.folder.md` that the cog sets (D36, D37); `undefined` removes it. */
   const writeOwnKey = (key: string, value: unknown): Promise<unknown> => {
-    setSettingsError(null)
+    clearErrors()
     const write = track(writeProperty(file, key, value))
     write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
     return write
@@ -814,7 +856,7 @@ export function FolderView({
     if (legacy === undefined) return writeOwnKey(key, value)
     const other = key === HOVER_ROWS_KEY ? HOVER_LINKS_KEY : HOVER_ROWS_KEY
     const otherOwn = record !== undefined && typeof record.properties[other] === 'boolean'
-    setSettingsError(null)
+    clearErrors()
     const write = track(writeProperties(file, [{ key: HOVER_PREVIEW_KEY, value: undefined }, ...(otherOwn ? [] : [{ key: other, value: legacy }]), { key, value }]))
     write.catch((err: unknown) => setSettingsError(err instanceof Error ? err.message : String(err)))
     return write
@@ -864,7 +906,7 @@ export function FolderView({
   }
   const commitSettings = (columns: Record<string, ColumnDecl>, views: ViewDef[], properties: ViewSet['properties']): Promise<void> => {
     if (refuseLocked(isViewOnlyChange({ columns: liveSettings.columns, properties: parsed.def.properties }, { columns, properties }))) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
-    setSettingsError(null)
+    clearErrors()
     const before = aheadRef.current
     setAhead(columns)
     // The views this write states are the page's at once, as a view change's are (`onChange`): a view write before the
@@ -912,7 +954,7 @@ export function FolderView({
   const onChange = (next: ParsedViews): boolean => {
     if (refuseLocked(isViewOnlyChange(parsed.def, next.def))) return false
     setParsed(next)
-    setSettingsError(null)
+    clearErrors()
     // What this write will stamp as when the index returns it (YAZ-1241) — formulas ride unchanged;
     // the labels are the DEF's (YAZ-1513), since a rename is one of the edits that lands here.
     pending.current.push(stampOf({ views: next.def.views, formulas: settings.formulas, properties: next.def.properties, defaultView: next.def.defaultView }))
@@ -1067,7 +1109,7 @@ export function FolderView({
    */
   const writeOtherFiles = (next: TrayLists): Promise<void> => {
     if (refuseLocked()) return Promise.reject(new Error(FOLDER_READ_ONLY_TIP))
-    setSettingsError(null)
+    clearErrors()
     const before = aheadOtherRef.current
     setAheadOther(next)
     return sendSettings((base) => block(base, { otherFiles: next.links, otherFilesKeepPages: next.keep })).then(
@@ -1305,8 +1347,8 @@ export function FolderView({
     // add types one). In a vault that does not use IDs (YAZ-2523 🔒 V3) only the name keeps two pages apart, so an
     // untyped one is `Untitled`, then `Untitled 2`, `Untitled 3`, …
     create: async (seed, name) => {
-      // A new page in a read-only vault asks first (YAZ-4939); a refusal is the pane's one-line error.
-      if (!(await vault.allowFileAction(root))) throw new Error(VAULT_READ_ONLY_TIP)
+      // A new page in a read-only vault asks first (YAZ-4939); Cancel makes nothing and says nothing (YAZ-5411).
+      if (!(await vault.allowFileAction(root))) throw CHANGE_CANCELLED
       const into = seed.folder !== undefined && inFolder(seed.folder, folder) ? seed.folder : folder
       const dir = into === folder ? path : absFrom(root, into)
       const pageSeed = Object.fromEntries(Object.entries(seed.properties).filter(([key]) => separate.has(key)))
@@ -1456,7 +1498,9 @@ export function FolderView({
     // "Delete page…" and "Duplicate page" (YAZ-4592 S26): the sidebar's delete, and a copy beside the page.
     trash: onDeleteEntries,
     // A read-only vault asks before the delete sheet (YAZ-4985), and the delete then does not ask again.
-    allowDelete: () => vault.allowFileAction(root),
+    allowFileAction: () => vault.allowFileAction(root),
+    // Read only asks first (YAZ-5411): the views' writes wait on this page's "Allow edits?" (`editGuard.ts`).
+    editLock,
     // A duplicate is a New page: a read-only vault asks first (YAZ-4985), as the page's New does.
     duplicate: (page) =>
       void vault.allowFileAction(root).then((ok) => {
@@ -1491,11 +1535,16 @@ export function FolderView({
         }}
         onTurnOff={pageLocked && !vault.on ? () => {
           setAskingUnlock(false)
-          setPageLocked(false, writeOwnKey(READ_ONLY_KEY, undefined))
+          const write = writeOwnKey(READ_ONLY_KEY, undefined)
+          turningOff.current = write
+          setPageLocked(false, write)
         } : undefined}
         editingUntil={unlock.until}
         onLock={unlock.lock}
-        onCancel={() => setAskingUnlock(false)}
+        onCancel={() => {
+          setAskingUnlock(false)
+          settleAsks(false)
+        }}
         showPageFile={showPageFile}
         onChangeShowPageFile={(next) => setShowPageFile(next, writeOwnKey(SHOW_PAGE_FILE_KEY, next))}
         hoverRows={ownRows}

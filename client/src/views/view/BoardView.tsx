@@ -1,4 +1,5 @@
 import { type CSSProperties, type DragEvent as ReactDragEvent, Fragment, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { EditLockContext } from '../editGuard'
 import { useUnit } from '../../vault/unitWord'
 import { ViewFind } from './viewFind'
 import type { IndexRecord } from '@shared/types'
@@ -190,6 +191,7 @@ export function BoardView({
   )
   // ⌘F's jump to a card not drawn yet draws its list down to it; the find bar scrolls to it once it mounts.
   const find = useContext(ViewFind)
+  const editLock = useContext(EditLockContext)
   useEffect(() => {
     if (find === null) return
     find.scrollTo = (path) => void revealCard(path)
@@ -306,7 +308,8 @@ export function BoardView({
     setMenu({ x: event.clientX, y: event.clientY, path: row.record.path, title: row.record.title })
   }
   const dragSource = (row: Row, group: Group, at: GroupSpot): Record<string, unknown> => {
-    const source = dnd.source(row.record.path, group, at, readOnly.has(row.record.path))
+    // A page the vault's Read only locks still drags: its drop asks "Allow edits?" first (YAZ-5411).
+    const source = dnd.source(row.record.path, group, at, readOnly.has(row.record.path) && editLock?.locked(row.record.path) !== true)
     const onDragEnd = source.onDragEnd as ((event: ReactDragEvent) => void) | undefined
     if (onDragEnd === undefined) return source
     return {
