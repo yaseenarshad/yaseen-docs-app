@@ -17,7 +17,7 @@ import { type CardPageDoors, cardMenuItems } from './rowMenuItems'
 import { openByKey } from '../../lib/openGesture'
 import { type PageWindowLink, currentItemClass, shownRows, usePageWindowItems } from './PageWindow'
 import { NO_READ_ONLY, writableKey } from '../readOnlyRows'
-import { ReadOnlyName } from './ReadOnlyMark'
+import { ItemName, useItemLock } from './ReadOnlyMark'
 import type { ViewHover } from './viewHover'
 
 export interface ListViewProps {
@@ -93,6 +93,8 @@ const separatorOf = (view: ViewDef): string => (typeof view.propertySeparator ==
  */
 export function ListView({ def, view, records, rows, groups, collapsed, onToggleGroup, onOpenFile, onOpenFileRight, onOpenFileBackground, onOpenWindow, windowLink, onNotice, onNewInGroup, pageDoors, root, properties = null, settings, vaultRecords, vaultFolders, resolve, resolveLink, onWriteValue, readOnly = NO_READ_ONLY, hover }: ListViewProps) {
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; title: string } | null>(null)
+  /** The read-only items (YAZ-5587): a lock only when the page's view is not locked too; a vault-locked cell asks first. */
+  const itemLock = useItemLock(readOnly)
   // The page window (YAZ-4547 D24): the order shown through the groups, once per rows, groups or collapse change.
   const windowOrder = useMemo(() => shownRows(groups, rows, collapsed), [groups, rows, collapsed])
   const rootRef = useRef<HTMLDivElement>(null)
@@ -141,6 +143,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
         titles={linkNames.get(key) ?? titles}
         resolve={resolve}
         readOnly={readOnly.has(row.record.path)}
+        ask={itemLock.asks(row.record.path) ? (open) => itemLock.ask(row.record.path, open) : undefined}
         onCommit={(next) => onWriteValue(row.record.path, bare, next)}
       />
     )
@@ -168,7 +171,7 @@ export function ListView({ def, view, records, rows, groups, collapsed, onToggle
               <div className="view-list__line">
                 {nameIsPrimary ? (
                   <button type="button" className="view-list__title" onClick={() => onOpenFile(row.record.path)} onKeyDown={(e) => openTitleByKey(e, row.record.path)}>
-                    {readOnly.has(row.record.path) ? <ReadOnlyName>{rowTitle(row)}</ReadOnlyName> : rowTitle(row)}
+                    <ItemName mark={itemLock.mark(row.record.path)}>{rowTitle(row)}</ItemName>
                   </button>
                 ) : (
                   <span className="view-list__primary">{editable(row, primary)}</span>

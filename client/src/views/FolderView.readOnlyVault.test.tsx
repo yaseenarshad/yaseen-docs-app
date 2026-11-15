@@ -54,7 +54,7 @@ let container: HTMLElement | null = null
 
 /** The index's snapshot: two pages — one with its own `readonly: true` — and the settings file's record. */
 function feed(): void {
-  const records = [rec(LEAD, { priority: 'High' }), rec(OWN, { priority: 'Low', readonly: true })]
+  const records = [rec(LEAD, { priority: 'High', status: 'Todo', due: '2026-11-10' }), rec(OWN, { priority: 'Low', status: 'Done', due: '2026-11-10', readonly: true })]
   const settings = disk.get(SETTINGS_FILE)
   const folders = settings === undefined ? [] : [rec(SETTINGS_FILE, parseFrontmatter(splitFrontmatter(settings.content).frontmatter).properties, settings.mtime)]
   const resolve = resolverFor(records, '/vault')
@@ -518,5 +518,138 @@ describe('YAZ-5411: a table change in a Read only vault asks "Allow edits?" firs
     await flush()
     expect(asking(el)).toBe(false)
     expect(writeFile).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('YAZ-5587: no lock on every item when the vault is Read only; an edit asks "Allow edits?" instead', () => {
+  /** The folder's settings with one view of `type` (status and due declared, for the board and the calendar). */
+  const withView = (type: string, more = ''): string => `---
+folder_settings:
+  columns:
+    priority:
+      kind: text
+    status:
+      kind: text
+    due:
+      kind: date
+  views:
+    - type: ${type}
+      name: V
+      order:
+        - file.name
+        - note.priority
+${more}---
+`
+  const VIEW_TYPES: Record<string, { more?: string; title: string }> = {
+    table: { title: '.view-table__name' },
+    board: { more: '      groupBy:\n        property: note.status\n', title: '.view-board__title' },
+    list: { title: '.view-list__title' },
+    cards: { title: '.view-card__title' },
+    calendar: { more: '      dateProperty: note.due\n', title: '.view-cal__card-title' },
+  }
+  const asking = (el: ParentNode) => el.querySelector('.read-only-chip__ask') !== null
+  const nameOf = (el: ParentNode, sel: string, name: string): HTMLElement => {
+    const n = [...el.querySelectorAll<HTMLElement>(sel)].find((x) => x.textContent?.startsWith(name))
+    if (n === undefined) throw new Error(`no ${sel} ${name}`)
+    return n
+  }
+  const mark = (n: Element) => n.querySelector('.view-read-only-mark')
+  const fire = (el: Element, type: string) => act(() => void el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true })))
+
+  beforeEach(() => vi.setSystemTime(new Date(2026, 10, 12, 12, 0)))
+
+  for (const [type, { more = '', title }] of Object.entries(VIEW_TYPES)) {
+    it(`${type}: the vault On, no item wears a lock — not even a page with its own switch; the vault Off, only that page does`, async () => {
+      disk.set(SETTINGS_FILE, { content: withView(type, more), mtime: 50 })
+      const el = await mount(true)
+      expect(chip(el)?.textContent).toBe('Read only')
+      expect(nameOf(el, title, 'Lead Gen').textContent).toBe('Lead Gen')
+      expect(el.querySelector('.view-read-only-mark')).toBeNull()
+      act(() => root?.unmount())
+      container?.remove()
+      const open = await mount(false)
+      expect(mark(nameOf(open, title, 'Own switch'))).not.toBeNull()
+      expect(mark(nameOf(open, title, 'Lead Gen'))).toBeNull()
+    })
+  }
+
+  it('table: the vault On, a Name cell shows its clipped title, not "This page is read only"; a double-click on it asks before the title field', async () => {
+    disk.set(SETTINGS_FILE, { content: withView('table'), mtime: 50 })
+    const el = await mount(true)
+    const name = nameOf(el, '.view-table__name', 'Lead Gen')
+    expect(name.getAttribute('title')).toBeNull()
+    act(() => void name.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })))
+    await flush()
+    expect(asking(el)).toBe(true)
+    click(boxButton(el, 'Allow edits for 1 minute'))
+    await flush()
+    expect(el.querySelector('input[aria-label="Edit title"]')).not.toBeNull()
+  })
+
+  it('board: a card the vault locks drags, and its drop asks first; Cancel writes nothing; Allow moves it; its own-switch neighbour does not drag', async () => {
+    disk.set(SETTINGS_FILE, { content: withView('board', VIEW_TYPES.board.more), mtime: 50 })
+    disk.set(LEAD, { content: '---\npriority: High\nstatus: Todo\n---\n', mtime: 10 })
+    const el = await mount(true)
+    const card = () => nameOf(el, '.view-board__title', 'Lead Gen').closest<HTMLElement>('.view-board__card')!
+    const own = nameOf(el, '.view-board__title', 'Own switch').closest<HTMLElement>('.view-board__card')!
+    expect(card().getAttribute('draggable')).toBe('true')
+    expect(own.getAttribute('draggable')).not.toBe('true')
+    const done = () => [...el.querySelectorAll<HTMLElement>('.view-board__col')].find((c) => c.querySelector('.view-group__value')?.textContent === 'Done')!
+    fire(card(), 'dragstart')
+    fire(done(), 'drop')
+    await flush()
+    expect(asking(el)).toBe(true)
+    click(boxButton(el, 'Cancel'))
+    await flush()
+    expect(writeFile).not.toHaveBeenCalled()
+    fire(card(), 'dragstart')
+    fire(done(), 'drop')
+    await flush()
+    click(boxButton(el, 'Allow edits for 1 minute'))
+    await flush()
+    const go = document.querySelector<HTMLButtonElement>('.change-ask__go')
+    if (go !== null) click(go)
+    await flush()
+    expect(disk.get(LEAD)?.content).toContain('status: Done')
+  })
+
+  it('calendar: a card the vault locks drags to another day, and its drop asks first; Allow moves it; its own-switch neighbour stays put', async () => {
+    disk.set(SETTINGS_FILE, { content: withView('calendar', VIEW_TYPES.calendar.more), mtime: 50 })
+    disk.set(LEAD, { content: '---\npriority: High\ndue: 2026-11-10\n---\n', mtime: 10 })
+    const el = await mount(true)
+    const card = () => nameOf(el, '.view-cal__card-title', 'Lead Gen').closest<HTMLElement>('.view-cal__card')!
+    expect(card().getAttribute('draggable')).toBe('true')
+    expect(nameOf(el, '.view-cal__card-title', 'Own switch').closest('.view-cal__card')!.getAttribute('draggable')).toBeNull()
+    const day = q<HTMLElement>(el, '[data-day="2026-11-13"]')
+    fire(card(), 'dragstart')
+    fire(day, 'dragover')
+    fire(day, 'drop')
+    await flush()
+    expect(asking(el)).toBe(true)
+    expect(writeFile).not.toHaveBeenCalled()
+    click(boxButton(el, 'Allow edits for 1 minute'))
+    await flush()
+    const go = document.querySelector<HTMLButtonElement>('.change-ask__go')
+    if (go !== null) click(go)
+    await flush()
+    expect(disk.get(LEAD)?.content).toContain('due: 2026-11-13')
+  })
+
+  it('cards: a click on a locked value asks first; Cancel opens nothing; Allow opens its editor (the list shows its values, it edits none)', async () => {
+    disk.set(SETTINGS_FILE, { content: withView('cards'), mtime: 50 })
+    const el = await mount(true)
+    const value = () => [...el.querySelectorAll<HTMLElement>('.view-card')].find((n) => n.textContent?.includes('Lead Gen'))!.querySelector<HTMLElement>('.view-card__prop-value')!
+    expect(value().querySelector('[data-edit]')).toBeNull()
+    click(value().querySelector('.view-cell-edit--read-only')!)
+    await flush()
+    expect(asking(el)).toBe(true)
+    click(boxButton(el, 'Cancel'))
+    await flush()
+    expect(value().querySelector('[data-edit]')).toBeNull()
+    click(value().querySelector('.view-cell-edit--read-only')!)
+    await flush()
+    click(boxButton(el, 'Allow edits for 1 minute'))
+    await flush()
+    expect(value().querySelector('.view-cell-edit[data-editing]')).not.toBeNull()
   })
 })

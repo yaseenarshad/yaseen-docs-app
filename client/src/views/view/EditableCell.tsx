@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { type LinkCandidate, matchLinks, trailingLinkFragment } from '../../links/completion'
 import { type EditorKind } from '../editorType'
 import { LinkValue, type Resolver, type Value, fromYaml, render } from '../expr'
@@ -47,6 +47,11 @@ export interface EditableCellProps {
    * shown disabled. Nothing commits.
    */
   readOnly?: boolean
+  /**
+   * A read-only cell whose lock the folder page's "Allow edits?" opens (YAZ-5411, YAZ-5587): a click asks first
+   * (`ItemLock.ask`), and once allowed the cell opens — a checkbox toggles — as the click would have.
+   */
+  ask?: (open: () => void) => boolean
 }
 
 /**
@@ -58,7 +63,7 @@ export interface EditableCellProps {
  * until the index refetch delivers it (`raw` changes); a failed write reverts the cell and
  * shows an inline error. Checkboxes are live and commit on every toggle, no edit mode.
  */
-export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false }: EditableCellProps) {
+export function EditableCell({ propKey, raw, value, editor, titles, onCommit, options = [], resolve, readOnly = false, ask }: EditableCellProps) {
   const unit = useUnit()
   const [editing, setEditing] = useState(false)
   /** Committed-but-not-yet-indexed value; cleared when `raw` catches up (or the write fails). */
@@ -120,12 +125,22 @@ export function EditableCell({ propKey, raw, value, editor, titles, onCommit, op
   if (readOnly) {
     // An Image cell (YAZ-4802) shows its picture, read only too.
     if (editor === 'image') return <ImageCellEditor raw={raw} decl={decl} label={`Edit ${propKey}`} readOnly onCommit={() => {}} />
+    /** The click that asks (`ask`): once allowed, the same click on the cell's editor, which the unlock has drawn. */
+    const asking = ask && ((e: ReactMouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      ask(() => wrapRef.current?.querySelector<HTMLElement>('[data-edit]')?.click())
+    })
     return editor === 'checkbox' ? (
       <span className="view-cell-edit">
-        <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={readOnlyTip(unit)} />
+        {asking ? (
+          <input type="checkbox" aria-disabled="true" checked={raw === true} readOnly aria-label={propKey} title={readOnlyTip(unit)} onClick={asking} />
+        ) : (
+          <input type="checkbox" disabled checked={raw === true} aria-label={propKey} title={readOnlyTip(unit)} />
+        )}
       </span>
     ) : (
-      <span className="view-cell-edit view-cell-edit--read-only" title={readOnlyTip(unit)}>
+      <span className="view-cell-edit view-cell-edit--read-only" title={readOnlyTip(unit)} onClick={asking}>
         {cellContent(value, resolve, decl)}
       </span>
     )
