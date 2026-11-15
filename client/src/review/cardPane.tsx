@@ -7,7 +7,7 @@
  * The heads are each one's own: the window's speaks of the page the card is on, the tab IS the card's file.
  */
 import { previewCard } from '../editor/card/cardOpen'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { editorViewCtx } from '@milkdown/kit/core'
 import { cardBlock, EMPTY_CARD_LINE, withCardFix, withCardNext, withCardNoTitle, withCardOff, withCardTitle, withoutCardReviews, type CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
@@ -27,6 +27,7 @@ import type { ExploreVault } from '../explore/ExplorePage'
 import { pageLabel, pathTitles } from '../lib/pageLabel'
 import type { MenuSection } from '../sidebar/menuSections'
 import { askResetHistory } from '../editor/card/askResetHistory'
+import { fileIconDecoration, IconsContext } from '../sidebar/FileIcon'
 import { changeCardLine, changeCardTextIn, type CardAtPage } from './cardFile'
 import { CardBody, CardStrip, type CardLinkDoors, type CardStripPart } from './cardParts'
 
@@ -118,7 +119,8 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
   if (card !== null && card.id !== null)
     rows.push([
       ...(opts.inbox ? [{ id: 'next', label: card.next ? 'Remove from top of Inbox' : 'Put at top of Inbox', onSelect: () => changeLine((l) => withCardNext(l, !card.next)) }] : []),
-      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
+      // Chapter 11's tour (YAZ-5330): Archive card, then Unarchive card on the same row once the card is archived.
+      { id: 'review-off', label: card.off ? 'Unarchive card' : 'Archive card', tour: card.off ? 'card-menu-unarchive' : 'card-menu-archive', onSelect: () => changeLine((l) => withCardOff(l, !card.off)) },
       { id: 'fix', label: card.fix === true ? 'Remove Fix later' : 'Fix later', onSelect: () => changeLine((l) => withCardFix(l, card.fix !== true)) },
       // ONE toggle row (YAZ-5030): the hint is the state now; a click turns it to the other.
       { id: 'title-front', label: 'Title on the front', hint: card.notitle === true ? 'Hide' : 'Show', onSelect: () => changeLine((l) => withCardNoTitle(l, card.notitle !== true)) },
@@ -126,7 +128,7 @@ export function cardMenuSections(card: CardAtPage | null, id: string | null, cha
   if (id !== null)
     rows.push([
       { id: 'copy-id', label: 'Copy card ID', hint: id, onSelect: () => copyText(id, 'card ID', onNotice, undefined, true) },
-      ...(opts.link ? [{ id: 'copy-link', label: 'Copy card link', hint: `[[${id}]]`, onSelect: () => copyText(`[[${id}]]`, 'card link', onNotice, undefined, true) }] : []),
+      ...(opts.link ? [{ id: 'copy-link', label: 'Copy card link', hint: `[[${id}]]`, tour: 'card-copy-link', onSelect: () => copyText(`[[${id}]]`, 'card link', onNotice, undefined, true) }] : []),
     ])
   rows.push(...(opts.more ?? []))
   if (card !== null && card.id !== null && card.reviews.length > 0) rows.push([{ id: 'reset', label: 'Reset history', danger: true, onSelect: () => askResetHistory(card.id, () => changeLine(withoutCardReviews)) }])
@@ -312,6 +314,10 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, 
   const hostRef = useRef<HTMLDivElement>(null)
   const doneRef = useRef(onDone)
   doneRef.current = onDone
+  // The icons of the `[[` picker's rows and the pills (YAZ-5407): the sidebar's, as a page's editor draws them.
+  const iconsHere = useContext(IconsContext)
+  const icons = useRef(iconsHere)
+  icons.current = iconsHere
   const start = useRef({ text, title, path, vault, select, titleField })
   useEffect(() => {
     const host = hostRef.current
@@ -326,7 +332,10 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, 
       defaultValue: `${cardBlock(text, withCardTitle(EMPTY_CARD_LINE, title))}\n`,
       features: CARD_EDIT_FEATURES,
       wikilinks: vault.wikilinks,
+      // The `[[` picker's pages and cards, as in a page (YAZ-5185): without it the picker had only "Create".
+      wikilinkCandidates: vault.wikilinkCandidates,
       viewOnlyLinks: vault.viewOnlyLinks,
+      linkLook: { icon: (target, folder) => fileIconDecoration(icons.current, target, folder) },
       image: { root: vault.root, pagePath: path },
       cards: { path, onEditDone: (t, next) => doneRef.current(t, next), beforeDone: () => beforeRef.current?.(), titleField },
       // Esc with the keyboard on the card's frame, not in its text (YAZ-5164): Done, as in its text; never a step out to
@@ -355,6 +364,6 @@ function CardPaneEditor({ text, title, path, vault, onDone, select, titleField, 
       el.remove()
     }
   }, [])
-  return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit />
+  return <div ref={hostRef} className="explore-card__edit" data-explore-card-edit data-tour="card-editor" />
 }
 

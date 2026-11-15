@@ -79,6 +79,7 @@ import { dirname } from '../lib/paths'
 import { FindBar } from './find/FindBar'
 import { createFindChannel } from './find/findChannel'
 import { createCardFinder } from './find/cardFind'
+import { tourEvent } from '../course/tourBus'
 
 export interface CardFileViewProps {
   /** The file as the tab's one read gave it (`useFile`): a card file. */
@@ -178,6 +179,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
   // A card New card just made (YAZ-5037) opens in Edit card, one time only.
   const [fresh] = useState(() => isNewCard(path))
   useEffect(() => forgetNewCard(path), [path])
+  // The course's guided tour (YAZ-5123): a card file opened in a tab.
+  useEffect(() => tourEvent('card-file-open', path), [path])
   const [editing, setEditing] = useState(fresh)
   const editingRef = useRef(editing)
   editingRef.current = editing
@@ -241,6 +244,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
       () => {
         setSave('saved')
         setEditing(false)
+        tourEvent('card-edit-done', path)
       },
       () => setSave('error'),
     )
@@ -250,8 +254,13 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
    * (YAZ-5145 round 2): the chip's card shows, and once the person allows edits, Edit card opens with no second E.
    */
   const startEdit = () => {
-    if (canEdit) return setEditing(true)
-    if (card !== null && content !== null && lockedBase && bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', () => setEditing(true))
+    // The guided tour (YAZ-5123) hears Edit card each time it opens.
+    const open = () => {
+      setEditing(true)
+      tourEvent('card-edit-open', path)
+    }
+    if (canEdit) return open()
+    if (card !== null && content !== null && lockedBase && bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', open)
   }
   const preview = () => card !== null && previewCardOf(bodyRef.current, path, card)
   const onKeyDown = (event: ReactKeyboardEvent) => {
@@ -394,7 +403,7 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
                   {reviewOn && card.next === true && <CardNextChip onRemove={() => writes.changeLine((l) => withCardNext(l, false))} />}
                   {card.fix === true && <span className="card__state card__fix">To fix</span>}
                   {(canEdit || lockedBase) && (
-                    <button type="button" className="card__edit" data-card-file-edit onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
+                    <button type="button" className="card__edit" data-card-file-edit data-tour="card-edit" onMouseDown={(e) => e.preventDefault()} onClick={startEdit}>
                       Edit card
                     </button>
                   )}
@@ -431,6 +440,7 @@ function CardFileMore({ sections }: { sections: () => MenuSection[] }) {
       <button
         type="button"
         className="card__more"
+        data-tour="card-menu"
         aria-label="More actions"
         aria-haspopup="menu"
         aria-expanded={at !== null}

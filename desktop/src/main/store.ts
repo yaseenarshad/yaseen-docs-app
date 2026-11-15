@@ -1,4 +1,5 @@
 import { cleanIconRules, isIconRules } from '@shared/vaultIcons'
+import { applyCoursePatch, cleanCourseState, type CoursePatch } from '@shared/courseState'
 import { isValidDailyPageFormat } from '@shared/dailyPage'
 import { isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
 import { randomUUID } from 'node:crypto'
@@ -322,6 +323,8 @@ export interface Store {
    * that changes nothing commits nothing.
    */
   setTabCanvas(patch: TabCanvasPatch): void
+  /** The card course (YAZ-5120): the fields of `patch` over `course`, by `applyCoursePatch`, in ONE commit; a patch that changes nothing commits nothing. */
+  setCourse(patch: CoursePatch): void
   /**
    * Repair every stored reference to a just-renamed file OR directory (Links E1 GRO-2194,
    * E1b GRO-2241): window `root`/`file`/`tabs` (through `normalizeTabs`), recents, each
@@ -688,6 +691,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   commentsOrder: (v): v is CommentsOrder => typeof v === 'string' && (COMMENTS_ORDERS as readonly string[]).includes(v),
   commentsResolved: (v): v is CommentsResolvedPlace => typeof v === 'string' && (COMMENTS_RESOLVED_PLACES as readonly string[]).includes(v),
   commentsHint: (v): v is boolean => typeof v === 'boolean',
+  cardSkillInSidebar: (v): v is boolean => typeof v === 'boolean',
   profile: (v): v is CommentProfile | null => v === null || isCommentProfile(v),
   sidebarSort: isSidebarSort,
   searchSort: (v): v is TabSort => isTabSort(v, false, true),
@@ -704,6 +708,7 @@ const SETTINGS_FIELD_OK: { [K in keyof SettingsState]: (v: unknown) => v is Sett
   shownHiddenWords: (v): v is ShownHiddenWords => typeof v === 'string' && (SHOWN_HIDDEN_WORDS as readonly string[]).includes(v),
   markNextHidden: (v): v is boolean => typeof v === 'boolean',
   nextHiddenColour: (v): v is string | null => v === null || isHexColour(v),
+  cardTips: (v): v is boolean => typeof v === 'boolean',
   cardSpacing: (v): v is CardSpacing => typeof v === 'string' && (CARD_SPACINGS as readonly string[]).includes(v),
   cardWidth: (v): v is number | null => v === null || isCardWidth(v),
   cardTextSize: (v): v is number | null => v === null || isCardTextSize(v),
@@ -1259,6 +1264,8 @@ function sanitizeState(raw: unknown): AppState | null {
     settingsSavedAt: isFiniteNumber(raw.settingsSavedAt) && raw.settingsSavedAt >= 0 ? raw.settingsSavedAt : 0,
     // YAZ-3343 D1: absent is the default; an old build drops the key.
     tabCanvas: sanitizeTabCanvas(raw.tabCanvas, windows),
+    // YAZ-5120: absent is the default; each bad field reads its default; an old build drops the key.
+    course: cleanCourseState(raw.course),
   }
 }
 
@@ -1566,6 +1573,11 @@ export function createStore(filePath: string): Store {
     setTabCanvas(patch) {
       const tabCanvas = applyTabCanvasPatch(state.tabCanvas, patch, new Set(state.windows.map((w) => w.id)))
       if (tabCanvas !== state.tabCanvas) commit({ ...state, tabCanvas })
+    },
+
+    setCourse(patch) {
+      const course = applyCoursePatch(state.course, patch)
+      if (course !== state.course) commit({ ...state, course })
     },
 
     renamePath(oldPath, newPath) {

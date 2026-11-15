@@ -1,0 +1,710 @@
+/**
+ * The card course's words, version 3 (YAZ-5148; version 2 was YAZ-5147, version 1 YAZ-5119, issue 6A of YAZ-5118).
+ * Each clip is one or two spoken sentences, and it is also the caption. The comment above each clip says what the scene
+ * shows (issue 6C) and, after "WAITS:", where the person acts. "SOURCE:" names the study or page behind a fact (the
+ * comment "Sources (agent)" on YAZ-5148 has the links). "APP:" names the file that confirms an app fact, as the code is
+ * after the demo branch and the YAZ-5036 rename were merged in (`ee5c7f18b`).
+ *
+ * Version 3 keeps the chapters Yaseen approved on version 2 (1, 3, 4, 5, 6, 8, 9 and the gardener). It reworks chapter
+ * 2 (the title facts, the toolbar, no "atomic") and chapter 7 (cards as nodes on a tree), adds chapter 10 (links), and
+ * adds links and scheduled agents to the gardener (now 11). A clip whose words changed keeps its id; a new clip takes
+ * the next free number. The gardener and the last chapter moved from 10 and 11 to 11 and 12, so their ids did too.
+ *
+ * Version 3, round 2 (written by hand after Yaseen's comments on YAZ-5148): a card is the hub of one idea, not a line or two.
+ * Chapter 2 shows a real card and its parts (a small front to recall, a back with room to understand, links at the
+ * bottom). Chapter 7 teaches the umbrella card and its branches. Chapters 10 and 11 carry the same tree on: links join
+ * branches across trees, and the gardener grows and prunes them. One example runs through all four: protein, carbs and
+ * fat. The shape of the example card follows Yaseen's own cards (a front of a sentence or two with one or two hidden
+ * parts; a back in sections; each link with a few words on why).
+ *
+ * Round 3 (Yaseen's comments in the doc YAS-2084): the front is the short version of the idea, with the key part hidden;
+ * the back has the details, in sections (his word). A front may be a question, or a sentence with a hidden part
+ * ("cloze deletion" to memory scientists, "hidden words" in the app). Links are made with the agent, handmade: the
+ * agent shows each one in the chat, and the person reads and approves it.
+ *
+ * Yaseen approves each chapter's words before its voice is made (issue 6D). `skills/card-skill/Course transcript.md` is
+ * made from this file: run `UPDATE_COURSE_TRANSCRIPT=1 npx vitest run client/src/course/script.test.ts` after a change.
+ */
+import type { LiveStep, TourStep } from './tour'
+import type { CourseDock } from '@shared/courseState'
+
+/** One spoken line: its clip, its caption, and the moments in it that a scene waits for. */
+/**
+ * One clip.
+ * - `dock` (YAZ-5365, YAZ-5366): the course's size for the clip: `full` for a lesson, `side` for "show and do" (the real
+ *   app beside the course, its controls lit on George's words), `corner` while the person does a step. A clip without
+ *   one keeps the size of the clip before it; a chapter starts in full. A run of clips with the same size is one PART:
+ *   the course asks for its size when it starts, and the person's own choice wins until the next part (`live.ts`).
+ * - `live` (YAZ-5366): the real controls the clip lights in the app, in order (`LiveStep` in `tour.ts`): on the clip's
+ *   mark at `mark`, or when its words end. A step with `done` is a do step: the clip holds until the real action.
+ */
+export interface CourseClip { id: string; text: string; marks?: number[]; dock?: CourseDock; live?: LiveStep[] }
+
+/** One chapter: what is shown, then the optional steps to try in the real app. */
+export interface CourseChapter { id: string; title: string; clips: CourseClip[]; tryIt?: TourStep[] }
+
+/** `AGENT_PROMPT` and `NO_CARDS_YET` live in `prompt.ts`, so the sidebar can use the prompt without loading this script. */
+export { AGENT_PROMPT, NO_CARDS_YET } from './prompt'
+
+export const COURSE: CourseChapter[] = [
+  {
+    id: 'why',
+    title: 'Why you forget, and the fix',
+    clips: [
+      // A fact glows on the stage; the forgetting curve starts to fall and the fact fades.
+      { id: 'c1-01', text: 'Say you learn something today. A week from now, your brain will have forgotten most of it.', marks: [0.389, 0.757] },
+      // Early memory research: Hermann Ebbinghaus, his notebook of made-up syllables, and the time it took to relearn them.
+      // SOURCE: Ebbinghaus 1885, Memory: A Contribution to Experimental Psychology; savings data as given in Murre & Dros 2015, PLOS ONE, Table 3.
+      { id: 'c1-02', text: "In the 1880s, a scientist named Hermann Ebbinghaus ran one of the first experiments on memory. He memorized lists of made-up syllables to see how quickly he forgot them. A week later, he had forgotten 75% of what he had learned.", marks: [0.155, 0.422, 0.712, 0.83] },
+      // The old curve from 1885 and a new one from 2015 slide over each other; they match.
+      // SOURCE: Murre & Dros 2015, "Replication and Analysis of Ebbinghaus' Forgetting Curve", PLOS ONE 10(7): "We conclude that the Ebbinghaus forgetting curve has indeed been replicated."
+      { id: 'c1-22', text: 'In 2015, scientists repeated his experiment. A hundred and thirty years later, they got the same curve.', marks: [0.267, 0.503, 0.819] },
+      // A review just before the curve drops; the curve lifts and falls slower.
+      { id: 'c1-03', text: 'But review it again before you forget, and it sticks longer.' },
+      // Three reviews; the gaps label "1 day", "1 week", "1 month" on the marks. (Approved sample, unchanged.)
+      { id: 's2b', text: "Each time you remember it, you can wait a little longer before the next review. A day, then a week, then a month. Over time, you review it less often and still remember it", marks: [0.428, 0.531, 0.585] },
+      // A small glowing memory, faint at first, grows solid over time.
+      // SOURCE: Squire, Genzel, Wixted & Morris 2015, "Memory Consolidation", Cold Spring Harb Perspect Biol.
+      { id: 'c1-04', text: 'A new memory starts out fragile. Over time, the brain makes it stable. Scientists call this consolidation.' },
+      // Each review mark pushes the memory deeper, from a "Short-term" band into a "Long-term" band.
+      { id: 'c1-05', text: 'Each review, near the point where you would forget, pushes the memory further into long-term memory.', marks: [0.161, 0.475, 0.704, 0.759] },
+      // Two brain cells and the link between them; with each spaced pulse, a switch inside the cell turns on and the link grows stronger.
+      // SOURCE: Naqib, Sossin & Farah 2012, "Molecular Determinants of the Spacing Effect", Neural Plasticity (CREB-dependent gene expression after spaced training, in Aplysia, Drosophila and rodents).
+      { id: 'c1-18', text: "This is proven science. Researchers have watched it in brain cells: spaced practice switches on the genes that build long-term memory.", marks: [0.231, 0.519, 0.643, 0.725] },
+      // A Nobel medal; "2000".
+      // SOURCE: The Nobel Prize in Physiology or Medicine 2000 (Eric Kandel, with Carlsson and Greengard): how nerve cells change to store memory.
+      { id: 'c1-19', text: 'The work that first showed how brain cells store a memory won a Nobel Prize.', marks: [0.641] },
+      // A wall of 317 experiments shows the result behind spaced repetition in Yaseen Docs.
+      // SOURCE: Cepeda, Pashler, Vul, Wixted & Rohrer 2006, "Distributed practice in verbal recall tasks", Psychological Bulletin: 317 experiments in 184 articles.
+      { id: 'c1-06', text: "A review of 317 experiments found that spaced reviews were the best way to learn. That’s the idea behind spaced repetition, which is the system you’ll learn to use in this app.", marks: [0.026, 0.065, 0.298, 0.642, 0.925] },
+      // A ridge-shaped graph: memory kept, against the gap before the review; a peak in the middle, lower on both sides; "more than 1,350 people".
+      // SOURCE: Cepeda, Vul, Rohrer, Wixted & Pashler 2008, "Spacing effects in learning: a temporal ridgeline of optimal retention", Psychological Science 19(11): more than 1,350 people; the best gap depends on how long the memory must last.
+      { id: 'c1-20', text: 'And yes, there is a best moment to review. A study of more than 1,300 people found it: too early or too late, and you keep less.', marks: [0.335, 0.428, 0.677, 0.774, 0.871] },
+      // A paper index card drops onto the stage.
+      { id: 'c1-07', text: 'So how do you store each thing you learn in the app? Answer: on a card.' },
+      // The paper index card becomes the app's real card: a title, a fact, one word as a blank.
+      { id: 'c1-08', text: 'A card is one idea, with part of it hidden.' },
+      // Many cards fan out across the stage, each with one fact.
+      { id: 'c1-09', text: 'You will have many cards, one for each thing you want to remember.' },
+      // Behind the curve, small gears turn; a date lights up on a calendar just before the curve drops. The words "Spaced repetition algorithm" settle under it. (Yaseen's line, from the doc YAS-2084.)
+      { id: 'c1-16', text: 'The app runs an algorithm behind the scenes to keep track of this for you, and predicts the day you are about to forget it. This is called a spaced repetition algorithm.' },
+      // The words "FSRS" over a card; behind it, a small graph of one memory: a curve, and numbers that update.
+      // SOURCE: shared/cardSchedule.ts (FSRS through ts-fsrs 5.4.2, the FSRS-6 weights); FSRS models each card's memory (stability, difficulty) and computes the chance of recall.
+      { id: 'c1-12', text: 'That algorithm is called FSRS. It is a mathematical model of your memory.' },
+      // A card's curve with a dotted line at 90%; the odds tick down day by day; the next date lands where the curve meets the line.
+      // SOURCE: shared/reviews.ts DEFAULT_REVIEW_SETTINGS.retention = 0.9; shared/cardSchedule.ts `recallChance`.
+      { id: 'c1-17', text: 'For every card, every day, it works out the odds that you still remember it. When they drop to about ninety percent, the card comes back.' },
+      // The 90% line and the ridge's peak from before line up; a marker lands on the best moment for this card, then the next card, then the next.
+      { id: 'c1-21', text: 'The algorithm finds that moment for every card, precisely for you, by studying your memory.' },
+      // A calendar; each card takes its own date.
+      { id: 'c1-10', text: 'The app keeps a calendar for every card. On the day a card is due, it shows it to you.' },
+      // The blank fills in; two buttons, Forgot and Remembered.
+      { id: 'c1-11', text: 'You try to recall the hidden part, then check. And you answer: forgot, or remembered.', marks: [0.38, 0.674, 0.788] },
+      // The chapter list lights up, 1 to 12.
+      { id: 'c1-13', text: 'This course takes about half an hour, in twelve short chapters.', marks: [0.3, 0.581] },
+      // The real app, with "Optional" over it.
+      { id: 'c1-14', text: 'Some chapters let you try the steps in the real app. That part is always your choice.' },
+      // The curve with its growing gaps, then the paper index card alone in the middle of the stage.
+      { id: 'c1-15', text: 'Your brain forgets on a curve. Now you have a way to beat it. Next: what a card really is, and you make your first one.' },
+    ],
+  },
+  {
+    id: 'first-card',
+    title: 'The card: the hub of an idea',
+    clips: [
+      // The paper index card from chapter 1, and the calendar behind it.
+      { id: 'c2-01', text: 'Quick recap: each thing you learn goes on a card. Now, what a card really is, and how to make one.', dock: 'full' },
+      // The small paper index card with one short line of handwriting on it.
+      { id: 'c2-02', text: 'When most people hear "card", they picture a line or two on a small piece of paper.', dock: 'full' },
+      // The paper card becomes a dot in the middle of the stage; short lines reach out from it, like spokes. The word "Hub".
+      { id: 'c2-03', text: 'Think of it another way. A card is the hub of one idea: the centre where what you know about it comes together.', dock: 'full' },
+      // A REAL CARD fills the stage, in the app's own look. Title: "Protein, carbs and fat". The front lights up:
+      //   "The three things food is mostly made of are {{protein, carbs and fat}}."
+      //   "Your body builds and repairs with {{protein}}, and gets its quick energy from {{carbs}}."
+      // The hidden parts show as blanks.
+      { id: 'c2-04', text: 'Here is a real one. The front is the short version: the idea in a sentence or two, with the key part hidden.', dock: 'full' },
+      // The same card turns to its back; three parts light up in turn, each under a thin line:
+      //   "Protein builds and repairs. Carbs are quick energy. Fat is slow energy, stored."
+      //   EXAMPLE: "An egg is mostly protein and fat. Bread is mostly carbs."
+      //   MEMORY HOOK: "Protein is the bricks. Carbs are the kindling. Fat is the logs."
+      { id: 'c2-05', text: 'The back has the details: how it works, an example, a hook to remember it by.', marks: [0.325, 0.493, 0.687], dock: 'full' },
+      // The bottom of the back: CONNECTIONS, with one link pill and a few grey words after it.
+      { id: 'c2-22', text: 'And at the bottom, links to the cards it connects to. You will make those in chapter 10.', dock: 'full' },
+      // A SECOND REAL CARD, for a word. Title: "candid". The front lights up, two lines, the word a blank in both:
+      //   "I asked for {{candid}} feedback, and she told me plainly what did not work."
+      //   "Honest and direct, even when it is hard to hear, is {{candid}}."
+      { id: 'c2-30', text: 'Here is another, for a new word. The front has a sentence that uses the word, then what it means. The word is hidden in both.', dock: 'full' },
+      // The word card turns to its back; its sections light up in turn:
+      //   "Candid means open and honest, with nothing held back."
+      //   PRONUNCIATION: "KAN-did". MEMORY HOOK: "A candid photo is one nobody posed for." EXAMPLES: two more sentences.
+      { id: 'c2-31', text: 'Its back has the details too: how to say it, where it comes from, more examples.', marks: [0.372, 0.53, 0.719], dock: 'full' },
+      // Three sizes side by side: one bare line, the real card, a full page of text. The real card gets the check; "Front: the short version", "Back: the details".
+      { id: 'c2-23', text: 'So a card is more than one line, and far less than a page. The short version on the front, the details on the back.', dock: 'full' },
+      // The lesson highlights the blanks on the front of the example card.
+      { id: 'c2-24', text: 'Keep the front simple. A simple front is easier to remember.', dock: 'full' },
+      // The real card with a short back; a second and a third part join the back over time. It stays one card.
+      { id: 'c2-25', text: 'A card is never finished. It starts light, and it grows as you learn more.', dock: 'full' },
+      // All the cards together form one growing set, labelled "Card base"; cards slide together in new groups, like pieces that fit many ways.
+      { id: 'c2-26', text: 'All your cards together are your card base. Each card is one idea, so cards can be mixed and matched, wherever you need them.', dock: 'full' },
+      // A blank card in the middle of the stage.
+      { id: 'c2-06', text: 'Your turn. Think of something you learned this week.', dock: 'full' },
+      // An empty card with a blinking caret. WAITS: the person types a sentence or two.
+      { id: 'c2-07', text: 'Type the short version of it, in a sentence or two.', dock: 'full' },
+      // The words become buttons. WAITS: the person taps the word to hide.
+      { id: 'c2-08', text: 'Now tap the word you want to hide.', dock: 'full' },
+      // The word turns into a blank; the card takes its frame; the label "Front".
+      { id: 'c2-09', text: "That's the front. The hidden word is the part you will try to recall.", dock: 'full' },
+      // A line labelled "Side 2" appears under the front, with a caret. WAITS: the person types a line (or skips).
+      { id: 'c2-28', text: 'Now the back. Add one detail: how it works, or an example.', dock: 'full' },
+      // The card, front only. WAITS: the person taps the card to show the word, then the back.
+      { id: 'c2-10', text: 'Tap the card to check yourself.', dock: 'full' },
+      // Forgot and Remembered under the card. WAITS: the person picks one.
+      { id: 'c2-11', text: 'Did you remember it?', dock: 'full' },
+      // The answer's quiet line under the card.
+      { id: 'c2-12', text: 'Either answer is fine. The app saves it with the card.', dock: 'full' },
+      // The sidebar: the folder "Course Cards" opens and shows the new card file.
+      { id: 'c2-13', text: 'Your card is now a real file, in a folder called Course Cards, at the top of your vault.', marks: [0.557], dock: 'side', live: [{ target: 'sidebar-course-cards', mark: 0 }] },
+      // A right-click on the Course Cards folder; its menu, "New card".
+      // APP: client/src/sidebar/menuSections.ts (`newCard`, "New card"), client/src/sidebar/CreateInline.tsx (Enter), client/src/review/newCardFile.ts (the typed name is the title; the tab opens in Edit card).
+      { id: 'c2-15', text: "Let's make it in the app. Right-click the Course Cards folder, and choose New card.", marks: [0.332, 0.461, 0.822], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Right-click the Course Cards folder in the sidebar.', done: { event: 'folder-menu-open' } }, { target: 'new-card', mark: 2, say: 'Choose New card.', done: 'click' }] },
+      // The name box in the sidebar; a title is typed, Enter; the card's tab opens in Edit card, empty.
+      { id: 'c2-32', text: 'Type a title, and press Enter.', marks: [0.117, 0.467], dock: 'corner', live: [{ target: 'new-card-name', mark: 0, say: 'Type a title, and press Enter.', done: { event: 'card-file-created' }, example: { text: 'Protein', enter: true } }] },
+      // The empty card in Edit card; the front is typed.
+      { id: 'c2-33', text: 'Now type the front: the short version, in a sentence or two.', marks: [0.071, 0.435], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: 'Now type the front: the short version, in a sentence or two.', done: { event: 'card-text-changed' }, example: { text: 'Your body builds and repairs with protein.' } }] },
+      // A word is selected; the toolbar shows over it; the braces button "Hide word" is clicked; then the key row "Cmd + L hide word".
+      // APP: client/src/editor/card/cardEditor.ts (`hideWordButton`: "Hide word", ⌘L, right after H1 H2 H3 T), client/src/editor/card/cardBlockView.ts (`CARD_EDIT_KEYS`, written "Cmd + L" by client/src/keys/keyWords.ts).
+      { id: 'c2-16', text: 'To hide a word, select it, and click Hide word in the toolbar. The key is Command L.', marks: [0.19, 0.44], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: 'Select one word. In the toolbar above it, click Hide word.', done: { event: 'card-word-hidden' } }] },
+      // "/" opens the menu; "New side" is chosen; a line labelled "Side 2" splits the card; then the key row "Cmd + Shift + Enter new side".
+      // APP: client/src/editor/card/cardEditor.ts (`newSideSlashRow`: "New side", ⌘⇧↵), client/src/editor/card/card.css ("Side 2" label, YAZ-5103). The toolbar has no side button.
+      { id: 'c2-17', text: 'For the back, type slash, and choose New side. The key is Command Shift Enter.', marks: [0.179, 0.474], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: 'Type slash, and choose New side. Then add one detail.', done: { event: 'card-side-added' }, example: { text: 'An egg is mostly protein and fat.', newSide: true } }] },
+      // On the back, three stars are typed on an empty line; they turn into a thin line; "EXAMPLE" is typed under it. Yaseen's word for each part is a section.
+      // APP: client/src/editor/card/cardEditor.ts (three stars on an empty line stay a line, an hr; three dashes are a new side).
+      { id: 'c2-29', text: 'You can add sections to the back. Type three stars on an empty line, and they turn into a line. Sections break up the details, so they are easier to take in.', dock: 'corner' },
+      // Esc, or the Done button in the card's head; the card shows again, saved.
+      // APP: client/src/editor/card/cardBlockView.ts (the edit button reads "Done" while editing; "Cmd + Enter / Esc Done").
+      { id: 'c2-20', text: 'Press Escape, or click Done, and the card saves.', marks: [0.02, 0.479], dock: 'corner', live: [{ target: 'card-done', mark: 0, say: 'Press Escape, or click Done, to save your card.', done: { event: 'card-edit-done' } }] },
+      // The card file's tab: the big title at the top; a click, new words, Enter; the tab and the sidebar take the new name.
+      // APP: shared/cardFileFormat.ts (the title is on the card line, `title "…"`, YAZ-5308; the file is named after it), client/src/editor/CardFileView.tsx (`PageTitle`: click, type, Enter; `retitle` writes the title, then renames the file). A card INSIDE a page has its title on its card line too.
+      { id: 'c2-14', text: "The title sits at the top of the card's tab. Click it to change it, and the file's name follows.", dock: 'side' },
+      // The card's ⋯ menu: "Title on the front · Show"; a click; it reads "Hide".
+      // APP: client/src/review/cardPane.tsx (`cardMenuSections`: "Title on the front", Show / Hide).
+      { id: 'c2-21', text: "If the title gives the answer away, set Title on the front to Hide, in the card's menu.", marks: [0.46, 0.862], dock: 'side', live: [{ target: 'card-menu', mark: 1 }] },
+      // The real card as a hub, with its spokes; then the sidebar's Inbox row glows softly.
+      { id: 'c2-19', text: 'A card is the hub of one idea: the short version on the front, the details on the back, and room to grow. Next: the place your cards come back to, each day.', dock: 'full' },
+    ],
+  },
+  {
+    id: 'inbox',
+    title: 'The Inbox, each day',
+    clips: [
+      // The card from chapter 2, in the Course Cards folder.
+      { id: 'c3-01', text: 'You made your first card. Here is the daily habit that brings it back.', marks: [0.6, 0.771], dock: 'full' },
+      // A calendar with many cards on many days; it fades.
+      { id: 'c3-02', text: 'So which card do you look at, and when?', marks: [0.705], dock: 'full' },
+      // The real sidebar; the Inbox row lights up.
+      { id: 'c3-03', text: 'The app keeps track of the dates for you. All you do is open the Inbox every day.', marks: [0.636, 0.802], dock: 'side', live: [{ target: 'sidebar-inbox', mark: 0 }] },
+      // The Inbox row's number, "4".
+      { id: 'c3-04', text: 'The Inbox is in the sidebar. The number beside it is how many cards are due now.', marks: [0.439, 0.798], dock: 'side', live: [{ target: 'sidebar-inbox', mark: 0 }] },
+      // The real Inbox on sample cards: one card in the middle, "1 of 4".
+      { id: 'c3-05', text: 'The Inbox shows one card at a time. Look at the card, and try to recall what is hidden.', marks: [0.182, 0.752], dock: 'full' },
+      // The cover of the journal Science, 2008; a paper slides out: "The Critical Importance of Retrieval for Learning"; one sentence is highlighted.
+      // SOURCE: Karpicke & Roediger 2008, "The Critical Importance of Retrieval for Learning", Science 319(5865):966-968.
+      { id: 'c3-06', text: 'Trying to recall is what makes it stick. A study in the journal Science put it to the test.', marks: [0.613, 0.801], dock: 'full' },
+      // Two bars rise, one week later: "Kept testing themselves: 80%", "Kept re-reading, no testing: 36%".
+      // SOURCE: the same paper, Fig. 2 and text: about 80% recalled in the repeated-testing conditions (ST, SnT); 36% in the repeated-study, no-more-testing condition (STn).
+      { id: 'c3-07', text: 'People who kept testing themselves remembered 80 percent a week later. People who kept re-reading, with no testing, remembered 36 percent.', marks: [0.256, 0.827], dock: 'full' },
+      // Under the bars: "Rounds of practice: 237 and 243".
+      // SOURCE: the same paper, Table 1: 236.8 trials (SnT, repeated testing) against 243.0 trials (STn, repeated study).
+      { id: 'c3-23', text: 'About the same amount of work. More than double the memory.', marks: [0.181, 0.617], dock: 'full' },
+      // The real sidebar; the Inbox row lights up, and the person clicks it.
+      { id: 'c3-24', text: "Let's try it. Click Inbox in the sidebar.", marks: [0.383, 0.68], dock: 'corner', live: [{ target: 'sidebar-inbox', mark: 0, say: 'Click Inbox in the sidebar.', done: 'click' }] },
+      // Space; the hidden word shows, then the back.
+      { id: 'c3-08', text: 'Press Space to show the hidden words, one at a time, and then the back.', marks: [0.062, 0.477, 0.777], dock: 'corner', live: [{ target: 'inbox-card', mark: 0, say: 'Look at the card, and try to recall the hidden word. Then press Space.', done: { event: 'inbox-step-shown' } }] },
+      // Forgot and Remembered show under the card.
+      { id: 'c3-09', text: 'Then choose Forgot or Remembered. Be honest. It only helps you.', marks: [0.14, 0.336], dock: 'corner', live: [{ target: 'inbox-answers', mark: 0, say: 'Now choose Forgot or Remembered.', done: { event: 'inbox-answered' } }] },
+      // The hover on Remembered: "Remembered · 9 days".
+      { id: 'c3-10', text: 'Hold the pointer on a button to see when the card comes back.', marks: [0.291, 0.54], dock: 'side', live: [{ target: 'inbox-answers', mark: 0 }] },
+      // The key row: 1 and 2 on the buttons; ⌘Z.
+      { id: 'c3-11', text: 'You can also press 1 for Forgot and 2 for Remembered. Command Z takes back the last answer.', marks: [0.155, 0.371, 0.629, 0.774], dock: 'side', live: [{ target: 'inbox-answers', mark: 0 }] },
+      // The calendar again, under the card.
+      { id: 'c3-12', text: 'Based on that, the app moves the calendar for you.', marks: [0.442], dock: 'full' },
+      // Forgot; the card's date moves closer.
+      { id: 'c3-13', text: 'If you forgot, the card comes back sooner, so you can learn it again.', marks: [0.122, 0.455], dock: 'full' },
+      // The forgotten card goes to the end of the queue and comes round again.
+      { id: 'c3-14', text: 'In fact, a card you forgot comes back later in the same review, until you remember it.', marks: [0.283, 0.713], dock: 'full' },
+      // Remembered; the card's date moves further, a bigger gap each time.
+      { id: 'c3-15', text: 'If you remembered, the card waits longer. Each time you remember it, the wait grows.', marks: [0.276, 0.605, 0.776], dock: 'full' },
+      // A new card: two check marks, then it leaves for a later day.
+      { id: 'c3-16', text: 'A new card needs two Remembered in a row. Then it leaves for a day or more.', marks: [0.227, 0.352, 0.63], dock: 'full' },
+      // The dates fill in by themselves.
+      { id: 'c3-17', text: 'You never set a date. The app works out each date from your answers.', marks: [0.183, 0.766], dock: 'full' },
+      // A few days pass on the calendar; the due cards wait in the Inbox.
+      { id: 'c3-18', text: "Missed a day? That's fine. The cards that are due wait in the Inbox until you come back.", marks: [0.069, 0.664], dock: 'full' },
+      // "New cards a day: 10" in Settings › Cards.
+      { id: 'c3-19', text: 'To keep it light, the Inbox brings at most ten new cards a day. You can change that number in Settings.', marks: [0.399, 0.776], dock: 'full' },
+      // The done screen: "Inbox complete."
+      { id: 'c3-20', text: "When nothing is left, the Inbox says Inbox complete. That's it for today.", marks: [0.157, 0.451], dock: 'full' },
+      // The real sidebar: "From tomorrow"; the Inbox row lights up.
+      { id: 'c3-21', text: 'From tomorrow, start here. Click Inbox to see what is due.', marks: [0.064, 0.556], dock: 'corner', live: [{ target: 'sidebar-inbox', say: 'From tomorrow, start here. Click Inbox to see what is due.', done: 'click' }] },
+      // A page of text, with a space between two paragraphs.
+      { id: 'c3-22', text: 'A few minutes a day, and the algorithm does the rest. Next: your cards can live right inside your pages.', marks: [0.221, 0.483, 0.809], dock: 'full' },
+    ],
+  },
+  {
+    id: 'where',
+    title: 'Where a card lives',
+    clips: [
+      // The card file and the Inbox, side by side.
+      { id: 'c4-01', text: 'So far, your card is a file of its own. It can also live beside your pages.', marks: [0.336, 0.714], dock: 'full' },
+      // Three empty frames side by side: "By itself", "In a page", "Embedded".
+      { id: 'c4-02', text: 'A card can live in three places. The review works the same in each one.', marks: [0.22, 0.535], dock: 'full' },
+      // The card file from chapter 2 in its own tab.
+      { id: 'c4-03', text: "First, a card by itself. That's the card file you made: one file, one card.", marks: [0.453, 0.657, 0.793], dock: 'side', live: [{ target: 'sidebar-course-cards', mark: 0 }] },
+      // A page of text with a card between two paragraphs.
+      { id: 'c4-04', text: 'Second, a card inside a page. Your pages on a topic can hold cards right beside the text.', marks: [0.193, 0.783], dock: 'full' },
+      // A "/card" typed in a page; a new, empty card opens for editing, its Title field has the keyboard (YAZ-5308).
+      // APP: client/src/editor/card/cardBlockView.ts (`edit('title')`), client/src/editor/card/cardEditor.ts (`selectTitle`, placeholder "Title").
+      { id: 'c4-05', text: 'In a page, type slash card, and press Enter. A new card opens, ready to edit.', marks: [0.446, 0.652], dock: 'full' },
+      // A card in a page with its ⋯ menu, its Reviews, and the Inbox behind it.
+      { id: 'c4-06', text: 'A card in a page has the same menu, the same history, and the same Inbox.', marks: [0.336, 0.595, 0.784], dock: 'full' },
+      // A page shows a card that lives in another file; an arrow back to the card file.
+      { id: 'c4-08', text: 'Third, a card embedded in a page. The card lives in one place, and the page shows it.', marks: [0.545, 0.853], dock: 'full' },
+      // The card's ⋯ menu, "Copy card link".
+      // APP: client/src/review/cardPane.tsx ("Copy card link" copies `[[ID]]`, on the card file tab), client/src/editor/linkMenu.ts ("Show as embed"),
+      // client/src/editor/card/cardEmbed.test.ts. The paste chip's "Embed" shows only for a pasted card file PATH (client/src/editor/pathPaste.ts), not for `[[ID]]`.
+      { id: 'c4-09', text: 'To embed a card, open its menu, and choose Copy card link.', marks: [0.281, 0.655], dock: 'corner', live: [{ target: 'card-menu', mark: 0, say: "Open your card's menu: the three dots in its head.", done: 'click' }, { target: 'card-copy-link', mark: 1, say: 'Choose Copy card link.', done: 'click' }] },
+      // A page opens; the link is pasted, a pill.
+      { id: 'c4-17', text: 'Then open a page, and paste the link.', marks: [0.151, 0.604], dock: 'corner', live: [{ target: 'course-page', mark: 0, say: 'Now open Course page, in the Course Cards folder.', done: 'click' }] },
+      // A right-click on the pill, "Show as embed"; the card shows in the page.
+      { id: 'c4-18', text: 'Right-click the link, and choose Show as embed.', marks: [0.02, 0.601], dock: 'corner', live: [{ target: 'page-editor', mark: 0, say: 'Click in the page, and paste with Command V. Then right-click the link, and choose Show as embed.', done: { event: 'card-embedded' } }] },
+      // A short message to the agent: "Embed my protein card in the Food page"; the embed appears in the page.
+      { id: 'c4-16', text: 'Or just tell your agent: embed this card in that page.', marks: [0.393, 0.861], dock: 'full' },
+      // The embed's head: ↗ Embedded from "…" · ID.
+      { id: 'c4-10', text: "The embed has a small head that says Embedded from, with the card's title.", marks: [0.446, 0.802], dock: 'full' },
+      // Edit card on the embed; the card file changes too.
+      { id: 'c4-11', text: 'Edit an embed, and you change the one real card. Its history stays with it.', marks: [0.404, 0.659], dock: 'full' },
+      // A card moves between the three frames; its history line follows.
+      { id: 'c4-12', text: 'You can move a card between these places at any time. Its history goes with it.', marks: [0.221, 0.669], dock: 'full' },
+      // Two labels: "A fact on its own" under the card file, "Part of your pages" under the page.
+      { id: 'c4-13', text: 'Use a card file for a fact on its own. Use a card in a page when it belongs with your pages.', marks: [0.211, 0.744], dock: 'full' },
+      // One card shown in three pages at once; lines lead back to it. Then the stage widens.
+      { id: 'c4-15', text: 'This is the mix and match from before: one card, one home, shown wherever it helps. Next: where all of this can take you.', marks: [0.278, 0.475, 0.798], dock: 'full' },
+    ],
+  },
+  {
+    id: 'compound',
+    title: 'Why it is worth it',
+    clips: [
+      // The four chapters so far, as four small ticks.
+      { id: 'c5-01', text: 'You can make, review and place a card. Now, why it is worth doing.', marks: [0.069, 0.201, 0.318, 0.733] },
+      // A small sum grows on itself, like interest on savings.
+      { id: 'c5-02', text: 'What you learn this way compounds. To compound is to grow on itself, like interest.', marks: [0.218, 0.621, 0.833] },
+      // One card, then a new card that hooks onto it.
+      { id: 'c5-03', text: 'Each thing you keep gives the next thing something to hold on to.', marks: [0.421, 0.679] },
+      // A counter: 5 cards a day, the days of a year pass, "1,825".
+      { id: 'c5-04', text: "Say you make five cards a day. In a year, that is more than 1,800 ideas and topics you still know.", marks: [0.112, 0.327, 0.5] },
+      // The pile grows tall; the daily stack beside it stays small.
+      { id: 'c5-05', text: 'And known cards come back less often, so the daily review stays small as the pile grows.', marks: [0.469, 0.773] },
+      // One card on a time line; four marks appear: "a few days", "about 2 weeks", "about 6 weeks", "about 4 months". The gaps stretch across the stage.
+      // SOURCE: the app's own scheduler with its default settings (shared/cardSchedule.ts, shared/reviews.ts DEFAULT_REVIEW_SETTINGS), each answer Remembered on the due day: gaps of about 4, 14, 45 and 135 days, then the default longest gap of 365 days (`maxDays`).
+      { id: 'c5-13', text: 'Follow one card you keep remembering. It comes back after a few days. Then about two weeks. Then about six weeks. Then about four months.', marks: [0.332, 0.485, 0.663, 0.849] },
+      // The time line zooms out: the card's next mark is far off to the right, past "2 months in".
+      { id: 'c5-14', text: "So after a few review cycles, that card is already months away.", marks: [0.209, 0.724] },
+      // The card fades into the outline of a person, and stays there as a small steady light.
+      { id: 'c5-15', text: 'By then you are not really reviewing it any more. It is part of what you know. It is part of who you are.', marks: [0.478, 0.724] },
+      // Wooden boxes of paper slips; the name "Niklas Luhmann", "1951 to 1996", "about 90,000 cards".
+      // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: about 90,000 notes, made between 1951 and 1996. (rename-note-to-page: keep)
+      { id: 'c5-06', text: 'The sociologist Niklas Luhmann had a similar card system. Over about 45 years, he created around 90,000 cards.', marks: [0.115, 0.54, 0.791] },
+      // Links between the slips bring ideas together, then the shelf fills with publications and books.
+      // SOURCE: Niklas Luhmann-Archiv, Bielefeld University: nearly 600 publications, among them over 40 monographs.
+      { id: 'c5-07', text: 'He said the links between those slips helped him see how ideas fit together and turn them into new work. That system helped make him one of the most well published scientists in history. He published nearly 600 works, including more than 40 books.', marks: [0.038, 0.341, 0.776, 0.918] },
+      // Robert Greene’s card method and The 48 Laws of Power, followed by the writer he taught.
+      { id: 'c5-17', text: "Robert Greene used a card system to research and write books like The 48 Laws of Power. He’s written three New York Times bestsellers using this system.", marks: [0.383, 0.638] },
+      // Ryan Holiday’s index card boxes, his books, and the value of the cards over time.
+      // SOURCE: Ryan Holiday on his card system: https://ryanholiday.net/the-notecard-system-the-key-for-remembering-organizing-and-using-everything-you-read/ (rename-note-to-page: keep)
+      // SOURCE: Penguin Random House’s author and book pages for Robert Greene and Ryan Holiday.
+      { id: 'c5-08', text: "Greene taught the card method to his research assistant, the writer Ryan Holiday. Holiday sorts ideas onto index cards so he can pull them together when he writes a book.", marks: [0.347, 0.637] },
+      { id: 'c5-16', text: "Over about 20 years, Holiday has made tens of thousands of cards. In his videos and articles, he shares how other thinkers have used similar systems.", marks: [0.26, 0.528] },
+      { id: 'c5-19', text: "Holiday credits the cards with helping him write a book almost every year. Using this system, he has gone on to write four New York Times bestsellers in his series on the Stoic virtues.", marks: [0.184, 0.592] },
+      { id: 'c5-20', text: "He says most of the value came later, as all those cards added up.", marks: [0.349, 0.746] },
+      { id: 'c5-21', text: "Thinkers have used systems like this for generations. The Notecard App just brings it all together in one place with research backed memory science and the memory algorithm that brings each card back when it’s time to review.", marks: [0.261, 0.591, 0.705] }, // rename-note-to-page: keep (the product's name)
+      // Three small scenes: a meeting, a page in another language, a field that becomes clear.
+      { id: 'c5-09', text: 'You do not need to write books or be an author for this system to be valuable for you. Think of the meeting where the right fact is there when you need it.', marks: [0.662, 0.765] },
+      // A page in another language becomes readable; a hard subject comes into focus.
+      { id: 'c5-10', text: 'The language you keep. The subject you finally understand.', marks: [0.084, 0.464, 0.676] },
+      // The card base, now large, glows: "Your card base".
+      { id: 'c5-11', text: 'Over time, your card base becomes a record of what you know. Because you review it, you still know it.', marks: [0.179, 0.856] },
+      // The Gym for the Mind ends with what to put on a card.
+      { id: 'c5-12', text: "This is why we call this card memory system “The Gym for the Mind.”", marks: [0.595] },
+      { id: 'c5-22', text: "Think about why people go to the gym. A machine can lift more weight than you can. So why do you still go to the gym to lift weights? Because you’re there to get stronger.", marks: [0.262, 0.9] },
+      { id: 'c5-23', text: "Cards give your mind that kind of practice. Yes, AI makes information easy to find. But humans still need to choose what’s worth remembering. Each time you try to recall an idea or make a card clearer, you get better at using what you know.", marks: [0.228, 0.48, 0.684] },
+      { id: 'c5-24', text: "That’s why we keep the cards handmade. Let AI suggest ideas, draft a card, or format it. Read the draft and think it through before you ask the agent to write the file. It takes discipline to do that every time, especially when the agent can make a whole batch in seconds. That pause is part of how you learn.", marks: [0.13, 0.51] },
+      { id: 'c5-25', text: "Over time, that practice turns what you learn into knowledge you can use.", marks: [0.632] },
+      { id: 'c5-26', text: "Next, we’ll look at which ideas are worth turning into cards and how to make them your own.", marks: [0.56, 0.784] },
+    ],
+  },
+  {
+    id: 'knowledge-base',
+    title: 'Your card base is your knowledge base',
+    clips: [
+      // The large card base from chapter 5.
+      { id: 'c6-01', text: 'Your cards add up, and what you know compounds. So what should go into them?', marks: [0.441, 0.698] },
+      // The card base, and a head in profile; the two match.
+      { id: 'c6-02', text: 'Your card base is your knowledge base. It is a picture of what you know.', marks: [0.294, 0.675] },
+      // An endless scroll of web pages pours past; a tiny card base under it.
+      { id: 'c6-03', text: 'The goal is not to copy the internet into it. There is always more.', marks: [0.229, 0.637] },
+      // A page of text boils down to two short cards in plain words.
+      { id: 'c6-04', text: 'The goal is to distil. Take what you learned, and put it in your own words and your own formats.', marks: [0.141, 0.598, 0.762] },
+      // A simple picture of digestion: food in, a smaller, useful part kept.
+      { id: 'c6-05', text: 'Think of it like digestion. You do not have to know a thing fully before you make its card.', marks: [0.137, 0.492, 0.848] },
+      // Two steps: Chew and Digest. Chew lights up first; Digest waits.
+      { id: 'c6-06', text: 'But you do have to chew it first.', marks: [0.438, 0.604] },
+      // Chewing is light and quick: Read it, Talk it over, Your own words light up in turn; the idea in one simple line.
+      { id: 'c6-07', text: 'To chew is to think about it a little: read it, talk it over, put the idea in your own words.', marks: [0.15, 0.39, 0.5, 0.805] },
+      // The chewed idea becomes a card; a calendar runs, and with each review the card settles a little deeper. (Yaseen: chewing makes the card; reviewing digests it.)
+      { id: 'c6-17', text: 'The full digestion comes later. Each time you review the card, you digest it a little more.', marks: [0.071, 0.497, 0.716] },
+      // A shallow glance versus a deep look; the deep one leaves a lasting mark.
+      // SOURCE: Craik & Lockhart 1972, "Levels of processing: A framework for memory research", Journal of Verbal Learning and Verbal Behavior.
+      { id: 'c6-08', text: 'Memory researchers call this depth of processing. It is one of the most cited ideas in the science of memory: the more you think about what something means, the longer you keep it.', marks: [0.157, 0.403, 0.643, 0.868] },
+      // Someone else's deck is copied in; the cards stay grey.
+      { id: 'c6-09', text: "That is why copying someone else's cards makes no sense: it skips the thinking that makes you learn.", marks: [0.103, 0.618] },
+      // A phone note: a quick line written down while someone talks. (rename-note-to-page: keep)
+      { id: 'c6-10', text: 'So when you hear something worth keeping, write it down somewhere.', marks: [0.574] },
+      // A rushed, messy card is made on the spot; it gets a red mark.
+      { id: 'c6-11', text: 'Do not make the card in that moment. Rushed cards are poor cards, they pile up, and review becomes a chore.', marks: [0.336, 0.632, 0.809] },
+      // Later, at a quiet desk: the note becomes a clean card. (rename-note-to-page: keep)
+      { id: 'c6-12', text: 'Make the card later, when you have time to sit and think. Capture first, create later.', marks: [0.22, 0.592, 0.766] },
+      // The new-card line: "New cards · 60 waiting", ten a day; a week of days ticks past.
+      { id: 'c6-13', text: 'With ten new cards a day and sixty waiting, a new card can take about a week to reach you.', marks: [0.05, 0.316, 0.766] },
+      // The card arrives in the Inbox; it looks familiar, like a friend.
+      { id: 'c6-14', text: 'When it comes, it is no surprise. You made it, you chewed on it, and you have been looking forward to it.', marks: [0.425, 0.544, 0.805] },
+      // A mental map of the card base, with the cards in their places.
+      { id: 'c6-15', text: 'You carry a picture of your card base in your head, because you put each card there.', marks: [0.134, 0.698] },
+      // The card base and the head in profile, matching; then a clean card next to a messy one.
+      { id: 'c6-16', text: 'Your card base is your knowledge base: make it yours. Next: how to make a card you will be glad to see again.', marks: [0.182, 0.317, 0.499] },
+    ],
+  },
+  {
+    id: 'good-card',
+    title: 'What makes a good card',
+    clips: [
+      // A chewed idea, and an empty card beside it.
+      { id: 'c7-01', text: 'You have chewed on an idea. Here is how to make its card a good one.', marks: [0.483] },
+      // A long page of text is pasted into one card; the card bulges.
+      { id: 'c7-02', text: 'Many people paste a whole page of text into one card. Then they review it, and nothing sticks.', marks: [0.23, 0.494, 0.774] },
+      // The wall of text, with a question mark over it.
+      { id: 'c7-03', text: 'A wall of text is not a card. It asks you to recall everything at once, so you recall nothing well.', marks: [0.036, 0.479, 0.827] },
+      // The other extreme: a card with one bare line and an empty back.
+      { id: 'c7-20', text: 'A single bare line is the other extreme. You may recall the words, and still not understand the idea.', marks: [0.043, 0.585, 0.744] },
+      // One sentence in the wall lights up.
+      { id: 'c7-04', text: 'So before you make a card, ask one question. What is the short version of this idea?', marks: [0.29, 0.656] },
+      // The lit sentence moves to a card's front and gets a blank; the rest of the page sorts itself into sections on the back.
+      { id: 'c7-21', text: 'That goes on the front, with the key part hidden. The details go on the back, in sections.', marks: [0.287, 0.524, 0.824] },
+      // The real card of chapter 2 in the Inbox: the blank on the front fills in; then the back shows, section by section.
+      { id: 'c7-22', text: 'So a review is quick: you fill in the front. Then the back gives you the details again.', marks: [0.333, 0.621] },
+      // One card alone, with an umbrella drawn over it: "Protein, carbs and fat".
+      { id: 'c7-05', text: 'Now, how cards grow. Start with an umbrella: one card that covers a whole topic.', marks: [0.394, 0.479, 0.845] },
+      // The real card of chapter 2 again: "Protein, carbs and fat", light, three short lines on its back.
+      { id: 'c7-06', text: 'Say, how protein, carbs and fat differ. One light card is enough to start.', marks: [0.193, 0.612] },
+      // Lines about protein pile up on the umbrella card's back until they no longer fit; they lift off into a new card, "Protein".
+      { id: 'c7-07', text: 'As you learn more about protein, it outgrows that card. So protein gets a card of its own.', marks: [0.198, 0.346, 0.655] },
+      // A line joins the two cards, with a pill at each end; the umbrella card keeps one line about protein.
+      { id: 'c7-18', text: 'The two link to each other. The umbrella stays the overview, and protein becomes a branch.', marks: [0.075, 0.325, 0.811] },
+      // More branches: "Carbs", then "Fibre" from it. A small tree, the umbrella at its root. The words "Node: a point where branches meet".
+      { id: 'c7-23', text: 'Over time you get a tree: the umbrella, its branches, and smaller branches from those. Each card is a node, a point where branches meet.', marks: [0.114, 0.346, 0.411, 0.723] },
+      // The tree with only two cards on day one; more appear as a calendar runs.
+      // Yaseen's own wording, from the doc (YAS-2084).
+      { id: 'c7-19', text: 'The tree grows as your understanding grows. So start light, and do not feel like you have to build the whole tree on day one.', marks: [0.064, 0.418, 0.755] },
+      // An old paper flashcard: "What does DNS stand for?" on one side, "Domain Name System" on the other.
+      { id: 'c7-24', text: 'Now, the front itself. Most people think a card is a question on one side, and the answer on the other.', marks: [0.311, 0.583, 0.783] },
+      // The question card stays; beside it, a sentence card: "DNS stands for {{Domain Name System}}." Both get a tick.
+      { id: 'c7-25', text: 'You can ask a question. Or you can just write the idea as a sentence, and hide the key part.', marks: [0.125, 0.424, 0.761] },
+      // The words "cloze deletion" over the blank, in small type; then the app's own words: "hidden word".
+      // SOURCE: Taylor 1953, "Cloze procedure: A new tool for measuring readability", Journalism Quarterly 30 (the origin of the word "cloze").
+      { id: 'c7-26', text: 'Memory scientists call that cloze deletion. In this app, we just call them hidden words.', marks: [0.27, 0.773] },
+      // "DNS stands for" and a blank; the blank fills in: "Domain Name System".
+      { id: 'c7-27', text: '"DNS stands for", then a blank. You jump straight in and fill it. It is faster to make, and faster to review.', marks: [0.28, 0.542, 0.665, 0.822] },
+      // The DNS card grows a first line above it, an example, in the shape of Yaseen's cards:
+      //   "When you type a website's name, {{DNS}} finds the number your computer needs."
+      //   "DNS stands for {{Domain Name System}}."
+      // Its back: the details of DNS, in sections.
+      { id: 'c7-28', text: 'An example on the front helps too. With your agent, one is easy to get.', marks: [0.027, 0.479] },
+      // Card A: "{{DNS}} stands for {{Domain Name System}}." Card B: "DNS stands for {{Domain Name System}}." WAITS: the person picks one.
+      { id: 'c7-08', text: 'Your turn. Which of these two cards is better?', marks: [0.488] },
+      // Card B gets the check; card A is all blanks.
+      { id: 'c7-09', text: 'The second one. The first card hides everything that matters, so there is no clue to recall from.', marks: [0.036, 0.348, 0.702] },
+      // Rule 1 as a title; card B's front shows, the answer hidden.
+      { id: 'c7-10', text: 'So, rule one. Hide the answer, not the clue. The front must still make sense with the blank in it.', marks: [0.075, 0.236, 0.58] },
+      // A report card with ten rows, the ten ways to learn; "Re-reading" and "Highlighting" get the lowest grade.
+      // SOURCE: Dunlosky, Rawson, Marsh, Nathan & Willingham 2013, "Improving students' learning with effective learning techniques", Psychological Science in the Public Interest 14(1): ten techniques; rereading and highlighting rated low utility.
+      { id: 'c7-11', text: 'Reading is not recalling. Researchers graded ten of the most common ways to learn. Re-reading and highlighting got the lowest grade.', marks: [0.125, 0.266, 0.386, 0.652] },
+      // Two rows light up with the top grade: "Testing yourself", "Spacing it out"; a card sits on both.
+      // SOURCE: the same review: practice testing and distributed practice rated high utility.
+      { id: 'c7-29', text: 'Only two got the top grade: testing yourself, and spacing it out over time. A card does both.', marks: [0.156, 0.292, 0.463, 0.735] },
+      // Rule 2; "{{It}} is a system." with a question mark, then "DNS stands for {{Domain Name System}}." with a tick.
+      { id: 'c7-12', text: 'Rule two. Leave enough in view to point to one answer. A blank that could be many things teaches you nothing.', marks: [0.048, 0.336, 0.581] },
+      // Rule 3; a sentence with three scattered blanks, then one blank over a whole phrase.
+      { id: 'c7-13', text: 'Rule three. Hide a phrase that means something, not a few scattered words.', marks: [0.067, 0.306, 0.665] },
+      // The answer shows; the person's own words differ, and still get the check.
+      { id: 'c7-14', text: 'When you check yourself, the same meaning in other words counts. Exact words matter only for quotes and commands.', marks: [0.217, 0.403, 0.534, 0.791] },
+      // A title changes from "From the podcast, part 3" to the name of the idea.
+      { id: 'c7-15', text: 'Name each card after the idea, not after where you found it.', marks: [0.363, 0.598] },
+      // Four small cards: a word, a person, a process, a quote; then the card skill's Formats folder.
+      { id: 'c7-16', text: 'Different things need different formats: a word, a person, a process, a quote. Each has a short page in the card skill.', marks: [0.304, 0.391, 0.477, 0.581, 0.755] },
+      // The small tree of cards; then a terminal window with an agent in it.
+      { id: 'c7-17', text: 'The short version on the front, the details on the back, and a tree that grows with you. Next, a tool that can help, and hurt.', marks: [0.117, 0.302, 0.411, 0.729] },
+    ],
+  },
+  {
+    id: 'ai',
+    title: 'Make cards with your AI, without vibe writing',
+    clips: [
+      // A terminal window with an agent in it, next to the app.
+      { id: 'c8-01', text: 'A good card starts with chewing. Now, a tool that makes cards fast, and why that is a danger.', marks: [0.21, 0.476, 0.886] },
+      // A card file opens as plain text: `kind: card`, the fact, the hidden word in marks, the card line with its ID and title (YAZ-5308); the word "Markdown".
+      { id: 'c8-02', text: 'One fact matters here: each card is a plain Markdown file, plain text with a few light marks.', marks: [0.465, 0.85] },
+      // The agent's window reads a card file.
+      { id: 'c8-03', text: 'An agent is an AI tool that can read and write files on your computer. Any agent like that works here.', marks: [0.308, 0.372, 0.659] },
+      // The app with a line through a cloud: no AI inside, nothing sent.
+      { id: 'c8-04', text: 'The app has no AI inside, and it sends nothing anywhere. You use your own agent.', marks: [0.123, 0.395, 0.679] },
+      // The screen goes quiet; one line: "Do not vibe write your cards."
+      { id: 'c8-05', text: 'Now the warning. Do not vibe write your cards.', marks: [0.377, 0.428, 0.51, 0.622, 0.673, 0.846] },
+      // An agent pours out card after card; nobody reads them.
+      { id: 'c8-06', text: 'Vibe writing means letting an AI pour out cards you never thought through.', marks: [0.475, 0.709] },
+      // The card base floods with grey cards; the Inbox row dims, then goes dark.
+      { id: 'c8-07', text: 'It is the fastest way to ruin your card base, which is your knowledge base, and to make the whole system worthless.', marks: [0.213, 0.516, 0.853] },
+      // Two paths: "Vibe write" leads down; "Chew, then create" leads up.
+      { id: 'c8-08', text: 'If you want this system to fail, vibe write your cards. If you want what you know to compound, do not.', marks: [0.233, 0.775] },
+      // The name "Ryan Holiday" and his line, in quotes.
+      // SOURCE: Ryan Holiday, YouTube video UBdlprawTkA, on taking notes by hand: "The inefficiency is the efficiency." (rename-note-to-page: keep)
+      { id: 'c8-09', text: 'Ryan Holiday puts it this way: "The inefficiency is the efficiency." The thinking is where you learn.', marks: [0.32, 0.691] },
+      // Chewed ideas go to the agent; it drafts the cards in the chat; the person reads each one there.
+      { id: 'c8-10', text: "Start with ideas you’ve already thought through. Ask your agent to draft the cards in chat. Read each one and tell it which ones it can save.", marks: [0.08, 0.44, 0.63] },
+      // A text box with "Use the example" under it. WAITS: the person pastes text or picks the example.
+      { id: 'c8-11', text: "Let's try it. Paste something you have chewed on, or use the example.", marks: [0.274, 0.499, 0.773] },
+      // The prompt with a Copy button; its lines light up: the skill, three cards, Course Cards. WAITS: the person clicks Copy.
+      { id: 'c8-12', text: "Copy the prompt. It asks your agent to read the card skill and show you three drafts in chat.", marks: [0.07, 0.46, 0.7] },
+      // The agent's chat: the paste, a draft, the person's yes. WAITS: the agent writes a card file in Course Cards.
+      { id: 'c8-13', text: "Paste it into your agent. Read the drafts, ask for changes if needed, and say which cards to save. Those are the cards that should appear here.", marks: [0.04, 0.22, 0.55] },
+      // The agent saves only the approved drafts; each new card appears in the list as its file is written.
+      { id: 'c8-20', text: 'Only the cards you approve are saved. They show up here as your agent saves them.', marks: [0.221, 0.392, 0.726] },
+      // The quiet line "No new cards yet. Did you check with your agent?"
+      { id: 'c8-14', text: 'If nothing shows up after a minute, check with your agent.', marks: [0.428, 0.571] },
+      // The word "Handmade"; Read, Think, Yes tick in turn; then "That is chewing". Nothing grades the agent's cards.
+      { id: 'c8-15', text: "Now check the cards that appeared. Make sure they match the drafts you approved.", marks: [0.06, 0.29, 0.59, 0.76] },
+      // Skip, then three ready example cards with "Make these cards".
+      { id: 'c8-16', text: 'No agent? Skip this step. The course shows three example cards, and makes them only if you say so.', marks: [0.161, 0.472, 0.708] },
+      // A person reads a card, rewrites a line, and deletes another card.
+      { id: 'c8-17', text: 'Your agent drafts fast, but you decide. Keep only what you want to recall, in your own words.', marks: [0.343, 0.487, 0.787] },
+      // The card skill's right-click menu: "Copy prompt for your agent".
+      { id: 'c8-18', text: 'To copy the prompt later, right-click the card skill, and choose Copy prompt for your agent.', marks: [0.272, 0.617] },
+      // The loop: you chew, the agent drafts, you decide; then the four step icons: Capture, Create, Review, Improve.
+      { id: 'c8-19', text: "Think it through, review the draft, and give the go-ahead yourself. Next, the three habits that keep your card base alive.", marks: [0.14, 0.3, 0.65] },
+    ],
+  },
+  {
+    id: 'habits',
+    title: 'Four steps: capture, create, review, improve',
+    clips: [
+      // The cards so far; the view steps back from them.
+      { id: 'c9-01', text: "Let's step back and see the whole system." },
+      // Four icons in a row, each on its word: a notepad "Capture", a pen on a card "Create", the Inbox "Review", a rising line "Improve".
+      { id: 'c9-02', text: 'It has four steps: capture, create, review, and improve.', marks: [0.317, 0.461, 0.67, 0.778] },
+      // Capture: a day goes by; small captures land in one place from a phone, a meeting, a walk.
+      { id: 'c9-12', text: 'Capture happens all day, wherever you are. When something is worth keeping, write it down.', marks: [0.164, 0.637, 0.782] },
+      // Three capture places side by side: a phone page, a page of quick lines, a chat channel with pages to self; each one collects the same few lines. "One place" lights up.
+      { id: 'c9-13', text: 'A note on your phone, a brain dump, a chat channel just for you. It does not matter where, as long as you have one place.', marks: [0.019, 0.199, 0.323, 0.845] }, // rename-note-to-page: keep (a phone note is everyday English, not the app's page)
+      // Create: a quiet desk; the capture list on one side, new cards forming on the other.
+      { id: 'c9-14', text: 'Create is when you sit down with your capture list, and turn it into cards.', marks: [0.433, 0.782] },
+      // The agent chat drafts a card from a captured line; the person reads it, and a Yes lets it become a card. The word "Chew".
+      { id: 'c9-15', text: 'This is where you chew. Your agent can do most of the work, and you read and approve each card.', marks: [0.151, 0.325, 0.731] },
+      // The Create icon lights up, "Time set aside"; a quiet desk, the lamp comes on.
+      { id: 'c9-09', text: 'Create is the one you set time aside for. Chewing takes thought, so give it a quiet moment.', marks: [0.567, 0.808] },
+      // The Review icon lights up, "Every day"; a sunrise; the Inbox opens and picks the cards.
+      { id: 'c9-03', text: 'Review is the daily one, here in the app. You open the Inbox, and the app picks the cards.', marks: [0.142, 0.568, 0.775] },
+      // A person with a thought bubble: "I am sure that worked"; a gauge beside it reads the opposite.
+      { id: 'c9-04', text: 'Trust the schedule, even when it feels slow. Your gut is a poor judge of your own memory.', marks: [0.21, 0.52, 0.66] },
+      // Ten figures: nine light up, "Spacing won"; then seven of the ten hold a sign, "I think it lost".
+      // SOURCE: Kornell 2009, "Optimising learning using flashcards: Spacing is more effective than cramming", Applied Cognitive Psychology 23: spacing was more effective for 90% of participants; 72% believed the opposite.
+      { id: 'c9-05', text: 'In one experiment, spacing won for nine people out of ten. Yet seven out of ten walked away sure it had lost.', marks: [0.16, 0.31, 0.57] },
+      // The Science paper again; a highlighted line: everyone predicted "about 50%"; the real bars: 80% and 36%.
+      // SOURCE: Karpicke & Roediger 2008, Science 319: in all four conditions people predicted they would recall about 50% of the pairs; actual recall was about 80% or about a third.
+      { id: 'c9-11', text: 'In the Science study, everyone guessed they would remember about half. Some kept 80 percent. Some kept a third. Nobody saw it coming.', marks: [0.14, 0.42, 0.51, 0.7, 0.82] },
+      // The Improve icon lights up, inside the Inbox: a card with a small fix.
+      { id: 'c9-06', text: 'Improving needs no time of its own. It happens while you review.', marks: [0.539] },
+      // Thought bubbles over a card, "Not clear", "Needs a link"; a short message goes to the agent; the review goes on.
+      { id: 'c9-07', text: "This card is unclear. That one needs a link. Ask your agent to suggest a fix while you keep reviewing. Come back to the suggestion and approve it before the agent edits the card.", marks: [0.16, 0.23, 0.33, 0.65, 0.77] },
+      // A clock face: a short arc for improving.
+      { id: 'c9-08', text: 'Even with a large card base, improving should only take a couple of minutes a day.', marks: [0.147, 0.367, 0.645] },
+      // The four icons with their times; then two cards with a line between them.
+      { id: 'c9-10', text: 'Capture all day. Create with time set aside. Review every day. Improve as you review. Next: the idea that changes how you organise everything.', marks: [0.14, 0.33, 0.477, 0.673] },
+    ],
+  },
+  {
+    id: 'links',
+    title: 'Links: how cards connect',
+    clips: [
+      // The four step icons; then two cards, a thin line drawn between them.
+      { id: 'c10-01', text: 'Quick recap: you capture, create, review and improve. Now, how your cards connect, and why that beats folders.', marks: [0.634, 0.879], dock: 'full' },
+      // A computer's folders: one file goes into one folder, and the folder closes.
+      { id: 'c10-02', text: 'Most of us keep things in files and folders. Computers taught us: one thing, one place.', marks: [0.24, 0.7], dock: 'full' },
+      // A new card hovers over three folders; a question mark: "Where does this go?"
+      { id: 'c10-03', text: 'So when you make a card, you ask: where does this go?', marks: [0.22, 0.61], dock: 'full' },
+      // An old office: a filing cabinet; one sheet of paper goes into one drawer, and the drawer shuts. Then the same picture as computer folders.
+      { id: 'c10-30', text: 'Computers copied the paper office, where a sheet of paper sits in one drawer.', marks: [0.14, 0.265, 0.53, 0.811], dock: 'full' },
+      // The drawer fades; a head in profile with ideas as dots and lines; then the app, with cards loose and linked, no folder required. (Yaseen: a "but" before the app's choice.)
+      { id: 'c10-31', text: 'But that is not how your brain works. And the app does not make you work that way.', marks: [0.235, 0.542, 0.77], dock: 'full' },
+      // The folders step aside: all the cards in one open box, or in folders. "Not required", then "Your choice".
+      { id: 'c10-04', text: 'That is why the app does not require folders. It leaves the choice to you.', marks: [0.492, 0.723], dock: 'full' },
+      // The advice as a card of its own: "Few folders. Many links." A pile of nested folders fades; a few cards with lines between them stay.
+      { id: 'c10-28', text: 'But with great power comes great responsibility. Our advice: keep folders few, and rely on links.', marks: [0.1, 0.657, 0.921], dock: 'full' },
+      // One folder is made, slowly and on purpose; the rest of the cards stay loose, joined by links.
+      { id: 'c10-29', text: 'Make a folder only when you truly need one.', marks: [0.204, 0.536, 0.663], dock: 'full' },
+      // A line goes from one card to another; the words "Link: points to another card"; the protein card of chapter 7 and its line back to the umbrella.
+      { id: 'c10-05', text: 'Links hold them together. You have seen one: the protein card, linked to its umbrella.', marks: [0.16, 0.57, 0.84], dock: 'full' },
+      // A head in profile; inside it, ideas as dots with lines between them, not boxes.
+      { id: 'c10-06', text: 'Your mind works by association: one idea calls up another.', marks: [0.147, 0.335, 0.555, 0.727], dock: 'full' },
+      // One dot lights up; the light spreads along its lines to the dots linked to it.
+      // SOURCE: Collins & Loftus 1975, "A spreading-activation theory of semantic processing", Psychological Review 82(6): memory as a network of linked concepts; activation spreads from one to the ones linked to it (priming).
+      { id: 'c10-07', text: 'Researchers describe memory as a web of linked ideas. Think of one, and the ones linked to it come to mind more easily.', marks: [0.14, 0.49, 0.62], dock: 'full' },
+      // A new dot joins the web where it fits, next to dots already there; it stays lit.
+      // SOURCE: van Kesteren, Ruiter, Fernández & Henson 2012, "How schema and novelty augment memory formation", Trends in Neurosciences 35(4); Brod, Werkle-Bergner & Shing 2013, "The influence of prior knowledge on memory", Frontiers in Behavioral Neuroscience 7.
+      { id: 'c10-08', text: 'And researchers found that new facts are usually remembered better when they fit with something you already know.', marks: [0.22, 0.65], dock: 'full' },
+      // The food tree of chapter 7 on the left; a second small tree on the right, "Exercise". A dotted line wants to cross between them.
+      { id: 'c10-23', text: 'A tree has branches. But ideas also connect across trees, and a folder cannot show that.', marks: [0.29, 0.48, 0.75], dock: 'full' },
+      // A "What if" frame: the card "Protein" goes into a folder "Food".
+      { id: 'c10-09', text: 'An easy example. Say you did sort your cards into folders. Your protein card would sit in Food.', marks: [0.25, 0.698, 0.831, 0.886], dock: 'full' },
+      // Still "What if": a card "How muscle grows" goes into a folder "Exercise".
+      { id: 'c10-10', text: 'And your card on how muscle grows would sit in Exercise.', marks: [0.277, 0.673], dock: 'full' },
+      // An arm lifts a weight; small protein blocks move into the muscle.
+      { id: 'c10-11', text: 'They belong together: your body builds muscle out of protein.', marks: [0.44, 0.59], dock: 'full' },
+      // The two folders stay shut, each card inside its own; then a line runs from the protein card straight to the muscle card.
+      { id: 'c10-12', text: 'A card can live in only one folder, so the folders keep them apart. A link joins them.', marks: [0.235, 0.568, 0.772], dock: 'full' },
+      // Two questions side by side: "Folders: where does this go?" and "Links: what does this connect to?"
+      { id: 'c10-13', text: 'Folders ask: where does this go? Links ask: what does this connect to?', marks: [0.22, 0.47, 0.67], dock: 'full' },
+      // A card links to a card file, a card in a page, and a page.
+      // APP: docs/CONTRACTS.md "Links to a card" (YAZ-5030); client/src/links/completion.ts (`cardLinkCandidates`: cards in files and in pages, after the pages).
+      { id: 'c10-14', text: 'A card can link to any card, wherever it lives, and to any page.', marks: [0.23, 0.4, 0.72], dock: 'full' },
+      // The agent's window: "These two cards connect: Protein and How muscle grows. Add the link?"
+      { id: 'c10-26', text: "Ask your agent to suggest connections in chat and explain why the cards belong together.", marks: [0.19, 0.42], dock: 'full' },
+      // The agent shows the link and its reason in the chat; the person reads it and says yes; only then does the card change. The word "Handmade".
+      { id: 'c10-27', text: "Read each suggestion. If the connection makes sense to you, tell the agent to add that link.", marks: [0.03, 0.12, 0.36, 0.62], dock: 'full' },
+      // After the pill, a few grey words: "muscle is built from protein". The pill and its reason sit on one line.
+      { id: 'c10-24', text: 'Beside each link go a few words on why the two connect. The reason is worth as much as the link.', marks: [0.11, 0.34, 0.64], dock: 'full' },
+      // The protein card opens; Edit card.
+      // APP: client/src/editor/card/cardEditorFeatures.ts (pills and the `[[` picker are on in Edit card), client/src/editor/wikilink/wikilinkPicker.ts.
+      { id: 'c10-15', text: 'To link by hand, open one of your cards, and click Edit card.', marks: [0.3, 0.732], dock: 'corner', live: [{ target: 'sidebar-course-cards', mark: 0, say: 'Open the Course Cards folder, and click one of your cards.', done: { event: 'card-file-open' } }, { target: 'card-edit', mark: 1, say: 'Click Edit card, or press E.', done: { event: 'card-edit-open' } }] },
+      // The caret at the end of a line; "[[" and "mus" are typed; the list opens.
+      { id: 'c10-32', text: "Type two square brackets, then a few letters of the other card's title.", marks: [0.127, 0.476], dock: 'corner', live: [{ target: 'card-editor', mark: 0, say: "At the end of a line, type two square brackets. Then a few letters of another card's title.", done: { event: 'link-picker-open' }, example: { text: '[[', lineEnd: true } }] },
+      // The list: pages, then cards with the card icon; the card row is clicked.
+      // APP: client/src/links/completion.ts (card rows have the card icon and insert `[[ID]]`; a card file is one row, YAZ-5134).
+      { id: 'c10-16', text: 'A list shows what matches. Click the one with the card icon.', marks: [0.07, 0.5, 0.7], dock: 'corner', live: [{ target: 'link-picker', mark: 1, say: 'Click the row with the card icon.', done: { event: 'card-link-added' } }] },
+      // Escape; `[[DEMO-12]]` turns into a pill: the card icon, "How muscle grows", and the ID small and grey.
+      // APP: docs/CONTRACTS.md "Links to a card": the pill shows the title, then the ID small and grey, with the card icon (`wikilink--card`).
+      { id: 'c10-17', text: "Press Escape to save. The link turns into a pill: the other card's title, with its ID small beside it.", marks: [0.039, 0.44, 0.617, 0.744], dock: 'corner', live: [{ target: 'card-done', mark: 0, say: 'Press Escape, or click Done. The link is now a pill.', done: { event: 'card-edit-done' } }] },
+      // A click on the pill; the muscle card opens in the card window; under it, "Linked mentions (1)" lists the protein card.
+      // APP: client/src/editor/createCrepe.ts (a card pill's plain click opens the card window), client/src/review/cardPane.tsx ("Linked mentions (n)"), shared/cardLinks.ts (`cardBacklinks`), shared/fences.ts (a card's text counts).
+      { id: 'c10-18', text: 'Click the pill, and that card opens. Under it, Linked mentions lists what links to it.', marks: [0.07, 0.27, 0.55], dock: 'corner', live: [{ target: 'card-link-pill', mark: 0, say: 'Click the pill. The other card opens, and Linked mentions lists your first card.', done: 'click' }] },
+      // One card with many lines coming in to it, "Linked mentions (12)"; it glows as a hub, like the dot of chapter 2.
+      { id: 'c10-25', text: 'Some cards end up with many links pointing to them. Those are your hubs: the ideas the rest leans on.', marks: [0.23, 0.55], dock: 'full' },
+      // In Edit card, the caret after the pill; Backspace; the pill goes.
+      // APP: client/src/editor/wikilink/idLinkCaret.ts (Backspace removes the whole link), client/src/editor/linkMenu.ts ("Remove link" on a right-click).
+      { id: 'c10-19', text: 'To remove a link, edit the card, and delete the pill like a word.', marks: [0.26, 0.53, 0.7], dock: 'full' },
+      // A loose pile of cards; lines join them one by one, until it is one connected web.
+      { id: 'c10-20', text: 'Your card base is your knowledge base. Links make it a base, not a pile.', marks: [0.52, 0.72, 0.83], dock: 'full' },
+      // The protein card and the muscle card with their line; then the garden from chapter 9.
+      { id: 'c10-22', text: 'Ask what a card connects to, not where it goes. Next: how to keep your tree alive.', marks: [0.31, 0.6], dock: 'full' },
+    ],
+  },
+  {
+    id: 'care',
+    title: 'Be a gardener',
+    clips: [
+      // The trees of cards with their links; then the Inbox with a card, and the Improve icon from chapter 9.
+      { id: 'c11-01', text: 'Your cards form trees, joined by links. Now, how to improve them as you review.', marks: [0.331, 0.562], dock: 'full' },
+      // A garden: a gardener clears weeds and prunes a branch; the garden fills out.
+      { id: 'c11-02', text: 'Think of a gardener. A garden does well when someone clears it and prunes it.', marks: [0.33, 0.65, 0.8], dock: 'full' },
+      // A card is reworded; a small glow over it.
+      { id: 'c11-03', text: 'That is not a chore. Each fix makes you think about the idea again, and that is learning too.', marks: [0.26, 0.82], dock: 'full' },
+      // A card that keeps turning red; a magnifying glass over its wording.
+      { id: 'c11-04', text: 'A card you keep missing is a sign to look at it. Often it is unclear, or it asks too much at once.', marks: [0.13, 0.31, 0.55, 0.71], dock: 'full' },
+      // A short message to the agent: "Make this card's clue clearer"; the card file changes.
+      { id: 'c11-06', text: "If you know exactly what you want changed, tell your agent to make that edit. If you want its help deciding, ask it to show you the proposed wording first.", marks: [0.25, 0.69, 0.88], dock: 'full' },
+      // Edit card on a card; then E in the Inbox.
+      { id: 'c11-05', text: 'Or do it yourself: click Edit card, or press E in the Inbox. Press Escape when you are done.', marks: [0.3, 0.53, 0.79], dock: 'side', live: [{ target: 'card-edit', mark: 0 }] },
+      // A clock; an agent's window wakes on its own each morning and reads the card base. Not the app: the person's own agent tool.
+      { id: 'c11-15', text: 'Some agent tools can run by themselves at set times: a scheduled agent.', marks: [0.25, 0.48, 0.72], dock: 'full' },
+      // The agent writes a short list: "Make this clue clearer", "Link Protein to How muscle grows". Nothing in the card base changes.
+      { id: 'c11-16', text: "Set it up to read your card base and leave you a list of suggested fixes and links.", marks: [0.17, 0.49, 0.77], dock: 'full' },
+      // The person reads the list, approves one change, and skips another. Only the approved one lands.
+      { id: 'c11-17', text: "Make this a rule for yourself. An agent should never make changes to your card base on its own. Tell it to wait, then read each suggestion and decide what it can change.", marks: [0.77, 0.84, 0.92], dock: 'full' },
+      // A branch is cut; the plant looks better for it.
+      { id: 'c11-07', text: 'Some cards no longer earn their place. Pruning is part of it.', marks: [0.62], dock: 'full' },
+      // The card's ⋯ menu, "Archive card"; the card turns muted.
+      { id: 'c11-08', text: 'To stop reviewing a card, open its menu and choose Archive card. It keeps its history.', marks: [0.27, 0.52, 0.74], dock: 'corner', live: [{ target: 'card-menu', mark: 0, say: 'Open the menu of one of your Course Cards.', done: 'click' }, { target: 'card-menu-archive', mark: 1, say: 'Choose Archive card.', done: 'click' }, { target: 'card-menu-unarchive', say: "Open the card's menu again. Choose Unarchive card to bring it back.", done: 'click' }] },
+      // A card's back has grown long on one part; that part lifts off into its own card, and a line joins the two.
+      { id: 'c11-20', text: 'Growing is improving too. When one part of a card keeps growing, give it its own card, and link the two.', marks: [0.474, 0.671, 0.8], dock: 'full' },
+      // Two cards side by side; a line is drawn between them.
+      { id: 'c11-18', text: 'Links need care too. When you notice two cards belong together, link them.', marks: [0.458, 0.808], dock: 'full' },
+      // A link between two cards that no longer fit is cut, as a branch is.
+      { id: 'c11-19', text: 'When a link no longer helps, delete it like a word.', marks: [0.45, 0.68], dock: 'full' },
+      // Reviews under a card opens: each answer with its bin; then ⋯ › Reset history, and the card shows New.
+      // APP: client/src/review/cardParts.tsx (the table's delete, on the card tab and the card window; not in the Inbox), client/src/review/cardPane.tsx ("Reset history").
+      { id: 'c11-11', text: 'Each card keeps its review history. You can delete one wrong answer, or choose Reset history to start fresh.', marks: [0.16, 0.43, 0.67, 0.83], dock: 'full' },
+      // The All cards menu: the row "New cards 10 / 48"; a click on the count turns it into "Add [10] more new cards"; Enter.
+      // APP: client/src/review/CardInboxBar.tsx, client/src/review/AddMoreField.tsx (YAZ-5042 round 2). The menu has no plain "Add" button.
+      { id: 'c11-12', text: 'Want more new cards today? Click their count in the All cards menu, and press Enter.', marks: [0.42, 0.79], dock: 'full' },
+      // The garden, full and tidy; then a calendar page for the week ahead.
+      { id: 'c11-14', text: 'Grow a branch here, prune one there, and your card base stays true. Next: your first week.', marks: [0.05, 0.2, 0.52, 0.72], dock: 'full' },
+    ],
+  },
+  {
+    id: 'where-things-are',
+    title: 'Where things are, and your first week',
+    clips: [
+      // The four step icons, then the real sidebar.
+      { id: 'c12-01', text: 'To finish: where things are, and your first week.', marks: [0.29, 0.71], dock: 'full' },
+      // The real sidebar; the card skill's row at the bottom lights up.
+      { id: 'c12-02', text: 'The card skill is at the bottom of the sidebar. Click it to open it.', marks: [0.287, 0.642], dock: 'corner', live: [{ target: 'card-skill-row', mark: 0, say: 'This is the card skill. Click it to open it.', done: 'click' }] },
+      // The card skill opens: Start here, the rules, Formats, Course transcript.
+      { id: 'c12-03', text: 'It is a short guide for you and your agent: the rules, the formats with examples, and the words of this course.', marks: [0.38, 0.54, 0.76], dock: 'side' },
+      // The lock on the skill; right-click › "Duplicate into …".
+      { id: 'c12-04', text: 'It is read only. To change it, duplicate it into your vault, and make it your own.', marks: [0.07, 0.44, 0.77], dock: 'side' },
+      // The duplicate in the vault; an update arrow on the built-in skill.
+      { id: 'c12-05', text: 'Your copy syncs with your vault. The built-in skill still gets each update of the app.', marks: [0.12, 0.44, 0.79], dock: 'side' },
+      // A terminal: `yaseendocs card guide` prints the skill's first page.
+      { id: 'c12-06', text: 'Your agent can find it too. One command prints its first page.', marks: [0.47, 0.63], dock: 'side' },
+      // Settings › Cards: "Card skill in the sidebar" and "Open the course".
+      { id: 'c12-07', text: 'Press Command comma to open Settings, and click Cards. One switch there shows or hides the card skill. Open the course brings you back here.', marks: [0.031, 0.292, 0.46, 0.783], dock: 'corner', live: [{ target: 'settings-review', mark: 0, say: 'Now press Command comma to open Settings, and click Cards.', done: 'click' }, { target: 'settings-card-skill', mark: 2, say: 'This switch shows or hides the card skill in the sidebar.' }, { target: 'settings-course', mark: 3, say: 'And this button brings you back to the course, at any time.' }] },
+      // Settings › Cards opens in full; the section title glows. (YAZ-5331, Yaseen's words.)
+      { id: 'c12-17', text: 'Settings has a whole section for cards. With new updates, we are adding different settings, but they will always be shown here.', marks: [0.163, 0.274, 0.437, 0.893], dock: 'side', live: [{ target: 'settings-cards-section', mark: 0, say: 'Look around. Hidden words, card width, tables and new cards a day are all here.' }] },
+      // The Card look group lights up row by row: Shown hidden words, Card width, Card tables.
+      { id: 'c12-18', text: 'You can change how hidden words look, how wide a card is, and how tables show on a card.', marks: [0.162, 0.412, 0.674], dock: 'side' },
+      // The Daily limits group lights up: New cards a day, New cards first. The folder choice is shown as an idea, not as a row a person could look for: it is not in the app yet (Yaseen keeps it on purpose, YAZ-5331).
+      { id: 'c12-19', text: 'You can set how many new cards come each day, and whether the oldest or the newest come first or select which folder you want your new cards to be selected from.', marks: [0.112, 0.357, 0.439, 0.711], dock: 'side' },
+      // Each row shows a small "Recommended" mark beside its default.
+      { id: 'c12-20', text: 'Each one starts at what we recommend. If you know what you want, change it. If not, keep the defaults.', marks: [0.2, 0.546, 0.861], dock: 'side' },
+      // The Scheduling group, with a quiet amber warning edge.
+      { id: 'c12-21', text: 'One warning: be careful with the scheduling settings. They decide when each card comes back.', marks: [0.046, 0.321, 0.784], dock: 'side' },
+      // A week of seven days appears.
+      { id: 'c12-08', text: 'Now, your first week.', marks: [0.33], dock: 'full' },
+      // Day 1: one card, made from something the person already understands.
+      { id: 'c12-09', text: 'Today, make one card, from something you already understand well.', marks: [0.28, 0.67], dock: 'full' },
+      // Each day ticks: the Inbox row lights up.
+      { id: 'c12-10', text: 'Each day, open the Inbox, and answer what is due.', marks: [0.21, 0.56], dock: 'full' },
+      // A capture note fills during the week; on one day, a desk and a few new cards. (rename-note-to-page: keep)
+      { id: 'c12-11', text: 'Keep one place to capture things as you hear them. Once this week, set time aside to create a few cards from it.', marks: [0.041, 0.588, 0.753], dock: 'full' },
+      // A new card; a line from it to a card already there.
+      { id: 'c12-16', text: 'For each new card, ask what it connects to, and link it.', marks: [0.36, 0.74], dock: 'full' },
+      // In the Inbox, a small fix to a card.
+      { id: 'c12-12', text: 'As you review, fix what is unclear. That is improving, and it is how your card base stays yours.', marks: [0.156, 0.468, 0.801], dock: 'full' },
+      // A small seedling in fresh soil.
+      // A common saying, not a study. Ryan Holiday uses it in video UBdlprawTkA; the name is left out, because the saying is not his.
+      { id: 'c12-13', text: 'The best time to start was years ago. The second best time is now.', marks: [0.37, 0.53, 0.83], dock: 'full' },
+      // One new card, then a calendar page turns to tomorrow and the Inbox lights up.
+      { id: 'c12-14', text: "That's the whole course. Make one card today. Open the Inbox tomorrow.", marks: [0.32, 0.65, 0.73], dock: 'full' },
+      // The course's end screen: cards made, and when they come back.
+      { id: 'c12-15', text: 'Your card base is your knowledge base. Build it one card at a time, and what you learn becomes part of who you are.', marks: [0.19, 0.34, 0.55, 0.74], dock: 'full' },
+    ],
+  },
+]

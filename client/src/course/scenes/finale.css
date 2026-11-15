@@ -1,0 +1,72 @@
+/*
+ * The course's end screen (YAZ-5121, `finale.tsx`). The kit's look is in `kit/kit.css`.
+ */
+/* THE END SCREEN (also under "That's the whole course.") */
+.later-end {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(6px, 1.8cqmin, 14px);
+  box-sizing: border-box;
+  width: min(92%, 34em);
+  margin: 0 auto;
+  padding: clamp(10px, 3cqmin, 22px);
+  text-align: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+.later-end p {
+  margin: 0;
+}
+.later-end__head,
+.later-end__none {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.later-end__list {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+.later-end__card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.later-end__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.later-end__when {
+  flex: none;
+  font-size: 12px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.later-end__more {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.later-end__last {
+  max-width: 30ch;
+  font-size: clamp(15px, 2.4vmin, 20px);
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.course-scene--end .later-end {
+  max-height: 62%;
+  overflow-y: auto;
+}

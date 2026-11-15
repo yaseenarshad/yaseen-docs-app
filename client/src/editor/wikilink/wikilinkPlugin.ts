@@ -65,6 +65,7 @@ import { boardEmbedName, boardEmbedTarget, isIdTarget } from '../drawing/boardEm
 import { headKey, headSpan, pathInfo, pillIconPlace, pillParts, pillsNeedInfo, tailKey, tailSpan, type PillMeta } from './linkPillLook'
 import { viewOnlyLinkTarget, type ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import './wikilink.css'
+import { tourEvent } from '../../course/tourBus'
 
 export const WIKILINK_CLASS = 'wikilink'
 export const WIKILINK_UNRESOLVED_CLASS = 'wikilink--unresolved'
@@ -415,6 +416,8 @@ export function cardPillSpan(title: string, id: string): HTMLElement {
   const span = document.createElement('span')
   span.className = `${WIKILINK_CLASS} ${WIKILINK_CARD_CLASS}`
   span.spellcheck = false
+  // A target of the course's guided tour (YAZ-5123): a click on a card pill.
+  span.dataset.tour = 'card-link-pill'
   const idSpan = document.createElement('span')
   idSpan.className = WIKILINK_CARD_ID_CLASS
   idSpan.textContent = id

@@ -1,0 +1,879 @@
+/**
+ * CHAPTER 5, "Why it is worth it" (YAZ-5121): the lift. Compounding, like interest; five cards a day; one card's path,
+ * where the time line stretches as the gaps grow (a few days, about 2 weeks, about 6 weeks, about 4 months: the gaps the
+ * voice says in c5-13, the app's own scheduler with its default settings, see `script.ts` c5-13), until the card settles into the outline of a person as a steady
+ * light; Niklas Luhmann's slips and books; Ryan Holiday's index cards; the meeting, the language, the subject.
+ * Cues land on the real voice's words (`marks` in `script.ts`).
+ */
+import type { CSSProperties } from 'react'
+import type { SceneProps } from '../scene'
+import { COURSE } from '../script'
+import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import { MANY_TITLES } from './cards'
+import {
+  BigNumber,
+  Counter,
+  Layer,
+  MiniCard,
+  Head,
+  IndexCard,
+  Stage,
+  Tally,
+  Tree,
+  Words,
+  between,
+  clamp,
+  cue,
+  ease,
+  lerp,
+  moved,
+  pop,
+  rise,
+  showFor,
+  since,
+  useBeat,
+  type Beat,
+  type TreeEdge,
+  type TreeNode,
+} from './kit'
+import type { ChapterScenes } from './registry'
+import './compound.css'
+
+/** c5-15: the other things you know, small lights around the new one (places in the head's mind). */
+const OTHERS: readonly (readonly [number, number])[] = [
+  [0.15, 0.2],
+  [0.82, 0.3],
+  [0.25, 0.75],
+  [0.7, 0.8],
+  [0.45, 0.12],
+  [0.9, 0.62],
+  [0.08, 0.5],
+  [0.6, 0.95],
+]
+
+/** c5-01: the four chapters so far, each with its tick; then this one. */
+function SoFar(props: SceneProps) {
+  const b = useBeat(props)
+  const ticks = [0.02, cue(b, 0, 0.069), cue(b, 1, 0.201), cue(b, 2, 0.318)]
+  const why = cue(b, 3, 0.733)
+  return (
+    <Stage beat={b} label="Four chapters done: why, make, review, place. Now: why it is worth it">
+      <Layer>
+        <ol className="kit-chapters kit-sofar">
+          {COURSE.slice(0, 5).map((ch, i) => {
+            const tick = i < 4 ? since(b, ticks[i], 0.4) : 0
+            const now = i === 4 ? since(b, why - 0.04, 0.5) : 0
+            return (
+              <li key={ch.id} style={{ ...rise(b, since(b, i * 0.03, 0.4), 6), background: now > 0 ? `color-mix(in srgb, var(--accent-soft) ${(now * 100).toFixed(0)}%, transparent)` : undefined, opacity: i === 4 ? clamp(0.35 + now) : 1 }}>
+                <b>{i + 1}</b>
+                <span>{ch.title}</span>
+                <span className="kit-sofar__tick" style={pop(b, tick, 0.4)}>
+                  ✓
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** c5-02: it compounds: each year's bar is last year's, plus what grew on it, like interest. */
+function Interest(props: SceneProps) {
+  const b = useBeat(props)
+  const start = cue(b, 0, 0.218)
+  const grow = cue(b, 1, 0.621)
+  const interest = cue(b, 2, 0.833)
+  const n = 10
+  const values = Array.from({ length: n }, (_, k) => Math.pow(1.32, k))
+  const max = values[n - 1]
+  const W = 520
+  const H = 220
+  const bw = W / n - 10
+  return (
+    <Stage beat={b} label="To compound is to grow on itself, like interest: each bar is the last one, plus what grew on it">
+      <Layer style={{ paddingTop: '6%' }}>
+        <svg className="kit-interest" viewBox={`-10 -30 ${W + 20} ${H + 60}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          <line className="kit-ax" x1={0} y1={H} x2={W} y2={H} opacity={since(b, 0.05, 0.5)} />
+          {values.map((v, k) => {
+            const p = since(b, lerp(start, grow + 0.08, k / (n - 1)), 0.5)
+            const h = (v / max) * H * moved(b, p, ease.out)
+            const base = k === 0 ? 0 : (values[k - 1] / max) * H * moved(b, p, ease.out)
+            const x = k * (W / n) + 5
+            const glow = showFor(since(b, interest, 0.4), 0) * (k === n - 1 ? 1 : 0)
+            return (
+              <g key={k} opacity={clamp(p * 3)}>
+                <rect className="kit-interest__base" x={x} y={H - base} width={bw} height={base} rx={3} />
+                <rect className="kit-interest__grow" x={x} y={H - h} width={bw} height={Math.max(0, h - base)} rx={3} style={glow > 0 ? { filter: `drop-shadow(0 0 ${(6 * glow).toFixed(1)}px var(--accent))` } : undefined} />
+              </g>
+            )
+          })}
+        </svg>
+      </Layer>
+      <Layer place="top" style={{ paddingTop: '4%' }}>
+        <div className="kit-interest__key" style={{ opacity: since(b, start, 0.5) }}>
+          <span>
+            <i className="kit-interest__swatch" /> What you had
+          </span>
+          <span style={{ opacity: since(b, grow - 0.1, 0.5) }}>
+            <i className="kit-interest__swatch kit-interest__swatch--grow" /> What grew on it
+          </span>
+        </div>
+      </Layer>
+      <Layer place="bottom">
+        <span className="kit-chip" style={pop(b, since(b, interest, 0.5))}>
+          Like interest
+        </span>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** c5-03: one card; the next one hooks onto it; then more. */
+const HOOK_NODES: TreeNode[] = [
+  { id: 'a', x: 150, y: 170, label: 'Protein', kind: 'branch' },
+  { id: 'b', x: 300, y: 110, label: 'Calories', kind: 'branch' },
+  { id: 'c', x: 450, y: 170, label: 'Food labels', kind: 'branch' },
+  { id: 'd', x: 300, y: 250, label: 'Energy', kind: 'branch' },
+]
+const HOOK_EDGES: TreeEdge[] = [
+  { from: 'a', to: 'b', kind: 'branch' },
+  { from: 'b', to: 'c', kind: 'branch' },
+  { from: 'a', to: 'd', kind: 'branch' },
+  { from: 'd', to: 'c', kind: 'link' },
+]
+
+function Hooks(props: SceneProps) {
+  const b = useBeat(props)
+  const next = cue(b, 0, 0.421)
+  const hold = cue(b, 1, 0.679)
+  return (
+    <Stage beat={b} label="Each thing you keep gives the next thing something to hold on to">
+      <Layer>
+        <Tree
+          beat={b}
+          nodes={HOOK_NODES}
+          edges={HOOK_EDGES}
+          show={{
+            a: since(b, 0, 0.6),
+            b: since(b, next - 0.04, 0.5),
+            'a>b': since(b, hold - 0.06, 0.6),
+            c: since(b, hold + 0.1, 0.5),
+            'b>c': since(b, hold + 0.14, 0.5),
+            d: since(b, hold + 0.18, 0.5),
+            'a>d': since(b, hold + 0.2, 0.5),
+            'd>c': since(b, hold + 0.26, 0.5),
+          }}
+        />
+      </Layer>
+    </Stage>
+  )
+}
+
+/** c5-04: five cards a day; the days of a year fill in; 1,825. */
+function FiveADay(props: SceneProps) {
+  const b = useBeat(props)
+  const five = cue(b, 0, 0.112)
+  const year = cue(b, 1, 0.346)
+  const total = cue(b, 2, 0.534)
+  const days = between(b, year, total + 0.05)
+  const big = since(b, total, 1.2)
+  return (
+    <Stage beat={b} label="Five cards a day: in a year, 1,825 ideas and topics you still know">
+      <Layer place="top" style={{ paddingTop: '5%' }}>
+        <div className="kit-five" style={{ opacity: 1 - 0.5 * since(b, total, 0.5) }}>
+          {MANY_TITLES.slice(0, 5).map((title, i) => (
+            <MiniCard key={title} title={title} style={pop(b, since(b, five - 0.03 + i * 0.03, 0.4), 0.6)} />
+          ))}
+          <Words size="label" style={{ opacity: since(b, five + 0.1, 0.4) }}>
+            a day
+          </Words>
+        </div>
+      </Layer>
+      <Layer style={{ paddingTop: '10%', opacity: 1 - 0.75 * since(b, total, 0.6) }}>
+        <div className="kit-five__year">
+          <Tally beat={b} count={365} fill={days} columns={37} />
+          <Words size="page" style={{ opacity: since(b, year, 0.4) }}>
+            One year: <Counter beat={b} p={days} to={365} /> days
+          </Words>
+        </div>
+      </Layer>
+      <Layer style={{ paddingTop: '10%' }}>
+        <BigNumber beat={b} p={big} value={1825} label="ideas and topics you still know" />
+      </Layer>
+    </Stage>
+  )
+}
+
+/** c5-05: the pile of cards grows tall; the day's review stays small. */
+function Pile(props: SceneProps) {
+  const b = useBeat(props)
+  const daily = cue(b, 0, 0.469)
+  const grows = cue(b, 1, 0.773)
+  const months = between(b, 0.04, 0.92)
+  const month = Math.max(1, Math.ceil(months * 12))
+  const pile = Math.round(lerp(2, 36, months))
+  const today = [4, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6][month - 1]
+  const lineAt = (i: number): CSSProperties => ({ bottom: `${(i * 2.4).toFixed(2)}%` })
+  return (
+    <Stage beat={b} label="Known cards come back less often, so the daily review stays small as the pile grows">
+      <Layer>
+        <div className="kit-pile">
+          <div className="kit-pile__col" style={{ boxShadow: `0 0 0 ${(2.5 * showFor(since(b, grows, 0.4), 0)).toFixed(2)}px var(--accent-soft)` }}>
+            <div className="kit-pile__stack">
+              {Array.from({ length: pile }, (_, i) => (
+                <i key={i} style={lineAt(i)} />
+              ))}
+            </div>
+            <Words size="label">All your cards</Words>
+          </div>
+          <div className="kit-pile__col kit-pile__col--today" style={{ boxShadow: `0 0 0 ${(2.5 * showFor(since(b, daily, 0.4), since(b, grows, 0.4))).toFixed(2)}px var(--accent)` }}>
+            <div className="kit-pile__stack">
+              {Array.from({ length: today }, (_, i) => (
+                <i key={i} style={lineAt(i)} />
+              ))}
+            </div>
+            <Words size="label">Today’s review</Words>
+          </div>
+        </div>
+        <Words size="kicker">Month {month}</Words>
+      </Layer>
+    </Stage>
+  )
+}
+
+/**
+ * One card's path: the days it comes back on when it is remembered each time (the voice's gaps, `script.ts` c5-13): the
+ * app's default gaps of about 4, 14, 45 and 135 days. The last review lands about two months in (day 63); the next gap
+ * ends about six and a half months in (day 198).
+ */
+const REVIEW_DAYS = [0, 4, 18, 63, 198]
+const GAPS = ['a few days', 'about 2 weeks', 'about 6 weeks', 'about 4 months']
+/** The days the line shows while each hop is drawn: it stretches as the gaps grow. */
+const SPANS = [6, 22, 75, 225]
+const TICKS: readonly [number, string][] = [
+  [7, '1 week'],
+  [30, '1 month'],
+  [61, '2 months'],
+  [182, '6 months'],
+  [365, '1 year'],
+]
+const AX = { l: 40, r: 560, y: 200 }
+
+/** A point on a hop's arc at `t` (a quadratic curve from day `a` to day `c`, `h` high). */
+function arcAt(xa: number, xc: number, h: number, t: number): [number, number] {
+  const xm = (xa + xc) / 2
+  // The control point is twice as high as the arc's top.
+  const ym = AX.y - h * 2
+  const u = 1 - t
+  return [u * u * xa + 2 * u * t * xm + t * t * xc, u * u * AX.y + 2 * u * t * ym + t * t * AX.y]
+}
+
+/** The line of one card's path, at a moment: each hop's draw (0..1), the span in days, what is lit. */
+function Path({ beat, draws, span, here = 0, away = 0, opacity = 1 }: { beat: Beat; draws: readonly number[]; span: number; here?: number; away?: number; opacity?: number }) {
+  const x = (day: number): number => AX.l + ((AX.r - AX.l) * day) / span
+  let cardAt: [number, number] = [x(0), AX.y]
+  const hops = draws.map((d, i) => {
+    const xa = x(REVIEW_DAYS[i])
+    const xc = x(REVIEW_DAYS[i + 1])
+    const h = Math.min(120, Math.max(14, (xc - xa) * 0.42))
+    const q = beat.reduced ? (d > 0 ? 1 : 0) : ease.inOut(clamp(d))
+    if (d > 0) cardAt = arcAt(xa, xc, h, q)
+    const labelOpacity = clamp(d * 2 - 0.6) * clamp((xc - xa - 26) / 40)
+    const last = i === draws.length - 1
+    return (
+      <g key={i}>
+        <path className={`kit-path__arc${last && away > 0 ? ' is-away' : ''}`} d={`M${xa.toFixed(2)} ${AX.y} Q${((xa + xc) / 2).toFixed(2)} ${(AX.y - h * 2).toFixed(2)} ${xc.toFixed(2)} ${AX.y}`} pathLength={1} strokeDasharray="1 1" strokeDashoffset={1 - q} opacity={d > 0 ? 1 : 0} />
+        <circle className="kit-dot" cx={xc} cy={AX.y} r={4.5} opacity={q >= 1 ? 1 : 0} />
+        <text className="kit-svg-label kit-path__gap" x={(xa + xc) / 2} y={AX.y - h - 10} textAnchor="middle" opacity={labelOpacity}>
+          {last && away > 0 ? (away > 0.5 ? '4 months away' : GAPS[i]) : GAPS[i]}
+        </text>
+      </g>
+    )
+  })
+  const youX = x(REVIEW_DAYS[3])
+  let shownX = x(0)
+  return (
+    <svg className="kit-path" viewBox="0 0 600 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true" style={{ opacity }}>
+      <line className="kit-ax" x1={AX.l} y1={AX.y} x2={AX.r} y2={AX.y} />
+      {TICKS.map(([day, label]) => {
+        const tx = x(day)
+        // A tick's label shows only with room beside the last one shown: two labels never sit on each other.
+        const room = clamp((tx - AX.l - 30) / 50) * clamp((AX.r + 10 - tx) / 20) * clamp((tx - shownX - 80) / 20)
+        if (room > 0.5) shownX = tx
+        return (
+          <g key={label} opacity={room * 0.9}>
+            <line className="kit-grid" x1={tx} y1={AX.y - 4} x2={tx} y2={AX.y + 4} />
+            <text className="kit-svg-page" x={tx} y={AX.y + 22} textAnchor="middle">
+              {label}
+            </text>
+          </g>
+        )
+      })}
+      <circle className="kit-dot" cx={x(0)} cy={AX.y} r={5} />
+      <text className="kit-svg-label" x={x(0)} y={AX.y + 22} textAnchor="middle">
+        Today
+      </text>
+      {hops}
+      {here > 0 && (
+        <g opacity={clamp(here * 2)}>
+          <line className="kit-path__here" x1={youX} y1={AX.y + 8} x2={youX} y2={30} />
+          <text className="kit-svg-label kit-svg-label--accent" x={youX + 6} y={42}>
+            2 months in
+          </text>
+        </g>
+      )}
+      <rect className="kit-path__card" x={cardAt[0] - 9} y={cardAt[1] - 6} width={18} height={12} rx={2.5} />
+    </svg>
+  )
+}
+
+/** c5-13, c5-14 and c5-15, one span: one card's path, the line stretching; months away; then part of who you are. */
+function Journey(props: SceneProps) {
+  const b = useBeat(props)
+  const id = props.clip.id
+  if (id === 'c5-13') {
+    const lands = [cue(b, 0, 0.332), cue(b, 1, 0.485), cue(b, 2, 0.663), cue(b, 3, 0.849)]
+    const draws = lands.map((l) => since(b, l - 0.06, 0.9))
+    let logSpan = Math.log(SPANS[0])
+    for (let k = 1; k < SPANS.length; k++) logSpan = lerp(logSpan, Math.log(SPANS[k]), moved(b, between(b, lands[k] - 0.12, lands[k] + 0.02)))
+    return (
+      <Stage beat={b} label="One card you keep remembering comes back after a few days, then about 2 weeks, then about 6 weeks, then about 4 months">
+        <Layer style={{ opacity: since(b, 0, 0.5) }}>
+          <Path beat={b} draws={draws} span={Math.exp(logSpan)} />
+        </Layer>
+        <Layer place="top" style={{ paddingTop: '5%' }}>
+          <span className="kit-answer-chip" data-rating="good" style={pop(b, since(b, 0.1, 0.4))}>
+            ✓ Remembered, each time
+          </span>
+        </Layer>
+      </Stage>
+    )
+  }
+  if (id === 'c5-14') {
+    const months = cue(b, 0, 0.209)
+    const away = cue(b, 1, 0.724)
+    const span = Math.exp(lerp(Math.log(SPANS[3]), Math.log(400), moved(b, between(b, 0.02, months + 0.1))))
+    return (
+      <Stage beat={b} label="After a few review cycles, that card is already months away">
+        <Layer>
+          <Path beat={b} draws={[1, 1, 1, 1]} span={span} here={since(b, months, 0.5)} away={since(b, away - 0.04, 0.6)} />
+        </Layer>
+      </Stage>
+    )
+  }
+  // c5-15: the line goes; the card becomes a small steady light inside the head, among the other things you know.
+  const know = cue(b, 0, 0.478)
+  const who = cue(b, 1, 0.724)
+  const fade = since(b, 0, 0.9)
+  return (
+    <Stage beat={b} label="It is part of what you know. It is part of who you are">
+      <Layer style={{ opacity: 1 - fade }}>
+        <Path beat={b} draws={[1, 1, 1, 1]} span={400} opacity={0.8} />
+      </Layer>
+      <Layer>
+        <div className="kit-who">
+          <Head beat={b} p={between(b, 0.12, know)} light={{ arrive: between(b, know - 0.16, know + 0.04) }} glow={since(b, who, 1.4)} dots={OTHERS.map(([x, y], i) => ({ x, y, p: clamp((between(b, who + 0.04, 1) - i / OTHERS.length) * 4), tone: 'fg' }))} />
+        </div>
+      </Layer>
+      <Layer place="bottom">
+        <div className="kit-who__words">
+          <Words size="label" style={{ opacity: showFor(since(b, know, 0.5), since(b, who - 0.04, 0.4)) }}>
+            Part of what you know
+          </Words>
+          <Words size="label" tone="accent" style={{ opacity: since(b, who, 0.6) }}>
+            Part of who you are
+          </Words>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** c5-06: Niklas Luhmann's wooden boxes of paper slips: 1951 to 1996; about 90,000. */
+function Luhmann(props: SceneProps) {
+  const b = useBeat(props)
+  const name = cue(b, 0, 0.115)
+  const years = cue(b, 1, 0.54)
+  const slips = cue(b, 2, 0.791)
+  const rows = 4
+  const cols = 6
+  const fill = between(b, 0.08, slips + 0.05)
+  return (
+    <Stage beat={b} label="Niklas Luhmann kept a box of paper slips from 1951 to 1996: about 90,000 of them">
+      <Layer>
+        <div className="kit-row kit-luhmann">
+          <svg className="kit-cabinet" viewBox="0 0 300 220" aria-hidden="true" style={rise(b, since(b, 0, 0.7), 14)}>
+            <rect className="kit-cabinet__body" x={4} y={4} width={292} height={212} rx={6} />
+            {Array.from({ length: rows * cols }, (_, i) => {
+              const c = i % cols
+              const r = Math.floor(i / cols)
+              const p = clamp(fill * rows * cols - i)
+              const x = 14 + c * 47
+              const y = 16 + r * 50
+              return (
+                <g key={i}>
+                  <rect className="kit-cabinet__drawer" x={x} y={y} width={41} height={42} rx={3} />
+                  <rect className="kit-cabinet__handle" x={x + 14} y={y + 26} width={13} height={4} rx={2} />
+                  <g opacity={p}>
+                    {[0, 1, 2, 3, 4].map((k) => (
+                      <rect key={k} className="kit-cabinet__slip" x={x + 5 + k * 6.5} y={y + 4 - (k % 2) * 2} width={5} height={14} rx={0.6} />
+                    ))}
+                  </g>
+                </g>
+              )
+            })}
+          </svg>
+          <div className="kit-luhmann__facts">
+            <Words size="title" style={rise(b, since(b, name, 0.5))}>
+              Niklas Luhmann
+            </Words>
+            <Words size="label" tone="muted" style={rise(b, since(b, years, 0.5))}>
+              1951 to 1996
+            </Words>
+            <div className="kit-luhmann__count" style={rise(b, since(b, slips - 0.06, 0.5))}>
+              <span className="kit-luhmann__number">
+                <Counter beat={b} p={since(b, slips - 0.06, 1.1)} to={90000} />
+              </span>
+              <Words size="label">paper slips</Words>
+            </div>
+            <Words size="page" style={{ opacity: since(b, slips + 0.08, 0.6) }}>
+              Niklas Luhmann-Archiv, Bielefeld University
+            </Words>
+          </div>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** The 40 books among the 600 publications: every 15th spine. */
+const isBook = (i: number): boolean => i % 15 === 7
+
+const SLIP_NODES: readonly TreeNode[] = [
+  { id: 'a', x: 135, y: 125, kind: 'card' },
+  { id: 'b', x: 220, y: 225, kind: 'card' },
+  { id: 'c', x: 325, y: 115, kind: 'card' },
+  { id: 'd', x: 435, y: 215, kind: 'card' },
+]
+const SLIP_LINKS: readonly TreeEdge[] = [
+  { from: 'a', to: 'b' },
+  { from: 'b', to: 'c' },
+  { from: 'c', to: 'd' },
+  { from: 'a', to: 'c', kind: 'link' },
+]
+
+/** c5-07: the links between slips bring ideas together before the shelf fills with the resulting publications. */
+function Books(props: SceneProps) {
+  const b = useBeat(props)
+  const linksAt = cue(b, 0, 0.038)
+  const workAt = cue(b, 1, 0.341)
+  const six = cue(b, 2, 0.776)
+  const forty = cue(b, 3, 0.918)
+  const shelf = since(b, workAt + 0.06, 0.9)
+  const linked = since(b, linksAt, 2)
+  const slips = Object.fromEntries([
+    ...SLIP_NODES.map(({ id }) => [id, since(b, 0, 0.55)]),
+    ...SLIP_LINKS.map(({ from, to }) => [`${from}>${to}`, linked]),
+  ])
+  const fill = between(b, six - 0.035, forty)
+  const lit = since(b, forty, 0.8)
+  const perRow = 100
+  return (
+    <Stage beat={b} label="Links between Luhmann’s slips helped him turn ideas into nearly 600 publications, including more than 40 books">
+      <Layer style={{ opacity: 1 - shelf }}>
+        <Tree beat={b} nodes={SLIP_NODES} edges={SLIP_LINKS} show={slips} />
+        <Words size="title" style={rise(b, since(b, linksAt, 0.7))}>Links between ideas</Words>
+      </Layer>
+      <Layer style={{ paddingBottom: '14%', opacity: shelf }}>
+        <svg className="kit-shelf" viewBox="0 0 600 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+          {[0, 1, 2, 3, 4, 5].map((r) => (
+            <line key={r} className="kit-shelf__board" x1={0} y1={r * 50 + 46} x2={600} y2={r * 50 + 46} />
+          ))}
+          {Array.from({ length: 600 }, (_, i) => {
+            const r = Math.floor(i / perRow)
+            const c = i % perRow
+            const on = i < Math.round(fill * 600)
+            if (!on) return null
+            const book = isBook(i) && lit > 0
+            const h = book ? 40 : 26 + ((i * 37) % 11)
+            return <rect key={i} className={book ? 'kit-shelf__book' : 'kit-shelf__spine'} x={c * 6 + 0.5} y={r * 50 + 46 - h} width={book ? 5.4 : 4.6} height={h} opacity={book ? 0.4 + 0.6 * lit : 1} />
+          })}
+        </svg>
+      </Layer>
+      <Layer place="bottom">
+        <Words size="label" tone="muted" style={rise(b, showFor(since(b, workAt, 0.7), since(b, six, 0.55)))}>
+          Ideas become new work
+        </Words>
+        <div className="kit-books__count">
+          <span style={{ opacity: since(b, six - 0.06, 0.4) }}>
+            <b>
+              <Counter beat={b} p={fill} to={600} />
+            </b>{' '}
+            publications
+          </span>
+          <span style={{ opacity: lit }}>
+            <b className="kit-tone--accent">40+</b> books
+          </span>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+const RESEARCH_PAGES = [
+  ['A story', 'What happened?'],
+  ['A pattern', 'Where else does it show up?'],
+  ['A principle', 'What can I take from it?'],
+] as const
+
+function ResearchDesk({ beat, gather, reveal, greene }: { beat: Beat; gather: number; reveal: number; greene: boolean }) {
+  return (
+    <div className="kit-research" aria-hidden="true">
+      <div className="kit-research__notes">
+        {RESEARCH_PAGES.map(([topic, question], i) => {
+          const inView = since(beat, 0.04 + i * 0.045, 0.6)
+          const travel = moved(beat, clamp(gather * 1.4 - 0.2 * i), ease.inOut)
+          return (
+            <div key={topic} className="kit-research__note" style={{ opacity: inView * (1 - 0.92 * travel), transform: beat.reduced ? undefined : `translateX(${travel * 78}%) translateY(${(1 - inView) * 30}%) rotate(${(i - 1) * 5 * (1 - travel)}deg)` }}>
+              <b>{topic}</b><span>{question}</span>
+            </div>
+          )
+        })}
+      </div>
+      <span className="kit-research__arrow" style={{ opacity: gather }}>→</span>
+      <div className={`kit-research__book${greene ? ' kit-research__book--greene' : ''}`} style={pop(beat, reveal, 0.85)}>
+        <span>{greene ? 'Robert Greene' : 'Ryan Holiday'}</span>
+        <strong>{greene ? 'The 48 Laws of Power' : 'A book takes shape'}</strong>
+      </div>
+    </div>
+  )
+}
+
+function Holiday(props: SceneProps) {
+  const b = useBeat(props)
+  const id = props.clip.id
+  const name = since(b, cue(b, 0, 0.347), 0.55)
+  const first = since(b, cue(b, 0, 0.26), 1.1)
+  const second = since(b, cue(b, 1, 0.637), 0.7)
+  const publication = since(b, cue(b, 0, 0.184), 0.55)
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <div className="kit-chapter5-visual">
+          <Words size="title" style={rise(b, id === 'c5-08' ? name : 1)}>Ryan Holiday</Words>
+          {id === 'c5-08' ? (
+            <ResearchDesk beat={b} gather={second} reveal={since(b, 0.78, 0.9)} greene={false} />
+          ) : id === 'c5-19' ? (
+            <>
+              <Words size="label" style={rise(b, publication)}>A new book almost every year</Words>
+              <div className="kit-research__series" aria-hidden="true">
+                {['Courage', 'Discipline', 'Justice', 'Wisdom'].map((title, i) => (
+                  <div key={title} className="kit-research__book" style={pop(b, since(b, cue(b, 1, 0.592) - 0.09 + i * 0.055, 0.45), 0.75)}><strong>{title}</strong></div>
+                ))}
+              </div>
+              <Words size="label" tone="accent" style={rise(b, second)}>Four New York Times bestsellers</Words>
+            </>
+          ) : (
+            <>
+              <div className="kit-research__archive" aria-hidden="true">
+                {Array.from({ length: 36 }, (_, i) => (
+                  <span key={i} style={{ opacity: clamp(first * 44 - i), background: id === 'c5-20' && second > 0 && (i % 7 === 2 || i % 7 === 4) ? 'var(--accent-soft)' : undefined }} />
+                ))}
+              </div>
+              <Words size="label" tone="accent" style={rise(b, id === 'c5-16' ? first : second)}>
+                {id === 'c5-16' ? 'Tens of thousands of cards over 20 years' : 'The cards become more valuable as they add up'}
+              </Words>
+            </>
+          )}
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+function Greene(props: SceneProps) {
+  const b = useBeat(props)
+  const bookAt = cue(b, 0, 0.383)
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <div className="kit-chapter5-visual">
+          <Words size="title" style={rise(b, since(b, 0, 0.65))}>Robert Greene</Words>
+          <ResearchDesk beat={b} gather={since(b, bookAt - 0.08, 1)} reveal={since(b, bookAt, 0.85)} greene />
+          <Words size="label" tone="accent" style={rise(b, since(b, cue(b, 1, 0.638), 0.5))}>Three New York Times bestsellers</Words>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+function CardTradition(props: SceneProps) {
+  const b = useBeat(props)
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <Words size="title" style={rise(b, since(b, 0, 0.65))}>A system thinkers have used for years</Words>
+        <div className="kit-tags">
+          <span className="kit-chip" style={pop(b, since(b, cue(b, 0, 0), 0.65))}>The Notecard App</span> {/* rename-note-to-page: keep (the product's name) */}
+          <span className="kit-chip" style={pop(b, since(b, cue(b, 1, 0.533), 0.65))}>Memory science</span>
+          <span className="kit-chip" style={pop(b, since(b, cue(b, 2, 0.65), 0.65))}>A review algorithm</span>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+const FRENCH: readonly [string, string][] = [
+  ['Je l’ai', 'I have … it'],
+  ['déjà', 'already'],
+  ['lu', 'read'],
+  ['deux fois.', 'twice.'],
+]
+const CYCLE = ['Rain', 'River', 'Sea', 'Cloud']
+
+/** c5-09 and c5-10, one span: not books: the meeting where the fact is there; the language you keep; the subject that comes clear. */
+function Life(props: SceneProps) {
+  const b = useBeat(props)
+  const first = props.clip.id === 'c5-09'
+  const meeting = first ? cue(b, 0, 0.493) : -1
+  const fact = first ? cue(b, 1, 0.644) : -1
+  const lang = first ? 2 : cue(b, 0, 0.084)
+  const subject = first ? 2 : cue(b, 1, 0.464)
+  const clear = first ? 2 : cue(b, 2, 0.676)
+  const meet = first ? since(b, meeting - 0.05, 0.6) : 1
+  const factP = first ? since(b, fact, 0.5) : 1
+  const books = first ? showFor(since(b, 0, 0.4), since(b, meeting - 0.08, 0.5)) : 0
+  const blur = first ? 1 : 1 - since(b, clear, 1)
+  return (
+    <Stage beat={b} label="The meeting where the right fact is there; the language you keep; the subject you finally understand">
+      <Layer style={{ opacity: books }}>
+        <Words size="title" tone="muted">
+          No books needed.
+        </Words>
+      </Layer>
+      <Layer>
+        <div className="kit-life">
+          <div className="kit-life__panel" style={{ ...pop(b, meet, 0.85), opacity: clamp(meet) * (first ? 1 : 0.55 + 0.45 * (1 - since(b, lang, 0.5))) }}>
+            <svg viewBox="0 0 160 120" aria-hidden="true" className="kit-life__art">
+              <ellipse className="kit-life__table" cx={80} cy={70} rx={46} ry={22} />
+              {[
+                [32, 46],
+                [80, 36],
+                [128, 46],
+                [44, 98],
+                [116, 98],
+              ].map(([x, y], i) => (
+                <circle key={i} className={i === 3 ? 'kit-life__you' : 'kit-life__person'} cx={x} cy={y} r={8} />
+              ))}
+              <g opacity={factP} transform={`translate(44 ${lerp(84, 70, b.reduced ? 1 : ease.out(factP))})`}>
+                <rect className="kit-life__card" x={-18} y={-30} width={36} height={22} rx={3} />
+                <line className="kit-life__cardline" x1={-12} y1={-23} x2={12} y2={-23} />
+                <line className="kit-life__cardline" x1={-12} y1={-16} x2={4} y2={-16} />
+              </g>
+            </svg>
+            <span className="kit-life__name">The meeting</span>
+          </div>
+          <div className="kit-life__panel" style={{ ...pop(b, since(b, lang, 0.5), 0.85), opacity: clamp(since(b, lang, 0.5)) * (first ? 0 : 1 - 0.45 * since(b, subject, 0.5)) }}>
+            <div className="kit-life__french">
+              {FRENCH.map(([fr, en], i) => (
+                <span key={fr} className="kit-life__word">
+                  <b>{fr}</b>
+                  <i style={{ opacity: since(b, lang + 0.06 + i * 0.04, 0.4) }}>{en}</i>
+                </span>
+              ))}
+            </div>
+            <span className="kit-life__name">The language</span>
+          </div>
+          <div className="kit-life__panel" style={{ ...pop(b, since(b, subject, 0.5), 0.85), opacity: first ? 0 : since(b, subject, 0.5) }}>
+            <svg viewBox="0 0 160 120" aria-hidden="true" className="kit-life__art" style={{ filter: b.reduced ? undefined : `blur(${(blur * 3.5).toFixed(2)}px)`, opacity: b.reduced ? lerp(0.45, 1, 1 - blur) : 1 }}>
+              <circle className="kit-life__cycle" cx={80} cy={60} r={38} />
+              {CYCLE.map((name, i) => {
+                const a = (-90 + i * 90) * (Math.PI / 180)
+                const x = 80 + Math.cos(a) * 38
+                const y = 60 + Math.sin(a) * 38
+                return (
+                  <g key={name}>
+                    <circle className="kit-life__node" cx={x} cy={y} r={6} />
+                    <text className="kit-svg-page" x={x + (i === 1 ? 10 : i === 3 ? -10 : 0)} y={y + (i === 0 ? -11 : i === 2 ? 19 : 4)} textAnchor={i === 1 ? 'start' : i === 3 ? 'end' : 'middle'}>
+                      {name}
+                    </text>
+                  </g>
+                )
+              })}
+            </svg>
+            <span className="kit-life__name">The subject</span>
+          </div>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** The titles of the card base's wall (made up): the course's sample titles, then a few more. */
+const BASE = [...MANY_TITLES, 'Supply and demand', 'The water cycle', 'Ser and estar', 'Kepler’s laws', 'Inflation', 'Photosynthesis, the light part', 'Habit loops', 'The Pythagorean theorem', 'Opportunity cost, again', 'Osmosis', 'Present perfect', 'Gross margin']
+
+/** c5-11: the card base, now large, glows: a record of what you know; and because you review it, you still know it. */
+function CardBase(props: SceneProps) {
+  const b = useBeat(props)
+  const base = cue(b, 0, 0.179)
+  const still = cue(b, 1, 0.856)
+  const ripple = since(b, still - 0.04, 1.3)
+  const cols = 6
+  return (
+    <Stage beat={b} label="Your card base: a record of what you know; because you review it, you still know it">
+      <Layer>
+        <div className="kit-base2">
+          {BASE.slice(0, 24).map((title, i) => {
+            const c = i % cols
+            const r = Math.floor(i / cols)
+            const d = Math.hypot(c - 2.5, r - 1.5) / 3.2
+            const g = showFor(clamp(ripple * 2.2 - d), clamp(ripple * 2.2 - d - 0.6))
+            return <MiniCard key={title} title={title} style={{ ...pop(b, since(b, 0.02 + i * 0.012, 0.4), 0.7), boxShadow: g > 0 ? `0 0 0 ${(2 * g).toFixed(2)}px var(--accent), 0 0 ${(14 * g).toFixed(1)}px color-mix(in srgb, var(--accent) 45%, transparent)` : undefined }} />
+          })}
+        </div>
+        <span className="kit-base2__label" style={pop(b, since(b, base, 0.5), 0.8)}>
+          Your card base
+        </span>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** A draft becomes a card after the learner checks and approves it. */
+function Yours(props: SceneProps) {
+  const b = useBeat(props)
+  const draft = since(b, cue(b, 0, 0.13), 0.6)
+  const read = since(b, 0.34, 0.6)
+  const approve = since(b, cue(b, 1, 0.51), 0.6)
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <div className="kit-chapter5-visual">
+          <Words size="title">Make the card yours</Words>
+          <div className="kit-approval" aria-hidden="true">
+            <div className="kit-gym-cards__face" style={rise(b, draft)}>
+              <b>AI draft</b><span>Spaced review helps memory.</span>
+            </div>
+            <span className="kit-research__arrow" style={{ opacity: read }}>→</span>
+            <div className="kit-gym-cards__face" style={rise(b, read)}>
+              <b>Why leave time between reviews?</b>
+              <span>Each review helps the memory last longer.</span>
+            </div>
+          </div>
+          <Words size="label" tone="accent" style={rise(b, approve)}>✓ Approved for your card base</Words>
+          <Words size="page" style={rise(b, since(b, 0.59, 0.6))}>Pause and think through every draft</Words>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+function LiftComparison(props: SceneProps) {
+  const b = useBeat(props)
+  const machineAt = cue(b, 0, 0.262)
+  const humanAt = 0.55
+  const machine = since(b, machineAt, 1.2)
+  const person = since(b, humanAt, 0.9)
+  const result = since(b, cue(b, 1, 0.9) - 0.04, 0.6)
+  const machineLift = moved(b, machine) * 30
+  const personLift = moved(b, person) * 28
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <div className="kit-chapter5-visual kit-gym-comparison">
+          <div className="kit-gym-comparison__pair">
+            <div className="kit-gym-panel" style={rise(b, since(b, machineAt - 0.06, 0.5))}>
+              <svg viewBox="0 0 180 128" aria-hidden="true" className="kit-gym-drawing">
+                <path d="M26 108V18h128v90M18 108h144M90 18v12" />
+                <g transform={`translate(0 ${-machineLift})`}>
+                  <path d="M90 60v22m-49 0h98" />
+                  {[47, 59, 121, 133].map((x) => <rect key={x} x={x - 5} y={69} width={10} height={26} rx={2} />)}
+                </g>
+              </svg>
+              <Words size="label">Machine lifts the weight</Words>
+            </div>
+            <div className="kit-gym-panel" style={rise(b, since(b, humanAt - 0.06, 0.5))}>
+              <svg viewBox="0 0 180 128" aria-hidden="true" className="kit-gym-drawing">
+                <path d="M20 108h140M90 63v24l-19 21m19-21 19 21" />
+                <circle cx={90} cy={53} r={8} />
+                <path d={`M90 68 70 ${65 - personLift} 59 ${70 - personLift} M90 68 110 ${65 - personLift} 121 ${70 - personLift}`} />
+                <g transform={`translate(0 ${-personLift})`}>
+                  <path d="M40 70h100" />
+                  {[47, 133].map((x) => <rect key={x} x={x - 5} y={59} width={10} height={22} rx={2} />)}
+                </g>
+              </svg>
+              <Words size="label" tone="accent">You lift to get stronger</Words>
+            </div>
+          </div>
+          <div className="kit-gym-progress" aria-hidden="true" style={{ opacity: result }}><span /><span /><span /></div>
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** Show a full repetition: choose a card, try to answer, and reveal its back. */
+function GymForTheMind(props: SceneProps) {
+  const b = useBeat(props)
+  const id = props.clip.id
+  const recall = id === 'c5-23'
+  const next = id === 'c5-26'
+  const use = id === 'c5-25'
+  const first = since(b, cue(b, 0, 0.22), 0.6)
+  const second = since(b, cue(b, 1, 0.55), 0.6)
+  const third = since(b, cue(b, 2, 0.75), 0.6)
+  const title = recall ? 'Practice remembering' : next ? 'What belongs on a card?' : use ? 'Knowledge you can use' : 'The Gym for the Mind'
+  return (
+    <Stage beat={b} label={props.clip.text}>
+      <Layer>
+        <div className="kit-chapter5-visual">
+          <Words size="title" style={rise(b, since(b, 0, 0.65))}>{title}</Words>
+          <div className="kit-gym-cards" aria-hidden="true">
+            <div className="kit-gym-cards__pile" style={rise(b, since(b, 0, 0.55))}>
+              <IndexCard style={pop(b, first)} />
+              <IndexCard style={pop(b, since(b, 0.1, 0.6))} />
+              <IndexCard style={pop(b, since(b, 0.04, 0.6))} />
+            </div>
+            <div className="kit-gym-cards__face" style={pop(b, recall ? second : first, 0.85)}>
+              <b>{next ? 'What do I want to remember?' : 'Why does spaced review work?'}</b>
+              <span style={rise(b, recall ? third : use || next ? first : 0)}>
+                {next ? 'Put it in your own words.' : 'Each review helps the memory last longer.'}
+              </span>
+            </div>
+          </div>
+          {recall && <Words size="label" tone="accent" style={rise(b, third)}>Try to recall it, then check your answer</Words>}
+        </div>
+      </Layer>
+    </Stage>
+  )
+}
+
+/** The facts the scenes use, from the app's own defaults (a test holds them to `shared/reviews.ts`). */
+export const COMPOUND_FACTS = { reviewDays: REVIEW_DAYS, maxDays: DEFAULT_REVIEW_SETTINGS.maxDays }
+
+export const COMPOUND_SCENES: ChapterScenes = {
+  chapter: 'compound',
+  entries: [
+    { clips: ['c5-01'], scene: SoFar },
+    { clips: ['c5-02'], scene: Interest },
+    { clips: ['c5-03'], scene: Hooks },
+    { clips: ['c5-04'], scene: FiveADay },
+    { clips: ['c5-05'], scene: Pile },
+    { clips: ['c5-13', 'c5-14', 'c5-15'], scene: Journey },
+    { clips: ['c5-06'], scene: Luhmann },
+    { clips: ['c5-07'], scene: Books },
+    { clips: ['c5-17'], scene: Greene },
+    { clips: ['c5-08', 'c5-16'], scene: Holiday },
+    { clips: ['c5-19', 'c5-20'], scene: Holiday },
+    { clips: ['c5-21'], scene: CardTradition },
+    { clips: ['c5-09', 'c5-10'], scene: Life },
+    { clips: ['c5-11'], scene: CardBase },
+    { clips: ['c5-12'], scene: GymForTheMind },
+    { clips: ['c5-22'], scene: LiftComparison },
+    { clips: ['c5-23'], scene: GymForTheMind },
+    { clips: ['c5-24'], scene: Yours },
+    { clips: ['c5-25', 'c5-26'], scene: GymForTheMind },
+  ],
+}

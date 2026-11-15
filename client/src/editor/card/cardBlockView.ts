@@ -68,7 +68,7 @@ import type { HotkeyOverrides } from '@shared/hotkeyBindings'
 import type { CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
 import { codeWidthSchema } from '../code/codeWidth'
-import { cardKeyRow, drawEditButton } from './cardEditKeys'
+import { CARD_EDIT_KEYS, cardKeyRow, drawEditButton } from './cardEditKeys'
 import { copyText, openMenuAt } from '../linkMenu'
 import type { MenuRow } from '../blockHandleMenu'
 import type { SlashRow } from '../slashMenu'
@@ -80,6 +80,7 @@ import { CARD_LINK_ATTR, cardLinkWhere, refreshCardLook, renderCard, type CardLo
 import { mountCardEditor, type CardCrepe, type CardEditor, type CardTitleField } from './cardEditor'
 import { mountReviewsStrip, type ReviewsStripHandle, type StripPart } from './reviewsStrip'
 import type { WikilinkResolveSource } from '../wikilink/wikilinkPlugin'
+import { isEmptyNewCard, newCardFormatHint } from './cardFormatHint'
 import { mountCardTitle, type CardTitleHandle } from './cardTitle'
 import { tellReadOnlyEdit } from '../readOnlyEdit'
 import './card.css'
@@ -235,6 +236,9 @@ const button = (className: string, label: string, text: string): HTMLButtonEleme
   return b
 }
 
+/** The keys of Edit card (YAZ-5034), in the row under its editor (`cardEditKeys.ts`). */
+export { CARD_EDIT_KEYS }
+
 export class CardBlockView implements NodeView {
   dom: HTMLElement
   /** The card ID, first in the head (D20): a click copies it. Hidden while the card has none. */
@@ -256,6 +260,8 @@ export class CardBlockView implements NodeView {
   private inner: { editor: CardEditor; mount: HTMLElement; base: string; written: string; timer: ReturnType<typeof setTimeout> | undefined } | null = null
   /** The key row under the editor (YAZ-5034): in the card only while it is edited. */
   private keyRow: HTMLElement | null = null
+  /** The format hint under the key row (YAZ-5114): only while a card that was new and empty at Edit card stays so. */
+  private formatHint: HTMLElement | null = null
   /** What the body last drew: redrawn only when it changes. */
   private drawn: string | null = null
   private readonly unsubscribe: (() => void) | undefined
@@ -361,6 +367,9 @@ export class CardBlockView implements NodeView {
     this.dom.classList.toggle('card--off', isCardOff(line))
     this.next.hidden = !isCardNext(line)
     drawEditButton(this.editButton, this.editing)
+    // Done is a target of the course's guided tour (YAZ-5123) while the card is edited.
+    if (this.editing) this.editButton.dataset.tour = 'card-done'
+    else delete this.editButton.dataset.tour
     this.dom.classList.toggle('card--editing', this.editing)
     this.previewButton.hidden = !this.editing
     this.drawReviews()
@@ -470,6 +479,7 @@ export class CardBlockView implements NodeView {
     this.code.dom.classList.add('card__code')
     this.keyRow ??= cardKeyRow()
     this.dom.append(this.code.dom, this.keyRow)
+    this.showFormatHint(this.node.textContent)
     this.draw()
     // The caret at the end, or `select` (offsets in the card's text). The code box has no Title field: `'title'` is the end.
     const size = this.node.content.size
@@ -496,6 +506,7 @@ export class CardBlockView implements NodeView {
     this.keyRow ??= cardKeyRow()
     this.dom.append(mount, this.keyRow)
     const text = this.node.textContent
+    this.showFormatHint(text)
     const title = cardTitleOf(cardLineOf(this.node))
     const editor = mountCardEditor({
       root: mount,
@@ -527,10 +538,34 @@ export class CardBlockView implements NodeView {
     this.dom.classList.toggle('ProseMirror-selectednode', selected)
   }
 
+  /** The format hint (YAZ-5114) under the key row, for a card that is new and empty as Edit card opens. */
+  private showFormatHint(text: string): void {
+    this.hideFormatHint()
+    if (!isEmptyNewCard(text)) return
+    this.formatHint = newCardFormatHint(this.path)
+    if (this.formatHint !== null) this.keyRow?.after(this.formatHint)
+  }
+
+  /** The hint goes at the card's first text, and for good in this edit. */
+  private followFormatHint(text: () => string): void {
+    if (this.formatHint !== null && !isEmptyNewCard(text())) this.hideFormatHint()
+  }
+
+  private hideFormatHint(): void {
+    this.formatHint?.remove()
+    this.formatHint = null
+  }
+
+  /** The format hint while edited (YAZ-5114), for tests: null when it does not show. */
+  get formatHintDom(): HTMLElement | null {
+    return this.formatHint
+  }
+
   /** A change in the card editor: its text goes into the page 300 ms later (`mirror`). */
   private changed(): void {
     const inner = this.inner
     if (inner === null) return
+    this.followFormatHint(() => inner.editor.text())
     clearTimeout(inner.timer)
     inner.timer = setTimeout(() => this.mirror(), CARD_MIRROR_MS)
   }
@@ -590,6 +625,7 @@ export class CardBlockView implements NodeView {
     inner.editor.destroy()
     inner.mount.remove()
     this.keyRow?.remove()
+    this.hideFormatHint()
     if (openCard === this) openCard = null
     this.write(inner.base, false)
     this.inner = null
@@ -614,6 +650,7 @@ export class CardBlockView implements NodeView {
     this.code.destroy?.()
     this.code.dom.remove()
     this.keyRow?.remove()
+    this.hideFormatHint()
     this.code = null
     this.draw()
     this.deps.host?.onEditDone?.(this.node.textContent, cardTitleOf(cardLineOf(this.node)))
@@ -790,6 +827,7 @@ export class CardBlockView implements NodeView {
     if (!isCardNode(node)) return false
     this.node = node
     if (this.code !== null && this.code.update?.(node, decorations, inner) === false) return false
+    if (this.code !== null) this.followFormatHint(() => node.textContent)
     const edit = this.inner
     if (edit !== null && node.textContent !== edit.written) {
       // The card's TEXT changed from outside while it is edited (an agent, git): Done writes ours, and ⌘Z brings theirs back.

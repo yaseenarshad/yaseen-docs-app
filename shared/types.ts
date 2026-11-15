@@ -10,6 +10,9 @@ import type { IconRule } from './vaultIcons'
 import type { CardRecord } from './cardLine'
 import type { HotkeyOverrides } from './hotkeyBindings'
 import { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPage'
+import { isAppVault } from './appVaults'
+import { defaultCourseState, type CourseState } from './courseState'
+export type { CoursePatch, CourseSpeed, CourseState } from './courseState'
 import { DEFAULT_MEDIA_FILTERS, type MediaFilters } from './iconPacks'
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT } from './timeFormat'
 
@@ -1073,8 +1076,9 @@ export type WatchEvent =
 export type RecentRoots = Array<{ path: string; lastOpened: number }>
 export const MAX_RECENT_ROOTS = 10
 
-/** Pure: prepend `path` to the MRU list, de-duplicated, capped — shared by the client cache and the main store. */
+/** Pure: prepend `path` to the MRU list, de-duplicated, capped — shared by the client cache and the main store. The app's own vault (the card skill, YAZ-5108) never joins: `list` comes back as it is. */
 export function addRecentRoot(list: RecentRoots, path: string, now: number): RecentRoots {
+  if (isAppVault(path)) return list
   return [{ path, lastOpened: now }, ...list.filter((r) => r.path !== path)].slice(0, MAX_RECENT_ROOTS)
 }
 
@@ -2156,6 +2160,11 @@ export interface SettingsState {
   commentsResolved: CommentsResolvedPlace
   /** YAZ-4615 D10: each new page the app creates carries `COMMENTS_HINT` at the top of its frontmatter. */
   commentsHint: boolean
+  /**
+   * Settings › Review › "Card skill in the sidebar" (YAZ-5059 decision 3, YAZ-5108): Show (true, the default) or Hide. On
+   * Show, a window whose vault has reviews on shows the app's copy of the card skill as its own row at the bottom of the sidebar.
+   */
+  cardSkillInSidebar: boolean
   /** YAZ-4615 D1/D7: who you are on a comment; null until set. Travels with the settings folder. */
   profile: CommentProfile | null
   /** Each sidebar tab's sort (YAZ-3227 D1): how you READ, global to this Mac, never part of a vault. */
@@ -2198,6 +2207,11 @@ export interface SettingsState {
   markNextHidden: boolean
   /** Its colour: `null` is the theme's calm default (`--next-hidden` in `app.css`, light and dark); else a hex colour for both. */
   nextHiddenColour: string | null
+  /**
+   * Settings › Review › Card tips (YAZ-5114, YAZ-5059 decision 8): the quiet format hint under a new, empty card in Edit
+   * card names the formats of the card skill. On by default; Off hides it. For the whole app.
+   */
+  cardTips: boolean
   /**
    * Settings › Review › Card spacing (YAZ-5050): how a card reads in the Inbox, the card window and the page.
    * `pages` (the default) follows the pages' Line spacing, Space between blocks, Bullet indent and Bullet gap; `custom`
@@ -2975,6 +2989,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   commentsOrder: 'oldest',
   commentsResolved: 'bottom',
   commentsHint: true,
+  cardSkillInSidebar: true,
   profile: null,
   sidebarSort: DEFAULT_SIDEBAR_SORT,
   searchSort: DEFAULT_SEARCH_SORT,
@@ -2991,6 +3006,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   shownHiddenWords: 'highlight',
   markNextHidden: true,
   nextHiddenColour: null,
+  cardTips: true,
   cardSpacing: 'pages',
   cardWidth: null,
   cardTextSize: null,
@@ -3499,6 +3515,11 @@ export interface AppState {
    * Additive within version 1: a file without it loads the default, and an old build drops the key.
    */
   tabCanvas: TabCanvasState
+  /**
+   * The card course (YAZ-5120): the place, the finished chapters, the offers' flags, Mute and Speed. Per machine
+   * (`shared/courseState.ts`). Additive within version 1: a file without it loads the default, and an old build drops the key.
+   */
+  course: CourseState
 }
 
 /** At most this many moved cards are kept (YAZ-3343 D1), last moved first: about 60 KB of the state file. */
@@ -3620,7 +3641,7 @@ export function sameTabCanvas(a: TabCanvasState, b: TabCanvasState): boolean {
 
 /** A fresh default state (a factory, so no caller can mutate a shared constant). */
 export function defaultAppState(): AppState {
-  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas() }
+  return { version: 1, settings: { ...DEFAULT_SETTINGS }, sidebarWidth: SIDEBAR_DEFAULT_W, recents: [], windows: [], folders: {}, vaultSets: [], favoritesOrder: [], focusOrder: [], sessions: [], settingsFolder: null, approvedPictureFolders: [], settingsSavedAt: 0, tabCanvas: defaultTabCanvas(), course: defaultCourseState() }
 }
 
 export function defaultFolderState(): FolderState {
@@ -3648,7 +3669,8 @@ export interface VaultEntry {
 export function listVaults(state: { recents: Readonly<RecentRoots>; windows: readonly { roots: readonly string[] }[]; folders: Readonly<Record<string, FolderState>> }): VaultEntry[] {
   const open = openVaultRoots(state.windows)
   const recents = new Map(state.recents.map((r) => [r.path, r.lastOpened]))
-  return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].map((path) => {
+  // The app's own vault (the card skill, YAZ-5108) is no vault of the person: never a row, whatever a list holds.
+  return [...new Set([...recents.keys(), ...open, ...keyedVaults(state.folders).map((v) => v.path)])].filter((path) => !isAppVault(path)).map((path) => {
     const folder = state.folders[path]
     return { path, name: placeName(state.folders, path), key: folder?.key ?? null, open: open.includes(path), lastUsed: recents.get(path) ?? null }
   })
@@ -4263,6 +4285,11 @@ export interface WindowIdentity {
   reloadViews?: (StartView | null)[]
   /** The memory reload's size (YAZ-3737 D12), MB: the window shows its notice once. Given out with `reloadViews`. */
   reloadedAtMb?: number
+  /**
+   * The card skill's copy, `<userData>/card-skill` (YAZ-5108): the app's own vault, which the sidebar shows after the
+   * window's vaults while Settings › Review says Show. Given out by EVERY identity read, never stored. Absent: main has no copy.
+   */
+  cardSkill?: string
   /** `'files'` for a Files window (YAZ-3357 D1), as `WindowEntry.kind`. */
   kind?: WindowKind
   /** A Files window's own sidebar zoom in percent (YAZ-3389 D13), as `WindowEntry.zoom`; absent on a full window. */

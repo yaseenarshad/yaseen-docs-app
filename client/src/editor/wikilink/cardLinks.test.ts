@@ -167,6 +167,20 @@ describe('the `[[` picker lists cards (YAZ-5030)', () => {
     expect(rowsFor('four agreements', [...linkCandidates(unswept, true), ...cardLinkCandidates(unswept)], ['DEMO']).filter((r) => !r.create).map((r) => [r.insert, r.card === true])).toEqual([['The Four Agreements', false]])
   })
 
+  it('YAZ-5407: with cards first (the course step on card links), a card comes before a page of the same rank; an empty `[[` shows cards in its first rows', () => {
+    expect(rowsFor('es', candidates, ['DEMO'], true).filter((r) => !r.create).map((r) => r.label)).toEqual(['Estar', 'Estar pages'])
+    // Many pages ahead of the cards in the list: with nothing typed, the cap is full of pages, unless cards come first.
+    const pages = Array.from({ length: 12 }, (_, i) => rec(`/vault/${String(i).padStart(2, '0')} Page.md`))
+    const many = [...linkCandidates([...pages, ...RECORDS]), ...cardLinkCandidates(RECORDS)]
+    expect(rowsFor('', many, ['DEMO']).some((r) => r.card === true)).toBe(false)
+    const first = rowsFor('', many, ['DEMO'], true)
+    expect(first.slice(0, 3).map((r) => [r.label, r.card === true])).toEqual([
+      ['Ser', true],
+      ['Estar', true],
+      ['Old card', true],
+    ])
+  })
+
   it('a card titled as typed is no page of that name: Create still makes the page', () => {
     const rows = rowsFor('Ser', candidates, ['DEMO'])
     expect(rows[0]).toMatchObject({ insert: 'DEMO-126', card: true })

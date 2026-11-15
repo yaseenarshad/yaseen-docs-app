@@ -4,6 +4,13 @@
  * observable stubs; the bridge is the jsdom stub pattern (storage.test.ts), so the real
  * storage / api / hook modules run against it.
  */
+import { FORMATS_CHAPTER_TITLE, requestCourse } from './course/openCourse'
+import { showTourPlace } from './course/tourBus'
+import { COURSE_NOTICE } from './course/courseFacts'
+import { COURSE } from './course/script'
+import { cardSkillReadOnlyVault } from './vault/cardSkill'
+import { CARD_FORMATS_OPEN } from './editor/card/cardFormatHint'
+import { defaultCourseState } from '@shared/courseState'
 import { LINK_NOTICE_MS, type NoticeKind, type NoticeType } from './lib/notice'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { StrictMode, act } from 'react'
@@ -27,7 +34,11 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null; app?: true }[]
+  /** "Hide card skill" on the card skill's row (YAZ-5108). */
+  onHideCardSkill?: () => void
+  /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109). */
+  onDuplicateCardSkill?: (vault: string) => void
   /** Right-click → "Share" on a board row (YAZ-3040). */
   onShareFile?: (path: string) => void
   /** The Recents vault filter (YAZ-4450 D6): App's, for the window's session. */
@@ -240,6 +251,8 @@ import { dropAllPageWindows, keepPageWindow, pageWindowKey, pageWindowMemory, op
 import { MOVE_ROW_TITLE_MAX } from './tabs/windowLabel'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
+/** The card course's notice is due in the next mount (YAZ-5120): only its own test sets it. */
+let courseNoticeDue = false
 
 /** The full `window.yaseenDocs` surface the App tree touches, all observable. `files` backs readFile/writeFile (the E1c rewrite path). */
 type IdentityFixture = Omit<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'> & Partial<Pick<WindowIdentity, 'roots' | 'rightPanel' | 'sidebarCollapsed' | 'sidebarLens'>>
@@ -335,7 +348,9 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     pickFolder: vi.fn(async () => ({ cancelled: true as const })),
     watch: vi.fn((_root?: string, _listener?: unknown): (() => void) => () => undefined),
     state: {
-      get: vi.fn(async () => state),
+      // The card course's one notice (YAZ-5120) shows once per Mac: here it has shown, unless a test asks for it
+      // (`courseNoticeDue`), so it never takes the place of the notice another test reads.
+      get: vi.fn(async () => (courseNoticeDue ? state : { ...state, course: { ...(state.course ?? defaultCourseState()), offered: true } })),
       setSettings: vi.fn(async () => undefined),
       setSidebarWidth: vi.fn(async () => undefined),
       pushRecent: vi.fn(async () => undefined),
@@ -347,6 +362,7 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
       setBaseGroups: vi.fn(async () => undefined),
       // The tab board's canvas (YAZ-3343 D1): the switch and the moved cards.
       setTabCanvas: vi.fn(async () => undefined),
+      setCourse: vi.fn(async () => undefined),
       onChange: vi.fn((listener: (next: AppState) => void) => {
         stateChanged.add(listener)
         return () => stateChanged.delete(listener)
@@ -582,6 +598,8 @@ function installBridge(state: AppState, identity: IdentityFixture, files: Record
     },
     // No `review.json` (YAZ-4967), so card review has its defaults: each vault owns one `useReviewSettings`, which reads and subscribes on vault open.
     vaultConfig: { read: vi.fn(async (_root?: string, _name?: string): Promise<unknown> => null), write: vi.fn(async () => undefined), onChange: vi.fn(() => () => undefined) },
+    // "Duplicate into <vault>…" (YAZ-5109): main copies the card skill into the vault as `Card skill`.
+    cardSkill: { duplicate: vi.fn(async (vault: string, _again: boolean): Promise<{ made: string } | { exists: string }> => ({ made: `${vault}/Card skill` })) },
     // A vault's IDs (YAZ-2677): main saves the answer and runs the duplicate check.
     ids: {
       set: vi.fn(async (_root?: string, _enabled?: boolean, _letters?: string): Promise<void> => undefined),
@@ -7729,5 +7747,274 @@ describe('a ghost of a focus folder (YAZ-4460 F6; YAZ-4477)', () => {
     await act(async () => sidebar.onAddVaultFor?.('zz', 'q.md'))
     expect(el.querySelector('#confirm-add-vault-for-link-text')).toBeNull()
     expect(el.querySelector('.link-notice')?.textContent).toContain('This item is in the vault "zz", which this Mac does not know. Open that folder first.')
+  })
+})
+
+
+/**
+ * THE CARD SKILL IN THE SIDEBAR (YAZ-5108), one test per row of the issue's table: the app's copy is one more vault of
+ * the window — last, `app: true` — while the switch says Show and a vault has reviews on. It never joins the window's
+ * own vaults (`setIdentity` roots), Recent vaults, or the 8-vault count. Made-up paths only.
+ */
+describe('App: the card skill in the sidebar (YAZ-5108)', () => {
+  const SKILL = '/demo-profile/card-skill'
+  const START = `${SKILL}/Start here.md`
+  const skillOn = (settings: Partial<AppState['settings']> = {}): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, ...settings } })
+  const reviews = (on: boolean) => (b: ReturnType<typeof installBridge>) => b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root === SKILL ? false : on } : name === 'read-only.json' && root === SKILL ? { on: true } : null))
+  const shown = () => captured.sidebar?.vaults.map((vault) => [vault.root, vault.app === true]) ?? []
+  const rootsWritten = (bridge: ReturnType<typeof installBridge>['bridge']) => (bridge.window.setIdentity.mock.calls as unknown as [{ roots?: string[] }][]).flatMap(([patch]) => patch.roots ?? [])
+
+  it('reviews off in this vault: no "Card skill" row', async () => {
+    await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(false))
+    expect(shown()).toEqual([['/v', false]])
+  })
+
+  it('reviews on, switch on Show: the row shows at the bottom, closed, and the window\'s own vaults stay as they are', async () => {
+    const { bridge } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/v', false], [SKILL, true]])
+    expect(captured.sidebar?.vaults.at(-1)).toMatchObject({ name: 'Card skill', review: false, readOnly: true })
+    expect(captured.sidebar?.closedVaults).toContain(SKILL)
+    expect(storage.getRoots()).toEqual(['/v'])
+    expect(rootsWritten(bridge)).not.toContain(SKILL)
+    expect((bridge.state.pushRecent.mock.calls as unknown as [string][]).map(([path]) => path)).not.toContain(SKILL)
+    expect(storage.listVaults().map((v) => v.path)).not.toContain(SKILL)
+  })
+
+  it('a window with two vaults: their rows as today, then "Card skill" last; a reorder never stores it', async () => {
+    const { bridge } = await mount(skillOn(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/a', false], ['/b', false], [SKILL, true]])
+    act(() => captured.sidebar?.onReorderVaults(['/b', SKILL, '/a']))
+    expect(storage.getRoots()).toEqual(['/b', '/a'])
+    expect(rootsWritten(bridge)).not.toContain(SKILL)
+  })
+
+  it('Hide from the right-click menu: the row goes, its tabs close, the switch is Hide, and the notice says where it is; "Open Settings" opens Review with the switch', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
+    await act(async () => captured.sidebar?.onHideCardSkill?.())
+    expect(shown()).toEqual([['/v', false]])
+    expect(storage.getSettings().cardSkillInSidebar).toBe(false)
+    expect(bridge.state.setSettings).toHaveBeenCalledWith(expect.objectContaining({ cardSkillInSidebar: false }))
+    expect(bridge.window.setIdentity).toHaveBeenLastCalledWith(expect.objectContaining({ tabs: ['/v/a.md'] }))
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Card skill hidden. Turn it on again in Settings › Cards.')
+    expect(el.querySelector('.link-notice__action')?.textContent).toBe('Open Settings')
+    await act(async () => el.querySelector<HTMLButtonElement>('.link-notice__action')?.click())
+    expect(el.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards')
+    const toggle = el.querySelector('[role="group"][aria-label="Card skill in the sidebar"]')
+    expect([...(toggle?.querySelectorAll('button') ?? [])].map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Show', 'false'], ['Hide', 'true']])
+  })
+
+  it('switch back to Show: the row shows again, closed', async () => {
+    const { el } = await mount(skillOn({ cardSkillInSidebar: false }), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    expect(shown()).toEqual([['/v', false]])
+    await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
+    settingsPage(el, 'Cards')
+    const show = [...el.querySelectorAll<HTMLButtonElement>('[aria-label="Card skill in the sidebar"] button')].find((b) => b.textContent === 'Show')
+    await act(async () => show?.click())
+    expect(shown()).toEqual([['/v', false], [SKILL, true]])
+    expect(captured.sidebar?.closedVaults).toContain(SKILL)
+  })
+
+  it('app restart with a skill tab open, skill shown: the tab comes back, read only in the skill\'s own scope', async () => {
+    await mount(skillOn(), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START && e.root === SKILL)).toBe(true)
+  })
+
+  it('app restart with a skill tab open, skill hidden: the tab does not come back', async () => {
+    const { bridge } = await mount(skillOn({ cardSkillInSidebar: false }), { id: 'w1', root: '/v', file: START, tabs: ['/v/a.md', START], cardSkill: SKILL }, {}, reviews(true))
+    expect(captured.editors.some((e) => e.path === START)).toBe(false)
+    expect(bridge.readFile).not.toHaveBeenCalledWith(START)
+  })
+
+  it('a file action in the skill is refused at once, with a word on how to change it', async () => {
+    const { el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    let allowed: boolean | undefined
+    await act(async () => {
+      allowed = await captured.sidebar?.onFileAction?.(SKILL)
+    })
+    expect(allowed).toBe(false)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('The card skill is read only. Duplicate it into your vault to change it.')
+  })
+
+  it('YAZ-5109: "Duplicate into <vault>…" asks main to copy into that vault and says where it landed', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, reviews(true))
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/v', false)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill". You can change it there.')
+  })
+
+  it('YAZ-5204: "Duplicate into <vault>…" into a read-only vault writes nothing and says why in one line; a writable vault of the window still takes it', async () => {
+    const readOnlyV = (b: ReturnType<typeof installBridge>) =>
+      b.bridge.vaultConfig.read.mockImplementation(async (root?: string, name?: string) => (name === 'review.json' ? { enabled: root !== SKILL } : name === 'read-only.json' ? { on: root === SKILL || root === '/v' } : null))
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', roots: ['/v', '/w'], file: null, tabs: [], cardSkill: SKILL }, {}, readOnlyV)
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(bridge.cardSkill.duplicate).not.toHaveBeenCalled()
+    expect(el.querySelector('#confirm-read-only-vault-text')).toBeNull()
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe(cardSkillReadOnlyVault('v'))
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/w'))
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledExactlyOnceWith('/w', false)
+  })
+
+  it('YAZ-5109: with `Card skill` in the vault already, one sheet asks before a second copy; Cancel makes nothing, the other button makes `Card skill 2`', async () => {
+    const { bridge, el } = await mount(skillOn(), { id: 'w1', root: '/v', file: null, tabs: [], cardSkill: SKILL }, {}, (b) => {
+      reviews(true)(b)
+      b.bridge.cardSkill.duplicate.mockImplementation(async (vault: string, again: boolean) => (again ? { made: `${vault}/Card skill 2` } : { exists: `${vault}/Card skill` }))
+    })
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    expect(el.querySelector('#confirm-card-skill-again-text')?.textContent).toBe('Card skill is already in v. Make a second copy? The app keeps using the first one.')
+    const button = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === label)
+    await act(async () => button('Cancel')?.click())
+    expect(el.querySelector('#confirm-card-skill-again-text')).toBeNull()
+    expect(bridge.cardSkill.duplicate).toHaveBeenCalledTimes(1)
+    await act(async () => captured.sidebar?.onDuplicateCardSkill?.('/v'))
+    await act(async () => button('Make a second copy')?.click())
+    expect(bridge.cardSkill.duplicate).toHaveBeenLastCalledWith('/v', true)
+    expect(el.querySelector('.link-notice__text')?.textContent).toBe('Duplicated the card skill into v: "Card skill 2". You can change it there.')
+  })
+})
+
+describe('App: the card course (YAZ-5120)', () => {
+  afterEach(() => {
+    courseNoticeDue = false
+  })
+
+  it('the one notice, the first time a vault with Review on shows: it is kept as shown, and "Open the course" opens the lazy layer; Esc closes it', async () => {
+    courseNoticeDue = true
+    const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ offered: true })
+    const open = [...el.querySelectorAll<HTMLButtonElement>('.link-notice button')].find((b) => b.textContent === 'Open the course')!
+    act(() => open.click())
+    await vi.waitFor(() => expect(document.querySelector('.course[role="dialog"]')).not.toBeNull())
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    expect(document.querySelector('.course')).toBeNull()
+  })
+
+  // YAZ-5272: the offer is for a person new to cards (Yaseen): the vault in front has cards on and holds no card yet.
+  describe('YAZ-5272: only a person new to cards gets the offer', () => {
+    const cardIn = (path: string): IndexRecord => ({
+      path, name: 'cards.md', basename: 'cards', title: 'Cards', folder: '', ext: 'md', size: 1, ctime: 1, mtime: 1,
+      properties: {}, aliases: [], tags: [], links: [], embeds: [], cards: [{ id: 'WIKI-9', off: false, next: false, reviews: [] }],
+    })
+    const index = (b: ReturnType<typeof installBridge>) =>
+      void b.bridge.index.mockImplementation(async (root: string) => ({ root, records: root === '/a' ? [cardIn('/a/cards.md')] : [], folders: [], generatedAt: 1, ids: true }))
+
+    it('a vault with Review on and one card, `offered` false: no notice, nothing kept as offered, and no course line in its empty Inbox', async () => {
+      courseNoticeDue = true
+      const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } }, index)
+      await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
+      await act(async () => new Promise((r) => setTimeout(r, 50)))
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
+      act(() => captured.sidebar?.onOpenInbox())
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+      expect(el.querySelector('.course-offer')).toBeNull()
+    })
+
+    it('a window with a vault with cards in front and a vault with none: no notice; the vault with none in front: the notice, one time', async () => {
+      courseNoticeDue = true
+      const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
+      const { bridge, el } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, index)
+      await vi.waitFor(() => expect(bridge.index).toHaveBeenCalledWith('/a'))
+      await act(async () => new Promise((r) => setTimeout(r, 50)))
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
+      await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
+      expect((bridge.state.setCourse.mock.calls as unknown as [{ offered?: boolean }][]).filter(([patch]) => patch.offered === true)).toHaveLength(1)
+    })
+  })
+
+  it('requestCourse(chapter) from any part opens the course at that chapter', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain('New to cards?')
+    act(() => requestCourse('good-card'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 7 of 12'))
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  })
+
+  it('YAZ-5123: the guided tour`s "Show me" opens Settings at Cards, and a file, with the app`s own doors', async () => {
+    const { el } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md', '/v/b.md'] }, { '/v/a.md': { content: '# a', mtime: 1 }, '/v/b.md': { content: '# b', mtime: 1 } })
+    act(() => showTourPlace({ kind: 'settings', page: 'cards' }))
+    await vi.waitFor(() => expect(document.querySelector('.settings-nav__item[aria-current="page"]')?.textContent).toBe('Cards'))
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    act(() => showTourPlace({ kind: 'file', path: '/v/b.md' }))
+    await vi.waitFor(() => expect(el.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('b'))
+  })
+
+  it('YAZ-5201: in a window with vaults A and B, the course stays in the vault it was opened from: B in front during the run makes nothing in B', async () => {
+    const files = { '/a/x.md': { content: '# x', mtime: 1 }, '/b/y.md': { content: '# y', mtime: 1 } }
+    const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/a', roots: ['/a', '/b'], file: '/a/x.md', tabs: ['/a/x.md', '/b/y.md'] }, files, (b) => {
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'review.json' ? { enabled: true } : null))
+      Object.assign(b.bridge, { createDir: vi.fn(async (req: { path: string }) => ({ path: req.path })), mintPageId: vi.fn(async () => 'TST-1') })
+    })
+    act(() => requestCourse('first-card'))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 2 of 12'))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ vault: '/a' })
+    // The person brings vault B to the front in the middle of the course (the tour lets them use the whole app).
+    act(() => showTourPlace({ kind: 'file', path: '/b/y.md' }))
+    await vi.waitFor(() => expect(document.querySelector('.tabbar__tab--active')?.textContent ?? '').toContain('y'))
+    // YAZ-5366: chapter 2's hands-on part is live steps now. Next up to the first one (c2-13): its check makes the folder.
+    const next = () => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.getAttribute('aria-label') === 'Next step')!
+    for (let i = 0; i < 40 && !(document.querySelector('.course__caption')?.textContent ?? '').startsWith('Your card is now a real file'); i++) act(() => next().click())
+    expect(document.querySelector('.course__caption')?.textContent).toContain('Your card is now a real file')
+    const createDir = (bridge as unknown as { createDir: ReturnType<typeof vi.fn> }).createDir
+    await vi.waitFor(() => expect(createDir).toHaveBeenCalled(), { timeout: SLOW_RUNNER_MS })
+    // The live step's check and the clip's scene may both ask for the folder: every ask is in vault A, none in B.
+    expect([...new Set(createDir.mock.calls.map(([req]) => (req as { path: string }).path))]).toEqual(['/a/course-cards'])
+    act(() => void document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+    document.querySelectorAll('.course-tour-root').forEach((n) => n.remove())
+  })
+
+  it('YAZ-5201: the course opens again at its place in the vault kept with it; when that vault is not in the window, one line and "Start over" in the vault in front', async () => {
+    const state: AppState = { ...defaultAppState(), course: { ...defaultCourseState(), chapter: 'inbox', clip: 'c3-04', vault: '/gone' } }
+    const { bridge } = await mount(state, { id: 'w1', root: '/a', file: '/a/x.md', tabs: ['/a/x.md'] }, { '/a/x.md': { content: '# x', mtime: 1 } })
+    act(() => requestCourse())
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 3 of 12'))
+    expect([...document.querySelectorAll('.course__note')].map((n) => n.textContent)).toEqual(['gone is not open in this window, so the course makes no files. Start over in a'])
+    expect(bridge.state.setCourse).not.toHaveBeenCalledWith(expect.objectContaining({ vault: '/a' }))
+    act(() => [...document.querySelectorAll<HTMLButtonElement>('.course button')].find((b) => b.textContent === 'Start over in a')!.click())
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain('Chapter 1 of 12'))
+    expect(bridge.state.setCourse).toHaveBeenCalledWith({ chapter: '', clip: '', vault: '/a' })
+    expect(document.querySelector('.course__note')).toBeNull()
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  })
+
+  it('YAZ-5114 with YAZ-5120: "Learn the formats" opens the course at the chapter on good cards and formats, not the folder', async () => {
+    await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/a.md', tabs: ['/v/a.md'] }, { '/v/a.md': { content: '# a', mtime: 1 } })
+    const at = COURSE.findIndex((chapter) => chapter.title === FORMATS_CHAPTER_TITLE)
+    expect(at).toBeGreaterThanOrEqual(0)
+    act(() => void document.body.dispatchEvent(new CustomEvent(CARD_FORMATS_OPEN, { bubbles: true, detail: { folder: '/demo-profile/card-skill/formats' } })))
+    await vi.waitFor(() => expect(document.querySelector('.course__where')?.textContent).toContain(`Chapter ${at + 1} of ${COURSE.length}`))
+    act(() => void document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
+  })
+
+  describe('Card tips (YAZ-5114) turns off the course offers; the Settings button stays', () => {
+    const noCards = (b: ReturnType<typeof installBridge>) => void b.bridge.index.mockResolvedValue({ root: '/v', records: [], folders: [], generatedAt: 1, ids: true })
+    const tips = (cardTips: boolean): AppState => ({ ...defaultAppState(), settings: { ...defaultAppState().settings, cardTips } })
+    const openInbox = async (el: HTMLElement) => {
+      act(() => captured.sidebar?.onOpenInbox())
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox')).toBeInstanceOf(HTMLElement), { timeout: SLOW_RUNNER_MS })
+    }
+
+    it('On (the default): the notice shows, and the empty Inbox of a vault with no card has the course line', async () => {
+      courseNoticeDue = true
+      const { el } = await mount(tips(true), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
+      await vi.waitFor(() => expect(el.querySelector('.link-notice')?.textContent).toContain(COURSE_NOTICE))
+      await openInbox(el)
+      await vi.waitFor(() => expect(el.querySelector('.course-offer')).not.toBeNull())
+    })
+
+    it('Off: no notice, nothing kept as offered, and no course line in the same empty Inbox; Settings › Cards still has "Open the course"', async () => {
+      courseNoticeDue = true
+      const { bridge, el } = await mount(tips(false), { id: 'w1', root: '/v', file: null, tabs: [] }, {}, noCards)
+      await openInbox(el)
+      await vi.waitFor(() => expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.'), { timeout: SLOW_RUNNER_MS })
+      expect(el.querySelector('.course-offer')).toBeNull()
+      expect(el.querySelector('.link-notice')?.textContent ?? '').not.toContain(COURSE_NOTICE)
+      expect(bridge.state.setCourse).not.toHaveBeenCalledWith({ offered: true })
+      await act(async () => (captured.sidebar as unknown as { onOpenSettings: () => void }).onOpenSettings())
+      settingsPage(el, 'Cards')
+      expect([...el.querySelectorAll('button')].some((b) => b.textContent === 'Open the course')).toBe(true)
+    })
   })
 })

@@ -8,9 +8,11 @@ on window:views
 on window:tabs
 on menu:paste-as
 on menu:copy-as
+app.cardFormats/1: invoke app:card-formats ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 app.home/0: invoke app:home []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 app.sound/1: invoke app:sound ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 boardHead/1: invoke fs:board-head ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+cardSkill.duplicate/2: invoke card-skill:duplicate ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 coldDiff/1: invoke fs:cold-diff ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.delete/1: invoke components:delete ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.list/0: invoke components:list []; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -19,6 +21,10 @@ components.preview/1: invoke components:preview ["a0"]; => "answer"; !> {"code":
 components.read/1: invoke components:read ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.rename/1: invoke components:rename ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 components.save/1: invoke components:save ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.chapter/1: invoke course-audio:chapter ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.chapterStarting/1: invoke course-audio:chapter-starting ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+courseAudio.onChange/1: on course-audio:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","root":"r","properties":"props"}]]; off course-audio:changed
+courseAudio.open/1: invoke course-audio:open ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createBoard/1: invoke fs:create-board ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createDir/1: invoke fs:create-dir ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 createFile/1: invoke fs:create-file ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
@@ -202,6 +208,7 @@ state.onChange/1: on state:changed -> listener[[{"id":"0-0-0-0-0","ev":"ev","roo
 state.pushRecent/1: invoke state:push-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.removeRecent/1: invoke state:remove-recent ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setBaseGroups/3: invoke state:set-base-groups ["a0","a1",["a","2"]]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
+state.setCourse/1: invoke state:set-course ["a0"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFavoritesOrder/2: invoke state:set-favorites-order ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFocusOrder/2: invoke state:set-focus-order ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}
 state.setFolder/2: invoke state:set-folder ["a0","a1"]; => "answer"; !> {"code":"NOT_FOUND","message":"gone","path":"/p"}

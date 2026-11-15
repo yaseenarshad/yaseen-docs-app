@@ -95,6 +95,7 @@
  *    is Archived), and a card's ⋯ menu unarchives it.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { CourseOffer, type CourseOfferProps } from '../course/CourseOffer'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardSides } from '@shared/cardText'
 import { withCardTitle } from '@shared/cardLine'
@@ -109,7 +110,7 @@ import type { InboxOpenAt } from '@shared/types'
 import type { CardRating } from '@shared/cardLine'
 import type { ExploreVault } from '../explore/ExplorePage'
 import { isListFilter, type CardReviewApi, type CardReviewSession } from './useCardReview'
-import { FIX_PATH } from './cardInboxIcons'
+import { ARCHIVE_PATH, FIX_PATH } from './cardInboxIcons'
 import { CardBand, CardId, CardNextChip, CardStrip, cardWait } from './cardParts'
 import { CardSideCount, InboxCardFace, InboxCardPanel, useCardFront, useCardSteps, useStepScroll } from './inboxCard'
 import { cardInboxHints, cardInboxKey } from './cardInboxKeys'
@@ -132,6 +133,7 @@ import { DueTodayEnd } from './DueTodayEnd'
 import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
+import { tourEvent } from '../course/tourBus'
 import type { CardPlace } from '../editor/card/cardOpen'
 
 /** Where the Inbox's zoom is kept (YAZ-5372): `savedZoom`, localStorage. */
@@ -166,6 +168,11 @@ export interface CardInboxProps {
   /** Focus mode (YAZ-5375, App's, remembered): on, the tab row hides while the Inbox shows. The bar's button, F and Esc change it. */
   focusMode?: boolean
   onFocusMode?: (on: boolean) => void
+  /**
+   * The card course's offer on the vault's empty Inbox (YAZ-5120, suggestion 24): App gives it only when the vault has
+   * no card, the course is not done, the person did not dismiss it, and Card tips is on. Absent: no offer.
+   */
+  courseOffer?: CourseOfferProps
 }
 
 const NO_TITLES: ReadonlyMap<string, string> = new Map()
@@ -198,7 +205,7 @@ const icon = (d: string) => (
 )
 /** The ⋯ row's icons (YAZ-5004): undo, an archive box (Archive card, YAZ-5046), up to the top, a card window. */
 const ICON_UNDO = icon('M6 4 3 7l3 3M3 7h7a3 3 0 0 1 0 6H8')
-const ICON_OFF = icon('M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3')
+const ICON_OFF = icon(ARCHIVE_PATH)
 const ICON_TOP = icon('M3 2.5h10M8 13.5V5.5M5 8.5l3-3 3 3')
 const ICON_CARD = icon('M2.5 3.5h11v9h-11zM2.5 6.5h11')
 const ICON_FIX = icon(FIX_PATH)
@@ -260,7 +267,7 @@ export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kin
 /** A Reset's line (YAZ-5042 round 2), after its "↺": "Reset today's new cards" (back to the Settings number). */
 export const resetLine = (kind: AddKind): string => `Reset today's ${kind === 'new' ? 'new cards' : 'Up next'}`
 
-export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode }: CardInboxProps) {
+export function CardInbox({ shown = true, review, session, vaultOf, nameOf, openPage: openFile, openAt = 'top', editCard, openInTab, openLinkIn, openLayer, onNotice, openPlace, focusMode = false, onFocusMode, courseOffer }: CardInboxProps) {
   const unit = useUnit()
   const rootRef = useRef<HTMLDivElement>(null)
   const columnRef = useRef<HTMLDivElement>(null)
@@ -381,7 +388,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
   // The steps are the shared card's (`useCardSteps`); at the end, with the end in view, a key rings the buttons.
   const advance = useCallback((by: 'key' | 'mouse' = 'key') => {
     const { steps, card } = live.current
-    if (card?.page == null || steps.stepOn(by) || by !== 'key') return
+    if (card?.page == null) return
+    if (steps.stepOn(by)) {
+      // The guided tour (YAZ-5123) hears each step of the card.
+      tourEvent('inbox-step-shown', card.path)
+      return
+    }
+    if (by !== 'key') return
     const key = steps.step.key
     setNudge((v) => ({ key, n: v.key === key ? v.n + 1 : 1 }))
   }, [])
@@ -479,7 +492,13 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 ) : session.scope === 'vault' ? (
                   <>
                     {withTitle && <p className="card-inbox__done-title">Inbox complete.</p>}
-                    {addButtons === null ? <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p> : [waits, addButtons]}
+                    {courseOffer !== undefined ? (
+                      <CourseOffer {...courseOffer} />
+                    ) : addButtons === null ? (
+                      <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
+                    ) : (
+                      [waits, addButtons]
+                    )}
                   </>
                 ) : (
                   <>
@@ -508,7 +527,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
       ? []
       : [
           { id: 'undo', label: 'Undo last review', keys: '⌘Z', icon: ICON_UNDO, disabled: !session.canUndo, run: () => void review.undo() },
-          { id: 'off', label: 'Archive card', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
+          { id: 'off', label: 'Archive card', tour: 'card-menu-archive', icon: ICON_OFF, disabled: card.page === null, run: () => void review.turnOff() },
           card.page?.next === true
             ? { id: 'next', label: 'Remove from top of Inbox', icon: ICON_TOP, disabled: false, run: () => void review.setNext(card.path, card.id, false) }
             : { id: 'next', label: 'Put at top of Inbox', icon: ICON_TOP, disabled: card.page === null, run: () => void review.setNext(card.path, card.id, true) },
@@ -619,7 +638,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
             ) : (
               text !== null &&
               card.page !== null && (
-                <InboxCardFace text={text} path={card.path} vault={vaultOf(card.path)} steps={steps} doors={doors} onStep={advance} />
+                <InboxCardFace tour="inbox-card" text={text} path={card.path} vault={vaultOf(card.path)} steps={steps} doors={doors} onStep={advance} />
               )
             )}
         </InboxCardPanel>
@@ -647,7 +666,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 </button>
               </HoverTip>
             </div>
-            <div className="card-inbox__answers" data-nudge={nudge.key === cardKey && nudge.key !== null ? (nudge.n % 2 === 1 ? 'a' : 'b') : undefined}>
+            <div className="card-inbox__answers" data-tour="inbox-answers" data-nudge={nudge.key === cardKey && nudge.key !== null ? (nudge.n % 2 === 1 ? 'a' : 'b') : undefined}>
               {/* YAZ-5029: the buttons are the setting's, always there — never only once the card's answers are fixed, so
                   fast ← → never takes them away for a frame. The hover says when the card comes back once it is known. */}
               {ratings.map((rating, i) => {
@@ -674,6 +693,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                         type="button"
                         className="explore__button card-inbox__more-action"
                         data-action={a.id}
+                        data-tour={a.tour}
                         aria-label={a.label}
                         disabled={a.disabled}
                         onMouseDown={(e) => e.preventDefault()}
@@ -689,7 +709,7 @@ export function CardInbox({ shown = true, review, session, vaultOf, nameOf, open
                 </div>
               )}
               <HoverTip text="More">
-                <button type="button" className="explore__button card-inbox__more-button" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => setMore(moreOpen ? null : cardKey)}>
+                <button type="button" className="explore__button card-inbox__more-button" data-tour="card-menu" aria-label="More" aria-expanded={moreOpen} onMouseDown={(e) => e.preventDefault()} onClick={() => setMore(moreOpen ? null : cardKey)}>
                   ⋯
                 </button>
               </HoverTip>

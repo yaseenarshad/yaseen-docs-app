@@ -13,6 +13,9 @@ const glyph = (body: ReactElement, size = 14): ReactElement => (
 
 /** All cards: an inbox tray, as Mochi's menu draws it; the sidebar's Inbox row wears the same shape (YAZ-5131). */
 export const InboxTrayIcon = () => glyph(<path d={INBOX_TRAY_PATH} />)
+/** An archive box: the Inbox ⋯'s Archive card glyph, and the course's Archived chip (YAZ-5046, YAZ-5330). */
+export const ARCHIVE_PATH = 'M2.5 3.5h11v3h-11zM3.5 6.5v6h9v-6M6.5 9h3'
+export const ArchiveIcon = () => glyph(<path d={ARCHIVE_PATH} />)
 /**
  * The wrench of Fix later (YAZ-5097; YAZ-5197: a pencil read as "Edit card"): the To fix row and the Inbox ⋯'s Fix later.
  * Tabler's `tool`, the wrench the app already draws for the Present tab (`toolsIcon`), redrawn at 2/3 for the 16 px grid.

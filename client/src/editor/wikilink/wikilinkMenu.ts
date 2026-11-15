@@ -30,6 +30,7 @@ import { linkPosAtDOM, wikilinkMatchAt, type LinkFollow, type WikilinkNav } from
 import { WIKILINK_CLASS, cardLinkTitle, cardResolverOf, idLinkTitle, linkDisplayText, linkIsResolved, linkPageId, linkPageName, linkPath, linkSplit, missingId, nameAndId, otherVaultId, type VaultsOfLetters, type WikilinkResolveSource } from './wikilinkPlugin'
 import type { ViewOnlyLinkSource } from './viewOnlyLinkSource'
 import { pillStyleRow } from './pillStyle'
+import { tourEvent } from '../../course/tourBus'
 
 const wikilinkMenuKey = new PluginKey('mdapp-wikilink-menu')
 
@@ -75,7 +76,10 @@ function menuOf(view: EditorView, from: number, to: number, inner: string, sourc
   const cards = cardCheckOf(view.state)
   const card = cards?.cardOf(target) ?? null
   const embed = card !== null ? `![[${card.id}]]` : cards?.isMissing(target) !== true && boardEmbedTarget(target, boardCheckOf(view.state)) !== null ? newEmbed(target) : null
-  if (view.editable && embed !== null && !inCellOrPage(view.state.doc.resolve(from))) menu.showAsEmbed = () => view.dispatch(view.state.tr.insertText(embed, from, to))
+  if (view.editable && embed !== null && !inCellOrPage(view.state.doc.resolve(from))) menu.showAsEmbed = () => {
+      view.dispatch(view.state.tr.insertText(embed, from, to))
+      if (card !== null) tourEvent('card-embedded')
+    }
   return menu
 }
 

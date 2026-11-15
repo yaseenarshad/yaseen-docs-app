@@ -12,12 +12,16 @@ import type { FileResponse, IndexRecord } from '@shared/types'
 import { createWikilinkResolveSource } from './wikilink/wikilinkPlugin'
 import { CardFileView } from './CardFileView'
 import { cardBlockViewOfDom } from './card/cardBlockView'
+import { setCardFormatHints } from './card/cardFormatHint'
 import { VaultReadOnly } from '../vault/readOnlyVault'
 import { useReviewSettings } from '../review/useReviewSettings'
 import { createCardFile } from '../review/newCardFile'
 import { cardFileName } from '@shared/cardFileFormat'
 import { paintedFindRanges } from './find/cardFind'
 import { placeOf } from '../test-placeName'
+import { listenTour } from '../course/tourBus'
+import { createWikilinkCandidateSource, WIKILINK_PICKER_CLASS } from './wikilink/wikilinkPicker'
+import { nameCandidate } from '../links/completion'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -108,7 +112,7 @@ afterEach(() => {
   el?.remove()
 })
 
-async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; pane?: boolean } = {}) {
+async function mount(content: string, opts: { readOnly?: boolean; review?: boolean; path?: string; allow?: boolean; pane?: boolean; candidates?: ReturnType<typeof createWikilinkCandidateSource> } = {}) {
   const path = opts.path ?? PATH
   disk.files.set(path, content)
   if (opts.review === false) disk.review = { enabled: false }
@@ -128,7 +132,7 @@ async function mount(content: string, opts: { readOnly?: boolean; review?: boole
     root?.render(
       <VaultReadOnly.Provider value={{ on: opts.readOnly === true, allowFileAction }}>
         <ReviewScope />
-        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onRetitle={onRetitle} onReread={onReread} />
+        <CardFileView file={file} root={ROOT} wikilinks={wikilinks} wikilinkCandidates={opts.candidates} onOpenFile={onOpenFile} onNotice={onNotice} onPage={onPage} onRetitle={onRetitle} onReread={onReread} />
       </VaultReadOnly.Provider>,
     ),
   )
@@ -446,6 +450,52 @@ describe('Edit card in the tab (the card editor, YAZ-5026)', () => {
  * "Read only" chip while the vault or the file is read only, Sync and Saved. The chip turns Read only off as on a page:
  * a time choice unlocks this tab (the vault's lock stays in its file), "Turn Read only off" writes the file's own switch.
  */
+describe('the guided tour hears the card file tab (YAZ-5123)', () => {
+  it('open, Edit card (click or E) and Done each fire their event once, with the path; the marks are on the real controls', async () => {
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
+    try {
+      await mount(FILE)
+      expect(heard).toEqual([['card-file-open', PATH]])
+      expect(editButton()!.dataset.tour).toBe('card-edit')
+      expect(el.querySelector('[data-card-file] .card__more')!.getAttribute('data-tour')).toBe('card-menu')
+      act(() => editButton()!.click())
+      const dom = await cardEditor()
+      expect(el.querySelector('[data-explore-card-edit]')!.getAttribute('data-tour')).toBe('card-editor')
+      expect(el.querySelector<HTMLElement>('[data-explore-card-edit] .card__edit')!.dataset.tour).toBe('card-done')
+      expect(heard.map(([n]) => n)).toEqual(['card-file-open', 'card-edit-open'])
+      key(dom, { key: 'Enter', metaKey: true })
+      await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit]')).toBeNull())
+      expect(heard).toEqual([['card-file-open', PATH], ['card-edit-open', PATH], ['card-edit-done', PATH]])
+      key(el.querySelector('[data-card-file-body]')!, { key: 'e' })
+      expect(heard.at(-1)).toEqual(['card-edit-open', PATH])
+      expect(heard).toHaveLength(4)
+    } finally {
+      stop()
+    }
+  })
+
+  it('the ⋯ rows Archive card and Copy card link are marks of the tour; once archived, the same row Unarchive card is (YAZ-5330); Put at top of Inbox is not', async () => {
+    await mount(FILE)
+    await menu()
+    const tours = () => [...document.querySelectorAll<HTMLElement>('[role="menuitem"][data-tour]')].map((item) => [item.textContent, item.dataset.tour])
+    expect(tours()).toEqual([
+      ['Archive card', 'card-menu-archive'],
+      ['Copy card link', 'card-copy-link'],
+    ])
+    pick('Archive card')
+    await vi.waitFor(() => expect(el.querySelector('.card-file__state')?.textContent).toBe('Archived'))
+    await vi.waitFor(() => expect(document.querySelector('[role="menuitem"]')).toBeNull())
+    await menu()
+    expect(tours()).toEqual([
+      ['Unarchive card', 'card-menu-unarchive'],
+      ['Copy card link', 'card-copy-link'],
+    ])
+    pick('Unarchive card')
+    await vi.waitFor(() => expect(disk.files.get(PATH)).toBe(FILE))
+  })
+})
+
 describe('Preview a card from its file (YAZ-5152)', () => {
   it('P and ⋯ › Preview ask for the preview with the card as the Inbox reads it (its title off the card line); no write', async () => {
     await mount(FILE)
@@ -590,8 +640,13 @@ describe('the top bar of a card file (YAZ-5102)', () => {
  */
 describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
   it('the typed name is `title`; the file is named after it; the card is empty and opens in Edit card; Done writes the card and renames nothing', async () => {
+    const heard: Array<[string, string | undefined]> = []
+    const stop = listenTour((name, detail) => heard.push([name, detail]))
     const made = await createCardFile('/v/Geography', 'Capital of France')
+    stop()
     expect(made).toBe(`/v/Geography/${cardFileName('Capital of France', 'WIKI-10')}`)
+    // The guided tour (YAZ-5123) hears the new card file once, with its path.
+    expect(heard).toEqual([['card-file-created', made]])
     expect(disk.files.get(made)).toBe('---\nkind: card\n---\n```card\n\n```\n<!-- card: WIKI-10, title "Capital of France" -->\n')
     const { onRetitle } = await mount(disk.files.get(made)!, { path: made })
     await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__editor .ProseMirror')).not.toBeNull())
@@ -608,6 +663,27 @@ describe('a new card file (YAZ-5037 phase 4, YAZ-5044)', () => {
     await mount(disk.files.get(made)!, { path: made })
     expect(el.querySelector('[data-explore-card-edit]')).toBeNull()
     expect(editButton()).not.toBeNull()
+  })
+
+  it('YAZ-5114: the new card file shows the format hint under the key row; the first text removes it; an old card file never shows it', async () => {
+    setCardFormatHints({ on: true, byVault: new Map([['/v', { folder: '/v/Card skill/formats', formats: ['acronym', 'book', 'comparison', 'concept'] }]]) })
+    try {
+      const made = await createCardFile('/v/Geography', 'la biblioteca')
+      await mount(disk.files.get(made)!, { path: made })
+      await vi.waitFor(() => expect(el.querySelector('[data-explore-card-edit] .card__formats')).not.toBeNull())
+      expect(el.querySelector('[data-explore-card-edit] .card__formats')!.textContent).toBe('Formats in your card skill: acronym · book · comparison · 1 more. Learn the formats')
+      const dom = el.querySelector<HTMLElement>('[data-explore-card-edit] .card__editor .ProseMirror')!
+      const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+      act(() => view.dispatch(view.state.tr.insertText('El libro', 1)))
+      expect(el.querySelector('.card__formats')).toBeNull()
+      act(() => root?.unmount())
+      await mount(FILE)
+      act(() => editButton()!.click())
+      await cardEditor()
+      expect(el.querySelector('.card__formats')).toBeNull()
+    } finally {
+      setCardFormatHints({ byVault: new Map() })
+    }
   })
 
   it('a Done in Edit card never renames: the card`s text is its sides, not its title', async () => {
@@ -754,5 +830,27 @@ describe('⌘F in a card file tab (YAZ-5378 part 2): the page\'s find bar, over 
     act(() => input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })))
     expect(el.querySelector('.find-bar')).toBeNull()
     expect(paintedFindRanges()).toEqual([])
+  })
+})
+
+describe('[[ in Edit card on a card file (YAZ-5185)', () => {
+  it('lists the vault\'s pages and cards, as in a page, not only "Create"', async () => {
+    const candidates = createWikilinkCandidateSource()
+    candidates.update([{ ...nameCandidate('Europe'), path: `${ROOT}/Europe.md` }, { name: 'Estar', insert: 'WIKI-12', label: 'Estar', lower: 'estar', card: true }])
+    await mount(FILE, { candidates })
+    act(() => editButton()!.click())
+    const dom = await cardEditor()
+    const view = cardBlockViewOfDom(dom.closest('.card'))!.cardEditor!.view()!
+    act(() => view.dispatch(view.state.tr.insertText('[[', view.state.doc.content.size - 1)))
+    act(() => view.dispatch(view.state.tr.insertText('e')))
+    const rows = () => [...document.querySelectorAll(`.${WIKILINK_PICKER_CLASS} [role="option"]`)].map((o) => o.textContent ?? '')
+    await vi.waitFor(() => expect(rows()).toContain('Europe'))
+    expect(rows().some((r) => r.includes('Estar'))).toBe(true)
+    // YAZ-5407: each row has its icon, as in a page's picker: the page row the sidebar's file icon, the card row the card icon.
+    const option = (label: string) => [...document.querySelectorAll<HTMLElement>(`.${WIKILINK_PICKER_CLASS} [role="option"]`)].find((o) => o.textContent?.includes(label))!
+    expect(option('Europe').querySelector('.file-icon')).not.toBeNull()
+    expect(option('Estar').querySelector('.wikilink-picker__card-icon')).not.toBeNull()
+    expect(option('Estar').dataset.card).toBe('true')
+    document.querySelectorAll(`.${WIKILINK_PICKER_CLASS}`).forEach((p) => p.remove())
   })
 })

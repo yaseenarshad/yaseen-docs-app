@@ -12,6 +12,9 @@
  */
 import type { AppState, AssetResponse, AssetWriteRequest, AssetWriteResponse, BoardFoldArrowsRequest, BoardHeadResponse, BoardHoverLinksRequest, BoardHoverOutlineRequest, BoardPicturesRequest, BoardPicturesResponse, BoardReadOnlyRequest, BoardReadOnlyResponse, BoardVersion, BoardVersionScene, BridgeError, ClipboardPasteRequest, ColdStartDiffResponse, ComponentItem, ComponentReadResponse, ComponentRenameRequest, ComponentSaveRequest, ComponentSlugRequest, CreateBoardRequest, CreateBoardResponse, CreateDirRequest, CreateDirResponse, CreateFileRequest, CreateFileResponse, DeleteRequest, DeleteResponse, DuplicateRequest, DiagramLoadRequest, DiagramLoadResponse, DiagramSaveRequest, DiagramSaveResponse, DrawingLoadRequest, DrawingLoadResponse, DrawingSaveRequest, DrawingSaveResponse, FileClipRequest, FileClipState, FileDeletedEvent, FileHead, FileRenamedEvent, TextHead, FileResponse, FileWriteRequest, FileWriteResponse, FilesAction, FilesPreviewRequest, ImportRequest, ImportResponse, DragOutRequest, DragEndedEvent, DragLandedEvent, DroppedHereRequest, FolderPatch, GestureSound, GithubSyncStatus, IdsState, ImageDownloadRequest, ImageDownloadResponse, ImageResponse, IndexResponse, InboxCarry, MediaDrawingIndexResponse, MediaDrawingRequest, MediaDrawingResponse, MediaFavoritesRequest, MediaImportRequest, MediaImportResponse, MediaPreviewRequest, MediaPreviewResponse, MediaLibraryFile, MediaUsedRequest, MediaSearchRequest, MediaSearchResponse, MovedTab, OpenDrawingResponse, OpenLinkRequest, OpenSetResult, OpenWindowOptions, PageView, RestoreSessionResult, PasteRequest, PasteResponse, PdfResponse, PickFolderResponse, PickPicturesFolderRequest, PickPicturesFolderResponse, PopOutCarry, PutBackRequest, PutBackResponse, PropertiesResponse, PropertyDecl, ReleaseNotes, RenameFileRequest, RenameFileResponse, RetitleRequest, RevealRequest, RevealResponse, SaveDrawingRequest, SaveDrawingResponse, SaveImageRequest, SavePdfRequest, SecretHasRequest, SecretSetRequest, SettingsState, ShareAccount, TabAction, TabCanvasPatch, TabRef, ShareBoardRequest, ShareEntry, ShareListEntry, SharePermissionRequest, SharePublishRequest, ShareSetupProgress, ShareStatus, ShrinkResult, StoredMediaItem, StoredTab, TocSource, TreeResponse, UpdateState, VaultConfigChange, VaultStorageStats, WatchEvent, WindowIdentity, ZoomStep, ScreenPoint, TearOffResult, MemoryReport, StartView } from './types'
 import type { FoundPage } from './pageBirth'
+import type { CardSkillDuplicate, CardSkillFormats } from './cardSkillFolder'
+import type { CoursePatch } from './courseState'
+import type { CourseAudioChange, CourseAudioSound } from './courseAudio'
 import type { CopyAsMode, CopyAsRich, FavoriteCopiesStatus, FavoriteElementsSaveRequest, FocusFolder, ListScope, PageMenuAction, PageMenuArg, MemoryTabFacts } from './types'
 import type { LspHover, LspLocation, LspOpenRequest, LspOpenResponse, LspPositionRequest } from './lsp'
 import type { LspHelpersState, LspInstallProgress, LspInstallResult } from './lspInstall'
@@ -213,6 +216,8 @@ export const CONTRACT = {
     setSidebarWidth: invoke<[width: number], void>('state:set-sidebar-width', 1),
     /** The tab board's canvas (YAZ-3343 D1): the switch, moved cards, forgotten cards (Tidy up). Sent on a drop or a click, never on each pointer move. */
     setTabCanvas: invoke<[patch: TabCanvasPatch], void>('state:set-tab-canvas', 1),
+    /** The card course's place, finished chapters, offers, Mute and Speed (YAZ-5120): only the fields the patch names. Per machine. */
+    setCourse: invoke<[patch: CoursePatch], void>('state:set-course', 1),
     /** The Favorites order of the window's vaults (YAZ-2631 D1); main merges it into the one list. */
     setFavoritesOrder: invoke<[roots: readonly string[], paths: readonly string[]], void>('state:set-favorites-order', 2),
     /** The focus order of the window's vaults (YAZ-2702 Decision 3); main merges it into the one list, as it does the Favorites order. */
@@ -567,6 +572,15 @@ export const CONTRACT = {
     /** Fired in every window after any vault's config change. */
     onChange: push<VaultConfigChange>('vaultConfig:changed'),
   },
+  /** The card skill (YAZ-5059). */
+  cardSkill: {
+    /**
+     * "Duplicate into <vault>…" (YAZ-5109): the app's copy into the top of `vault`, a vault of the calling window, as
+     * `Card skill` — every file writable, with no `.yaseendocs` and no `.version`. With `Card skill` there it makes nothing
+     * and answers `exists`; with `again`, it makes the next free `Card skill N`. Never over anything.
+     */
+    duplicate: invoke<[vault: string, again: boolean], CardSkillDuplicate>('card-skill:duplicate', 2),
+  },
   /** A vault's IDs (YAZ-2677), each for a vault of the calling window: the switch in Settings and the duplicate check. */
   ids: {
     /**
@@ -734,6 +748,12 @@ export const CONTRACT = {
     sound: invoke<[kind: GestureSound], void>('app:sound', 1),
     /** This user's home folder (YAZ-3886 P2): the Welcome screen shows it as "~" in a folder's path. Never fails. */
     home: invoke<[], string>('app:home', 0),
+    /**
+     * The format hint on a new card (YAZ-5114): the `formats` folder of the card skill that `vault` uses (its own
+     * `Card skill` folder, else the app's copy, `cardSkillFolder`) and the format names in it, A to Z. Null when that
+     * skill has no `formats` folder. `vault` null: the app's copy. Never writes.
+     */
+    cardFormats: invoke<[vault: string | null], CardSkillFormats | null>('app:card-formats', 1),
   },
   /** The updater (YAZ-2976 D2): main owns it, and every window reads the same state. */
   update: {
@@ -764,6 +784,20 @@ export const CONTRACT = {
    * request a handle and a position. `null` = no helper answers (none fits, or it is down): the tab
    * falls back to Monaco's one-file help, with no message. Long form: docs/CONTRACTS.md › Bridge API.
    */
+  /**
+   * The course sound (YAZ-5159, 6D1): main downloads one chapter's file when the person starts that chapter, then the
+   * next chapter's in the background, only while the course is open. A failed download is `missing`, never a rejection.
+   */
+  courseAudio: {
+    /** The course layer opened (`true`) or closed (`false`) in this window. The last close stops the downloads. */
+    open: invoke<[open: boolean], void>('course-audio:open', 1),
+    /** A chapter starts (or "Try again"): its sound downloads when it is not here. */
+    chapterStarting: invoke<[chapter: string], void>('course-audio:chapter-starting', 1),
+    /** The chapter's sound when its checked file is here; else null. */
+    chapter: invoke<[chapter: string], CourseAudioSound | null>('course-audio:chapter', 1),
+    /** A chapter's sound arrived, is downloading, or could not come. */
+    onChange: push<CourseAudioChange>('course-audio:changed'),
+  },
   lsp: {
     open: invoke<[req: LspOpenRequest], LspOpenResponse | null>('lsp:open', 1),
     /** The tab's whole text now (debounced by the tab). */

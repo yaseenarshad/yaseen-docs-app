@@ -18,6 +18,7 @@ import { foldHints } from './CardInboxHints'
 import { CARD_MIN_WIDTH, clampCardWidth, inboxCardWidth, setInboxCardWidth } from './inboxCardWidth'
 import { useReadOnlyVault } from '../vault/readOnlyVault'
 import { ZOOM_EVENT } from '../editor/zoomRequest'
+import { listenTour } from '../course/tourBus'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -425,6 +426,26 @@ describe('the Inbox screen (YAZ-4962)', () => {
     render()
     expect(inbox.hidden).toBe(false)
     expect(shown()).toEqual(['France'])
+  })
+
+  it('YAZ-5120: with the course`s offer (App gives it to a beginner only), the empty vault Inbox says one line, with Take the course and Don`t show again', () => {
+    mount(TWO_SIDES)
+    const offer = { onOpen: vi.fn(), onDismiss: vi.fn() }
+    session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
+    props = { ...props, courseOffer: offer }
+    render()
+    expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
+    expect(el.querySelector('.course-offer__line')?.textContent).toBe('No cards yet. Take the course, or make a card.')
+    const [open, dismiss] = [...el.querySelectorAll<HTMLButtonElement>('.course-offer button')]
+    expect([open.textContent, dismiss.textContent]).toEqual(['Take the course', "Don't show again"])
+    act(() => open.click())
+    act(() => dismiss.click())
+    expect(offer.onOpen).toHaveBeenCalledOnce()
+    expect(offer.onDismiss).toHaveBeenCalledOnce()
+    // No offer: the screen is as before.
+    props = { ...props, courseOffer: undefined }
+    render()
+    expect(el.querySelector('.course-offer')).toBeNull()
   })
 
   it('the done screen: "Inbox complete." and one quiet line; only ⌘Z (with an answer to undo) in the hint row', () => {
@@ -967,6 +988,36 @@ describe('the Inbox screen (YAZ-4962)', () => {
     session = { ...session, card: null, place: [] }
     render()
     expect(el.querySelector('.card-inbox__path')).toBeNull()
+  })
+})
+
+describe('the guided tour hears the Inbox (YAZ-5123)', () => {
+  it('each Space that shows a part fires inbox-step-shown once; the card, the answers and the ⋯ are marks', async () => {
+    mount(TWO_SIDES)
+    await flush()
+    const heard: string[] = []
+    const stop = listenTour((name) => heard.push(name))
+    try {
+      expect(el.querySelector('.card-inbox__card')!.getAttribute('data-tour')).toBe('inbox-card')
+      expect(el.querySelector('.card-inbox__answers')!.getAttribute('data-tour')).toBe('inbox-answers')
+      expect(el.querySelector('.card-inbox__more-button')!.getAttribute('data-tour')).toBe('card-menu')
+      press(' ')
+      expect(heard).toEqual(['inbox-step-shown'])
+      press(' ')
+      press(' ')
+      expect(heard).toEqual(['inbox-step-shown', 'inbox-step-shown', 'inbox-step-shown'])
+      // All shown: one more Space shows nothing, and fires nothing.
+      press(' ')
+      press(' ')
+      const all = heard.length
+      press(' ')
+      expect(heard).toHaveLength(all)
+      act(() => el.querySelector<HTMLButtonElement>('.card-inbox__more-button')!.click())
+      const marks = [...el.querySelectorAll<HTMLElement>('.card-inbox__more-action[data-tour]')].map((b) => [b.getAttribute('aria-label'), b.dataset.tour])
+      expect(marks).toEqual([['Archive card', 'card-menu-archive']])
+    } finally {
+      stop()
+    }
   })
 })
 
