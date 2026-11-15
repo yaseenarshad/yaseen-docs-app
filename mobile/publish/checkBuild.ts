@@ -56,8 +56,12 @@ export const NOT_FIRST_LOAD: RegExp[] = [
   /^mobile\/src\/screens\/(Settings\.tsx|eraseWords\.ts)$/, /^mobile\/src\/settings\/buildInfo\.ts$/, // Settings, after a tap on the gear
 ]
 
-/** YAZ-5377: modules that no production chunk may hold: dev-only and test-only code, and the fixtures. */
-export const NEVER_BUNDLED: RegExp[] = [/^mobile\/src\/dev\//, /\.test\.[cm]?[jt]sx?$/, /fixture/i, /cssAudit/, /^mobile\/src\/friends\/check3\//]
+/**
+ * YAZ-5377: modules that no production chunk may hold: dev-only and test-only code, and the fixtures. YAZ-5092 C3: the
+ * test helpers (`testing.ts`, `*.testing.ts`), the research tools (`*.research.ts`) and every friends checker folder
+ * (`check3` to `check6`, and any later one).
+ */
+export const NEVER_BUNDLED: RegExp[] = [/^mobile\/src\/dev\//, /\.test\.[cm]?[jt]sx?$/, /(^|\/|\.)testing\.[cm]?[jt]sx?$/, /\.research\.[cm]?[jt]sx?$/, /fixture/i, /cssAudit/, /^mobile\/src\/friends\/check\d+\//]
 
 /** The files the publish needs. */
 export const PARTS = ['index.html', 'friend.html', 'group.html', 'join.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
