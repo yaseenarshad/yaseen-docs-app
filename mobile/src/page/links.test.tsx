@@ -6,7 +6,7 @@ import { forgetSearch } from '../search/searchState'
 import type { VaultData } from '../search/vaultData'
 import { phoneRecord } from '../sync/phoneIndex'
 import { mount, newPhone, type Harness } from '../screens/testing'
-import { linkedFromCount } from './LinkedFrom'
+import { LINKED_FROM_PAGE, linkedFromCount, moreStep } from './LinkedFrom'
 
 /**
  * YAZ-5455: links work, and "Linked from". A `[[link]]` (with words, a heading, an ID) and a relative Markdown link open
@@ -177,7 +177,7 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     expect(h.host.querySelector('.linked-from')).toBeNull()
   })
 
-  it('linkedFrom_drawsFirst20_thenMore: 47 linking pages draw 20, then "Show 20 more", then the last 7 (S4)', async () => {
+  it('linkedFrom_drawsFirst20_thenMore: 47 linking pages draw 20, then "Show all 47" (S4; YAZ-5521)', async () => {
     const many = Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`many/Fan ${String(i).padStart(2, '0')}.md`, page(`title: Fan ${String(i).padStart(2, '0')}\n`, 'Back to [[Trip plan]].')]))
     const phone = await newPhone()
     await seedReaderVault(phone.store, phone.tokens, { ...FILES, ...many })
@@ -193,10 +193,8 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     const entries = () => h!.host.querySelectorAll('.linked-from__entry').length
     const more = () => h!.host.querySelector<HTMLButtonElement>('.linked-from__more')
     expect(entries()).toBe(20)
-    expect(more()?.textContent).toBe('Show 20 more')
-    await act(async () => more()!.click())
-    expect(entries()).toBe(40)
-    expect(more()?.textContent).toBe('Show 7 more')
+    // YAZ-5521 (sweep2 nit 1): then all of them in one tap, when 100 or fewer are left.
+    expect(more()?.textContent).toBe('Show all 47')
     await act(async () => more()!.click())
     expect(entries()).toBe(47)
     expect(more()).toBeNull()
@@ -204,6 +202,21 @@ describe('YAZ-5455: "Linked from" at the end of a page', () => {
     await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
     await act(async () => h!.host.querySelector<HTMLButtonElement>('.linked-from__header')!.click())
     expect(entries()).toBe(20)
+  })
+
+  it('linkedFrom_showMore_growsInLargerSteps: 1,301 linking pages: 20, then 100 at a time, then all of what is left (sweep2 nit 1)', () => {
+    const steps: string[] = []
+    let shown = LINKED_FROM_PAGE
+    for (let more = moreStep(shown, 1301); more !== null; more = moreStep(shown, 1301)) {
+      steps.push(more.label)
+      shown += more.count
+    }
+    expect(shown).toBe(1301)
+    expect(steps.length).toBe(13)
+    expect(steps.slice(0, 2)).toEqual(['Show 100 more', 'Show 100 more'])
+    expect(steps.at(-1)).toBe('Show all 1301')
+    expect(moreStep(20, 47)).toEqual({ count: 27, label: 'Show all 47' })
+    expect(moreStep(20, 20)).toBeNull()
   })
 
   it('1,300 pages: the reverse map is one pass, built once per version of the vault data, then free', () => {

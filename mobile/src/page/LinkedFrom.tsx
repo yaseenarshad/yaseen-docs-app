@@ -28,7 +28,7 @@ export function LinkedFrom({ path, data, store, door }: { path: string; data: Va
   const [shown, setShown] = useState(LINKED_FROM_PAGE)
   const entries = linkedFromOf(path, data)
   if (entries.length === 0) return null
-  const next = Math.min(LINKED_FROM_PAGE, entries.length - shown)
+  const more = moreStep(shown, entries.length)
   const toggle = () => {
     setShown(LINKED_FROM_PAGE)
     setOpen((o) => !o)
@@ -50,9 +50,9 @@ export function LinkedFrom({ path, data, store, door }: { path: string; data: Va
           ))}
         </ul>
       )}
-      {open && next > 0 && (
-        <button type="button" className="linked-from__more" onClick={() => setShown((n) => n + LINKED_FROM_PAGE)}>
-          Show {next} more
+      {open && more !== null && (
+        <button type="button" className="linked-from__more" onClick={() => setShown((n) => n + more.count)}>
+          {more.label}
         </button>
       )}
     </section>
@@ -61,9 +61,19 @@ export function LinkedFrom({ path, data, store, door }: { path: string; data: Va
 
 /**
  * S4 (sweep1): a page 1,301 pages link to drew 3,904 elements, and read 1,301 files, in one go when the section
- * opened. It draws this many pages, then "Show N more" draws the next as many (each reads its file only when drawn).
+ * opened. It draws this many pages, then "Show 100 more" or "Show all N" (`moreStep`; each reads its file only when drawn).
  */
 export const LINKED_FROM_PAGE = 20
+
+/** YAZ-5521 (sweep2 nit 1): after the first 20, "Show more" draws 100 at a time (1,301 took 65 taps of 20). */
+export const LINKED_FROM_MORE = 100
+
+/** The "Show more" of `shown` of `total`: all that is left when 100 or fewer ("Show all 47"), else 100. Null: all shown. */
+export function moreStep(shown: number, total: number): { count: number; label: string } | null {
+  const left = total - shown
+  if (left <= 0) return null
+  return left <= LINKED_FROM_MORE ? { count: left, label: `Show all ${total}` } : { count: LINKED_FROM_MORE, label: `Show ${LINKED_FROM_MORE} more` }
+}
 
 function Entry({ record, target, data, store, door }: { record: IndexRecord; target: string; data: VaultData; store: VaultStore; door: LinkDoor }) {
   /** null: the read runs; []: none to show (or the file is not on the phone). */
