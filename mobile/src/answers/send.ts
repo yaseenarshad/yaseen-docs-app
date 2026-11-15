@@ -31,6 +31,8 @@ export interface SendOptions {
    * (`engine.lane((remote, pass) => …)`), so the screens hear of it. Default: a bare `syncPass`.
    */
   pass?: () => Promise<unknown>
+  /** YAZ-5596 (5): the index the sync engine holds (no read of the stored one when it is of the checkpoint's commit). */
+  index?: () => PhoneIndex | null
   now?: () => number
   yieldToUi?: () => Promise<void>
 }
@@ -93,7 +95,7 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
         await outbox.settle(held, [], now())
         landed += held.length
       }
-      const plan = await planSend(store, vault, outbox.waiting())
+      const plan = await planSend(store, vault, outbox.waiting(), options.index)
       if (plan.changes.length > 0) {
         // From here GitHub may hold these actions, so Undo may no longer remove them. An action that Undo
         // removed after the plan was made is not marked: plan again without it.
@@ -157,9 +159,10 @@ interface SendPlan {
 }
 
 /** Steps 2 and 3 on the stored copy, which the pass just brought to the head. */
-async function planSend(store: VaultStore, vault: string, waiting: readonly WaitingAnswer[]): Promise<SendPlan> {
+async function planSend(store: VaultStore, vault: string, waiting: readonly WaitingAnswer[], heldIndex?: () => PhoneIndex | null): Promise<SendPlan> {
   const checkpoint = await store.checkpoint(vault)
-  const index = await store.getState<PhoneIndex>(vault, INDEX_STATE)
+  const held = heldIndex?.() ?? null
+  const index = held !== null && held.commit === checkpoint?.commit ? held : await store.getState<PhoneIndex>(vault, INDEX_STATE)
   if (checkpoint === null || index === undefined || index.commit !== checkpoint.commit) throw new Error('The phone has no full copy of the vault yet')
   const holders = cardHolders(Object.values(index.records))
   const files = new Map<string, WaitingAnswer[]>()

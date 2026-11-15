@@ -66,7 +66,7 @@ export interface CommentSender {
 
 export interface CommentSenderOptions {
   store: VaultStore
-  engine: Pick<SyncEngine, 'state' | 'subscribe' | 'lane'>
+  engine: Pick<SyncEngine, 'state' | 'subscribe' | 'lane'> & Partial<Pick<SyncEngine, 'index'>>
   clock?: Clock
 }
 
@@ -236,7 +236,7 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         }
         const report = await engine.lane(async (remote, pass, laneVault) => {
           if (laneVault !== id) return null
-          return sendComments({ remote, store, vault: id, box: own, pass, now: clock.now })
+          return sendComments({ remote, store, vault: id, box: own, pass, index: () => engine.index?.() ?? null, now: clock.now })
         })
         if (report === null) return void (elsewhere = true)
         slowedInRow = 0

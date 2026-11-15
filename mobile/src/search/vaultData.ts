@@ -134,7 +134,8 @@ export function useVaultData(): VaultData | null {
         if (live && mine === generation) setData(kept)
       })
     }
-    load()
+    // YAZ-5596 (5): the index the sync engine holds, when it has it: no read of a copy of the stored index.
+    load(sync.index?.(vaultKey) ?? undefined)
     const off = sync.subscribe((event) => {
       if (event.type === 'changed' && event.vault === vaultKey) load(event.index)
     })

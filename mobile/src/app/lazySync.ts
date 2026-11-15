@@ -96,6 +96,7 @@ export function lazySync(store: VaultStore, tokens: TokenStore, load: () => Prom
     async idle() {
       if (engine !== null) await engine.idle()
     },
+    index: (vault) => (engine !== null && engine.state().vault === vault ? engine.index() : null),
     async syncNow() {
       if (engine !== null) await engine.syncNow()
       // After the pass: the answers that waited (3C: "engine.syncNow(), then answers.sendNow()").

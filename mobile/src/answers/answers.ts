@@ -49,7 +49,7 @@ export type AnswersEvent =
 export interface AnswersOptions {
   store: VaultStore
   /** The sync engine of 3B: the send runs in its lane, never while a pass writes the store. */
-  engine: Pick<SyncEngine, 'state' | 'subscribe' | 'lane'>
+  engine: Pick<SyncEngine, 'state' | 'subscribe' | 'lane'> & Partial<Pick<SyncEngine, 'index'>>
   clock?: Clock
   yieldToUi?: () => Promise<void>
 }
@@ -147,6 +147,8 @@ function createAnswerList(options: AnswersOptions): Answers {
     return holders
   }
 
+  /** YAZ-5596 (5): the open vault's index as the sync engine holds it, or null. */
+  const heldIndex = () => engine.index?.() ?? null
   const emit = (event: AnswersEvent) => {
     for (const listener of [...listeners]) listener(event)
   }
@@ -251,7 +253,7 @@ function createAnswerList(options: AnswersOptions): Answers {
       try {
         const report = await engine.lane(async (remote, pass, laneVault) => {
           if (laneVault !== id) return null // the open vault changed: this list waits for its vault
-          return sendOutbox({ remote, store, vault: id, outbox: own, pass, now: clock.now, yieldToUi: options.yieldToUi })
+          return sendOutbox({ remote, store, vault: id, outbox: own, pass, index: heldIndex, now: clock.now, yieldToUi: options.yieldToUi })
         })
         if (report === null) return
         slowedInRow = 0
@@ -304,7 +306,7 @@ function createAnswerList(options: AnswersOptions): Answers {
   async function shownOps(id: string, path: string, given?: PhoneIndex): Promise<CardOp[]> {
     const all = [...afterglow, ...(box?.waiting() ?? [])]
     if (all.every((w) => w.path === path)) return all.map((w) => w.op)
-    const index = given ?? lastIndex ?? (await store.getState<PhoneIndex>(id, INDEX_STATE))
+    const index = given ?? lastIndex ?? (engine.state().vault === id ? heldIndex() : null) ?? (await store.getState<PhoneIndex>(id, INDEX_STATE))
     if (index === undefined) return all.map((w) => w.op)
     const holders = holdersOf(index)
     const here = (w: { op: CardOp; path: string }) => {

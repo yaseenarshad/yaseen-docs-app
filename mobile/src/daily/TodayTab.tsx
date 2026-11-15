@@ -5,6 +5,7 @@ import { openFile } from '../explore/openFile'
 import { PageView } from '../screens/PageScreen'
 import { Toast, useToast } from '../screens/Toast'
 import type { VaultStore } from '../store'
+import type { PhoneIndex } from '../sync/phoneIndex'
 
 const load = () => import('./today')
 
@@ -40,10 +41,10 @@ const readingOn = new WeakMap<VaultStore, Promise<void>>()
 const dayOf = (now: Date) => now.toDateString()
 
 /** Which page the tap opens, with everything it needs to draw read (chunks, text, look, renderer); null: none. */
-async function readToday(store: VaultStore, vault: string, repoName: string, now: Date): Promise<string | null> {
+async function readToday(store: VaultStore, vault: string, repoName: string, now: Date, held: () => PhoneIndex | null): Promise<string | null> {
   // The page view's chunk: its screen then draws with no wait (`lazyScreen`); `primePage` is in that same chunk.
   const [m, page] = await Promise.all([load(), PageView.preload().then(() => import('../page/PageView'))])
-  const found = await m.findToday(store, vault, now)
+  const found = await m.findToday(store, vault, now, held())
   if (found === null) return null
   // The page still opens when a part of the read fails (it then reads it itself).
   await page.primePage(store, vault, repoName, found.path).catch(() => {})
@@ -62,11 +63,13 @@ export function TodayTab() {
   const button = useRef<HTMLButtonElement>(null)
   const opened = openedOn.get(store)
   const nowDate = () => new Date((app.services.now ?? Date.now)())
+  /** YAZ-5596 (5): the index the sync engine holds, so the read finds the page with no read of the stored index. */
+  const held = () => (vault === null ? null : sync.index?.(vault) ?? null)
   useEffect(() => {
     if (vault === null || page === null || (opened?.vault === vault && opened.path === page)) return
     let live = true
     void load()
-      .then((m) => m.findToday(store, vault, nowDate()))
+      .then((m) => m.findToday(store, vault, nowDate(), held()))
       .then((found) => live && found?.today === true && found.path === page && setIsToday(page), () => {})
     return () => void (live = false)
   }, [vault, page, store]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -84,7 +87,7 @@ export function TodayTab() {
       const known = aheadOn.get(store)
       if (known?.vault === vault && known.day === dayOf(now)) return mark()
       if (readingOn.has(store)) return void readingOn.get(store)!.then(mark)
-      const reading = readToday(store, vault, repoName, now)
+      const reading = readToday(store, vault, repoName, now, held)
         .then((path) => {
           if (path === null) aheadOn.delete(store)
           else aheadOn.set(store, { vault, day: dayOf(now), path })
@@ -120,7 +123,7 @@ export function TodayTab() {
     const known = aheadOn.get(store)
     // Read ahead: the page opens now, in this frame.
     if (known?.vault === vault && known.day === dayOf(now)) return open(known.path)
-    void readToday(store, vault, repoName, now)
+    void readToday(store, vault, repoName, now, held)
       .then((path) => (path === null ? say('No daily notes yet') : open(path)))
       .catch(() => say('Could not open the daily note'))
   }

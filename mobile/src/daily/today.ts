@@ -35,11 +35,14 @@ export async function dailyPagesOf(store: VaultStore, vault: string): Promise<Va
   return sanitizeDailyPages(await readJson(store, vault, `${VAULT_CONFIG_DIR}/${DAILY_PAGES_FILE}`))
 }
 
-/** The page the Today button opens in the stored vault, or null when there is none (or Daily pages are off). */
-export async function findToday(store: VaultStore, vault: string, now: Date): Promise<{ path: string; today: boolean } | null> {
+/**
+ * The page the Today button opens in the stored vault, or null when there is none (or Daily pages are off). `held`:
+ * the index the sync engine holds (YAZ-5596: no read of the stored one), else the stored one is read.
+ */
+export async function findToday(store: VaultStore, vault: string, now: Date, held?: PhoneIndex | null): Promise<{ path: string; today: boolean } | null> {
   const daily = await dailyPagesOf(store, vault)
   if (daily === null) return null
-  const index = await store.getState<PhoneIndex>(vault, INDEX_STATE_NAME)
+  const index = held ?? (await store.getState<PhoneIndex>(vault, INDEX_STATE_NAME))
   const records = Object.values(index?.records ?? {}).filter((r) => r.name !== FOLDER_SETTINGS_FILE)
   return todayOrLatest(records, daily, now)
 }
