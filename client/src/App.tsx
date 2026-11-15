@@ -88,6 +88,8 @@ import { type SidebarClipboard, type SidebarCreateRequest, type SidebarMenuReque
 import { newItemFolder, placePath, resolveGoTo } from './sidebar/goToPlace'
 import { dailyPageName } from '@shared/dailyPage'
 import { dailyPagesOfSettings, sameDailyPages, windowDailyPages, withDailyPages, type DailyPagesSettings } from '@shared/dailyPagesFile'
+import { newPlacesOfSettings, vaultNewPlacesFields } from '@shared/newPlaces'
+import { setNewBoardFolderOf } from './drawings/createDrawing'
 import { hasLetters } from '@shared/pageId'
 import { dailyPageVault, todaysPage } from './sidebar/dailyPage'
 import { sidebarDroppedInFrame } from './sidebar/sidebarDrag'
@@ -659,7 +661,15 @@ export function App() {
   const dailyHere = windowDailyPages(placeVaults.map((v) => ({ root: v.root, file: vaults[roots.indexOf(v.root)]?.dailyPages.file ?? null })), dailyPagesOfSettings(appSettings), active.root)
   const dailyKey = JSON.stringify(dailyHere.settings)
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `dailyKey` is the value of `dailyHere.settings`
-  const settings = useMemo(() => withDailyPages(appSettings, dailyHere.settings), [appSettings, dailyKey])
+  // YAZ-5486: where new pages and boards go are the ACTIVE tab's vault's (`new-places.json`) in `settings` (Settings, ⌘N);
+  // a new [[link]] page and a new board ask their own vault's (`newPlacesOf`).
+  const activeNewPlaces = active.newPlaces.value
+  const settings = useMemo(() => withDailyPages(vaultNewPlacesFields(appSettings, activeNewPlaces), dailyHere.settings), [appSettings, activeNewPlaces, dailyKey])
+  /** Where new things go in the vault that holds `path` (YAZ-5486): its file's keys over the app's values. */
+  const newPlacesOf = (path: string) => vaultNewPlacesFields(appSettings, scopeOf(path).newPlaces.value)
+  const newPlacesOfRef = useRef(newPlacesOf)
+  newPlacesOfRef.current = newPlacesOf
+  useEffect(() => setNewBoardFolderOf((root) => newPlacesOfRef.current(root).newBoardFolder), [])
   const placeInputs = useRef({ vault: active.root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings })
   placeInputs.current = { vault: active.root ?? root, vaults: placeVaults.map((v) => v.root), page: pageOnShow, settings, dailyRoot: dailyHere.root, appSettings }
   // The close/quit handshake for the writers below App — the outline's debounce and every in-flight
@@ -772,10 +782,13 @@ export function App() {
   // which stays as it was: the fallback. A window with no vault has no file to write, so there it is the app value.
   const saveDailyRef = useRef<(next: DailyPagesSettings) => void>(() => undefined)
   const changeSettings = useCallback((next: SettingsState) => {
-    const { vaults: here, settings: shown, appSettings: stored } = placeInputs.current
-    const app = here.length === 0 ? next : withDailyPages(next, dailyPagesOfSettings(stored))
+    const { vaults: here, settings: shown, appSettings: stored, vault: activeRoot } = placeInputs.current
+    const app = here.length === 0 ? next : withDailyPages(vaultNewPlacesFields(next, newPlacesOfSettings(stored)), dailyPagesOfSettings(stored))
     const daily = dailyPagesOfSettings(next)
     if (here.length > 0 && !sameDailyPages(daily, dailyPagesOfSettings(shown))) saveDailyRef.current(daily)
+    // YAZ-5486: where new things go are the active tab's vault's `new-places.json`; the app value stays (the fallback).
+    const places = newPlacesOfSettings(next)
+    if (activeRoot !== null && here.length > 0 && JSON.stringify(places) !== JSON.stringify(newPlacesOfSettings(shown))) live.current.vaults[live.current.roots.indexOf(activeRoot)]?.newPlaces.save(places)
     storage.setSettings(app)
     setSettings(app)
   }, [])
@@ -861,7 +874,8 @@ export function App() {
   newPageFolderInputs.current = { settings }
   const newPageFolderFor = useCallback((sourcePath: string) => {
     const vault = scopeOf(sourcePath).root
-    return vault === null ? '' : newPageBase(newPageFolderInputs.current.settings, vault, sourcePath)
+    // YAZ-5486: the vault's own place (`new-places.json`), never another vault's folder.
+    return vault === null ? '' : newPageBase(newPlacesOfRef.current(sourcePath), vault, sourcePath)
   }, [scopeOf])
   // The comment stream's order toggle (YAZ-1515) writes the setting through the same ref-backed,
   // stable door: `RetainedEditor` is `memo(Editor)`, and a fresh arrow per render would re-render

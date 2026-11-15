@@ -2470,11 +2470,18 @@ describe('App ⌘N New… box and ⌘D Show in sidebar (YAZ-3556)', () => {
   const page = (path: string): TreeNode => ({ type: 'file', name: path.slice(path.lastIndexOf('/') + 1), path, size: 1, mtime: 1, kind: 'markdown' })
   const folder = (path: string, children: TreeNode[]): TreeNode => ({ type: 'dir', name: path.slice(path.lastIndexOf('/') + 1), path, children })
   /** A fresh vault holding Projects/plan.md, the window on it with the sidebar hidden, and the settings given. */
+  /**
+   * YAZ-5486: a default folder is the VAULT's (`new-places.json` › newPage); the app's own vault-relative folder is no
+   * vault's, so these windows read it from the vault's file.
+   */
   const mountWith = async (settings: Partial<AppState['settings']>) => {
     const v = `/goto-${++n}`
-    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...settings } }, { id: 'w1', root: v, file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' }, {}, (b) =>
-      b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [folder(`${v}/Projects`, [page(`${v}/Projects/plan.md`)])], generatedAt: 1 })),
-    )
+    const { newPageLocation, newPageFolder, ...app } = settings
+    const vaultPlaces = newPageLocation === undefined ? null : { version: 1, places: [null, null, null], newPage: { location: newPageLocation, folder: newPageFolder ?? '' } }
+    const m = await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...app } }, { id: 'w1', root: v, file: null, tabs: [], sidebarCollapsed: true, sidebarLens: 'favorites' }, {}, (b) => {
+      b.bridge.tree.mockImplementation(async (root: string) => ({ root, tree: [folder(`${v}/Projects`, [page(`${v}/Projects/plan.md`)])], generatedAt: 1 }))
+      b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'new-places.json' ? vaultPlaces : null))
+    })
     return { ...m, v }
   }
   const settle = () => act(async () => {})
@@ -6381,11 +6388,11 @@ describe('App with one vault makes the bridge calls it made before (YAZ-2602 S79
       properties: [['/v'], ['/v']],
       sync: [['/v'], ['/v']],
       // The vault's review settings, its "Clicking a link" (YAZ-4936), its "Show IDs in search" (YAZ-4940), its word for a page (YAZ-4938), its "Read only" (YAZ-4939), its text formatting (YAZ-3066) and its link pills look (YAZ-4924), each read once for each mount effect.
-      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json']],
+      config: [['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json'], ['/v', 'review.json'], ['/v', 'link-click.json'], ['/v', 'show-ids.json'], ['/v', 'unit-word.json'], ['/v', 'read-only.json'], ['/v', 'text-formatting.json'], ['/v', 'link-pills.json'], ['/v', 'daily-pages.json'], ['/v', 'new-places.json']],
       coldDiff: [['/v']],
       // vaultConfig: review, link click (YAZ-4936), show IDs (YAZ-4940), the word for a page (YAZ-4938), read only (YAZ-4939), text formatting and link pills (YAZ-4924), each subscribed
       // once for each mount effect (7 × 2), plus the WikilinkIndexBridge's `useIndex`, which hears the vault's config too (2 since YAZ-2602: the count was [2, 2, 4] with review.json alone).
-      subscriptions: [2, 2, 18],
+      subscriptions: [2, 2, 20],
     }
     expect(asked()).toEqual(boot)
     act(() => captured.sidebar?.onOpenFile('/v/b.md'))
@@ -6487,7 +6494,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect([...select.options].map((o) => o.textContent)).toEqual(['v', 'w'])
     expect(select.value).toBe('1')
     act(() => el.querySelector<HTMLButtonElement>('button[aria-label="Text larger"]')?.click())
-    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 1, text: { size: 17 } }, TEXT_FORMATTING_KEYS]])
+    expect(bridge.vaultConfig.write.mock.calls).toEqual([['/w', TEXT_FORMATTING_FILE, { version: 2, text: { size: 17 } }, TEXT_FORMATTING_KEYS]])
     // The page layer of /w takes the new size at once; nothing reaches the layer of /v.
     await act(async () => {})
     expect(el.querySelector<HTMLElement>('.tabstack__layer [data-path="/w/b.md"]')?.closest<HTMLElement>('.tabstack__layer')?.style.getPropertyValue('--text-size')).toBe('17px')
@@ -6515,7 +6522,7 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
       expect(callsFor(bridge.tree, vault)).toBe(1)
       expect(callsFor(bridge.properties.get, vault)).toBe(2)
       expect(callsFor(bridge.github.status, vault)).toBe(2)
-      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(16) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924) and daily-pages.json (YAZ-5491)
+      expect(callsFor(bridge.vaultConfig.read, vault)).toBe(18) // review.json, link-click.json (YAZ-4936), show-ids.json (YAZ-4940), unit-word.json (YAZ-4938), read-only.json (YAZ-4939), text-formatting.json (YAZ-3066), link-pills.json (YAZ-4924), daily-pages.json (YAZ-5491) and new-places.json (YAZ-5486)
       expect(callsFor(bridge.coldDiff, vault)).toBe(1)
     }
     expect(el.querySelector('[data-sidebar]')?.getAttribute('data-root')).toBe('/v')
@@ -6569,6 +6576,19 @@ describe('App with two vaults keeps one scope per vault (YAZ-2602 D1)', () => {
     expect(folderFor).toBe(editor('/v/a.md')?.newPageFolderFor) // the window's one getter, stable under every editor
     expect(folderFor?.('/w/sub/x.md')).toBe('sub')
     expect(folderFor?.('/v/deep/er/y.md')).toBe('deep/er')
+  })
+
+  it('YAZ-5486: a new [[link]] page goes to ITS vault\'s place (new-places.json); the app\'s folder is no vault\'s', async () => {
+    const places: Record<string, unknown> = { '/v': { version: 1, places: [null, null, null], newPage: { location: 'folder', folder: 'Inbox' } } }
+    await mount({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, newPageLocation: 'folder', newPageFolder: 'Elsewhere' } }, TWO, {}, (b) =>
+      b.bridge.vaultConfig.read.mockImplementation(async (vault?: string, name?: string) => (name === 'new-places.json' ? (places[vault ?? ""] ?? null) : null)),
+    )
+    show('/w/b.md')
+    await act(async () => {})
+    const folderFor = editor('/w/b.md')?.newPageFolderFor
+    expect(folderFor?.('/v/deep/y.md')).toBe('Inbox')
+    // /w has no file: not the app's "Elsewhere" (it would be made there), the default: beside the page.
+    expect(folderFor?.('/w/sub/x.md')).toBe('sub')
   })
 
   it('a tab and a right-panel page are a folder by their own vault\'s tree, and each page gets its own vault (S31, S32)', async () => {

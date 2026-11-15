@@ -38,6 +38,8 @@ export async function seedVaultPart(
   canSeed: (root: string) => Promise<boolean> = async () => true,
   /** The mark of this part (`<name>#<part>` where one file takes several moves); the file's name by default. */
   mark: string = name,
+  /** More keys for a NEW file only (new-places.json's empty shortcuts, which an older build needs). */
+  fresh: Record<string, unknown> = {},
 ): Promise<SeedResult> {
   if (store.seededConfig(root, mark)) return 'seeded-before'
   if (!(await isFolder(root))) return 'unreachable'
@@ -54,7 +56,7 @@ export async function seedVaultPart(
   if (part === null) return 'default'
   if (!(await canSeed(root))) return 'not-yet'
   if (held === null) {
-    if (!(await createConfig(root, name, part))) {
+    if (!(await createConfig(root, name, { ...fresh, ...part }))) {
       // A file came while this ran (a pull): it is the vault's now.
       store.markSeededConfig(root, mark)
       return 'present'

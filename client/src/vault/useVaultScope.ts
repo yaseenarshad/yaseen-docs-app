@@ -21,6 +21,7 @@ import { useVaultUnitWord, type UnitWordState } from './unitWord'
 import { useReadOnlyVault, type ReadOnlyVaultState } from './readOnlyVault'
 import { useTextFormatting, type TextFormattingState } from '../settings/useTextFormatting'
 import { useDailyPages, type DailyPagesState } from '../settings/useDailyPages'
+import { useVaultNewPlaces, type VaultNewPlacesState } from '../settings/useVaultNewPlaces'
 import { useProperties } from '../views/useProperties'
 
 /**
@@ -60,6 +61,8 @@ export interface VaultScope {
   linkPills: LinkPillsState
   /** This vault's daily pages (YAZ-5491): `.yaseendocs/daily-pages.json`, the one source; App picks the window's (`windowDailyPages`). */
   dailyPages: DailyPagesState
+  /** Where new pages and boards go in this vault (YAZ-5486): `.yaseendocs/new-places.json`'s `newPage` and `newBoard`. */
+  newPlaces: VaultNewPlacesState
   review: CardReviewApi
   renames: ExternalRenames
   /**
@@ -142,6 +145,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
   const textFormatting = useTextFormatting(root, notify)
   const linkPills = useLinkPills(root, notify)
   const dailyPages = useDailyPages(root, notify)
+  const newPlaces = useVaultNewPlaces(root, notify)
   // The look's text pieces and the vault's name reach every editor of the vault through its resolve source (YAZ-4924):
   // one object the editors already subscribe to, so a change draws the pills again without a prop on each editor.
   useEffect(() => wikilinks.setLook(linkPills.pills, name), [wikilinks, linkPills.pills, name])
@@ -215,6 +219,7 @@ export function useVaultScope(root: string | null, notify: (text: string, icon?:
     textFormatting,
     linkPills,
     dailyPages,
+    newPlaces,
     review,
     renames,
     ids: vaultIds === null ? undefined : { enabled: vaultIds.enabled, held: vaultIds.held, ask: vaultIds.ask, set: saveIds, check: checkIds, old: vaultIds.old, unfinished: vaultIds.unfinished, state: idsState, reletter, backfill },

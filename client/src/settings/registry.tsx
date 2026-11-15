@@ -1705,7 +1705,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3556 D3: the New… box uses it too, for pages, drawings and diagrams.
             hint: ({ settings }) => {
               const key = menuKey('newItem', settings)
-              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page.`
+              // YAZ-5486: the active tab's vault's (`new-places.json`).
+              return `Where the New… box${key === null ? '' : ` (${key})`} and a new [[link]] make a page. Saved in this vault.`
             },
             keywords: ['folder', 'wikilink', 'new', 'cmd n', 'drawing', 'diagram'],
             // A plain label-left / dropdown-right row, until the folder input needs the width.
@@ -1758,7 +1759,8 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             // YAZ-3943 demo 2: new boards only; a board's own cog still moves its pictures. Demo round 3: a folder you pick.
             id: 'newBoardPictures',
             label: 'New boards keep pictures',
-            hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures.',
+            // YAZ-5486: the active tab's vault's (`new-places.json`).
+            hint: 'For drawings the app makes from now on. A board\'s cog moves its own pictures. Saved in this vault.',
             keywords: ['pictures', 'images', 'assets', 'drawing', 'board', 'folder', 'pictures folder'],
             // A plain row, until the chosen folder and "Choose…" need the width (the new-page folder's rule).
             wide: ({ settings }) => settings.newBoardPictures === 'folder',

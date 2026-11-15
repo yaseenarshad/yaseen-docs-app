@@ -12,6 +12,7 @@ import { copyLibrary, followLibraryMoves, type LibraryMoves } from '../library/c
 import { libraryFolderOf } from '../library/folder'
 import { DAILY_PAGES_MOVE } from '../dailyPagesVaultFile'
 import { PAGE_SPACING_MOVE } from '../textFormattingMove'
+import { NEW_PLACES_MOVE } from '../newPlaces'
 import { moveSettingsIntoVaults, type VaultMove } from '../vaultSettingsMove'
 import { registerBoardIpc } from './board'
 import { registerComponentsIpc } from './components'
@@ -117,6 +118,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
   // YAZ-5491: the one-time move of Settings › Daily pages into the vault that holds the daily folder
   // (`.yaseendocs/daily-pages.json`, the one source since). A vault that has none gets one only after its first pull
   // (its pass ended `synced`), or when its sync is off. YAZ-5485: the page spacing, into each vault's text-formatting.json.
+  // YAZ-5486: where new pages and boards go, into each vault's new-places.json (a folder only where the vault has it).
   const pulled = new Set<string>()
   let moves: VaultMove | null = null
   const sync = registerGithubIpc(store, (status) => {
@@ -124,7 +126,7 @@ export function registerIpc(store: Store, windows: WindowManagerIpc, places: Ipc
     pulled.add(status.root)
     moves?.pulled(status.root)
   })
-  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE], async (root) => {
+  moves = moveSettingsIntoVaults(store, [DAILY_PAGES_MOVE, PAGE_SPACING_MOVE, NEW_PLACES_MOVE], async (root) => {
     if (pulled.has(root)) return true
     const status = await sync.status(root)
     return status.enabled !== true || status.state === 'off' || status.state === 'synced'
