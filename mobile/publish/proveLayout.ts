@@ -40,7 +40,8 @@ import { freePort } from './freePort'
  *  - the guide lines of Search's tree (`#fixture=search-lines`, YAZ-5507), light and dark, at 375 px: with a finger on
  *    the list they show, each at the centre of the chevron of the folder above; the stuck rows cover them.
  *  - the card strip (`#fixture=card-strip`, `page-card-strip`, YAZ-5508), light and dark, at 375 px: closed under the
- *    card, each toggle a 44px tap, the bar inside the screen; a tap opens Reviews' drawer to its table (a picture of
+ *    card, each toggle a 44px tap, the bar inside the screen, no due line under it (YAZ-5528); a tap opens Reviews'
+ *    drawer to its table and its last line, the due words left and the chance right, inside the drawer (a picture of
  *    each); a page's card and a card embed with theirs; the page never scrolls sideways.
  *  - the comment count of a card file (`#fixture=card-strip`, YAZ-5511), light and dark, at 375 px: on the screen above
  *    the card, a 44 px tap, its centre the count's own; a tap brings the comments under the card up.
@@ -634,7 +635,19 @@ const STRIP_CHECK = `(() => {
     short: toggles.filter((b) => r(b).height < 44 || r(b).width < 44).map((b) => b.textContent),
     outside: toggles.filter((b) => r(b).right > innerWidth + 0.5 || r(b).left < -0.5).map((b) => b.textContent),
     drawer: Math.round(r(drawer).height),
-    rows: s.querySelectorAll('.card-view__table tbody tr').length,
+    rows: s.querySelectorAll('.card-view__table tbody tr:not(.card-reviews__next)').length,
+    // YAZ-5528: the Reviews drawer's last line (the Mac's): the due words on the left, the chance on the right, inside
+    // the drawer; and no due line under the strip.
+    next: (() => {
+      const line = s.querySelector('.card-view__table tbody tr:last-child.card-reviews__next .card-reviews__next-line')
+      if (!line) return null
+      const due = line.querySelector('.card-reviews__due')
+      const chance = line.querySelector('.card-reviews__chance')
+      const box = r(drawer)
+      const inside = (el) => el === null || (r(el).left >= box.left - 0.5 && r(el).right <= box.right + 0.5)
+      return { due: due?.textContent ?? null, chance: chance?.textContent ?? null, dueLeft: due !== null && Math.abs(r(due).left - r(line).left) < 1, chanceRight: chance === null || Math.abs(r(chance).right - r(line).right) < 1, inside: inside(due) && inside(chance) }
+    })(),
+    factsLine: document.querySelector('.card-view__facts') !== null,
     wide: screen ? screen.scrollWidth > screen.clientWidth + 1 : true,
   }
 })()`
@@ -653,9 +666,11 @@ if (process.env.LAYOUT_STRIP !== 'no') {
     await wait(200)
     const opened = await evaluate(STRIP_CHECK)
     writeFileSync(shot.replace('.png', '-open.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
-    const ok = closed.error === undefined && closed.drawer === 0 && closed.rows === 0 && closed.short.length === 0 && closed.outside.length === 0 && !closed.wide && opened.drawer > 100 && opened.rows === 4 && !opened.wide
+    const n = opened.next
+    const nextOk = n !== null && /^Due /.test(n.due ?? '') && /^\d+% chance you remember it$/.test(n.chance ?? '') && n.dueLeft && n.chanceRight && n.inside
+    const ok = closed.error === undefined && closed.drawer === 0 && closed.rows === 0 && closed.short.length === 0 && closed.outside.length === 0 && !closed.wide && !closed.factsLine && opened.drawer > 100 && opened.rows === 4 && nextOk && !opened.wide
     if (!ok) failed++
-    console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip ${scheme} at 375x667: ${JSON.stringify(closed.tabs)}; closed drawer ${closed.drawer}px; short taps ${closed.short.length === 0 ? 'none' : closed.short.join(',')}; off screen ${closed.outside.length === 0 ? 'none' : closed.outside.join(',')}; open: ${opened.rows} rows, ${opened.drawer}px; ${closed.wide || opened.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
+    console.log(`${ok ? 'PASS' : 'FAIL'}  card-strip ${scheme} at 375x667: ${JSON.stringify(closed.tabs)}; closed drawer ${closed.drawer}px; short taps ${closed.short.length === 0 ? 'none' : closed.short.join(',')}; off screen ${closed.outside.length === 0 ? 'none' : closed.outside.join(',')}; ${closed.factsLine ? 'A DUE LINE UNDER THE STRIP' : 'no due line under the strip'}; open: ${opened.rows} rows, ${opened.drawer}px, last line ${n === null ? 'MISSING' : `"${n.due}" ${n.dueLeft ? 'left' : 'NOT LEFT'} / "${n.chance}" ${n.chanceRight ? 'right' : 'NOT RIGHT'}${n.inside ? '' : ' OUTSIDE THE DRAWER'}`}; ${closed.wide || opened.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}  ${shot}`)
     const pageFile = await open('page-card-strip', 375, 667)
     const inPage = await evaluate(STRIP_CHECK)
     const pageShot = pageFile.replace('.png', `-${scheme}.png`)

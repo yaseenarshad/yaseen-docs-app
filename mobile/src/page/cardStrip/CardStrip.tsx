@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { cardFullDate, reviewsTitle } from '@client/review/cardWords'
+import { cardDueWords, cardFullDate, cardNextReview, reviewsTitle } from '@client/review/cardWords'
 import { cardResolverOf } from '@client/editor/wikilink/linkResolve'
 import type { CardPropertyValue, CardReview } from '@shared/cardLine'
 import { cardBacklinks, cardEmbedders } from '@shared/cardLinks'
-import { answerLabel, cardHistory } from '@shared/cardSchedule'
+import { answerLabel, cardHistory, recallChance } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
 import type { VaultData } from '../../search/vaultData'
@@ -22,7 +22,9 @@ import './cardStrip.css'
  *    A part with 0 is dimmed, and still opens (YAZ-5380).
  *  - CLOSED by default. A tap opens that part's drawer; a tap on the open one, or on another part, closes it (one open
  *    at a time, YAZ-5349). The drawer slides open by its height; with Reduce Motion it opens at once.
- *  - Reviews: the phone's review table (Reviewed on, Answer, Next due). Properties: the card's own properties in the
+ *  - Reviews: the phone's review table (Reviewed on, Answer, Next due), its last, muted line the Mac's (YAZ-5381,
+ *    YAZ-5528): when the card is due on the left ("Due in 144 days (Apr 8, 2027)", a new card "Due today"), "100% chance
+ *    you remember it" on the right (none for a new card). Properties: the card's own properties in the
  *    page properties panel's rows (YAZ-5459). Linked mentions / Embedded in: the Mac's list, one page a row, its name and
  *    its folder (`cardBacklinks`, `cardEmbedders`: the same lists "Linked from" reads, off the phone's index); a tap opens it.
  *
@@ -40,12 +42,14 @@ export interface CardStripProps {
   door: LinkDoor
   /** Linked mentions (and, with `embeds`, Embedded in) of the card with this ID. Absent: neither part. */
   pages?: { id: string; embeds?: boolean }
+  /** The time the Reviews drawer's last line counts from (the app's clock). */
+  now?: number
 }
 
 /** How long the drawer's slide takes (`cardStrip.css`); its content stays this long after a close, so it slides shut. */
 export const DRAWER_MS = 220
 
-export function CardStrip({ reviews, settings, properties, data, door, pages }: CardStripProps) {
+export function CardStrip({ reviews, settings, properties, data, door, pages, now = Date.now() }: CardStripProps) {
   const [open, setOpen] = useState<StripPart | null>(null)
   // What the drawer shows: the open part, or the one closing while the drawer slides shut.
   const [shown, setShown] = useState<StripPart | null>(null)
@@ -76,7 +80,7 @@ export function CardStrip({ reviews, settings, properties, data, door, pages }: 
       </div>
       <div className="phone-strip__drawer" data-open={open !== null || undefined} data-part={part ?? undefined} inert={open === null} aria-hidden={open === null || undefined}>
         <div className="phone-strip__inner">
-          {part === 'reviews' && <ReviewsTable reviews={reviews} settings={settings} />}
+          {part === 'reviews' && <ReviewsTable reviews={reviews} settings={settings} now={now} />}
           {part === 'properties' && (
             <div className="card-strip__part">
               {propertyCount === 0 ? (
@@ -139,10 +143,18 @@ function Toggle({
   )
 }
 
-/** The card's review history, as the phone showed it under the card before (one row for each answer, read only). */
-function ReviewsTable({ reviews, settings }: { reviews: readonly CardReview[]; settings: ReviewSettings }) {
+/**
+ * The card's review history (one row for each answer, read only), then the Mac's last line (`CardReviewsTable`,
+ * YAZ-5381): the review to come, muted, across the table: the due words on the LEFT, the recall chance on the RIGHT (a
+ * narrow table puts the chance on its own line, still on the right). A new card: the header and "Due today", as the Mac.
+ * The Mac's (i) by the chance is a hover tip; the phone has none.
+ */
+function ReviewsTable({ reviews, settings, now }: { reviews: readonly CardReview[]; settings: ReviewSettings; now: number }) {
   const rows = cardHistory(reviews, settings)
-  if (rows.length === 0) return <p className="card-strip__none">No reviews yet.</p>
+  const last = rows.at(-1)
+  // A new card is due today, as the Inbox shows it; it has no chance yet (there is nothing to remember).
+  const next = last === undefined ? cardNextReview(now, false, now) : cardNextReview(last.due, last.inSteps, now)
+  const recall = last === undefined ? null : recallChance(reviews, settings, now)
   return (
     <div className="phone-strip__scroll">
       <table className="card-view__table" aria-label="Review history">
@@ -161,6 +173,18 @@ function ReviewsTable({ reviews, settings }: { reviews: readonly CardReview[]; s
               <td>{cardFullDate(row.due)}</td>
             </tr>
           ))}
+          <tr className="card-reviews__next">
+            <td colSpan={3}>
+              <div className="card-reviews__next-line">
+                <span className="card-reviews__due">{cardDueWords(next)}</span>
+                {recall !== null && (
+                  <span className="card-reviews__chance card-strip__recall">
+                    <b className="card-strip__value">{`${Math.round(recall * 100)}%`}</b> chance you remember it
+                  </span>
+                )}
+              </div>
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>

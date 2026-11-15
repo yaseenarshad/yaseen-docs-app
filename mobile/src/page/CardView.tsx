@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { cardInContent, type CardAtPage } from '@client/review/cardRead'
-import { cardDueWords, cardFacts, cardNextReview } from '@client/review/cardWords'
 import { cardFileShape } from '@shared/cardFileFormat'
 import { splitFrontmatter } from '@shared/frontmatter'
 import { useApp } from '../app/AppState'
@@ -33,7 +32,7 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  * draws it (`renderCard`), in the Mac's card box (YAZ-5437, the card window): its head (ID, "Archived", and "Title
  * hidden in review" while Review is on) and its title band (none for a card with no title: the ID names it). The top
  * bar says the title ("Untitled card" with none); the heading "Title · ID" is for VoiceOver only, which names a card
- * with no title by its ID, when it is due and how sure you are, its review history, and "Open
+ * with no title by its ID, its review history, and "Open
  * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card.
  *
  * TWO ⋯ (YAZ-5527): the CARD's own ⋯ sits at the right of its head (its ID row), the same ⋯ and menu as a card inside
@@ -47,7 +46,9 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
  * 4B (Review) opens this view for "Open card" (`{ kind: 'card', path, id }`), and the page view for "Open page"
  * (`{ kind: 'page', path, at: id }`).
  *
- * YAZ-5508: under the card, the Mac's strip (`cardStrip/CardStrip.tsx`), closed; then the due line.
+ * YAZ-5508: under the card, the Mac's strip (`cardStrip/CardStrip.tsx`), closed. YAZ-5528: no due line under it (the
+ * Mac's card file tab has none): when the card is due and the chance you remember it are the last line of the Reviews
+ * drawer, as the Mac's.
  *
  * YAZ-5477: a card file shows its comments under the card and its strip, with the page's Comment button and box
  * (`comments/PageComments.tsx`, the same block, no copy). A card in a page shows none: they are the page's.
@@ -137,7 +138,6 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     else setNotice(await openFile(media, tap.path))
   }
 
-  const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
     <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader kind={isFile ? 'card-file' : 'card'} tools={tools.button} notice={tools.bar} foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
       <article className="reader card-view" aria-label={label} style={look?.style}>
@@ -161,18 +161,12 @@ export default function CardView({ path, id }: { path: string; id: string }) {
         {text === null && <p className="muted">This card is not on the phone.</p>}
         {text !== undefined && text !== null && card === null && shape === null && <p className="muted">{`Missing card · ${id}`}</p>}
         <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
-        {card !== null && data !== null && (
-          <>
-            {/* YAZ-5508: the Mac's strip, tucked under the card and closed: Reviews, Properties, Linked mentions (and a card
-                file's Embedded in), each opening its drawer. Review off: none, as the Mac. */}
-            {reviewOn && (
-              <Suspense fallback={null}>
-                <CardStrip key={`${path}\n${card.id ?? id}`} reviews={card.reviews} settings={data.review} properties={card.properties ?? {}} data={data} door={door} pages={card.id === null ? undefined : { id: card.id, embeds: isFile }} />
-              </Suspense>
-            )}
-            {/* The due line under the strip, as the Mac's card window says it under its strip. */}
-            <p className="card-view__facts">{facts === null ? 'New card' : `${cardDueWords(cardNextReview(facts.due, facts.inSteps, now))}${facts.recall === null ? '' : ` · ${Math.round(facts.recall * 100)}% chance you remember it`}`}</p>
-          </>
+        {/* YAZ-5508: the Mac's strip, tucked under the card and closed: Reviews, Properties, Linked mentions (and a card
+            file's Embedded in), each opening its drawer. Review off: none, as the Mac. */}
+        {card !== null && data !== null && reviewOn && (
+          <Suspense fallback={null}>
+            <CardStrip key={`${path}\n${card.id ?? id}`} reviews={card.reviews} settings={data.review} properties={card.properties ?? {}} data={data} door={door} pages={card.id === null ? undefined : { id: card.id, embeds: isFile }} now={now} />
+          </Suspense>
         )}
         {!isFile && record !== undefined && (
           <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'open', route: { kind: 'page', path, at: card?.id ?? id } })}>

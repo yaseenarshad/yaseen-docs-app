@@ -476,11 +476,6 @@
 .card-view__card {
   margin: 0 0 12px;
 }
-.card-view__facts {
-  margin: 0 0 4px;
-  color: var(--fg-muted);
-  font-size: 14px;
-}
 .card-view__history {
   margin-bottom: 16px;
 }

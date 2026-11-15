@@ -452,8 +452,10 @@ describe('a card alone (YAZ-5079; round 12 item 10)', () => {
     // YAZ-5508: the history is behind the strip's Reviews part, closed until tapped.
     expect(h.host.querySelector('.card-view__table')).toBeNull()
     await h.click('2 Reviews')
-    expect([...h.host.querySelectorAll('.card-view__table tbody tr')]).toHaveLength(2)
-    expect(h.host.querySelector('.card-view__facts')?.textContent).toMatch(/^Due /)
+    expect([...h.host.querySelectorAll('.card-view__table tbody tr:not(.card-reviews__next)')]).toHaveLength(2)
+    // YAZ-5528: when it is due is the Reviews drawer's last line (the Mac's), not a line under the strip.
+    expect(h.host.querySelector('.card-view__table .card-reviews__next .card-reviews__due')?.textContent).toMatch(/^Due /)
+    expect(h.host.querySelector('.card-view__facts')).toBeNull()
     await h.click('Open page')
     await waitFor(h, () => h!.host.querySelector('.reader__title')?.textContent === 'Spanish words')
   })
