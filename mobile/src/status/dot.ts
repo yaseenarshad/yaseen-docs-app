@@ -13,7 +13,7 @@ export interface DotInput {
   sync: { status: ShellSyncStatus; problem: string | null }
   /**
    * 3C's answer list, counted as the person counts (`answersPart`). `loaded`: the list has read its stored answers for
-   * the open vault (YAZ-5297). Before that, the counts are not known, so the dot cannot say green.
+   * the open vault. Before that, the counts are not known, so the dot cannot say green.
    */
   answers: { loaded: boolean; waiting: number; lost: number; sending: boolean; problem: string | null; stuck?: 'store' | 'list' | null; comments?: number; ticks?: number; notSent?: { n: number; ticks: number; gone: number } }
   /** The phone's own signal (`navigator.onLine`). The engine learns it only at its next poll. */
@@ -50,15 +50,15 @@ export interface Dot {
   /** The same facts in 20 characters at most, for a top bar under 380 px (iPhone SE). Equal to `words` when they are short. */
   short: string
   /**
-   * YAZ-5521 (sweep2 S-B): the words in the top bar from 380 px: `words`, but never a sentence: what could not be sent
+   * The words in the top bar from 380 px: `words`, but never a sentence: what could not be sent
    * says `short` ("1 not sent"); the sentence is in the sheet and the button's VoiceOver name.
    */
   bar: string
-  /** YAZ-5521: the number the amber dot says alone where room is short (a page's ID chip in the bar); null with no number. */
+  /** The number the amber dot says alone where room is short (a page's ID chip in the bar); null with no number. */
   count: number | null
   reason: DotReason
   /**
-   * YAZ-5524 (sweep3 S-2): under a state that needs a tap (a lost answer, a change not sent), the state the dot would
+   * Under a state that needs a tap (a lost answer, a change not sent), the state the dot would
    * say without it ("3 waiting · no signal"), so neither hides the other: the bar adds its count, the sheet its group.
    * Null when nothing else is to say, and on every other state.
    */
@@ -79,18 +79,18 @@ const RED: Record<string, { reason: DotReason; words: string }> = {
 }
 
 /**
- * THE DOT (decision 12; round 10 items 18 and 20; round 12 item 9; YAZ-5080). The first rule that is true wins:
+ * THE DOT (decision 12; round 10 items 18 and 20; round 12 item 9). The first rule that is true wins:
  *
- * 0. (a cold start) grey "Checking…" until the answer list has read its stored answers: never green before (YAZ-5297).
- *    It ends (YAZ-5302): red "Phone can't save" when the store does not answer, grey "Can't sync now" when it does.
+ * 0. (a cold start) grey "Checking…" until the answer list has read its stored answers: never green before.
+ *    It ends: red "Phone can't save" when the store does not answer, grey "Can't sync now" when it does.
  * 1. red: the person must act. A 401 or a token that ended ("Sign in again"), a vault that is gone, a vault too large,
  *    a full phone. Never for no signal, GitHub down, "slow down" or a failed read: those pass by themselves.
  * 2. amber "N answers could not be saved": a lost answer needs a tap (Discard). It stays until then.
- *    YAZ-5517: so does a comment or a tick the phone could not send ("1 comment couldn't be sent: its page is gone").
- *    YAZ-5524: it never hides rules 3 to 9: `then` is what they say, and the bar adds its count ("1 not sent · 3 waiting").
+ *    So does a comment or a tick the phone could not send ("1 comment couldn't be sent: its page is gone").
+ *    It never hides rules 3 to 9: `then` is what they say, and the bar adds its count ("1 not sent · 3 waiting").
  * 3. no signal (the phone's or the engine's): amber "N answers waiting · no signal" when answers wait, else grey.
  * 4. blue "Syncing…": a pass or a send runs.
- * 5. amber "N answers waiting" (also while GitHub asked to wait); "1 comment waiting" for a page's comment (YAZ-5461).
+ * 5. amber "N answers waiting" (also while GitHub asked to wait); "1 comment waiting" for a page's comment.
  * 6. amber "Waiting for GitHub": "slow down", with nothing waiting.
  * 7. amber "Token ends in N days": only in place of green.
  * 8. grey "Not synced yet": no vault is open in the engine.
@@ -102,14 +102,14 @@ export function syncDot(input: DotInput): Dot {
   const bar = dot.reason === 'not-sent' ? short : dot.words
   const one = { ...dot, short, bar, count: countOf(dot, input), then: null }
   if (dot.reason !== 'not-sent' && dot.reason !== 'lost') return one
-  // YAZ-5524: the rest, as if nothing needed a tap. The bar names it by its count: "1 not sent · 3 waiting".
+  // The rest, as if nothing needed a tap. The bar names it by its count: "1 not sent · 3 waiting".
   const then = syncDot({ ...input, answers: { ...input.answers, lost: 0, notSent: undefined } })
   if (then.reason === 'synced' || then.reason === 'syncing' || then.reason === 'starting') return one
   const more = then.count === null ? '' : ` · ${then.count} waiting`
   return { ...one, then, bar: bar + more, short: dot.reason === 'not-sent' ? short + more : short }
 }
 
-/** YAZ-5521: what the dot counts, for its smallest form (the dot and a number). */
+/** What the dot counts, for its smallest form (the dot and a number). */
 function countOf(dot: Omit<Dot, 'short' | 'bar' | 'count' | 'then'>, { answers }: DotInput): number | null {
   if (dot.reason === 'waiting' || dot.reason === 'waiting-offline') return answers.waiting
   if (dot.reason === 'not-sent') return answers.notSent?.n ?? null
@@ -117,7 +117,7 @@ function countOf(dot: Omit<Dot, 'short' | 'bar' | 'count' | 'then'>, { answers }
   return null
 }
 
-/** YAZ-5216: the short form keeps each fact of the words; only the long words of two states change. */
+/** The short form keeps each fact of the words; only the long words of two states change. */
 function shortWords(dot: Omit<Dot, 'short' | 'bar' | 'count' | 'then'>, { answers }: DotInput): string {
   if (dot.reason === 'waiting-offline') return `${answers.waiting} waiting · offline`
   if (dot.reason === 'not-sent') return `${answers.notSent!.n} not sent`
@@ -135,9 +135,9 @@ function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short'
           ? RED[answers.problem]
           : null
   if (red !== null) return { state: 'attention', ...red }
-  // YAZ-5297: a cold start. The list reads its stored answers after the first paint; until then nothing may say "Synced".
+  // A cold start. The list reads its stored answers after the first paint; until then nothing may say "Synced".
   if (!answers.loaded) {
-    // YAZ-5302: "Checking…" ends. The store did not answer: the person must act. The store answered: the sync did not start.
+    // "Checking…" ends. The store did not answer: the person must act. The store answered: the sync did not start.
     if (answers.stuck === 'store') return { state: 'attention', words: "Phone can't save", reason: 'no-storage' }
     if (answers.stuck === 'list') return { state: 'off', words: "Can't sync now", reason: 'no-list' }
     return { state: 'off', words: 'Checking…', reason: 'checking' }
@@ -148,7 +148,7 @@ function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short'
     const what = no.ticks === no.n ? plural(no.n, 'check box', 'check boxes') : no.ticks === 0 ? plural(no.n, 'comment', 'comments') : plural(no.n, 'change', 'changes')
     return { state: 'pending', words: `${what} couldn't be sent${no.gone === no.n ? `: ${no.n === 1 ? 'its' : 'their'} page is gone` : ''}`, reason: 'not-sent' }
   }
-  // YAZ-5461: `waiting` counts the comments too (`comments` of them), and those the check box ticks (`ticks`, YAZ-5494);
+  // `waiting` counts the comments too (`comments` of them), and those the check box ticks (`ticks`);
   // the words name what waits when it is one kind.
   const comments = answers.comments ?? 0
   const ticks = answers.ticks ?? 0
@@ -179,11 +179,11 @@ export interface LostRow {
   /** The answer in the words of the Review screen. */
   answer: string
   seqs: number[]
-  /** YAZ-5514: why the send refused it, when the card is not simply gone. */
+  /** Why the send refused it, when the card is not simply gone. */
   note?: string
 }
 
-/** YAZ-5514 (W2): the words for a refused action whose card is on two other pages. */
+/** The words for a refused action whose card is on two other pages. */
 export const TWO_FILES_NOTE = 'The card is on two pages now'
 
 const ANSWER_WORDS: Record<CardOp['kind'], (op: CardOp) => string> = {
@@ -201,7 +201,7 @@ export function lostRows(lost: readonly LostAnswer[]): LostRow[] {
     // The review is the answer the person gave; an action that only came with it (Up next off) does not name the row.
     const rank = l.op.kind === 'review' ? 2 : l.op.kind === 'next' && !l.op.on ? 0 : 1
     const row = rows.get(l.op.id)
-    // YAZ-5245: a card with no title is named by its ID, as Review's lost line names it.
+    // A card with no title is named by its ID, as Review's lost line names it.
     if (row === undefined) rows.set(l.op.id, { id: l.op.id, title: l.title.trim() === '' ? l.op.id : l.title, answer: ANSWER_WORDS[l.op.kind](l.op), seqs: [l.seq], rank, ...(l.why === 'two-files' && { note: TWO_FILES_NOTE }) })
     else {
       if (l.why === 'two-files') row.note = TWO_FILES_NOTE
@@ -236,7 +236,7 @@ export function lastSyncWords(at: number | null, now: number): string {
   return `Last synced ${plural(Math.floor(ago / DAY), 'day', 'days')} ago`
 }
 
-/** YAZ-5214: when the answer list tries again. "Next try in about 4 minutes, at 2:32 PM." */
+/** When the answer list tries again. "Next try in about 4 minutes, at 2:32 PM." */
 export function nextTryWords(retryAt: number, now: number): string {
   const minutes = Math.ceil((retryAt - now) / MIN)
   if (minutes <= 1) return `Next try in less than a minute, at ${clockTime(retryAt)}.`

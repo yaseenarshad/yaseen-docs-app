@@ -7,7 +7,7 @@ import type { ShellSync } from '../app/syncPort'
 export type DotAnswers = Pick<Answers, 'state' | 'subscribe' | 'waiting' | 'discard' | 'sendNow' | 'comments'>
 
 /**
- * 4B (YAZ-5078) makes the ONE answer list of the open vault with the engine (`lazySync`) and gives it through
+ * 4B makes the ONE answer list of the open vault with the engine (`lazySync`) and gives it through
  * `ShellSync.review()`. The dot reads that same list. It never makes a second one: two lists would send twice.
  * Until 4B's `review()` is there (a fake sync, or before the merge), the engine alone drives the dot.
  */
@@ -15,7 +15,7 @@ type WithReview = { review?: () => Promise<{ answers: DotAnswers } | null> }
 
 export interface DotAnswersView {
   list: DotAnswers | null
-  /** The list's state once it has read its stored answers for the open vault; null before (YAZ-5297). */
+  /** The list's state once it has read its stored answers for the open vault; null before. */
   state: AnswersState | null
   waiting: readonly WaitingAnswer[]
   /** The app has no answer list at all (a sync with no `review()`): the engine alone drives the dot. */

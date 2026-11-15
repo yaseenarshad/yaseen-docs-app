@@ -3,7 +3,7 @@ import type { VaultStore } from '../store'
 import { LAST_SYNC_STATE } from './lastSync'
 
 /**
- * YAZ-5302: "Checking…" must end. The dot waits until the answer list has read its stored answers (YAZ-5297). If the
+ * "Checking…" must end. The dot waits until the answer list has read its stored answers. If the
  * phone's store never answers (IndexedDB blocked, a full phone, a version change held by another tab), that never
  * happens. So after `checkMs` the dot asks the store itself, with a limit of `probeMs`:
  *  - no answer, or an error: `store` (red "Phone can't save", the app's own store-failure words);

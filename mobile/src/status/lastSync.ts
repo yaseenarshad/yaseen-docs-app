@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import type { VaultStore } from '../store'
 
 /**
- * YAZ-5297: the time of the last sync, kept on the phone (phone-only state of the vault). The engine knows only the
+ * The time of the last sync, kept on the phone (phone-only state of the vault). The engine knows only the
  * passes of this run, so after a cold open with no signal the sheet still says when the phone last synced.
  */
 export const LAST_SYNC_STATE = 'lastSync'
