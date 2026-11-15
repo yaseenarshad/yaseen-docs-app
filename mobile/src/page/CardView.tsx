@@ -10,6 +10,7 @@ import { useVaultData } from '../search/vaultData'
 import { useMediaWatch, useVaultMedia } from '../media/ui/useVaultMedia'
 import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
+import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 
@@ -18,8 +19,10 @@ export const NEEDS_A_FIX = 'This card file needs a fix on the Mac.'
 
 /**
  * A CARD ALONE, READ ONLY (YAZ-5079, 4C; round 12 item 10): a tap on a card in Search opens it here. The card as Review
- * draws it (`renderCard`), its head "Title · ID" (the title off its card line, YAZ-5308; "Untitled card · ID" with none,
- * and VoiceOver names it by its ID), when it is due and how sure you are, its review history, and "Open
+ * draws it (`renderCard`), in the Mac's card box (YAZ-5437, the card window): its head (ID, "Archived", and "Title
+ * hidden in review" while Review is on) and its title band (none for a card with no title: the ID names it). The top
+ * bar says the title ("Untitled card" with none); the heading "Title · ID" is for VoiceOver only, which names a card
+ * with no title by its ID, when it is due and how sure you are, its review history, and "Open
  * page" for a card in a page (a card file's card has no other page: 4B, round 15). No Edit card and no ⋯ in stage one.
  *
  * A card file that is not valid (2 or more cards, text outside the card, or no card; from git or an agent): the first
@@ -70,15 +73,20 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const title = name === '' ? UNTITLED_CARD : name
   const label = name === '' ? (card?.id ?? id) : name
 
+  const reviewOn = data?.review.enabled === true
+  const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}`
   useEffect(() => {
     const el = host.current
     if (el === null || data === null || card === null) return
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(drawCard(data, path, card.text))
-    el.replaceChildren(body)
-    // `card.text` is the drawn text: a new read with the same text draws nothing again.
-  }, [data, path, card?.text])
+    const parts = [cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true }), titleBand(card.title), body]
+    el.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null))
+    el.classList.toggle('card--off', card.off)
+    // `card.text` and the head's words are what is drawn: a new read with the same ones draws nothing again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, path, card?.text, head])
 
   const onTap = async (event: React.MouseEvent) => {
     if (data === null) return
@@ -95,12 +103,11 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   return (
     <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs>
       <article className="reader card-view" aria-label={label}>
-        <h2 className="reader__title">
+        <h2 className="reader__title reader__title--same">
           {title}
           <span className="card-view__id"> · {card?.id ?? id}</span>
         </h2>
         {!isFile && record !== undefined && <p className="muted card-view__in">{app.unit(`in ${record.title}`)}</p>}
-        {card?.off === true && <p className="muted">Archived</p>}
         {shape !== null && shape.problem !== 'ok' && (
           <p className="problem problem--quiet" role="status">
             {NEEDS_A_FIX}

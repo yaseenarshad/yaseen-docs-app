@@ -188,22 +188,56 @@ li:has(> .page-task[data-checked='true'], > p:first-child > .page-task[data-chec
   background: var(--bg);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.06);
 }
-.card-embed__from {
-  display: block;
-  width: 100%;
-  min-height: var(--tap);
-  padding: 8px 12px;
-  border: 0;
-  border-bottom: 1px solid var(--border);
-  border-radius: 7px 7px 0 0;
-  background: var(--bg-side);
-  color: var(--fg-muted);
+/* A card's head and title band (YAZ-5437), as the Mac's read card (`card.css`: `.card__head`, `.card-band`): the ID first,
+   small and grey, then its marks; the title bold in the shaded band under it. The band's colour is the Mac's
+   `--card-title-band` (`app.css`), one step darker than the head. Card title size stays Default (the Mac's setting is
+   in its settings folder, which the phone never gets). */
+.reader {
+  --card-title-band: #ededf0;
+}
+@media (prefers-color-scheme: dark) {
+  .reader {
+    --card-title-band: #2d2d30;
+  }
+}
+.reader .card .card__head {
+  min-height: 32px;
+  padding: 4px 12px;
   font-size: 13px;
+}
+.reader .card .card__head .card__id {
+  padding: 0;
+  font-size: 12px;
+}
+.reader .card .card-band {
+  padding: 8px 14px 9px;
+}
+/* The embed's head: `↗ Embedded from "<name>" · ID` (the Mac's `cardEmbed.ts`); its first part opens the card alone. */
+.reader .card-embed__head {
+  min-height: var(--tap);
+  padding: 0 12px 0 4px;
+}
+.card__head .card-embed__from {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: var(--tap);
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
   text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
-.card-embed__state {
-  margin-left: 6px;
+.card__head .card-embed__arrow {
+  margin-right: 4px;
+}
+.card-embed__dot {
+  flex: none;
+  color: var(--fg-muted);
 }
 .card-embed--missing {
   margin: 12px 0;

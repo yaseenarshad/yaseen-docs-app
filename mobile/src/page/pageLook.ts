@@ -98,16 +98,6 @@ export function embedName(data: VaultData, card: CardLink): string {
   return record?.title ?? card.path
 }
 
-/**
- * An embedded card's head (YAZ-5164 part 3 on the Mac's `cardEmbed.ts`): a card in a page first shows its own title
- * (`title`, off its card line; "Untitled card" with none), then where it is from; a card file's title is the name in
- * "Embedded from" already.
- */
-export function embedHead(data: VaultData, card: CardLink, title: string): string {
-  const from = `Embedded from "${embedName(data, card)}" · ${card.id}`
-  return data.byPath[card.path]?.kind === 'card' ? from : `${title === '' ? UNTITLED_CARD : title} · ${from}`
-}
-
 /** The card an `![[ID]]` or `[[ID]]` names, or null. */
 export const cardOf = (data: VaultData, inner: string): CardLink | null => linkCard(inner, resolveSourceOf(data))
 

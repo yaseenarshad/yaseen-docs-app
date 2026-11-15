@@ -10,3 +10,12 @@ describe('the card view head', () => {
     expect(css).not.toMatch(/\.reader__title \{[^}]*white-space: nowrap;/)
   })
 })
+
+describe('the title band (YAZ-5437)', () => {
+  it("is the Mac's: its colour token in light and dark, Default title size (1.125× the card text)", () => {
+    expect(css).toMatch(/--card-title-band: #ededf0/)
+    expect(css).toMatch(/prefers-color-scheme: dark[\s\S]*--card-title-band: #2d2d30/)
+    const card = readFileSync(new URL('../../../client/src/editor/card/card.css', import.meta.url), 'utf8')
+    expect(card).toMatch(/\.card-band \{[^}]*font-size: var\(--card-title-size, calc\(1em \* 1\.125\)\)/)
+  })
+})

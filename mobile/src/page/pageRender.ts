@@ -1,8 +1,9 @@
 import { isAudioRef } from '@client/editor/card/cardMedia'
 import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/localOnly'
 import { parseAlt } from '@client/editor/image/imageSrc'
-import { cardIdOf, parseCardLine } from '@shared/cardLine'
+import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
+import { cardHead, titleBand, type CardMarks } from '../media/ui/cardHead'
 
 /**
  * A PAGE, READ ONLY, WITH NO EDITOR (YAZ-5079, 4C). The Mac reads a page with its editor (`useReadOnlyPage`: Crepe,
@@ -26,7 +27,9 @@ import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
  *    ID", as the Mac. A picture or a sound waits for its bytes (`data-vault-src`, `data-vault-sound`): the address is
  *    never one the browser fetches. A drawing: "Open it on the Mac" (C3). A picture from the web: a calm line, because
  *    the page's CSP loads none (decision 8, round 12 item 13).
- *  - The page's own card (a `card` fence): drawn read only by `look.card` (`renderCard`); its card line is out of sight.
+ *  - The page's own card (a `card` fence): drawn read only by `look.card` (`renderCard`); its card line is out of sight,
+ *    and gives the card its head (ID, "Archived", "Title hidden in review") and its title band, as the Mac's page card
+ *    (YAZ-5437: before, only the ID was kept, so a card's title never showed in a page).
  *  - Web links open in Safari (`target="_blank"`); a link to a vault file opens it (`data-open`).
  *
  * A long page draws in slices (`renderPage`'s `slice`): it is cut between blocks (`cutAt`, never inside a code fence),
@@ -185,9 +188,9 @@ const blockMath: TokenizerAndRendererExtension = {
   },
 }
 
-/** One parse: the page's own cards it met, in order, with the ID of the card line under each. */
+/** One parse: the page's own cards it met, in order, with what the card line under each says (`lined`: it has one). */
 interface Parse {
-  cards: { text: string; id: string | null }[]
+  cards: (CardMarks & { text: string; lined: boolean })[]
 }
 let parse: Parse = { cards: [] }
 
@@ -198,15 +201,18 @@ markdown.use({
     checkbox: ({ checked }) => `<span class="page-task" role="img" aria-label="${checked ? 'Done' : 'Not done'}" ${localMark('checked')}="${checked}"></span> `,
     code(token) {
       if (token.lang?.trim() !== 'card') return false
-      parse.cards.push({ text: token.text, id: null })
+      parse.cards.push({ text: token.text, id: null, title: '', lined: false })
       return `<div ${localMark('page-card')}="${parse.cards.length - 1}"></div>`
     },
     html({ text }) {
-      // A comment shows nothing. A card line (`<!-- card: ID, … -->`) under a card gives that card its ID.
+      // A comment shows nothing. A card line (`<!-- card: ID, title "…", … -->`) under a card gives that card its ID, its
+      // title (YAZ-5308) and its marks.
       if (/^\s*<!--\s*card:[\s\S]*?-->\s*$/.test(text)) {
         const last = parse.cards.at(-1)
         const line = parseCardLine(text.trim())
-        if (last !== undefined && last.id === null && line !== null) last.id = cardIdOf(line)
+        if (last !== undefined && !last.lined && line !== null) {
+          Object.assign(last, { lined: true, id: cardIdOf(line), title: cardTitleOf(line), off: isCardOff(line), notitle: isCardNoTitle(line) })
+        }
         return ''
       }
       // YAZ-5364: only WHOLE comments show nothing. An unclosed `<!--` runs to the end of the text (CommonMark); hiding
@@ -374,12 +380,13 @@ function drawCards(root: DocumentFragment, look: PageLook, cards: Parse['cards']
     const card = cards[Number(slot.getAttribute('data-page-card'))]
     slot.removeAttribute('data-page-card')
     if (card === undefined) continue
-    slot.className = 'card page-card'
+    slot.className = card.off === true ? 'card page-card card--off' : 'card page-card'
     if (card.id !== null) slot.dataset.cardId = card.id
-    // The Mac's card box: the sides in `.card__body` (`card.css` spaces them and draws the rule across).
+    // The Mac's card box: the head, the title band (YAZ-5437), the sides in `.card__body` (`card.css` spaces them).
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(look.card(card.text))
+    for (const part of [cardHead(card), titleBand(card.title)]) if (part !== null) slot.append(part)
     slot.append(body)
   }
 }
