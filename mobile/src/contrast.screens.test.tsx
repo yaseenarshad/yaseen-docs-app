@@ -105,6 +105,8 @@ const FIXTURES = [
   'page-headings',
   'page-properties',
   'page-jump',
+  // YAZ-5458: the reading look, every block.
+  'page-look',
   // YAZ-5472: Explore's sheets.
   'explore-one',
   'explore-stack',

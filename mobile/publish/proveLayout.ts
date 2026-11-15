@@ -16,15 +16,18 @@ import { join } from 'node:path'
  *  - the table look (`#fixture=page-table-look`, YAZ-5482), light and dark: the merged cells span their rows and
  *    columns, the fills and text colours paint (a custom dark ink made readable in dark mode), a clipped cell is one
  *    line, no column is too narrow to read, the page never scrolls sideways.
+ *  - the reading look (`#fixture=page-look`, YAZ-5458): every block, light and dark, at 375 px, screen by screen down
+ *    the page; the page never scrolls sideways.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
- * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go).
+ * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const mobile = new URL('..', import.meta.url).pathname
 const DIST = process.env.LAYOUT_DIST ?? join(mobile, 'dist-fixtures')
 const PORT = Number(process.env.PROOF_PORT ?? 8931)
-const DEBUG = 9351
+const DEBUG = Number(process.env.PROOF_DEBUG ?? 9351)
 const out = process.env.PROOF_DIR ?? mkdtempSync(join(tmpdir(), 'notecards-layout-'))
 mkdirSync(out, { recursive: true })
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -98,7 +101,7 @@ const MEASURE = `(() => {
 })()`
 
 let failed = 0
-for (const [w, h] of SIZES) {
+for (const [w, h] of process.env.LAYOUT_ASKS === 'no' ? [] : SIZES) {
   for (const name of ASKS) {
     const file = await open(name, w, h)
     const m = await evaluate(MEASURE)
@@ -256,6 +259,26 @@ if (process.env.LAYOUT_PAGES !== 'no') {
     await wait(200)
     writeFileSync(shot.replace('.png', '-clip.png'), Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-table-look at 375x667, ${scheme}: merged ${m.rowspan ? 'rows' : 'ROWS NOT'} and ${m.colspan ? 'columns' : 'COLUMNS NOT'}; fills ${m.fills.map((f: boolean) => (f ? 'Y' : 'n')).join('')}; custom ink ${m.ink}; clip ${m.clipCut && m.clipOneLine ? 'one line, cut' : 'NOT CUT ' + JSON.stringify(m.clipInfo)}; narrow columns ${m.narrow.length === 0 ? 'none' : m.narrow.join(',')}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5458: the reading look, light and dark, at 375 px: a picture of each screen down the page.
+if (process.env.LAYOUT_LOOK !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('page-look', 375, 667)
+    const m = await evaluate(`(() => { const s = document.querySelector('.screen--reader'); return { height: s ? s.scrollHeight : 0, view: s ? s.clientHeight : 0, wide: s ? s.scrollWidth > s.clientWidth + 1 : true, blocks: document.querySelectorAll('.reader__body > *').length } })()`)
+    const shots: string[] = []
+    for (let y = 0, i = 1; y < m.height; y += m.view - 80, i++) {
+      await evaluate(`document.querySelector('.screen--reader').scrollTop = ${y}`)
+      await wait(150)
+      const shot = file.replace('.png', `-${scheme}-${i}.png`)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      shots.push(shot)
+    }
+    const ok = m.blocks > 20 && !m.wide
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  page-look ${scheme} at 375x667: ${m.blocks} blocks, ${m.height}px tall; ${m.wide ? 'SCROLLS SIDEWAYS' : 'no side scroll'}; ${shots.length} pictures  ${shots[0]}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
