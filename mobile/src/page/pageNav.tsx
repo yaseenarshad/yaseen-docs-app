@@ -93,8 +93,8 @@ export function neighbours(stops: readonly Stop[], at: Route): { before: Stop | 
 
 /** Opens `route` IN PLACE of the open page or card: Back still goes to where the reading started. */
 export function stepTo(go: AppModel['go'], route: Route): void {
-  go({ type: 'back' })
-  go({ type: 'open', route })
+  // One step (YAZ-5499): a Back here would step the browser's history, which is not done at once.
+  go({ type: 'swap', route })
 }
 
 /** The thin bar over the tabs: "‹ page before", the place, "page after ›". At the first or the last, that side is dim and does nothing. */

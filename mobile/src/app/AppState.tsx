@@ -8,6 +8,7 @@ import type { VaultMedia } from '../media/ui/vaultMedia'
 import type { Scanner } from '../scan/scanner'
 import { loadVaultList, openVault, openVaultOf, saveVaultList, vaultId, type KeepStorage, type PhoneVault, type TokenStore, type VaultList, type VaultStore } from '../store'
 import type { FriendsPort, FriendsSettings } from './friendsPort'
+import { browserBack, useBrowserHistory } from './browserHistory'
 import { PLAIN_VAULT, navigate, openingTab, tabIn, type NavAction, type NavState, type VaultTabs } from './nav'
 import { IDLE, type ShellSync, type ShellSyncState } from './syncPort'
 import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
@@ -148,6 +149,11 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   const tabsOfVault = services.vaultTabs ?? readVaultTabs
   const [loaded, setLoaded] = useState<Loaded>(EMPTY)
   const [nav, setNav] = useState<NavState>({ tab: 'review', stack: [] })
+  // YAZ-5499: the browser's history follows the screens, so Safari's own back swipe (in a tab) goes back too.
+  const shownStack = useRef(nav.stack)
+  shownStack.current = nav.stack
+  const showStack = useCallback((stack: NavState['stack']) => setNav((n) => ({ ...n, stack })), [])
+  useBrowserHistory(nav.stack, showStack)
   const [syncState, setSyncState] = useState<ShellSyncState>(() => sync.state() ?? IDLE)
   const openKey = useRef<string | null>(null)
   /** YAZ-5476: the vault's tabs changed (Review turned off, another vault): a tab it no longer has goes to Search, and stays there. */
@@ -222,9 +228,11 @@ export function AppProvider({ services, children }: { services: AppServices; chi
 
   const go = useCallback(
     (action: NavAction) => {
-      // YAZ-5457: a page or card opened goes to this phone's Recent (its own lazy chunk; it records only those two).
+      // YAZ-5457: a page or card opened (or swapped in by the arrows) goes to this phone's Recent (its own lazy chunk; it records only those two).
       const vault = openKey.current
-      if (action.type === 'open') void import('../search/recent').then((m) => m.remember(store, vault, action.route))
+      if ('route' in action) void import('../search/recent').then((m) => m.remember(store, vault, action.route))
+      // Back steps the browser back when the entry under is the screen under: its `popstate` shows it (one Back only).
+      if (action.type === 'back' && browserBack(shownStack.current)) return
       setNav((n) => navigate(n, action))
     },
     [store],

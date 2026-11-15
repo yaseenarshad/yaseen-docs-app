@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
+import { interceptBrowserBack } from '../app/browserHistory'
 import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { swipeIsOurs } from '../app/edgeSwipe'
 import { useVaultData, type VaultData } from '../search/vaultData'
@@ -41,7 +42,12 @@ export default function SheetLayer() {
     if (top === undefined) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeTop()
     document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
+    // YAZ-5499: in a Safari tab, Safari's own back swipe closes the top sheet, as the app's swipe does in the Home Screen app.
+    interceptBrowserBack(() => (closeTop(), true))
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      interceptBrowserBack(null)
+    }
   }, [top])
 
   if (mounted.length === 0) return null

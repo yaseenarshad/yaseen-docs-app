@@ -71,7 +71,8 @@ export interface NavState {
   stack: Route[]
 }
 
-export type NavAction = { type: 'tab'; tab: Tab } | { type: 'open'; route: Route } | { type: 'back' } | { type: 'home' }
+/** `swap`: `route` IN PLACE of the top screen (the page arrows): Back still goes to the screen under. */
+export type NavAction = { type: 'tab'; tab: Tab } | { type: 'open'; route: Route } | { type: 'swap'; route: Route } | { type: 'back' } | { type: 'home' }
 
 export function navigate(state: NavState, action: NavAction): NavState {
   switch (action.type) {
@@ -79,6 +80,8 @@ export function navigate(state: NavState, action: NavAction): NavState {
       return { tab: action.tab, stack: [] }
     case 'open':
       return { ...state, stack: [...state.stack, action.route] }
+    case 'swap':
+      return { ...state, stack: [...state.stack.slice(0, -1), action.route] }
     case 'back':
       return { ...state, stack: state.stack.slice(0, -1) }
     case 'home':
