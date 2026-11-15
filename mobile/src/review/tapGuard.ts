@@ -2,6 +2,12 @@ import { useCallback, useEffect, useReducer } from 'react'
 
 /** How long a NEW card is on the screen before a tap acts on it (a double tap is about 150 ms apart). */
 export const SEEN_MS = 400
+/**
+ * YAZ-5596 (2): the longest an answer's save holds the taps. A save with no answer by then (iOS storage that hangs
+ * after a wake) counts as failed for the screen: the card stays and taps act again. The save itself goes on, and an
+ * answer that lands later still counts.
+ */
+export const SAVE_LIMIT_MS = 10_000
 
 /**
  * THE TAP GUARD (YAZ-5266): one small state machine with ONE owner (the Review screen), so the
@@ -27,6 +33,8 @@ export const SEEN_MS = 400
  *    `answering` (its next card still gets its 400 ms).
  *  - `shown` of another drawing in `settling` starts its 400 ms again.
  *  - `seen`: the `SEEN_MS` timer of `settling` ran out.
+ *  - a save with no answer in `SAVE_LIMIT_MS` (YAZ-5596): `answered` with the same card, so `ready`; the late end of
+ *    that save sends nothing.
  */
 export type GuardState = { kind: 'ready' } | { kind: 'answering'; from: string | null; follows: boolean } | { kind: 'awaiting'; from: string | null } | { kind: 'settling'; turn: number; key?: string }
 
@@ -85,13 +93,21 @@ export function useTapGuard() {
   /**
    * Runs one answer; `after()` says what is on the screen when the save ended (`sameCard`: the save failed, the card
    * stays). `from`: the card answered, when the caller also sends `shown` for each card drawn (the Review screen).
+   * `onLate`: the save had no answer in `SAVE_LIMIT_MS`; the taps act again from then (YAZ-5596).
    */
-  const answer = useCallback(async (run: () => Promise<unknown>, after: () => { sameCard: boolean; cardOnScreen: boolean }, from?: string | null) => {
+  const answer = useCallback(async (run: () => Promise<unknown>, after: () => { sameCard: boolean; cardOnScreen: boolean }, from?: string | null, onLate?: () => void) => {
     dispatch(from === undefined ? { type: 'answer' } : { type: 'answer', from })
+    let late = false
+    const limit = setTimeout(() => {
+      late = true
+      onLate?.()
+      dispatch({ type: 'answered', sameCard: true, cardOnScreen: true })
+    }, SAVE_LIMIT_MS)
     try {
       await run()
     } finally {
-      dispatch({ type: 'answered', ...after() })
+      clearTimeout(limit)
+      if (!late) dispatch({ type: 'answered', ...after() })
     }
   }, [])
   const shown = useCallback((key: string) => dispatch({ type: 'shown', key }), [])

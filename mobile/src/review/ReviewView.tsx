@@ -414,12 +414,14 @@ function SessionScreen({
     const answeredBefore = session.answered.length
     // The title's words as they read (a hidden-word mark gives its words: the card is answered), else the ID.
     const name = cardPieces(cardName).map((p) => p.text).join('').trim()
-    setLine({ kind: 'answer', count: answeredBefore + 1, id: card.id, name: name === '' ? card.id : name, rating })
+    const answeredLine: Line = { kind: 'answer', count: answeredBefore + 1, id: card.id, name: name === '' ? card.id : name, rating }
+    setLine(answeredLine)
     // The guard's one way through an answer; a failed save keeps this card on the screen, and taps act again.
     // Whether the answer counted is the hook's own word (`answer` gives it), never read off the screen: on
     // the phone React may draw the next card AFTER a 0 ms timer, and the screen then still showed the old count, so a
     // saved answer looked failed and its line (with the 4-second Undo) was put back to the one before.
     let counted = false
+    let late = false
     void guard.answer(
       async () => {
         counted = await review.answer(rating, seconds())
@@ -427,10 +429,21 @@ function SessionScreen({
         await new Promise((r) => setTimeout(r, 0))
         // A save that failed counts no answer; the line goes back to what it said (the earlier Undo stays).
         if (!counted) setLine(earlier)
+        // YAZ-5596 (2): a save that ended after its time limit and counted: the answer's line (and its Undo) after all.
+        else if (late) {
+          setNotice(null)
+          setLine(answeredLine)
+        }
       },
       // `sameCard`: the save failed (no answer counted; the card stays). The next card's drawing starts the 400 ms.
       () => ({ sameCard: !counted, cardOnScreen: liveKey.current !== null }),
       fromDrawing,
+      // YAZ-5596 (2): no answer from the storage in 10 s: the card stays and takes taps again; the save goes on.
+      () => {
+        late = true
+        setLine(earlier)
+        setNotice('That did not save yet. It will try again.')
+      },
     )
   }
   // An answer whose card was gone at the send is in the amber line. Its Undo takes it away cleanly (as
