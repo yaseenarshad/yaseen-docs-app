@@ -13,4 +13,8 @@ describe('YAZ-5514: card answers and marks (applyOps) on random pages with rando
     for (const x of all) byKind.set(x.kind, [...(byKind.get(x.kind) ?? []), x])
     expect([...byKind].map(([k, v]) => `${k}: ${v.length} (seed ${v[0].seed}) ${v[0].detail.slice(0, 300)}`)).toEqual([])
   })
+  // YAZ-5520: a list with an unreview and a review of the same review, applied twice, moved the review.
+  it('seeds 17250 and 32795 (a review taken out and put back by one list): a resend changes nothing', () => {
+    expect([17250, 32795].flatMap(checkCardSequence)).toEqual([])
+  })
 })

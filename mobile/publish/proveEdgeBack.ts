@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { freePort } from './freePort'
 
 /**
  * THE LEFT-EDGE BACK IN HEADLESS CHROME (YAZ-5435, YAZ-5499): a real touch swipe on the real app. The fixtures build runs
@@ -21,14 +22,15 @@ import { join } from 'node:path'
  *  - A page's overlays (the ⋯ menu, Find, Headings, Properties, a table full screen): Back closes ONLY the overlay and
  *    the page stays: `history.back()` in a tab, the edge swipe in the Home Screen app.
  * Run after `npm run build:fixtures -w mobile`: `npx vite-node mobile/publish/proveEdgeBack.ts` (LAYOUT_DIST: another
- * build folder). Exit 0: every swipe went back.
+ * build folder; PROOF_PORT, PROOF_DEBUG: the ports, else free ones). Exit 0: every swipe went back.
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const mobile = new URL('..', import.meta.url).pathname
 const DIST = process.env.LAYOUT_DIST ?? join(mobile, 'dist-fixtures')
-const PORT = Number(process.env.PROOF_PORT ?? 8934)
-const DEBUG = 9354
+// PROOF_PORT, PROOF_DEBUG: the file server's port and Chrome's debug port; each a free port when not named.
+const PORT = await freePort(process.env.PROOF_PORT)
+const DEBUG = await freePort(process.env.PROOF_DEBUG)
 const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1'
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

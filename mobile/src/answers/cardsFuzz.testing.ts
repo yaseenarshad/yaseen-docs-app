@@ -1,6 +1,6 @@
 import { cardIdOf, cardRecords, formatCardLine, pageCards, parseCardLine, type CardLine } from '@shared/cardLine'
 import { splitFrontmatter } from '@shared/frontmatter'
-import { applyOp, applyOps, type CardOp } from './ops'
+import { applyCardOps, applyOps, type CardOp } from './ops'
 
 /**
  * YAZ-5514: the answer and mark fuzz of the writes check (`check-writes`, cards.fuzz), as a normal test. Seeded
@@ -219,7 +219,8 @@ export interface Finding {
 /**
  * One random page and action list through `applyOps`. Findings (empty: safe):
  *  - only the changed cards' lines change, each keeping its own line end (YAZ-5514 W1), and the line count stays;
- *  - each changed line means what the actions, one after another, make of it (`applyOp`), and reads back;
+ *  - each changed line means what the card's actions, one after another, make of it (`applyCardOps`: `applyOp` each,
+ *    a review taken out and put back keeping its place, YAZ-5520), and reads back;
  *  - every part the actions did not touch keeps its bytes (YAZ-5409);
  *  - the same list applied to the result changes nothing (a resend);
  *  - the BOM stays, the IDs stay, the Mac's reader reads the page.
@@ -246,11 +247,12 @@ export function checkCardSequence(seed: number): Finding[] {
     const id = cardIdOf(c.line)
     if (id !== null && !first.has(id.toLowerCase())) first.set(id.toLowerCase(), n)
   })
-  const want = new Map<number, CardLine>()
+  const byCard = new Map<number, CardOp[]>()
   for (const op of ops) {
     const n = first.get(op.id.toLowerCase())
-    if (n !== undefined) want.set(n, applyOp(want.get(n) ?? cards[n].line, op))
+    if (n !== undefined) byCard.set(n, [...(byCard.get(n) ?? []), op])
   }
+  const want = new Map<number, CardLine>([...byCard].map(([n, list]) => [n, applyCardOps(cards[n].line, list)]))
   const diff = changedLines(text, content)
   if (diff === null) {
     f('line-count-changed', JSON.stringify({ text, ops }))
