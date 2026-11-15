@@ -164,7 +164,7 @@
   border-bottom: 1.75px solid var(--fg-muted);
   transform: rotate(-45deg);
 }
-.tree__chevron--open::before {
+.tree__chevron.tree__chevron--open::before {
   top: 1px;
   transform: rotate(45deg);
 }
