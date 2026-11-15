@@ -48,14 +48,14 @@ afterEach(() => {
   host?.remove()
 })
 
-async function mount(port: CommentsPort | null, text = PAGE) {
+async function mount(port: CommentsPort | null, text = PAGE, noun?: string) {
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
   const { comments, shape } = readCommentsAndShape(text)
   const names: Record<string, string> = { 'yaseen-a': 'Yaseen A' }
   await act(async () =>
-    root!.render(createElement(CommentsView, { path: 'notes/plan.md', comments, shape, port, signer: async () => 'yaseen-a', nameOf: (h) => (h === undefined ? 'Someone' : (names[h] ?? h)), version: 0 })),
+    root!.render(createElement(CommentsView, { path: 'notes/plan.md', comments, shape, port, signer: async () => 'yaseen-a', nameOf: (h) => (h === undefined ? 'Someone' : (names[h] ?? h)), version: 0, ...(noun !== undefined && { noun }) })),
   )
 }
 const button = (name: string) => [...host.querySelectorAll('button')].find((b) => b.textContent?.trim() === name) as HTMLButtonElement | undefined
@@ -101,6 +101,19 @@ describe('the comments of a page, read only', () => {
     expect(host.textContent).toContain('uses "comments" for something else')
     expect(button('Discard')).toBeDefined()
     expect(host.textContent).not.toContain('Elsewhere')
+  })
+})
+
+describe('a card file (YAZ-5477): the same block, its refusals name the card file', () => {
+  it('a refused comment and a refused file say "card file", not "page"', async () => {
+    const waiting: WaitingComment[] = [
+      { id: 'w1', path: 'notes/plan.md', body: 'Gone one', at: '2026-11-14T10:00:00Z', madeAt: 0, notBefore: 0, refused: 'gone' },
+      { id: 'w2', path: 'notes/plan.md', body: 'Odd one', at: '2026-11-14T10:00:00Z', madeAt: 0, notBefore: 0, refused: 'invalid' },
+    ]
+    await mount(fakePort(waiting).port, PAGE, 'card file')
+    expect(host.textContent).toContain('This card file is no longer in the vault')
+    expect(host.textContent).toContain("This card file's properties do not read correctly")
+    expect(host.textContent).not.toMatch(/\bpage\b/)
   })
 })
 

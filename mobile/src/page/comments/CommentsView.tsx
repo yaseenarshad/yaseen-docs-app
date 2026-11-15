@@ -30,7 +30,12 @@ export interface CommentsViewProps {
   nameOf: (handle: string | undefined) => string
   /** Bumped when the comment list changes (the port's `subscribe`). */
   version: number
+  /** YAZ-5477: what the file is called in the words of a refusal: "page" (the default), or "card file". */
+  noun?: string
 }
+
+/** The words of a refusal, with the file called by its noun (YAZ-5477: "This card file is no longer in the vault"). */
+const named = (words: string, noun: string): string => (noun === 'page' ? words : words.replace(/\bpage\b/g, noun))
 
 const when = (at: string): string => {
   const ms = Date.parse(at)
@@ -50,7 +55,7 @@ const when = (at: string): string => {
  * it posts at once with a 4-second Undo (one tap: Yaseen's "boom"); a typed comment goes with Send, which waits for a
  * word. The comment shows at once, "Waiting to send" until GitHub holds it.
  */
-export function CommentsView({ path, comments, shape, port, signer, nameOf, version }: CommentsViewProps) {
+export function CommentsView({ path, comments, shape, port, signer, nameOf, version, noun = 'page' }: CommentsViewProps) {
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -69,7 +74,7 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
     return () => clearTimeout(id)
   }, [undoable])
 
-  const refused = shape === 'foreign' || shape === 'invalid' ? REFUSED_WORDS[shape] : null
+  const refused = shape === 'foreign' || shape === 'invalid' ? named(REFUSED_WORDS[shape], noun) : null
   void version
   const held = new Set(comments.map((c) => c.id))
   const pending = (port?.waiting(path) ?? []).filter((c) => !held.has(c.id))
@@ -137,7 +142,7 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
               <p className="page-comments__body">{c.body}</p>
               {c.refused !== undefined && (
                 <p className="page-comments__problem" role="alert">
-                  {NOT_SENT[c.refused]}{' '}
+                  {named(NOT_SENT[c.refused], noun)}{' '}
                   <button type="button" className="link-btn" onClick={() => void port?.discard(c.id)}>
                     Discard
                   </button>
