@@ -511,6 +511,13 @@ const FOLDER_CHECK = `(() => {
     board: board ? { columns: board.children.length, scrolls: board.scrollWidth > board.clientWidth + 1 } : null,
     cards: document.querySelectorAll('.folder-card').length,
     agenda: document.querySelectorAll('.folder-agenda__day').length,
+    // YAZ-5531: the page in an Explore sheet: the sheet up (its box near the top), its title, text, tabs and table drawn in it.
+    sheet: (() => {
+      const box = [...document.querySelectorAll('.explore-sheet__box')].at(-1)
+      if (!box) return null
+      const page = box.querySelector('.folder-page')
+      return { top: Math.round(r(box).top), up: r(box).top < innerHeight / 3, title: page?.querySelector('.reader__title')?.textContent ?? null, text: !!page?.querySelector('.folder-page__text')?.textContent?.trim(), tabs: page?.querySelectorAll('.folder-tabs__tab').length ?? 0, table: !!page?.querySelector('.folder-table table') }
+    })(),
     pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 || [...document.querySelectorAll('.screen, .explore-sheet__body')].some((s) => s.scrollWidth > s.clientWidth + 1),
   }
 })()`
@@ -523,7 +530,7 @@ if (process.env.LAYOUT_FOLDERS !== 'no') {
     'folder-board': (m) => m.board !== null && m.board.columns === 3 && m.board.scrolls && m.cards === 5,
     'folder-cards': (m) => m.cards === 5,
     'folder-calendar': (m) => m.agenda === 5,
-    'folder-sheet': (m) => m.page && m.table,
+    'folder-sheet': (m) => m.sheet !== null && m.sheet.up && m.sheet.title === 'Projects' && m.sheet.text && m.sheet.tabs === 5 && m.sheet.table,
   }
   for (const scheme of ['light', 'dark'] as const) {
     await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
