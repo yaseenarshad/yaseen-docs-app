@@ -184,3 +184,58 @@ describe('YAZ-5512 C1: a comment on a page with a BOM goes into its own properti
     }
   })
 })
+
+describe('YAZ-5522 N4: a phone comment changes only its own lines; every other comment stays byte for byte', () => {
+  const PAGE = [
+    '---',
+    'title: Weekend jobs',
+    'comments:',
+    '  - {id: demo0001, n: 1, at: 2026-11-01T09:00:00Z, by: sam, body: "Paint the fence"}',
+    '  # the next one is long',
+    '  - id: demo0002',
+    '    n: 2',
+    '    at:   2026-11-02T09:00:00Z',
+    '    by: yaseen',
+    '    body: |-',
+    '      Two lines',
+    '      of text',
+    '  - {id: demo0003, n: 3, at: 2026-11-03T09:00:00Z, reply_to: demo0001, body: ok}',
+    'after: 1',
+    '---',
+    'Body.',
+    '',
+  ].join('\n')
+
+  it('commentWrite_keepsExistingCommentStyle: the one-line entries stay one line; the new entry goes after the last', () => {
+    const out = added(PAGE, C('a1b2c3d4', 'Looks good'))
+    const inserted = onlyInserted(PAGE, out)
+    expect(inserted).toBe('  - id: a1b2c3d4\n    n: 3\n    at: 2026-11-14T10:00:00Z\n    by: yaseen\n    body: Looks good\n')
+    expect(out).toContain('  - {id: demo0001, n: 1, at: 2026-11-01T09:00:00Z, by: sam, body: "Paint the fence"}\n  # the next one is long\n')
+  })
+
+  it("round trip: the Mac's parser reads the phone's result exactly as it reads its own writer's", () => {
+    const pages = [
+      PAGE,
+      PAGE.replace(/\n/g, '\r\n'),
+      // A list indented flush with its key, a wider dash, a hand-written entry the Mac numbers (D10).
+      '---\ncomments:\n- {id: p1, n: 2, at: 2026-11-01T09:00:00Z, body: a}\n-   {by: agent, body: "hand written"}\n---\nBody\n',
+      // A flow list: the whole entry from the Mac's writer, as before.
+      '---\ncomments: [{id: p1, n: 1, at: 2026-11-01T09:00:00Z, body: a}]\n---\n',
+    ]
+    for (const page of pages) {
+      const c = C('a1b2c3d4', 'Line one\nline two')
+      const mac = addComment(page, c.body, { id: c.id, at: c.at, by: c.by })
+      const out = added(page, c)
+      expect(readComments(out)).toEqual(readComments(mac))
+      expect(rawComments(out)).toEqual(rawComments(mac))
+      expect(pageRest(out)).toBe(pageRest(page))
+      // And the next comment on the result reads the same on both sides too.
+      const next = C('e5f6a7b8', 'Again')
+      expect(readComments(added(out, next))).toEqual(readComments(addComment(out, next.body, { id: next.id, at: next.at, by: next.by })))
+    }
+    // The flush list keeps its flush dash and its one-line first entry; the hand-written entry takes the Mac's lines.
+    const flush = added(pages[2]!, C('a1b2c3d4'))
+    expect(flush.startsWith('---\ncomments:\n- {id: p1, n: 2, at: 2026-11-01T09:00:00Z, body: a}\n-   id: ')).toBe(true)
+    expect(flush).toContain('\n-   id: a1b2c3d4\n    n: 4\n')
+  })
+})
