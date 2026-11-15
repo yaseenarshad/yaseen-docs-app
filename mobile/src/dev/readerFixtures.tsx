@@ -41,8 +41,8 @@ import { fixtureAnswers } from './fixtureAnswers'
  * line a third down the 9:30 row, the rows before it dimmed; `page-calendar-chip` the same (`proveLayout.ts` scrolls it past the now
  * row: the Now pill at the bottom); `page-calendar-full` the table full screen.
  * YAZ-5494: `page-tasks` a made-up page of tasks in every shape (`taskFixtures.ts`): each box of the page a check box a
- * tap ticks (44 px around it), the card's box a glyph. YAZ-5510: `page-tasks-numbered` numbered tasks (`1.` to `11.`): the
- * number, then the box, then the text.
+ * tap ticks (44 px around it), the card's box a glyph. YAZ-5510: `page-tasks-numbered` numbered tasks (`1.` to `11.`): only
+ * the box, in the number's place (the Mac's rule), then the text.
  * YAZ-5460: the folder page on the made-up `Projects` folder (`folderVault.ts`): `folder-hold` the menu of a held
  * folder; `folder-page` its page (text, tabs, the table); `folder-table` scrolled to its table; `folder-grouped` the
  * grouped table; `folder-board`, `folder-cards`, `folder-calendar` (every day, "Earlier" open) its other views;
