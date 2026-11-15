@@ -158,6 +158,17 @@ describe('the card strip on the phone (YAZ-5508)', () => {
     expect(s.textContent).not.toContain('No reviews yet')
   })
 
+  it('cardStrip_emptyStripKept (YAZ-5522 N15, kept as on the Mac): a card with nothing in its strip still shows every part, dimmed, closed', async () => {
+    h = await open(FILES, 'tram', /^Tram start/)
+    const s = strip(h)
+    expect(tabs(s)).toEqual(['0 Reviews', 'Properties0', 'Mentions0', 'Embeds0'])
+    for (const part of ['reviews', 'properties', 'links', 'embeds']) expect(toggle(s, part).hasAttribute('data-empty')).toBe(true)
+    expect(openPart(s)).toEqual([])
+    // Each still opens (YAZ-5380), with the Mac's words for none.
+    await tap(h, toggle(s, 'links'))
+    expect(s.textContent).toContain('No page links to this card yet.')
+  })
+
   it('a card in a page: Reviews, Properties, Mentions (no "Embeds", as the Mac\'s card window)', async () => {
     h = await open(FILES, 'islands', /^Islands/)
     const s = strip(h)
