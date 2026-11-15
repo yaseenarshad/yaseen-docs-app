@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { freePort } from './freePort'
@@ -1202,6 +1202,38 @@ if (process.env.LAYOUT_DIAGRAMS !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  page-diagrams at ${w}x${h}, ${scheme}: ${boxes.map((b) => `${b.path} ${b.drawn ? (b.fits ? 'drawn, fits' : 'drawn, TOO WIDE') : `NOT DRAWN (${b.text})`}${b.picker ? `, picker ${b.picker.pages} pages ${b.picker.left}-${b.picker.right} x${b.picker.height}` : ''}`).join('; ')}; a pick drew "${picked}"; page ${pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${file.replace('.png', `-${scheme}-*.png`)}`)
     }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5564: the install screen of a browser tab (`#fixture=install-gate`, `install-gate-desktop`), light and dark, at
+// 320 and 375 px: every line on the screen, nothing sideways, the Share picture drawn, the page's own background.
+if (process.env.LAYOUT_GATE !== 'no') {
+  const GATE = `(() => {
+    const r = (el) => el.getBoundingClientRect()
+    const lines = [...document.querySelectorAll('.install-gate h1, .install-gate p, .install-gate li')]
+    const icon = document.querySelector('.install-gate svg[role=img]')
+    return {
+      lines: lines.length,
+      inside: lines.every((el) => r(el).left >= 0 && r(el).right <= innerWidth + 0.5 && r(el).bottom <= innerHeight),
+      icon: icon !== null && r(icon).width === 20,
+      wide: document.scrollingElement.scrollWidth > innerWidth + 1,
+      controls: document.querySelectorAll('input, button, form, a').length,
+      bg: getComputedStyle(document.body).backgroundColor,
+    }
+  })()`
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const name of ['install-gate', 'install-gate-desktop'])
+      for (const [w, h] of [[320, 568], [375, 667]] as const) {
+        const file = await open(name, w, h)
+        const shot = file.replace('.png', `-${scheme}.png`)
+        renameSync(file, shot)
+        const m = await evaluate(GATE)
+        const bg = scheme === 'dark' ? 'rgb(30, 30, 30)' : 'rgb(255, 255, 255)'
+        const ok = m.lines === (name === 'install-gate' ? 5 : 6) && m.inside && m.icon && !m.wide && m.controls === 0 && m.bg === bg
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} ${scheme} at ${w}x${h}: ${m.lines} lines ${m.inside ? 'on the screen' : 'CUT'}; Share picture ${m.icon ? 'drawn' : 'MISSING'}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'nothing sideways'}; ${m.controls} controls; background ${m.bg}  ${shot}`)
+      }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

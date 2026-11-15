@@ -8,6 +8,9 @@ import { lazyMedia } from './media/ui/lazyMedia'
 import { lazyFriends } from './friends/ui/lazy'
 import { cameraScanner } from './scan/camera'
 import { openPhoneStorage } from './store'
+import { browserFacts } from './pwa/homeScreen'
+import { asInstalled, gateOf } from './pwa/installGate'
+import { InstallGate } from './screens/InstallGate'
 import './styles.css'
 
 // YAZ-5209: every card the phone draws (the reader, Review) loads nothing from another host (`localOnly.ts`).
@@ -22,6 +25,9 @@ else void boot(root)
 
 // YAZ-5087: a new version that waits starts now, before the app runs (nothing is open; the answer list is stored).
 async function boot(root: Root) {
+  // YAZ-5564: a browser tab shows only the install screen: no storage opens, no worker, no sign-in.
+  const gate = gateOf(browserFacts(), asInstalled(location.search))
+  if (gate !== 'app') return void root.render(<InstallGate desktop={gate === 'desktop'} />)
   if (await swapWaitingVersion()) return
   await start(root)
 }
