@@ -1,0 +1,127 @@
+import { commitSubject, MAX_STALE_HEADS } from '../answers/send'
+import { GithubError } from '../github/client'
+import type { VaultStore } from '../store'
+import type { Change, GithubRemote } from '../sync/githubRemote'
+import type { CommentBox, WaitingComment } from './outbox'
+import { applyComment } from './write'
+
+export interface CommentSendOptions {
+  remote: GithubRemote
+  store: VaultStore
+  vault: string
+  box: CommentBox
+  /** One sync pass that brings the stored copy to the newest head (the engine's pass inside its lane). */
+  pass: () => Promise<unknown>
+  now?: () => number
+}
+
+export interface CommentSendReport {
+  /** `sent`: GitHub holds each comment that was due. `nothing`: none was due. `offline`: no connection, or GitHub is down. */
+  result: 'sent' | 'nothing' | 'offline'
+  commit: string | null
+  sent: number
+  refused: number
+  staleHeads: number
+  /** The stored copy holds the result (the pass after the commit worked): the page shows the comment at once. */
+  stored: boolean
+}
+
+type Refusal = { id: string; why: NonNullable<WaitingComment['refused']> }
+
+/**
+ * ONE SEND of the comment list (YAZ-5461), on the answer list's path (`answers/send.ts`, YAZ-5097 decision 2): the
+ * write is compare-and-swap on the branch, never a force push, never a conflict copy.
+ *  1. A sync pass brings the stored copy to the newest head: the page's FRESH bytes.
+ *  2. Each comment that is due goes onto its page as it is NOW (`applyComment`): the number is taken on that page,
+ *     and a comment whose id the page holds already is not added again (a try whose answer was lost).
+ *  3. A page whose `comments` is not a comment list, that does not parse, or that is gone: the comment is refused,
+ *     nothing is written, and it stays on the phone with its words (the page shows it, with Discard).
+ *  4. ONE commit with each changed page (`remote.commit`: a tree on `base_tree`, then the ref `PATCH` with
+ *     `force: false`). GitHub refuses it when the branch moved first (`STALE_HEAD`): back to 1, at most
+ *     `MAX_STALE_HEADS` times: the comments go again onto the newest pages, with the numbers of those pages.
+ *  5. A pass takes the new head in (the page shows the comment), then the comments leave the list.
+ * No connection or GitHub down: `offline`, the comments stay. Any other failure is thrown, and they stay.
+ */
+export async function sendComments(options: CommentSendOptions): Promise<CommentSendReport> {
+  const { remote, store, vault, box, pass } = options
+  const now = options.now ?? Date.now
+  const report: CommentSendReport = { result: 'nothing', commit: null, sent: 0, refused: 0, staleHeads: 0, stored: false }
+  // An unsigned comment (no account known yet) waits for its `by`: the sender signs it first.
+  const due = () => box.waiting().filter((c) => c.refused === undefined && c.by !== undefined && c.notBefore <= now())
+  if (due().length === 0) return report
+  try {
+    for (;;) {
+      await pass()
+      await box.refresh()
+      const list = due()
+      if (list.length === 0) return report
+      const plan = await planComments(store, vault, list)
+      if (plan.changes.length > 0) {
+        // From here GitHub may hold them: Undo can no longer take them back. One that Undo took meanwhile: plan again.
+        const marked = await box.markTried(plan.added.map((c) => c.id))
+        if (marked.length < plan.added.length) continue
+        try {
+          report.commit = await remote.commit(plan.parent, plan.changes, commitSubject(plan.changes.map((c) => c.path)))
+        } catch (error) {
+          if (error instanceof GithubError && error.code === 'STALE_HEAD' && report.staleHeads < MAX_STALE_HEADS) {
+            report.staleHeads++
+            continue
+          }
+          throw error
+        }
+        try {
+          await pass()
+          report.stored = true
+        } catch {
+          report.stored = false
+        }
+      } else report.stored = true
+      const done = [...plan.added, ...plan.already].map((c) => c.id)
+      await box.settle(done, plan.refused)
+      report.sent = done.length
+      report.refused = plan.refused.length
+      report.result = done.length > 0 ? 'sent' : 'nothing'
+      return report
+    }
+  } catch (error) {
+    if (error instanceof GithubError && (error.code === 'OFFLINE' || error.code === 'GITHUB_DOWN')) return { ...report, result: 'offline', commit: null }
+    throw error
+  }
+}
+
+interface CommentPlan {
+  parent: string
+  changes: Change[]
+  added: WaitingComment[]
+  already: WaitingComment[]
+  refused: Refusal[]
+}
+
+/** Step 2 and 3 on the stored copy, which the pass just brought to the head. */
+async function planComments(store: VaultStore, vault: string, list: readonly WaitingComment[]): Promise<CommentPlan> {
+  const checkpoint = await store.checkpoint(vault)
+  if (checkpoint === null) throw new Error('The phone has no full copy of the vault yet')
+  const plan: CommentPlan = { parent: checkpoint.commit, changes: [], added: [], already: [], refused: [] }
+  const byPath = new Map<string, WaitingComment[]>()
+  for (const c of list) byPath.set(c.path, [...(byPath.get(c.path) ?? []), c])
+  for (const [path, comments] of byPath) {
+    const file = checkpoint.shas[path] === undefined ? null : await store.read(vault, path)
+    if (file === null || typeof file.content !== 'string') {
+      // Gone from the vault (deleted or renamed on the Mac), or over the phone's size limit (F7): the words stay here.
+      const why = checkpoint.shas[path] === undefined ? 'gone' : 'too-large'
+      for (const c of comments) plan.refused.push({ id: c.id, why })
+      continue
+    }
+    let content = file.content
+    for (const c of comments) {
+      const out = applyComment(content, { id: c.id, at: c.at, by: c.by, body: c.body })
+      if (out.kind === 'added') {
+        content = out.content
+        plan.added.push(c)
+      } else if (out.kind === 'already') plan.already.push(c)
+      else plan.refused.push({ id: c.id, why: out.why })
+    }
+    if (content !== file.content) plan.changes.push({ path, content })
+  }
+  return plan
+}

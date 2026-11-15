@@ -17,7 +17,7 @@ import { remember } from '../search/recent'
  * "next" side dim); `card-next` a card after one step of its arrows. The clipboard is a fake: nothing reaches the
  * phone's real one.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -78,6 +78,22 @@ const CODE_PAGE = [
   `A long inline code: \`${LONG_CODE.replace(/ /g, '')}\`, and a long address: ${LONG_URL}`,
   cardBlock('DEMO-61', ['What does {{show}} print?', '', '```js', `    ${LONG_CODE}`, '```', '---', `It prints \`${LONG_URL}\``].join('\n'), ['title "Long code"']),
 ].join('\n\n')
+/** YAZ-5461: a page with comments (made-up): a thread with a reply, a resolved one, and a hand-written one. */
+const COMMENTED = [
+  '---',
+  'title: Review notes',
+  'comments:',
+  '  - {id: demo0001, n: 1, at: "2026-11-10T09:00:00Z", by: demo, body: "Can we add the May dates?"}',
+  '  - {id: demo0002, n: 1, at: "2026-11-10T09:30:00Z", by: sam, reply_to: demo0001, body: "Added."}',
+  '  - {id: demo0003, n: 2, at: "2026-11-11T08:00:00Z", by: demo, title: Budget, resolved: "2026-11-12T08:00:00Z", body: "Check the hotel price."}',
+  '  - {by: agent, body: "Approved"}',
+  '---',
+  '',
+  '# Review notes',
+  '',
+  'The trip, for review.',
+  '',
+].join('\n')
 
 export async function mountReaderFixture(root: Root, name: ReaderFixture): Promise<void> {
   const backend = memoryBackend()
@@ -108,7 +124,9 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 }
               : name === 'search-ids'
                 ? { '.yaseendocs/show-ids.json': JSON.stringify({ search: 'always', title: true, files: 'number' }) } // YAZ-5454: "#12" at each page row's end
-                : {}
+                : name === 'page-comments'
+                  ? { 'Review notes.md': COMMENTED }
+                  : {}
   await seedReaderVault(store, tokens, { ...READER_FILES, ...extra })
   // `page-online`: a media that "downloads" the picture that is not on the phone (as 3D does with a signal).
   const stored = storedMedia(store, 'yaseen/vault@main')
@@ -251,6 +269,10 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
     case 'page-code':
       await typed('code notes')
       await open(/^Code notes/, '.reader__body pre')
+      break
+    case 'page-comments':
+      await open(/^Review notes/, '.page-comments')
+      document.querySelector('.page-comments')?.scrollIntoView({ block: 'start' })
       break
     case 'page-tricks':
       await typed('parser')

@@ -9,7 +9,6 @@ import { Friends } from './Friends'
 import { lazyScreen } from './LazyScreen'
 import { Review } from './Review'
 import './reviewSlot.css'
-import { ScanCode } from './ScanCode'
 import { Search } from './Search'
 import { Settings } from './Settings'
 import { SignIn } from './SignIn'
@@ -22,6 +21,8 @@ const CardView = lazyScreen(() => import('../page/CardView'), { waiting: routeWa
 const VsScreen = lazyScreen(() => import('../friends/ui/VsScreen'), { waiting: routeWaiting })
 /** "Set up your phone": a chunk of its own (YAZ-5446 keeps the first load under its ceiling). */
 const SetupGuide = lazyScreen(() => import('./SetupGuide'), { waiting: routeWaiting })
+/** "Scan a code": a chunk of its own too (YAZ-5461 makes room in the first load for the waiting comments of the dot). */
+const ScanCode = lazyScreen(() => import('./ScanCode'), { waiting: routeWaiting })
 
 /** Each tab draws one component from its own file; 4B, 4C and 4E replace the placeholders (decision 21). */
 const TAB_SCREENS: Record<Exclude<Tab, 'review'>, () => React.JSX.Element> = { friends: Friends, search: Search }

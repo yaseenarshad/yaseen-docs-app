@@ -83,6 +83,7 @@ const FIXTURES = [
   'search-type',
   'search-none',
   'page',
+  'page-comments',
   'card',
   'card-file',
   'card-invalid',

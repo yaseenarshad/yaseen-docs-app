@@ -118,6 +118,8 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       break
     case 'scan':
       press('Scan a code')
+      // Its own chunk (YAZ-5461): wait until it draws.
+      for (let i = 0; i < 100 && document.querySelector('.camera') === null; i++) await wait(20)
       break
     case 'download':
       sync.set({ progress: { done: 240, total: 611 } })

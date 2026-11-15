@@ -7,6 +7,7 @@ import { phoneRecord, type PhoneIndex } from '../sync/phoneIndex'
 import { applyOps, type CardOp } from './ops'
 import { openOutbox, type LostAnswer, type Outbox, type WaitingAnswer } from './outbox'
 import { sendOutbox } from './send'
+import { withComments, type CommentsPort } from '../comments/bridge'
 
 /** Why the last send did not end well: a `GithubErrorCode`, or `FAILED` (anything else). Never a message with a secret. */
 export type SendProblem = GithubErrorCode | 'FAILED'
@@ -29,6 +30,8 @@ export interface AnswersState {
   retryAt: number | null
   /** The end of the last send that GitHub took (ms since 1970). */
   lastSentAt: number | null
+  /** YAZ-5461: comments written on the phone that GitHub does not hold yet (`comments/bridge.ts`): the dot counts them. */
+  comments?: number
 }
 
 export type AnswersEvent =
@@ -71,6 +74,8 @@ export interface Answers {
   /** Resolves when the list is read and no send runs. */
   idle(): Promise<void>
   stop(): void
+  /** YAZ-5461: the open vault's comment list (pages' comments written on the phone), with the same triggers. */
+  comments?: CommentsPort
 }
 
 const browserClock: Clock = {
@@ -94,6 +99,11 @@ const NO_SIGNAL: readonly SendProblem[] = ['OFFLINE', 'GITHUB_DOWN']
  *  - "slow down": at the time GitHub gives.
  */
 export function createAnswers(options: AnswersOptions): Answers {
+  // YAZ-5461: the ONE answer list of the app carries the comment list too (its sender loads only when used).
+  return withComments(createAnswerList(options), options)
+}
+
+function createAnswerList(options: AnswersOptions): Answers {
   const { store, engine } = options
   const clock = options.clock ?? browserClock
   const listeners = new Set<(event: AnswersEvent) => void>()
