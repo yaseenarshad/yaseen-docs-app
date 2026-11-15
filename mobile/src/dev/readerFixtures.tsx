@@ -52,6 +52,8 @@ import { openSheet } from '../explore/sheets'
  * YAZ-5504: `card-menu` a card file's view (YAZ-5527: River of Seville) with the card's own ⋯ (on its head) open, Archive
  * card tapped once ("Tap again to archive");
  * `page-card-menu` the page of three cards with the ⋯ of its first card open (a made-up answer list, `fixtureAnswers`).
+ * YAZ-5548: `sheet-card-menu` the same page in an Explore panel over Search, its first card's ⋯ open, Archive card
+ * tapped once.
  * YAZ-5506: `search-sticky` a made-up tree nine folders deep, every folder open, scrolled to its deepest pages: the open
  * folders stuck at the top (`STICKY_FILES`).
  * YAZ-5507: `search-lines` the same tree, a finger on it (its guide lines show), scrolled so three folders stick.
@@ -76,7 +78,7 @@ const TYPES_FILES: Record<string, string | Uint8Array> = {
   'work/Whiteboard.excalidraw': new TextEncoder().encode(JSON.stringify(GARDEN_SCENE)),
   '.yaseendocs/favorites.json': JSON.stringify({ version: 1, favorites: ['git', 'cards/capital-of-spain-demo-40.md', 'travel'] }),
 }
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'page-comments', 'search-collapsed', 'page-tables', 'page-table-full', 'page-folder', 'page-links', 'page-linked-from', 'page-pills', 'page-tools', 'page-find', 'page-headings', 'page-headings-few', 'page-headings-alone', 'page-menu-title', 'page-properties', 'page-properties-closed', 'page-properties-title', 'card-file-comments', 'page-table-frozen', 'page-table-frozen-full', 'page-table-look', 'page-look', 'page-calendar', 'page-calendar-chip', 'page-calendar-full', 'page-calendar-next', 'page-tasks', 'page-tasks-numbered', 'folder-hold', 'folder-page', 'folder-table', 'folder-grouped', 'folder-board', 'folder-cards', 'folder-calendar', 'folder-sheet', 'card-menu', 'page-card-menu', 'sheet-card-menu', 'search-sticky', 'search-lines', 'card-strip', 'page-card-strip', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline', 'search-types', 'search-types-menu', 'search-types-favorites', 'page-table-band', 'page-table-band-full', 'folder-table-band', 'page-diagrams'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -195,7 +197,7 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
   const extra: Record<string, string | Uint8Array> =
     name === 'page-tricks'
       ? { 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` }
-      : name === 'page-card-menu'
+      : name === 'page-card-menu' || name === 'sheet-card-menu'
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${MENU_CARDS}\n` }
       : name === 'page-cards' || name === 'search-tree' || name === 'search-found' || name === 'search-collapsed'
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
@@ -311,7 +313,7 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
   }
   const sync = fakeSync()
   // YAZ-5504: the card menu's fixtures get a made-up answer list (in memory; nothing is sent).
-  if (name === 'card-menu' || name === 'page-card-menu') {
+  if (name === 'card-menu' || name === 'page-card-menu' || name === 'sheet-card-menu') {
     const answers = fixtureAnswers(store, READER_ID)
     sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
   }
@@ -683,6 +685,16 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
       await open(/^Rivers of Europe/, '.reader__body .page-card')
       press('Card actions: River of Madrid')
       await until(() => document.querySelector('.card-menu [data-action="off"]:not(:disabled)') !== null)
+      break
+    case 'sheet-card-menu':
+      // YAZ-5548: the page in an Explore panel (as a link in a page opens it when the vault says "explore").
+      openSheet({ kind: 'page', path: 'travel/Rivers of Europe.md' })
+      await until(() => document.querySelector('.explore-sheet .page-card .card__more') !== null)
+      await wait(400)
+      press('Card actions: River of Madrid')
+      await until(() => document.querySelector('.explore-sheet .card-menu [data-action="off"]:not(:disabled)') !== null)
+      press('Archive card')
+      await wait(50)
       break
     case 'card-file-comments':
       await typed('seville')

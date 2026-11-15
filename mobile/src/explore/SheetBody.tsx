@@ -17,6 +17,10 @@ import { headingTarget, landOn } from '../page/headings'
 import { openLink, type LinkDoor } from '../page/openLink'
 import { LinkedMentions } from '../page/LinkedMentions'
 import { boardKindOf, boardLabel } from '../drawing/boardFiles'
+import type { Answers } from '../answers/answers'
+import { shownText, useAnswers, useAnswersChanged } from '../cardMenu/useAnswers'
+import { usePageCardMenu } from '../cardMenu/pageCardMenu'
+import { cardMoreButton } from '../cardMenu/moreButton'
 import type { SheetRoute } from './sheets'
 
 /**
@@ -27,8 +31,12 @@ import type { SheetRoute } from './sheets'
 
 const text = (content: string | Uint8Array) => (typeof content === 'string' ? content : new TextDecoder().decode(content))
 
-/** The file's text from the phone's storage: undefined while it reads, null when it is not on the phone. Read again when a pass changes it. */
-export function useFileText(path: string): string | null | undefined {
+/**
+ * The file's text from the phone's storage: undefined while it reads, null when it is not on the phone. Read again when
+ * a pass changes it. With the vault's answer list (`answers`, YAZ-5548): the text as the phone shows it (`shownText`,
+ * with the waiting card actions), read again when an action is added, so a card's ⋯ shows its change at once.
+ */
+export function useFileText(path: string, answers: Answers | null = null): string | null | undefined {
   const app = useApp()
   const { store, sync } = app.services
   const vault = app.vaultKey!
@@ -41,13 +49,14 @@ export function useFileText(path: string): string | null | undefined {
       }),
     [sync, vault, path],
   )
+  useAnswersChanged(answers, path, () => setReads((n) => n + 1))
   useEffect(() => {
     let live = true
-    void store.read(vault, path).then((file) => live && setValue(file === null ? null : text(file.content)))
+    void shownText(store, vault, path, answers).then((content) => live && setValue(content))
     return () => {
       live = false
     }
-  }, [store, vault, path, reads])
+  }, [store, vault, path, reads, answers])
   return value
 }
 
@@ -88,9 +97,12 @@ export function titleOf(data: VaultData | null, path: string): string {
 export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: string; heading?: string; onDrawn(): void }) {
   const app = useApp()
   const data = useVaultData()
-  const content = useFileText(path)
+  const answers = useAnswers()
+  const content = useFileText(path, answers)
   const [notice, setNotice] = useState<string | null>(null)
   const host = useRef<HTMLDivElement>(null)
+  // YAZ-5548: a card's ⋯ in a sheet opens the full page's card menu (the same component), and writes the same way.
+  const cardMenu = usePageCardMenu(host, { path, answers, upNext: data?.review.enabled === true })
   const { door, onTap, media } = useSheetTap(data, setNotice)
   useMediaWatch(host, media)
   useDrawings(host, media)
@@ -113,8 +125,6 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       if (!live) return
       await fillCardEmbeds(into, data, app.services.store, door, () => live)
       if (!live) return
-      // YAZ-5523: a sheet reads only. A page card's ⋯ (the card actions, YAZ-5504) has no menu here and no style.
-      for (const more of into.querySelectorAll('.card__more-box')) more.remove()
       el.replaceChildren(...into.childNodes)
       const head = el.firstElementChild
       // S2 (sweep1): the title hides before the card asked for is landed on (it leaves the flow; the page moves up).
@@ -148,6 +158,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
       {/* YAZ-5535: the end of the page, the full page's own component; a row opens another panel (the sheet's door). */}
       {data !== null && content !== undefined && <LinkedMentions path={path} data={data} store={app.services.store} door={door} />}
+      {cardMenu}
     </article>
   )
 }
@@ -162,7 +173,8 @@ export function cardOfText(data: VaultData | null, path: string, id: string, con
 export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: string; onDrawn(): void; onText(text: string): void }) {
   const app = useApp()
   const data = useVaultData()
-  const content = useFileText(path)
+  const answers = useAnswers()
+  const content = useFileText(path, answers)
   const [notice, setNotice] = useState<string | null>(null)
   const host = useRef<HTMLDivElement>(null)
   const { onTap, media } = useSheetTap(data, setNotice)
@@ -170,6 +182,8 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
   const card = cardOfText(data, path, id, content)
   const record = data?.byPath[path]
   const reviewOn = data?.review.enabled === true
+  // YAZ-5548: the card's own ⋯ at the right of its head, as the full card view's (YAZ-5527), with the same menu.
+  const cardMenu = usePageCardMenu(host, { path, answers, upNext: reviewOn })
   const title = card === null ? (record?.cards?.find((c) => c.id?.toLowerCase() === id.toLowerCase())?.title ?? '') : card.title
   const head = card === null ? null : `${card.id ?? id}\n${card.title}\n${card.off}\n${reviewOn && card.notitle === true}\n${card.text}`
 
@@ -179,7 +193,12 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
     const body = document.createElement('div')
     body.className = 'card__body'
     body.append(drawCard(data, path, card.text))
-    const parts = [cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true }), titleBand(card.title), body]
+    const top = cardHead({ id: card.id ?? id, title: card.title, off: card.off, notitle: reviewOn && card.notitle === true })
+    // Only a card with its own ID: it is what the actions write by.
+    if (top !== null && card.id !== null) top.append(cardMoreButton(card.id, card.title))
+    if (card.id !== null) el.dataset.cardId = card.id
+    else delete el.dataset.cardId
+    const parts = [top, titleBand(card.title), body]
     el.replaceChildren(...parts.filter((part): part is HTMLElement => part !== null))
     el.classList.toggle('card--off', card.off)
     onText(card.text)
@@ -202,6 +221,7 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
       {content === null && <p className="muted">This card is not on the phone.</p>}
       {typeof content === 'string' && card === null && <p className="muted">{`Missing card · ${id}`}</p>}
       <div className="card card-view__card" ref={host} hidden={card === null} onClick={(e) => void onTap(e)} />
+      {cardMenu}
     </article>
   )
 }

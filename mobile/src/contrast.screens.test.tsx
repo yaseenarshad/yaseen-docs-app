@@ -136,6 +136,8 @@ const FIXTURES = [
   // YAZ-5504: the card's ⋯ in the card view (a row armed: "Tap again to archive") and on a page card.
   'card-menu',
   'page-card-menu',
+  // YAZ-5548: a card's ⋯ in an Explore panel, its menu open.
+  'sheet-card-menu',
   // YAZ-5472: Explore's sheets.
   'explore-one',
   'explore-stack',

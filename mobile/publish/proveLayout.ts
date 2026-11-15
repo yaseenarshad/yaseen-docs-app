@@ -62,6 +62,8 @@ import { freePort } from './freePort'
  *    screen, above the page arrows and the tab bar; its first row on top.
  *  - a card file's own ⋯ (`#fixture=card-menu`, YAZ-5527), light and dark, at 375 px: at the right of the card's head, a
  *    44 px tap; its menu inside the screen; the top bar's ⋯ holds Find in card and no card action.
+ *  - a page card's ⋯ in an Explore panel (`#fixture=sheet-card-menu`, YAZ-5548), light and dark, at 375 px: at the right
+ *    of the card's head, a 44 px tap; its menu (Archive card armed) inside the panel, its first row on top.
  *  - the Type filter of Search (`#fixture=search-types`, `search-types-menu`, `search-types-favorites`, YAZ-5534), light and
  *    dark, at 375 px: the bar one line, the pill naming the pick; each menu row a 44 px tap; each row of the types in the
  *    tree under its open parent folders; the page never scrolls sideways.
@@ -902,6 +904,40 @@ if (process.env.LAYOUT_CARD_MENU !== 'no') {
     const ok = more.error === undefined && more.last && more.inCard && more.tap && more.hit && more.rightGap <= 8 && m.error === undefined && m.top >= m.screenTop - 0.5 && m.bottom <= m.screenBottom + 0.5 && m.hit && bar.error === undefined && bar.actions === 0 && bar.rows.length === 1 && /Find in card/.test(bar.rows[0])
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  card-menu ${scheme} at 375x667: the card ⋯ ${more.last ? 'last in the head' : 'NOT LAST IN THE HEAD'}, ${more.inCard ? 'in the card' : 'OUTSIDE THE CARD'}, ${more.rightGap}px from its right, ${more.tap ? '44px tap' : 'TAP TOO SMALL'}, ${more.hit ? 'its centre the ⋯' : 'COVERED'}; menu ${m.top}-${m.bottom}, the screen ${m.screenTop}-${m.screenBottom}, first row ${m.hit ? 'on top' : 'COVERED'}; top bar ⋯ ${JSON.stringify(bar.rows)}, ${bar.actions} card actions  ${shot}`)
+  }
+  // YAZ-5548: a page card's ⋯ in an Explore panel (`#fixture=sheet-card-menu`), light and dark, at 375 px: at the right of
+  // its head (inside the card, a 44 px tap, its centre the ⋯ itself); its menu open (Archive card armed) inside the panel's
+  // scroller, its first row on top.
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    const file = await open('sheet-card-menu', 375, 667)
+    const m = await evaluate(`(() => {
+      const b = document.querySelector('.explore-sheet .page-card .card__head .card__more')
+      const menu = document.querySelector('.explore-sheet .card-menu')
+      if (!b || !menu) return { error: b ? 'no menu' : 'no card ⋯' }
+      const card = b.closest('.page-card').getBoundingClientRect()
+      const r = b.getBoundingClientRect()
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      const s = document.querySelector('.explore-sheet__body').getBoundingClientRect()
+      const box = menu.getBoundingClientRect()
+      const row = menu.querySelector('[role=menuitem]').getBoundingClientRect()
+      const first = document.elementFromPoint(row.left + 20, row.top + row.height / 2)
+      return {
+        last: b.closest('.card__head').lastElementChild === b.parentElement,
+        inCard: r.left >= card.left - 0.5 && r.right <= card.right + 0.5 && r.top >= card.top - 8,
+        tap: r.width >= 44 && r.height >= 44,
+        hit: hit === b || hit?.closest('.card-menu') === menu,
+        armed: menu.querySelector('[data-action="off"]')?.textContent.trim(),
+        rows: [...menu.querySelectorAll('[role=menuitem]')].map((x) => x.dataset.action),
+        top: Math.round(box.top), bottom: Math.round(box.bottom), sheetTop: Math.round(s.top), sheetBottom: Math.round(s.bottom),
+        first: first !== null && first.closest('.card-menu') === menu,
+      }
+    })()`)
+    const shot = file.replace('.png', `-${scheme}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.error === undefined && m.last && m.inCard && m.tap && m.hit && m.armed === 'Tap again to archive' && m.top >= m.sheetTop - 0.5 && m.bottom <= m.sheetBottom + 0.5 && m.first
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  sheet-card-menu ${scheme} at 375x667: ${JSON.stringify(m)}  ${shot}`)
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }

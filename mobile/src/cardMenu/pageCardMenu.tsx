@@ -8,7 +8,7 @@ import { CARD_MORE_ATTR } from './moreButton'
 import './cardMenu.css'
 
 /**
- * A PAGE CARD'S ⋯ MENU (YAZ-5504; also the card view's card, YAZ-5527): a tap on the ⋯ at the right of a card's head in the page (`moreButton.ts`) opens
+ * A PAGE CARD'S ⋯ MENU (YAZ-5504; also the card view's card, YAZ-5527, and a card in an Explore sheet, YAZ-5548): a tap on the ⋯ at the right of a card's head in the page (`moreButton.ts`) opens
  * the card actions for THAT card, under the ⋯, in the card's own box. A tap outside, Escape, the ⋯ again, or an action
  * closes it. What was done shows in the app's quiet toast; the card shows it at once (the page reads `shownText`). The
  * page view mounts it with one line; the rows are a lazy chunk (`CardMenuFor`).
@@ -43,17 +43,19 @@ export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { 
       if (!(e.target instanceof Node) || menu.current?.contains(e.target) === true || open.button.contains(e.target)) return
       setOpen(null)
     }
+    // YAZ-5548: first (capture), and only the menu: in an Explore sheet, Escape would close the sheet too.
     const key = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      e.stopPropagation()
       setOpen(null)
       open.button.focus()
     }
     document.addEventListener('pointerdown', away)
-    document.addEventListener('keydown', key)
+    document.addEventListener('keydown', key, true)
     return () => {
       open.button.setAttribute('aria-expanded', 'false')
       document.removeEventListener('pointerdown', away)
-      document.removeEventListener('keydown', key)
+      document.removeEventListener('keydown', key, true)
     }
   }, [open])
   // S6 (sweep1): a card low on the screen opened its menu under the screen's end (over the tab bar, cut off). It opens
@@ -86,11 +88,11 @@ export function usePageCardMenu(host: RefObject<HTMLElement | null>, options: { 
 
 /**
  * Where a card's menu opens (S6): under its ⋯ when it fits above the screen's end (the scroller `.screen`, which ends
- * over the page arrows and the tab bar), else upward when there is more room above. Neither fits (a short screen in
- * landscape): the screen scrolls the menu in.
+ * over the page arrows and the tab bar; in an Explore sheet, the sheet's own scroller, YAZ-5548), else upward when
+ * there is more room above. Neither fits (a short screen in landscape): the screen scrolls the menu in.
  */
 export function placeMenu(menu: HTMLElement, button: HTMLElement): void {
-  const screen = button.closest<HTMLElement>('.screen')
+  const screen = button.closest<HTMLElement>('.explore-sheet__body, .screen')
   if (screen === null) return
   const view = screen.getBoundingClientRect()
   const at = button.getBoundingClientRect()
