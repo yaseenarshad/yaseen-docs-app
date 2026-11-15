@@ -82,7 +82,8 @@ export const CENTRE_FILES: Record<string, string> = {
 
 /**
  * YAZ-5568: the folding fixtures (`page-folds*`), made-up: the scoping's "Garden plan" with headings two deep, parent
- * bullets, a parent task, a card embed in a section, and the same page with `folding: false` (`page-folds-off`).
+ * bullets, a parent task, a quote (its text lines up with a top-level list's), a card embed in a section, and the same
+ * page with `folding: false` (`page-folds-off`).
  */
 export const FOLDS_PAGE = [
   '# Garden plan',
@@ -91,6 +92,7 @@ export const FOLDS_PAGE = [
   ['- North bed', '    - Tomatoes, six plants', '    - Basil between them', '- South bed', '    - Beans on the fence', '        - Two rows, 20 cm apart', '    - Lettuce in the shade', '- Herb pots by the door'].join('\n'),
   '## Watering',
   'Water early, before 8 am. The hose reaches every bed but the far corner.',
+  '> Rain water first, from the butt by the shed.',
   ['- Drip line on the north bed', '- A can for the pots'].join('\n'),
   '![[DEMO-40]]',
   '## Jobs by week',

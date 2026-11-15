@@ -89,11 +89,12 @@ const levelOf = (el: Element): number | null => {
   return m === null ? null : Number(m[1])
 }
 
-/** The Mac's chevron (`headingFolding.ts`'s `chevronSvg`): down when open, turned right by CSS when folded. */
+/** The Mac's chevron (`headingFolding.ts`'s `chevronSvg`): down when open, turned right by CSS when folded. Its box is
+ *  cut to the stroke (units 5 to 19 of 24; the same arrow at the same size, `reader.css`). */
 function chevron(): SVGSVGElement {
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
-  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('viewBox', '5 5 14 14')
   svg.setAttribute('fill', 'none')
   svg.setAttribute('stroke', 'currentColor')
   svg.setAttribute('stroke-width', '2')
