@@ -56,14 +56,14 @@ export interface SendReport {
  * ONE SEND of the answer list (decision 2): read the head, apply the waiting actions to the newest text, make ONE commit,
  * move the branch. Each round:
  *  1. A sync pass brings the stored copy and its index to the newest head (only changed files download).
- *  2. Each action finds its card's file in the index of THAT head (`cardTarget`, YAZ-5514): the file the person acted
+ *  2. Each action finds its card's file in the index of THAT head (`cardTarget`): the file the person acted
  *     in while it still holds the card ID; else the one file that holds it now (the Mac can move a card to another
  *     page, or into its own card file, after the answer). Two files that hold it and neither is the person's: the
  *     action is refused (lost, `two-files`). A page that only embeds the card is never written.
  *  3. `applyOps` on each file's stored text. A card that the newest head does not hold: the action is lost (it moves to
  *     the lost list and never blocks the others).
  *  4. No file changed: GitHub already holds every action (a send that reached GitHub but whose answer was lost). They
- *     leave the list with no write. Before the plan (YAZ-5514, W3): an action whose last commit the branch holds is
+ *     leave the list with no write. Before the plan (W3): an action whose last commit the branch holds is
  *     done, with no write, whatever the newest text shows: so a resend never undoes a change the Mac made since. Else ONE commit with every changed file (`remote.commit`: blobs, tree with
  *     `base_tree`, commit, `PATCH` the ref with `force: false`).
  *  5. GitHub refuses the move when the branch moved first (422 "Update is not a fast forward": `STALE_HEAD`): repeat
@@ -86,7 +86,7 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
     for (;;) {
       await pass()
       await outbox.refresh()
-      // YAZ-5514 (W3): actions whose commit the branch already holds (the ref moved, its answer was lost) are done:
+      // Actions whose commit the branch already holds (the ref moved, its answer was lost) are done:
       // they leave with NO write, even when the newest text no longer shows them (the Mac changed it since).
       const held = await heldByBranch(remote, store, vault, outbox.waiting(), refused)
       if (held.length > 0) {
@@ -95,7 +95,7 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
       }
       const plan = await planSend(store, vault, outbox.waiting())
       if (plan.changes.length > 0) {
-        // YAZ-5180: from here GitHub may hold these actions, so Undo may no longer remove them. An action that Undo
+        // From here GitHub may hold these actions, so Undo may no longer remove them. An action that Undo
         // removed after the plan was made is not marked: plan again without it.
         const marked = await outbox.markTried(plan.done.map((w) => w.seq))
         if (marked.length < plan.done.length) continue
@@ -135,7 +135,7 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
   }
 }
 
-/** YAZ-5514 (W3): the waiting actions whose commit the branch's head (the stored copy's, after the pass) holds. */
+/** The waiting actions whose commit the branch's head (the stored copy's, after the pass) holds. */
 async function heldByBranch(remote: GithubRemote, store: VaultStore, vault: string, waiting: readonly WaitingAnswer[], refused: ReadonlySet<string>): Promise<number[]> {
   const commits = new Set(waiting.flatMap((w) => (w.commit === undefined || refused.has(w.commit) ? [] : [w.commit])))
   if (commits.size === 0) return []

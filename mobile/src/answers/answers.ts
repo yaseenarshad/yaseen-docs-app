@@ -32,11 +32,11 @@ export interface AnswersState {
   retryAt: number | null
   /** The end of the last send that GitHub took (ms since 1970). */
   lastSentAt: number | null
-  /** YAZ-5461: comments written on the phone that GitHub does not hold yet (`comments/bridge.ts`): the dot counts them. */
+  /** Comments written on the phone that GitHub does not hold yet (`comments/bridge.ts`): the dot counts them. */
   comments?: number
-  /** YAZ-5494: of `comments`, the check box ticks (the dot names them). */
+  /** Of `comments`, the check box ticks (the dot names them). */
   ticks?: number
-  /** YAZ-5517: comments and ticks the phone could not send (refused, kept with their words): the dot counts them. */
+  /** Comments and ticks the phone could not send (refused, kept with their words): the dot counts them. */
   notSent?: { n: number; ticks: number; gone: number }
 }
 
@@ -62,7 +62,7 @@ export interface Answers {
   add(entries: readonly { op: CardOp; path: string; title: string }[]): Promise<number>
   /**
    * Undo of an UNSENT action: its group leaves the list. False when it is gone, or when a send has tried it (it may be
-   * on GitHub, YAZ-5180): the host then adds `unreview`.
+   * on GitHub): the host then adds `unreview`.
    */
   undo(group: number): Promise<boolean>
   /** Discard of a lost action (the tap on the amber dot). */
@@ -80,7 +80,7 @@ export interface Answers {
   /** Resolves when the list is read and no send runs. */
   idle(): Promise<void>
   stop(): void
-  /** YAZ-5461: the open vault's comment list (pages' comments written on the phone), with the same triggers. */
+  /** The open vault's comment list (pages' comments written on the phone), with the same triggers. */
   comments?: CommentsPort
 }
 
@@ -100,7 +100,7 @@ const NO_SIGNAL: readonly SendProblem[] = ['OFFLINE', 'GITHUB_DOWN']
  *  - "slow down": at the time GitHub gives.
  */
 export function createAnswers(options: AnswersOptions): Answers {
-  // YAZ-5461: the ONE answer list of the app carries the comment list too (its sender loads only when used).
+  // The ONE answer list of the app carries the comment list too (its sender loads only when used).
   return withComments(createAnswerList(options), options)
 }
 
@@ -118,18 +118,18 @@ function createAnswerList(options: AnswersOptions): Answers {
   let stopped = false
   /** Actions GitHub has, but the stored copy not yet (the pass after the commit failed): shown until the next pass. */
   let afterglow: { op: CardOp; path: string }[] = []
-  /** "Slow down" answers to a send in a row: each one doubles the wait, up to 1 hour, as the engine does (YAZ-5169). */
+  /** "Slow down" answers to a send in a row: each one doubles the wait, up to 1 hour, as the engine does. */
   let slowedInRow = 0
-  /** Sends in a row that ended in `STALE_HEAD` (the branch kept moving): each one doubles the wait (YAZ-5183). */
+  /** Sends in a row that ended in `STALE_HEAD` (the branch kept moving): each one doubles the wait. */
   let staleInRow = 0
   let state: AnswersState = { vault: null, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null }
   /**
-   * YAZ-5078: the view's mtime of each file whose shown text differs from the stored copy, with that text. The shared
+   * The view's mtime of each file whose shown text differs from the stored copy, with that text. The shared
    * due list keeps a page's card facts by path, mtime and size (`cardFacts`): the Mac's index gives a new mtime on each
    * write, so the view does too. The same text keeps its mtime (the cache hits); a new text gets a newer one.
    */
   let shownAt = new Map<string, { text: string; mtime: number }>()
-  /** The last index the view read (YAZ-5514): `text` finds an action's file in it without a store read. */
+  /** The last index the view read: `text` finds an action's file in it without a store read. */
   let lastIndex: PhoneIndex | undefined
   /** Each index's card holders, built once (an index is never changed in place: a pass writes a new one). */
   const holdersCache = new WeakMap<PhoneIndex, Map<string, string[]>>()
@@ -169,7 +169,7 @@ function createAnswerList(options: AnswersOptions): Answers {
   }
 
   /**
-   * YAZ-5282: ALL the state that belongs to one vault, set back for the next one, in ONE place: a new field goes here,
+   * ALL the state that belongs to one vault, set back for the next one, in ONE place: a new field goes here,
    * so no vault starts with the waits or the problem of the one before.
    */
   function forgetVaultState() {
@@ -245,7 +245,7 @@ function createAnswerList(options: AnswersOptions): Answers {
           plan(retryAt)
         } else {
           setState({ problem, retryAt: null })
-          // A branch that kept moving (YAZ-5183): wait 1, 2, 4 … minutes, up to 1 hour, with the client's clamp. Each
+          // A branch that kept moving: wait 1, 2, 4 … minutes, up to 1 hour, with the client's clamp. Each
           // send is up to 6 tries of 3 writes, so this stays far under GitHub's write limit. Other problems wait for
           // the person or a trigger.
           if (problem === 'STALE_HEAD') {
@@ -268,7 +268,7 @@ function createAnswerList(options: AnswersOptions): Answers {
   }
 
   /**
-   * The actions that file `path` shows: each one whose card goes to `path` at the send (`cardTarget`, YAZ-5514 W2), so
+   * The actions that file `path` shows: each one whose card goes to `path` at the send (`cardTarget`), so
    * an answer made in one of two files that share a card ID shows in that file only. The index is read only when an
    * action was made in another file.
    */

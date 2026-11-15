@@ -24,12 +24,12 @@ export interface WaitingAnswer {
   /** When the person acted (ms since 1970). */
   madeAt: number
   /**
-   * A send put this action in a commit (YAZ-5180). From then on GitHub MAY hold it: the reply can be lost, or the ref
+   * A send put this action in a commit. From then on GitHub MAY hold it: the reply can be lost, or the ref
    * move can still be on its way. Such an action is never removed by Undo; Undo adds an `unreview` instead.
    */
   tried?: true
   /**
-   * YAZ-5514 (W3): the commit of the last send that put this action in one, kept BEFORE its ref move. After a lost
+   * The commit of the last send that put this action in one, kept BEFORE its ref move. After a lost
    * answer, the next send asks GitHub whether the branch holds it: then the action is done, and nothing is written
    * again (a write again would undo what the Mac changed since). A commit the branch never took is sent again.
    */
@@ -44,7 +44,7 @@ export interface LostAnswer {
   title: string
   /** When the send found the card gone. */
   lostAt: number
-  /** Why, when the card is not simply gone (YAZ-5514): `two-files`, two other files hold its ID, so the send cannot tell which. */
+  /** Why, when the card is not simply gone: `two-files`, two other files hold its ID, so the send cannot tell which. */
   why?: LostWhy
 }
 
@@ -67,15 +67,15 @@ export interface Outbox {
   add(entries: readonly { op: CardOp; path: string; title: string }[], now: number): Promise<number>
   /**
    * Undo of an unsent action: its group leaves the list. Resolves with what left. Empty: the group is not there, or a
-   * send has TRIED it (GitHub may hold it): then the caller adds `unreview` (YAZ-5180).
+   * send has TRIED it (GitHub may hold it): then the caller adds `unreview`.
    */
   removeGroup(group: number): Promise<WaitingAnswer[]>
   /**
    * Just before a commit: marks these actions as tried. Resolves with the ones it marked; one that Undo removed
-   * meanwhile is not there, and the send must plan again (YAZ-5180).
+   * meanwhile is not there, and the send must plan again.
    */
   markTried(seqs: readonly number[]): Promise<number[]>
-  /** YAZ-5514: the commit these actions are in, before its ref move. Resolves with the ones it marked. */
+  /** The commit these actions are in, before its ref move. Resolves with the ones it marked. */
   markCommit(seqs: readonly number[], commit: string): Promise<number[]>
   /** After a send: the actions `done` (GitHub has them) leave; the actions `lost` move to the lost list (with `why`, when given). */
   settle(done: readonly number[], lost: readonly number[], now: number, why?: ReadonlyMap<number, LostWhy>): Promise<void>
@@ -89,7 +89,7 @@ const EMPTY: AnswerBook = { v: 1, next: 1, waiting: [], lost: [] }
 
 /**
  * A stored list of one vault: the answer list, and the comment list (`comments/outbox.ts`) too. Each change runs alone,
- * in every tab (YAZ-5182): the read of the stored list and its write are held together by the Web Lock
+ * in every tab: the read of the stored list and its write are held together by the Web Lock
  * `<lockName>:<vault>` (`vaultLock`). Each change starts from the STORED list, so another tab's change is kept (P4). A
  * write that fails (a full phone) leaves the stored list as it was.
  */
