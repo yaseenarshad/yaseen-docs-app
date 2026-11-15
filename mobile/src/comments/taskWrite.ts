@@ -16,8 +16,16 @@ import { pageTasks, readTaskLine, withoutBom } from '../page/pageMarked'
  * FINDING THE SAME TASK AGAIN: a tap names the task by its LINE (`core`: the line from its marker on, its box read as
  * `[ ]`, with no indent or quote marks before it) and its place among the lines that read the same (`nth` of `of`), in
  * document order. On the fresh page the task is the `nth` line of the same text, when the page still has `of` of them:
- * so a line added or removed elsewhere changes nothing, and a task whose text changed, that is gone, or that now has a
- * twin (or lost one) is refused, and nothing is written.
+ * so a line added or removed elsewhere changes nothing, and a task whose text changed or that is gone is refused, and
+ * nothing is written.
+ *
+ * YAZ-5570, REBASE BY INTENT: a tick also keeps where each line of its text was (`twins`: the line, and the lines just
+ * around it). So when the Mac added a twin of the task, or took one out, or moved lines, the send finds the same task
+ * again (`taskFor`): with as many twins as at the tap, the `nth` as before (its place), unless another twin has more of
+ * the tapped line's neighbours; else the ONE twin whose neighbours read most like the tapped line's (boxes read as
+ * `[ ]`, so the Mac's tick of the next task changes nothing), and more like them than like any other twin's. Else (the
+ * tapped line itself was edited or deleted, or two twins fit it the same) the tick is refused as before: it stays on
+ * the phone with its words, never on another task.
  *
  * IDEMPOTENT: an entry says what the box must BECOME (`checked`), not "toggle". A retry whose first try reached GitHub
  * finds the box already so, and writes nothing (`already`): never a double toggle. A tick then an untick are two
@@ -32,7 +40,23 @@ export interface TaskTick {
   of: number
   /** What the box becomes. */
   checked: boolean
+  /**
+   * YAZ-5570: each line with the same `core` when it was tapped (in order: `twins[nth]` is the tapped one), with its
+   * line in the body and the lines around it (`AROUND` each way, nearest first, boxes as `[ ]`, twins skipped). Absent on a tick
+   * stored before it: then only `nth` of `of` finds the task.
+   */
+  twins?: TaskPlace[]
 }
+
+/** Where a task line was: its body line, and the lines just above (`before`) and below (`after`) it, nearest first. */
+export interface TaskPlace {
+  line: number
+  before: string[]
+  after: string[]
+}
+
+/** How many lines each way are kept around a tapped task (`TaskPlace`). */
+const AROUND = 2
 
 export type TaskRefusedWhy = 'changed' | 'gone'
 
@@ -81,15 +105,73 @@ function readTasks(content: string): Array<TaskLine & { at: number; line: number
   return pageTasks(body).map((t) => ({ box: t.box, checked: t.checked, core: t.core, line: t.line, at: starts[t.line]! + t.box }))
 }
 
-/** The tick of the `nth` task with `core` in `content` (`of` of them), to `checked`. */
+/** The tick of the `nth` task with `core` in `content` (`of` of them), to `checked`, with where each of them is (YAZ-5570). */
 export function tickOf(content: string, core: string, nth: number, checked: boolean): TaskTick {
-  return { core, nth, of: taskLines(content).filter((t) => t.core === core).length, checked }
+  const same = taskLines(content).filter((t) => t.core === core)
+  const lines = bodyLines(content)
+  const twinLines = new Set(same.map((t) => t.line))
+  return { core, nth, of: same.length, checked, twins: same.map((t) => placeOf(lines, t.line, twinLines)) }
+}
+
+/** The body's lines as the parser counts them (LF, CRLF or CR), each read with its box as `[ ]` and no end. */
+function bodyLines(content: string): string[] {
+  return withoutBom(splitFrontmatter(content).body)
+    .split(/\r\n|\r|\n/)
+    .map((l) => l.replace(/\[[xX ]\]/, '[ ]'))
+}
+
+/**
+ * Where `line` is: the `AROUND` nearest lines each way that are not twins (`twinLines`: the lines with the task's own
+ * text). A twin next to it says nothing about which twin it is: one the Mac added just above or just below reads the same.
+ */
+function placeOf(lines: readonly string[], line: number, twinLines: ReadonlySet<number>): TaskPlace {
+  const walk = (step: 1 | -1) => {
+    const out: string[] = []
+    for (let i = line + step; i >= 0 && i < lines.length && out.length < AROUND; i += step) if (!twinLines.has(i)) out.push(lines[i]!)
+    return out
+  }
+  return { line, before: walk(-1), after: walk(1) }
+}
+
+/** How many of the lines around `here` read as around `place` (each way, nearest first). */
+function likeness(here: TaskPlace, place: TaskPlace): number {
+  let same = 0
+  place.before.forEach((l, k) => void (here.before[k] === l && same++))
+  place.after.forEach((l, k) => void (here.after[k] === l && same++))
+  return same
+}
+
+/**
+ * YAZ-5570: the task of `content` that `tick` names, or none (`undefined`: the tick is refused). With as many twins as
+ * at the tap: the `nth`, while no other twin has more of the tapped line's neighbours (the old rule: the place counts).
+ * Else (with `twins`): the ONE twin with the most of them, which must also have more of them than of any other old
+ * twin's (the tapped line may be the one gone). No neighbour alike while twins are about, or two twins alike: unclear.
+ */
+export function taskFor<T extends { line: number; core: string }>(content: string, tick: Pick<TaskTick, 'core' | 'nth' | 'of' | 'twins'>, tasks: readonly T[]): T | undefined {
+  const same = tasks.filter((t) => t.core === tick.core)
+  const twins = tick.twins
+  const own = twins?.[tick.nth]
+  if (twins === undefined || own === undefined || twins.length !== tick.of) return same.length === tick.of ? same[tick.nth] : undefined
+  if (same.length === 0) return undefined
+  const lines = bodyLines(content)
+  const twinLines = new Set(same.map((t) => t.line))
+  const ranked = same.map((t) => {
+    const here = placeOf(lines, t.line, twinLines)
+    return { t, here, like: likeness(here, own) }
+  })
+  const top = Math.max(...ranked.map((x) => x.like))
+  if (same.length === tick.of && ranked[tick.nth]!.like === top) return same[tick.nth]
+  const best = ranked.filter((x) => x.like === top)
+  if (best.length !== 1) return undefined
+  const one = best[0]!
+  if (top === 0 && (same.length > 1 || twins.length > 1)) return undefined
+  if (twins.some((p, k) => k !== tick.nth && likeness(one.here, p) >= top)) return undefined
+  return one.t
 }
 
 /** `content` with the task's box set to `tick.checked`, or `already`, or why not (`changed`: not found the same). */
 export function applyTask(content: string, tick: TaskTick): TaskResult {
-  const same = taskLines(content).filter((t) => t.core === tick.core)
-  const task = same.length === tick.of ? same[tick.nth] : undefined
+  const task = taskFor(content, tick, taskLines(content))
   if (task === undefined) return { kind: 'refused', why: 'changed' }
   if (task.checked === tick.checked) return { kind: 'already' }
   return { kind: 'ticked', content: `${content.slice(0, task.at)}${tick.checked ? 'x' : ' '}${content.slice(task.at + 1)}` }

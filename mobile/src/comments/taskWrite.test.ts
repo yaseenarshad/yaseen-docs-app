@@ -95,11 +95,13 @@ describe('the same task found again, or refused', () => {
     expect(out).toContain('* [x] Call Sam about the fence')
   })
 
-  it('refused when its text changed, it is gone, or it now has a twin (or lost one): nothing written', () => {
+  it('refused when its text changed, it is gone, or the tapped twin is gone: nothing written', () => {
     const t = tick(TASKS_PAGE, '- [ ] Buy seeds', true)
     expect(applyTask(TASKS_PAGE.replace('Buy seeds', 'Buy seeds and bulbs'), t)).toEqual({ kind: 'refused', why: 'changed' })
     expect(applyTask(TASKS_PAGE.replace('- [ ] Buy seeds\n', ''), t)).toEqual({ kind: 'refused', why: 'changed' })
-    expect(applyTask(TASKS_PAGE.replace('The end.', '- [ ] Buy seeds'), t)).toEqual({ kind: 'refused', why: 'changed' })
+    // YAZ-5570: a twin the Mac added elsewhere no longer refuses it: the tapped task is found by the lines around it.
+    const twin = TASKS_PAGE.replace('The end.', '- [ ] Buy seeds')
+    expect(ticked(twin, t)).toBe(twin.replace('- [ ] Buy seeds\n- [x] Mow', '- [x] Buy seeds\n- [x] Mow'))
     const twins = 'a\n- [ ] Same\nb\n- [ ] Same\n'
     expect(applyTask('a\n- [ ] Same\n', tick(twins, '- [ ] Same', true, 1))).toEqual({ kind: 'refused', why: 'changed' })
   })

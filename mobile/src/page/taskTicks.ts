@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import type { CommentsPort } from '../comments/bridge'
 import type { WaitingComment } from '../comments/outbox'
-import { TASK_REFUSED_WORDS, taskLines, type TaskTick } from '../comments/taskWrite'
+import { TASK_REFUSED_WORDS, taskFor, taskLines, tickOf, type TaskTick } from '../comments/taskWrite'
 
 /**
  * TICK A TASK FROM THE PHONE (YAZ-5494): a tap on a task's check box in a page ticks it, or unticks it. Only that
@@ -31,11 +31,11 @@ export const TICK_HOLD_MS = 3000
 
 const BOX = '.page-task[data-task][data-task-line]'
 
-/** The task of `text` that a tick names: the `nth` with its core (`taskLines`: the reader's parse). */
-const taskOf = (text: string, tick: Pick<TaskTick, 'core' | 'nth'>) => taskLines(text).filter((l) => l.core === tick.core)[tick.nth]
+/** The task of `text` that a tick names (`taskLines`: the reader's parse): found as the send finds it (YAZ-5570, `taskFor`). */
+const taskOf = (text: string, tick: TaskTick) => taskFor(text, tick, taskLines(text))
 
 /** The box of the tick's task in `host`, drawn from `text`: the box on that task's line. */
-function boxOf(host: HTMLElement, text: string, tick: Pick<TaskTick, 'core' | 'nth'>): HTMLElement | null {
+function boxOf(host: HTMLElement, text: string, tick: TaskTick): HTMLElement | null {
   const task = taskOf(text, tick)
   if (task === undefined) return null
   return [...host.querySelectorAll<HTMLElement>(BOX)].find((b) => b.dataset.taskLine === String(task.line) && b.dataset.task === task.core) ?? null
@@ -51,7 +51,8 @@ export function tickOfBox(text: string, box: HTMLElement, checked: boolean): Tas
   const core = box.dataset.task
   const same = taskLines(text).filter((l) => l.core === core)
   const nth = same.findIndex((l) => String(l.line) === box.dataset.taskLine)
-  return core === undefined || nth < 0 ? null : { core, nth, of: same.length, checked }
+  // YAZ-5570: with where each twin is, so the send finds the same task again after the Mac's edits (`taskFor`).
+  return core === undefined || nth < 0 ? null : tickOf(text, core, nth, checked)
 }
 
 /** The box shows `checked` (the reader's look reads `data-checked`), and says so. */
