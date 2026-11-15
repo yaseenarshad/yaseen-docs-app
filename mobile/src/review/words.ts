@@ -18,6 +18,15 @@ export const FILTERS: readonly { id: ReviewFilter; label: string }[] = [
   { id: 'new', label: 'New cards' },
 ]
 
+/** The mockup's glyph of each list (YAZ-5415, round 3): the count at the top and the review sheet. */
+export const FILTER_ICON: Record<ReviewFilter, string> = { all: '▣', next: '⤒', due: '◷', new: '◌' }
+
+/** The hint line (YAZ-5415): "Tap anywhere · 3 left" while parts hide, "Did you remember it?" once all show. */
+export const hintText = (left: number): string => (left > 0 ? `Tap anywhere · ${left} left` : 'Did you remember it?')
+
+/** How long "↶ Undo" stays in the hint line after an answer or an action (YAZ-5415, round 5). It stays in ⋯. */
+export const UNDO_SHOWN_MS = 4000
+
 export const filterLabel = (filter: CardFilter): string => FILTERS.find((f) => f.id === filter)?.label ?? 'All cards'
 
 /** A filter's done screen, as the Mac says it. */

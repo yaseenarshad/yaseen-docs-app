@@ -157,12 +157,13 @@ describe('4B checker: the screen', () => {
   it('probe: a filter with no cards, and a filter change while a card is half shown', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', ...dueCards(2, 3)) })
     await h.tap()
-    await h.click('All cards ▾')
+    await h.click(/Choose what to review/)
     const rows = [...h.host.querySelectorAll('[role="menuitemradio"]')].map((r) => r.textContent)
-    await h.click(/^Up next/)
-    console.log('[filter] rows', JSON.stringify(rows), '| Up next screen:', h.text().slice(0, 160))
-    await h.click('Up next ▾')
-    await h.click(/^All cards/)
+    // YAZ-5321: no card is marked Up next, so the menu has no Up next row; New cards is the list with no card here.
+    await h.click(/^New cards$/)
+    console.log('[filter] rows', JSON.stringify(rows), '| New cards screen:', h.text().slice(0, 160))
+    await h.click(/Choose what to review/)
+    await h.click(/^All cards$/)
     console.log('[filter] back on All:', h.head(), '| blanks hidden:', h.host.querySelectorAll('.card__blank').length)
   })
 

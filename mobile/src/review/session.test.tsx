@@ -27,11 +27,12 @@ const ops = () => h.answers.waiting().map((w) => `${w.op.kind}:${w.op.id}${'on' 
 describe('Review: a full session (decision 11)', () => {
   it('tap, tap, Remembered, Forgot, Undo, Up next, Fix later, Archive card, Open page; one commit reaches GitHub', async () => {
     h = await reviewSetup(FILES)
-    // The first card: its state, "1 of 3", and the head "Title · ID · in <page>" (round 15, item 4).
+    // The first card: its state (the chip, YAZ-5415: "New" / "Due"), "1 / 3", the head "Title · ID" (round 15, item 4) and the crumb (the page).
     expect(h.text()).toContain('All cards ▾')
-    expect(h.text()).toContain('New card')
-    expect(h.text()).toContain('1 of 3')
-    expect(h.head()).toBe('la biblioteca · DEMO-12 · in Spanish words')
+    expect(h.host.querySelector('.review__chip')?.textContent).toBe('New')
+    expect(h.host.querySelector('.review__chip')?.getAttribute('title')).toBe('New card')
+    expect(h.text()).toContain('1 / 3')
+    expect(h.head()).toBe('la biblioteca · DEMO-12')
     expect(h.cardText()).toBe('What does "la biblioteca" mean?')
     expect(h.button('Forgot')).not.toBeNull()
     expect(h.button('Remembered')).not.toBeNull()
@@ -48,17 +49,17 @@ describe('Review: a full session (decision 11)', () => {
     expect(h.cardText()).toBe('What does "la biblioteca" mean? The library. A bookshop is "la librería".')
 
     await h.click('Remembered')
-    expect(h.head()).toBe('Hola · DEMO-13 · in Spanish words')
-    expect(h.last()).toBe('Answered·Undo')
+    expect(h.head()).toBe('Hola · DEMO-13')
+    expect(h.last()).toBe('Answered↶ Undo')
     expect(ops()).toEqual(['review:DEMO-12:good'])
 
     await h.click('Forgot')
-    expect(h.head()).toBe('git pull · DEMO-38 · in Git cheat sheet')
+    expect(h.head()).toBe('git pull · DEMO-38')
     expect(ops()).toEqual(['review:DEMO-12:good', 'review:DEMO-13:again'])
 
     // Undo takes back the last answer: the card shows again, at its first step; its action leaves the list.
     await h.click('Undo')
-    expect(h.head()).toBe('Hola · DEMO-13 · in Spanish words')
+    expect(h.head()).toBe('Hola · DEMO-13')
     expect(h.cardText()).toBe('Hola')
     expect(ops()).toEqual(['review:DEMO-12:good'])
 
@@ -78,7 +79,7 @@ describe('Review: a full session (decision 11)', () => {
     // ⋯ › Archive card: the card leaves the session.
     await h.click('Archive card')
     expect(ops()).toEqual(['review:DEMO-12:good', 'next:DEMO-13:true', 'fix:DEMO-13:true', 'off:DEMO-13:true'])
-    expect(h.head()).toBe('git pull · DEMO-38 · in Git cheat sheet')
+    expect(h.head()).toBe('git pull · DEMO-38')
 
     // ⋯ › Open page: 4C's read-only page, by its path in the repo, at this card.
     await h.click('More card actions')

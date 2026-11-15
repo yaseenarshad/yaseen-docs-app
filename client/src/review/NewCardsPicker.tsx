@@ -11,20 +11,11 @@
 import { useState, type ReactNode } from 'react'
 import { ContextMenuSurface } from '../components/ContextMenuSurface'
 import type { CardReviewApi, CardReviewSession, NewCardFolder } from './useCardReview'
+import { newCardsFrom, pickLabel, toggledPick, underFolder } from './inboxMenu'
 
-/** The pick's words: "Spanish", "Spanish, Geography"; empty for All folders. */
-export const pickLabel = (picked: readonly Pick<NewCardFolder, 'label'>[]): string => picked.map((f) => f.label).join(', ')
-
-/** Where today's new cards really come from (the coordinator note): the pick, or "All folders" with none or in the fallback. */
-export const newCardsFrom = (session: Pick<CardReviewSession, 'newFrom' | 'newFallback'>): string => (session.newFrom.length === 0 || session.newFallback ? 'All folders' : pickLabel(session.newFrom))
-
-const under = (folder: string, ancestor: string): boolean => folder.startsWith(`${ancestor}/`)
-
-/** The pick after a click on `folder`'s box: off when it was ticked, else on, in place of its subfolders. */
-export function toggledPick(picked: readonly string[], folder: string): string[] {
-  if (picked.includes(folder)) return picked.filter((f) => f !== folder)
-  return [...picked.filter((f) => !under(f, folder)), folder]
-}
+// The pure rules are shared with the phone (`inboxMenu.ts`, YAZ-5415); the names stay exported here.
+export { newCardsFrom, pickLabel, toggledPick }
+const under = underFolder
 
 interface PickerProps {
   x: number

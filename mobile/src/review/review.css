@@ -20,29 +20,271 @@
 /* `.review`, `.review--waiting`, `.review--off`, `.review-slot` and `.review-host` are in `screens/reviewSlot.css`: the
    first load draws them (the Review tab's place and its "Loading…" before this chunk comes; YAZ-5363). */
 
-/* ---- The top row: the filter and today's work ---- */
+/* ---- YAZ-5415: the Mochi look (round 5 of the mockup). One line at the top (the shell's top bar draws the dot and the
+   gear; this screen draws the count into its middle), a thin progress bar in steps, the card with its chip and crumb
+   on one line, the hint line, and one row of controls: ← → · ✕ ✓ centred · ⋯. The screen never scrolls: the card does. */
 
-.review__top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+:root {
+  --review-ok-bg: #e3f6ea;
+  --review-bad-bg: #fbe7e7;
+  --review-hide-on: #e7e8ff;
 }
 
-.review__filter {
+@media (prefers-color-scheme: dark) {
+  :root {
+    --review-ok-bg: #1d3527;
+    --review-bad-bg: #3a2224;
+    --review-hide-on: #34365c;
+  }
+}
+
+.review--mochi {
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* With no top bar (the screen alone): the count on a line of its own. */
+.review__top {
+  display: flex;
+  justify-content: center;
+}
+
+.review__count-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
   min-height: var(--tap);
-  padding: 0 14px;
+  padding: 4px 10px;
   border: 0;
-  border-radius: 999px;
-  background: var(--accent-soft);
+  border-radius: 12px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.review__count-btn[aria-expanded='true'],
+.review__count-btn:active {
+  background: var(--bg-side);
+}
+
+.review__mode {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+
+.review__place {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.review__place small {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
+/* The progress bar in steps (round 4, as Mochi): grey for Remembered, red for Forgot. */
+.review__progress {
+  display: flex;
+  flex: none;
+  gap: 1px;
+  height: 3px;
+  background: var(--border);
+}
+
+.review__progress:not([data-steps]) {
+  gap: 0;
+  background: var(--border);
+}
+
+.review__step {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.review__progress[data-steps] .review__step {
+  background: var(--border);
+}
+
+.review__step[data-answer='remembered'] {
+  background: color-mix(in srgb, var(--fg-muted) 55%, transparent) !important;
+}
+
+.review__step[data-answer='forgot'] {
+  background: var(--danger) !important;
+}
+
+/* ---- The review sheet (the Mac's cards menu) ---- */
+
+.review__sheet {
+  position: absolute;
+  z-index: 5;
+  top: 6px;
+  left: 10px;
+  right: 10px;
+  max-height: calc(100% - 12px);
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.25);
+}
+
+.review__sheet-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 10px;
+  border-radius: 10px;
+}
+
+.review__sheet-row:active {
+  background: var(--bg-side);
+}
+
+.review__sheet-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+  min-height: 48px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg);
   font-size: 15px;
+  text-align: left;
+}
+
+/* The whole row picks; "from … ›" and Reset sit over it with their own taps. */
+.review__sheet-pick::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.review__sheet-row[data-on] .review__sheet-pick {
+  font-weight: 700;
+}
+
+.review__sheet-from,
+.review__sheet-reset {
+  position: relative;
+  z-index: 1;
+  min-height: var(--tap);
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.review__sheet-from {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.review__sheet-reset {
+  padding: 0 4px;
+  font-size: 12px;
+}
+
+.review__sheet-ic {
+  width: 22px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.review__sheet-n {
+  margin-left: auto;
+  padding: 1px 9px;
+  border-radius: 999px;
+  background: var(--bg-side);
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.review__sheet-n[data-kind='next'] {
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.review__sheet-reset + .review__sheet-n,
+.review__sheet-n + .review__sheet-reset {
+  margin-left: 0;
+}
+
+.review__sheet-back {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--fg);
+  font-size: 15px;
+  text-align: left;
+}
+
+.review__sheet-h {
+  margin: 8px 10px 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.review__sheet-folder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 10px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+.review__sheet-folder input {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.review__sheet-folder[data-on] {
   font-weight: 600;
 }
 
-.review__today {
-  font-size: 14px;
+.review__sheet-note,
+.review__sheet-today {
+  margin: 6px 10px 6px;
+  font-size: 13px;
   color: var(--fg-muted);
+}
+
+.review__sheet-today:empty {
+  display: none;
+}
+
+.review__today {
   white-space: nowrap;
 }
 
@@ -53,59 +295,121 @@
   border: 0;
   background: none;
   color: var(--fg-muted);
-  font-size: 14px;
+  font-size: 13px;
 }
 
-.review__menu {
-  margin: 0 0 10px;
-  padding: 2px 14px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--bg-side);
-}
+/* ---- The card: 10 px from the screen's edges; it scrolls inside itself, with no scroll bar ---- */
 
-.review__menu-row {
+.review__stage {
+  position: relative;
   display: flex;
-  justify-content: space-between;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  padding: 8px 10px 0;
+}
+
+.review__stage--done {
+  overflow: auto;
+}
+
+.review__card {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 18px 28px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--bg-side);
+  cursor: pointer;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overflow-wrap: anywhere;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: background-color 0.12s;
+}
+
+.review__card::-webkit-scrollbar {
+  display: none;
+}
+
+/* The press look on a tap (touch): the card darkens a touch, then lets go. */
+.review__stage:active .review__card {
+  background: color-mix(in srgb, var(--bg-side) 92%, var(--accent));
+}
+
+.review__cardtop {
+  display: flex;
   align-items: center;
-  width: 100%;
-  min-height: var(--tap);
-  padding: 0;
-  border: 0;
-  border-bottom: 1px solid var(--border);
+  gap: 8px;
+  min-width: 0;
+}
+
+.review__chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  /* The page's own colour under the words: the muted "New" stays 4.5:1 (light and dark). */
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.review__chip i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.review__chip[data-new] {
+  color: var(--fg-muted);
+}
+
+.review__chip[data-new] i {
+  border: 1.5px dashed currentColor;
   background: none;
-  text-align: left;
-  font-size: 16px;
 }
 
-.review__menu-row:last-child {
-  border-bottom: 0;
+.review__crumb {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--fg-muted);
 }
 
-.review__menu-row[aria-checked='true'] {
+.review__crumb-folder {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.review__crumb b {
+  color: var(--fg);
   font-weight: 600;
 }
 
-.review__menu-row:disabled {
-  opacity: 0.5;
-}
-
-.review__count {
-  color: var(--fg-muted);
-  font-size: 14px;
-}
-
-/* ---- Above the card ---- */
-
-.review__meta {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
+.review__sides {
+  flex: none;
+  margin-left: auto;
+  font-size: 11.5px;
   color: var(--fg-muted);
 }
 
 .review__head {
-  margin: 2px 0 8px;
+  margin: 10px 0 6px;
   font-size: 15px;
   overflow-wrap: anywhere;
 }
@@ -114,14 +418,10 @@
   font-weight: 600;
 }
 
-.review__id,
-.review__in {
+.review__id {
   color: var(--fg-muted);
   font-size: 13px;
-}
-
-/* The card ID is one word ("NC-48"): never broken over two lines (YAZ-5299). The title wraps. */
-.review__id {
+  /* The card ID is one word ("NC-48"): never broken over two lines (YAZ-5299). The title wraps. */
   white-space: nowrap;
 }
 
@@ -131,19 +431,9 @@
   color: var(--review-warn-text);
 }
 
-/* ---- The card: a tap shows the next part. A long card scrolls with the screen; the buttons stay at the bottom. ---- */
-
-.review__card {
-  min-width: 0;
-  min-height: 200px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--bg-side);
-  cursor: pointer;
-  overflow-wrap: anywhere;
-  -webkit-user-select: none;
-  user-select: none;
+.review__card .phone-card__body {
+  font-size: 17px;
+  line-height: 1.55;
 }
 
 .review__card pre,
@@ -171,83 +461,328 @@
   color: var(--fg-muted);
 }
 
-.review__sides {
-  margin: 6px 0 0;
-  text-align: right;
-  font-size: 13px;
-  color: var(--fg-muted);
+/* The part the next tap shows: the accent's mark (the Mac's "Mark the next hidden word"). */
+.review__card .card__blank[data-next] {
+  border-bottom-color: var(--next-hidden);
+  background: color-mix(in srgb, var(--next-hidden) 16%, transparent);
 }
 
-/* ---- The buttons, in reach of the thumb ---- */
+/* A pointer: the hidden part under it lights up (as the Mac's hover); a tap on it shows THAT part. */
+@media (hover: hover) {
+  .review__card .card__blank:hover {
+    background: var(--review-hide-on);
+    box-shadow: inset 0 0 0 2px var(--accent);
+  }
+}
+
+.review__card .card__blank:active {
+  background: var(--review-hide-on);
+}
+
+/* The part that just showed flashes once. */
+.review__flash {
+  animation: review-flash 0.5s ease;
+}
+
+@keyframes review-flash {
+  from {
+    box-shadow: inset 0 0 0 3px var(--accent);
+  }
+}
+
+/* More of the card below: a soft fade at its foot and a small "↓ more"; both go at the end. */
+.review__fade {
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  bottom: 0;
+  height: 34px;
+  border-radius: 0 0 18px 18px;
+  background: linear-gradient(to bottom, transparent, var(--bg-side));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.review__more-cue {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--fg-muted);
+  font-size: 11px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.2s,
+    visibility 0.2s;
+}
+
+.review__fade[data-on],
+.review__more-cue[data-on] {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ---- The hint line: "Tap anywhere · 3 left", "Did you remember it?", and "↶ Undo" for a few seconds ---- */
+
+.review__hint {
+  display: flex;
+  flex: none;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  margin: 0;
+  padding: 4px 16px 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.review__last {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.review__last:empty {
+  display: none;
+}
+
+.review__undo {
+  position: relative;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 13px;
+  background: none;
+  color: var(--accent);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* 44 pt to a finger, though it looks small. */
+.review__undo::after {
+  content: '';
+  position: absolute;
+  inset: -9px -4px;
+}
+
+.review__undo:active {
+  background: var(--bg-side);
+}
+
+/* ---- The controls: ← → at the left, ✕ ✓ centred on the screen, ⋯ at the right ---- */
 
 .review__dock {
-  /* Short card: the buttons sit at the bottom of the screen. Long card: they stick there while it scrolls. The dock
-     covers the screen's bottom padding too (24 px), so no text shows under it. */
-  position: sticky;
-  bottom: -24px;
-  margin: auto -16px -24px;
-  padding: 10px 16px 40px;
-  background: var(--bg);
+  position: relative;
+  flex: none;
+  padding: 2px 6px calc(6px + var(--update-room, 0px));
+}
+
+.review__ctrl {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+}
+
+.review__arrows {
+  display: flex;
+  gap: 0;
+}
+
+.review__right {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.review__arrow {
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 20px;
+}
+
+.review__arrow:active:not(:disabled) {
+  background: var(--bg-side);
+}
+
+.review__arrow:disabled {
+  opacity: 0.3;
 }
 
 .review__answers {
   display: flex;
-  gap: 8px;
+  gap: 14px;
 }
 
 .review__answer {
-  flex: 1;
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 56px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--bg);
-  font-size: 17px;
-  font-weight: 600;
+  width: 58px;
+  height: 58px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-side);
+  color: var(--fg);
+  font-size: 26px;
+  line-height: 1;
+  transition:
+    transform 0.08s,
+    filter 0.15s;
 }
 
-.review__answer[data-rating='again'] svg {
+.review__answer[data-rating='again'] {
+  background: var(--review-bad-bg);
   color: var(--danger);
 }
 
-.review__answer[data-rating='good'] svg,
-.review__answer[data-rating='easy'] svg {
+.review__answer[data-rating='good'],
+.review__answer[data-rating='easy'] {
+  background: var(--review-ok-bg);
   color: var(--ok);
 }
 
-.review__answer:disabled {
-  opacity: 0.55;
+.review__answer[data-rating='hard'] {
+  color: var(--warn);
 }
 
-.review__more {
-  min-width: 56px;
-  min-height: 56px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--bg);
+.review__answer:active:not(:disabled) {
+  transform: scale(0.93);
+}
+
+.review__answer:disabled {
+  opacity: 0.4;
+}
+
+/* Four buttons (Settings › Answers: 4): smaller, closer. */
+.review__answers[data-count='4'] {
+  gap: 6px;
+}
+
+.review__answers[data-count='4'] .review__answer {
+  width: var(--tap);
+  height: var(--tap);
   font-size: 20px;
 }
 
+/* THE END (the Mac's end cue, YAZ-5049 round 3): one more tap when every part shows bounces ✕ and ✓ once, with a soft
+   ring. Two names, so each new tap plays it again. With Reduce motion: the ring alone, as on the Mac. */
+.review__answers[data-nudge='a'] .review__answer {
+  animation: review-nudge-a 0.55s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.review__answers[data-nudge='b'] .review__answer {
+  animation: review-nudge-b 0.55s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+
+.review__answers[data-nudge] .review__answer + .review__answer {
+  animation-delay: 70ms;
+}
+
+@keyframes review-nudge-a {
+  30% {
+    transform: scale(1.14) translateY(-4px);
+    box-shadow: 0 0 0 6px color-mix(in srgb, currentColor 18%, transparent);
+  }
+  60% {
+    transform: scale(0.97);
+  }
+}
+
+@keyframes review-nudge-b {
+  30% {
+    transform: scale(1.14) translateY(-4px);
+    box-shadow: 0 0 0 6px color-mix(in srgb, currentColor 18%, transparent);
+  }
+  60% {
+    transform: scale(0.97);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .review__answers[data-nudge='a'] .review__answer {
+    animation: review-ring-a 0.7s ease-out;
+  }
+  .review__answers[data-nudge='b'] .review__answer {
+    animation: review-ring-b 0.7s ease-out;
+  }
+  .review__flash {
+    animation: none;
+  }
+  .review__card,
+  .review__fade,
+  .review__more-cue {
+    transition: none;
+  }
+}
+
+@keyframes review-ring-a {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
+
+@keyframes review-ring-b {
+  from {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+}
+
+/* The ⋯ menu: over the controls, at the right. */
+.review__menu {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
 .review__menu--more {
-  margin: 8px 0 0;
+  position: absolute;
+  z-index: 5;
+  right: 10px;
+  bottom: calc(100% + 4px);
+  width: 220px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
 }
 
-.review__last {
+.review__menu-row {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
-  gap: 6px;
+  width: 100%;
   min-height: var(--tap);
-  font-size: 14px;
-  color: var(--fg-muted);
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  font-size: 15px;
 }
 
-.review__undo {
-  min-width: var(--tap);
-  font-size: 14px;
+.review__menu-row:last-child {
+  border-bottom: 0;
+}
+
+.review__menu-row:active:not(:disabled) {
+  background: var(--bg-side);
+}
+
+.review__menu-row:disabled {
+  opacity: 0.5;
 }
 
 /* ---- Done ---- */
@@ -284,7 +819,7 @@
 /* ---- Lines that need the person ---- */
 
 .review__lost {
-  margin: 0 0 10px;
+  margin: 8px 10px 0;
   padding: 10px 12px;
   border: 1px solid var(--warn);
   border-radius: 12px;
@@ -311,7 +846,7 @@
 }
 
 .review__notice {
-  margin: 0 0 10px;
+  margin: 6px 16px 0;
   font-size: 14px;
   color: var(--danger);
 }
@@ -343,29 +878,6 @@
   min-height: var(--tap);
 }
 
-/* ---- Narrow screens (YAZ-5231): the buttons and ⋯ stay inside the 16 px gutter at 320 px ---- */
-
-.review__answer {
-  min-width: 0;
-}
-
-@media (max-width: 374px) {
-  .review__answers {
-    gap: 6px;
-  }
-  .review__answer {
-    gap: 4px;
-    padding: 0 4px;
-    font-size: 15px;
-  }
-  .review__answer svg {
-    display: none;
-  }
-  .review__more {
-    min-width: var(--tap);
-  }
-}
-
 /* A sound's progress bar (YAZ-5317, YAZ-5333): on the phone it shows the progress only. It takes no tap (a 4 px line
    is no target, and a 44 pt box around it covered the middle of a short card): a tap on it steps the card. Play is the
    player's one control, 44 × 44. */
@@ -374,13 +886,25 @@
 }
 
 /* ---- "A new version is ready." (YAZ-5313) ----
-   The line is 5-'s (`pwa/update.css`): fixed over the tab bar. While it shows, the Review dock keeps the room it needs
+   The line is 5-'s (`pwa/update.css`): fixed over the tab bar. While it shows, the controls keep the room it needs
    above it, so the line never lies over Undo or the answer buttons. */
 #root:has(> .update-line) {
   --update-room: 72px;
 }
 
-.review__dock {
-  bottom: calc(var(--update-room, 0px) - 24px);
-  margin-bottom: calc(var(--update-room, 0px) - 24px);
+/* ---- Narrow screens (YAZ-5231, YAZ-5415): four answer buttons do not fit centred at 320 px; they take the middle ---- */
+@media (max-width: 374px) {
+  .review__ctrl:has([data-count='4']) {
+    grid-template-columns: auto 1fr auto;
+  }
+  .review__ctrl:has([data-count='4']) .review__answers {
+    justify-self: center;
+  }
+  .review__answers[data-count='4'] {
+    gap: 2px;
+  }
+  .review__dock {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
 }

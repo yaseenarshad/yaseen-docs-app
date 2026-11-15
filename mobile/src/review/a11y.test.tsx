@@ -21,8 +21,9 @@ afterEach(() => {
 
 async function walk(text: string, words: string[]) {
   h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock(text, 'AX-1')) })
-  const card = () => spokenText(h!.host.querySelector('.review__card')!)
-  const live = h.host.querySelector('.review__card ~ p[aria-live]')!
+  // The card's text (its chip, crumb and head sit above it in the card box: YAZ-5415).
+  const card = () => spokenText(h!.host.querySelector('.phone-card__body')!)
+  const live = h.host.querySelector('.review__stage ~ p[aria-live]')!
   const steps: { card: string; said: string }[] = [{ card: card(), said: (live.textContent ?? '').trim() }]
   for (let i = 0; i < 6 && h.button('Show the next part') !== null; i++) {
     await h.click('Show the next part')

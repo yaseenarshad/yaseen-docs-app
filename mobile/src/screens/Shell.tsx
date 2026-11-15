@@ -91,7 +91,7 @@ export function Shell() {
     )
   return (
     <>
-      <Frame title={vaultName(app.vault.repo)} gear tabs notice={notice}>
+      <Frame title={vaultName(app.vault.repo)} gear tabs notice={notice} review={TabScreen === null}>
         {TabScreen === null ? <ReviewSlot host={reviewHost} /> : <TabScreen />}
       </Frame>
       {kept}

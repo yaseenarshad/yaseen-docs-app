@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { useApp } from '../app/AppState'
 import { FORWARD_LABEL, type Forward } from '../app/help'
 import { TABS } from '../app/nav'
+import { setReviewTop } from './reviewTop'
 import { SyncStatus } from './SyncStatus'
 
 /**
@@ -14,6 +15,7 @@ export function Frame({
   gear = false,
   tabs = false,
   notice,
+  review = false,
   children,
 }: {
   title: string
@@ -24,20 +26,26 @@ export function Frame({
   tabs?: boolean
   /** A problem line under the top bar. */
   notice?: ReactNode
+  /**
+   * The Review tab (YAZ-5415, as Mochi): ONE line — the sync dot (its words in its sheet), the Review screen's
+   * "▣ All cards ▾ 3 / 12" in the middle (`reviewTop.ts`), the gear. The screen fills the space between the bars.
+   */
+  review?: boolean
   children: ReactNode
 }) {
   const app = useApp()
   const route = app.nav.stack.at(-1)
   return (
     <div className="app">
-      <header className="topbar">
+      <header className={review ? 'topbar topbar--review' : 'topbar'}>
         {back && (
           <button type="button" className="link-btn back" onClick={back}>
             ‹ Back
           </button>
         )}
-        <h1 className="topbar__title">{title}</h1>
+        <h1 className={review ? 'topbar__title sr-only' : 'topbar__title'}>{title}</h1>
         {gear && <SyncStatus />}
+        {review && <div ref={setReviewTop} className="topbar__review" />}
         {gear && (
           <button type="button" className="icon-btn" aria-label="Settings" onClick={() => app.go({ type: 'open', route: { kind: 'settings' } })}>
             ⚙
@@ -45,7 +53,7 @@ export function Frame({
         )}
       </header>
       {notice}
-      <main className="screen">{children}</main>
+      <main className={review ? 'screen screen--review' : 'screen'}>{children}</main>
       {tabs && (
         <nav className="tabbar" role="tablist" aria-label="Tabs">
           {TABS.map((t) => (

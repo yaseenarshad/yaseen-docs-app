@@ -20,15 +20,15 @@ const newCards = (n: number) => Array.from({ length: n }, (_, i) => cardBlock(`C
 describe('Review: done, and "Add more for today" (round 10, addition 2)', () => {
   it('"Inbox complete", today\'s work, what waits, "Add 2 new cards"; the add shows a card at once, and Undo takes it back', async () => {
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('P', ...newCards(5)) })
-    expect(h.text()).toContain('1 of 2')
+    expect(h.text()).toContain('1 / 2')
     // A new card needs two Remembered (its same-day steps): four answers end the session.
     for (let i = 0; i < 4; i++) await h.click('Remembered')
     expect(h.text()).toContain('Inbox complete')
     expect(h.text()).toContain('Today: 2 cards')
     expect(h.text()).toContain('3 new cards wait for another day.')
     await h.click('Add 2 new cards')
-    expect(h.head()).toBe('NW-3 · in P')
-    expect(h.last()).toBe('Added 2 new cards for today·Undo')
+    expect(h.head()).toBe('NW-3')
+    expect(h.last()).toBe('Added 2 new cards for today↶ Undo')
     await h.click('Undo')
     expect(h.text()).toContain('Inbox complete')
     expect(h.button('Add 2 new cards')).not.toBeNull()
@@ -56,13 +56,14 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
 
   it('All cards, Up next, Due today, New cards, with counts; a pick shows only those cards', async () => {
     h = await reviewSetup(FILES)
-    await h.click('All cards ▾')
-    const rows = [...h.host.querySelectorAll('[role="menuitemradio"]')].map((r) => r.textContent)
-    expect(rows).toEqual(['All cards3', 'Up next1', 'Due today1', 'New cards2'])
+    await h.click(/Choose what to review/)
+    // YAZ-5415: the review sheet's rows: the glyph, the name, (New cards: "from All folders ›"), the count.
+    const rows = [...h.host.querySelectorAll('.review__sheet-row')].map((r) => r.textContent)
+    expect(rows).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›2 / 2'])
     await h.click(/^Due today/)
     expect(h.text()).toContain('Due today ▾')
-    expect(h.head()).toBe('DU-1 · in P')
-    expect(h.text()).toContain('1 of 1')
+    expect(h.head()).toBe('DU-1')
+    expect(h.text()).toContain('1 / 1')
     await h.click('Remembered')
     expect(h.text()).toContain('No due cards left.')
     await h.click('2 more in All cards')
@@ -72,13 +73,13 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
 
   it('Up next shows the marked card; New cards shows the new ones', async () => {
     h = await reviewSetup(FILES)
-    await h.click('All cards ▾')
+    await h.click(/Choose what to review/)
     await h.click(/^Up next/)
-    expect(h.head()).toBe('DU-3 · in P')
-    await h.click('Up next ▾')
+    expect(h.head()).toBe('DU-3')
+    await h.click(/Choose what to review/)
     await h.click(/^New cards/)
     expect(h.text()).toContain('New cards ▾')
-    expect(h.text()).toMatch(/1 of 2/)
+    expect(h.text()).toMatch(/1 \/ 2/)
   })
 })
 
@@ -93,7 +94,7 @@ describe('Review: no signal (decision 2; Turn 3: "offline should work")', () => 
     await h.click('Fix later')
     await h.click('More card actions')
     await h.click('Archive card')
-    expect(h.head()).toBe('NW-3 · in P')
+    expect(h.head()).toBe('NW-3')
     await h.wait(5_000)
     expect(h.commits()).toBe(0)
     expect(h.answers.waiting().map((w) => `${w.op.kind}:${w.op.id}`)).toEqual(['review:NW-1', 'fix:NW-2', 'off:NW-2'])
@@ -118,7 +119,7 @@ describe('Review: Undo after a send tried the answer (YAZ-5180)', () => {
     await h.wait(5_000)
     expect(h.answers.waiting()).toHaveLength(1)
     await h.click('Undo')
-    expect(h.head()).toBe('NW-1 · in P')
+    expect(h.head()).toBe('NW-1')
     expect(h.cardText()).toBe('Card 1?')
     // The waiting count goes UP: the screen reads the list's own state, not its own sums.
     expect(h.answers.waiting().map((w) => w.op.kind)).toEqual(['review', 'unreview'])
