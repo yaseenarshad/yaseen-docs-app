@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readComments } from '@shared/comments'
 import { TASKS_PAGE } from '../dev/taskFixtures'
 import { answersPart, syncDot } from '../status/dot'
+import { WHY_NOT_SENT } from '../status/NotSent'
 import { taskCore, tickOf } from './taskWrite'
 import { commentsSetup } from './testing'
 
@@ -75,6 +76,19 @@ describe('outbox_commentOnDeletedOrMovedPage_staysCountedAndShowsItsWords', () =
     expect(dot.short).toBe('2 not sent')
     for (const c of kept) expect(await t.port.discard(c.id)).toBe(true)
     expect(dotOf(t).words).toBe('Synced')
+  })
+
+  it('notSent_pageCopiedTwiceWithSameId_saysCopy: a page copied to two places with its id is not "gone": "Its page has a copy with the same ID", kept with Copy and Discard (sweep2 nit 2)', async () => {
+    const t = await offlineWrites(WITH_ID)
+    await t.macPush({ [PAGE]: null, 'a/Weekend jobs.md': WITH_ID.replace('# Weekend jobs\n', '# Weekend jobs\n\nA.\n'), 'b/Weekend jobs.md': WITH_ID.replace('# Weekend jobs\n', '# Weekend jobs\n\nB.\n') })
+    await backOnline(t)
+    expect(readComments((await t.remote('a/Weekend jobs.md'))!)).toEqual([])
+    expect(readComments((await t.remote('b/Weekend jobs.md'))!)).toEqual([])
+    expect(t.port.waiting().map((c) => c.refused)).toEqual(['copies', 'copies'])
+    expect(WHY_NOT_SENT.copies).toBe('Its page has a copy with the same ID.')
+    const dot = dotOf(t)
+    expect(dot.state).toBe('pending')
+    expect(dot.words).toBe("2 changes couldn't be sent")
   })
 
   it('moved with no id AND edited: not certain, so not followed: kept as "couldn\'t be sent"', async () => {

@@ -141,9 +141,10 @@ function pageIdOf(content: string): string | undefined {
 
 /**
  * YAZ-5517: where a page gone from its path is now, when that is SURE: the one path that holds its old bytes (a git
- * rename, as the sync pass pairs them, `diffTrees`), else the one page with its `id`. Two candidates, or none: null.
+ * rename, as the sync pass pairs them, `diffTrees`), else the one page with its `id`. None: null. YAZ-5521: two or
+ * more pages with its `id` (and no one path with its bytes): `{ copies: true }`, the page was copied, not deleted.
  */
-function movedTo(was: WaitingComment['was'], shas: Readonly<Record<string, string>>, index: PhoneIndex | null): string | null {
+function movedTo(was: WaitingComment['was'], shas: Readonly<Record<string, string>>, index: PhoneIndex | null): string | { copies: true } | null {
   if (was === undefined) return null
   if (was.sha !== undefined) {
     const same = Object.keys(shas).filter((p) => shas[p] === was.sha)
@@ -152,6 +153,7 @@ function movedTo(was: WaitingComment['was'], shas: Readonly<Record<string, strin
   if (was.id !== undefined && index !== null) {
     const same = Object.values(index.records).filter((r) => r.id === was.id && shas[r.path] !== undefined)
     if (same.length === 1) return same[0]!.path
+    if (same.length > 1) return { copies: true }
   }
   return null
 }
@@ -202,6 +204,8 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
   // YAZ-5517: a page gone from its path that is found again for sure: its comments and ticks go to its new path.
   let index: PhoneIndex | null | undefined
   const byPath = new Map<string, WaitingComment[]>()
+  // YAZ-5521: comments whose page's `id` is on two or more pages now (copied on the Mac): not "gone".
+  const copied = new Set<string>()
   for (const c of list) {
     let path = c.path
     if (checkpoint.shas[path] === undefined && c.was !== undefined) {
@@ -210,10 +214,10 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
         index = saved !== undefined && saved.commit === checkpoint.commit ? saved : null
       }
       const to = movedTo(c.was, checkpoint.shas, index)
-      if (to !== null) {
+      if (typeof to === 'string') {
         path = to
         plan.moved.push({ id: c.id, path })
-      }
+      } else if (to?.copies === true) copied.add(c.id)
     }
     byPath.set(path, [...(byPath.get(path) ?? []), c])
   }
@@ -222,7 +226,7 @@ async function planComments(store: VaultStore, vault: string, list: readonly Wai
     if (file === null || typeof file.content !== 'string') {
       // Gone from the vault (deleted or renamed on the Mac), or over the phone's size limit (F7): the words stay here.
       const why = checkpoint.shas[path] === undefined ? 'gone' : 'too-large'
-      for (const c of comments) plan.refused.push({ id: c.id, why })
+      for (const c of comments) plan.refused.push({ id: c.id, why: why === 'gone' && copied.has(c.id) ? 'copies' : why })
       continue
     }
     let content = file.content

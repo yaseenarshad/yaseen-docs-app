@@ -35,7 +35,8 @@ export interface WaitingComment {
    */
   commit?: { sha: string; parent: string }
   /** The fresh page refused it (`REFUSED_WORDS`): it is not sent again; the page shows it with Discard. */
-  refused?: 'foreign' | 'invalid' | 'layout' | 'gone' | 'too-large' | 'changed'
+  /** YAZ-5521: `copies`: its page is gone from its path, and its `id` is on more than one page now (copied on the Mac). */
+  refused?: 'foreign' | 'invalid' | 'layout' | 'gone' | 'too-large' | 'changed' | 'copies'
   /**
    * YAZ-5494: not a comment but a TICK of a task check box on the page (`taskWrite.ts`): what the box becomes, and how
    * to find the same task again. It goes the comment's way (this list, the send, the dot); its `body` is empty and it

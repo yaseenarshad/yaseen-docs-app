@@ -67,7 +67,8 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const doorRef = useRef(door)
   doorRef.current = door
   // YAZ-5494: a tap on a task's box ticks it in the file, on the comments' safe path.
-  const ticks = useTaskTicks(host, path, text, useCommentsPort(), setNotice)
+  // YAZ-5521: a tick that settled (also with no write: the Mac's state won) reads the stored file again.
+  const ticks = useTaskTicks(host, path, text, useCommentsPort(), setNotice, () => setReads((n) => n + 1))
   const ticksRef = useRef(ticks)
   ticksRef.current = ticks
   // YAZ-5504: each card's ⋯ (the card actions); the page reads its cards as the phone shows them (with waiting actions).
@@ -102,7 +103,11 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   useEffect(() => {
     let live = true
     void shownText(store, vault, path, answers).then((content) => {
-      if (live) setText(content)
+      if (!live) return
+      setText(content)
+      // YAZ-5521 (sweep2 S-D): the same text as the page on the screen draws nothing again; its boxes still show the
+      // file (a settled tick's box kept the tap's state).
+      if (typeof content === 'string' && drawn.current?.text === content) ticksRef.current.paint()
     })
     return () => {
       live = false

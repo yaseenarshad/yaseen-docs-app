@@ -207,6 +207,27 @@ describe('the inline box at the end of the comments (YAZ-5478)', () => {
     expect(f.added).toEqual([])
   })
 
+  it('approvedTwice_thenTyping_keepsCaretAtEnd: a second "Approved" tap is a no-op; the selection and focus stay exactly (sweep2 S-A)', async () => {
+    const f = fakePort()
+    await mount(f.port, 'Body')
+    const box = host.querySelector('textarea')!
+    await click('Approved')
+    expect(box.value).toBe('Approved')
+    // The person selects part of the word, then taps Approved again: nothing moves.
+    box.setSelectionRange(2, 5)
+    await click('Approved')
+    expect(box.value).toBe('Approved')
+    expect([box.selectionStart, box.selectionEnd]).toEqual([2, 5])
+    expect(document.activeElement).toBe(box)
+    // The next letters land where they are typed (the caret at the end), not at a stale spot.
+    box.setSelectionRange(8, 8)
+    await type('Approved -')
+    expect(box.value).toBe('Approved -')
+    expect(box.selectionStart).toBe('Approved -'.length)
+    await type('Approved - ship it')
+    expect(box.selectionStart).toBe('Approved - ship it'.length)
+  })
+
   it('a page whose comments is not a comment list: Comment says so and nothing is added', async () => {
     const f = fakePort()
     await mount(f.port, '---\ncomments: see the doc\n---\nBody')

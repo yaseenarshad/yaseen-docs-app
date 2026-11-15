@@ -279,6 +279,15 @@ function SessionScreen({
   useEffect(() => {
     if (drawing !== null) cardShown(drawing)
   }, [drawing, cardShown])
+  // Sweep2 nit 3 (YAZ-5521): a card drawn where the screen after the last card was ("Review missed cards", "Learn new
+  // cards") takes no tap for 400 ms: the second tap of a double tap on the button showed its side 2.
+  const { arrive } = guard
+  const onDone = useRef(card === null)
+  useEffect(() => {
+    const was = onDone.current
+    onDone.current = card === null
+    if (was && card !== null) arrive()
+  }, [card, arrive])
   // Hidden and shown again: the guard starts from `ready` (YAZ-5266).
   const { reset: resetGuard } = guard
   useEffect(() => resetGuard(), [shown, resetGuard])
@@ -444,7 +453,9 @@ function SessionScreen({
   const undo = () => {
     setMenu(null)
     setNotice(null)
-    guard.undo()
+    // sweep2 M-A: from the screen after the last card, the card that comes back takes no tap for 400 ms (its ✓ sits
+    // under the finger that tapped Undo).
+    guard.undo(card === null)
     // YAZ-5078: Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
     if (line?.kind === 'mark' && line.undo !== undefined) {
       const run = line.undo

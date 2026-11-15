@@ -11,6 +11,7 @@ export const QUICK_REPLIES = ['Approved'] as const
 const NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
   ...REFUSED_WORDS,
   gone: 'This page is no longer in the vault (it was moved or deleted), so your comment was not added.',
+  copies: 'This page has a copy with the same ID, so the phone could not tell where your comment goes. It was not added.',
   'too-large': 'This page is too large for the phone to change, so your comment was not added. Comment on the Mac.',
   // A check box tick's refusal (YAZ-5494); ticks are not shown here (`taskTicks.ts` says it).
   changed: 'This page changed, so your comment was not added.',
@@ -110,6 +111,9 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
     const el = box.current
     const at = el !== null && document.activeElement === el ? el.selectionEnd : draft.length
     const next = withWords(draft, words, at)
+    // Sweep2 S-A (YAZ-5521): the box says the words already (a second tap): a no-op. The selection and the focus stay
+    // exactly; no caret is kept for later (no draw follows to use it, so the next typed letter put the caret back).
+    if (next.text === draft) return
     setDraft(next.text)
     caret.current = next.caret
     setProblem(null)

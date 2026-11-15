@@ -49,6 +49,13 @@ export interface Dot {
   words: string
   /** The same facts in 20 characters at most, for a top bar under 380 px (iPhone SE). Equal to `words` when they are short. */
   short: string
+  /**
+   * YAZ-5521 (sweep2 S-B): the words in the top bar from 380 px: `words`, but never a sentence: what could not be sent
+   * says `short` ("1 not sent"); the sentence is in the sheet and the button's VoiceOver name.
+   */
+  bar: string
+  /** YAZ-5521: the number the amber dot says alone where room is short (a page's ID chip in the bar); null with no number. */
+  count: number | null
   reason: DotReason
 }
 
@@ -84,18 +91,27 @@ const RED: Record<string, { reason: DotReason; words: string }> = {
  */
 export function syncDot(input: DotInput): Dot {
   const dot = dotWords(input)
-  return { ...dot, short: shortWords(dot, input) }
+  const short = shortWords(dot, input)
+  return { ...dot, short, bar: dot.reason === 'not-sent' ? short : dot.words, count: countOf(dot, input) }
+}
+
+/** YAZ-5521: what the dot counts, for its smallest form (the dot and a number). */
+function countOf(dot: Omit<Dot, 'short' | 'bar' | 'count'>, { answers }: DotInput): number | null {
+  if (dot.reason === 'waiting' || dot.reason === 'waiting-offline') return answers.waiting
+  if (dot.reason === 'not-sent') return answers.notSent?.n ?? null
+  if (dot.reason === 'lost') return answers.lost
+  return null
 }
 
 /** YAZ-5216: the short form keeps each fact of the words; only the long words of two states change. */
-function shortWords(dot: Omit<Dot, 'short'>, { answers }: DotInput): string {
+function shortWords(dot: Omit<Dot, 'short' | 'bar' | 'count'>, { answers }: DotInput): string {
   if (dot.reason === 'waiting-offline') return `${answers.waiting} waiting · offline`
   if (dot.reason === 'not-sent') return `${answers.notSent!.n} not sent`
   if (dot.reason === 'lost') return `${plural(answers.lost, 'answer', 'answers')} not saved`
   return dot.words
 }
 
-function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short'> {
+function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short' | 'bar' | 'count'> {
   const red =
     token.kind === 'ended'
       ? RED.UNAUTHORIZED

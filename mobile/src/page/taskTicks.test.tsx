@@ -40,7 +40,7 @@ const PATH = 'home/Weekend jobs.md'
 function fakePort() {
   const list: WaitingComment[] = []
   const listeners = new Set<() => void>()
-  const port: CommentsPort & { list: WaitingComment[]; refuse(id: string): void } = {
+  const port: CommentsPort & { list: WaitingComment[]; refuse(id: string): void; settle(id: string): void } = {
     list,
     ready: async () => {},
     waiting: (path) => list.filter((c) => path === undefined || c.path === path),
@@ -64,6 +64,11 @@ function fakePort() {
       c.refused = 'changed'
       for (const l of [...listeners]) l()
     },
+    /** The send settled it (written, or found done already): it leaves the list. */
+    settle(id) {
+      list.splice(list.findIndex((w) => w.id === id), 1)
+      for (const l of [...listeners]) l()
+    },
   }
   return port
 }
@@ -81,10 +86,20 @@ async function page(text: string, port: CommentsPort | null) {
   function Page() {
     const host = useRef<HTMLDivElement>(null)
     const [, setNotice] = useState<string | null>(null)
-    const ticks = useTaskTicks(host, PATH, text, port, (w) => {
-      said.push(w)
-      setNotice(w)
-    })
+    // A tick that settled: the page reads its stored file again (here the same text) and paints from it, as PageView.
+    const ticks = useTaskTicks(
+      host,
+      PATH,
+      text,
+      port,
+      (w) => {
+        said.push(w)
+        setNotice(w)
+      },
+      () => ticksRef.current?.paint(),
+    )
+    const ticksRef = useRef(ticks)
+    ticksRef.current = ticks
     paint = ticks.paint
     useEffect(() => {
       void renderPage(splitFrontmatter(text).body, look, host.current!).then(() => ticks.paint())
@@ -189,6 +204,20 @@ describe('a tap ticks (YAZ-5494)', () => {
     expect(p.said).toEqual([TASK_REFUSED_WORDS.changed])
     expect(seeds.dataset.checked).toBe('false')
     expect(port.discard).toHaveBeenCalledWith('t0')
+  })
+
+  it('lostReply_alreadyInBranch_clearsThePendingTickOnTheOpenPage: a tick settled with no write (the Mac unticked after it) shows the stored file at once (sweep2 S-D)', async () => {
+    const port = fakePort()
+    // The stored file: the Mac's state (Buy seeds not done), the same bytes as before the tap.
+    const p = await page(TASKS_PAGE, port)
+    const seeds = p.box('Buy seeds')
+    await tap(seeds)
+    expect(seeds.dataset.checked).toBe('true')
+    // The retry finds its commit in the branch (W3): the tick leaves the list; nothing is written.
+    await act(async () => port.settle(port.list[0]!.id))
+    expect(seeds.dataset.checked).toBe('false')
+    expect(seeds.getAttribute('aria-checked')).toBe('false')
+    expect(p.said).toEqual([])
   })
 
   it('a waiting tick keeps its state when the page is drawn again before GitHub holds it', async () => {

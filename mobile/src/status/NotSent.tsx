@@ -7,8 +7,10 @@ import { Confirm } from '../screens/Confirm'
  * Copy (the words, to keep them) and Discard (it asks first: they cannot come back). They stay until Discard, so a
  * write is never lost without a word, also when its page is gone and no page shows it. The sheet is its own chunk.
  */
-const WHY: Record<NonNullable<WaitingComment['refused']>, string> = {
+export const WHY_NOT_SENT: Record<NonNullable<WaitingComment['refused']>, string> = {
   gone: 'Its page is gone (deleted or moved on the Mac).',
+  // YAZ-5521 (sweep2 nit 2): the page was copied on the Mac, its `id` with it: the phone cannot tell which one is it.
+  copies: 'Its page has a copy with the same ID.',
   changed: 'The task changed on the Mac.',
   foreign: 'The page uses "comments" for something else.',
   invalid: "The page's properties do not read correctly.",
@@ -52,7 +54,7 @@ function NotSentRow({ item, onDiscard }: { item: WaitingComment; onDiscard: () =
         {words}
         <br />
         <span className="muted">
-          {pageName(item.path)} · {WHY[item.refused ?? 'gone']}
+          {pageName(item.path)} · {WHY_NOT_SENT[item.refused ?? 'gone']}
         </span>
       </span>
       {asking ? (
