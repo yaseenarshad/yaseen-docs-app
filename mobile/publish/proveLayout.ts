@@ -50,6 +50,9 @@ import { freePort } from './freePort'
  *    each); a page's card and a card embed with theirs; the page never scrolls sideways.
  *  - the comment count of a card file (`#fixture=card-strip`, YAZ-5511), light and dark, at 375 px: on the screen above
  *    the card, a 44 px tap, its centre the count's own; a tap brings the comments under the card up.
+ *  - folding (`#fixture=page-folds`, `-folded`, `-all`, `-off`, YAZ-5568), light and dark, at 375 and 320 px: each arrow
+ *    inside the screen, a 44 px button that its arrow's middle hits, a bullet's holding its dot, a task's leaving its
+ *    box to the tick; folded lines turned and their children gone; `folding: false` none; never sideways.
  *  - a link to a heading (`#fixture=page-links`, YAZ-5519 S2) at 320 and 375 px: the heading lands whole under the top
  *    bar, a small gap between.
  *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
@@ -1555,6 +1558,72 @@ if (process.env.LAYOUT_APPEARANCE !== 'no') {
       const ok = m.rows.join() === 'System,Light,Dark' && m.checked === chosen && m.taps && m.bg === BG[look] && m.scheme === look && m.bars.join() === bars.join() && !m.wide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}, the iPhone ${system}, ${chosen} checked: rows ${m.rows.join(' / ')}; checked ${m.checked}; taps ${m.taps ? '44+' : 'SMALL'}; page ${m.scheme} ${m.bg}; bars ${m.bars.join(' ')}${m.wide ? '; SCROLLS SIDEWAYS' : ''}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5568: folding (option A), light and dark, at 375 and 320 px. Each arrow drawn inside the screen; each a 44 px
+// button whose arrow's middle is the button (`elementFromPoint`); a bullet's button holds its dot too; a task's ends at
+// its box, so the box's middle is still the box (a tick); folded: the arrow turned, the lines under it gone; Collapse
+// all leaves the headings, turned; `folding: false`: no arrow; the page never scrolls sideways.
+const FOLDS_CHECK = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const buttons = [...document.querySelectorAll('.reader__body .fold-btn')].filter((b) => b.offsetParent !== null)
+  const onScreen = (y) => y > 60 && y < innerHeight - 60
+  const rows = buttons.map((b) => {
+    const a = r(b.querySelector('svg'))
+    const box = r(b)
+    const cx = a.left + a.width / 2, cy = a.top + a.height / 2
+    const li = b.parentElement.tagName === 'LI' ? b.parentElement : null
+    const task = li && li.querySelector(':scope > .page-task, :scope > p:first-child > .page-task')
+    let dot = null
+    if (li && !task) { const be = getComputedStyle(li, '::before'); const lr = r(li); dot = { x: lr.left + parseFloat(be.left) + parseFloat(be.width) / 2, y: lr.top + parseFloat(be.top) + parseFloat(be.height) / 2 } }
+    const inside = (p) => p.x >= box.left && p.x <= box.right && p.y >= box.top && p.y <= box.bottom
+    const tb = task && r(task)
+    return {
+      label: b.dataset.foldLabel,
+      expanded: b.getAttribute('aria-expanded'),
+      size: Math.round(box.width) + 'x' + Math.round(box.height),
+      arrowIn: a.left >= -0.5 && a.right <= innerWidth + 0.5,
+      hit: !onScreen(cy) || document.elementFromPoint(cx, cy)?.closest('.fold-btn') === b,
+      dot: dot === null ? null : inside(dot),
+      tick: tb ? (!onScreen(tb.top) || document.elementFromPoint(tb.left + tb.width / 2, tb.top + tb.height / 2) === task) : null,
+      arrowX: Math.round(cx),
+    }
+  })
+  const own = (e) => [...e.childNodes].filter((n) => n.nodeType === 3).map((n) => n.textContent).join('').trim()
+  const hidden = (words) => { const el = [...document.querySelectorAll('.reader__body li, .reader__body p')].find((e) => own(e).startsWith(words)); return el ? el.offsetParent === null : null }
+  return { rows, all: document.querySelectorAll('.reader__body .fold-btn').length, beans: hidden('Beans on the fence'), water: hidden('Water early'), first: hidden('North bed first'), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_FOLDS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, hgt] of [[375, 667], [320, 568]] as const) {
+      for (const name of ['page-folds', 'page-folds-folded', 'page-folds-all', 'page-folds-off'] as const) {
+        if ((name === 'page-folds-all' || name === 'page-folds-off') && w !== 375) continue
+        const file = await open(name, w, hgt)
+        const shot = file.replace('.png', `-${scheme}.png`)
+        // The folded tasks in view too (Week 1), for the picture of the folded page.
+        if (name === 'page-folds-folded') await evaluate(`document.querySelector('.screen').scrollTop = 0`)
+        writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        const m = await evaluate(FOLDS_CHECK)
+        type Row = { label: string; expanded: string; size: string; arrowIn: boolean; hit: boolean; dot: boolean | null; tick: boolean | null; arrowX: number }
+        const rows = m.rows as Row[]
+        const each = rows.every((x) => x.size === '44x44' && x.arrowIn && x.hit && x.dot !== false && x.tick !== false)
+        const folded = new Set(rows.filter((x) => x.expanded === 'false').map((x) => x.label))
+        const ok =
+          !m.pageWide &&
+          (name === 'page-folds-off'
+            ? m.all === 0
+            : each &&
+              (name === 'page-folds'
+                ? rows.length === 10 && folded.size === 0 && m.beans === false
+                : name === 'page-folds-folded'
+                  ? folded.has('South bed') && folded.has('Watering') && folded.has('Dig the beds') && m.beans === true && m.water === true && m.first === true
+                  : rows.length === 4 && folded.size === 4))
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at ${w}x${hgt}, ${scheme}: ${m.all} arrows, ${rows.length} shown (${rows.map((x) => `${x.label}${x.expanded === 'false' ? ' folded' : ''} ${x.size}${x.arrowIn ? '' : ' ARROW OFF SCREEN'}${x.hit ? '' : ' TAP MISSES'}${x.dot === false ? ' DOT OUTSIDE' : ''}${x.tick === false ? ' BOX TAKEN' : ''} @${x.arrowX}`).join('; ')}); hidden: Beans ${m.beans}, Water ${m.water}, North bed first ${m.first}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}  ${shot}`)
+      }
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)

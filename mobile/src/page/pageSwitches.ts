@@ -1,4 +1,4 @@
-import { readPageSwitches } from '@shared/pageSwitches'
+import { readFindFolds, readPageSwitches } from '@shared/pageSwitches'
 
 /**
  * THE PAGE'S OWN SWITCHES ON THE PHONE (YAZ-5566): the Mac's page cog keeps its on/off rows IN the page's frontmatter
@@ -10,7 +10,10 @@ import { readPageSwitches } from '@shared/pageSwitches'
  *    lines (`reader.css`, the Mac's `sectionIndent.css`; the depths by `markSections`, the Mac's `sectionDepths`).
  *  - `toc` and `bullet-threading`: nothing to draw on the phone. The Mac's table of contents is a panel beside the page;
  *    the phone's Headings (⋯) is its own list, opened on demand. Threading colours the path to the CARET; the reader has
- *    no caret. `folding` is YAZ-5568.
+ *    no caret.
+ *  - `folding` (default on, YAZ-5568): off, the page has no fold arrows (`folds.ts`): `data-folding="off"`.
+ *  - `find-folds` (default `current`, the Mac's Settings › Editor › Find): how Find in page opens folds
+ *    (`find/FindBar.tsx`): `data-find-folds`.
  * The attributes go on the page's body (`.reader__body`), as the Mac's go on its `.editor-host`.
  */
 export function pageSwitchAttrs(content: string): Record<string, string> {
@@ -18,6 +21,9 @@ export function pageSwitchAttrs(content: string): Record<string, string> {
   const attrs: Record<string, string> = {}
   if (switches['guide-lines'] === false) attrs['data-guide-lines'] = 'off'
   if (switches['section-indent'] === true) attrs['data-section-indent'] = 'true'
+  if (switches.folding === false) attrs['data-folding'] = 'off'
+  const findFolds = readFindFolds(content)
+  if (findFolds !== null) attrs['data-find-folds'] = findFolds
   return attrs
 }
 

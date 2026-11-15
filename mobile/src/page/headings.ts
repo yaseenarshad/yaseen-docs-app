@@ -1,5 +1,6 @@
 import { FLASH_FRAMES, FLASH_MS, reducedMotion } from '@client/editor/toc/tocMotion'
 import { DEEPEST_TOC_LEVEL, ENOUGH_ROWS } from '@client/editor/toc/tocChannel'
+import { revealFolds } from './folds'
 
 /**
  * A DRAWN PAGE'S HEADINGS: the rows of the headings list, the heading a link names, and the landing.
@@ -71,8 +72,12 @@ export function landingTop(scroller: HTMLElement, element: HTMLElement | Range, 
   return Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, scroller.scrollTop + top - scroller.getBoundingClientRect().top - offset))
 }
 
-/** Lands on `element` in its `.screen` (the only scroller), then the Mac's one flash (none with Reduce Motion). */
+/**
+ * Lands on `element` in its `.screen` (the only scroller), then the Mac's one flash (none with Reduce Motion). YAZ-5568:
+ * the folds that hide it open first (a link, the Headings list, a same-page `#heading`), so it is on the screen.
+ */
 export function landOn(element: HTMLElement, scroller: HTMLElement | null = element.closest<HTMLElement>('.screen')): void {
+  revealFolds(element)
   if (scroller !== null) scroller.scrollTop = landingTop(scroller, element)
   if (typeof element.animate === 'function' && !reducedMotion()) element.animate(FLASH_FRAMES, { duration: FLASH_MS, easing: 'ease-out' })
 }

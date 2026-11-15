@@ -14,6 +14,8 @@ import { fillCardEmbeds, tapOf } from '../page/pageDom'
 import { UNTITLED_CARD, drawCard, pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
 import { headingTarget, landOn } from '../page/headings'
+import { attachFolds, revealFolds, type PageFolds } from '../page/folds'
+import { readPageSwitches } from '@shared/pageSwitches'
 import { openLink, type LinkDoor } from '../page/openLink'
 import { LinkedMentions } from '../page/LinkedMentions'
 import { boardKindOf, boardLabel } from '../drawing/boardFiles'
@@ -78,7 +80,9 @@ export function useSheetTap(data: VaultData | null, say: (words: string) => void
     if (tap.kind === 'go') openLink(door, tap.target)
     else if (tap.kind === 'heading') {
       const root = event.currentTarget as HTMLElement
-      headingTarget(root, tap.heading)?.scrollIntoView?.({ block: 'start' })
+      const target = headingTarget(root, tap.heading)
+      if (target !== null) revealFolds(target)
+      target?.scrollIntoView?.({ block: 'start' })
     } else if (tap.kind === 'none') return
     else {
       const words = await openMediaFile(media, tap.path)
@@ -110,6 +114,9 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
   const [sameTitle, setSameTitle] = useState(false)
   const drawn = useRef<string | null>(null)
   const landed = useRef(false)
+  // YAZ-5568: a panel folds as the page does (the page's `folding: false` too); its folds last while it is open.
+  const folds = useRef<PageFolds | null>(null)
+  useEffect(() => () => folds.current?.destroy(), [])
 
   useEffect(() => {
     const el = host.current
@@ -126,10 +133,18 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       await fillCardEmbeds(into, data, app.services.store, door, () => live)
       if (!live) return
       el.replaceChildren(...into.childNodes)
+      const kept = folds.current?.folded() ?? []
+      folds.current?.destroy()
+      folds.current = readPageSwitches(content).folding === false ? null : attachFolds(el, { title, initial: kept })
+      folds.current?.apply()
       const head = el.firstElementChild
       // S2 (sweep1): the title hides before the card asked for is landed on (it leaves the flow; the page moves up).
       flushSync(() => setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase()))
-      if (at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
+      const card = at === undefined ? null : el.querySelector<HTMLElement>(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)
+      if (card !== null) {
+        revealFolds(card)
+        card.scrollIntoView?.({ block: 'start' })
+      }
       onDrawn()
       // A link that named a heading (`[[Long notes#Part 40]]`) lands on it in the sheet, as full screen.
       // Only the first drawing, at the top (not a sheet drawn again at its kept place): a new version keeps the place.

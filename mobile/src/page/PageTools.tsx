@@ -4,6 +4,7 @@ import { useOverlay } from '../app/browserHistory'
 import { useMenuToggle } from '../app/menuToggle'
 import { useCopyPath } from '../screens/copyPath'
 import { MenuTitle, isCut } from './menuTitle'
+import type { PageFolds } from './folds'
 import './find/pageTools.css'
 
 /**
@@ -41,7 +42,16 @@ export interface ToolsFor {
   label?: string
   find?: string
   headings?: boolean
+  /** YAZ-5568: the page's folds (none: the page does not fold, `folding: false`, a card): "Collapse all" / "Expand all". */
+  folds?: PageFolds | null
 }
+
+/** The Mac's fold-all icons (`FoldAllButton.tsx`'s shape): two chevrons up to collapse, down to expand. */
+const foldAllIcon = (collapse: boolean) => (
+  <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d={collapse ? 'M4.5 7 8 4l3.5 3M4.5 12 8 9l3.5 3' : 'M4.5 4 8 7l3.5-3M4.5 9 8 12l3.5-3'} />
+  </svg>
+)
 
 export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor): { button: ReactNode; bar: ReactNode; sheet: ReactNode } {
   const { label = 'Page tools', find = 'Find in page', headings = true } = file
@@ -61,6 +71,12 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
   const toggle = () => {
     if (!menu) setCut(isCut(box.current?.closest('.topbar')?.querySelector('.topbar__title')))
     setMenu(!menu)
+  }
+  // Read as the menu draws (it draws again each time it opens).
+  const foldNext = menu && file.folds != null ? file.folds.next() : 'none'
+  const foldAll = () => {
+    setMenu(false)
+    file.folds?.setAll(foldNext === 'collapse')
   }
   const { copyPath, layer } = useCopyPath()
   const copy = async () => {
@@ -87,6 +103,15 @@ export function usePageTools(host: RefObject<HTMLElement | null>, file: ToolsFor
               {headings && (
                 <button type="button" role="menuitem" className="page-tools__item" onClick={() => pick('headings')}>
                   <span aria-hidden="true">☰</span> Headings
+                </button>
+              )}
+              {/* YAZ-5568: the Mac's fold-all button's rule: Collapse all while anything is open, else Expand all. */}
+              {foldNext !== 'none' && (
+                <button type="button" role="menuitem" className="page-tools__item" onClick={foldAll}>
+                  <span aria-hidden="true" className="page-tools__icon">
+                    {foldAllIcon(foldNext === 'collapse')}
+                  </span>{' '}
+                  {foldNext === 'collapse' ? 'Collapse all' : 'Expand all'}
                 </button>
               )}
             </>

@@ -23,6 +23,8 @@ import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
 import { renderPage } from './pageRender'
 import { markSections, pageSwitchAttrs } from './pageSwitches'
+import { attachFolds, revealFolds, type PageFolds } from './folds'
+import { moveFolds, readFolds, writeFolds } from '../store/foldPref'
 import { PageComments, PageCommentsCount, useCommentsPort } from './comments/PageComments'
 import { hasUnsentDraft } from './comments/unsentDrafts'
 import { useTaskTicks } from './taskTicks'
@@ -82,11 +84,29 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   const cardMenu = usePageCardMenu(host, { path, answers, upNext: data?.review.enabled === true })
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
-  // "⋯" → Find in page, Headings (each a lazy chunk); YAZ-5498: the full title when the top bar cuts it.
-  const tools = usePageTools(host, { title, path })
   // The page's own Guide lines and Section indent, from its frontmatter (`pageSwitches.ts`).
   const switches = useMemo(() => (typeof text === 'string' ? pageSwitchAttrs(text) : {}), [text])
   const sectionIndent = switches['data-section-indent'] === 'true'
+  // YAZ-5568: the Mac's folding, on unless the page says `folding: false`; the folds kept on this phone, by vault and path.
+  const foldingOn = switches['data-folding'] !== 'off'
+  const folds = useRef<PageFolds | null>(null)
+  const [foldsNow, setFoldsNow] = useState<PageFolds | null>(null)
+  useEffect(() => {
+    const el = host.current
+    if (el === null || !foldingOn) return
+    const made = attachFolds(el, { title, initial: readFolds(vault, path), onChange: (keys) => writeFolds(vault, path, keys) })
+    folds.current = made
+    setFoldsNow(made)
+    // The page is on the screen already (a page whose `folding` came back on): its arrows now.
+    made.apply()
+    return () => {
+      made.destroy()
+      if (folds.current === made) folds.current = null
+      setFoldsNow(null)
+    }
+  }, [vault, path, title, foldingOn])
+  // "⋯" → Find in page, Headings (each a lazy chunk), Collapse all; YAZ-5498: the full title when the top bar cuts it.
+  const tools = usePageTools(host, { title, path, folds: foldsNow })
   // The Mac's properties chip at the right of the title; the rows open under it, in the page.
   const props = usePageProperties({ path, record, data, door, slot: sameTitle ? propsSlot : null })
 
@@ -118,7 +138,10 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
           return
         }
         const renamed = diff.renamed.find((r) => r.from === path)
-        if (renamed !== undefined) setPath(renamed.to)
+        if (renamed !== undefined) {
+          moveFolds(vault, path, renamed.to)
+          setPath(renamed.to)
+        }
         else if (diff.changed.includes(path)) setReads((n) => n + 1)
       }),
     [sync, vault, path, title, app],
@@ -171,7 +194,10 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       // swapped in at once. Before, the page shrank to its first slice under the finger, the scroll place jumped, and
       // the embedded cards came again one by one: the page "hung" while the person scrolled.
       const into = first ? el : document.createElement('div')
-      await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, uiSlicer(), () => live)
+      // YAZ-5568: each slice of a long page gets its arrows and its folds as it comes (a section runs across slices).
+      const slicer = uiSlicer()
+      const slice = first ? async () => (folds.current?.scan(), await slicer()) : slicer
+      await renderPage(splitFrontmatter(text).body, { ...pageLook(data, path), tables: look.table }, into, slice, () => live)
       if (!live) return
       markSections(into, sectionIndent)
       if (!first) {
@@ -180,6 +206,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         el.replaceChildren(...into.childNodes)
       }
       ticksRef.current.paint()
+      folds.current?.apply()
       const head = el.firstElementChild
       // S2 (sweep1): the reader's own title hides NOW when the page's H1 says it (`--same` takes it out of the flow, and
       // the page moves up by its height). A landing measured before React drew that put the heading under the top bar.
@@ -204,7 +231,11 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         if (target !== null) landOn(target)
         else if (scroller !== null) scroller.scrollTop = 0
       }
-      if (first && at !== undefined) target?.scrollIntoView?.({ block: 'start' })
+      if (first && at !== undefined && target !== null) {
+        // A card in a folded part: its folds open first.
+        revealFolds(target)
+        target.scrollIntoView?.({ block: 'start' })
+      }
       const landed = scroller?.scrollTop
       if (first) await fillCardEmbeds(el, data, store, doorRef.current, () => live)
       if (!live) return

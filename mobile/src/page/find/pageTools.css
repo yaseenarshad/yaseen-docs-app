@@ -59,6 +59,12 @@
   text-align: left;
   cursor: pointer;
 }
+/* YAZ-5568: the fold-all row's icon, in the column of the other rows' glyphs. */
+.page-tools__icon {
+  display: inline-flex;
+  width: 1.25em;
+  justify-content: center;
+}
 .page-tools__item:active {
   background: var(--bg-side);
 }
