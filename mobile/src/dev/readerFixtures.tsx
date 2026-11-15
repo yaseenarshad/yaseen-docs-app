@@ -16,8 +16,9 @@ import { remember } from '../search/recent'
  * on the chip; `page-copy-by-hand` the path to copy by hand (the clipboard says no); `page-last` the last page (its
  * "next" side dim); `card-next` a card after one step of its arrows. The clipboard is a fake: nothing reaches the
  * phone's real one.
+ * YAZ-5474: `search-collapsed` the tree after "Collapse all folders" in the box, its Expand all icon at the right end.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'search-favorites', 'search-focus', 'search-ids', 'search-recent', 'search-collapsed'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -86,7 +87,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
   const extra: Record<string, string | Uint8Array> =
     name === 'page-tricks'
       ? { 'Parser tricks.md': `---\ntitle: Parser tricks\n---\n# Parser tricks\n\n${TRICKS}\n\nAfter the comment.\n` }
-      : name === 'page-cards' || name === 'search-tree' || name === 'search-found'
+      : name === 'page-cards' || name === 'search-tree' || name === 'search-found' || name === 'search-collapsed'
         ? { 'travel/Rivers of Europe.md': `---\ntitle: Rivers of Europe\n---\n\n${THREE_CARDS}\n`, 'travel/2026/Madrid days.md': '---\ntitle: Madrid days\n---\n\nDay one.\n' }
         : name === 'page-code'
           ? { 'Code notes.md': `---\ntitle: Code notes\n---\n\n${CODE_PAGE}\n` }
@@ -216,6 +217,16 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
         press(folder)
         await wait(80)
       }
+      break
+    case 'search-collapsed':
+      // YAZ-5474: folders opened to two depths, then "Collapse all folders" in the box: all closed, the box shows Expand all.
+      for (const folder of [/^travel, folder/, /^2026, folder/, /^cards, folder/]) {
+        press(folder)
+        await wait(80)
+      }
+      await until(() => document.querySelector('.search__fold') !== null)
+      press('Collapse all folders')
+      await until(() => document.querySelector('[aria-label="Expand all folders"]') !== null)
       break
     case 'search-found':
       // YAZ-5447: the matches in the tree: a page two folders down, a card under its page, the typed text marked.

@@ -15,6 +15,8 @@ const ResultList = lazy(() => import('../search/SearchTree').then((m) => ({ defa
 const ResultTree = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.ResultTree })))
 /** The filter bar: Type and the vault's lists (YAZ-5452), the same chunk. */
 const SearchBar = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.SearchBar })))
+/** Collapse all / Expand all in the box (YAZ-5474), the same chunk. */
+const FoldButton = lazy(() => import('../search/SearchTree').then((m) => ({ default: m.FoldButton })))
 
 /** Rows drawn at first, and added at each "Show more" (5,000 pages are not drawn at once). */
 const STEP = 100
@@ -33,6 +35,7 @@ const STEP = 100
  * and the tree shows again.
  * YAZ-5447: with text, the results stand in that tree, as on the Mac's Search tab (`ResultTree`, `foundTree.ts`).
  * YAZ-5452: a list filter (Favorites, `SearchBar`) cuts the rows to that list before the search, so the text finds only in it.
+ * YAZ-5474: with an empty box, the ✕'s place holds the Mac's Collapse all / Expand all (`folds.tsx`).
  */
 export function Search() {
   const app = useApp()
@@ -138,10 +141,18 @@ export function Search() {
           }
         }}
       />
-      {query !== '' && (
+      {query !== '' ? (
         <button type="button" className="search__clear" aria-label="Clear search" onClick={leave}>
           <span aria-hidden>✕</span>
         </button>
+      ) : (
+        tree &&
+        data !== null &&
+        data.records.length > 0 && (
+          <Suspense fallback={null}>
+            <FoldButton data={data} scope={scope} />
+          </Suspense>
+        )
       )}
       </div>
       <Suspense fallback={<div className="search__bar" />}>

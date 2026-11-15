@@ -12,9 +12,11 @@ import { ICON_KIND, RowIcon } from './rowIcon'
 import { buildTree, visibleRows, type TreeRow } from './vaultTree'
 import type { Scope } from './lists'
 import { ListTree } from './ListTree'
+import { bumpFolds, useFolds } from './folds'
 import { rowId, useIdsForm } from './showIds'
 
 export { SearchBar } from './SearchBar'
+export { FoldButton } from './folds'
 
 /** Where a tree row opens: a page in the reader; a card file in the card view. */
 export function treeRoute(row: TreeRow): Route {
@@ -39,7 +41,8 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
   const ids = useIdsForm(data)
   useEffect(forgetFlips, [])
   const open = openFoldersOf(app.vaultKey)
-  const [turn, setTurn] = useState(0)
+  // YAZ-5474: a fold here, or Collapse all / Expand all in the box, draws the tree again.
+  const turn = useFolds()
   const tree = useMemo(() => buildTree(data.records, data.folders), [data])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const rows = useMemo(() => visibleRows(tree, open, cards ? undefined : (r) => r.kind !== 'card'), [tree, open, cards, turn])
@@ -47,7 +50,7 @@ function FullTree({ data, cards, shown, onMore }: { data: VaultData; cards: bool
     (path: string) => {
       if (open.has(path)) open.delete(path)
       else open.add(path)
-      setTurn((n) => n + 1)
+      bumpFolds()
     },
     [open],
   )
