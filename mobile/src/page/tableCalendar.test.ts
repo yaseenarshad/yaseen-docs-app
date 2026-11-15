@@ -268,6 +268,58 @@ describe('the next time slot (YAZ-5541)', () => {
   })
 })
 
+describe('the next time slot at the day\'s edges (YAZ-5557)', () => {
+  const on = calendarLook({ nextShade: true })
+  const marks = (t: HTMLTableElement) => ({ now: rowsOf(t, 'table-now-row'), next: rowsOf(t, 'table-next-row'), past: rowsOf(t, 'table-past-row') })
+  /** A night: rows after midnight count on (the 12:00 am row is the next day). */
+  const NIGHT = table(['| 10:00 pm | a |', '| 11:00 pm | b |', '| 12:00 am | c |', '| 1:00 am | d |'], '<!-- table: calendar 60m -->')
+
+  it('after midnight: the next slot of 11:40 pm is the 12:00 am row; at 12:20 am the 1:00 am row', async () => {
+    const t = (await draw(NIGHT)).querySelector('table')!
+    markCalendar(t, at(23, 40), on)
+    expect(marks(t)).toEqual({ now: [2], next: [3], past: [1] })
+    markCalendar(t, at(0, 20), on)
+    expect(marks(t)).toEqual({ now: [3], next: [4], past: [1, 2] })
+  })
+
+  it('the day ends: now in the last row (after midnight too) and after the last slot, no next row', async () => {
+    const t = (await draw(NIGHT)).querySelector('table')!
+    markCalendar(t, at(1, 30), on)
+    expect(marks(t)).toEqual({ now: [4], next: [], past: [1, 2, 3] })
+    // 2:30 am: after the last slot (it ended at 2:00 am); before 10 pm today, so the first slot is the next to come.
+    markCalendar(t, at(2, 30), on)
+    expect(marks(t)).toEqual({ now: [], next: [1], past: [] })
+    // A day that ends at 6 pm: at 7 pm every row is past and none is next.
+    const day = (await draw(table(['| 4:00 pm | a |', '| 5:00 pm | b |'], '<!-- table: calendar 60m -->'))).querySelector('table')!
+    markCalendar(day, at(19, 0), on)
+    expect(marks(day)).toEqual({ now: [], next: [], past: [1, 2] })
+  })
+
+  it('now in the last row, with a row of no time under it: that row is next (as the Mac); with nothing under it, none', async () => {
+    const t = (await draw(table(['| 9:00 am | a |', '| 9:30 am | b |', '| Notes | c |'], '<!-- table: calendar 30m -->'))).querySelector('table')!
+    markCalendar(t, at(9, 45), on)
+    expect(marks(t)).toEqual({ now: [2], next: [3], past: [1] })
+    const last = (await draw(table(['| 9:00 am | a |', '| 9:30 am | b |'], '<!-- table: calendar 30m -->'))).querySelector('table')!
+    markCalendar(last, at(9, 59), on)
+    expect(marks(last)).toEqual({ now: [2], next: [], past: [1] })
+  })
+
+  it('a folded run: the phone draws no fold (every row of the run shows), so the next row is the row right after the now row', async () => {
+    const times = ['5:00 pm', '5:30 pm', '6:00 pm', '6:30 pm', '7:00 pm'].map((time) => `| ${time} | |`)
+    const t = (await draw(table(times, '<!-- table: fold 3-5, calendar 30m -->'))).querySelector('table')!
+    expect([t.rows.length, [...t.rows].every((row) => !row.hidden)]).toEqual([6, true])
+    // Now in the run's rows: the next is the row under it, also inside the run (each is on the screen).
+    markCalendar(t, at(18, 15), on)
+    expect(marks(t)).toEqual({ now: [3], next: [4], past: [1, 2] })
+    // Now right above the run: its first row.
+    markCalendar(t, at(17, 10), on)
+    expect(marks(t)).toEqual({ now: [1], next: [2], past: [] })
+    // Now in the run's last row, the table's last: none.
+    markCalendar(t, at(19, 10), on)
+    expect(marks(t)).toEqual({ now: [5], next: [], past: [1, 2, 3, 4] })
+  })
+})
+
 describe('the look settings: the Mac defaults, through one function (YAZ-5493, for YAZ-5487)', () => {
   it("are the Mac's DEFAULT_SETTINGS", () => {
     expect(MAC_CALENDAR_LOOK).toEqual({
