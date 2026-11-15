@@ -2152,9 +2152,13 @@
   color: var(--fg);
 }
 
-/* Seven equal columns that may shrink below their cards: a long title ellipses, the page never scrolls sideways. */
+/* Seven equal columns that may shrink below their cards: a long title ellipses, the page never scrolls sideways.
+   The grid and its week rows never shrink in height (YAZ-5588 round 2): a row is as tall as its tallest day (its
+   "+N more", or every card with "Fold long days" off, wrapped titles too) and the page (Month) or the grid (Rolling)
+   scrolls. A squeezed row stops at its 104px and its cards spill into the next week. */
 .view-cal__grid {
   display: flex;
+  flex: none;
   flex-direction: column;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -2164,6 +2168,7 @@
 
 .view-cal__week {
   display: grid;
+  flex: none;
   grid-template-columns: repeat(7, minmax(0, 1fr));
 }
 
