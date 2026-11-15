@@ -33,6 +33,10 @@
  *    contents, the widths, "Turn into a card file", …) and Collapse all are not there: a card has none of them.
  *  - ⌘F (YAZ-5378): the page's find bar, over the title and the card as the tab shows them (`cardFind.ts`, the page's
  *    own card search), the Edit card editor's text while it is open.
+ *  - COMMENTS (YAZ-5466): the page's one comments block (`CommentsSection`, the file's front matter `comments`), under the
+ *    card and its strip, where a page has it: write, reply, edit your own, resolve, delete, the order setting. `comments`
+ *    is the file's (decision D): it stays in the front matter beside `kind: card`, never on the card line, never a card
+ *    property. While the tab is locked, each comment write asks "Allow edits?" first and goes on once allowed.
  *  - ON DISK: the tab reads the file again on each new index version, as the card window does. A file that lost
  *    `kind: card` goes back to the page view (`onPage`, with the bytes just read); a second card is the notice above.
  */
@@ -44,7 +48,8 @@ import { isPageReadOnly, setPageReadOnly } from '@shared/readOnly'
 import { tellReadOnlyEdit } from './readOnlyEdit'
 import { withCardNext, type CardReview } from '@shared/cardLine'
 import type { ReviewSettings } from '@shared/reviews'
-import type { FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
+import type { CommentsOrder, FileResponse, GithubSyncStatus, ZoomStep } from '@shared/types'
+import { CommentsSection } from '../comments/CommentsSection'
 import type { SaveStatus } from '../lib/autosave'
 import { transformFile } from '../views/writeProperty'
 import { api, BridgeRequestError } from '../api'
@@ -105,6 +110,9 @@ export interface CardFileViewProps {
   /** The top bar's sync chip (YAZ-5102), as a page's: App's `useGithubSync`. */
   sync?: GithubSyncStatus | null
   onSyncNow?: () => void
+  /** The comments' order (YAZ-5466): the app's one setting, as a page's block reads it. Absent: no comments block. */
+  commentsOrder?: CommentsOrder
+  onChangeCommentsOrder?: (order: CommentsOrder) => void
 }
 
 const NO_CANDIDATES: WikilinkCandidateSource = { candidates: [], subscribe: () => () => undefined }
@@ -126,7 +134,7 @@ function folderOf(root: string, path: string): string {
   return folder === '' ? base.slice(base.lastIndexOf('/') + 1) : folder.split('/').join(' / ')
 }
 
-export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow }: CardFileViewProps) {
+export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOnlyLinks, onOpenFile, onOpenLink, onOpenExplore, exploreOnClick, onNotice = quiet, onPage, onRetitle, onReread, sync, onSyncNow, commentsOrder, onChangeCommentsOrder }: CardFileViewProps) {
   const unit = useUnit()
   const path = file.path
   const [content, setContent] = useState<string | null>(file.content)
@@ -339,6 +347,13 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
         onLock: unlock.lock,
         onReturn: giveKeysBack,
       }
+  /** A comment write while locked (YAZ-5466): the chip's "Allow edits?" box at once; the write goes on once allowed. */
+  const askToEdit = !locked
+    ? undefined
+    : (resume?: () => void) => {
+        if (bodyRef.current !== null) tellReadOnlyEdit(bodyRef.current, 'card', resume)
+        setAsking(true)
+      }
   const cardText = card?.text ?? ''
   const propertyCount = Object.keys(card?.properties ?? {}).length
   const propertiesLabel = propertyCount > 0 ? `Properties (${propertyCount})` : 'Properties'
@@ -419,6 +434,8 @@ export function CardFileView({ file, root, wikilinks, wikilinkCandidates, viewOn
               }
             />
           )}
+          {/* YAZ-5466: the page's comments block, under the card and its strip; the file's front matter is its store. */}
+          {commentsOrder !== undefined && onChangeCommentsOrder !== undefined && <CommentsSection file={{ path, content }} order={commentsOrder} onChangeOrder={onChangeCommentsOrder} root={root} askToEdit={askToEdit} />}
         </div>
       </div>
     </>

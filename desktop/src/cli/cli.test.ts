@@ -1414,3 +1414,39 @@ describe('no card check (YAZ-5116: removed)', () => {
     expect(await rows('capital-of-italy-yaz-11.md')).toEqual([['YAZ-11', 'Capital of Italy']])
   })
 })
+
+/** YAZ-5466: comments on a card file, from the CLI: the file's front matter, the card block and line byte for byte. */
+describe('comments on a card file (YAZ-5466)', () => {
+  it('card new --prop, then comment, reply, edit and delete: the card part stays byte for byte; `card add` still refuses it', async () => {
+    const root = await vault('cards', { 'Cards/.keep': '' })
+    const made = JSON.parse((await run(['card', 'new', path.join(root, 'Cards'), '--title', 'Rivers, of Seville', '--prop', 'tags=rivers', '--prop', 'source=Atlas, 2nd ed.', '--body', 'Q\n---\nA', '--json'])).out) as { path: string }
+    const before = await readFile(made.path, 'utf8')
+    const card = before.slice(before.indexOf('```card'))
+    expect((await run(['comment', made.path, '--body', 'Is this right?'])).out).toBe(`#1 added to ${made.path}\n`)
+    expect((await run(['comment', made.path, '--reply-to', '1', '--body', 'Yes, it is.'])).code).toBe(0)
+    expect((await run(['edit', made.path, '#1', '--body', 'Is this right, really?'])).code).toBe(0)
+    let after = await readFile(made.path, 'utf8')
+    expect(after.startsWith('---\nkind: card\ncomments:\n')).toBe(true)
+    expect(after.slice(after.indexOf('```card'))).toBe(card)
+    expect(readComments(after).map((c) => c.body)).toEqual(['Is this right, really?', 'Yes, it is.'])
+    // Never a card property, in the index.
+    const record = await scanFile(root, made.path)
+    expect(record.kind).toBe('card')
+    expect(record.properties).not.toHaveProperty('comments')
+    expect(record.cards?.[0].properties).toEqual({ tags: 'rivers', source: 'Atlas, 2nd ed.' })
+    expect((await run(['delete', made.path, '#1'])).code).toBe(0)
+    after = await readFile(made.path, 'utf8')
+    expect(readComments(after)).toEqual([])
+    expect(after.slice(after.indexOf('```card'))).toBe(card)
+    expect((await run(['card', 'add', made.path, '--body', 'x'])).code).not.toBe(0)
+  })
+
+  it('a Windows (CRLF) card file keeps its line ends and its card part through a CLI comment', async () => {
+    const root = await vault('crlf', { 'river.md': '---\r\nkind: card\r\n---\r\n```card\r\nQ\r\n---\r\nA\r\n```\r\n<!-- card: YAZ-3, title "River" -->\r\n' })
+    const p = path.join(root, 'river.md')
+    expect((await run(['comment', p, '--body', 'From Windows'])).code).toBe(0)
+    const after = await readFile(p, 'utf8')
+    expect(after.replace(/\r\n/g, '')).not.toContain('\n')
+    expect(after.endsWith('```card\r\nQ\r\n---\r\nA\r\n```\r\n<!-- card: YAZ-3, title "River" -->\r\n')).toBe(true)
+  })
+})

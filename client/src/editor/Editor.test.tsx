@@ -330,6 +330,12 @@ describe('the card file route (YAZ-5037 phase 3)', () => {
     expect(createCrepeMock).not.toHaveBeenCalled()
   })
 
+  it('YAZ-5466: the card file tab (and so Explore`s card file, the same editor) gets the comments order setting and its door', async () => {
+    await mount(CARD_FILE)
+    expect(cardTab.props?.commentsOrder).toBe('oldest')
+    expect(typeof cardTab.props?.onChangeCommentsOrder).toBe('function')
+  })
+
   it('a page (another `kind`, or none) still gets the page editor', async () => {
     const view = await mount('---\nkind: page\n---\n```card\nQ\n```\n')
     expect(view.querySelector('[data-card-file-stub]')).toBeNull()

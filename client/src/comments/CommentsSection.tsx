@@ -61,6 +61,12 @@ export interface CommentsSectionProps {
   onChangeOrder: (order: CommentsOrder) => void
   /** The vault the page is in (YAZ-4615 D1): whose people file names the writers. Null shows handles only. */
   root?: string | null
+  /**
+   * Present only while the file is Read only (YAZ-5466, a card file's tab): every write — a comment, a reply, Edit,
+   * Resolve or Reopen, Undo, Delete, and typing in a comment field — asks "Allow edits?" through this first, and
+   * `resume` carries on once the person allows edits. Absent: the block writes as it always has.
+   */
+  askToEdit?: (resume?: () => void) => void
 }
 
 interface Snapshot {
@@ -172,7 +178,7 @@ const toggled = (set: ReadonlySet<string>, id: string): Set<string> => {
   return next
 }
 
-export function CommentsSection({ file, order, onChangeOrder, root = null }: CommentsSectionProps) {
+export function CommentsSection({ file, order, onChangeOrder, root = null, askToEdit }: CommentsSectionProps) {
   const { me, resolvedPlace, openProfile } = useContext(CommentPrefsContext)
   const people = usePeople(root)
   const [snap, setSnap] = useState<Snapshot>(() => ({ seen: file.content, content: file.content }))
@@ -196,6 +202,35 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const now = useClock()
+  const sectionRef = useRef<HTMLElement>(null)
+  // Read only (YAZ-5466): read at the moment of each attempt, so an action resumed after "Allow edits" never asks twice.
+  const askRef = useRef(askToEdit)
+  askRef.current = askToEdit
+  /** True when Read only asked "Allow edits?" instead; `resume` runs once allowed. */
+  const asked = (resume?: () => void): boolean => {
+    const ask = askRef.current
+    if (ask === undefined) return false
+    ask(resume)
+    return true
+  }
+  /** `action`, or, while Read only, "Allow edits?" first and then `action`. */
+  const gated = (action: () => void) => () => {
+    if (!asked(action)) action()
+  }
+  // Typing (or pasting) in a comment field while Read only types nothing and asks; once allowed, the field has the keys back.
+  useEffect(() => {
+    const section = sectionRef.current
+    if (section === null) return
+    const onInput = (event: Event) => {
+      const field = event.target instanceof HTMLElement ? event.target.closest('textarea, input') : null
+      if (field === null || askRef.current === undefined) return
+      event.preventDefault()
+      asked(() => (field as HTMLElement).focus())
+    }
+    section.addEventListener('beforeinput', onInput, true)
+    return () => section.removeEventListener('beforeinput', onInput, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reads the ask through its ref
+  }, [])
   useEffect(() => () => {
     if (undoTimer.current !== null) clearTimeout(undoTimer.current)
   }, [])
@@ -302,13 +337,13 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
         folded={folded.has(comment.id)}
         editing={inline?.kind === 'edit' && inline.id === comment.id}
         onToggleFold={() => setFolded((s) => toggled(s, comment.id))}
-        onReply={onReply}
-        onToggleResolved={() => void toggleResolved(comment, label)}
-        onEdit={() => {
+        onReply={onReply === undefined ? undefined : gated(onReply)}
+        onToggleResolved={gated(() => void toggleResolved(comment, label))}
+        onEdit={gated(() => {
           setFolded((s) => (s.has(comment.id) ? toggled(s, comment.id) : s))
           setInline({ kind: 'edit', id: comment.id })
-        }}
-        onDelete={() => setConfirming({ id: comment.id, label, replies })}
+        })}
+        onDelete={gated(() => setConfirming({ id: comment.id, label, replies }))}
         onSave={async (draft) => {
           // Save is against the comment as it was opened: gone or changed underneath → refuse, never clobber.
           const ok = await write((fresh) => {
@@ -322,6 +357,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
           return ok
         }}
         onCancel={closeInline}
+        asked={asked}
       />
     )
   }
@@ -331,7 +367,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
       <Check />
       <span>Resolved {label ?? ''}</span>
       <span aria-hidden>·</span>
-      <button type="button" className="comments__undo-btn" disabled={saving} onClick={() => undo(id)}>
+      <button type="button" className="comments__undo-btn" disabled={saving} onClick={gated(() => undo(id))}>
         Undo
       </button>
     </div>
@@ -370,7 +406,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
               </>
             )}
             {/* One rule (audit 19): a resolved thread takes no new reply — Reopen it first. */}
-            {!isResolved(comment) && <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} collapsible onSubmit={(draft) => add(draft, comment.id)} />}
+            {!isResolved(comment) && <Composer placeholder="Reply…" submitLabel="Reply" saving={saving} asked={asked} collapsible onSubmit={(draft) => add(draft, comment.id)} />}
           </div>
         )}
         {!threaded && opened && (
@@ -379,6 +415,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
               placeholder="Reply…"
               submitLabel="Reply"
               saving={saving}
+              asked={asked}
               onSubmit={async (draft) => {
                 const ok = await add(draft, comment.id)
                 if (ok) closeInline()
@@ -405,7 +442,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const listed = threads.filter((t) => !bottom || !isResolved(t.comment) || t.comment.id === justResolved?.id)
 
   return (
-    <section className="comments" onClick={onClick}>
+    <section ref={sectionRef} className="comments" onClick={onClick}>
       <div className="comments__bar">
         <button type="button" className="comments__header" aria-expanded={expanded} onClick={() => setExpanded((open) => !open)}>
           <Chevron />
@@ -453,7 +490,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
                 </div>
               )}
               {/* The composer stays at the BOTTOM whichever way the list reads (YAZ-1515: Yasin's call on the demo). */}
-              <Composer placeholder="Leave a comment…" submitLabel="Comment" saving={saving} onSubmit={(draft) => add(draft)} me={me} onOpenProfile={openProfile} />
+              <Composer placeholder="Leave a comment…" submitLabel="Comment" saving={saving} asked={asked} onSubmit={(draft) => add(draft)} me={me} onOpenProfile={openProfile} />
               {/* D5: the Resolved group, folded until opened; under the composer, so the open stream and its box stay together. */}
               {done.length > 0 && (
                 <div className="comments__resolved" ref={groupRef}>
@@ -522,6 +559,7 @@ function CommentItem({
   onDelete,
   onSave,
   onCancel,
+  asked,
 }: {
   comment: PageComment
   /** `#3` / `#3.1`, or null for a dot. */
@@ -542,6 +580,8 @@ function CommentItem({
   onDelete: () => void
   onSave: (draft: Draft) => Promise<boolean>
   onCancel: () => void
+  /** Read only's ask (YAZ-5466): true when it asked instead of saving. */
+  asked: (resume?: () => void) => boolean
 }) {
   const at = comment.at === '' ? null : parsed(comment.at)
   const edited = comment.edited === undefined ? null : parsed(comment.edited)
@@ -617,7 +657,7 @@ function CommentItem({
         </div>
       </div>
       {editing ? (
-        <Composer initial={{ body: comment.body, title: title ?? '' }} placeholder="Edit…" submitLabel="Save" saving={saving} onSubmit={onSave} onCancel={onCancel} />
+        <Composer initial={{ body: comment.body, title: title ?? '' }} placeholder="Edit…" submitLabel="Save" saving={saving} asked={asked} onSubmit={onSave} onCancel={onCancel} />
       ) : (
         // Sanitised HTML from `commentHtml`: Markdown in, document markup out, nothing that can run.
         !closed && foldable && <div className="comments__body" dangerouslySetInnerHTML={{ __html: commentHtml(below) }} />
@@ -646,6 +686,7 @@ function Composer({
   onCancel,
   me,
   onOpenProfile,
+  asked,
 }: {
   placeholder: string
   submitLabel: string
@@ -660,6 +701,8 @@ function Composer({
   /** The bottom seat only: who you comment as. Undefined elsewhere. */
   me?: CommentProfile | null
   onOpenProfile?: () => void
+  /** Read only's ask (YAZ-5466): true when it asked "Allow edits?" instead; the submit runs again once allowed. */
+  asked?: (resume?: () => void) => boolean
 }) {
   const autoFocus = onCancel !== undefined
   const [text, setText] = useState(initial?.body ?? '')
@@ -682,6 +725,7 @@ function Composer({
 
   const submit = async (): Promise<void> => {
     if (!ready) return
+    if (asked?.(() => void submit()) === true) return
     if (await onSubmit({ body: text, title })) {
       setText('')
       setTitle('')

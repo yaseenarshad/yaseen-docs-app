@@ -202,3 +202,12 @@ describe('YAZ-5430: Card fix status (Q53): "Needs fixing" or blank, next to Card
     expect(cardLineChange([{ key: 'card.fix', value: 'Needs fixing' }])(on)).toBe(on)
   })
 })
+
+describe('YAZ-5466: a card file`s comments are never a Cards table column', () => {
+  it('the row`s properties are its card line`s: a `comments` the file holds is not one, and makes no column', () => {
+    const file = record('river', { kind: 'card', properties: { kind: 'card', comments: [{ id: 'aaaaaaaa', body: 'Hi' }] } as IndexRecord['properties'], cards: [card('GEO-9', { properties: { level: 'A2' } } as Partial<CardRecord>)] })
+    const [row] = cardRowRecords([file])
+    expect(row.properties).not.toHaveProperty('comments')
+    expect(row.properties.level).toBe('A2')
+  })
+})
