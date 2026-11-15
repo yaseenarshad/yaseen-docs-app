@@ -1495,3 +1495,73 @@ describe('calendar Rolling scale (YAZ-5588)', () => {
     expect(write).toHaveBeenLastCalledWith('/vault/Bare.md', 'due', '2026-12-20')
   })
 })
+
+describe('a week row is the same in Month and Rolling, and grows to its tallest day (YAZ-5588 round 2)', () => {
+  const ROLLING = `${CALENDAR}    calendarScale: rolling\n`
+  const WEEK = '2026-12-13'
+  const rowOf = (el: ParentNode, d: string) => day(el, d).parentElement as HTMLElement
+  const rows = (text: string) => {
+    const { el } = mount(text)
+    const html = rowOf(el, '2026-12-15').innerHTML
+    const style = rowOf(el, '2026-12-15').style.gridTemplateRows
+    act(() => root?.unmount())
+    container?.remove()
+    return { html, style }
+  }
+
+  it('Fold long days On: Rolling folds a busy day to "+N more" and opens it with Show less, as Month', () => {
+    const { el } = mount(ROLLING)
+    expect(rowOf(el, '2026-12-15').dataset.week).toBe(WEEK)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C'])
+    click(q(day(el, '2026-12-15'), '.view-cal__more'))
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('Show less')
+  })
+
+  it('Fold long days Off: Rolling shows every card of the day, no "+N more"', () => {
+    const { el } = mount(`${ROLLING}    foldDays: false\n`)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
+    expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
+  })
+
+  it('one week-row renderer: the same week draws the same row in Month and Rolling, fold On or Off, clip or wrap', () => {
+    for (const extra of ['', '    foldDays: false\n', '    cardTitles: wrap\n', '    foldDays: false\n    cardTitles: wrap\n']) {
+      const month = rows(`${CALENDAR}${extra}`)
+      const rolling = rows(`${ROLLING}${extra}`)
+      expect(rolling).toEqual(month)
+    }
+  })
+
+  // views.css's rules, read as text, against the real elements: the last rule that sets `flex` on it.
+  const cssRules = [...viewsCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{([^{}]*)\}/g)].map(([, sel, body]) => ({ selector: sel.trim(), body }))
+  const flexOf = (node: Element) => cssRules.filter(({ selector, body }) => /(^|[;\s])flex:/.test(body) && node.matches(selector)).map(({ body }) => body.match(/(?:^|[;\s])flex:([^;]+);/)![1]!.trim()).at(-1)
+
+  it('a week row never shrinks below its cards (a squeezed row spilled them into the next week): Month and Rolling, fold Off, wrap', () => {
+    for (const text of [CALENDAR, ROLLING, `${CALENDAR}    foldDays: false\n    cardTitles: wrap\n`, `${ROLLING}    foldDays: false\n    cardTitles: wrap\n`]) {
+      const { el } = mount(text)
+      const weekRows = [...el.querySelectorAll('.view-cal__week')]
+      expect(weekRows.length).toBeGreaterThan(4)
+      for (const row of weekRows) expect(flexOf(row)).toBe('none')
+      act(() => root?.unmount())
+      container?.remove()
+    }
+  })
+
+  it('Month\'s grid never shrinks either (the page scrolls); Rolling\'s grid is the scroller and takes the room left', () => {
+    const month = mount(CALENDAR)
+    expect(flexOf(q(month.el, '.view-cal__grid'))).toBe('none')
+    act(() => root?.unmount())
+    container?.remove()
+    const rolling = mount(ROLLING)
+    expect(flexOf(q(rolling.el, '.view-cal__grid'))).toBe('1 1 0')
+  })
+
+  it('a row\'s height is its content: its lanes and its cards row are auto, no fixed height, with fold Off and wrap', () => {
+    const { el } = mount(`${ROLLING}    foldDays: false\n    cardTitles: wrap\n`)
+    for (const row of el.querySelectorAll<HTMLElement>('.view-cal__week--days')) {
+      expect(row.style.height).toBe('')
+      expect(row.style.gridTemplateRows).toMatch(/^auto( repeat\(\d+, auto\))? 1fr$/)
+    }
+    expect(cardOf(el, 'Busy E').classList.contains('view-cal__card--wrap')).toBe(true)
+  })
+})
