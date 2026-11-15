@@ -52,6 +52,29 @@ export function withWords(draft: string, words: string, at: number): { text: str
   return { text, caret: before.length + lead.length + words.length }
 }
 
+/**
+ * Sweep3 N-1 (YAZ-5524): puts `withWords`'s result in the box as the browser's own edit (`insertText` at the selection):
+ * one step on the box's Undo stack, the caret after it. False when the browser cannot (the caller sets the value).
+ */
+function nativeFill(el: HTMLTextAreaElement, draft: string, next: { text: string; caret: number }, at: number): boolean {
+  if (typeof document.execCommand !== 'function') return false
+  const empty = draft.trim() === ''
+  const from = empty ? 0 : Math.min(Math.max(at, 0), draft.length)
+  const to = empty ? draft.length : from
+  const piece = next.text.slice(from, next.text.length - (draft.length - to))
+  el.focus()
+  el.setSelectionRange(from, to)
+  let done = false
+  try {
+    done = document.execCommand('insertText', false, piece)
+  } catch {
+    done = false
+  }
+  if (!done || el.value !== next.text) return false
+  el.setSelectionRange(next.caret, next.caret)
+  return true
+}
+
 /** The words of a refusal, with the file called by its noun (YAZ-5477: "This card file is no longer in the vault"). */
 const named = (words: string, noun: string): string => (noun === 'page' ? words : words.replace(/\bpage\b/g, noun))
 
@@ -120,9 +143,12 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
     // Sweep2 S-A (YAZ-5521): the box says the words already (a second tap): a no-op. The selection and the focus stay
     // exactly; no caret is kept for later (no draw follows to use it, so the next typed letter put the caret back).
     if (next.text === draft) return
+    setProblem(null)
+    // Sweep3 N-1 (YAZ-5524): a NATIVE edit, so the system Undo (⌘Z, shake) takes the fill back as one step; its input
+    // event sets the draft. A value set by React has no Undo step, and the Undo then duplicated the draft.
+    if (el !== null && nativeFill(el, draft, next, at)) return
     setDraft(next.text)
     caret.current = next.caret
-    setProblem(null)
     el?.focus()
   }
 
