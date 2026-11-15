@@ -238,6 +238,16 @@
   border-width: 0.125em;
   border-radius: 0.15em;
 }
+/* YAZ-5510: a numbered task keeps its number in the dot's column (its `::marker`, outside the item: there is no dot to
+   give way), then the box, then the text. The box is the same box, a gap after the number (the numbers' 0.3em), and
+   the text the Mac's gap after the box; the lines that wrap start under the text, as the box's own column. */
+.reader__body ol > li:has(> .page-task:first-child, > p:first-child > .page-task:first-child) {
+  padding-left: calc(0.3em + 1.125em + var(--list-label-gap));
+}
+.reader__body ol > li > .page-task:first-child,
+.reader__body ol > li > p:first-child > .page-task:first-child {
+  left: 0.3em;
+}
 .page-task[data-checked='true'] {
   border-color: var(--fg-muted);
   background: var(--fg-muted);

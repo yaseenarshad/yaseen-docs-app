@@ -169,3 +169,13 @@
 .comments-count__icon {
   flex: none;
 }
+
+/* YAZ-5511: the card view hides its title (`reader__title--same`: the card's band says it), so the count floats beside
+   nothing, and the card box (`position: relative`, card.css) starts at the same height and paints over the float. In the
+   card view the count takes a row of its own above the card, at the right: seen, and a tap's own. */
+.card-view > .comments-count {
+  float: none;
+  display: flex;
+  width: fit-content;
+  margin: -6px -8px 0 auto;
+}
