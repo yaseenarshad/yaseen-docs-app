@@ -609,6 +609,62 @@ describe('hide weekends (YAZ-4595 S33)', () => {
   })
 })
 
+describe('"Fold long days" On · Off (YAZ-5586)', () => {
+  const SPAN = `views:\n  - type: calendar\n    name: C\n    endDateProperty: note.end\n`
+  const many = [...RECORDS, ...['W', 'X', 'Y', 'Z'].map((n) => rec(`Span ${n}`, { due: '2026-12-14', end: '2026-12-16' }))]
+  const foldSeg = (el: ParentNode) => [...el.querySelectorAll<HTMLButtonElement>('.view-popover--properties [role="group"][aria-label="Fold long days"] button')]
+  const pressedFold = (el: ParentNode) => foldSeg(el).find((b) => b.getAttribute('aria-pressed') === 'true')?.textContent
+  const openViewTab = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+  }
+
+  it('On by default: a busy day folds to "+N more" as before', () => {
+    const { el } = mount(CALENDAR)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C'])
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('+2 more')
+  })
+
+  it('Off: every card and every bar shows, the row takes every lane, and no day has "+N more" or "Show less"', () => {
+    const { el } = mount(`${SPAN}    foldDays: false\n`, { records: many })
+    expect(el.querySelectorAll('.view-cal__bar')).toHaveLength(4)
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D', 'Busy E'])
+    expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
+    const row = day(el, '2026-12-15').parentElement as HTMLElement
+    expect(row.style.gridTemplateRows).toBe('auto repeat(4, auto) 1fr')
+  })
+
+  it('Off leaves the "No date" tray its own fold', () => {
+    const undated = Array.from({ length: 25 }, (_, i) => rec(`Loose ${i}`, {}))
+    const { el } = mount(`${CALENDAR}    foldDays: false\n`, { records: [...RECORDS, ...undated] })
+    expect(q(q(el, '.view-cal__tray'), '.view-cal__more').textContent).toBe('+6 more')
+  })
+
+  it('the View tab writes foldDays: false for Off and removes the key for On; another view keeps its own', () => {
+    const TWO = `views:\n  - type: calendar\n    name: C\n  - type: calendar\n    name: D\n`
+    const { el, yaml } = mount(TWO)
+    openViewTab(el)
+    expect(foldSeg(el).map((b) => b.textContent)).toEqual(['On', 'Off'])
+    expect(pressedFold(el)).toBe('On')
+    click(foldSeg(el).find((b) => b.textContent === 'Off')!)
+    expect(yaml()).toMatch(/name: C\n\s+foldDays: false\n/)
+    expect(yaml().match(/foldDays/g)).toHaveLength(1)
+    expect(el.querySelector('.view-cal__grid .view-cal__more')).toBeNull()
+    click(foldSeg(el).find((b) => b.textContent === 'On')!)
+    expect(yaml()).not.toContain('foldDays')
+    expect(q(day(el, '2026-12-15'), '.view-cal__more').textContent).toBe('+2 more')
+  })
+
+  it('Off: a card dragged out of a busy day moves it, and the day it left still shows all the others', async () => {
+    const { el } = mount(`${CALENDAR}    foldDays: false\n`)
+    drag(cardOf(el, 'Busy E'), day(el, '2026-12-17'))
+    expect(write).toHaveBeenCalledWith('/vault/Busy E.md', 'due', '2026-12-17')
+    expect(titlesIn(day(el, '2026-12-17'))).toEqual(['Busy E'])
+    expect(titlesIn(day(el, '2026-12-15'))).toEqual(['Busy A', 'Busy B', 'Busy C', 'Busy D'])
+    await flush()
+  })
+})
+
 describe('the shown columns on a card (YAZ-4857)', () => {
   const records = [...RECORDS, rec('Styled', { due: '2026-12-08 09:00', status: 'Done', priority: 2, owner: 'Sam' }), rec('Sparse', { due: '2026-12-08' })]
   const SHOWN = (cardStyle = '') => `views:

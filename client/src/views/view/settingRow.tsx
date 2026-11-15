@@ -30,6 +30,7 @@ const ICONS = {
   opensIn: <path d="M2.5 3.5h11v10h-11zM2.5 7h11M6.2 7v6.5M9.8 7v6.5" />,
   cardTitles: <><rect x="2" y="4" width="12" height="8" rx="1.5" /><path d="M4.5 7h7M4.5 9.5h4" /></>,
   hideWeekends: <><rect x="2.5" y="3.5" width="11" height="10" rx="1.5" /><path d="M5 11l6-5" /></>,
+  foldDays: <><rect x="2.5" y="2.5" width="11" height="11" rx="1.5" /><path d="M5 5.5h6M5 8h6M6 11l2-1.5 2 1.5" /></>,
   markerStyle: <><path d="M6 4h8M6 8h8M6 12h8" /><circle cx="3" cy="4" r=".9" /><circle cx="3" cy="8" r=".9" /><circle cx="3" cy="12" r=".9" /></>,
   indentProperties: <path d="M2 3.5h12M6 8h8M6 12.5h8M2 7v6" />,
   separator: <><circle cx="7.5" cy="8.5" r="1" /><path d="M8.5 9v1.5c0 1-.7 2-1.7 2.5" /></>,
