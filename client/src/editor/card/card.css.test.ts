@@ -43,9 +43,23 @@ it('YAZ-5005: Underline on `.app` takes the highlight off a shown hidden word an
   expect(underline[0].body).toMatch(/text-decoration:\s*underline/)
   expect(underline[0].body).toMatch(/text-decoration-color:\s*var\(--accent\)/)
   // It beats the highlight rule it replaces.
-  expect(beats(specificity(underline[0].selector), specificity('.card .card__hidden'))).toBe(true)
+  expect(beats(specificity(underline[0].selector.split(',')[0]!.trim()), specificity('.card .card__hidden'))).toBe(true)
   // Underline leaves the blank as it is (Box, YAZ-5053, is the one look that draws the blank too).
   expect(rules(cardCss, '.card__blank').every((r) => !r.selector.includes("data-shown-hidden-words='underline'"))).toBe(true)
+})
+
+it('YAZ-5378 round 2: while ⌘F has a query, a shown hidden word in Highlight takes the Underline look — the SAME rule, in the page and in Edit card; Box and Underline do not change', () => {
+  for (const word of ['.card__hidden', '.card__cloze']) {
+    const underline = rules(cardCss, `[data-shown-hidden-words='underline'] .card ${word}`)
+    expect(underline, word).toHaveLength(1)
+    const selectors = underline[0].selector.split(/,(?![^(]*\))/).map((s) => s.trim())
+    // One rule, two selectors: the setting's Underline, and Highlight in a view find is searching (`data-find-query`).
+    expect(selectors).toEqual([`[data-shown-hidden-words='underline'] .card ${word}`, `[data-shown-hidden-words='highlight'] [data-find-query] .card ${word}`])
+    for (const selector of selectors) expect(beats(specificity(selector), specificity(`.card ${word}`)), selector).toBe(true)
+    // No other rule reads the find attribute: Box keeps its look.
+    expect(rules(cardCss, 'data-find-query').filter((r) => r.selector.includes(word))).toEqual(underline)
+  }
+  expect(rules(cardCss, 'data-find-query').every((r) => !r.selector.includes("'box'"))).toBe(true)
 })
 
 it('YAZ-5013: a blank and a shown word have ONE box model — inline, the same horizontal padding in both looks — and the word in a blank is invisible and not selectable', () => {
