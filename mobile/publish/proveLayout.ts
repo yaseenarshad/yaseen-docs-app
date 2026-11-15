@@ -805,8 +805,14 @@ const TOPBAR_FITS = `(() => {
   const numberEl = bar.querySelector('.page-id__number')
   const number = numberEl && numberEl.scrollWidth <= numberEl.clientWidth ? box(numberEl) : null
   const title = bar.querySelector('.topbar__title')
+  // YAZ-5522 N3 (kept): the dot's and the ⚙'s tap boxes overlap (the 14 px pull less the bar's gap); a tap on each glyph is its own.
+  const dotTap = box(bar.querySelector('.sync-status'))
+  const gearTap = box(bar.querySelector('.topbar__gear'))
+  const overlap = Math.round(dotTap.right - gearTap.left)
+  const hit = (r, sel) => { const el = document.elementFromPoint((r.left + r.right) / 2, (r.top + r.bottom) / 2); return el !== null && el.closest(sel) !== null }
+  const ownTaps = hit(dot, '.sync-status') && hit(gear, '.topbar__gear')
   const words = [...bar.querySelectorAll('.sync-status__words')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => e.textContent).join('|')
-  return { words, at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: noId || (number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5), titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
+  return { overlap, ownTaps, words, at, inside, clear: dot.right <= gear.left && gear.right <= innerWidth, number: noId || (number !== null && number.left >= pill.left - 0.5 && number.right <= pill.right + 0.5), titleWidth: Math.round(title.getBoundingClientRect().width), titleCut: title.scrollWidth > title.clientWidth, sideways: document.scrollingElement.scrollWidth > innerWidth }
 })()`
 if (process.env.LAYOUT_TOPBAR !== 'no') {
   // YAZ-5521 (sweep2 S-B): also with the dot amber, one comment not sent or two waiting, at 390 too:
@@ -818,9 +824,9 @@ if (process.env.LAYOUT_TOPBAR !== 'no') {
     for (const name of ['page', 'page-long-id', 'page-not-sent', 'page-waiting', 'page-long-id-not-sent', 'page-long-id-waiting', 'page-no-id', 'page-no-id-waiting1-offline', 'page-no-id-waiting2-offline', 'page-no-id-waiting', 'page-no-id-not-sent', 'page-no-id-mixed-offline', 'page-mixed-offline']) {
       const file = await open(name, w, h)
       const m = await evaluate(TOPBAR_FITS)
-      const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways
+      const ok = m.inside && m.clear && m.number && m.titleWidth >= 30 && !m.sideways && m.overlap > 0 && m.overlap <= 14 && m.ownTaps
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}; the dot says "${m.words}"  ${file}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; tap boxes overlap ${m.overlap}px${m.overlap > 0 && m.overlap <= 14 ? '' : ' (NOT THE PULL)'}, ${m.ownTaps ? 'each glyph taps its own' : 'A GLYPH TAPS THE OTHER'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}; the dot says "${m.words}"  ${file}`)
     }
   }
 }

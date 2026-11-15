@@ -30,3 +30,16 @@ describe('YAZ-5475: one top bar end for every screen', () => {
     for (const file of ['./Shell.tsx', './Settings.tsx', './Review.tsx', './Search.tsx', '../page/PageView.tsx', '../page/CardView.tsx', '../review/ReviewView.tsx', '../friends/ui/FriendsTab.tsx']) expect(src(file)).not.toContain('⚙')
   })
 })
+
+describe('YAZ-5522 N3 (kept as it is, Yaseen chose A): the dot\'s and the ⚙\'s tap boxes overlap by the pull', () => {
+  it('topBar_dotAndGear_tapOverlapKept: both keep a 44 pt box; the ⚙ (drawn last) is pulled 14 px over the dot\'s', () => {
+    // jsdom has no layout: proveLayout's "top bar" measures the overlap and that a tap on each glyph is its own control.
+    const css = src('../styles.css')
+    expect(css).toMatch(/--topbar-end-pull: -14px;/)
+    expect(css).toMatch(/\.topbar__gear \{\s*font-size: var\(--topbar-gear-size\);\s*margin-left: var\(--topbar-end-pull\);/)
+    expect(src('../status/status.css')).toMatch(/\.sync-status \{[^}]*min-height: var\(--tap\);/)
+    const frame = src('./Frame.tsx')
+    expect(frame.indexOf('<SyncStatus />')).toBeLessThan(frame.indexOf('className="icon-btn topbar__gear"'))
+  })
+})
+
