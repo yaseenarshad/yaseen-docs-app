@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
-import { interceptBrowserBack } from '../app/browserHistory'
 import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { swipeIsOurs } from '../app/edgeSwipe'
 import { useVaultData, type VaultData } from '../search/vaultData'
@@ -11,7 +10,7 @@ import { countWords, linkCounts, type LinkCounts } from './linkCounts'
 import { SheetContent, titleOf } from './SheetBody'
 import { SHEET_MS } from './sheetDrag'
 import { sheetMotion, type SheetMotion } from './sheetMotion'
-import { MAX_MOUNTED, closeAll, closeTop, dropTop, keepScroll, setAnimatedClose, sheetStack, subscribeSheets, type Sheet, type SheetRoute } from './sheets'
+import { MAX_MOUNTED, closeAll, closeTop, dropSheet, keepScroll, setAnimatedClose, sheetStack, subscribeSheets, type Sheet, type SheetRoute } from './sheets'
 import './explore.css'
 import '../page/pageNav.css'
 
@@ -43,12 +42,8 @@ export default function SheetLayer() {
     if (top === undefined) return
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeTop()
     document.addEventListener('keydown', onKey)
-    // YAZ-5499: in a Safari tab, Safari's own back swipe closes the top sheet, as the app's swipe does in the Home Screen app.
-    interceptBrowserBack(() => (closeTop(), true))
-    return () => {
-      document.removeEventListener('keydown', onKey)
-      interceptBrowserBack(null)
-    }
+    // YAZ-5518: Safari's own Back in a tab closes the top sheet through its history entry (`sheets.ts`, `openOverlay`).
+    return () => document.removeEventListener('keydown', onKey)
   }, [top])
 
   if (mounted.length === 0) return null
@@ -96,7 +91,7 @@ function SheetView({ sheet, level, depth }: { sheet: Sheet; level: number; depth
     if (!isTop || box.current === null || head.current === null || body.current === null || mark.current === null || dim.current === null) return
     const m = sheetMotion(
       { box: box.current, head: head.current, body: body.current, top: mark.current, dim: dim.current },
-      { onClosed: dropTop, edge: swipeIsOurs(whereAmI(browserFacts())) },
+      { onClosed: () => dropSheet(sheet.id), edge: swipeIsOurs(whereAmI(browserFacts())) },
     )
     motion.current = m
     if (isNew.current) m.open()
