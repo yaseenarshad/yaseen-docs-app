@@ -45,7 +45,7 @@ const INDENT_STEPS = [['small', 'Small'], ['medium', 'Medium'], ['large', 'Large
  * (Group indent, D60, where the view indents its groups; Show empty groups), then the type's own sections ("Default
  * view" is the folder's, in its ⚙ since YAZ-4909). YAZ-4864 (Yaseen: "sections of the view settings bc there are starting to become a lot of them"): one
  * tab, small headings with a little room above each, the same words in every type — a Board's and a List's own rows
- * are Layout; a calendar's are Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends), Lines
+ * are Layout; a calendar's are Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends, Fold long days), Lines
  * (YAZ-4878) and Cross out (its rules); a Table's are Rows (Row height, Text in cells, Row numbers, Subfolders) and
  * Header row (Column type icons and the row's look, YAZ-4908). Frozen columns and rows live only on the header and row right-clicks, and a
  * calendar's Start date and End date only here, first in Dates (YAZ-3746 13AD: off the toolbar, over C3 and D11). Each row: an icon and label, then a segmented choice, a switch or a quiet select; a Settings ›
@@ -247,6 +247,21 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
             />
             <FromSettings own={own} viewKey="hideWeekends" viewIndex={viewIndex} onUpdate={onUpdate} />
           </label>
+          {/* Fold long days (YAZ-5586): On folds a busy Month day to "+N more"; Off writes `foldDays: false` and the day shows everything. */}
+          <div className="view-settings-row">
+            <RowLabel icon="foldDays">Fold long days</RowLabel>
+            <ChoiceSeg
+              label="Fold long days"
+              value={view.foldDays === false ? 'off' : 'on'}
+              options={[['on', 'On'], ['off', 'Off']] as const}
+              onChange={(next) =>
+                onUpdate((d) => {
+                  if (next === 'off') d.views[viewIndex].foldDays = false
+                  else delete d.views[viewIndex].foldDays
+                })
+              }
+            />
+          </div>
           <CardClickRow own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* The day names' look (YAZ-4864 round 3): the Table view's header row, the same keys and Settings default. */}
           <HeaderRowStyleRow label="Header row" own={own} viewIndex={viewIndex} onUpdate={onUpdate} />

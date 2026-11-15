@@ -126,7 +126,7 @@ describe('each view type shows its settings only (D59)', () => {
   // Frozen columns and rows live only on the header and row right-clicks (the View tab's Frozen section went in the YAZ-3746 demo).
   const TABLE = ['Row height', 'Text in cells', 'Row numbers', 'Subfolders', 'Column type icons', 'Header row style']
   const BOARD = ['Column width in pixels', 'Subfolders']
-  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Header row style', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders']
+  const CALENDAR = ['Start date', 'End date', 'Opens in', 'Card titles', 'Hide weekends', 'Fold long days', 'Header row style', 'Between weeks thickness', 'Between weeks colour', 'Between days thickness', 'Between days colour', 'Cross out when', 'Subfolders']
   const LIST = ['Marker style', 'Indent properties', 'Property separator', 'Subfolders']
   const ALL = [...new Set([...TABLE, ...BOARD, ...CALENDAR, ...LIST, 'Group indent', 'Frozen columns', 'Frozen rows', 'Default view'])]
 
@@ -167,7 +167,7 @@ describe('each view type shows its settings only (D59)', () => {
     expect(pop.textContent).toContain('Show empty columns')
   })
 
-  it('Calendar (YAZ-4864 sections): Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends), Lines (YAZ-4878), Cross out, then Folder', () => {
+  it('Calendar (YAZ-4864 sections): Dates (Start date, End date), Layout (Opens in, Card titles, Hide weekends, Fold long days), Lines (YAZ-4878), Cross out, then Folder', () => {
     const pop = openProperties(mount(view('calendar')).el)
     toTab(pop, 'View')
     expectOnly(pop, CALENDAR)
