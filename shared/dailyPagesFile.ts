@@ -4,7 +4,10 @@
  * not in the vault, and finds the vault of the daily pages by the folder (`dailyPageVault`). The phone has only the vault,
  * so it reads this file: the same four settings, for this vault.
  *
- *   { "enabled": true, "folder": "Daily", "format": "YYYY-MM-DD", "dayFolder": false }
+ *   { "version": 1, "enabled": true, "folder": "Daily", "format": "YYYY-MM-DD", "dayFolder": false }
+ *
+ * YAZ-5476: the Mac writes it (`desktop/src/main/dailyPagesVaultFile.ts`) and keeps any other top-level key. `version`
+ * is the file's shape; a reader of this shape reads any version (a newer one adds keys, never changes these).
  *
  * No file, `enabled` not true, or a style the Mac could not use: Daily pages are off in this vault.
  */
@@ -12,6 +15,8 @@ import { DEFAULT_DAILY_PAGE_FORMAT, isValidDailyPageFormat } from './dailyPage'
 import { isRecord } from './guards'
 
 export const DAILY_PAGES_FILE = 'daily-pages.json'
+/** The shape of the file the Mac writes. */
+export const DAILY_PAGES_VERSION = 1
 
 export interface VaultDailyPages {
   /** The daily pages folder, vault-relative ('' = the vault folder): the Mac's `dailyPageFolder`. */

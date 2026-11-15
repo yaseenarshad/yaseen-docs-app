@@ -29,7 +29,7 @@ describe('writeDailyPagesFile', () => {
   it('on, and the vault holds the folder: the file says on, in the phone\'s format', async () => {
     const root = await vault('Daily')
     expect(await writeDailyPagesFile(root, ON)).toBe('written')
-    expect(await held(root)).toEqual({ enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false })
+    expect(await held(root)).toEqual({ version: 1, enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false })
     expect(sanitizeDailyPages(await held(root))).toEqual({ folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false })
   })
 
@@ -41,14 +41,14 @@ describe('writeDailyPagesFile', () => {
     expect((await stat(file(root))).mtimeMs).toBe(before)
     // A change of the name style is a change.
     expect(await writeDailyPagesFile(root, { ...ON, dailyPageFormat: 'MMM D, YYYY', dailyPageDayFolder: true })).toBe('written')
-    expect(await held(root)).toEqual({ enabled: true, folder: 'Daily', format: 'MMM D, YYYY', dayFolder: true })
+    expect(await held(root)).toEqual({ version: 1, enabled: true, folder: 'Daily', format: 'MMM D, YYYY', dayFolder: true })
   })
 
   it('turned off: the file says off; a second time writes nothing', async () => {
     const root = await vault('Daily')
     await writeDailyPagesFile(root, ON)
     expect(await writeDailyPagesFile(root, OFF)).toBe('written')
-    expect(await held(root)).toEqual({ enabled: false, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false })
+    expect(await held(root)).toEqual({ version: 1, enabled: false, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false })
     expect(sanitizeDailyPages(await held(root))).toBeNull()
     expect(await writeDailyPagesFile(root, OFF)).toBe('not-needed')
   })
@@ -79,6 +79,31 @@ describe('writeDailyPagesFile', () => {
     await writeFile(path.join(root, 'Plain'), 'not a folder')
     expect(await writeDailyPagesFile(root, { ...ON, dailyPageFolder: 'Plain' })).toBe('written')
     expect(await held(root)).toMatchObject({ enabled: false })
+  })
+
+  it('a write keeps the top-level keys it does not know (a newer build\'s)', async () => {
+    const root = await vault('Daily')
+    await mkdir(path.join(root, '.yaseendocs'))
+    await writeFile(file(root), JSON.stringify({ version: 2, enabled: true, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false, later: { a: 1 } }))
+    expect(await writeDailyPagesFile(root, OFF)).toBe('written')
+    expect(await held(root)).toEqual({ version: 1, enabled: false, folder: 'Daily', format: 'YYYY-MM-DD', dayFolder: false, later: { a: 1 } })
+  })
+
+  it('a NEW file waits for the vault\'s first pull (two Macs never both make it); an update of a file it has does not wait', async () => {
+    const root = await vault('Daily')
+    const notYet = async () => false
+    expect(await writeDailyPagesFile(root, ON, notYet)).toBe('not-yet')
+    expect(await readdir(root)).toEqual(['Daily'])
+    expect(await writeDailyPagesFile(root, ON, async () => true)).toBe('written')
+    expect(await writeDailyPagesFile(root, OFF, notYet)).toBe('written')
+    expect(await held(root)).toMatchObject({ enabled: false })
+  })
+
+  it('a root that is not a folder now (a drive not connected) is skipped, and nothing is made there', async () => {
+    const root = await vault('Daily')
+    const gone = path.join(root, 'not-here')
+    expect(await writeDailyPagesFile(gone, ON)).toBe('unreachable')
+    expect(await readdir(root)).toEqual(['Daily'])
   })
 
   it('a file that is not JSON is left as it is', async () => {
@@ -125,14 +150,28 @@ describe('keepDailyPagesFiles', () => {
     keep.stop()
   })
 
+  it('a vault whose first pull is not done gets its file when the pull is done', async () => {
+    const daily = await vault('Daily')
+    const store = fakeStore({ ...ON }, [[daily]])
+    let pulled = false
+    const keep = keepDailyPagesFiles(store, async () => pulled)
+    await keep.idle()
+    expect(await readdir(daily)).toEqual(['Daily'])
+    pulled = true
+    keep.pulled(daily)
+    await keep.idle()
+    expect(await held(daily)).toMatchObject({ version: 1, enabled: true })
+    keep.stop()
+  })
+
   it('another change of the app state (not Daily pages, not the vaults) writes nothing', async () => {
     const daily = await vault('Daily')
     const store = fakeStore({ ...ON }, [[daily]])
     const write = vi.fn(async () => 'unchanged' as const)
-    const keep = keepDailyPagesFiles(store, write)
+    const keep = keepDailyPagesFiles(store, undefined, write)
     await keep.idle()
     expect(write).toHaveBeenCalledTimes(1)
-    store.set({ settings: { ...store.get().settings, spellcheck: !store.get().settings.spellcheck } } as Partial<AppState>)
+    store.set({ settings: { ...store.get().settings, dailyPageOpens: store.get().settings.dailyPageOpens === 'now' ? 'page' : 'now' } } as Partial<AppState>)
     await keep.idle()
     expect(write).toHaveBeenCalledTimes(1)
     keep.stop()
