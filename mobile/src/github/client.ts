@@ -33,7 +33,7 @@ export type GithubErrorCode = 'UNAUTHORIZED' | 'NO_ACCESS' | 'READ_ONLY' | 'NOT_
 /** GitHub's advice for its secondary limit when the answer has no `Retry-After`: wait at least one minute. */
 export const SECONDARY_LIMIT_WAIT_MS = 60_000
 /**
- * The floor and the ceiling of every rate-limit wait (YAZ-5174, YAZ-5169). GitHub's headers can give 0 s, less than 0 s
+ * The floor and the ceiling of every rate-limit wait. GitHub's headers can give 0 s, less than 0 s
  * (`x-ratelimit-reset` is GitHub's clock; a fast phone clock puts it in the past) or years. Without a floor the app asks
  * again at once, in a loop; over 2^31-1 ms a browser timer fires at once. The floor is GitHub's advice (1 minute); the
  * ceiling is one hour, as GitHub's hourly limit resets within the hour.
@@ -41,12 +41,12 @@ export const SECONDARY_LIMIT_WAIT_MS = 60_000
 export const MIN_RATE_WAIT_MS = SECONDARY_LIMIT_WAIT_MS
 export const MAX_RATE_WAIT_MS = 60 * 60_000
 /**
- * A request that is SILENT this long stops (YAZ-5173) and reads as `OFFLINE`: no answer, and no new bytes of its body.
- * A download that still gets bytes goes on to its end (YAZ-5184).
+ * A request that is SILENT this long stops and reads as `OFFLINE`: no answer, and no new bytes of its body.
+ * A download that still gets bytes goes on to its end.
  */
 export const REQUEST_TIMEOUT_MS = 30_000
 /**
- * YAZ-5199: `fetch` gives no upload progress (and Safari no streamed request body), so a body that goes up slowly
+ * `fetch` gives no upload progress (and Safari no streamed request body), so a body that goes up slowly
  * looks silent. Until GitHub's answer comes, a request with a body gets the time its body needs at this floor speed
  * (10 KB/s: a bad but live signal), on top of the silence limit. After the answer's head, the silence limit holds.
  */
@@ -135,7 +135,7 @@ export interface ClientOptions {
   now?: () => number
   /** The silence limit of one request, ms (default REQUEST_TIMEOUT_MS). */
   timeoutMs?: number
-  /** Called each time GitHub gives something: the answer's head, and each part of its body (YAZ-5184). */
+  /** Called each time GitHub gives something: the answer's head, and each part of its body. */
   onActivity?: () => void
 }
 
@@ -168,7 +168,7 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
       if (opts.etag !== undefined) headers.set('If-None-Match', opts.etag)
       if (opts.body !== undefined) headers.set('Content-Type', 'application/json')
 
-      // The silence limit (YAZ-5173, YAZ-5184): it starts again at the answer and at each part of the body.
+      // The silence limit: it starts again at the answer and at each part of the body.
       const limit = options.timeoutMs ?? REQUEST_TIMEOUT_MS
       const payload = opts.body === undefined ? undefined : JSON.stringify(opts.body)
       const abort = typeof AbortController === 'function' ? new AbortController() : null
@@ -181,7 +181,7 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
         alive()
         options.onActivity?.()
       }
-      // Before the answer: the limit plus the time the body needs at the floor speed (YAZ-5199).
+      // Before the answer: the limit plus the time the body needs at the floor speed.
       alive(limit + (payload === undefined ? 0 : uploadAllowanceMs(new TextEncoder().encode(payload).byteLength)))
       try {
         return await send()
@@ -199,7 +199,7 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
             body: payload,
             // No cookies. No browser cache: the ETag is ours (3B), and answers made with the token stay off the disk.
             credentials: 'omit',
-            // A request that is silent for `limit` stops (YAZ-5173, YAZ-5184). The abort reads as OFFLINE below.
+            // A request that is silent for `limit` stops. The abort reads as OFFLINE below.
             signal: abort?.signal,
             cache: 'no-store',
             referrerPolicy: 'no-referrer',
@@ -221,7 +221,7 @@ export function githubClient(token: string, options: ClientOptions = {}): Github
         const said = body !== null && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string' ? (body as { message: string }).message : ''
         const error = failure(response, method, scrub(said), now(), rateLimit)
         // A status in `allow` comes back as an answer (its JSON body in `data`), but a rate limit never does: a probe
-        // that allows 403 must not read GitHub's "slow down" as "no access" (YAZ-5166).
+        // that allows 403 must not read GitHub's "slow down" as "no access".
         if (error.code !== 'RATE_LIMITED' && (opts.allow ?? []).includes(response.status))
           return { status: response.status, headers: response.headers, etag, data: body, rateLimit }
         throw error
@@ -255,7 +255,7 @@ function readRateLimit(headers: Headers): RateLimit | null {
   return Object.values(rate).every((v) => v === null) ? null : rate
 }
 
-/** The body's bytes, part by part: each part tells `heard`, so a slow but live body is never cut (YAZ-5184). */
+/** The body's bytes, part by part: each part tells `heard`, so a slow but live body is never cut. */
 async function readBytes(response: Response, heard: () => void): Promise<Uint8Array> {
   if (response.body === null) return new Uint8Array(await response.arrayBuffer())
   const reader = response.body.getReader()
@@ -291,7 +291,7 @@ function failure(response: Response, method: Method, said: string, now: number, 
   const { status, headers } = response
   const message = `GitHub answered ${status}${said ? `: ${said}` : ''}`
   const make = (code: GithubErrorCode, resetAt: number | null = null) => new GithubError(code, status, message, resetAt, said, rateLimit)
-  // Each wait goes through `rateLimitedUntil`: never under 1 minute, never over 1 hour (YAZ-5174). An empty
+  // Each wait goes through `rateLimitedUntil`: never under 1 minute, never over 1 hour. An empty
   // `retry-after` is no `retry-after` (`Number('')` is 0); an HTTP date is not a number and falls through.
   const retryHeader = headers.get('retry-after')?.trim() ?? ''
   const retryAfter = retryHeader === '' ? NaN : Number(retryHeader)
