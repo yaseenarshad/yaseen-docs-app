@@ -52,7 +52,9 @@ describe('4B checker: the screen', () => {
     }
     await app.click('More card actions')
     await app.click('Open page')
-    for (let i = 0; i < 8 && !app.text().includes('A long page'); i++) await app.settle()
+    // The reader is a lazy chunk; since YAZ-5455..5475 it pulls in more modules (tools, find, properties, Linked from), so a
+    // cold import takes ~40 settles, more than a fixed 8. Wait by time, as the other reader tests do.
+    await app.waitText('A long page')
     console.log('[4B-A] page scrolled to:', JSON.stringify(scrolled), 'nav top:', JSON.stringify((app.services as unknown as { nav?: unknown }).nav ?? null))
     await app.click('Back')
     for (let i = 0; i < 8 && !app.text().includes('DC-'); i++) await app.settle()
@@ -79,7 +81,7 @@ describe('4B checker: the screen', () => {
     }
     await app.click('More card actions')
     await app.click('Open page')
-    for (let i = 0; i < 10 && !app.text().includes('Intro'); i++) await app.settle()
+    await app.waitText('Intro')
     for (let i = 0; i < 6; i++) await app.settle()
     Element.prototype.scrollIntoView = orig
     console.log('[4B-B] scrollIntoView calls:', JSON.stringify(scrolled))
