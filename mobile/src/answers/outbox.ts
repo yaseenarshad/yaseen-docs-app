@@ -1,4 +1,5 @@
 import type { VaultStore } from '../store'
+import { vaultLock } from '../sync/browser'
 import type { CardOp } from './ops'
 
 /**
@@ -91,18 +92,7 @@ const EMPTY: AnswerBook = { v: 1, next: 1, waiting: [], lost: [] }
  * together by the Web Lock `notecards-answers:<vault>`. Where Web Locks are missing, one queue for each vault in this
  * page does it (two lists of one vault in one page, and the tests).
  */
-const pageQueues = new Map<string, Promise<unknown>>()
-function listLock<T>(vault: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<T>): Promise<T> } } }).navigator?.locks
-  if (locks !== undefined) return locks.request(`notecards-answers:${vault}`, fn)
-  const run = (pageQueues.get(vault) ?? Promise.resolve()).then(fn, fn)
-  const settled = run.catch(() => undefined)
-  pageQueues.set(vault, settled)
-  void settled.then(() => {
-    if (pageQueues.get(vault) === settled) pageQueues.delete(vault)
-  })
-  return run
-}
+const listLock = <T>(vault: string, fn: () => Promise<T>): Promise<T> => vaultLock('notecards-answers', vault, fn)
 
 /** The answer list of vault `vault`, read from the store. */
 export async function openOutbox(store: VaultStore, vault: string): Promise<Outbox> {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GITHUB_API, GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, githubClient, repoPath, type FetchLike } from './client'
+import { GITHUB_API, GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, backoffMs, githubClient, repoPath, slowedUntil, staleUntil, type FetchLike } from './client'
 
 const TOKEN = 'github_pat_11SECRETSECRET0000000000_secretsecretsecretsecretsecretsecretsecretsecretsecretsecretsecret'
 
@@ -197,5 +197,23 @@ describe('githubClient: the one way the phone talks to GitHub', () => {
   it('repoPath encodes each part, and keeps the slashes of a branch name', () => {
     expect(repoPath('Yaseen/My.Vault', 'branches', 'feat/phone #1')).toBe('/repos/Yaseen/My.Vault/branches/feat/phone%20%231')
     expect(() => repoPath('not a repo', 'x')).toThrow()
+  })
+})
+
+describe('the one backoff (YAZ-5092 A4): the sync engine, the answer list and the comment list use it', () => {
+  it('doubles from the floor each time in a row, up to the ceiling', () => {
+    expect([1, 2, 3, 4].map(backoffMs)).toEqual([1, 2, 4, 8].map((n) => n * MIN_RATE_WAIT_MS))
+    expect(backoffMs(7)).toBe(MAX_RATE_WAIT_MS)
+    expect(backoffMs(10_000)).toBe(MAX_RATE_WAIT_MS)
+  })
+  it('a "slow down": GitHub\'s time or the backoff, the later one; a reset in the past is the backoff', () => {
+    const now = 1_000_000
+    const at = (resetAt?: number) => Object.assign(new GithubError('RATE_LIMITED', 403, 'slow'), { resetAt })
+    expect(slowedUntil(at(now + 10 * MIN_RATE_WAIT_MS), 1, now)).toBe(now + 10 * MIN_RATE_WAIT_MS)
+    expect(slowedUntil(at(now - 5), 3, now)).toBe(now + 4 * MIN_RATE_WAIT_MS)
+    expect(slowedUntil(at(now + 9 * MAX_RATE_WAIT_MS), 1, now)).toBe(now + MAX_RATE_WAIT_MS)
+  })
+  it('a branch that kept moving: 1, 2, 4 … minutes, up to 1 hour', () => {
+    expect([1, 2, 3, 30].map((n) => staleUntil(n, 0))).toEqual([MIN_RATE_WAIT_MS, 2 * MIN_RATE_WAIT_MS, 4 * MIN_RATE_WAIT_MS, MAX_RATE_WAIT_MS])
   })
 })

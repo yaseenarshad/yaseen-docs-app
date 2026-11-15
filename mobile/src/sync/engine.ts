@@ -1,5 +1,6 @@
-import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, REQUEST_TIMEOUT_MS, githubClient, uploadAllowanceMs, type GithubErrorCode } from '../github/client'
+import { GithubError, MAX_RATE_WAIT_MS, REQUEST_TIMEOUT_MS, githubClient, slowedUntil, uploadAllowanceMs, type GithubErrorCode } from '../github/client'
 import { StorageFullError, vaultId, type PhoneVault, type StoredFile, type TokenStore, type VaultStore } from '../store'
+import { browserClock, webLock } from './browser'
 import { POLL_MS } from './cadence'
 import { githubRemote, type Change, type GithubRemote } from './githubRemote'
 import { syncPass, type PassProgress, type PassResult } from './pass'
@@ -116,16 +117,6 @@ export interface SyncEngine {
   stop(): void
 }
 
-const browserClock: Clock = {
-  now: () => Date.now(),
-  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
-}
-
-function webLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<T>): Promise<T> } } }).navigator?.locks
-  return locks === undefined ? fn() : locks.request(name, fn)
-}
 
 /** The lock name of a vault: two tabs of the app share it, so only one of them runs a pass of that vault at a time. */
 export const lockName = (vault: string) => `notecards-sync:${vault}`
@@ -333,9 +324,7 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
         // GitHub's time (the client holds it between 1 minute and 1 hour), or more: each "slow down" in a row doubles
         // the wait, up to 1 hour (YAZ-5169). Never under the floor, so a reset time in the past cannot loop.
         slowedInRow++
-        const backoff = Math.min(MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS * 2 ** Math.min(slowedInRow - 1, 16))
-        const given = ((error as GithubError).resetAt ?? clock.now()) - clock.now()
-        const retryAt = clock.now() + Math.min(MAX_RATE_WAIT_MS, Math.max(MIN_RATE_WAIT_MS, given, backoff))
+        const retryAt = slowedUntil(error as GithubError, slowedInRow, clock.now())
         setState({ status: 'slowed', problem, retryAt, progress: null })
         plan(retryAt)
       } else if (ATTENTION.includes(problem)) {

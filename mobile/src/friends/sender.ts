@@ -19,6 +19,7 @@ import { finishRemove, pendingRemove, remakeNumbers, settlePointers } from '@sha
 import { recordGistsRefused } from '../auth/friends'
 import type { FetchLike } from '../github/client'
 import { PHONE, VaultClosedError, type TokenStore, type VaultStore } from '../store'
+import { browserClock, webLock } from '../sync/browser'
 import type { Clock, SyncEvent } from '../sync/engine'
 import { countedVaults, openFriendsApi } from './friendsApi'
 import type { OwnNumbers } from './ownNumbers'
@@ -123,15 +124,6 @@ export interface FriendsSender {
   stop(): Promise<void>
 }
 
-const browserClock: Clock = {
-  now: () => Date.now(),
-  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
-}
-function webLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<T>): Promise<T> } } }).navigator?.locks
-  return locks === undefined ? fn() : locks.request(name, fn)
-}
 const STRENGTH: Record<SendReason, number> = { timer: 0, pass: 1, background: 2 }
 /** A timer never waits longer than this (a browser timer over 2^31-1 ms fires at once). */
 const MAX_TIMER_MS = 60 * 60_000

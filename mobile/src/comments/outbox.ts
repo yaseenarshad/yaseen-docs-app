@@ -1,4 +1,5 @@
 import type { VaultStore } from '../store'
+import { vaultLock } from '../sync/browser'
 import type { TaskTick } from './taskWrite'
 
 /**
@@ -88,18 +89,7 @@ export async function keptComments(store: VaultStore, vault: string): Promise<nu
 }
 
 /** One change at a time, in every tab (Web Locks), as the answer list does; one queue per vault where they are missing. */
-const pageQueues = new Map<string, Promise<unknown>>()
-function bookLock<T>(vault: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<T>): Promise<T> } } }).navigator?.locks
-  if (locks !== undefined) return locks.request(`notecards-comments:${vault}`, fn)
-  const run = (pageQueues.get(vault) ?? Promise.resolve()).then(fn, fn)
-  const settled = run.catch(() => undefined)
-  pageQueues.set(vault, settled)
-  void settled.then(() => {
-    if (pageQueues.get(vault) === settled) pageQueues.delete(vault)
-  })
-  return run
-}
+const bookLock = <T>(vault: string, fn: () => Promise<T>): Promise<T> => vaultLock('notecards-comments', vault, fn)
 
 export async function openCommentBox(store: VaultStore, vault: string): Promise<CommentBox> {
   let book = bookOf(await store.getState<CommentBook>(vault, COMMENTS_STATE))

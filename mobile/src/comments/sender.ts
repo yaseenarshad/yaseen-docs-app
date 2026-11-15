@@ -1,6 +1,7 @@
 import { newCommentId, nowIso } from '@shared/comments'
-import { GithubError, MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS, rateLimitedUntil } from '../github/client'
+import { GithubError, slowedUntil, staleUntil } from '../github/client'
 import type { VaultStore } from '../store'
+import { browserClock } from '../sync/browser'
 import type { Clock, SyncEngine } from '../sync/engine'
 import { openCommentBox, type CommentBox, type WaitingComment } from './outbox'
 import type { TaskTick } from './taskWrite'
@@ -60,11 +61,6 @@ export interface CommentSenderOptions {
   clock?: Clock
 }
 
-const browserClock: Clock = {
-  now: () => Date.now(),
-  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle as ReturnType<typeof setTimeout>),
-}
 
 /** The person must act: no send by itself until `sendNow()` (after "Sign in again") or a new comment. */
 const NEEDS_PERSON = ['UNAUTHORIZED', 'READ_ONLY', 'NOT_FOUND', 'NO_ACCESS']
@@ -201,13 +197,11 @@ export function createCommentSender(options: CommentSenderOptions): CommentSende
         const problem = error instanceof GithubError ? error.code : 'FAILED'
         if (problem === 'RATE_LIMITED') {
           slowedInRow++
-          const backoff = Math.min(MAX_RATE_WAIT_MS, MIN_RATE_WAIT_MS * 2 ** Math.min(slowedInRow - 1, 16))
-          const given = ((error as GithubError).resetAt ?? clock.now()) - clock.now()
-          setState({ problem, retryAt: clock.now() + Math.min(MAX_RATE_WAIT_MS, Math.max(MIN_RATE_WAIT_MS, given, backoff)) })
+          setState({ problem, retryAt: slowedUntil(error as GithubError, slowedInRow, clock.now()) })
         } else if (problem === 'STALE_HEAD') {
           // The branch kept moving: wait 1, 2, 4 … minutes, as the answer list does (YAZ-5183).
           staleInRow++
-          setState({ problem, retryAt: rateLimitedUntil(clock.now() + MIN_RATE_WAIT_MS * 2 ** Math.min(staleInRow - 1, 16), clock.now()) })
+          setState({ problem, retryAt: staleUntil(staleInRow, clock.now()) })
         } else setState({ problem, retryAt: null })
       } finally {
         running = null

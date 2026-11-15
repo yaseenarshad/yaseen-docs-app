@@ -48,6 +48,7 @@ import {
 import { localFriends, type FriendsPort, type FriendsSettings } from '../app/friendsPort'
 import { recordGistsRefused } from '../auth/friends'
 import { loadAccount } from '../auth/account'
+import { webLock } from '../sync/browser'
 import type { FetchLike } from '../github/client'
 import { PHONE, VaultClosedError, loadVaultList, vaultId, type TokenStore, type VaultStore } from '../store'
 import type { Clock } from '../sync/engine'
@@ -183,11 +184,6 @@ interface ListCopy {
   nickname: string | null
   /** YAZ-5251: the home time zone of the list (absent: not set yet). */
   zone?: string
-}
-
-function webLock<T>(name: string, fn: () => Promise<T>): Promise<T> {
-  const locks = (globalThis as { navigator?: { locks?: { request(name: string, fn: () => Promise<T>): Promise<T> } } }).navigator?.locks
-  return locks === undefined ? fn() : locks.request(name, fn)
 }
 
 export function createFriendsList(options: FriendsListOptions): FriendsList {
