@@ -122,6 +122,30 @@ describe('Show IDs in the title and in the files list (YAZ-4940 part 2)', () => 
     both.unmount()
   })
 
+  it('`useAllPathIds` shows a card file\'s ID, off its card line (YAZ-5546): it holds no `id:`; a page with its own `id` is unchanged', () => {
+    const one = createWikilinkResolveSource()
+    const cardFile: IndexRecord = { ...record('/v/cards/demo-40.md'), kind: 'card', title: 'Made-up card', cards: [{ id: 'DEMO-40', off: false, next: false, reviews: [], title: 'Made-up card' }] }
+    const unswept: IndexRecord = { ...record('/v/cards/new.md'), kind: 'card', cards: [{ id: null, off: false, next: false, reviews: [] }] }
+    const pageWithCards: IndexRecord = { ...record('/v/page.md', 'DEMO-7'), cards: [{ id: 'DEMO-41', off: false, next: false, reviews: [] }] }
+    one.update(() => null, [cardFile, unswept, pageWithCards, record('/v/plain.md')], [], true)
+    const seen: (PathIds | undefined)[] = []
+    const Probe = ({ form }: { form: 'number' | 'full' }) => {
+      seen.push(useAllPathIds([{ index: one, form }]))
+      return null
+    }
+    const el = document.createElement('div')
+    const root = createRoot(el)
+    act(() => root.render(<Probe form="number" />))
+    expect(seen.at(-1)?.get('/v/cards/demo-40.md')).toBe('#40')
+    expect(seen.at(-1)?.get('/v/page.md')).toBe('#7')
+    expect(seen.at(-1)?.has('/v/cards/new.md')).toBe(false)
+    expect(seen.at(-1)?.has('/v/plain.md')).toBe(false)
+    act(() => root.render(<Probe form="full" />))
+    expect(seen.at(-1)?.get('/v/cards/demo-40.md')).toBe('DEMO-40')
+    expect(seen.at(-1)?.get('/v/page.md')).toBe('DEMO-7')
+    act(() => root.unmount())
+  })
+
   it('`useAllPathIds` follows a change of form on the same index: Number to Full ID redraws the map', () => {
     const one = createWikilinkResolveSource()
     one.update(() => null, [record('/v/a.md', 'EMB-12')], [], true)

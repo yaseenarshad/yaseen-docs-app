@@ -102,8 +102,8 @@ function sameIds(prev: PathIds, next: Map<string, string>): boolean {
 /**
  * One `PathIds` over the index of each vault in `sources`, live, each in its vault's form: the sidebar's files list
  * draws each page's ID from it. Empty `sources` (no vault chose the files list): `undefined`, and no index is read or
- * subscribed to. Built once per snapshot or change of form, off `pathInfo`'s cached map; a build that changed no
- * shown ID keeps the Map it had.
+ * subscribed to. Built once per snapshot or change of form, off `pathInfo`'s cached map (and a card file's card ID,
+ * YAZ-5546); a build that changed no shown ID keeps the Map it had.
  */
 export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | undefined {
   const subscribe = useCallback(
@@ -121,8 +121,15 @@ export function useAllPathIds(sources: readonly PathIdsSource[]): PathIds | unde
     if (forms === last.forms && infos.length === last.infos.length && infos.every((info, i) => info === last.infos[i])) return last.ids
     const built = new Map<string, string>()
     infos.forEach((info, i) => {
-      const number = sources[i].form === 'number'
-      for (const [path, { id }] of info) if (id !== undefined) built.set(path, idInFiles(id, number ? 'number' : 'full'))
+      const form = sources[i].form === 'number' ? 'number' : 'full'
+      for (const [path, { id }] of info) if (id !== undefined) built.set(path, idInFiles(id, form))
+      // A card file (decision D, YAZ-5308) holds no `id:` property: its ID is its card's, off its card line, as
+      // `searchCandidates`' `cardFileId` (and the phone's `rowId`, YAZ-5536). Read here, not put on the record or
+      // `pathInfo`: a record's `id` also resolves links, draws pills and names comments, where a card file is not a page.
+      for (const record of sources[i].index.records) {
+        const cardId = record.kind === 'card' && record.id === undefined ? (record.cards?.[0]?.id ?? undefined) : undefined
+        if (cardId !== undefined) built.set(record.path, idInFiles(cardId, form))
+      }
     })
     held.current = { infos, forms, ids: sameIds(last.ids, built) ? last.ids : built }
     return held.current.ids
