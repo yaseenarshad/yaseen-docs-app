@@ -1158,5 +1158,24 @@ export async function remakeNumbers(api: GistsApi, handle: IndexHandle, budget: 
   }
 }
 
+/**
+ * YAZ-5492: a list whose numbers gist is GONE heals itself: a new generation (`remakeNumbers`: the same saga as a
+ * remove, so one generation, never two; each pointer of the list moves to it). Two phones' way outs into two vaults at
+ * the same moment could each delete the other's new numbers gist; the list that the note names then pointed at nothing
+ * for good, and each friend added after it read "no update yet". One read of the numbers gist (an ETag read, free when
+ * it is there). `null`: nothing to heal (the gist is there, a remove waits and makes its own, or GitHub did not answer).
+ */
+export async function healNumbers(api: GistsApi, handle: IndexHandle, budget: GistBudget, opts: ListOptions): Promise<RemoveResult | null> {
+  const stats = handle.index.stats
+  if (handle.store === undefined || stats === null || pendingRemove(handle) !== null || (handle.state?.pending.length ?? 0) > 0) return null
+  try {
+    await api.read(stats)
+    return null
+  } catch (err) {
+    if (gistErrorCode(err) !== 'NOT_FOUND') return null
+  }
+  return remakeNumbers(api, handle, budget, opts)
+}
+
 /** Reads the list (read only), for a caller that holds no handle yet. */
 export { findFriendsIndex, ListError }

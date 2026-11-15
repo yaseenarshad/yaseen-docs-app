@@ -73,16 +73,22 @@ export function gistsApi(client: GithubClient, repos?: () => Promise<readonly Re
     if (known.length > 0) serverTime = Math.max(...known)
     return answer
   }
-  /** `GET /gists`, page by page. `all` (YAZ-5464): a full last page means there may be more: `TOO_MANY_GISTS`. */
+  /**
+   * `GET /gists`, page by page. `all` (YAZ-5464): more than `max` pages is `TOO_MANY_GISTS`. YAZ-5492 (nit): a full
+   * last page may be the end (exactly 3,000 gists): one more page tells; only a gist on it is too many.
+   */
   async function pages(max: number, all: boolean): Promise<GistListItem[]> {
     const out: GistListItem[] = []
-    for (let page = 1; page <= max; page++) {
+    for (let page = 1; page <= max + (all ? 1 : 0); page++) {
       const answer = await request('/gists', { query: { per_page: String(PAGE), page: String(page) } })
       const items = asList(answer.data)
+      if (page > max) {
+        if (items.length === 0) return out
+        throw Object.assign(new Error(`You have more than ${max * PAGE} gists on GitHub: the app cannot see them all`), { code: 'TOO_MANY_GISTS' })
+      }
       out.push(...items.map((g) => ({ id: g.id, description: g.description ?? '', files: Object.keys(g.files ?? {}), createdAt: g.created_at, updatedAt: g.updated_at })))
       if (items.length < PAGE) return out
     }
-    if (all) throw Object.assign(new Error(`You have more than ${max * PAGE} gists on GitHub: the app cannot see them all`), { code: 'TOO_MANY_GISTS' })
     return out
   }
   return {

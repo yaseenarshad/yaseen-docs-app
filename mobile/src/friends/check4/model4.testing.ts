@@ -164,7 +164,7 @@ export class Model4 extends Model {
         const busy = (this.inflight.get(id) ?? 0) > 0
         if ((busy && this.rng() < 0.6) || this.rng() < this.p409) {
           this.st4.c409++
-          return new Response(JSON.stringify({ message: 'Gist cannot be updated.' }), { status: 409, headers: { 'content-type': 'application/json', date: new Date(this.clock.now()).toUTCString() } })
+          return new Response(JSON.stringify({ message: 'Gist cannot be updated.' }), { status: 409, headers: { 'content-type': 'application/json' } })
         }
         // GitHub (live, round 4): a PATCH that sets a file to null that the gist does not have is refused whole, 422.
         if (process.env.G422 === '1') {
@@ -172,7 +172,7 @@ export class Model4 extends Model {
           const body = typeof init.body === 'string' ? (JSON.parse(init.body) as { files?: Record<string, unknown> }) : {}
           if (g !== undefined && Object.entries(body.files ?? {}).some(([n, f]) => f === null && !(n in g.files))) {
             this.st4.c422++
-            return new Response(JSON.stringify({ message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] }), { status: 422, headers: { 'content-type': 'application/json', date: new Date(this.clock.now()).toUTCString() } })
+            return new Response(JSON.stringify({ message: 'Validation Failed', errors: [{ resource: 'Gist', code: 'missing_field', field: 'files' }] }), { status: 422, headers: { 'content-type': 'application/json' } })
           }
         }
         const mark = { d }

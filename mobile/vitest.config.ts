@@ -51,7 +51,7 @@ export default defineConfig({
     // own settings: only with CHECK4_TOOLS=1.
     exclude: [
       ...configDefaults.exclude,
-      ...(process.env.CHECK3_FULL === '1' ? [] : ['src/friends/check3/{seeds,mine}-*.test.ts', 'src/friends/check3/show.test.ts', 'src/friends/check4/{full4,mine4}-*.test.ts', 'src/friends/check5/full5-*.test.ts', 'src/friends/check6/sample6-*.test.ts']),
+      ...(process.env.CHECK3_FULL === '1' ? [] : ['src/friends/check3/{seeds,mine}-*.test.ts', 'src/friends/check3/show.test.ts', 'src/friends/check4/{full4,mine4}-*.test.ts', 'src/friends/check5/full5-*.test.ts', 'src/friends/check6/sample6-*.test.ts', 'src/friends/check6/sample8-*.test.ts']),
       // The round 5 checker's tools (its runner by env, replay, shrink): only with CHECK4_TOOLS=1.
       ...(process.env.CHECK4_TOOLS === '1' ? [] : ['src/friends/check4/{attack,classify,msgs,one,scanold,shrink}.test.ts', 'src/friends/check5/{run5,replay,shrink5}.test.ts']),
     ],

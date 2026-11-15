@@ -142,12 +142,27 @@ it('R7-2: a phone whose clock is 12 minutes FAST, a list made 1 minute ago (a la
   m.clock.advance(60_000)
   del(m)
   ;(m as any).skew = { A1: 12 * 60_000 }
+  // BUILDER (YAZ-5492 nit): the REAL path of a phone. A browser cannot read GitHub's `Date` header (CORS); the phone
+  // learns GitHub's time only from the core reset. What the new phone's `fetch` gives the app is counted here.
+  const heard = { date: 0, core: 0 }
+  const orig = (m as any).fetchFor.bind(m)
+  ;(m as any).fetchFor = (d: any) => {
+    const f = orig(d)
+    return async (url: string, init: any) => {
+      const res: Response = await f(url, init)
+      if (res.headers.get('date') !== null) heard.date++
+      if (res.headers.get('x-ratelimit-resource') === 'core' && res.headers.get('x-ratelimit-reset') !== null) heard.core++
+      return res
+    }
+  }
   const fresh = (await (m as any).device('A', 1)) as any
   m.devs.A.push(fresh)
   const rows = await fresh.list.rows()
   const out = rows.kind === 'home-gone' ? await fresh.list.restart('ali/vault') : { kind: 'not offered' }
   fileBack(m, old) // the replica catches up
-  console.log('R7-2', JSON.stringify({ rows: rows.kind, restart: out.kind, bPointerAlive: m.gist(mine) !== undefined }))
+  console.log('R7-2', JSON.stringify({ rows: rows.kind, restart: out.kind, bPointerAlive: m.gist(mine) !== undefined, heard }))
+  expect(heard.date).toBe(0)
+  expect(heard.core).toBeGreaterThan(0)
   expect(rows.kind).not.toBe('home-gone')
   expect(m.gist(mine)).toBeDefined()
 })

@@ -30,6 +30,7 @@ import {
   markPaired,
   settlePointers,
   finishRemove,
+  healNumbers,
   newListCache,
   parseFriendLink,
   pasteLink,
@@ -274,9 +275,12 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     }
     const found = await openFriendsList(api, opts, seed)
     switch (found.kind) {
-      case 'ok':
-        await remember(found.handle)
-        return found.handle
+      case 'ok': {
+        // YAZ-5492: once a session, a list whose numbers gist is gone heals itself (a new generation).
+        const healed = await heal(api, found.handle)
+        await remember(healed)
+        return healed
+      }
       case 'none':
         return null
       case 'newer':
@@ -306,6 +310,14 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
     return { kind: 'home-gone', home, vaults: [...new Set(vaults)] }
   }
   const isHandle = (x: IndexHandle | Unavailable | null): x is IndexHandle => x !== null && 'index' in x
+
+  /** YAZ-5492: the list with its numbers gist made again when it is gone (or as it is: the heal waits for later). */
+  async function heal(api: GistsApi, h: IndexHandle): Promise<IndexHandle> {
+    const r = await healNumbers(api, h, await budget(), opts)
+    if (r === null) return h
+    await saveBudget(r.budget)
+    return r.handle
+  }
 
   async function budget(): Promise<GistBudget> {
     return (await store.getState<{ budget?: GistBudget }>(PHONE, SEND_STATE))?.budget ?? emptyBudget()
@@ -629,8 +641,10 @@ export function createFriendsList(options: FriendsListOptions): FriendsList {
         if (r.kind !== 'ok') return r.kind === 'newer' ? { kind: 'newer-app' as const } : { kind: r.kind }
         // Nothing of the old list waits on this phone any more: its pointers are gone.
         for (const mine of await queuedMines(phoneStore)) await dequeueRemove(phoneStore, mine)
-        await remember(r.handle)
-        return { kind: 'done' as const, vault: r.handle.store!.port.repo }
+        // YAZ-5492: another phone's way out at the same moment may have deleted the numbers gist of the list that won.
+        const healed = await heal(api, r.handle)
+        await remember(healed)
+        return { kind: 'done' as const, vault: healed.store!.port.repo }
       }),
     remove: (mine, asked) =>
       withApi(async (api, login, vault) => {

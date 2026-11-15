@@ -17,6 +17,7 @@ import {
   readListFiles,
   readListGist,
   type GistDoc,
+  type GistListItem,
   type FriendsIndex,
   type GistsApi,
   type IndexFind,
@@ -189,9 +190,9 @@ interface NoteGist {
  * list call and in a read), in name order, and an old list's entry files (`notecards-friends.f.…`) sort BEFORE the head.
  * Such a list is never taken for "no list" (that made a new, empty one).
  */
-async function listGists(api: GistsApi, all = false): Promise<NoteGist[]> {
+async function listGists(api: GistsApi, all = false, listed?: readonly GistListItem[]): Promise<NoteGist[]> {
   // YAZ-5464 (nit): the way out sees EVERY gist (`all`), so no old list gist is left that names friends' pointers.
-  const items = (await (all ? everyGist(api) : api.list())).filter((g) => g.files.some(isListFile)).sort(older)
+  const items = (listed ?? (await (all ? everyGist(api) : api.list()))).filter((g) => g.files.some(isListFile)).sort(older)
   const out: NoteGist[] = []
   for (const item of items) {
     let gist: GistDoc | 'unchanged'
@@ -375,8 +376,10 @@ export async function openFriendsList(api: GistsApi, opts: WriteOptions, seed: L
       const found = await atHome(api, ports, first.read.home, first.id, first.owner, guard, true, first.gist.updatedAt)
       if (found.kind === 'ok') await tidyOldGist(api, first.gist)
       // YAZ-5462: a way out that stopped after its new list: its deletes are finished here, then its mark goes.
-      if (found.kind === 'ok' && wayOutOf(found.handle) !== null) return { kind: 'ok', handle: await finishWayOut(api, found.handle, opts) }
-      return found
+      const handle = found.kind === 'ok' && wayOutOf(found.handle) !== null ? await finishWayOut(api, found.handle, opts) : found.kind === 'ok' ? found.handle : null
+      // YAZ-5492: a marked list in another of my vaults is a way out that lost (another phone's note won): its mark goes.
+      if (handle !== null && wayOutOf(handle) === null) await clearStaleMarks(ports, handle, opts)
+      return handle === null ? found : { kind: 'ok', handle }
     }
     if (first.read.kind === 'newer') return { kind: 'newer', id: first.id }
     if (first.read.kind !== 'legacy') return { kind: 'broken', id: first.id }
@@ -433,8 +436,10 @@ async function withNote(api: GistsApi, handle: IndexHandle, ports: readonly Repo
   }
   const first = gists[0]
   if (first === undefined) return { kind: 'ok', handle }
-  // A twin note of mine (the same vault) goes; the oldest stays.
-  for (const g of gists.slice(1)) if (g.read.kind === 'note' && g.read.home === home && g.owner === first.owner) await removeQuietly(api, g.id).catch(() => undefined)
+  // A twin note of mine goes; the oldest stays. YAZ-5492: also a note that names ANOTHER vault (two phones' way outs
+  // into two vaults at the same moment each wrote one): every app reads the oldest, and a second note would only name
+  // a list that lost (it read as a second home in the checker's model).
+  if (first.read.kind === 'note') for (const g of gists.slice(1)) if (g.read.kind === 'note' && g.owner === first.owner) await removeQuietly(api, g.id).catch(() => undefined)
   if (first.read.kind === 'note') {
     if (first.read.home === home) return { kind: 'ok', handle: { ...handle, id: first.id, owner: first.owner, store: { port: handle.store!.port, note: first.id, guard: guardOf(opts) } } }
     // The oldest note names another vault: that list is the one (a new list that lost the race is left empty).
@@ -699,9 +704,16 @@ export const wayOutOf = (h: IndexHandle): string | null => {
  * 3. EVERY pointer gist of mine (exactly our one file, in our format) that names another numbers gist than the new list
  *    names, and EVERY such numbers gist, is deleted: each friend, each group I am in, each shared link. No friend or
  *    group member has a way to my numbers any more. (A pointer that names the new numbers gist is new: it stays.)
+ *    YAZ-5492: only the gists that were there when step 0 listed them (the sharing it ends). A newer gist is another
+ *    phone's way out at the same moment (into another vault), or its new list's generation or friend: it stays, and so
+ *    does an older numbers gist that a MARKED list in my vaults names (another way out's own).
  * 4. Each list gist of mine (the note, a twin, an old list: they name the old vault, and an old one names friends and
- *    pointer IDs in its revisions) is deleted; then ONE new note names `target`.
- * 5. The `wayOut` mark leaves the list.
+ *    pointer IDs in its revisions) is deleted; then ONE new note names `target` (YAZ-5492: the oldest note wins; a
+ *    newer one, of another phone's way out into another vault, goes; that phone's list then lost: its mark and its
+ *    numbers gist go).
+ * 5. The `wayOut` mark leaves the list (YAZ-5492: chosen from the list proved newest, `finishWayOut`).
+ * YAZ-5492: if the new list's write fails, its numbers gist goes at once. A list whose numbers gist is gone after all
+ * (what a phone could not see of another phone's way out) heals: the phone gives it a new generation (`healNumbers`).
  * Each step can run again: a stop before 2 leaves the old note and no list (the same way out is offered again, and its
  * run deletes the numbers gist of the stopped run, as no list names it); a stop after 2 leaves the mark, and the next
  * open of the list by its note finishes 3 to 5 (`openFriendsList`); in another vault, a stop before 4 leaves the old
@@ -713,12 +725,19 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   const ports = await portsOf(api)
   // 0. Every gist of mine can be seen (a pointer that the way out cannot see is never left behind silently).
   let gists: NoteGist[]
+  let every: GistListItem[]
   try {
-    gists = await listGists(api, true)
+    every = await everyGist(api)
+    gists = await listGists(api, true, every)
   } catch (err) {
     if (tooManyGists(err)) return { kind: 'too-many-gists' }
     throw err
   }
+  // YAZ-5492: the gists that exist as this way out starts: the sharing it ends (every pointer and numbers gist of them
+  // goes, also one that an old list names: an old list that came back still names the old numbers gist, which a removed
+  // friend can read by its ID). A gist made later is new (another phone's way out, its new generation, a friend added
+  // on its list, at the same moment): it is never deleted here.
+  const before = new Set(every.map((g) => g.id.toLowerCase()))
   const first = gists[0]
   // YAZ-5400: an old list that GitHub cut at 300 files cannot be read either: the same way out.
   if (first === undefined || (first.read.kind !== 'note' && !first.cut)) return { kind: 'home-is-there' }
@@ -739,7 +758,16 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   const now = opts.now ?? Date.now
   const numbers = await api.create(opts.describe('numbers'), { [NUMBERS_FILE]: JSON.stringify(seed.numbers ?? emptyNumbers(now())) })
   await opts.sleep(1000)
-  const made = await replaceRepoList(port, newListFiles(seed, numbers.id), guard, opts.sleep, inHome, { [WAY_OUT]: numbers.id })
+  const step = { committed: false }
+  let made: Awaited<ReturnType<typeof replaceRepoList>>
+  try {
+    made = await replaceRepoList(port, newListFiles(seed, numbers.id), guard, opts.sleep, inHome, { [WAY_OUT]: numbers.id }, step)
+  } catch (err) {
+    // YAZ-5492 (nit): the new list was not written: its numbers gist goes at once (no stray gist). A commit that may
+    // have landed (no answer) is read back first: a list that names the gist keeps it.
+    await dropUnlisted(api, port, numbers.id, step.committed, guard)
+    throw err
+  }
   if (made === 'newer' || made === 'there') {
     await removeQuietly(api, numbers.id)
     return { kind: made === 'newer' ? 'newer' : 'home-is-there' }
@@ -751,8 +779,9 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
     await removeQuietly(api, numbers.id)
     return { kind: 'home-is-there' }
   }
-  // 3. Every old pointer, then every old numbers gist, that is provably ours.
-  const deleted = { ...(await deleteOld(api, new Set([numbers.id]))), notes: 0 }
+  // 3. Every old pointer, then every old numbers gist, that is provably ours (YAZ-5492: never a numbers gist of another
+  // phone's way out into another vault at the same moment).
+  const deleted = { ...(await deleteOld(api, new Set([numbers.id.toLowerCase()]), ports, (g) => before.has(g.id.toLowerCase()))), notes: 0 }
   // 4. The old list gists go (the note names a vault that is gone; an old one holds friends' pointer IDs), then the note.
   for (const g of gists) {
     if (g.read.kind !== 'note' && g.read.kind !== 'legacy' && g.read.kind !== 'unreadable' && !g.cut) continue
@@ -761,6 +790,15 @@ export async function restartList(api: GistsApi, target: string, seed: ListSeed,
   }
   const found = await withNote(api, handle, ports, opts)
   if (found.kind !== 'ok') throw new BrokenList()
+  // YAZ-5492: another phone's way out into another vault won (its note is older): my new list is no list any more.
+  // Its mark goes (its deletes ran above; no one may act on it later), only while it is still my own mark.
+  if (found.handle.store?.port.repo !== port.repo) {
+    // YAZ-5492: another phone's way out into another vault won (its note is older): my new list is no list any more.
+    // Its mark goes (its deletes ran above; no one may act on it later), only while it is still my own mark; then its
+    // numbers gist goes too (no pointer names it: no friend was ever added to that list).
+    const cleared = await clearMark(handle, numbers.id, opts).catch(() => null)
+    if (cleared !== null && wayOutOf(cleared) === null && !numbersOf({ value: found.handle.index, list: found.handle.state }, found.handle.extra).includes(numbers.id.toLowerCase())) await removeQuietly(api, numbers.id).catch(() => undefined)
+  }
   handle = found.handle
   // 5. The mark goes (the list that the note names now: another device's way out at the same moment may have won).
   if (wayOutOf(handle) !== null) handle = await finishWayOut(api, handle, opts)
@@ -777,15 +815,59 @@ async function everyGist(api: GistsApi) {
 }
 
 /**
+ * YAZ-5492: every numbers gist that a list in one of my vaults names (each generation, the old v2 numbers, the mark),
+ * of the lists that carry a `wayOut` mark: the new lists of other way outs at the same moment (another phone's, into a
+ * vault this device may not have). The vaults: this device's own (on the friends account), and each vault that a note
+ * gist of mine names. A vault this token cannot see is skipped; any other failure throws (nothing is deleted on a
+ * guess). An UNMARKED list does not count here: an old list that came back (a push, a restore) names the old numbers
+ * gist, which a removed friend can still read by its ID; the way out deletes that one (I1).
+ */
+async function wayOutNumbers(api: GistsApi, ports: readonly RepoPort[]): Promise<Set<string>> {
+  const out = new Set<string>()
+  const vaults = new Map<string, RepoPort | null>(ports.map((p) => [p.repo, p]))
+  for (const g of await listGists(api)) if (g.read.kind === 'note' && !vaults.has(g.read.home)) vaults.set(g.read.home, null)
+  for (const [name, known] of vaults) {
+    try {
+      const port = known ?? (api.repo === undefined ? null : await api.repo(name))
+      if (port === null) continue
+      // No read guard: an older list than this device saw (an old list that came back over the way out's new one) is
+      // read as it is, never taken for a stale read that stops the deletes.
+      const read = await readRepoList(port)
+      if (read.kind !== 'ok' || typeof read.snap.extra[WAY_OUT] !== 'string') continue
+      for (const id of numbersOf(read.snap.read, read.snap.extra)) out.add(id)
+    } catch (err) {
+      if (listErrorCode(err) === 'NO_LIST_ACCESS') continue
+      throw err
+    }
+  }
+  return out
+}
+
+/** The numbers gists one list names (lower case). */
+function numbersOf(read: { value: FriendsIndex; list?: { gens: readonly { stats: string }[]; legacyStats: string | null } }, extra: Record<string, unknown> | undefined): string[] {
+  const mark = extra?.[WAY_OUT]
+  return [read.value.stats, ...(read.list?.gens ?? []).map((g) => g.stats), read.list?.legacyStats ?? null, typeof mark === 'string' ? mark : null].filter((x): x is string => typeof x === 'string').map((x) => x.toLowerCase())
+}
+
+/**
  * YAZ-5462: deletes every pointer gist of mine that does not name a numbers gist in `keep`, and every numbers gist of
  * mine not in `keep` (each exactly our one file, in our format, read fresh). Every gist is listed (all pages).
+ * YAZ-5492: only the gists that the way out ENDS (`old`: they were there when it started). A newer gist is never
+ * deleted here: another phone's way out into another vault at the same moment, its new generation, a friend added on
+ * its new list. And an old numbers gist that a marked list in my vaults names (another way out's, that started a moment
+ * before) stays, with each pointer that names it (`wayOutNumbers`, read again right before the numbers go). What one
+ * phone could still not see (another phone's list in a vault it does not have, before that phone's note) heals: a list
+ * whose numbers gist is gone gets a new generation (`healNumbers`).
  */
-async function deleteOld(api: GistsApi, keep: ReadonlySet<string>): Promise<{ pointers: number; numbers: number }> {
+async function deleteOld(api: GistsApi, keep: ReadonlySet<string>, ports: readonly RepoPort[], old: (g: GistListItem) => boolean): Promise<{ pointers: number; numbers: number }> {
   const deleted = { pointers: 0, numbers: 0 }
   const mine = await everyGist(api)
+  let named = await wayOutNumbers(api, ports)
   for (const kind of ['pointer', 'numbers'] as const) {
     const file = kind === 'pointer' ? POINTER_FILE : NUMBERS_FILE
-    for (const item of mine.filter((g) => g.files.length === 1 && g.files[0] === file && !keep.has(g.id))) {
+    if (kind === 'numbers') named = await wayOutNumbers(api, ports)
+    for (const item of mine.filter((g) => g.files.length === 1 && g.files[0] === file && !keep.has(g.id.toLowerCase()) && old(g))) {
+      if (kind === 'numbers' && named.has(item.id.toLowerCase())) continue
       let gist: GistDoc | 'unchanged'
       try {
         gist = await api.read(item.id)
@@ -796,7 +878,9 @@ async function deleteOld(api: GistsApi, keep: ReadonlySet<string>): Promise<{ po
       if (gist === 'unchanged' || Object.keys(gist.files).length !== 1) continue
       if (kind === 'pointer') {
         const p = readPointerFile(fileText(gist, POINTER_FILE))
-        if (p.kind !== 'ok' || keep.has(p.value.stats.toLowerCase())) continue
+        if (p.kind !== 'ok') continue
+        const stats = p.value.stats.toLowerCase()
+        if (keep.has(stats) || named.has(stats)) continue
       } else if (readStatsFile(fileText(gist, NUMBERS_FILE)).kind !== 'ok') continue
       await removeQuietly(api, item.id)
       deleted[kind === 'pointer' ? 'pointers' : 'numbers']++
@@ -807,23 +891,79 @@ async function deleteOld(api: GistsApi, keep: ReadonlySet<string>): Promise<{ po
 
 /**
  * YAZ-5462: finishes a way out that stopped after its new list (the list carries the `wayOut` mark): the deletes of
- * step 3, then the mark goes. Kept: every numbers gist that the list names now (each generation, and the mark's).
+ * step 3, then the mark goes. Kept: every numbers gist that the list names now (each generation, and the mark's), and
+ * (YAZ-5492) every numbers gist that any list in my vaults names.
+ * YAZ-5492 (R8-6): what to keep is chosen from the list PROVED to be the newest: a compare-and-swap write of it (the
+ * same list, its write count one up) lands only on the branch head. A stale read (a lagging replica gave an older,
+ * marked list after the way out ended and a remove made a new generation) is refused there and read again; then the
+ * newest list (no mark) deletes nothing.
  */
 export async function finishWayOut(api: GistsApi, handle: IndexHandle, opts: Pick<WriteOptions, 'sleep'>): Promise<IndexHandle> {
-  const mark = wayOutOf(handle)
-  if (mark === null) return handle
-  const keep = new Set([mark.toLowerCase(), ...(handle.index.stats === null ? [] : [handle.index.stats]), ...(handle.state?.gens ?? []).map((g) => g.stats)])
-  await deleteOld(api, keep)
-  return clearWayOut(handle, opts)
+  if (wayOutOf(handle) === null) return handle
+  const proved = await rewriteExtra(handle, (base) => (wayOutOf(base) === null ? null : (base.extra ?? {})), opts)
+  const mark = wayOutOf(proved)
+  if (mark === null) return proved
+  const keep = new Set([mark.toLowerCase(), ...(proved.index.stats === null ? [] : [proved.index.stats.toLowerCase()]), ...(proved.state?.gens ?? []).map((g) => g.stats.toLowerCase())])
+  // YAZ-5492: the gists the way out ends are those made BEFORE its numbers gist (GitHub's `created_at` of both, whole
+  // seconds: the same second counts as new). With the mark's gist gone, every gist counts as old (as before).
+  const every = await everyGist(api)
+  const born = every.find((g) => g.id.toLowerCase() === mark.toLowerCase())?.createdAt
+  await deleteOld(api, keep, await portsOf(api), (g) => born === undefined || g.createdAt < born)
+  return clearWayOut(proved, opts)
 }
 
 /** The `wayOut` mark leaves the list (compare-and-swap; on a moved branch, from the newest list). */
-async function clearWayOut(handle: IndexHandle, opts: Pick<WriteOptions, 'sleep'>): Promise<IndexHandle> {
+function clearWayOut(handle: IndexHandle, opts: Pick<WriteOptions, 'sleep'>): Promise<IndexHandle> {
+  return rewriteExtra(handle, (base) => (wayOutOf(base) === null ? null : withoutMark(base)), opts)
+}
+
+/**
+ * YAZ-5492: a list with a `wayOut` mark in one of my vaults that the note does NOT name is a way out that lost (two
+ * phones' way outs into two vaults at the same moment: the older note won). Its mark goes, and nothing is deleted for
+ * it: the list the note names has no mark, so its own way out already ended all the sharing from before both (each
+ * deletes every gist older than its own numbers gist). A list read with no mark, or one that cannot be read, is left.
+ * Only the list's extra fields change (compare-and-swap), so a later open never acts on the dead list's mark.
+ */
+async function clearStaleMarks(ports: readonly RepoPort[], live: IndexHandle, opts: WriteOptions): Promise<void> {
+  const home = live.store?.port.repo
+  if (home === undefined) return
+  const guard = guardOf(opts)
+  for (const port of ports) {
+    if (port.repo === home) continue
+    try {
+      const read = await readRepoList(port, guard)
+      if (read.kind !== 'ok' || typeof read.snap.extra[WAY_OUT] !== 'string') continue
+      const h = handleOf({ port, note: null, guard }, read.snap, null)
+      const mark = wayOutOf(h)
+      if (mark !== null) await clearMark(h, mark, opts)
+    } catch (err) {
+      if (listErrorCode(err) === 'NO_LIST_ACCESS' || gistErrorCode(err) !== null) continue
+      throw err
+    }
+  }
+}
+
+/** YAZ-5492: the mark leaves the list only while it is `mine` (the mark of this way out, not of a later one). */
+function clearMark(handle: IndexHandle, mine: string, opts: Pick<WriteOptions, 'sleep'>): Promise<IndexHandle> {
+  return rewriteExtra(handle, (base) => (wayOutOf(base)?.toLowerCase() !== mine.toLowerCase() ? null : withoutMark(base)), opts)
+}
+
+const withoutMark = (base: IndexHandle): Record<string, unknown> => {
+  const { [WAY_OUT]: _mark, ...extra } = base.extra ?? {}
+  return extra
+}
+
+/**
+ * Writes the list again with the extra fields `next` gives (null: no write), its write count one up (compare-and-swap;
+ * on a moved branch, `next` runs again on the newest list). The handle that comes back is the list at the new commit.
+ */
+async function rewriteExtra(handle: IndexHandle, next: (base: IndexHandle) => Record<string, unknown> | null, opts: Pick<WriteOptions, 'sleep'>): Promise<IndexHandle> {
   const store = handle.store
   if (store === undefined || handle.sha === undefined) return handle
   let base = handle
-  for (let attempt = 0; wayOutOf(base) !== null; attempt++) {
-    const { [WAY_OUT]: _mark, ...extra } = base.extra ?? {}
+  for (let attempt = 0; ; attempt++) {
+    const extra = next(base)
+    if (extra === null) return base
     const rev = (base.rev ?? 0) + 1
     let sha: string
     try {
@@ -839,7 +979,23 @@ async function clearWayOut(handle: IndexHandle, opts: Pick<WriteOptions, 'sleep'
     store.guard?.memory?.saw(repoKey(store.port), rev, seenAt)
     return { ...base, sha, etag: null, rev, seenAt, extra }
   }
-  return base
+}
+
+/**
+ * YAZ-5492 (nit): the numbers gist of a way out whose new list was not written goes at once. When the commit may have
+ * landed (it got no answer), the list is read back first: one that names the gist keeps it. A read that fails leaves it
+ * (no list names it, so the next way out deletes it).
+ */
+async function dropUnlisted(api: GistsApi, port: RepoPort, numbers: string, committed: boolean, guard: ReadGuard | undefined): Promise<void> {
+  try {
+    if (committed) {
+      const read = await readRepoList(port, guard)
+      if (read.kind === 'ok' && numbersOf(read.snap.read, read.snap.extra).includes(numbers.toLowerCase())) return
+    }
+    await removeQuietly(api, numbers)
+  } catch {
+    /* left for the next way out */
+  }
 }
 
 /**
@@ -856,6 +1012,8 @@ async function replaceRepoList(
   sleep: (ms: number) => Promise<void>,
   onlyIfMissing = false,
   extra: Record<string, unknown> = {},
+  /** YAZ-5492: set once a commit was sent that got no clear answer (it may have landed). */
+  step: { committed: boolean } = { committed: false },
 ): Promise<RepoListSnapshot | 'newer' | 'there'> {
   const remembered = guard?.memory?.floor(repoKey(port))?.rev ?? 0
   for (let attempt = 0; ; attempt++) {
@@ -872,9 +1030,11 @@ async function replaceRepoList(
     const rev = Math.max(read.kind === 'ok' ? read.snap.rev : 0, remembered) + 1
     let made: string
     try {
+      step.committed = true
       made = await port.commit(sha, LIST_PATH, listFileText(files, extra, rev), LIST_COMMIT)
     } catch (err) {
       if (listErrorCode(err) === 'STALE_HEAD') {
+        step.committed = false
         if (attempt >= MAX_STALE_WRITES) throw Object.assign(new Error('The friends list kept changing on GitHub'), { code: 'GITHUB_DOWN' })
         await sleep(backoff(attempt))
         continue

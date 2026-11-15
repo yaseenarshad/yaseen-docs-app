@@ -141,4 +141,19 @@ describe('gistsApi (YAZ-5082)', () => {
     expect(pagesAsked).toEqual(Array.from({ length: 13 }, (_, i) => i + 1))
     await expect(api.listAll!(12)).rejects.toMatchObject({ code: 'TOO_MANY_GISTS' })
   })
+  it('YAZ-5492 (nit): EXACTLY 3,000 gists (30 full pages) is not too many; 3,001 is', async () => {
+    const page = (from: number, n: number) => Array.from({ length: Math.max(0, n) }, (_, i) => ({ id: (from + i + 1).toString(16).padStart(32, '0'), description: '', files: { 'a.json': {} }, created_at: '2026-11-14T06:00:00Z', updated_at: '2026-11-14T06:00:00Z' }))
+    const api = (total: number) =>
+      gistsApi(
+        githubClient(TOKEN, {
+          fetch: (async (url: string) => {
+            const p = Number(new URL(url).searchParams.get('page'))
+            return new Response(JSON.stringify(page((p - 1) * 100, Math.min(100, total - (p - 1) * 100))), { status: 200, headers: { 'content-type': 'application/json' } })
+          }) as never,
+        }),
+      )
+    expect(await api(3000).listAll!(30)).toHaveLength(3000)
+    expect(await api(2999).listAll!(30)).toHaveLength(2999)
+    await expect(api(3001).listAll!(30)).rejects.toMatchObject({ code: 'TOO_MANY_GISTS' })
+  })
 })
