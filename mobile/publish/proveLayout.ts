@@ -48,11 +48,13 @@ import { join } from 'node:path'
  *  - the top bar of a page with an ID chip (`#fixture=page`, `page-long-id`, YAZ-5519 S3) at 320, 375 and 430 px: every
  *    control inside the screen, the dot clear of the ⚙; the title cut first, then the ID's letters; its number shows.
  *    YAZ-5521: the same with the dot amber (`page-not-sent`, `page-waiting`, and with the long ID), at 390 px too.
+ *  - the Discard ask of a comment not sent, holding a long URL (`#fixture=page-not-sent`, YAZ-5521) at 320, 375 and
+ *    390 px: its words wrap, its buttons inside the screen.
  *  - a page card's ⋯ menu low on the screen (`#fixture=page-card-menu`, YAZ-5519 S6) at 375 and 430 px: inside the
  *    screen, above the page arrows and the tab bar; its first row on top.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -740,6 +742,31 @@ if (process.env.LAYOUT_TOPBAR !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  top bar ${name} at ${w}x${h}: ${Object.entries(m.at).map(([k, v]) => `${k} ${v ? (v as number[]).join('-') : 'NONE'}`).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the dot ${m.clear ? 'clear of the ⚙' : 'UNDER THE ⚙ (or the ⚙ cut)'}; the ID's number ${m.number ? 'shows' : 'IS CUT'}; the title ${m.titleWidth}px${m.titleCut ? ', cut with …' : ''}; the dot says "${m.words}"  ${file}`)
     }
+  }
+}
+// YAZ-5521 (sweep2 S-C): discardAsk_wrapsLongWords_buttonsInsideViewport. The dot's sheet (`#fixture=page-not-sent`:
+// one comment not sent, holding a long URL), Discard tapped: the ask wraps its words, every button is inside the screen.
+const DISCARD_ASK = `(() => {
+  const ask = document.querySelector('.status-sheet .confirm')
+  if (!ask) return { error: 'no ask' }
+  const box = (el) => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right)] }
+  const buttons = [...ask.querySelectorAll('button')].map(box)
+  const q = ask.querySelector('.confirm__question')
+  return { ask: box(ask), question: box(q), buttons, inside: [box(ask), box(q), ...buttons].every(([l, r]) => l >= -0.5 && r <= innerWidth + 0.5), wraps: q.scrollWidth <= q.clientWidth + 1, sideways: document.scrollingElement.scrollWidth > innerWidth }
+})()`
+if (process.env.LAYOUT_DISCARD !== 'no') {
+  for (const [w, h] of [[320, 568], [375, 667], [390, 844]] as const) {
+    const file = await open('page-not-sent', w, h)
+    await evaluate(`document.querySelector('.sync-status').click()`)
+    for (let i = 0; i < 30 && (await evaluate(`document.querySelector('.status-sheet .not-sent .discard-answer') !== null`)) !== true; i++) await wait(100)
+    await evaluate(`document.querySelector('.status-sheet .not-sent .discard-answer').click()`)
+    await wait(400)
+    const m = await evaluate(DISCARD_ASK)
+    const shot = file.replace('.png', '-discard-ask.png')
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const ok = m.error === undefined && m.inside && m.wraps && !m.sideways
+    if (!ok) failed++
+    console.log(`${ok ? 'PASS' : 'FAIL'}  discard ask (a long URL) at ${w}x${h}: ${m.error ?? `ask ${m.ask.join('-')}, question ${m.question.join('-')}, buttons ${m.buttons.map((b: number[]) => b.join('-')).join(', ')}; ${m.inside ? 'all inside' : 'OFF SCREEN'}; the words ${m.wraps ? 'wrap' : 'DO NOT WRAP'}; page ${m.sideways ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
   }
 }
 // YAZ-5519 S6: a page card's ⋯ low on the screen (`#fixture=page-card-menu`, the third card, unscrolled) opens its menu

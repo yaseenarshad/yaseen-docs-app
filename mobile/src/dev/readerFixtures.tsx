@@ -278,7 +278,10 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
   }
   if (dotKind !== undefined) {
     const state = { vault: READER_ID, waiting: 0, lost: [], sending: false, problem: null, retryAt: null, lastSentAt: null, comments: dotKind === 'waiting' ? 2 : 0, ticks: 0, notSent: dotKind === 'not-sent' ? { n: 1, ticks: 0, gone: 1 } : undefined }
-    const answers = { state: () => state, subscribe: () => () => {}, waiting: () => [] }
+    // The comment not sent holds a long URL (sweep2 S-C: the Discard ask must wrap it).
+    const lost = { id: 'a1b2c3d4', path: 'garden/Old plan.md', body: 'See https://example.com/a/very/long/path/that/does/not/wrap/nicely/at/all/Supercalifragilisticexpialidocious', at: '2026-11-15T09:00:00Z', madeAt: 0, notBefore: 0, refused: 'gone' as const }
+    const comments = { ready: async () => {}, waiting: (path?: string) => (dotKind === 'not-sent' && (path === undefined || path === lost.path) ? [lost] : []), add: async () => lost, undo: async () => false, discard: async () => true, subscribe: () => () => {} }
+    const answers = { state: () => state, subscribe: () => () => {}, waiting: () => [], comments }
     sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
   }
   const services: AppServices = { store, tokens, vaultTabs: name === 'page-headings-alone' ? undefined : reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
