@@ -281,8 +281,10 @@ export function CalendarView({ hover, def, view, records, settings, resolve, row
     [scale, anchor, month.y, month.m, sundayFirst, rollFirst, rollCount],
   )
   const weeks = useMemo(() => (hideWeekends ? allWeeks.map(withoutWeekends) : allWeeks), [allWeeks, hideWeekends])
-  // Each week row's bars and lanes (YAZ-4858), once per rows or page change.
-  const layouts = useMemo(() => weeks.map((week) => layoutWeek(week, bars)), [weeks, bars])
+  // Each week row's bars and lanes (YAZ-4858), once per rows or page change. With a sort the bars follow it, as the
+  // one-day cards do (YAZ-5603): the rows come in the view's sort.
+  const sorted = (view.sort?.length ?? 0) > 0
+  const layouts = useMemo(() => weeks.map((week) => layoutWeek(week, bars, sorted)), [weeks, bars, sorted])
   // Each day on screen in its order, the timed cards first in time order (D22), in Month and in Week alike, so the
   // page window steps exactly as the days show. While weekends hide (YAZ-4595 S33) a weekday also takes the cards of
   // the weekend days that go to it (`weekendHomes`, YAZ-4635 P3: a Friday its Saturday's then its Sunday's; a Monday

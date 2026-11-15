@@ -305,6 +305,31 @@ describe('cards over several days (YAZ-4858)', () => {
     expect(lanes).toBe(2)
   })
 
+  it('layoutWeek, sorted (YAZ-5603): the bars placed in the rows\' order, each in the highest lane free over all its days; read by column, then lane', () => {
+    // The rows come in the view's sort: "First" (the lower Order) sorts before "Sarmad", which starts the same day and is longer.
+    const sorted = [span('First', '2026-12-07', '2026-12-08'), span('Sarmad', '2026-12-04', '2026-12-09'), span('Gap', '2026-12-10', '2026-12-11'), span('Wide', '2026-12-08', '2026-12-12')]
+    const { bars, lanes } = layoutWeek(WEEK, sorted, true)
+    expect(placed(bars)).toEqual([
+      ['First', 0, 2, 0, false, false],
+      ['Sarmad', 0, 3, 1, true, false],
+      // Free in no lane over all of Tue … Sat: a new lane.
+      ['Wide', 1, 5, 2, false, false],
+      // A later bar takes a gap an earlier one left, when the gap is free over all its days.
+      ['Gap', 3, 2, 0, false, false],
+    ])
+    expect(lanes).toBe(3)
+    // Never two bars on one lane's day.
+    for (const a of bars) for (const b of bars) if (a !== b && a.lane === b.lane) expect(a.col + a.cols <= b.col || b.col + b.cols <= a.col).toBe(true)
+  })
+
+  it('layoutWeek, no sort: start, then the longer one, whatever the rows\' order', () => {
+    const rows = [span('First', '2026-12-07', '2026-12-08'), span('Sarmad', '2026-12-04', '2026-12-09')]
+    expect(placed(layoutWeek(WEEK, rows).bars).map(([name, , , lane]) => [name, lane])).toEqual([
+      ['Sarmad', 0],
+      ['First', 1],
+    ])
+  })
+
   it('layoutWeek: a bar from an earlier week is cut at the start; one off the row is left out', () => {
     const { bars } = layoutWeek(WEEK, [span('From before', '2026-12-04', '2026-12-08'), span('Elsewhere', '2026-12-14', '2026-12-16')])
     expect(placed(bars)).toEqual([['From before', 0, 2, 0, true, false]])

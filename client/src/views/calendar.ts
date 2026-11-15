@@ -127,10 +127,12 @@ export interface BarPlace {
 
 /**
  * The bars of one week row (YAZ-4858): each span that has a shown day in `days` (the row's days in order, with or
- * without its weekends), cut to those days, in lanes above the one-day cards. The lanes fill in order: the bar that
- * starts first, then the longer one, then row order, takes the first lane free from its first column on. Pure.
+ * without its weekends), cut to those days, in lanes above the one-day cards. The bars take lanes one by one, each the
+ * highest lane free over all its shown days on the row (a gap an earlier bar left is filled when a later bar fits it),
+ * else a new lane; `bars` come in reading order (column, then lane). The order of placing (YAZ-5603): `sorted` (the view has a sort) = the rows' order, the view's sort, as the
+ * one-day cards; else the bar that starts first, then the longer one, then row order. Pure.
  */
-export function layoutWeek(days: readonly DayKey[], multi: readonly Span[]): { bars: BarPlace[]; lanes: number } {
+export function layoutWeek(days: readonly DayKey[], multi: readonly Span[], sorted = false): { bars: BarPlace[]; lanes: number } {
   const placed: Omit<BarPlace, 'lane'>[] = []
   if (days.length === 0) return { bars: [], lanes: 0 }
   const first = days[0]
@@ -147,15 +149,19 @@ export function layoutWeek(days: readonly DayKey[], multi: readonly Span[]): { b
     if (col === -1 || end < col) continue
     placed.push({ span, col, cols: end - col + 1, cutStart: span.start < days[col], cutEnd: span.end > days[end] })
   }
-  placed.sort((a, b) => a.col - b.col || b.cols - a.cols)
-  const laneEnds: number[] = []
+  if (!sorted) placed.sort((a, b) => a.col - b.col || b.cols - a.cols)
+  // Each lane's taken columns.
+  const taken: boolean[][] = []
   const bars = placed.map((bar) => {
-    let lane = laneEnds.findIndex((end) => end < bar.col)
-    if (lane === -1) lane = laneEnds.push(0) - 1
-    laneEnds[lane] = bar.col + bar.cols - 1
+    const cols = Array.from({ length: bar.cols }, (_, i) => bar.col + i)
+    let lane = taken.findIndex((used) => cols.every((c) => !used[c]))
+    if (lane === -1) lane = taken.push(new Array<boolean>(days.length).fill(false)) - 1
+    for (const c of cols) taken[lane][c] = true
     return { ...bar, lane }
   })
-  return { bars, lanes: laneEnds.length }
+  // Reading order, for the DOM and the page window: by first column, then from the top lane.
+  bars.sort((a, b) => a.col - b.col || a.lane - b.lane)
+  return { bars, lanes: taken.length }
 }
 
 /** The days from `from` to `to` (negative when `to` is earlier): a bar's whole-card drag moves both its dates by it (YAZ-4858). */
