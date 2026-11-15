@@ -5,7 +5,7 @@
 
 /** The ready styles of Settings › Files & Links › Daily pages › Name style, in order. "Custom…" is any other style. */
 export const DAILY_PAGE_STYLES = ['YYYY-MM-DD', 'MM_DD', 'MMM D, YYYY', 'YYYY-MM-DD ddd'] as const
-export const DEFAULT_DAILY_PAGE_FORMAT = 'YYYY-MM-DD'
+export { DEFAULT_DAILY_PAGE_FORMAT } from './dailyPageDefault'
 
 /** The tokens, for the custom style's hint: what each one gives on Friday 16 October 2026. */
 export const DAILY_PAGE_TOKENS: ReadonlyArray<{ token: string; example: string }> = [
@@ -57,3 +57,67 @@ export function dailyPageFormatProblem(format: string): string | null {
 }
 
 export const isValidDailyPageFormat = (format: string): boolean => dailyPageFormatProblem(format) === null
+
+const escapeRe = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const SHORT = (names: readonly string[]) => names.map((n) => n.slice(0, 3))
+/** What each token matches in a name, the other way round from `dailyPageName`. */
+const TOKEN_RE: Record<string, string> = {
+  YYYY: '(\\d{4})',
+  MMMM: `(${MONTHS.join('|')})`,
+  MMM: `(${SHORT(MONTHS).join('|')})`,
+  MM: '(\\d{2})',
+  M: '(\\d{1,2})',
+  dddd: `(${DAYS.join('|')})`,
+  ddd: `(${SHORT(DAYS).join('|')})`,
+  DD: '(\\d{2})',
+  D: '(\\d{1,2})',
+}
+
+/**
+ * The day a daily page's name stands for (YAZ-5470: the phone's Today button finds the latest daily page by the date in
+ * its name, never by the file's time), or null when `name` is not a name of `format`. A style with no year
+ * (`MM_DD- ddd`) is read as the latest such day on or before `today`; its weekday, when the style has one, picks the
+ * year (up to 7 years back).
+ */
+export function dailyPageDate(format: string, name: string, today: Date): Date | null {
+  const tokens: string[] = []
+  let source = ''
+  let at = 0
+  const style = format.trim()
+  for (const m of style.matchAll(TOKENS)) {
+    source += escapeRe(style.slice(at, m.index))
+    at = m.index + m[0].length
+    if (m[0].startsWith('[')) source += escapeRe(m[0].slice(1, -1))
+    else (tokens.push(m[0]), (source += TOKEN_RE[m[0]]))
+  }
+  source += escapeRe(style.slice(at))
+  const found = new RegExp(`^${source}$`, 'i').exec(name.trim())
+  if (found === null) return null
+  let year: number | null = null
+  let month: number | null = null
+  let date: number | null = null
+  let weekday: number | null = null
+  const index = (names: readonly string[], v: string) => names.findIndex((n) => n.toLowerCase() === v.toLowerCase())
+  tokens.forEach((t, i) => {
+    const v = found[i + 1]
+    if (t === 'YYYY') year = Number(v)
+    else if (t === 'MMMM') month = index(MONTHS, v)
+    else if (t === 'MMM') month = index(SHORT(MONTHS), v)
+    else if (t === 'MM' || t === 'M') month = Number(v) - 1
+    else if (t === 'dddd') weekday = index(DAYS, v)
+    else if (t === 'ddd') weekday = index(SHORT(DAYS), v)
+    else date = Number(v)
+  })
+  if (month === null || date === null) return null
+  const real = (y: number): Date | null => {
+    const d = new Date(y, month!, date!)
+    return d.getFullYear() === y && d.getMonth() === month && d.getDate() === date ? d : null
+  }
+  if (year !== null) return real(year)
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1).getTime()
+  for (let y = today.getFullYear(); y >= today.getFullYear() - 7; y--) {
+    const d = real(y)
+    if (d !== null && d.getTime() < end && (weekday === null || d.getDay() === weekday)) return d
+  }
+  return null
+}

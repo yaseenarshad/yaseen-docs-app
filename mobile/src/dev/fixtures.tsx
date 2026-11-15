@@ -70,6 +70,8 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   if (name.startsWith('friends-')) return (await import('../friends/ui/fixtures')).mountFriendsFixture(root, name)
   // The status dot's own fixtures (4D, YAZ-5080).
   if (name.startsWith('dot')) return (await import('../status/fixtures')).mountDotFixture(root, name)
+  // YAZ-5470: the Today button (`daily/fixtures.tsx`).
+  if (name.startsWith('today')) return (await import('../daily/fixtures')).mountTodayFixture(root, name)
   // 4C (YAZ-5079): Search, a page and a card, on a made-up vault (`readerFixtures.tsx`).
   if (isReaderFixture(name)) return mountReaderFixture(root, name)
   const backend = memoryBackend()
