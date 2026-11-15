@@ -1,6 +1,6 @@
 import { DEFAULT_FOLDER_PAGES } from './folderPagesDefault'
 import { isRecord } from './guards'
-import { FOLDER_PAGE_CHOICES, calLine, readColorStrength, type FolderPagesSettings } from './types'
+import { readColorStrength, type FolderPagesSettings } from './types'
 
 /**
  * A vault's folder page defaults (YAZ-5489, scoping B8, section 7 row 7): the 27 view and page defaults of Settings ›
@@ -62,6 +62,24 @@ export type FolderPagesFile = Partial<Pick<FolderPagesSettings, FolderPagesVault
 /** The 27 parts, every one set. */
 export type FolderPagesVault = Pick<FolderPagesSettings, FolderPagesVaultPart>
 
+/**
+ * `FOLDER_PAGE_CHOICES` and `MAX_CAL_LINE` of `types.ts`, written out (the `cardLook.ts` rule): an import of those values
+ * would put them in the phone's first load. `folderPagesFile.test.ts` checks they are the same.
+ */
+export const FOLDER_PAGES_CHOICES = {
+  rowHeight: ['short', 'medium', 'tall'],
+  textInCells: ['kind', 'wrap', 'clip'],
+  groupIndent: ['medium', 'small', 'large'],
+  subfolders: ['pages', 'rows', 'both', 'hide'],
+  calendarScale: ['month', 'week'],
+  cardTitles: ['clip', 'wrap'],
+  columnMarks: ['icon', 'name', 'off'],
+  groupLines: ['hover', 'always', 'off'],
+  groupLineStyle: ['plain', 'thread'],
+} as const
+const FOLDER_PAGE_CHOICES = FOLDER_PAGES_CHOICES
+export const FOLDER_PAGES_LINE_MAX = 12
+const calLine = (v: unknown): number => (typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= FOLDER_PAGES_LINE_MAX ? v : 1)
 const isBool = (v: unknown): v is boolean => typeof v === 'boolean'
 const oneOf = (list: readonly string[]) => (v: unknown): boolean => typeof v === 'string' && list.includes(v)
 

@@ -3,13 +3,17 @@
  * (`shared/folderPages.ts`); the personal parts stay the Mac's. Made-up values.
  */
 import { describe, expect, it } from 'vitest'
-import { FOLDER_PAGES_PERSONAL, FOLDER_PAGES_VAULT_PARTS, folderPagesFile, folderPagesFor, folderPagesOf, folderPagesVault, sanitizeFolderPagesFile } from '@shared/folderPages'
-import { DEFAULT_FOLDER_PAGES } from '@shared/types'
+import { FOLDER_PAGES_CHOICES, FOLDER_PAGES_LINE_MAX, FOLDER_PAGES_PERSONAL, FOLDER_PAGES_VAULT_PARTS, folderPagesFile, folderPagesFor, folderPagesOf, folderPagesVault, sanitizeFolderPagesFile } from '@shared/folderPages'
+import { DEFAULT_FOLDER_PAGES, FOLDER_PAGE_CHOICES, MAX_CAL_LINE } from '@shared/types'
 
 describe('folder-pages.json (shared/folderPages.ts)', () => {
   it('the 27 vault parts and the 4 personal ones are every Settings › Folder pages part, once', () => {
     expect(FOLDER_PAGES_VAULT_PARTS).toHaveLength(27)
     expect([...FOLDER_PAGES_VAULT_PARTS, ...FOLDER_PAGES_PERSONAL].sort()).toEqual(Object.keys(DEFAULT_FOLDER_PAGES).sort())
+    // The choices and the line width, written out for the phone's first load, are types.ts'.
+    const { weekStartsOn: _personal, ...vaultChoices } = FOLDER_PAGE_CHOICES
+    expect(FOLDER_PAGES_CHOICES).toEqual(vaultChoices)
+    expect(FOLDER_PAGES_LINE_MAX).toBe(MAX_CAL_LINE)
   })
 
   it('the sanitiser keeps each part that reads and drops each one that does not, alone; never a personal part', () => {
