@@ -276,6 +276,8 @@ describe('the Friends tab (decisions 21, 24, 25)', () => {
     ;({ h } = await open(demoBoard(NOW), { logins: ['demo', 'work'] }))
     expect(plain(h.text())).toContain('Your vaults are on two GitHub accounts. Friends use @demo.')
     await tap(h, 'Change')
+    // Settings is a lazy chunk: wait for it to draw.
+    for (const end = Date.now() + 3000; h.host.querySelector('.settings__version') === null && Date.now() < end; ) await h.settle()
     expect(plain(h.host.querySelector('.topbar__title')?.textContent)).toBe('Settings')
   })
 

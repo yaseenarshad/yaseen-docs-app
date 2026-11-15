@@ -132,12 +132,11 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       sync.set({ status: 'attention', problem: 'UNAUTHORIZED' })
       break
     case 'settings':
-      press('Settings')
-      break
     case 'erase':
       press('Settings')
-      await wait(20)
-      press('Sign out and erase this phone')
+      // Its own chunk (makes room in the first load): wait until it draws.
+      for (let i = 0; i < 100 && document.querySelector('.settings__version') === null; i++) await wait(20)
+      if (name === 'erase') press('Sign out and erase this phone')
       break
   }
   await wait(50)

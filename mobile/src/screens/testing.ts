@@ -116,6 +116,8 @@ export async function mount(
       if (el === null) throw new Error(`No button "${name}" on: ${host.textContent}`)
       await act(async () => el.click())
       await settle()
+      // A lazy screen (Settings, a page, Scan a code) may still load its chunk: wait (at most 3 s) for it to draw.
+      for (const end = Date.now() + 3000; host.querySelector('.app[aria-busy="true"], .lazy-screen') !== null && Date.now() < end; ) await settle()
     },
     async waitText(want) {
       const end = Date.now() + 3000

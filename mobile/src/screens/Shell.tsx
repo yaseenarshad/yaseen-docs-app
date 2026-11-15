@@ -10,7 +10,6 @@ import { lazyScreen } from './LazyScreen'
 import { Review } from './Review'
 import './reviewSlot.css'
 import { Search } from './Search'
-import { Settings } from './Settings'
 import { SignIn } from './SignIn'
 
 /** The reader (4C, YAZ-5079): a chunk of its own, with the Markdown renderer, so the tabs do not load it. */
@@ -27,6 +26,8 @@ const VsScreen = lazyScreen(() => import('../friends/ui/VsScreen'), { waiting: r
 const SetupGuide = lazyScreen(() => import('./SetupGuide'), { waiting: routeWaiting })
 /** "Scan a code": a chunk of its own too (YAZ-5461 makes room in the first load for the waiting comments of the dot). */
 const ScanCode = lazyScreen(() => import('./ScanCode'), { waiting: routeWaiting })
+/** Settings (the gear): a chunk of its own, after a tap (makes room in the first load under its ceiling). */
+const Settings = lazyScreen<object>(() => import('./Settings').then((m) => ({ default: m.Settings })), { waiting: routeWaiting })
 
 /** Each tab draws one component from its own file; 4B, 4C and 4E replace the placeholders (decision 21). */
 const TAB_SCREENS: Record<Exclude<Tab, 'review'>, () => React.JSX.Element> = { friends: Friends, search: Search }

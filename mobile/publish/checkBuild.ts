@@ -53,6 +53,7 @@ export const NOT_FIRST_LOAD: RegExp[] = [
   /^mobile\/src\/settings\/(whatsNew\.ts|WhatsNewList\.tsx)$/, // Settings › What's new, loaded when opened (YAZ-5446)
   /^mobile\/src\/status\/passWords\.ts$/, // the words of the dot's toast, after a tap (YAZ-5469)
   /^mobile\/src\/daily\/today\.ts$/, /^shared\/dailyPagesFile\.ts$/, // the Today button's page, after a tap (YAZ-5470)
+  /^mobile\/src\/screens\/(Settings\.tsx|eraseWords\.ts)$/, /^mobile\/src\/settings\/buildInfo\.ts$/, // Settings, after a tap on the gear
 ]
 
 /** YAZ-5377: modules that no production chunk may hold: dev-only and test-only code, and the fixtures. */
