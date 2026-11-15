@@ -12,7 +12,7 @@ import { cardHead, titleBand } from '../media/ui/cardHead'
 import { fillCardEmbeds, tapOf } from '../page/pageDom'
 import { UNTITLED_CARD, drawCard, pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
-import { headingTarget } from '../page/headings'
+import { headingTarget, landOn } from '../page/headings'
 import { openLink, type LinkDoor } from '../page/openLink'
 import { boardKindOf, boardLabel } from '../drawing/boardFiles'
 import type { SheetRoute } from './sheets'
@@ -83,7 +83,7 @@ export function titleOf(data: VaultData | null, path: string): string {
 }
 
 /** A page in a sheet. `onDrawn`: its text is on the screen (the sheet then puts back a kept scroll place). */
-export function SheetPage({ path, at, onDrawn }: { path: string; at?: string; onDrawn(): void }) {
+export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: string; heading?: string; onDrawn(): void }) {
   const app = useApp()
   const data = useVaultData()
   const content = useFileText(path)
@@ -95,6 +95,7 @@ export function SheetPage({ path, at, onDrawn }: { path: string; at?: string; on
   const title = titleOf(data, path)
   const [sameTitle, setSameTitle] = useState(false)
   const drawn = useRef<string | null>(null)
+  const landed = useRef(false)
 
   useEffect(() => {
     const el = host.current
@@ -115,6 +116,12 @@ export function SheetPage({ path, at, onDrawn }: { path: string; at?: string; on
       setSameTitle(head?.tagName === 'H1' && head.textContent?.trim().toLowerCase() === title.trim().toLowerCase())
       if (at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
       onDrawn()
+      // YAZ-5518: a link that named a heading (`[[Long notes#Part 40]]`) lands on it in the sheet, as full screen (YAZ-5455).
+      // Only the first drawing, at the top (not a sheet drawn again at its kept place): a new version keeps the place.
+      const scroller = el.closest<HTMLElement>('.explore-sheet__body')
+      const target = heading === undefined || landed.current || (scroller?.scrollTop ?? 0) > 0 ? null : headingTarget(el, heading)
+      landed.current = true
+      if (target !== null) landOn(target, scroller)
     })()
     return () => {
       live = false
@@ -122,7 +129,7 @@ export function SheetPage({ path, at, onDrawn }: { path: string; at?: string; on
     }
     // `door` and `onDrawn` are the same doors at each render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, data, path, at, title])
+  }, [content, data, path, at, heading, title])
 
   return (
     <article className="reader explore-sheet__reader" aria-label={title}>
@@ -249,5 +256,5 @@ export function SheetContent({ route, onDrawn, onText }: { route: SheetRoute; on
       </Suspense>
     )
   if (route.kind === 'drawing') return <DrawingBody path={route.path} onDrawn={onDrawn} />
-  return route.kind === 'page' ? <SheetPage path={route.path} at={route.at} onDrawn={onDrawn} /> : <SheetCard path={route.path} id={route.id} onDrawn={onDrawn} onText={onText} />
+  return route.kind === 'page' ? <SheetPage path={route.path} at={route.at} heading={route.heading} onDrawn={onDrawn} /> : <SheetCard path={route.path} id={route.id} onDrawn={onDrawn} onText={onText} />
 }

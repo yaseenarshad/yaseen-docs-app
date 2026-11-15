@@ -1,3 +1,6 @@
+import { openOverlay } from '../app/browserHistory'
+import { edgeBackOn, swipeIsOurs } from '../app/edgeSwipe'
+import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { onMacWords } from './drawingBox'
 import type { DrawInput, Drawn } from './engine/drawPicture'
 import { pinchZoom } from './pinchZoom'
@@ -197,7 +200,7 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
       online?.removeEventListener('online', retry)
       for (const held of boxes.values()) release(held)
       boxes.clear()
-      document.querySelector('.drawing-view')?.remove()
+      closeView?.()
     },
   }
 }
@@ -206,8 +209,11 @@ export function watchDrawings(root: HTMLElement, deps: DrawingDeps): DrawingWatc
  * The full-screen view of a picture: the whole drawing to fit the screen, then pinch (or double-tap) to zoom and drag
  * to move. ✕ or Escape closes it. It shows the same `blob:` URL: nothing new is made.
  */
+/** The open full-screen view's close (one at a time). */
+let closeView: (() => void) | null = null
+
 export function openView(url: string, name: string, width: number, height: number): HTMLElement {
-  document.querySelector('.drawing-view')?.remove()
+  closeView?.()
   const view = document.createElement('div')
   view.className = 'drawing-view'
   view.setAttribute('role', 'dialog')
@@ -241,6 +247,10 @@ export function openView(url: string, name: string, width: number, height: numbe
   }, { min: fit, max: Math.max(4, fit * 8), start: fit, doubleIn: fit * 2.5 })
 
   const done = () => {
+    if (closeView !== done) return
+    closeView = null
+    // YAZ-5518: its history entry goes with it (nothing when a Back closed it).
+    leave()
     view.remove()
     document.removeEventListener('keydown', key)
   }
@@ -249,6 +259,11 @@ export function openView(url: string, name: string, width: number, height: numbe
   }
   close.addEventListener('click', done)
   document.addEventListener('keydown', key)
+  // YAZ-5518: an overlay of the app's one stack: a Back closes the drawing, and the page stays.
+  closeView = done
+  const leave = openOverlay(done)
+  // The left-edge Back (the Home Screen app) closes it too: the view is over the frame, out of its swipe.
+  edgeBackOn(view, done, swipeIsOurs(whereAmI(browserFacts())))
   close.focus()
   return view
 }

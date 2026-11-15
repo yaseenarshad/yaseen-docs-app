@@ -87,3 +87,24 @@ export function edgeSwipe(width: () => number): EdgeSwipe {
 
 /** The swipe is the app's only in the Home Screen app; a Safari tab keeps Safari's own back swipe. */
 export const swipeIsOurs = (where: 'standalone' | 'ios-safari' | 'ios-other' | 'not-ios'): boolean => where === 'standalone'
+
+/**
+ * YAZ-5518: the left-edge Back on a full-screen view drawn outside the frame (a table, a drawing): a swipe from the edge
+ * calls `back` (passive; no motion of its own). `ours`: the swipe is the app's (the Home Screen app, `swipeIsOurs`).
+ */
+export function edgeBackOn(el: HTMLElement, back: () => void, ours: boolean): void {
+  if (!ours) return
+  const swipe = edgeSwipe(() => window.innerWidth)
+  const passive = { passive: true }
+  el.addEventListener('touchstart', (e) => {
+    const t = e.touches[0]
+    if (e.touches.length !== 1 || t === undefined) return swipe.cancel()
+    swipe.start(t.clientX, t.clientY, e.timeStamp)
+  }, passive)
+  el.addEventListener('touchmove', (e) => {
+    const t = e.touches[0]
+    if (t !== undefined) swipe.move(t.clientX, t.clientY, e.timeStamp)
+  }, passive)
+  el.addEventListener('touchend', (e) => void (swipe.end(e.timeStamp) === 'back' && back()), passive)
+  el.addEventListener('touchcancel', () => swipe.cancel(), passive)
+}

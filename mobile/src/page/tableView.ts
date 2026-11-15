@@ -1,3 +1,6 @@
+import { openOverlay } from '../app/browserHistory'
+import { edgeBackOn, swipeIsOurs } from '../app/edgeSwipe'
+import { browserFacts, whereAmI } from '../pwa/homeScreen'
 import { pinchZoom, type ZoomRange } from '../drawing/pinchZoom'
 
 /**
@@ -210,6 +213,8 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null): TableVie
   const done = () => {
     if (closed) return
     closed = true
+    // YAZ-5518: its history entry goes with it (nothing when a Back closed it).
+    leave()
     view.remove()
     pane.removeEventListener('scroll', schedule)
     if (frame !== 0) cancelAnimationFrame(frame)
@@ -221,6 +226,10 @@ export function showTable(box: HTMLElement, back?: HTMLElement | null): TableVie
   }
   close.addEventListener('click', done)
   document.addEventListener('keydown', key)
+  // YAZ-5518: an overlay of the app's one stack: a Back (Safari's swipe, the app's) closes the table, and the page stays.
+  const leave = openOverlay(done)
+  // The left-edge Back (the Home Screen app) closes it too: the view is over the frame, out of its swipe.
+  edgeBackOn(view, done, swipeIsOurs(whereAmI(browserFacts())))
   const self: TableView = { el: view, close: done }
   open = self
   close.focus()

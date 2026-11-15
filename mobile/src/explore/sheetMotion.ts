@@ -221,37 +221,39 @@ export function sheetMotion(parts: SheetParts, options: MotionOptions): SheetMot
   on(body, 'touchcancel', lost)
   if (seen === null) on(body, 'scroll', () => (atTop = body.scrollTop <= 0))
 
-  // THE LEFT EDGE: Back closes the sheet (passive, as YAZ-5435's).
+  // THE LEFT EDGE: Back closes the sheet (passive, as YAZ-5435's). YAZ-5518: on the sheet AND on its dim: the sheet sits
+  // 8 px in from the edge, so a finger at x = 0 to 7 lands on the dim beside it, and must close it too.
   let sideways = false
-  if (options.edge) {
-    on(box, 'touchstart', (e) => {
-      const t = e.touches[0]
-      sideways = false
-      if (e.touches.length !== 1 || t === undefined || closing) return swipe.cancel()
-      width = window.innerWidth
-      swipe.start(t.clientX, t.clientY, e.timeStamp)
-    })
-    on(box, 'touchmove', (e) => {
-      const t = e.touches[0]
-      if (t === undefined) return
-      const px = swipe.move(t.clientX, t.clientY, e.timeStamp)
-      if (px === null) return
-      sideways = true
-      draw(px, 0)
-    })
-    on(box, 'touchend', (e) => {
-      const result = swipe.end(e.timeStamp)
-      if (!sideways) return
-      sideways = false
-      if (result === 'back') close()
-      else glide(0, 0, 1, still() ? 0 : SHEET_MS / 2)
-    })
-    on(box, 'touchcancel', () => {
-      swipe.cancel()
-      if (sideways) glide(0, 0, 1, 0)
-      sideways = false
-    })
-  }
+  if (options.edge)
+    for (const zone of [box, dim]) {
+      on(zone, 'touchstart', (e) => {
+        const t = e.touches[0]
+        sideways = false
+        if (e.touches.length !== 1 || t === undefined || closing) return swipe.cancel()
+        width = window.innerWidth
+        swipe.start(t.clientX, t.clientY, e.timeStamp)
+      })
+      on(zone, 'touchmove', (e) => {
+        const t = e.touches[0]
+        if (t === undefined) return
+        const px = swipe.move(t.clientX, t.clientY, e.timeStamp)
+        if (px === null) return
+        sideways = true
+        draw(px, 0)
+      })
+      on(zone, 'touchend', (e) => {
+        const result = swipe.end(e.timeStamp)
+        if (!sideways) return
+        sideways = false
+        if (result === 'back') close()
+        else glide(0, 0, 1, still() ? 0 : SHEET_MS / 2)
+      })
+      on(zone, 'touchcancel', () => {
+        swipe.cancel()
+        if (sideways) glide(0, 0, 1, 0)
+        sideways = false
+      })
+    }
 
   return {
     open() {

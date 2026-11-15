@@ -13,6 +13,13 @@ import { join } from 'node:path'
  *  - A SAFARI TAB: the same swipe must do NOTHING (Safari's own swipe is the only one: no double Back). Then Safari's
  *    edge swipe, the browser's history back (`history.back()`, as the gesture does), must show Search again, in the
  *    app; before YAZ-5499 the app wrote no history entry, and that Back left the app.
+ *
+ * YAZ-5518, the ONE overlay stack (sheets, panels, menus, full-screen views):
+ *  - A SAFARI TAB, an Explore sheet over each tab screen (Search with 3 sheets, Review, Today): each `history.back()`
+ *    (Safari's swipe) closes ONE sheet, and the tab stays in the app (before, sheets wrote no entry and Back left the app).
+ *  - THE HOME SCREEN APP: a real touch swipe from x = 2 (the sheet sits 8 px in: the finger lands on its dim) closes the top sheet.
+ *  - A page's overlays (the ⋯ menu, Find, Headings, Properties, a table full screen): Back closes ONLY the overlay and
+ *    the page stays: `history.back()` in a tab, the edge swipe in the Home Screen app.
  * Run after `npm run build:fixtures -w mobile`: `npx vite-node mobile/publish/proveEdgeBack.ts` (LAYOUT_DIST: another
  * build folder). Exit 0: every swipe went back.
  */
@@ -28,7 +35,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 process.env.NOTECARDS_SERVE = 'no'
 const { serveDist } = await import('./serve')
 const server = await serveDist(DIST, PORT)
-setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 180_000).unref()
+setTimeout(() => (console.log('TIMEOUT'), process.exit(2)), 360_000).unref()
 const profile = mkdtempSync(join(tmpdir(), 'notecards-edge-profile-'))
 const chrome = spawn(
   CHROME,
@@ -122,6 +129,111 @@ async function run(fixture: 'page' | 'card', where: Where, spot: Spot): Promise<
   return { fixture, where, spot, before, swiped, after, ok, note: `under the finger at y ${y}: ${under}; history ${entries}` }
 }
 
+/** A fixture open in a new tab, as `run` opens it. */
+async function session(fixture: string, where: Where) {
+  const { targetId } = await send('Target.createTarget', { url: 'about:blank' })
+  const page = (await send('Target.attachToTarget', { targetId, flatten: true })).sessionId as string
+  const evaluate = async (expression: string) => send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, page).then((r) => r.result.value, () => null)
+  await send('Page.enable', {}, page)
+  await send('Runtime.enable', {}, page)
+  await send('Emulation.setUserAgentOverride', { userAgent: IPHONE_UA, platform: 'iPhone' }, page)
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true }, page)
+  await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, page)
+  if (where === 'home-screen') {
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: `Object.defineProperty(navigator, 'standalone', { value: true, configurable: true })` }, page)
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'display-mode', value: 'standalone' }] }, page).catch(() => undefined)
+  }
+  await send('Page.navigate', { url: `http://127.0.0.1:${PORT}/?edge#fixture=${fixture}` }, page)
+  for (let i = 0; i < 150; i++) {
+    await wait(100)
+    if ((await evaluate(`document.documentElement.dataset.fixtureReady === '${fixture}' || document.body.dataset.fixtureError !== undefined`)) === true) break
+  }
+  await wait(500)
+  /** A finger from `from` to x = 300 at `y`, as `run`'s. */
+  const swipe = async (from: number, y: number) => {
+    const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', x: number) =>
+      send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, radiusX: 4, radiusY: 4, force: 1, id: 1 }] }, page)
+    await touch('touchStart', from)
+    for (let x = from + 15; x <= 300; x += 15) {
+      await touch('touchMove', x)
+      await wait(16)
+    }
+    await touch('touchEnd', 300)
+    await wait(900)
+  }
+  const stayed = async () => String(await evaluate('location.href')).startsWith(`http://127.0.0.1:${PORT}/`)
+  const back = async () => {
+    await evaluate('history.back()')
+    await wait(900)
+  }
+  return { evaluate, swipe, stayed, back, close: () => send('Target.closeTarget', { targetId }) }
+}
+
+const SHEETS = `document.querySelectorAll('.explore-sheet').length`
+const SCREEN = `(() => { const t = document.querySelector('.topbar__title'); return (t ? t.textContent : '?') + (document.querySelector('.topbar .back') ? ' [Back]' : '') })()`
+type Check = { name: string; ok: boolean; note: string }
+
+/** A Safari tab, sheets over a tab screen: each Back closes one sheet, in the app. */
+async function sheetsBack(fixture: 'explore-stack' | 'explore-review' | 'explore-today'): Promise<Check> {
+  const s = await session(fixture, 'safari-tab')
+  const counts = [Number(await s.evaluate(SHEETS))]
+  while (counts.at(-1)! > 0 && counts.length < 6 && (await s.stayed())) {
+    await s.back()
+    counts.push(Number(await s.evaluate(SHEETS)))
+  }
+  const stayed = await s.stayed()
+  const screen = String(await s.evaluate(SCREEN))
+  await s.close()
+  const ok = counts[0] > 0 && stayed && counts.every((c, i) => i === 0 || c === counts[i - 1] - 1) && counts.at(-1) === 0 && !screen.endsWith('[Back]')
+  return { name: `safari-tab, Back with sheets over ${fixture.replace('explore-', '').replace('stack', 'search')}`, ok, note: `sheets ${counts.join(' -> ')}; in the app: ${stayed}; under: "${screen}"` }
+}
+
+/** The Home Screen app: a swipe from x = 2 (on the dim beside the sheet) closes the top sheet. */
+async function sheetEdge(): Promise<Check> {
+  const s = await session('explore-stack', 'home-screen')
+  const before = Number(await s.evaluate(SHEETS))
+  const under = String(await s.evaluate(`(() => { const e = document.elementFromPoint(2, 420); return e ? e.tagName.toLowerCase() + [...e.classList].map((c) => '.' + c).join('') : 'none' })()`))
+  await s.swipe(2, 420)
+  const after = Number(await s.evaluate(SHEETS))
+  await s.close()
+  return { name: 'home-screen, the edge swipe from x = 2 closes the top sheet', ok: before === 3 && after === 2, note: `sheets ${before} -> ${after}; under the finger: ${under}` }
+}
+
+/** Opens one of the page's overlays; its selector, to see it shut. */
+const OVERLAYS: { name: string; open: string; shows: string }[] = [
+  { name: 'the ⋯ menu', open: `document.querySelector('[aria-label="Page tools"]').click()`, shows: '.page-tools__menu' },
+  { name: 'Find in page', open: `document.querySelector('[aria-label="Page tools"]').click(); await new Promise((r) => setTimeout(r, 100)); [...document.querySelectorAll('[role="menuitem"]')].find((b) => /Find in page/.test(b.textContent)).click()`, shows: '.find-line' },
+  { name: 'Headings', open: `document.querySelector('[aria-label="Page tools"]').click(); await new Promise((r) => setTimeout(r, 100)); [...document.querySelectorAll('[role="menuitem"]')].find((b) => /Headings/.test(b.textContent)).click()`, shows: '[role="dialog"][aria-label="Headings"]' },
+  { name: 'Properties', open: `document.querySelector('[aria-label="Properties"]').click()`, shows: '[role="dialog"][aria-label="Properties"]' },
+  { name: 'a table, full screen', open: `document.querySelector('[data-table-open]').click()`, shows: '.table-view' },
+]
+
+/** Back with a page overlay open closes only the overlay: the browser's Back in a tab, the edge swipe in the Home Screen app. */
+async function overlayBack(where: Where): Promise<Check[]> {
+  const s = await session('page', where)
+  const checks: Check[] = []
+  for (const o of OVERLAYS) {
+    await s.evaluate(`(async () => { ${o.open} })()`)
+    await wait(900)
+    const shown = (await s.evaluate(`document.querySelector(${JSON.stringify(o.shows)}) !== null`)) === true
+    if (where === 'safari-tab') await s.back()
+    else await s.swipe(5, 420)
+    const gone = (await s.evaluate(`document.querySelector(${JSON.stringify(o.shows)}) === null`)) === true
+    const screen = String(await s.evaluate(SCREEN))
+    const stayed = await s.stayed()
+    // The page did not slide away under the overlay's Back.
+    const still = (await s.evaluate(`(document.querySelector('.app')?.style.transform ?? '') === ''`)) === true
+    checks.push({ name: `${where}, Back with ${o.name} open closes only it`, ok: shown && gone && stayed && still && screen === 'Spanish words [Back]', note: `shown ${shown}, closed ${gone}, page: "${screen}", page in place: ${still}` })
+  }
+  // Then Back closes the page itself.
+  if (where === 'safari-tab') await s.back()
+  else await s.swipe(5, 420)
+  const screen = String(await s.evaluate(SCREEN))
+  checks.push({ name: `${where}, then Back closes the page`, ok: !screen.endsWith('[Back]') && (await s.stayed()), note: `"${screen}"` })
+  await s.close()
+  return checks
+}
+
 const results: Result[] = []
 for (const fixture of ['page', 'card'] as const)
   for (const where of ['home-screen', 'safari-tab'] as const) for (const spot of ['middle', 'top', 'foot'] as const) results.push(await run(fixture, where, spot))
@@ -129,6 +241,15 @@ let failed = 0
 for (const r of results) {
   if (!r.ok) failed++
   console.log(`${r.ok ? 'PASS' : 'FAIL'}  ${r.where}, ${r.fixture}, ${r.spot}: "${r.before}" -> swipe -> "${r.swiped}"${r.where === 'safari-tab' ? ` -> Safari Back -> "${r.after}"` : ''} (${r.note})`)
+}
+// YAZ-5518: the overlay stack.
+const checks: Check[] = []
+for (const fixture of ['explore-stack', 'explore-review', 'explore-today'] as const) checks.push(await sheetsBack(fixture))
+checks.push(await sheetEdge())
+for (const where of ['safari-tab', 'home-screen'] as const) checks.push(...(await overlayBack(where)))
+for (const c of checks) {
+  if (!c.ok) failed++
+  console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name} (${c.note})`)
 }
 chrome.kill()
 server.close()

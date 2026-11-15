@@ -81,7 +81,8 @@ export function navigate(state: NavState, action: NavAction): NavState {
     case 'tab':
       return { tab: action.tab, stack: [] }
     case 'open':
-      return { ...state, stack: [...state.stack, action.route] }
+      // YAZ-5518: the screen already on top (Today tapped again, a double tap) opens nothing: one entry, one Back.
+      return sameRoute(state.stack.at(-1), action.route) ? state : { ...state, stack: [...state.stack, action.route] }
     case 'swap':
       return { ...state, stack: [...state.stack.slice(0, -1), action.route] }
     case 'back':
@@ -90,5 +91,7 @@ export function navigate(state: NavState, action: NavAction): NavState {
       return { ...state, stack: [] }
   }
 }
+
+const sameRoute = (a: Route | undefined, b: Route): boolean => a !== undefined && JSON.stringify(a) === JSON.stringify(b)
 
 export const topRoute = (state: NavState): Route | null => state.stack.at(-1) ?? null

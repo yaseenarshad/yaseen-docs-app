@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
+import { useOverlay } from '../app/browserHistory'
 import { useAnswerTimer } from '@client/review/answerTimer'
 import { cardStateText } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
@@ -384,6 +385,8 @@ function SessionScreen({
 
   // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards", YAZ-5495).
   const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
+  // YAZ-5518: an open menu is an overlay of the app's one stack: a Back closes it, and Review stays.
+  useOverlay(menu !== null, () => setMenu(null))
   const [line, setLine] = useState<Line | null>(null)
   const ratings = answerRatings(review.settings)
 

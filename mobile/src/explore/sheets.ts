@@ -1,3 +1,4 @@
+import { openOverlay } from '../app/browserHistory'
 import type { Route } from '../app/nav'
 
 /**
@@ -9,6 +10,10 @@ import type { Route } from '../app/nav'
  * This file is the stack's STATE only, in the first load (a few hundred bytes): `openSheet` and `closeTop` work before
  * the sheets' own chunk (`SheetLayer.tsx`) has loaded; the chunk loads on the first open (and is preloaded when idle).
  * It is a plain store, not React state, so a caller with no React (the reader's `openLink`) can push a sheet.
+ *
+ * YAZ-5518: each sheet is one overlay of the app's ONE overlay stack (`openOverlay`): one history entry, so Safari's
+ * Back in a tab and the app's Back close the top sheet first. A second open of the route already on top (a double tap,
+ * Today tapped again) opens nothing.
  */
 
 /** What a sheet can show: a page, a card (in a page, or a card file), a drawing file (YAZ-5473), or a folder's page (YAZ-5460). */
@@ -31,11 +36,22 @@ export const isSheetRoute = (route: Route): route is SheetRoute => route.kind ==
 
 let sheets: readonly Sheet[] = []
 let nextId = 1
+/** Each sheet's overlay `done`: its history entry goes with it. */
+const overlayDone = new Map<number, () => void>()
+/** The sheets sliding down (a close under way): not "on top" for a new open. */
+const closing = new Set<number>()
 const listeners = new Set<() => void>()
 /** The layer's animated close of the top sheet; null while the layer is not drawn. True: it runs (and drops the sheet at its end). */
 let animatedClose: (() => boolean) | null = null
 
 function set(next: readonly Sheet[]): void {
+  // A sheet that leaves the stack takes its history entry with it.
+  for (const sheet of sheets)
+    if (!next.includes(sheet)) {
+      overlayDone.get(sheet.id)?.()
+      overlayDone.delete(sheet.id)
+      closing.delete(sheet.id)
+    }
   sheets = next
   for (const listener of listeners) listener()
 }
@@ -56,22 +72,42 @@ export function preloadSheets(): void {
   void loadSheetLayer().catch(() => undefined)
 }
 
-/** Pushes a sheet with `route` on top of the stack. */
+const sameRoute = (a: SheetRoute, b: SheetRoute): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/** Pushes a sheet with `route` on top of the stack; nothing when the top sheet (not one closing) already shows it. */
 export function openSheet(route: SheetRoute): void {
   preloadSheets()
-  set([...sheets, { id: nextId++, route, scroll: 0 }].slice(-MAX_SHEETS))
+  const top = [...sheets].reverse().find((s) => !closing.has(s.id))
+  if (top !== undefined && sameRoute(top.route, route)) return
+  const id = nextId++
+  overlayDone.set(id, openOverlay(() => closeSheet(id)))
+  set([...sheets, { id, route, scroll: 0 }].slice(-MAX_SHEETS))
 }
 
 /** Closes the top sheet: it slides down when it is on the screen (as a drag that let go), else it goes at once. */
 export function closeTop(): void {
-  if (sheets.length === 0) return
+  const top = sheets.at(-1)
+  if (top === undefined || closing.has(top.id)) return
+  closing.add(top.id)
   if (animatedClose?.() === true) return
-  dropTop()
+  dropSheet(top.id)
+}
+
+/** Closes the sheet `id` (a Back took its entry): the top one slides down; one under it goes at once. */
+function closeSheet(id: number): void {
+  if (sheets.at(-1)?.id === id) closeTop()
+  else dropSheet(id)
+}
+
+/** Takes the sheet `id` off the stack, with no motion (the end of its close). */
+export function dropSheet(id: number): void {
+  if (sheets.some((s) => s.id === id)) set(sheets.filter((s) => s.id !== id))
 }
 
 /** Takes the top sheet off the stack, with no motion (the end of a close). */
 export function dropTop(): void {
-  if (sheets.length > 0) set(sheets.slice(0, -1))
+  const top = sheets.at(-1)
+  if (top !== undefined) dropSheet(top.id)
 }
 
 /** Every sheet goes (another vault opens; "Open full page"). */

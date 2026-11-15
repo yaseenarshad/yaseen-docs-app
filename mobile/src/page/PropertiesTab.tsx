@@ -3,6 +3,7 @@ import { FOLDER_VALUES_KEY } from '@shared/folderValues'
 import { TITLE_KEY } from '@shared/pageName'
 import { isCardMark } from '@shared/cardFileFormat'
 import type { IndexRecord } from '@shared/types'
+import { useOverlay } from '../app/browserHistory'
 import type { VaultData } from '../search/vaultData'
 import type { LinkDoor } from './openLink'
 import { overFrame } from './PageTools'
@@ -26,6 +27,9 @@ export function hasShownProperties(record: IndexRecord | undefined, ids: boolean
 export function PropertiesTab({ record, data, door }: { record: IndexRecord | undefined; data: VaultData | null; door: LinkDoor }) {
   const [open, setOpen] = useState(false)
   const tab = useRef<HTMLButtonElement>(null)
+  // YAZ-5518: the panel is an overlay: a Back closes it, and the page stays.
+  const shows = open && data !== null && record !== undefined
+  useOverlay(shows, () => setOpen(false))
   if (data === null || record === undefined || !hasShownProperties(record, data.ids)) return null
   return (
     <>
