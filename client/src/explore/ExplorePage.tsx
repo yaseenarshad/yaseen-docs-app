@@ -74,6 +74,7 @@ import { recordAt } from '../editor/card/embedCard'
 import { keepPlace, readPagePlace, showPagePlace, type PagePlace } from '../editor/pagePlace'
 import { readPageViewOf } from '../lib/pageView'
 import { READ_ONLY_EDIT, ReadOnlyEditEvent } from '../editor/readOnlyEdit'
+import type { BeforeVaultLock } from '../vault/readOnlyVault'
 import { KeyLabel } from '../keys/KeyLabel'
 import { DONE_KEYS, withKeys } from '@shared/keyLabel'
 
@@ -84,8 +85,10 @@ export interface ExploreVault {
   wikilinkCandidates: WikilinkCandidateSource
   /** The vault's catalog of files that are no pages: a board embed and a link to a drawing resolve through it. */
   viewOnlyLinks?: ViewOnlyLinkSource
-  /** The vault's Read only (YAZ-4939): E asks with the timed "Allow edits" box before the layer edits. */
+  /** The vault's Read only (YAZ-4939): E asks with the timed "Allow edits" box before the layer edits. False while the vault's unlock runs (YAZ-5581). */
   readOnly?: boolean
+  /** The vault's relock (YAZ-5581): an editing layer goes back to reading first. Stable. */
+  beforeLock?: BeforeVaultLock
   /** The vault's card review (YAZ-4962): the card window's strip and Reviews table read the settings; its delete writes. */
   review?: { settings: ReviewSettings; deleteReview: (path: string, id: string, review: CardReview) => Promise<void> }
 }
@@ -584,7 +587,7 @@ export function ExplorePage({ path, mode, gone = 0, title, idInTitle = false, va
   leave.current = { mode, onToggleEdit }
   const unlock = useTimedUnlock(() => {
     if (leave.current.mode === 'edit') leave.current.onToggleEdit()
-  })
+  }, vault.beforeLock)
   const unlocked = locked && unlock.until !== null
   const [asking, setAsking] = useState(false)
   /** E and Edit: edit, or ask first while the vault locks the layer. */

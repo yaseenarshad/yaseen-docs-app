@@ -35,7 +35,7 @@ interface SidebarStubProps {
   /** The first vault of `vaults`, read off them by the stub: the vault the panel is keyed on. */
   root: string
   /** The window's vaults in the order they were added (YAZ-2602 D1): each with its name, its watcher and its index source. */
-  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; fileChangesUntil?: number | null; app?: true }[]
+  vaults: { root: string; name: string; watch: unknown; index: unknown; review: boolean; dueCount: number; reviewing: boolean; tooLarge?: readonly string[]; readOnly?: boolean; unlockedUntil?: number | null; app?: true }[]
   /** "Hide card skill" on the card skill's row (YAZ-5108). */
   onHideCardSkill?: () => void
   /** "Duplicate into <vault>…" on the card skill's row (YAZ-5109). */
@@ -87,8 +87,8 @@ interface SidebarStubProps {
   /** App's read-only door (YAZ-4939, YAZ-4985): true = go on. */
   onFileAction?: (root: string) => Promise<boolean>
   /** The vault lock's choices (YAZ-4985). */
-  onAllowFileChanges?: (root: string, choice: 'minute' | 'ten') => void
-  onLockFileChanges?: (root: string) => void
+  onUnlockVault?: (root: string, choice: 'ten' | 'hour' | 'until') => void
+  onLockVault?: (root: string) => void
   onDraggedOut: (paths: string[]) => void
   pendingSearchFocus: boolean
   pendingSearchClear: boolean
@@ -177,7 +177,7 @@ const captured = vi.hoisted(() => ({
   /** The card flow mounts the REAL page editor (`./editor/Editor`); every other test the stub. */
   realEditor: false,
   crepes: [] as import('@milkdown/crepe').Crepe[],
-  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }[],
+  editors: [] as { path: string | null; root: string; wikilinks: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void }[],
 }))
 
 vi.mock('./editor/Editor', async (importOriginal) => {
@@ -199,8 +199,8 @@ vi.mock('./editor/createCrepe', async (importOriginal) => {
     },
   }
 })
-const EditorStub = ({ root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView }) => {
-    captured.editors.push({ path, root, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
+const EditorStub = ({ vaultReadOnly, onVaultLock, root, path, onOpenFile, onOpenFileBackground, onOpenLink, viewOnlyLinks, onRetitle, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView, tabId, onZoom }: { tabId?: string; onZoom?: (tabId: string, zoom: string | null, quiet: boolean, label: string | null) => void; root: string; path: string | null; onOpenFile: (path: string) => void; onOpenFileBackground?: (path: string) => void; onOpenLink?: (path: string, where?: 'thisTab' | 'newTab' | 'backgroundTab') => void; viewOnlyLinks?: ViewOnlyLinkSource; onRetitle?: (path: string, title: string, kind: 'file' | 'dir') => void; wikilinks?: unknown; sync?: { state: string } | null; newPageFolderFor?: (sourcePath: string) => string; onUserEdit?: (path: string) => void; tableOfContents?: string; tocOnByDefault?: boolean; contentWidth?: string; onChangeTableOfContents?: (mode: 'auto' | 'pinned' | 'off') => void; tableOfContentsWidth?: number; onChangeTableOfContentsWidth?: (width: number) => void; startView?: PageView; vaultReadOnly?: boolean; onVaultLock?: (step: () => Promise<unknown> | void) => () => void }) => {
+    captured.editors.push({ vaultReadOnly, onVaultLock, path, root, wikilinks, sync, newPageFolderFor, onUserEdit, tableOfContents, tocOnByDefault, contentWidth, onChangeTableOfContents, tableOfContentsWidth, onChangeTableOfContentsWidth, startView })
     if (tabId !== undefined && onZoom !== undefined) captured.zoomDoors.set(tabId, onZoom)
     captured.editorOpeners.push({ path, open: onOpenFile })
     captured.linkOpeners.push({ path, open: onOpenLink })
@@ -2636,7 +2636,7 @@ describe('App ⌘-click on the daily page button (YAZ-3776)', () => {
     expect(captured.sidebar?.revealRequest).toEqual({ id: 1, path: `${v}/Daily/${today()}.md`, focus: false })
   })
 
-  it('YAZ-4985: in a read-only vault today\'s page is a New page, so it asks first; Cancel makes nothing, "Allow for 10 minutes" makes it', async () => {
+  it('YAZ-4985: in a read-only vault today\'s page is a New page, so it asks first; Cancel makes nothing, "Unlock for 10 minutes" makes it', async () => {
     const { el, v, files, bridge } = await mountDaily()
     bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
     await act(async () => (bridge.vaultConfig.onChange.mock.calls as unknown as [(c: { root: string; name: string }) => void][]).forEach(([listener]) => listener({ root: v, name: 'read-only.json' })))
@@ -2648,7 +2648,7 @@ describe('App ⌘-click on the daily page button (YAZ-3776)', () => {
     await act(async () => {})
     expect(bridge.makeDailyPage).not.toHaveBeenCalled()
     await press(false)
-    await act(async () => button('10 minutes')?.click())
+    await act(async () => button('Unlock for 10 minutes')?.click())
     await act(async () => {})
     await act(async () => {})
     expect(Object.keys(files)).toEqual([`${v}/Daily/${today()}.md`])
@@ -4616,17 +4616,17 @@ describe('App rename door (⚡ YAZ-888)', () => {
       act(() => void captured.sidebar?.onDeleteEntries(['/v/B.md']))
       await act(async () => {})
       expect(sheet()?.textContent).toBe('This vault (v) is read only. Allow this file change?')
-      expect([...el.querySelectorAll('.confirm__actions button')].map((b) => b.textContent)).toEqual(['1 minute', '10 minutes', 'Cancel', 'Just this once'])
+      expect([...el.querySelectorAll('.confirm__actions button')].map((b) => b.textContent)).toEqual(['Unlock for 10 minutes', '1 hour', 'Until I lock it', 'Cancel', 'Just this once'])
       expect(bridge.file.delete).not.toHaveBeenCalled()
       await act(async () => button('Cancel')?.click())
       expect(sheet()).toBeNull()
       expect(bridge.file.delete).not.toHaveBeenCalled()
-      // Rename asks too; "Allow for 10 minutes" lets it run.
+      // Rename asks too; "Unlock for 10 minutes" lets it run.
       act(() => void captured.sidebar?.onRenameFile('/v/B.md', '/v/C.md', 'file'))
       await act(async () => {})
       expect(sheet()).not.toBeNull()
       expect(bridge.file.rename).not.toHaveBeenCalled()
-      await act(async () => button('10 minutes')?.click())
+      await act(async () => button('Unlock for 10 minutes')?.click())
       await act(async () => {})
       expect(sheet()).toBeNull()
       expect(renames(bridge)).toEqual([['/v/B.md', '/v/C.md']])
@@ -4696,7 +4696,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       act(() => void (answer = captured.sidebar?.onFileAction?.('/w')))
       await act(async () => {})
       expect(sheet()?.textContent).toBe('This vault (w) is read only. Allow this file change?')
-      await act(async () => button('10 minutes')?.click())
+      await act(async () => button('Unlock for 10 minutes')?.click())
       await expect(answer).resolves.toBe(true)
       // Within the 10 minutes that vault does not ask again.
       await act(async () => void (answer = captured.sidebar?.onFileAction?.('/w')))
@@ -4712,7 +4712,35 @@ describe('App rename door (⚡ YAZ-888)', () => {
       await expect(captured.sidebar?.onFileAction?.('/nowhere')).resolves.toBe(true)
     })
 
-    it('YAZ-4985: the sidebar lock and the ask box share ONE allowance: "1 minute" from the lock lets a move through with no ask, the lock counts it, and at zero the vault locks again by itself; the box\'s "1 minute" shows on the lock', async () => {
+    it('YAZ-5581: the sidebar lock unlocks the whole vault: every editor of the vault edits (no Read only) while it runs; Lock now saves each open page FIRST, then locks it; read-only.json is never written', async () => {
+      const { bridge } = await mount(defaultAppState(), { id: 'w1', root: '/v', file: '/v/A.md', tabs: ['/v/A.md'] }, { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
+        feed(b)
+        b.bridge.tree.mockResolvedValue({ root: '/v', tree: TREE, generatedAt: 1 })
+        b.bridge.vaultConfig.read.mockImplementation(async (_root?: string, name?: string) => (name === 'read-only.json' ? { on: true } : null))
+      })
+      await act(async () => {})
+      const editor = () => captured.editors.filter((e) => e.root === '/v').at(-1)
+      expect(editor()?.vaultReadOnly).toBe(true)
+      // An open page's save step, as `useTimedUnlock` registers it: the lock waits for it.
+      const order: string[] = []
+      let saved!: () => void
+      const off = editor()!.onVaultLock!(() => new Promise<void>((resolve) => (saved = () => (order.push('saved'), resolve()))))
+      act(() => captured.sidebar?.onUnlockVault?.('/v', 'until'))
+      expect(editor()?.vaultReadOnly).toBe(false)
+      expect(captured.sidebar?.vaults[0].unlockedUntil).toBe(Infinity)
+      act(() => captured.sidebar?.onLockVault?.('/v'))
+      await act(async () => {})
+      // Still unlocked while the page saves.
+      expect(editor()?.vaultReadOnly).toBe(false)
+      await act(async () => saved())
+      order.push(editor()?.vaultReadOnly === true ? 'locked' : 'open')
+      expect(order).toEqual(['saved', 'locked'])
+      expect(captured.sidebar?.vaults[0].unlockedUntil).toBeNull()
+      expect(bridge.vaultConfig.write).not.toHaveBeenCalled()
+      off()
+    })
+
+    it('YAZ-4985, YAZ-5581: the sidebar lock and the ask box share ONE allowance: "Unlock for 10 minutes" from the lock lets a move through with no ask, the lock counts it, and at zero the vault locks again by itself; the box\'s "1 hour" shows on the lock', async () => {
       vi.useFakeTimers({ shouldAdvanceTime: true })
       try {
         const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
@@ -4723,27 +4751,27 @@ describe('App rename door (⚡ YAZ-888)', () => {
         await act(async () => {})
         const sheet = () => el.querySelector('#confirm-read-only-vault-text')
         const lock = () => captured.sidebar?.vaults[0]
-        expect([lock()?.readOnly, lock()?.fileChangesUntil]).toEqual([true, null])
-        act(() => captured.sidebar?.onAllowFileChanges?.('/v', 'minute'))
-        const until = lock()?.fileChangesUntil
-        expect(until).toBeGreaterThan(Date.now() + 59_000)
+        expect([lock()?.readOnly, lock()?.unlockedUntil]).toEqual([true, null])
+        act(() => captured.sidebar?.onUnlockVault?.('/v', 'ten'))
+        const until = lock()?.unlockedUntil
+        expect(until).toBeGreaterThan(Date.now() + 599_000)
         await act(async () => await captured.sidebar?.onMoveEntries([{ oldPath: '/v/A.md', newPath: '/v/Docs/A.md', kind: 'file' }, { oldPath: '/v/B.md', newPath: '/v/Docs/B.md', kind: 'file' }]))
         expect(sheet()).toBeNull()
         expect(renames(bridge)).toHaveLength(2)
         // At zero: locked again, and the lock says so.
-        await act(async () => vi.advanceTimersByTime(60_000))
-        expect(lock()?.fileChangesUntil).toBeNull()
+        await act(async () => vi.advanceTimersByTime(600_000))
+        expect(lock()?.unlockedUntil).toBeNull()
         act(() => void captured.sidebar?.onMoveEntries([{ oldPath: '/v/R.md', newPath: '/v/Docs/R.md', kind: 'file' }, { oldPath: '/v/Docs/A.md', newPath: '/v/A.md', kind: 'file' }]))
         await act(async () => {})
         expect(sheet()).not.toBeNull()
-        // The box's "1 minute" is the same allowance: the lock shows it.
-        await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === '1 minute')?.click())
+        // The box's "1 hour" is the same allowance: the lock shows it.
+        await act(async () => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === '1 hour')?.click())
         await act(async () => {})
-        expect(lock()?.fileChangesUntil).toBeGreaterThan(Date.now() + 59_000)
+        expect(lock()?.unlockedUntil).toBeGreaterThan(Date.now() + 3_599_000)
         expect(renames(bridge)).toHaveLength(4)
         // "Lock now" from the lock ends it for the box too.
-        act(() => captured.sidebar?.onLockFileChanges?.('/v'))
-        expect(lock()?.fileChangesUntil).toBeNull()
+        await act(async () => captured.sidebar?.onLockVault?.('/v'))
+        expect(lock()?.unlockedUntil).toBeNull()
         act(() => void captured.sidebar?.onDeleteEntries(['/v/R.md']))
         await act(async () => {})
         expect(sheet()).not.toBeNull()
@@ -4752,7 +4780,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       }
     })
 
-    it('YAZ-4985: an Undo or a Redo in a read-only vault asks first — a Delete made while the vault was not read only does not come back by ⌘Z, and ⌘⇧Z does not delete it again, until "Allow for 10 minutes"', async () => {
+    it('YAZ-4985: an Undo or a Redo in a read-only vault asks first — a Delete made while the vault was not read only does not come back by ⌘Z, and ⌘⇧Z does not delete it again, until "Unlock for 10 minutes"', async () => {
       let on = false
       const { bridge, el } = await mount(defaultAppState(), identity(), { '/v/A.md': { content: 'See [[B]].\n', mtime: 1 } }, (b) => {
         feed(b)
@@ -4779,7 +4807,7 @@ describe('App rename door (⚡ YAZ-888)', () => {
       expect(putBacks(bridge)).toEqual([])
       await press()
       expect(sheet()).not.toBeNull()
-      await act(async () => button('10 minutes')?.click())
+      await act(async () => button('Unlock for 10 minutes')?.click())
       await settle()
       expect(putBacks(bridge)).toEqual([[`${TRASH}/B.md 1`, '/v/B.md']])
       // The redo of the delete: allowed for 10 minutes now, so it runs; past them it asks.

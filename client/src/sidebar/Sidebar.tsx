@@ -62,7 +62,7 @@ import type { NoticeKind, NoticeType } from '../lib/notice'
 import { dropOn, hasFiles, leftTarget, PlacedCreate, Tree, type CreatePlace, type ReorderOver, type TreeFileMove } from './Tree'
 import { VaultSwitcher } from './VaultSwitcher'
 import { VaultLock } from './VaultLock'
-import type { FileActionsFor } from '../vault/readOnlyVault'
+import type { VaultUnlockFor } from '../vault/readOnlyVault'
 import { PREVIEW_FOLLOW_MS, useSidebarSearch } from './hooks/useSidebarSearch'
 import { useSameList, useVaultTree } from './hooks/useVaultTree'
 import type { ScopeState, VaultListsHere } from '../lists/useVaultListsHere'
@@ -114,8 +114,8 @@ export interface SidebarVault {
   tooLarge?: readonly string[]
   /** Settings › This vault › Read only (YAZ-4939): the header shows the vault's lock (YAZ-4985). Absent: off. */
   readOnly?: boolean
-  /** The vault's timed allowance of file changes (YAZ-4985): when it ends, or null. The lock counts it down. */
-  fileChangesUntil?: number | null
+  /** The vault's unlock (YAZ-5581): when it ends (Infinity: until Lock now), or null. The lock counts it down. */
+  unlockedUntil?: number | null
   /**
    * The app's own vault (the card skill, YAZ-5108), LAST in `vaults`: one row at the bottom with a lock, read only, never
    * a vault of the person. It does not make the window "two vaults": blank space and the person's own tree are as before.
@@ -323,10 +323,10 @@ interface SidebarProps {
   onDeleteEntries: (paths: string[], asked?: boolean) => Promise<void>
   /** A file action in a read-only vault asks first (YAZ-4939): App's sheet, true = go on. The sidebar's New … and Paste ask through it. */
   onFileAction?: (root: string) => Promise<boolean>
-  /** The vault lock's "1 minute" / "10 minutes" (YAZ-4985): the vault's one allowance, the ask box's too. Absent: no lock. */
-  onAllowFileChanges?: (root: string, choice: FileActionsFor) => void
-  /** The vault lock's "Lock now" (YAZ-4985). */
-  onLockFileChanges?: (root: string) => void
+  /** The vault lock's "Unlock for 10 minutes" · "1 hour" · "Until I lock it" (YAZ-5581): the whole vault, the ask sheet's allowance too. Absent: no lock. */
+  onUnlockVault?: (root: string, choice: VaultUnlockFor) => void
+  /** The vault lock's "Lock now": each open page saves, then the vault locks. */
+  onLockVault?: (root: string) => void
   /** Show a transient, unobtrusive message — never a dialog (E1, GRO-2171). App owns the banner. */
   onNotice: (message: string, kind?: NoticeKind, type?: NoticeType) => void
   /**
@@ -757,8 +757,8 @@ export function Sidebar({
   onRetitle,
   onDeleteEntries,
   onFileAction,
-  onAllowFileChanges,
-  onLockFileChanges,
+  onUnlockVault,
+  onLockVault,
   onNotice,
   pendingSearchFocus,
   pendingSearchClear = false,
@@ -1882,13 +1882,14 @@ export function Sidebar({
           hotkeys={settings.hotkeys}
         />
         {/* The lock of each read-only vault (YAZ-4985), beside the vault's name: the page chip's box and countdown. */}
-        {onAllowFileChanges !== undefined && vaults.filter((vault) => vault.readOnly === true && vault.app !== true).map((vault) => (
+        {onUnlockVault !== undefined && vaults.filter((vault) => vault.readOnly === true && vault.app !== true).map((vault) => (
           <VaultLock
             key={vault.root}
+            root={vault.root}
             name={multi ? vault.name : undefined}
-            until={vault.fileChangesUntil ?? null}
-            onAllow={(choice) => onAllowFileChanges(vault.root, choice)}
-            onLock={() => onLockFileChanges?.(vault.root)}
+            until={vault.unlockedUntil ?? null}
+            onAllow={(choice) => onUnlockVault(vault.root, choice)}
+            onLock={() => onLockVault?.(vault.root)}
           />
         ))}
         {onShowAllTabs !== undefined ? (

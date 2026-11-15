@@ -64,7 +64,7 @@ import { FOLD_LOCKED_NOTICE } from './outline/foldLock'
 import { PageSettings } from './PageSettings'
 import { HeadChipsSlot, LAYER_ESCAPE, StatusChips } from './StatusChips'
 import { useTimedUnlock } from './useTimedUnlock'
-import { NO_VAULT_READ_ONLY, VaultReadOnly, type VaultReadOnlyScope } from '../vault/readOnlyVault'
+import { NO_VAULT_READ_ONLY, VaultReadOnly, type BeforeVaultLock, type VaultReadOnlyScope } from '../vault/readOnlyVault'
 import { PageMenu } from './pageMenu'
 import { ZOOM_EVENT } from './zoomRequest'
 import { onGoToNowRequest, takeGoToNow } from './table/goToNowRequest'
@@ -167,8 +167,10 @@ interface EditorProps {
   exploreOnClick?: () => boolean
   /** This vault's "Show IDs in the title" (YAZ-4940): the page's ID after its title, drawn off the index. Absent = off. */
   idInTitle?: boolean
-  /** This vault's Read only (YAZ-4939): every page this editor draws opens read only, with a timed "Allow edits". Absent = off. */
+  /** This vault's Read only (YAZ-4939): every page this editor draws opens read only, with a timed "Allow edits". Absent = off. False while the vault's unlock runs (YAZ-5581). */
   vaultReadOnly?: boolean
+  /** The vault's relock asks each surface here to save first (YAZ-5581, `ReadOnlyVaultState.beforeLock`). Stable. */
+  onVaultLock?: BeforeVaultLock
   /** This vault's card review settings (YAZ-5000): the "Reviews (n)" table under each card in the page. Absent → no section. */
   cardReviewSettings?: ReviewSettings
   /** This vault's delete of one card review (`useCardReview.deleteReview`: a file write, Undo in its notice). */
@@ -317,8 +319,11 @@ interface EditorProps {
 
 /** The vault's Read only (YAZ-4939) reaches every page the editor draws — a page, a board, a code tab, a folder page and its cells — through one context. */
 export function Editor(props: EditorProps) {
-  const { vaultReadOnly = false, onFileAction, cardReviewSettings, onDeleteCardReview } = props
-  const vault = useMemo((): VaultReadOnlyScope => ({ on: vaultReadOnly, allowFileAction: onFileAction ?? NO_VAULT_READ_ONLY.allowFileAction }), [vaultReadOnly, onFileAction])
+  const { vaultReadOnly = false, onFileAction, onVaultLock, cardReviewSettings, onDeleteCardReview } = props
+  const vault = useMemo(
+    (): VaultReadOnlyScope => ({ on: vaultReadOnly, allowFileAction: onFileAction ?? NO_VAULT_READ_ONLY.allowFileAction, beforeLock: onVaultLock ?? NO_VAULT_READ_ONLY.beforeLock }),
+    [vaultReadOnly, onFileAction, onVaultLock],
+  )
   // One door for the editor's life: the settings are read at each draw, so a change of them makes no new Crepe.
   const reviewSettings = useRef(cardReviewSettings)
   reviewSettings.current = cardReviewSettings

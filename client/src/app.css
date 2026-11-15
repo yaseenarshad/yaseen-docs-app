@@ -4842,6 +4842,14 @@ body.drag-held iframe {
   z-index: 30;
 }
 
+/* "Unlock this vault?" says what it opens (YAZ-5581), in the muted colour under the question. */
+.read-only-chip__ask .vault-lock__what {
+  margin-top: -4px;
+  color: var(--fg-muted);
+  font-weight: 400;
+  line-height: 1.35;
+}
+
 /* The message of an edit attempt (YAZ-4446, D33): a card under the chip, a red arrow pointing up at it, and one red pulse
    of the chip. The live region is always there and draws nothing; the card is absolute in the chip's box, so nothing
    in the page moves, and it takes no pointer, so the page under it still answers. The toast's surface and shadow

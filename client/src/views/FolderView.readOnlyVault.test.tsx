@@ -273,6 +273,35 @@ describe('Read only for the whole vault on a folder page (YAZ-4939)', () => {
     expect(lockedCell(el, 'Own switch')).toBe(true)
   })
 
+  it('YAZ-5581: the sidebar lock\'s vault unlock reaches the table: while it runs no chip, the cells open (a page\'s own switch still holds) and a column rename writes with no "Allow edits?"; when it ends the table locks in place and asks again', async () => {
+    const el = await mount(true)
+    const render = (on: boolean) =>
+      act(() =>
+        root?.render(
+          <VaultReadOnly.Provider value={{ on, allowFileAction: () => Promise.resolve(true) }}>
+            <FolderView root="/vault" path={STAGES} source={source} onOpenFile={() => undefined} onRetitle={() => undefined} commentsOrder="oldest" onChangeCommentsOrder={() => undefined} />
+          </VaultReadOnly.Provider>,
+        ),
+      )
+    expect(lockedCell(el, 'Lead Gen')).toBe(true)
+    render(false)
+    await flush()
+    expect(chip(el)).toBeNull()
+    expect([lockedCell(el, 'Lead Gen'), lockedCell(el, 'Own switch')]).toEqual([false, true])
+    renameColumn(el, 'Priority', 'Importance')
+    await flush()
+    expect(el.querySelector('.read-only-chip__ask')).toBeNull()
+    expect(disk.get(SETTINGS_FILE)?.content).toContain('displayName: Importance')
+    render(true)
+    await flush()
+    expect(chip(el)?.textContent).toBe('Read only')
+    expect(lockedCell(el, 'Lead Gen')).toBe(true)
+    renameColumn(el, 'Importance', 'Weight')
+    await flush()
+    expect(boxLabels(el)).toEqual(['Allow edits for 1 minute', '10 minutes', 'Until I close this tab', 'Cancel'])
+    expect(disk.get(SETTINGS_FILE)?.content).not.toContain('Weight')
+  })
+
   it('a time choice unlocks this tab — the settings write goes, the cells open, a page’s own switch still holds; at zero it locks again; "Lock now" locks at once', async () => {
     const el = await mount(true)
     click(chip(el)!)

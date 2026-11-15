@@ -7,7 +7,7 @@
  * window, where the Explore layer is narrow and its head folds.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { clickMenuItemQuietly, appWindow, buildFixtureVault, copyVault, fileRow, launchApp, layer, lensTab, seededState } from './helpers'
@@ -182,6 +182,43 @@ test('page tab (Read only): unlock and Lock now, at the top and halfway', async 
     soft(`pageTab.${where}.lock`, await sample(win, marker, async () => {
       await layer(win).locator('.read-only-chip__lock').click()
     }))
+  }
+})
+
+// YAZ-5581: the sidebar lock unlocks the whole vault; Lock now saves the open page, then locks it IN PLACE (no jump).
+test('vault lock (sidebar): Unlock for 10 minutes, type, Lock now, halfway down a page tab', async () => {
+  const readOnlyFile = path.join(vault, '.yaseendocs', 'read-only.json')
+  await writeFile(readOnlyFile, JSON.stringify({ on: true }))
+  try {
+    await fileRow(win, 'Long page').click()
+    await expect(layer(win).locator('p', { hasText: 'nojump-line-01' })).toBeVisible()
+    await expect(layer(win).locator('.read-only-chip__button')).toHaveCount(1)
+    await scrollTo(win, '.tabstack__layer:not(.tabstack__layer--hidden) .editor-host', MARK(20).slice(0, 18))
+    const marker = MARK(20).slice(0, 18)
+    soft('vaultLock.unlock', await sample(win, marker, async () => {
+      await win.locator('.sidebar__header .vault-lock__button').click()
+      await win.locator('.vault-lock__ask .read-only-chip__allow').click()
+    }))
+    // The one signal is the sidebar's: no chip on the page, and the page edits.
+    await expect(win.locator('.vault-lock--allowed')).toHaveCount(1)
+    await expect(layer(win).locator('.read-only-chip__button')).toHaveCount(0)
+    await layer(win).locator('p', { hasText: marker }).last().click()
+    await win.keyboard.press('End')
+    await win.keyboard.type(' vault-unlocked-typing')
+    // The typing's own scroll settles before the lock is measured.
+    await sample(win, marker, async () => undefined)
+    soft('vaultLock.lock', await sample(win, marker, async () => {
+      // A narrow header shows the short form ("10m") with no Lock now beside it (YAZ-4964): the box always has it.
+      await win.locator('.sidebar__header .vault-lock__button').click()
+      await win.locator('.vault-lock__ask button', { hasText: 'Lock now' }).click()
+    }))
+    await expect(layer(win).locator('.read-only-chip__button')).toHaveCount(1)
+    expect(await readFile(path.join(vault, 'Long page.md'), 'utf8')).toContain('vault-unlocked-typing')
+    const shift = report['vaultLock.lock'] as Awaited<ReturnType<typeof sample>>
+    expect(Math.abs(shift.endShift.top)).toBeLessThanOrEqual(2)
+  } finally {
+    await rm(readOnlyFile, { force: true })
+    await win.waitForTimeout(800)
   }
 })
 

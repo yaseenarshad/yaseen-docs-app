@@ -121,7 +121,7 @@ import { inPlace } from './vault/placeScope'
 import { useVaultScope, type VaultScope } from './vault/useVaultScope'
 import { CARD_SKILL_HIDDEN, CARD_SKILL_NAME, CARD_SKILL_READ_ONLY, cardSkillAgain, cardSkillDuplicated, cardSkillReadOnlyVault } from './vault/cardSkill'
 import { inAppVault, isAppVault } from '@shared/appVaults'
-import { FILE_ACTIONS_ALLOW, READ_ONLY_VAULT_FILE, sanitizeReadOnlyVault, type FileActionsFor } from './vault/readOnlyVault'
+import { READ_ONLY_VAULT_FILE, VAULT_UNLOCK_MS, sanitizeReadOnlyVault, type VaultUnlockFor } from './vault/readOnlyVault'
 import { foreignDrag, windowTabOf, WORKSPACE_PAGE_MIME, type PageDrag } from './workspace/pageDrag'
 import { StartPage } from './workspace/StartPage'
 import { duplicateTabIds, nearSteps, stepIdOf, tabById, tabOf, useWorkspace, type ZoomFrom } from './workspace/useWorkspace'
@@ -620,20 +620,20 @@ export function App() {
     }
     return new Promise((resolve) => setReadOnlyAsk({ root, resolve }))
   }, [scopeOf, notify])
-  const allowFileChanges = useCallback((root: string, choice: FileActionsFor) => scopeOf(root).readOnlyVault.allowFileActions(choice), [scopeOf])
-  const lockFileChanges = useCallback((root: string) => scopeOf(root).readOnlyVault.lockFileActions(), [scopeOf])
+  const unlockVault = useCallback((root: string, choice: VaultUnlockFor) => scopeOf(root).readOnlyVault.unlock(choice), [scopeOf])
+  const lockVault = useCallback((root: string) => scopeOf(root).readOnlyVault.lock(), [scopeOf])
   /** The sheet's answer: false = Cancel; null = Just this once (no allowance); a time = that allowance, then go on. */
   const readOnlyAskNow = useRef(readOnlyAsk)
   readOnlyAskNow.current = readOnlyAsk
-  const answerReadOnly = useCallback((choice: FileActionsFor | null | false) => {
+  const answerReadOnly = useCallback((choice: VaultUnlockFor | null | false) => {
     const ask = readOnlyAskNow.current
     if (ask === null) return
     readOnlyAskNow.current = null
     setReadOnlyAsk(null)
     if (choice !== false && choice !== null) {
       const scope = scopeOf(ask.root)
-      if (scope.root === ask.root) scope.readOnlyVault.allowFileActions(choice)
-      else outsideAllowed.current.set(ask.root, Date.now() + FILE_ACTIONS_ALLOW[choice])
+      if (scope.root === ask.root) scope.readOnlyVault.unlock(choice)
+      else outsideAllowed.current.set(ask.root, Date.now() + VAULT_UNLOCK_MS[choice])
     }
     ask.resolve(choice !== false)
   }, [scopeOf])
@@ -1733,7 +1733,7 @@ export function App() {
   )
   const exploreVaultOf = useCallback((path: string) => {
     const scope = scopeOf(path)
-    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks, readOnly: scope.readOnlyVault.settings.on, review: { settings: scope.review.settings, deleteReview: scope.review.deleteReview } }
+    return { root: scope.root ?? '', wikilinks: scope.wikilinks, wikilinkCandidates: scope.wikilinkCandidates, viewOnlyLinks: scope.viewOnlyLinks, readOnly: scope.readOnlyVault.locked, beforeLock: scope.readOnlyVault.beforeLock, review: { settings: scope.review.settings, deleteReview: scope.review.deleteReview } }
   }, [scopeOf])
   // The pages opened most recently, for the stack's empty search: the active tab's page, drawing or diagram counts (YAZ-4943).
   useEffect(() => {
@@ -3616,7 +3616,7 @@ export function App() {
   const duplicateCardSkill = useCallback((vault: string, again = false) => {
     const scope = live.current.vaults[live.current.roots.indexOf(vault)]
     const name = scope?.name ?? storage.vaultName(vault)
-    if (scope?.readOnlyVault.settings.on === true) return notify(cardSkillReadOnlyVault(name), 'error')
+    if (scope?.readOnlyVault.locked === true) return notify(cardSkillReadOnlyVault(name), 'error')
     api.cardSkill.duplicate(vault, again).then(
       (out) => {
         if ('exists' in out) return setSkillAgain(vault)
@@ -3684,8 +3684,9 @@ export function App() {
       exploreOnClick: exploreOnClickFor(path),
       // The vault's "Show IDs in the title" (YAZ-4940): the page's ID after its title.
       idInTitle: scope.showIds.settings.title,
-      // The vault's Read only (YAZ-4939), and the door a file action asks through.
-      vaultReadOnly: scope.readOnlyVault.settings.on,
+      // The vault's Read only (YAZ-4939), off while its unlock runs (YAZ-5581); the relock's save step; the door a file action asks through.
+      vaultReadOnly: scope.readOnlyVault.locked,
+      onVaultLock: scope.readOnlyVault.beforeLock,
       onFileAction: allowFileAction,
       // The vault's card review (YAZ-5000): "Reviews (n)" under each card in the page, the card window's table.
       cardReviewSettings: scope.review.settings,
@@ -4039,7 +4040,7 @@ export function App() {
           // The folders' shortcut rows (YAZ-2290 D2) read the SAME index source of each vault
           // its WikilinkIndexBridge already feeds below — read-only, and no second feed.
           vaults={[
-            ...vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null && inboxFront, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, fileChangesUntil: vault.readOnlyVault.allowedUntil })),
+            ...vaults.map((vault, i) => ({ root: roots[i], ...folderShown(roots[i]), name: vault.name ?? '', watch: vault.watch, idsInSearch: vault.showIds.inSearch, idsInFiles: vault.showIds.settings.files, index: vault.wikilinks, review: vault.reviewSettings.settings.enabled, dueCount: vault.review.dueCount, reviewing: vault.review.session !== null && inboxFront, tooLarge: vault.sync.status?.tooLarge, readOnly: vault.readOnlyVault.settings.on, unlockedUntil: vault.readOnlyVault.unlockedUntil })),
             // The card skill (YAZ-5108): the app's own vault, last — one row at the bottom, read only, no Inbox.
             ...(skillShown && cardSkill !== null ? [{ root: cardSkill, name: CARD_SKILL_NAME, watch: skillScope.watch, index: skillScope.wikilinks, review: false, dueCount: 0, reviewing: false, readOnly: true, app: true as const }] : []),
           ]}
@@ -4109,8 +4110,8 @@ export function App() {
           onDeleteEntries={trashMany}
           onFileAction={allowFileAction}
           // The vault's lock in the header (YAZ-4985): the ask box's allowance, granted and ended there too.
-          onAllowFileChanges={allowFileChanges}
-          onLockFileChanges={lockFileChanges}
+          onUnlockVault={unlockVault}
+          onLockVault={lockVault}
           onDraggedOut={(paths) => void askAfterDragOut(paths)}
           onNotice={notify}
           // ⌘⇧C's box (🔒 D4, YAZ-1338): the panel keeps it current, the chord above reads it.
@@ -4373,14 +4374,16 @@ export function App() {
           text={`This vault (${storage.vaultName(readOnlyAsk.root)}) is read only. Allow this file change?`}
           confirmLabel="Just this once"
           focusConfirm
-          // ↓ ↑ Tab move through Just this once · 1 minute · 10 minutes · Cancel; Enter picks the focused one (YAZ-4989).
+          // ↓ ↑ Tab move through Just this once · the sidebar lock's three · Cancel; Enter picks the focused one (YAZ-4989).
+          // Each timed choice unlocks the whole vault, as the sidebar's lock does (YAZ-5581): one allowance, one meaning.
           choices
           onConfirm={() => answerReadOnly(null)}
           onCancel={() => answerReadOnly(false)}
           other={
             <>
-              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('minute')}>1 minute</button>
-              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('ten')}>10 minutes</button>
+              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('ten')}>Unlock for 10 minutes</button>
+              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('hour')}>1 hour</button>
+              <button type="button" className="confirm__btn" onClick={() => answerReadOnly('until')}>Until I lock it</button>
             </>
           }
         />

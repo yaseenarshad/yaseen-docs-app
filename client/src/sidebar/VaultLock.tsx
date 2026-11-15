@@ -1,11 +1,12 @@
 /**
  * THE VAULT'S LOCK in the sidebar's header (YAZ-4985), modelled on a page's "Read only" chip (`ReadOnlyChip`). It shows
- * only for a vault that is read only (Settings › This vault › Read only): a small closed lock. The files look as always
- * and the menus are as always; a file change there asks first (App's door). A click opens the chip's kind of box:
- * "Allow file changes for 1 minute" (first, so Enter takes it) · "10 minutes" · Cancel. That is the vault's ONE allowance
- * (`ReadOnlyVaultState.allowFileActions`), the same one the ask box's "1 minute" and "10 minutes" start, so the two always
- * agree. While it runs the lock is amber with the time left ("9:52"), "Lock now" beside it; at zero the vault locks again
- * by itself (the state's own timer) and the lock turns back. The 1-second tick is here alone, only while it runs.
+ * only for a vault that is read only (Settings › This vault › Read only): a small closed lock. A click opens the chip's
+ * kind of box, "Unlock this vault?" (YAZ-5581): "Unlock for 10 minutes" (first, so Enter takes it) · "1 hour" · "Until
+ * I lock it" · Cancel. That unlocks the WHOLE vault (`ReadOnlyVaultState.unlock`): every page, card file, table, code
+ * tab and file change, the same allowance the ask sheet's timed choices start. While it runs the lock is amber with the
+ * time left ("9:52", or "Open" until Lock now), "Lock now" beside it: the one signal, no page shows a chip. At zero or
+ * on Lock now each open page saves, then the vault locks again (the state's own timer) and the lock turns back. The
+ * 1-second tick is here alone, only while a countdown runs.
  *
  * The box closes on Cancel, Esc, a press outside it (capture `pointerdown`, as the chip's) and the window's blur. The
  * hover text is the app's own box (`HoverTip`): a native `title` shows nothing in the app.
@@ -20,37 +21,46 @@ import { choiceKey } from '../components/choiceKeys'
 import { useEffect, useReducer, useRef, useState } from 'react'
 import { HoverTip } from '../components/HoverTip'
 import { LockIcon } from '../views/view/icons'
-import type { FileActionsFor } from '../vault/readOnlyVault'
+import type { VaultUnlockFor } from '../vault/readOnlyVault'
+import { useVaultUnit } from '../vault/unitWord'
 
 export interface VaultLockProps {
+  /** The vault: its unit word ("page", "note", …) in the box's words. */
+  root?: string
   /** The vault's name: said in the hover text only when the window shows two or more vaults. */
   name?: string
-  /** When the allowance ends (ms since the epoch), or null while the vault is locked. */
+  /** When the unlock ends (ms since the epoch; Infinity: until Lock now), or null while the vault is locked. */
   until: number | null
-  onAllow: (choice: FileActionsFor) => void
+  onAllow: (choice: VaultUnlockFor) => void
   onLock: () => void
 }
 
-/** The time left, as the chip's countdown: "9:52". */
+/** "Until I lock it": no countdown, the word the lock shows instead. */
+export const UNLOCKED_OPEN = 'Open'
+
+/** The time left, as the chip's countdown: "9:52"; "Open" with no end. */
 export function timeLeft(until: number, now: number): string {
+  if (until === Infinity) return UNLOCKED_OPEN
   const left = Math.max(0, Math.ceil((until - now) / 1000))
   return `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`
 }
 
 /** The time left in a few letters, for a narrow header: whole minutes up ("10m", "1m"), then seconds ("58s"). */
 export function shortTimeLeft(until: number, now: number): string {
+  if (until === Infinity) return UNLOCKED_OPEN
   const left = Math.max(0, Math.ceil((until - now) / 1000))
   return left >= 60 ? `${Math.ceil(left / 60)}m` : `${left}s`
 }
 
-export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
+export function VaultLock({ root, name, until, onAllow, onLock }: VaultLockProps) {
+  const unit = useVaultUnit(root)
   const [asking, setAsking] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const allowed = until !== null
   const [, tick] = useReducer((n: number) => n + 1, 0)
   useEffect(() => {
-    if (until === null) return
+    if (until === null || until === Infinity) return
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
   }, [until])
@@ -68,8 +78,8 @@ export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
     }
   }, [asking])
   const whose = name === undefined ? 'This vault' : name
-  const tip = allowed ? `File changes are allowed in ${name ?? 'this vault'} for now. Click for another time.` : `${whose} is read only. Click to allow file changes.`
-  const allow = (choice: FileActionsFor) => {
+  const tip = allowed ? unit(`${name ?? 'This vault'} is unlocked: every page, card and file change. Click for another time.`) : `${whose} is read only. Click to unlock it for a while.`
+  const allow = (choice: VaultUnlockFor) => {
     setAsking(false)
     onAllow(choice)
   }
@@ -92,7 +102,7 @@ export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
           ref={buttonRef}
           type="button"
           className={`read-only-chip__button vault-lock__button${allowed ? ' read-only-chip__button--editing' : ''}`}
-          aria-label={allowed ? `File changes allowed, ${timeLeft(until, Date.now())} left` : `${whose} is read only`}
+          aria-label={allowed ? (until === Infinity ? `${whose} is unlocked until you lock it` : `${whose} is unlocked, ${timeLeft(until, Date.now())} left`) : `${whose} is read only`}
           aria-haspopup="dialog"
           aria-expanded={asking}
           // The header's own mousedown (the switcher's surface) must not take this press.
@@ -114,11 +124,13 @@ export function VaultLock({ name, until, onAllow, onLock }: VaultLockProps) {
         </button>
       )}
       {asking && (
-        <div className="read-only-chip__ask vault-lock__ask" role="dialog" aria-label="Allow file changes">
-          <p>Allow file changes?</p>
+        <div className="read-only-chip__ask vault-lock__ask" role="dialog" aria-label="Unlock this vault">
+          <p>Unlock this vault?</p>
+          <p className="vault-lock__what">{unit('Every page, card, table and file change. Files with their own Read only stay locked.')}</p>
           <div className="read-only-chip__times">
-            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => allow('minute')}>Allow file changes for 1 minute</button>
-            <button type="button" onClick={() => allow('ten')}>10 minutes</button>
+            <button type="button" className="read-only-chip__allow" autoFocus onClick={() => allow('ten')}>Unlock for 10 minutes</button>
+            <button type="button" onClick={() => allow('hour')}>1 hour</button>
+            <button type="button" onClick={() => allow('until')}>Until I lock it</button>
           </div>
           <div className="read-only-chip__actions">
             {allowed && (
