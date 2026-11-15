@@ -147,6 +147,7 @@ const ANSWER_WORDS: Record<CardOp['kind'], (op: CardOp) => string> = {
   off: (op) => (op.kind === 'off' && !op.on ? 'Unarchive card' : 'Archive card'),
   next: (op) => (op.kind === 'next' && !op.on ? 'Not up next' : 'Up next'),
   fix: (op) => (op.kind === 'fix' && !op.on ? 'Fixed' : 'Fix later'),
+  notitle: (op) => (op.kind === 'notitle' && !op.on ? 'Title on the front: Show' : 'Title on the front: Hide'),
 }
 
 export function lostRows(lost: readonly LostAnswer[]): LostRow[] {

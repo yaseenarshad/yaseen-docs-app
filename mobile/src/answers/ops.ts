@@ -5,10 +5,12 @@ import {
   formatCardLine,
   isCardFix,
   isCardNext,
+  isCardNoTitle,
   isCardOff,
   pageCards,
   withCardFix,
   withCardNext,
+  withCardNoTitle,
   withCardOff,
   withCardReview,
   withoutCardReview,
@@ -45,6 +47,11 @@ export type CardOp =
    */
   | { kind: 'next'; id: string; on: boolean; at?: number }
   | { kind: 'fix'; id: string; on: boolean } // Fix later (round 10, YAZ-5097)
+  /**
+   * Title on the front (YAZ-5503): `on` hides the title on the review front (the line's `notitle`), off shows it again.
+   * The Mac's own change (`withCardNoTitle`): the word goes after the ID, the title and any `off` / `next`; Show takes it out.
+   */
+  | { kind: 'notitle'; id: string; on: boolean }
 
 /**
  * One action on one card line, with the shared card logic (`shared/cardLine.ts`). Each kind is IDEMPOTENT: an action
@@ -75,6 +82,8 @@ export function applyOp(line: CardLine, op: CardOp): CardLine {
       return withCardNext(line, op.on, op.on ? op.at : undefined)
     case 'fix':
       return withCardFix(line, op.on)
+    case 'notitle':
+      return withCardNoTitle(line, op.on)
   }
 }
 
@@ -133,15 +142,15 @@ export class UnsentChangeError extends Error {
 /**
  * A change of card `id`'s line (the review host's `changeCardLine`, the ⋯ menu) as actions: each mark that changed,
  * then each review taken out, then each review added. Applied to `before`, they give `after`'s marks and reviews.
- * Any other change (the title, YAZ-5308; a property, YAZ-5349; the title on the front, an ID, an unknown part) cannot
- * be sent: it throws `UnsentChangeError`, so nothing is half saved.
+ * The title on the front (`notitle`) is a mark too since YAZ-5503. Any other change (the title, YAZ-5308; a property,
+ * YAZ-5349; an ID, an unknown part) cannot be sent: it throws `UnsentChangeError`, so nothing is half saved.
  */
 export function opsBetween(id: string, before: CardLine, after: CardLine): CardOp[] {
   const rest = (line: CardLine) =>
     line.parts
-      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && p.kind !== 'fix')
+      .filter((p) => p.kind !== 'review' && p.kind !== 'off' && p.kind !== 'next' && p.kind !== 'fix' && p.kind !== 'notitle')
       .map((p) =>
-        p.kind === 'id' ? `id:${p.id}` : p.kind === 'title' ? `title:${p.title}` : p.kind === 'property' ? `property:${JSON.stringify([p.name, p.value])}` : p.kind === 'other' ? `other:${p.text}` : p.kind,
+        p.kind === 'id' ? `id:${p.id}` : p.kind === 'title' ? `title:${p.title}` : p.kind === 'property' ? `property:${JSON.stringify([p.name, p.value])}` : p.kind === 'other' ? `other:${p.text}` : (p as { kind: string }).kind,
       )
       .join(',')
   if (rest(before) !== rest(after)) throw new UnsentChangeError(id)
@@ -149,6 +158,7 @@ export function opsBetween(id: string, before: CardLine, after: CardLine): CardO
   if (isCardOff(before) !== isCardOff(after)) ops.push({ kind: 'off', id, on: isCardOff(after) })
   if (isCardNext(before) !== isCardNext(after)) ops.push({ kind: 'next', id, on: isCardNext(after) })
   if (isCardFix(before) !== isCardFix(after)) ops.push({ kind: 'fix', id, on: isCardFix(after) })
+  if (isCardNoTitle(before) !== isCardNoTitle(after)) ops.push({ kind: 'notitle', id, on: isCardNoTitle(after) })
   // Reviews by name, counted (YAZ-5198: two identical copies are two): the copies taken out go last first, each naming
   // its copy (`nth`), then the copies added, each naming its place among its name.
   const count = (line: CardLine) => {

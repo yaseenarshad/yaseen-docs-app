@@ -168,7 +168,7 @@ export function phoneReviewHost(options: PhoneReviewHostOptions): ReviewHost {
       // mark's group leaves the list, so the card reads byte for byte as before. When a send has tried it (it may be on
       // GitHub, YAZ-5180), the list keeps it and the inverse goes as an action, as an `unreview` does.
       const only = ops.length === 1 ? ops[0] : null
-      if (only !== null && (only.kind === 'off' || only.kind === 'next' || only.kind === 'fix')) {
+      if (only !== null && (only.kind === 'off' || only.kind === 'next' || only.kind === 'fix' || only.kind === 'notitle')) {
         const waiting = answers.waiting()
         const mark = [...waiting].reverse().find((w) => w.op.kind === only.kind && w.op.id === id && 'on' in w.op && w.op.on === !only.on)
         if (mark !== undefined && waiting.filter((w) => w.group === mark.group).length === 1 && (await answers.undo(mark.group))) return
