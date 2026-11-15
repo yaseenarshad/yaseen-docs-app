@@ -5,7 +5,7 @@ import type { VaultStore } from '../store'
 /**
  * The phone's index of the open vault: one record for each page and card file, built with the Mac's own
  * `indexRecord` (`shared/indexRecord.ts`, 2B). Search (4C), review (4B) and the friends numbers read it. A card file
- * gets `kind: 'card'` and its `title`; a page that embeds a card holds only the ID, in `embeds` (YAZ-5037, YAZ-5044).
+ * gets `kind: 'card'` and its `title`; a page that embeds a card holds only the ID, in `embeds`.
  *
  * It is kept as the vault's phone-only state `INDEX_STATE`, written by the sync pass just BEFORE the checkpoint. It
  * is trusted only when its `commit` is the checkpoint's; else the pass builds it again in full (after "Reset local
@@ -16,11 +16,11 @@ export const INDEX_STATE = 'index'
 
 /**
  * The rules the records are built by, as the Mac's `CACHE_VERSION` (`desktop/.../vaultIndex/cache.ts`). Raise it when
- * `indexRecord` reads a file in a new way. 2 (YAZ-5309): a card's title is its card line's `title` part (YAZ-5308),
- * never its first line nor a card file's `title` property. 3 (YAZ-5349): a card's own properties ride on its record
+ * `indexRecord` reads a file in a new way. 2: a card's title is its card line's `title` part,
+ * never its first line nor a card file's `title` property. 3: a card's own properties ride on its record
  * (`CardRecord.properties`, off its card line), and `fix` is a card line word (no property is named so); the Mac's
- * `CACHE_VERSION` 19. 4 (YAZ-5512 S1): an empty block (`---\n---`) ends at its own second fence, never at a later
- * `---` line (the cards above that line were missing); the Mac's `CACHE_VERSION` 20. 5 (YAZ-5512 C1): a page that starts
+ * `CACHE_VERSION` 19. 4: an empty block (`---\n---`) ends at its own second fence, never at a later
+ * `---` line (the cards above that line were missing); the Mac's `CACHE_VERSION` 20. 5: a page that starts
  * with a BOM has its block read; the Mac's `CACHE_VERSION` 21. Absent (1): every index stored before it.
  */
 export const INDEX_RULES = 5
@@ -62,7 +62,7 @@ export function phoneRecord(path: string, size: number, text: string | null, tim
 export const ofTheseRules = (index: PhoneIndex): boolean => index.rules === INDEX_RULES
 
 /**
- * `index` built again by this build's rules (YAZ-5309), from the files the phone holds: each record's file read from
+ * `index` built again by this build's rules, from the files the phone holds: each record's file read from
  * `store`, with its size and times kept. A file the phone does not hold as text (over the size limit, F7) keeps a
  * record of its metadata only. No network.
  */
