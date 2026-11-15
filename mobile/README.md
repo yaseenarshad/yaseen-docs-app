@@ -172,7 +172,11 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
   works on any tab and over waiting comments; it never runs while answers wait, a comment box holds words, or the
   first download runs: the line then says why ("Restart after your answers are sent."). The rule is written once, at
   the top of `safeMoment.ts`; keep this paragraph in step with it. Settings shows the running build at its top
-  ("Build 8432fd9 · 15 Nov, 14:02").
+  ("Build bb8a4aa30 · 15 Nov, 14:02": the commit as `/version.txt` names it, the same in the Version row), then the
+  address the app runs from and **Check for updates** (YAZ-5593, `src/settings/UpdateCheck.tsx`): it asks the host
+  now (`update()`, and `/version.txt` read by the worker with no cache: `VERSION_ASK`) and says "You have the newest
+  build (…)", the same "A new version is ready." line with Restart (the same holds), or "Can't reach the server. Open
+  the app from docs.yaseenarshad.com." (offline, or a host that no longer serves the app). It never restarts.
   **Keep this.** It is how an installed home-screen app gets each new build: a person never has to delete and add the
   app again. Every publish must keep `UpdateLine.tsx` ("A new version is ready." → Restart), the `no-cache` rule on
   `sw.js`, and `updateViaCache: "none"`. To test it: publish, close the app, open it again; the line shows, then Restart.

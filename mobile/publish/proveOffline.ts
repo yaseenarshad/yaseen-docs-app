@@ -11,6 +11,8 @@ import { join } from 'node:path'
  *  1. the app loads with zero CSP violations and zero errors, and the service worker installs and keeps the shell;
  *  2. the CSP is live (a call to another origin is refused);
  *  3. with the host gone, a second open still shows the app, a lazy chunk still loads, the friend page still opens;
+ *     YAZ-5593: Check for updates' question (the worker reads `/version.txt` with no cache) names the served build
+ *     online (2b) and says "no answer from the host" offline (3e), with no CSP violation;
  *  4. a new deploy installs in the background; it NEVER runs by itself (YAZ-5555): after the browser activated it, a
  *     cold open still runs the old version and the worker's state says a new one is ready; the Restart's load
  *     (`?notecards-update=1`) runs it, and from then on every open does;
@@ -59,6 +61,13 @@ const v2 = LIVE ? '' : deploy(v1, 'v2', (dir) => {
   writeFileSync(html, readFileSync(html, 'utf8').replace('<title>', '<meta name="proof" content="v2" /><title>'))
 })
 // The worker file that the checked site serves (live: fetched; local: the build).
+/** YAZ-5593: the page's question to the worker for "Check for updates" (`VERSION_ASK`), its answer as JSON. */
+const ASK_SERVED = `new Promise((resolve) => {
+  const channel = new MessageChannel()
+  const timer = setTimeout(() => resolve('no answer'), 15000)
+  channel.port1.onmessage = (event) => { clearTimeout(timer); resolve(JSON.stringify(event.data)) }
+  navigator.serviceWorker.controller.postMessage({ type: 'notecards:version' }, [channel.port2])
+})`
 const swText = LIVE ? await fetch(`${LIVE}/sw.js`).then((r) => r.text()) : readFileSync(join(v1, 'sw.js'), 'utf8')
 const shellList = JSON.parse(/\bfiles:(\[[^\]]*\])/.exec(swText)![1]) as string[]
 const engine = shellList.find((f) => f.startsWith('/assets/engine-'))!.slice('/assets/'.length)
@@ -307,6 +316,13 @@ try {
   record('2 the CSP refuses a call to another origin', refused === 'refused' && csp().length > before, `${refused}`)
   const onPurpose = csp().length
 
+  // 2b. YAZ-5593: Check for updates asks the worker what the host serves (the page's CSP lets it fetch only GitHub):
+  // the worker reads /version.txt with no cache and names this build; no CSP violation.
+  const servedText = LIVE ? await fetch(`${LIVE}/version.txt`, { cache: 'no-store' }).then((r) => r.text()) : readFileSync(join(v1, 'version.txt'), 'utf8')
+  const servedOnline = await evaluate(ASK_SERVED)
+  const [servedCommit, servedWorker] = servedText.trim().split('\n')
+  record('2b Check for updates: the worker reads /version.txt (no cache) and names the served build', servedOnline === JSON.stringify({ commit: servedCommit, worker: servedWorker }) && csp().length === onPurpose, `${servedOnline}`)
+
   // 3. The host is gone: a second open.
   await host(null)
   await open(`${ORIGIN}/`)
@@ -319,6 +335,11 @@ try {
   await open(`${ORIGIN}/some/route`)
   record('3d offline: any other address opens the app (single-page)', await until(`!!document.querySelector('input[name="token"]')`))
   await shot('3-offline-app')
+  // 3e. YAZ-5593: offline, the same question has no answer from the host (null): Settings says it cannot reach the
+  // server; nothing reloads (the page is the same document after it).
+  await evaluate(`window.__sameDocument = true`)
+  const servedOffline = await evaluate(ASK_SERVED)
+  record('3e offline: Check for updates finds no server (null), and the page does not reload', servedOffline === 'null' && (await evaluate(`window.__sameDocument === true`)) === true, `${servedOffline}`)
 
   if (process.env.PROOF_TRACE) console.log('versions so far:', versions.slice(-6).join(' '))
   if (!LIVE) {

@@ -6,6 +6,7 @@ import type { FriendsPort } from '../app/friendsPort'
 import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs, type FakeScanner, type FakeSync } from '../dev/fakes'
 import { fakeGithub, type FakeGithub, type FakeRepo, type FakeToken } from '../github/testing'
 import { memoryBackend, openVaultStore, tokenStoreOn, type TokenStore, type VaultStore } from '../store'
+import type { Updates } from '../pwa/updates'
 
 /**
  * Test help for the screens (jsdom): the real app with the real store (in memory) and the real sign-in logic, and fakes
@@ -74,7 +75,7 @@ const named = (el: Element) => (el.getAttribute('aria-label') ?? el.textContent 
 const matches = (el: Element, name: string | RegExp) => (typeof name === 'string' ? named(el) === name : name.test(named(el)))
 
 export async function mount(
-  options: { phone?: { store: VaultStore; tokens: TokenStore }; hasFriends?: boolean; download?: boolean; friends?: (store: VaultStore) => FriendsPort; /** YAZ-5476: 'files': the tabs follow the vault's files alone. Default: Review on (`reviewOnTabs`). */ vaultTabs?: 'files' } = {},
+  options: { phone?: { store: VaultStore; tokens: TokenStore }; hasFriends?: boolean; download?: boolean; friends?: (store: VaultStore) => FriendsPort; /** YAZ-5476: 'files': the tabs follow the vault's files alone. Default: Review on (`reviewOnTabs`). */ vaultTabs?: 'files'; /** YAZ-5593: the service worker's update (Settings › Check for updates). */ updates?: Updates } = {},
 ): Promise<Harness> {
   const { store, tokens } = options.phone ?? (await newPhone())
   const github = fakeGithub({ tokens: TOKENS, repos: REPOS })
@@ -98,7 +99,7 @@ export async function mount(
     for (let i = 0; i < 4; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 0))))
   }
   const button = (name: string | RegExp) => ([...host.querySelectorAll('button, a')].find((el) => matches(el, name)) as HTMLButtonElement | undefined) ?? null
-  await act(async () => root.render(createElement(App, { services })))
+  await act(async () => root.render(createElement(App, { services, updates: options.updates ?? null })))
   await settle()
   return {
     host,

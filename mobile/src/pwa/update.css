@@ -26,3 +26,10 @@
   color: var(--accent);
   font-weight: 600;
 }
+
+/* YAZ-5593: the same line inside Settings, under "Check for updates": in the flow of the screen. */
+.update-line--inline {
+  position: static;
+  margin: 8px 0 0;
+  box-shadow: none;
+}

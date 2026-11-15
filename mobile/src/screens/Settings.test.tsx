@@ -27,14 +27,14 @@ async function settings() {
 const toggle = (x: Harness) => x.host.querySelector<HTMLButtonElement>('.whats-new__toggle')!
 
 describe('the version (YAZ-5446)', () => {
-  it("the words: the version, the build's date and time in the phone's own time, the commit", () => {
+  it("the words: the version, the build (the commit, as /version.txt names it), the build's date and time in the phone's own time (YAZ-5593)", () => {
     expect(buildTime('2026-11-14T10:42:00Z', 'UTC')).toBe('14 Nov 2026, 10:42')
     expect(buildTime('2026-11-14T10:42:00Z', 'Asia/Karachi')).toBe('14 Nov 2026, 15:42')
     expect(buildTime('2026-11-14T23:30:00Z', 'Pacific/Auckland')).toBe('15 Nov 2026, 12:30')
-    expect(versionWords({ version: '0.7.0', built: '2026-11-14T10:42:00Z', commit: 'abc1234' }, 'UTC')).toBe('0.7.0 · 14 Nov 2026, 10:42 · abc1234')
+    expect(versionWords({ version: '0.7.0', built: '2026-11-15T14:02:00Z', commit: 'bb8a4aa30' }, 'UTC')).toBe('Version 0.7.0 · Build bb8a4aa30 · 15 Nov 2026, 14:02')
     // A part that is not known is left out.
-    expect(versionWords({ version: '0.7.0', built: '', commit: '' })).toBe('0.7.0')
-    expect(versionWords({ version: 'dev', built: 'not a time', commit: '' })).toBe('dev')
+    expect(versionWords({ version: '0.7.0', built: '', commit: '' })).toBe('Version 0.7.0')
+    expect(versionWords({ version: 'dev', built: 'not a time', commit: '' })).toBe('Version dev')
   })
 
   it("Settings shows a Version row with package.json's version and the build's date and time", async () => {
@@ -42,18 +42,19 @@ describe('the version (YAZ-5446)', () => {
     const row = [...x.host.querySelectorAll('.row')].find((r) => r.querySelector('.row__main')?.textContent === 'Version')!
     expect(row).toBeDefined()
     const words = row.querySelector('.settings__version')!.textContent!
-    expect(words.startsWith(`${pkg.version} · ${buildTime('2026-11-14T10:42:00Z')}`)).toBe(true)
-    expect(words).toMatch(/^\d+\.\d+\.\d+ · \d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2}/)
+    expect(words.startsWith(`Version ${pkg.version} · `)).toBe(true)
+    expect(words.endsWith(buildTime(BUILD.built))).toBe(true)
+    expect(words).toMatch(/^Version \d+\.\d+\.\d+ · (Build \S+ · )?\d{1,2} [A-Z][a-z]{2} \d{4}, \d{2}:\d{2}$/)
   })
 })
 
 describe('the build at the top of Settings (YAZ-5555)', () => {
-  it('the words: "Build <commit> · <day> <month>, <time>" in the phone\'s own time; the version when no commit', () => {
+  it('the words: "Build <commit> · <day> <month>, <time>" in the phone\'s own time (YAZ-5593: the whole short commit, as /version.txt); the version when no commit', () => {
     expect(buildShortTime('2026-11-15T14:02:00Z', 'UTC')).toBe('15 Nov, 14:02')
     expect(buildShortTime('2026-11-15T23:30:00Z', 'Pacific/Auckland')).toBe('16 Nov, 12:30')
     expect(buildLine({ version: '0.8.0', built: '2026-11-15T14:02:00Z', commit: '8432fd9' }, 'UTC')).toBe('Build 8432fd9 · 15 Nov, 14:02')
-    expect(buildLine({ version: '0.8.0', built: '2026-11-15T14:02:00Z', commit: '8432fd91c' }, 'UTC')).toBe('Build 8432fd9 · 15 Nov, 14:02')
-    expect(buildLine({ version: '0.8.0', built: '', commit: '8432fd91c-dirty' })).toBe('Build 8432fd9-dirty')
+    expect(buildLine({ version: '0.8.0', built: '2026-11-15T14:02:00Z', commit: '8432fd91c' }, 'UTC')).toBe('Build 8432fd91c · 15 Nov, 14:02')
+    expect(buildLine({ version: '0.8.0', built: '', commit: '8432fd91c-dirty' })).toBe('Build 8432fd91c-dirty')
     expect(buildLine({ version: '0.8.0', built: '', commit: '' })).toBe('Build 0.8.0')
     expect(buildLine({ version: 'dev', built: 'not a time', commit: '' })).toBe('Build dev')
   })

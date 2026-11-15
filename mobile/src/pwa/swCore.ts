@@ -64,6 +64,36 @@ export interface WorkerState {
   active: string
   chosen: string
 }
+/**
+ * YAZ-5593: the page's message (with a port for the answer): what the host serves now. The worker reads
+ * `/version.txt` with no cache (the page's CSP lets it fetch only GitHub; the worker's own lets it fetch this site) and
+ * answers a `ServedVersion`, or null when the host does not answer with the app's `/version.txt` (no signal, or a host
+ * that no longer serves the app).
+ */
+export const VERSION_ASK = 'notecards:version'
+export interface ServedVersion {
+  /** The short commit of the served build (`commitOf`, "-dirty" or "unknown" possible). */
+  commit: string
+  /** The served worker's version (its shell's hash), or "kill-switch". */
+  worker: string
+}
+
+/** YAZ-5593: `/version.txt`'s two lines, or null for anything else (another site's page, an error page, nothing). */
+export function servedVersion(text: string): ServedVersion | null {
+  const [commit = '', worker = '', ...rest] = text.replace(/\n$/, '').split('\n')
+  if (rest.length > 0 || !/^([0-9a-f]{7,40}(-dirty)?|unknown)$/.test(commit) || !/^[\w-]{1,80}$/.test(worker)) return null
+  return { commit, worker }
+}
+
+/** YAZ-5593: what the host serves now, read past every cache; null when it does not answer with the app's file. */
+export async function askServed(scope: Pick<SwScope, 'fetch'>): Promise<ServedVersion | null> {
+  try {
+    const response = await scope.fetch('/version.txt', { cache: 'no-store' })
+    return response.ok ? servedVersion(await response.text()) : null
+  } catch {
+    return null
+  }
+}
 export const cacheName = (version: string) => `${CACHE_PREFIX}${version}`
 /** The draw.io files a diagram fetched, one cache per draw.io folder (`/drawio/<hash>/`). */
 export const DRAWIO_CACHE_PREFIX = 'notecards-drawio-'
@@ -416,5 +446,6 @@ export function wire(scope: SwScope, build: ShellBuild): void {
     if (type === SKIP_WAITING) event.waitUntil(scope.skipWaiting())
     if (type === PAGE_READY) event.waitUntil(prune(scope, build))
     if (type === STATE_ASK) event.waitUntil(workerState(scope.caches, build).then((state) => event.ports?.[0]?.postMessage(state)))
+    if (type === VERSION_ASK) event.waitUntil(askServed(scope).then((served) => event.ports?.[0]?.postMessage(served)))
   })
 }

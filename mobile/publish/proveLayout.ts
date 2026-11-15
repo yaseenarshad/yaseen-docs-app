@@ -94,6 +94,7 @@ import { freePort } from './freePort'
  *    sheet's ⋯, Review's deck button and ⋯: a tap opens it, a tap on its button again closes it; a tap outside closes it
  *    and does nothing else.
  *  - Settings (`#fixture=settings`, YAZ-5555), light and dark, at 320 and 375 px: the build's line at the top, one line.
+ *    YAZ-5593 (`settings-check-*`): the address under it, Check for updates (44 px) and each answer, light and dark.
  *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
@@ -1460,6 +1461,43 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const ok = !m.error && /^Build \S+ · \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/.test(m.text) && m.oneLine && m.below && m.above && m.inside && !m.pageWide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings build line at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.text}", ${m.oneLine ? 'one line' : 'WRAPS'}, ${m.below && m.above ? 'at the top' : 'NOT AT THE TOP'}, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.colour}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
+  }
+  await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5593: under the build's line, the address (muted, like it) and "Check for updates" (a 44 px tap), tapped, with
+// each answer (`#fixture=settings-check-<answer>`), light and dark, at 320 and 375 px: inside the screen, the page never
+// sideways. The fixture's update is made up.
+const CHECK_UPDATES = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const build = document.querySelector('.settings__build')
+  const host = document.querySelector('.settings__host')
+  const button = document.querySelector('.settings__check button')
+  if (!build || !host || !button) return { error: 'no address or no button' }
+  const answer = document.querySelector('.settings__check-result, .settings__check .update-line')
+  const inside = (el) => r(el).left >= 0 && r(el).right <= innerWidth + 0.5
+  return { host: host.textContent, sameLook: getComputedStyle(host).color === getComputedStyle(build).color && getComputedStyle(host).fontSize === getComputedStyle(build).fontSize, under: r(host).top >= r(build).bottom - 0.5 && r(button).top >= r(host).bottom - 0.5, button: button.textContent, busy: button.getAttribute('aria-busy'), tap: Math.round(r(button).height), answer: answer ? answer.textContent : '', restart: !!document.querySelector('.settings__check .update-line button'), inside: [host, button, answer].every((el) => !el || inside(el)), pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+})()`
+if (process.env.LAYOUT_SETTINGS !== 'no') {
+  const WANT: Record<string, (m: { button: string; busy: string; answer: string; restart: boolean }) => boolean> = {
+    settings: (m) => m.button === 'Check for updates' && m.answer === '',
+    'settings-check-busy': (m) => m.button === 'Checking…' && m.busy === 'true' && m.answer === '',
+    'settings-check-newest': (m) => /^You have the newest build \(\S+\)$/.test(m.answer) && m.button === 'Check for updates',
+    'settings-check-ready': (m) => m.answer.startsWith('A new version is ready.') && m.restart,
+    'settings-check-unreachable': (m) => m.answer === "Can't reach the server. Open the app from docs.yaseenarshad.com.",
+  }
+  for (const scheme of ['light', 'dark'] as const) {
+    await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }, page)
+    for (const [w, h] of [[320, 568], [375, 667]] as const) {
+      for (const [name, want] of Object.entries(WANT)) {
+        const file = await open(name, w, h)
+        const shot = file.replace('.png', `-check-${scheme}.png`)
+        writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+        const m = await evaluate(CHECK_UPDATES)
+        const ok = !m.error && m.host !== '' && m.sameLook && m.under && m.tap >= 44 && m.inside && !m.pageWide && want(m)
+        if (!ok) failed++
+        console.log(`${ok ? 'PASS' : 'FAIL'}  settings check for updates (${name}) at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.host}" ${m.sameLook ? 'muted like the build line' : 'NOT LIKE THE BUILD LINE'}, ${m.under ? 'under it' : 'NOT UNDER IT'}; "${m.button}" a ${m.tap}px tap; answer "${m.answer}"${m.restart ? ' with Restart' : ''}; ${m.inside ? 'inside' : 'OUTSIDE'}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+      }
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
