@@ -1,7 +1,7 @@
 import { CARD_LINK_ATTR } from '@client/editor/card/cardRender'
 import { linkPath, linkSplit } from '@client/editor/wikilink/linkResolve'
 import { cardInContent } from '@client/review/cardRead'
-import type { NavAction } from '../app/nav'
+import { openLink, type LinkDoor, type LinkTarget } from './openLink'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 import { headMarks, titleBand } from '../media/ui/cardHead'
@@ -20,7 +20,7 @@ import { cardOf, drawCard, embedName, resolveSourceOf } from './pageLook'
  * alone; under it the card's title band (off its card line; none for a card with no title); then the card, drawn by
  * `renderCard`. No Edit card and no ⋯ in stage one.
  */
-export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: VaultStore, go: (action: NavAction) => void, live: () => boolean = () => true): Promise<void> {
+export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: VaultStore, door: LinkDoor, live: () => boolean = () => true): Promise<void> {
   const jobs: Promise<void>[] = []
   for (const box of root.querySelectorAll<HTMLElement>('[data-card-embed]')) {
     const card = cardOf(data, box.dataset.cardEmbed!)
@@ -38,7 +38,7 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
     arrow.setAttribute('aria-hidden', 'true')
     arrow.textContent = '↗'
     from.append(arrow, `Embedded from "${embedName(data, card)}"`)
-    from.addEventListener('click', () => go({ type: 'open', route: { kind: 'card', path: card.path, id: card.id } }))
+    from.addEventListener('click', () => openLink(door, { kind: 'card', path: card.path, id: card.id }))
     const head = document.createElement('div')
     head.className = 'card__head card-embed__head'
     const dot = document.createElement('span')
@@ -82,7 +82,7 @@ export async function fillCardEmbeds(root: ParentNode, data: VaultData, store: V
  * What a tap on the page asks for (YAZ-5455): open a page (at a heading) or a card; a file; land on a heading of this
  * page; `none`: a link to a missing page, which does nothing (it shows plain and dim). null: not the app's (a web link).
  */
-export type Tap = { kind: 'go'; action: NavAction } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'none' } | null
+export type Tap = { kind: 'go'; target: LinkTarget } | { kind: 'file'; path: string } | { kind: 'heading'; heading: string } | { kind: 'none' } | null
 
 /** What a tap at `target` (in a drawn page or card) opens. A web link: null (the browser opens Safari). */
 export function tapOf(target: EventTarget | null, data: VaultData): Tap {
@@ -93,19 +93,19 @@ export function tapOf(target: EventTarget | null, data: VaultData): Tap {
   const path = (el as HTMLElement).dataset.path
   const heading = (el as HTMLElement).dataset.heading
   if (open === 'heading') return heading === undefined ? { kind: 'none' } : { kind: 'heading', heading }
-  if (open === 'page' && path !== undefined) return { kind: 'go', action: { type: 'open', route: { kind: 'page', path, ...(heading !== undefined && { heading }) } } }
-  if (open === 'card' && path !== undefined) return { kind: 'go', action: { type: 'open', route: { kind: 'card', path, id: (el as HTMLElement).dataset.card ?? '' } } }
+  if (open === 'page' && path !== undefined) return { kind: 'go', target: { kind: 'page', path, ...(heading !== undefined && { heading }) } }
+  if (open === 'card' && path !== undefined) return { kind: 'go', target: { kind: 'card', path, id: (el as HTMLElement).dataset.card ?? '' } }
   if (open === 'file' && path !== undefined) return { kind: 'file', path }
-  if (el.classList.contains('wikilink--unresolved')) return { kind: 'none' }
+  if (el.classList.contains('wikilink--unresolved') || el.classList.contains('page-pill--missing')) return { kind: 'none' }
   // A pill in a card (`renderCard`): its link, as the card's page reads it.
   const inner = el.getAttribute(CARD_LINK_ATTR)
   if (inner !== null) {
     const card = cardOf(data, inner)
-    if (card !== null) return { kind: 'go', action: { type: 'open', route: { kind: 'card', path: card.path, id: card.id } } }
+    if (card !== null) return { kind: 'go', target: { kind: 'card', path: card.path, id: card.id } }
     const source = resolveSourceOf(data)
     const part = linkSplit(inner, source).hash.replace(/^#/, '')
     const page = linkPath(inner, source, undefined)
-    if (page !== null) return { kind: 'go', action: { type: 'open', route: { kind: 'page', path: page, ...(part !== '' && { heading: part }) } } }
+    if (page !== null) return { kind: 'go', target: { kind: 'page', path: page, ...(part !== '' && { heading: part }) } }
     return { kind: 'none' }
   }
   return null

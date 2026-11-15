@@ -17,7 +17,7 @@ import { fileType, storedMedia, type VaultMedia } from '../media/ui/vaultMedia'
  * two pages ("1 / 2": the folder's pages only). YAZ-5467: `page-jump` a long page just scrolled, the ⤒ ⤓ pill at the right edge. The clipboard is a fake: nothing reaches the
  * phone's real one.
  */
-const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump', 'page-links', 'page-linked-from'] as const
+const NAMES = ['search', 'search-typed', 'search-type', 'search-none', 'page', 'page-lower', 'card', 'card-file', 'card-invalid', 'page-offline', 'page-online', 'page-tricks', 'page-cards', 'search-tree', 'search-clear', 'page-drawing', 'search-found', 'page-copied', 'page-copy-by-hand', 'page-last', 'card-next', 'page-code', 'page-folder', 'page-jump', 'page-links', 'page-linked-from', 'page-pills'] as const
 type ReaderFixture = (typeof NAMES)[number]
 
 export const isReaderFixture = (name: string): name is ReaderFixture => (NAMES as readonly string[]).includes(name)
@@ -95,6 +95,11 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
                 'Links.md': `---\ntitle: Links\nid: DEMO-7\n---\n\n# Links\n\nBy words: [[Trip plan|the trip]]. By ID: [[DEMO-4]]. To a heading: [[Spanish words#Places]].\n\nA card: [[DEMO-40]]. Missing: [[No such page]]. Web: [a site](https://example.com/x).\n\nRelative: [the guide](notes/Folder%20guide.md#step-two).\n`,
                 'notes/Folder guide.md': '---\ntitle: Folder guide\n---\n\n# Folder guide\n\n## Step one\n\nOne.\n\n## Step two\n\nDone.\n',
               }
+          : name === 'page-pills'
+            ? {
+                '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { fill: 'green', shape: 'square' } }),
+                '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 }, h2: { underline: true } }),
+              }
           : name === 'page-jump'
             ? { 'Long notes.md': `---\ntitle: Long notes\n---\n\n${Array.from({ length: 60 }, (_, i) => `## Part ${i + 1}\n\nA line of made-up notes for part ${i + 1}.`).join('\n\n')}\n` }
           : name === 'page-folder'
@@ -160,6 +165,9 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
       await until(() => document.querySelector('.scroll-jump[data-on]') !== null)
       break
     }
+    case 'page-pills':
+      await open(/^Spanish words/, '.reader__body h1')
+      break
     case 'page-links':
       await typed('links')
       await open(/^Links/, '.reader__body h1')

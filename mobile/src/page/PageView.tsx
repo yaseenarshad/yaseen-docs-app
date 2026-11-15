@@ -11,6 +11,10 @@ import { guardLink } from '../media/ui/safeLinks'
 import { openFile } from '../media/ui/vaultMedia'
 import { headingTarget, landOn } from './headings'
 import { LinkedFrom } from './LinkedFrom'
+import { openLink, type LinkDoor } from './openLink'
+import { resolveSourceOf } from './pageLook'
+import { useVaultLook } from './vaultLook'
+import { vaultName } from '../screens/Frame'
 import { fillCardEmbeds, tapOf } from './pageDom'
 import { pageLook } from './pageLook'
 import { PageArrows, PageIdChip, pageIdOf } from './pageNav'
@@ -48,6 +52,11 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   // YAZ-5440: its drawings, drawn on the phone when they near the screen; nothing is saved.
   useDrawings(host, media)
 
+  // YAZ-5455: the vault's own look (link pills, heading sizes) and its "Clicking a link", for the link door.
+  const look = useVaultLook(store, data)
+  const door: LinkDoor = { go: app.go, click: look?.click ?? 'open' }
+  const doorRef = useRef(door)
+  doorRef.current = door
   const record = data?.byPath[path]
   const title = record?.title ?? path.slice(path.lastIndexOf('/') + 1).replace(/\.(md|markdown)$/i, '')
 
@@ -83,19 +92,20 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   }, [store, vault, path, reads])
 
   // Draw it, in slices; again when the text or the vault's index changes, at the same reading place (R3).
-  const drawn = useRef<{ text: string; version: number } | null>(null)
+  const drawn = useRef<{ text: string; version: number; look: object } | null>(null)
   const everDrawn = useRef(false)
   useEffect(() => {
     const el = host.current
-    if (el === null || data === null || typeof text !== 'string') return
-    if (drawn.current !== null && drawn.current.text === text && drawn.current.version === data.version) return
+    if (el === null || data === null || typeof text !== 'string' || look === undefined) return
+    if (drawn.current !== null && drawn.current.text === text && drawn.current.version === data.version && drawn.current.look === look) return
+    resolveSourceOf(data).setLook(look.pills, vaultName(app.vault?.repo ?? ''))
     let live = true
     const scroller = el.closest('.screen')
     const top = scroller?.scrollTop ?? 0
     // The first draw of this view (a redraw after R3 keeps the place it had).
     const first = !everDrawn.current
     everDrawn.current = true
-    drawn.current = { text, version: data.version }
+    drawn.current = { text, version: data.version, look }
     void (async () => {
       // YAZ-5436: a REDRAW (the sync changed the page or the vault) is drawn off the screen, its cards in place, then
       // swapped in at once. Before, the page shrank to its first slice under the finger, the scroll place jumped, and
@@ -104,7 +114,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       await renderPage(splitFrontmatter(text).body, pageLook(data, path), into, uiSlicer(), () => live)
       if (!live) return
       if (!first) {
-        await fillCardEmbeds(into, data, store, app.go, () => live)
+        await fillCardEmbeds(into, data, store, doorRef.current, () => live)
         if (!live) return
         el.replaceChildren(...into.childNodes)
       }
@@ -120,13 +130,13 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         else if (scroller !== null) scroller.scrollTop = 0
       }
       if (first && at !== undefined) el.querySelector(`[data-card-id="${at.replace(/["\\]/g, '\\$&')}"]`)?.scrollIntoView?.({ block: 'start' })
-      if (first) await fillCardEmbeds(el, data, store, app.go, () => live)
+      if (first) await fillCardEmbeds(el, data, store, doorRef.current, () => live)
     })()
     return () => {
       live = false
       drawn.current = null
     }
-  }, [text, data, path, at, heading, store, app.go, title])
+  }, [text, data, look, path, at, heading, store, app.go, app.vault, title])
 
   // YAZ-5211: the reading place of this page, kept as the person scrolls.
   useEffect(() => {
@@ -144,12 +154,12 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
     if (tap === null) return void guardLink(event)
     event.preventDefault()
     // A link to this same page (`[[This page#Goals]]`) lands here: it opens no second copy of the page.
-    const self = tap.kind === 'go' && tap.action.type === 'open' && tap.action.route.kind === 'page' && tap.action.route.path === path ? tap.action.route : null
+    const self = tap.kind === 'go' && tap.target.kind === 'page' && tap.target.path === path ? tap.target : null
     if (self !== null) {
       const target = self.heading === undefined || host.current === null ? null : headingTarget(host.current, self.heading)
       if (target !== null) landOn(target)
       else host.current?.closest('.screen')?.scrollTo?.({ top: 0 })
-    } else if (tap.kind === 'go') app.go(tap.action)
+    } else if (tap.kind === 'go') openLink(door, tap.target)
     // YAZ-5455: a heading of this page lands there; a missing page's link does nothing.
     else if (tap.kind === 'heading') {
       const target = host.current === null ? null : headingTarget(host.current, tap.heading)
@@ -170,7 +180,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
       chip={pageId !== null && <PageIdChip id={pageId} path={path} />}
       foot={<PageArrows data={data} at={{ kind: 'page', path }} go={app.go} noun="page" />}
     >
-      <article className="reader" aria-label={title}>
+      <article className="reader" aria-label={title} style={look?.style}>
         <h2 className={sameTitle ? 'reader__title reader__title--same' : 'reader__title'}>{title}</h2>
         {notice !== null && (
           <p className="reader__notice" role="status">
@@ -181,7 +191,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
         {/* The page's text: drawn by `renderPage`, which cleans it first. A tap on a link opens what it names. */}
         <div className="reader__body" ref={host} onClick={(e) => void onTap(e)} />
         <ScrollJump scroller={host} closest=".screen" />
-        {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} go={app.go} />}
+        {data !== null && text !== undefined && <LinkedFrom path={path} data={data} store={store} door={door} />}
       </article>
     </Frame>
   )

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { backlinksFor, mentionSnippets, type MentionSnippet } from '@client/links/backlinks'
 import { pathTitles } from '@client/lib/pathTitles'
 import type { IndexRecord } from '@shared/types'
-import type { NavAction } from '../app/nav'
+import { openLink, type LinkDoor } from './openLink'
 import type { VaultStore } from '../store'
 import type { VaultData } from '../search/vaultData'
 import { resolveSourceOf } from './pageLook'
@@ -22,7 +22,7 @@ import './linkedFrom.css'
  *
  * The phone's difference: a FOLDER that links here (its `.folder.md`) is not listed: the phone has no folder page to open.
  */
-export function LinkedFrom({ path, data, store, go }: { path: string; data: VaultData; store: VaultStore; go: (action: NavAction) => void }) {
+export function LinkedFrom({ path, data, store, door }: { path: string; data: VaultData; store: VaultStore; door: LinkDoor }) {
   const [open, setOpen] = useState(false)
   const source = resolveSourceOf(data)
   const resolve = source.resolve
@@ -41,7 +41,7 @@ export function LinkedFrom({ path, data, store, go }: { path: string; data: Vaul
       {open && (
         <ul className="linked-from__list">
           {entries.map((record) => (
-            <Entry key={record.path} record={record} target={path} data={data} store={store} go={go} />
+            <Entry key={record.path} record={record} target={path} data={data} store={store} door={door} />
           ))}
         </ul>
       )}
@@ -49,7 +49,7 @@ export function LinkedFrom({ path, data, store, go }: { path: string; data: Vaul
   )
 }
 
-function Entry({ record, target, data, store, go }: { record: IndexRecord; target: string; data: VaultData; store: VaultStore; go: (action: NavAction) => void }) {
+function Entry({ record, target, data, store, door }: { record: IndexRecord; target: string; data: VaultData; store: VaultStore; door: LinkDoor }) {
   /** null: the read runs; []: none to show (or the file is not on the phone). */
   const [lines, setLines] = useState<MentionSnippet[] | null>(null)
   const dataRef = useRef(data)
@@ -71,7 +71,7 @@ function Entry({ record, target, data, store, go }: { record: IndexRecord; targe
       live = false
     }
   }, [store, data.vault, record.path, record.mtime, target])
-  const open = () => go({ type: 'open', route: { kind: 'page', path: record.path } })
+  const open = () => openLink(door, { kind: 'page', path: record.path })
   const title = record.title.trim() !== '' ? record.title : record.basename
   return (
     <li className="linked-from__entry">

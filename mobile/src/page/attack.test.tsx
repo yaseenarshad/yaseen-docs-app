@@ -58,7 +58,7 @@ describe('the 90 vectors make no request in a page, a card or Review (YAZ-5242)'
       document.body.append(page)
       await renderPage(`${vector}\n\n${cardBlock('DEMO-99', card)}\n\n![[DEMO-40]]`, pageLook(data, 'Attack.md'), page)
       const store = { read: async () => ({ content: `---\nkind: card\ntitle: x\n---\n\n${cardBlock('DEMO-40', card)}\n` }) }
-      await fillCardEmbeds(page, data, store as never, () => undefined)
+      await fillCardEmbeds(page, data, store as never, { go: () => undefined, click: 'open' })
       const pageWatch = watchMedia(page, media)
       await settle()
       tapEveryPlay(page)

@@ -1,6 +1,7 @@
 import { isAudioRef } from '@client/editor/card/cardMedia'
 import { LOCAL_SRC, cleanLocal, localMark, urlOf } from '@client/editor/card/localOnly'
 import { parseAlt } from '@client/editor/image/imageSrc'
+import { headSpan, tailSpan, type PillEnd } from '@client/editor/wikilink/linkPillLook'
 import { cardIdOf, cardTitleOf, isCardNoTitle, isCardOff, parseCardLine } from '@shared/cardLine'
 import { Marked, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import { drawingBox, onMacWords } from '../drawing/drawingBox'
@@ -52,6 +53,8 @@ export interface LinkShow {
   open: LinkOpen | null
   /** A broken link's words for VoiceOver ("Missing page · DEMO-9"). */
   missing?: string
+  /** The vault's pill format's ends (YAZ-5455, `link-pills.json`): drawn before and after the name, as the Mac's page. */
+  ends?: { head: PillEnd | null; tail: PillEnd | null }
 }
 
 /** What an `![[embed]]` is. */
@@ -293,6 +296,18 @@ function drawLinks(root: DocumentFragment, look: PageLook): void {
       const show = look.link(inner)
       a.textContent = show.label
       a.className = show.open === null ? 'wikilink wikilink--unresolved' : show.open.kind === 'card' ? 'wikilink wikilink--card' : 'wikilink'
+      // The vault's format adds pieces at the pill's ends (YAZ-5455): the Mac's three spans, the head, the name, the
+      // tail, each in the pill's classes; the `<a>` holds them and draws nothing itself.
+      const head = show.ends?.head ?? null
+      const tail = show.ends?.tail ?? null
+      if (head !== null || tail !== null) {
+        const cls = a.className
+        const name = document.createElement('span')
+        name.className = cls
+        name.textContent = show.label
+        a.replaceChildren(...[head === null ? null : headSpan(cls, head), name, tail === null ? null : tailSpan(cls, tail)].filter((el): el is HTMLElement => el !== null))
+        a.className = show.open === null ? 'page-pill page-pill--missing' : 'page-pill'
+      }
       // YAZ-5455: a missing page's link is plain and dim, and no link: a tap on it does nothing.
       if (show.open !== null) opens(a, show.open)
       else {

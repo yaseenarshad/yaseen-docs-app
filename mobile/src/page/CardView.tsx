@@ -14,6 +14,8 @@ import { cardHead, titleBand } from '../media/ui/cardHead'
 import { tapOf } from './pageDom'
 import { PageArrows } from './pageNav'
 import { ScrollJump } from './ScrollJump'
+import { openLink } from './openLink'
+import { useVaultLook } from './vaultLook'
 import { UNTITLED_CARD, drawCard } from './pageLook'
 
 /** The words of a card file that is not valid (round 15, item 3). */
@@ -38,6 +40,8 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const { store, sync } = app.services
   const vault = app.vaultKey!
   const data = useVaultData()
+  // YAZ-5455: the vault's link pills (their CSS variables) and its "Clicking a link".
+  const look = useVaultLook(app.services.store, data)
   const [text, setText] = useState<string | null | undefined>(undefined)
   const [reads, setReads] = useState(0)
   const [notice, setNotice] = useState<string | null>(null)
@@ -96,7 +100,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
     // Any other link: the web opens Safari, the app's window stays (YAZ-5243).
     if (tap === null) return void guardLink(event)
     event.preventDefault()
-    if (tap.kind === 'go') app.go(tap.action)
+    if (tap.kind === 'go') openLink({ go: app.go, click: look?.click ?? 'open' }, tap.target)
     // A missing page's link, or a heading of a page (a card has none), does nothing (YAZ-5455).
     else if (tap.kind === 'none' || tap.kind === 'heading') return
     else setNotice(await openFile(media, tap.path))
@@ -105,7 +109,7 @@ export default function CardView({ path, id }: { path: string; id: string }) {
   const facts = card === null || data === null ? null : cardFacts(card.reviews, data.review, now)
   return (
     <Frame title={title} back={() => app.go({ type: 'back' })} gear tabs reader foot={<PageArrows data={data} at={{ kind: 'card', path, id }} go={app.go} noun="card" />}>
-      <article className="reader card-view" aria-label={label}>
+      <article className="reader card-view" aria-label={label} style={look?.style}>
         <h2 className="reader__title reader__title--same">
           {title}
           <span className="card-view__id"> · {card?.id ?? id}</span>
