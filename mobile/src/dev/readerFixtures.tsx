@@ -102,7 +102,7 @@ export async function mountReaderFixture(root: Root, name: ReaderFixture): Promi
               }
           : name === 'page-pills'
             ? {
-                '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { fill: 'green', shape: 'square' } }),
+                '.yaseendocs/link-pills.json': JSON.stringify({ version: 2, format: '{name} · {id}', box: { shape: 'underline' }, parts: { id: { bold: true } } }),
                 '.yaseendocs/text-formatting.json': JSON.stringify({ version: 1, h1: { size: 30 }, h2: { underline: true } }),
               }
           : name === 'page-jump' || name === 'page-headings'

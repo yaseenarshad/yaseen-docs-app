@@ -157,8 +157,9 @@
   font-weight: 600;
 }
 .headings-sheet__row[aria-current='location'] {
-  color: var(--accent);
   background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 600;
 }
 .headings-sheet__none {
   padding: 16px;
