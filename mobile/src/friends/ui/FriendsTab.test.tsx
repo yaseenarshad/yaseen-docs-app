@@ -329,8 +329,8 @@ describe('"+ Add" (decision 20)', () => {
     expect(s.calls.share).toBe(1)
     expect(shared).toEqual([
       {
-        title: 'Notecard friend link',
-        text: 'Add me as a friend on Notecard.',
+        title: 'Yaseen Docs friend link',
+        text: 'Add me as a friend on Yaseen Docs.',
         url: s.shareAnswer.kind === 'ok' ? s.shareAnswer.link : '',
       },
     ])

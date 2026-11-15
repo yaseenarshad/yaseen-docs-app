@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs'
-import { deflateSync } from 'node:zlib'
 
 /**
- * The pictures of the home-screen app (YAZ-5087), made by `makeIcons.ts` from ONE drawing (`iconSvg`). No new
- * dependency: the icons are drawn by the Chrome on this Mac, the splash pictures (one colour) by this file.
+ * The pictures of the home-screen app (YAZ-5087), made by `makeIcons.ts` from ONE picture, the Mac app's icon (YAZ-5476,
+ * `LOGO_SOURCE`). No new dependency: the icons and the splash pictures are drawn by the Chrome on this Mac.
  */
 
 /** The app's accent and backgrounds (`src/styles.css`; `publish/site.test.ts` checks the manifest against it). */
@@ -12,27 +11,43 @@ export const BG_LIGHT = '#ffffff'
 export const BG_DARK = '#1e1e1e'
 
 /**
- * THE ICON (Yaseen, 2026-11-14: logo option 1, "Hidden word"): a white card on the accent square, with lines of text and
- * one word covered by a dark bar. Full-bleed (iOS rounds the corners itself). The shapes are the approved art, as drawn.
- * `scale` shrinks the card's shapes on the same blue (the maskable icon keeps the card well inside the safe zone).
+ * THE ICON (YAZ-5476, Yaseen: "use the same Yaseen Docs logo"): the Mac app's own icon, `desktop/build/icon.png` (the
+ * source electron-builder packs, `desktop/package.json` › build.mac.icon is its `.icns`). The Mac's picture is a macOS
+ * rounded square with a margin and a shadow; the phone's icon is full-bleed (iOS and Android round the corners
+ * themselves), so the drawing crops the inside of the square, past its bevel (`LOGO_CROP`), and lays it on the square's
+ * own blue (top to bottom, sampled from the art) so the corners the crop leaves are the same blue. The Y sits well
+ * inside the maskable safe circle (`site.test.ts`), so the maskable icon is the same drawing.
  */
-const CARD = `<rect x="92" y="146" width="328" height="220" rx="30" fill="#ffffff"/>
-  <rect x="132" y="190" width="248" height="26" rx="13" fill="#c9cfff"/>
-  <rect x="132" y="243" width="56" height="26" rx="13" fill="#c9cfff"/>
-  <rect x="204" y="234" width="140" height="44" rx="12" fill="#1f1f1f"/>
-  <rect x="132" y="296" width="180" height="26" rx="13" fill="#c9cfff"/>`
+export const LOGO_SOURCE = new URL('../../desktop/build/icon.png', import.meta.url).pathname
+/** The Mac icon's 1024 px canvas, and the square inside its rounded square's bevel (x and y from, and the side). */
+export const LOGO_CANVAS = 1024
+export const LOGO_CROP = { from: 121, size: 782 } as const
+/** The rounded square's blue at the top and at the bottom of the crop. */
+export const LOGO_TOP = '#7684ff'
+export const LOGO_BOTTOM = '#4755df'
 
-export function iconSvg({ scale = 1 }: { scale?: number } = {}): string {
-  const card = scale === 1 ? `  ${CARD}` : `  <g transform="translate(256 256) scale(${scale}) translate(-256 -256)">\n  ${CARD}\n  </g>`
+const logoData = () => `data:image/png;base64,${readFileSync(LOGO_SOURCE).toString('base64')}`
+
+/** The full-bleed icon: the Mac logo's inside on its blue, 512 x 512. */
+export function iconSvg(): string {
+  const k = 512 / LOGO_CROP.size
+  const n = (v: number) => Number(v.toFixed(3))
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" fill="${ACCENT}"/>
-${card}
+  <defs><linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${LOGO_TOP}"/><stop offset="1" stop-color="${LOGO_BOTTOM}"/></linearGradient></defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <image href="${logoData()}" x="${n(-LOGO_CROP.from * k)}" y="${n(-LOGO_CROP.from * k)}" width="${n(LOGO_CANVAS * k)}" height="${n(LOGO_CANVAS * k)}"/>
 </svg>
 `
 }
 
-/** The maskable icon's scale: the card's corners then sit 158 px from the centre, inside a circle of 33% of the width. */
-export const MASKABLE_SCALE = 0.8
+/** The splash picture's page: the background colour, and the Mac logo as the Mac shows it (rounded, with its shadow) in the middle. */
+export function splashHtml(width: number, height: number, colour: string): string {
+  const side = Math.round(width * SPLASH_LOGO)
+  return `<!doctype html><style>html,body{margin:0;width:${width}px;height:${height}px;background:${colour};overflow:hidden}img{position:absolute;left:${Math.round((width - side) / 2)}px;top:${Math.round((height - side) / 2)}px;width:${side}px;height:${side}px}</style><img src="${logoData()}">`
+}
+
+/** The logo's side on a splash picture, as a share of the screen's width (about 140 pt on a 440 pt iPhone). */
+export const SPLASH_LOGO = 0.32
 
 /**
  * The iPhone screens that get a splash picture (CSS points and pixel ratio). With none, iOS shows a white screen
@@ -66,36 +81,4 @@ export function pngSize(file: string): { width: number; height: number } {
   const b = readFileSync(file)
   if (b.toString('latin1', 1, 4) !== 'PNG') throw new Error(`${file} is not a PNG`)
   return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) }
-}
-
-const crcTable = Array.from({ length: 256 }, (_, n) => {
-  let c = n
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
-  return c >>> 0
-})
-const crc32 = (buf: Buffer) => {
-  let c = 0xffffffff
-  for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8)
-  return (c ^ 0xffffffff) >>> 0
-}
-const chunk = (type: string, data: Buffer) => {
-  const len = Buffer.alloc(4)
-  len.writeUInt32BE(data.length)
-  const body = Buffer.concat([Buffer.from(type, 'latin1'), data])
-  const crc = Buffer.alloc(4)
-  crc.writeUInt32BE(crc32(body))
-  return Buffer.concat([len, body, crc])
-}
-
-/** A PNG of one colour (`#rrggbb`), opaque. */
-export function solidPng(width: number, height: number, hex: string): Buffer {
-  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
-  const row = Buffer.alloc(1 + width * 3)
-  for (let x = 0; x < width; x++) row.set([r, g, b], 1 + x * 3)
-  const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(width, 0)
-  ihdr.writeUInt32BE(height, 4)
-  ihdr.set([8, 2, 0, 0, 0], 8) // 8 bits, RGB
-  const raw = Buffer.concat(Array.from({ length: height }, () => row))
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw, { level: 9 })), chunk('IEND', Buffer.alloc(0))])
 }

@@ -504,7 +504,7 @@ describe('YAZ-5302 (4D5): the phone\'s store never opens (IndexedDB blocked, ful
     await settled(h)
     expect(shown(h)).toMatchObject({ colour: 'attention', words: "Phone can't save", label: "Sync status: Phone can't save" })
     await h.click("Sync status: Phone can't save")
-    expect(h.text()).toContain('This browser does not let Notecard keep your vault on the phone. Turn off Private Browsing, or open Notecard from the Home Screen.')
+    expect(h.text()).toContain('This browser does not let Yaseen Docs keep your vault on the phone. Turn off Private Browsing, or open Yaseen Docs from the Home Screen.')
     expect(h.button('Try again')).not.toBeNull()
   })
 

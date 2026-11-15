@@ -98,7 +98,7 @@ function AboutPart() {
   const [open, setOpen] = useState(false)
   return (
     <>
-      <h2 className="section">About</h2>
+      <h2 className="section">About Yaseen Docs</h2>
       <ul className="rows">
         <li className="row">
           <span className="row__main">Version</span>
