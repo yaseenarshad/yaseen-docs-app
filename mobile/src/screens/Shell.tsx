@@ -1,20 +1,20 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
+import { useReaderAhead } from '../explore/openReady'
 import { syncHelp } from '../app/help'
 import { topRoute, type Route, type Tab } from '../app/nav'
 import { FirstDownload } from './FirstDownload'
 import { ForwardButton, Frame, vaultName } from './Frame'
 import { Friends } from './Friends'
 import { lazyScreen } from './LazyScreen'
-import { PageView, routeWaiting } from './PageScreen'
+import { CardView, PageView, routeWaiting } from './PageScreen'
 import { Review } from './Review'
 import './reviewSlot.css'
 import { Search } from './Search'
 import { SignIn } from './SignIn'
 
-// The reader (4C): `PageScreen.tsx`.
-const CardView = lazyScreen(() => import('../page/CardView'), { waiting: routeWaiting })
+// The reader (4C) and the card view: `PageScreen.tsx`.
 /** A drawing file on its own: with the sheets' reader parts. */
 const DrawingView = lazyScreen(() => import('../explore/DrawingView'), { waiting: routeWaiting })
 /** A folder's page and its views, read only: a chunk of its own, with the Mac's view engine. */
@@ -55,6 +55,8 @@ function ReviewSlot({ host }: { host: HTMLElement }) {
  */
 export function Shell() {
   const app = useApp()
+  // YAZ-5589: the reader read ahead once the app is idle, so any page opens drawn, at once.
+  useReaderAhead(app)
   const route = topRoute(app.nav)
   const reviewHost = useMemo(() => Object.assign(document.createElement('div'), { className: 'review-host' }), [])
   const [reviewKept, setReviewKept] = useState(false)

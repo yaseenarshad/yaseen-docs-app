@@ -2,6 +2,7 @@ import type { IndexRecord } from '@shared/types'
 import { vaultPageId } from '@shared/pageId'
 import type { AppModel } from '../app/AppState'
 import type { Route } from '../app/nav'
+import { whenReady } from '../explore/openReady'
 import type { VaultData } from '../search/vaultData'
 import { KIND_WORD, KindIcon, type FileKind } from '../screens/Frame'
 import { useCopyPath } from '../screens/copyPath'
@@ -92,9 +93,10 @@ export function neighbours(stops: readonly Stop[], at: Route): { before: Stop | 
 }
 
 /** Opens `route` IN PLACE of the open page or card: Back still goes to where the reading started. */
-export function stepTo(go: AppModel['go'], route: Route): void {
+export function stepTo(go: AppModel['go'], route: Route, vault: string | null = null): void {
   // One step: a Back here would step the browser's history, which is not done at once.
-  go({ type: 'swap', route })
+  // YAZ-5589: drawn at once (the page's neighbours are read ahead), else once read, this page staying until then.
+  whenReady(vault, route, () => go({ type: 'swap', route }))
 }
 
 /** The thin bar over the tabs: "‹ page before", the place, "page after ›". At the first or the last, that side is dim and does nothing. */
@@ -108,7 +110,7 @@ export function PageArrows({ data, at, go, noun }: { data: VaultData | null; at:
       className={after ? 'page-arrows__go page-arrows__go--after' : 'page-arrows__go'}
       disabled={stop === null}
       aria-label={stop === null ? (after ? `Last ${noun}` : `First ${noun}`) : `${after ? 'Next' : 'Previous'}: ${KIND_WORD[stop.kind]}, ${stop.label}`}
-      onClick={() => stop !== null && stepTo(go, stop.route)}
+      onClick={() => stop !== null && stepTo(go, stop.route, data.vault)}
     >
       {/* A very small kind glyph before the title ("‹ ▤ Trip plan", "▣ Café notes ›"). */}
       {after ? '' : '‹ '}

@@ -13,6 +13,7 @@ import { cardHead, titleBand } from '../media/ui/cardHead'
 import { fillCardEmbeds, tapOf } from '../page/pageDom'
 import { UNTITLED_CARD, drawCard, pageLook } from '../page/pageLook'
 import { renderPage } from '../page/pageRender'
+import { heldText, holdText } from '../page/heldText'
 import { headingTarget, landOn } from '../page/headings'
 import { attachFolds, revealFolds, type PageFolds } from '../page/folds'
 import { pageSwitchAttrs } from '../page/pageSwitches'
@@ -42,7 +43,8 @@ export function useFileText(path: string, answers: Answers | null = null): strin
   const app = useApp()
   const { store, sync } = app.services
   const vault = app.vaultKey!
-  const [value, setValue] = useState<string | null | undefined>(undefined)
+  // YAZ-5589: the text read ahead (`heldText.ts`): the panel opens with it drawn; the stored file is read again at once.
+  const [value, setValue] = useState<string | null | undefined>(() => heldText(vault, path))
   const [reads, setReads] = useState(0)
   useEffect(
     () =>
@@ -54,7 +56,11 @@ export function useFileText(path: string, answers: Answers | null = null): strin
   useAnswersChanged(answers, path, () => setReads((n) => n + 1))
   useEffect(() => {
     let live = true
-    void shownText(store, vault, path, answers).then((content) => live && setValue(content))
+    void shownText(store, vault, path, answers).then((content) => {
+      if (!live) return
+      setValue(content)
+      if (typeof content === 'string') holdText(vault, path, content)
+    })
     return () => {
       live = false
     }
@@ -127,12 +133,17 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
     let live = true
     void (async () => {
       // Drawn off the screen, then swapped in at once: a redraw never shrinks the page under the finger.
-      const into = document.createElement('div')
+      // YAZ-5589: a first draw with no place to land on goes straight in, in the panel's first frame (its text read
+      // ahead, the renderer warm), with its title as it stays; its embedded cards fill in place after.
+      const direct = el.childNodes.length === 0 && at === undefined && heading === undefined
+      const into = direct ? el : document.createElement('div')
       await renderPage(splitFrontmatter(content).body, pageLook(data, path), into, uiSlicer(), () => live)
       if (!live) return
-      await fillCardEmbeds(into, data, app.services.store, door, () => live)
-      if (!live) return
-      el.replaceChildren(...into.childNodes)
+      if (!direct) {
+        await fillCardEmbeds(into, data, app.services.store, door, () => live)
+        if (!live) return
+        el.replaceChildren(...into.childNodes)
+      }
       const kept = folds.current?.folded() ?? []
       folds.current?.destroy()
       folds.current = pageSwitchAttrs(content)['data-folding'] === 'off' ? null : attachFolds(el, { title, initial: kept })
@@ -152,6 +163,7 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       const target = heading === undefined || landed.current || (scroller?.scrollTop ?? 0) > 0 ? null : headingTarget(el, heading)
       landed.current = true
       if (target !== null) landOn(target, scroller)
+      if (direct) await fillCardEmbeds(el, data, app.services.store, door, () => live)
     })()
     return () => {
       live = false

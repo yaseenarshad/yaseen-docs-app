@@ -16,6 +16,7 @@ import { openSheet } from './sheets'
  *    full screen (Q4), and a link in it opens a sheet (YAZ-5518: Safari's Back in a tab closes the sheet, then the page).
  *  - `explore-mentions` (YAZ-5535): a long made-up page ("Road trip") in a sheet over Search, scrolled to its end:
  *    "Linked mentions (2)", collapsed, in the page's scroll (no sticky foot under the sheet).
+ *  - `explore-search` (YAZ-5589): Search, nothing open (the vault says "explore"), for the proof's real taps.
  * Only a `--mode fixtures` build has this file. Nothing calls GitHub.
  */
 const refuseAll: FetchLike = async () => new Response('{}', { status: 401 })
@@ -57,7 +58,9 @@ export async function mountExploreFixture(root: Root, name: string): Promise<voi
   press(/^Search$/)
   await until(() => document.querySelector('.tree') !== null)
   await wait(200)
-  if (name === 'explore-today') {
+  if (name === 'explore-search') {
+    // YAZ-5589: Search alone (the vault says "explore"): the layout proof taps a row, then a link (a panel opens).
+  } else if (name === 'explore-today') {
     await until(() => document.querySelector('.tabbar__today') !== null)
     document.querySelector<HTMLElement>('.tabbar__today')?.click()
     await until(() => /Today words/.test(document.querySelector('.reader__body')?.textContent ?? ''))

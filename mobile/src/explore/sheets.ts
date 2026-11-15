@@ -67,16 +67,25 @@ export function subscribeSheets(listener: () => void): () => void {
 /** The sheets' chunk. Imported once; the module system keeps it. */
 export const loadSheetLayer = () => import('./SheetLayer')
 
-/** Loads the sheets' chunk now, so the first link opens with no wait (the app calls it when idle). */
-export function preloadSheets(): void {
-  void loadSheetLayer().catch(() => undefined)
+/**
+ * Loads the sheets' chunk now, so the first link opens with no wait (the app calls it when idle). YAZ-5589: through the
+ * sheets' screen (`ExploreHost`'s `SheetLayer.preload`), so a panel's first open draws at once.
+ */
+let preloader: () => Promise<unknown> = loadSheetLayer
+export const setSheetsPreload = (load: () => Promise<unknown>): void => void (preloader = load)
+/** The chunk, loaded (a failed load is tried again at the next call). */
+export function preloadSheets(): Promise<void> {
+  return preloader().then(
+    () => undefined,
+    () => undefined,
+  )
 }
 
 const sameRoute = (a: SheetRoute, b: SheetRoute): boolean => JSON.stringify(a) === JSON.stringify(b)
 
 /** Pushes a sheet with `route` on top of the stack; nothing when the top sheet (not one closing) already shows it. */
 export function openSheet(route: SheetRoute): void {
-  preloadSheets()
+  void preloadSheets()
   const top = [...sheets].reverse().find((s) => !closing.has(s.id))
   if (top !== undefined && sameRoute(top.route, route)) return
   const id = nextId++

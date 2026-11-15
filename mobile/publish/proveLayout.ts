@@ -80,6 +80,9 @@ import { freePort } from './freePort'
  *    (`aria-current="page"`) in the selected tab's colour and weight; on the tab bar alone (`today`) it is not.
  *    YAZ-5589: a real tap on Today once the app is idle: the first frame after it shows today's page (its title, its
  *    text, the bars), and no frame shows the empty waiting screen or "Loading".
+ *  - any page opens at once (`#fixture=explore-search`, YAZ-5589), at 375 px: real taps on a Search row, the page arrow ‹,
+ *    a link into an Explore panel; the first frame after each that shows the page has its title and its text, no frame
+ *    is empty or waiting, and nothing in it changes after (no second paint).
  *  - a folder's table as the vault's folder-pages.json says (`#fixture=folder-table`, `folder-table-look`, YAZ-5549), light
  *    and dark, at 375 px (in the folder views' part): the row height (Short: the Name cell keeps 44 px; Tall: 68 px),
  *    the `#` numbers, a subfolder's "N inside".
@@ -104,7 +107,7 @@ import { freePort } from './freePort'
  *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
  * `npx vite-node mobile/publish/proveLayout.ts` (LAYOUT_DIST: another build folder; PROOF_DIR: where the pictures go;
- * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no skip a part).
+ * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no skip a part).
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -941,6 +944,75 @@ if (process.env.LAYOUT_TODAY !== 'no') {
     )
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5589: anyPage_firstFrameAfterTheTap_isDrawn. On Search (`#fixture=explore-search`: no Today button to read a page
+// ahead; the vault says "explore"), real taps, frame by frame (requestAnimationFrame) after each: a Search row, the page
+// arrow ‹, a link into an Explore panel. The first frame that shows the opened page (or panel) comes within 250 ms of
+// the tap and already has its title and its text; no frame shows the empty waiting screen (`aria-busy`), "Loading", or no bars; and once drawn, nothing in
+// it changes (no second paint, no jump of its text).
+if (process.env.LAYOUT_OPEN !== 'no') {
+  const OPEN_FRAMES = `(() => {
+    const frames = []
+    let t0 = null
+    addEventListener('pointerdown', () => { t0 = performance.now() }, { capture: true, once: true })
+    const start = performance.now()
+    const snap = () => {
+      const sheet = [...document.querySelectorAll('.explore-sheet')].at(-1) ?? null
+      const body = (sheet ?? document).querySelector('.reader__body')
+      return {
+        t: Math.round(performance.now() - t0),
+        title: document.querySelector('.topbar__title')?.textContent ?? null,
+        sheet: sheet?.querySelector('.explore-sheet__where')?.textContent ?? null,
+        body: (body?.innerText ?? '').replace(/\\s+/g, ' ').trim().slice(0, 40),
+        h: Math.round(body?.getBoundingClientRect().height ?? 0),
+        bars: document.querySelector('.topbar') !== null && document.querySelector('.tabbar') !== null,
+        busy: document.querySelector('[aria-busy="true"]')?.className ?? null,
+        loading: /Loading/.test(document.body.innerText),
+      }
+    }
+    const tick = () => {
+      if (t0 !== null) frames.push(snap())
+      if (performance.now() - (t0 ?? start) < 900) requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+    window.__openFrames = frames
+  })()`
+  type OpenFrame = { t: number; title: string | null; sheet: string | null; body: string; h: number; bars: boolean; busy: string | null; loading: boolean }
+  const realTap = async (selector: string) => {
+    // A link may wrap: the middle of its first line box.
+    const at = await evaluate(`(() => { const b = ${selector}?.getClientRects()[0]; return b ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null })()`)
+    if (at === null) return false
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 }, page)
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 }, page)
+    return true
+  }
+  const file = await open('explore-search', 375, 667)
+  // The app idles a moment after its start, as a person reads the list before a tap.
+  await wait(1500)
+  const cases: { name: string; tap: string; shows: (f: OpenFrame) => boolean; text: RegExp }[] = [
+    { name: 'Search row → page', tap: `[...document.querySelectorAll('.tree__row')].find((b) => /^Trip plan, page/.test(b.getAttribute('aria-label') ?? ''))`, shows: (f) => f.title === 'Trip plan' && f.sheet === null, text: /^Madrid, May 3/ },
+    { name: 'page arrow ‹', tap: `document.querySelector('.page-arrows__go:not(.page-arrows__go--after)')`, shows: (f) => f.title === 'Spanish words' && f.sheet === null, text: /Words for a trip/ },
+    { name: 'link → Explore panel', tap: `[...document.querySelectorAll('.reader__body [data-open="page"]')].find((a) => a.textContent === 'Trip plan')`, shows: (f) => f.sheet !== null, text: /Madrid, May 3/ },
+  ]
+  for (const c of cases) {
+    await evaluate(OPEN_FRAMES)
+    const tapped = await realTap(c.tap)
+    await wait(1100)
+    const frames = ((await evaluate('window.__openFrames')) ?? []) as OpenFrame[]
+    const shot = file.replace('.png', `-open-${cases.indexOf(c)}.png`)
+    writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+    const at = frames.findIndex(c.shows)
+    const first = frames[at]
+    const bad = frames.filter((f) => f.busy !== null || f.loading || !f.bars)
+    const after = at < 0 ? [] : frames.slice(at + 1).filter((f) => f.body !== first.body || f.h !== first.h || f.title !== first.title)
+    // At once: not the ~300 ms React holds a screen whose chunk was still loading (its Suspense wait).
+    const soon = first !== undefined && first.t <= 250
+    const ok = tapped && first !== undefined && soon && c.text.test(first.body) && bad.length === 0 && after.length === 0
+    if (!ok) failed++
+    console.log(
+      `${ok ? 'PASS' : 'FAIL'}  open at once, ${c.name}, at 375x667: ${tapped ? '' : 'NOTHING TO TAP; '}the first frame of it (+${first?.t ?? '?'} ms${soon ? '' : ', TOO LATE'}, frame ${at}): title "${first?.title}"${first?.sheet != null ? `, panel "${first.sheet}"` : ''}, text "${first?.body}"${first !== undefined && !c.text.test(first.body) ? ' (NOT ITS TEXT)' : ''}; ${bad.length === 0 ? 'no waiting or empty frame' : `${bad.length} WAITING OR EMPTY FRAMES`}; ${after.length === 0 ? 'no change after it' : `${after.length} FRAMES CHANGED AFTER IT (+${after[0].t} ms: "${after[0].body}", ${after[0].h} px)`}  ${shot}`,
+    )
+  }
 }
 // YAZ-5521 (sweep2 S-C): discardAsk_wrapsLongWords_buttonsInsideViewport. The dot's sheet (`#fixture=page-not-sent`:
 // one comment not sent, holding a long URL), Discard tapped: the ask wraps its words, every button is inside the screen.
