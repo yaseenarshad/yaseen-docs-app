@@ -66,7 +66,7 @@ describe('the Review tab in the app shell', () => {
     expect(h.button('Remembered')).toBeNull()
   })
 
-  it('YAZ-5224: Friends, Search, Settings and a card view, then back: the same card, the same step, Undo still there', async () => {
+  it('YAZ-5224: Friends, Search, Settings and a card view, then back: the same card, the same step, Undo still there (in ⋯)', async () => {
     await app()
     await h.click('Remembered')
     for (let i = 0; i < 30 && h.host.querySelector('[data-guard]') !== null; i++) await new Promise((r) => setTimeout(r, 20))
@@ -76,7 +76,8 @@ describe('the Review tab in the app shell', () => {
     await h.settle()
     const state = () => ({ meta: h.host.querySelector('.review__meta')?.textContent, head: h.host.querySelector('.review__head')?.textContent, last: h.host.querySelector('.review__last')?.textContent, card: h.host.querySelector('.phone-card__body')?.textContent })
     const before = state()
-    expect(before.last).toContain('Undo')
+    // YAZ-5500: the card's first tap put the answer's "Last: … · ↶ Undo" away; its Undo stays in ⋯.
+    expect(before.last).toBe('')
     for (const away of [['Friends'], ['Search'], ['Settings', 'Back'], ['More card actions', 'Open card', 'Back']]) {
       for (const name of away) {
         await h.click(name)
@@ -86,6 +87,9 @@ describe('the Review tab in the app shell', () => {
       for (let i = 0; i < 4; i++) await h.settle()
       expect(state()).toEqual(before)
     }
+    await h.click('More card actions')
+    expect(h.button('Undo last answer')?.disabled).toBe(false)
+    await h.click('More card actions')
     // Off the screen the Review box is out of the document: no hidden buttons answer for the page.
     await h.click('Search')
     expect(h.button('Remembered')).toBeNull()

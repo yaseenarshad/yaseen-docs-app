@@ -149,7 +149,7 @@ describe('the guard on the screen (YAZ-5266)', () => {
     }
     await press(h, 'Remembered')
     expect(h.host.querySelector('.review__notice')?.textContent).toBe("Can't save the answer.")
-    expect(h.last()).toBe('Answered↶ Undo')
+    expect(h.last()).toBe('Last: GD-1 (Remembered) · ↶ Undo')
     ;(h.answers as { add: unknown }).add = add
     await press(h, 'Undo')
     expect(h.head()).toBe('GD-1')
