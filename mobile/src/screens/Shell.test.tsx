@@ -496,9 +496,9 @@ describe("the vault's word for page (round 15, item 5)", () => {
     expect(h.text()).toContain('Downloading your entries')
     await h.syncSet({ ready: true, status: 'synced' })
     await h.click('Search')
-    // 4C (YAZ-5079) put the real Search tab in the slot: its box and its empty vault say the vault's word.
+    // 4C (YAZ-5079) put the real Search tab in the slot: its box and its empty vault say the vault's word (synced: N5).
     expect(h.host.querySelector('input[type="search"]')?.getAttribute('placeholder')).toBe('Search cards and entries')
-    expect(h.text()).toContain('No entries yet.')
+    expect(h.text()).toContain('No entries here.')
   })
 })
 

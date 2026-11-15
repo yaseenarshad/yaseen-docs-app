@@ -31,7 +31,7 @@ async function openSearch(files?: Record<string, string | Uint8Array>): Promise<
   const x = await mount({ phone })
   await x.click('Search')
   // The rows build in slices (real timeouts).
-  await waitFor(x, () => x.host.querySelector('.search__rows, .tree') !== null || x.text().includes('No pages yet'))
+  await waitFor(x, () => x.host.querySelector('.search__rows, .tree') !== null || x.text().includes('No pages'))
   return x
 }
 
@@ -62,6 +62,11 @@ async function typeQuery(x: Harness, value: string): Promise<void> {
 }
 
 describe('the Search tab (YAZ-5079)', () => {
+  it('N5 (sweep1): an empty vault that is synced says it is empty, not that pages come with the next sync', async () => {
+    h = await openSearch({})
+    await waitFor(h, () => h!.text().includes('No pages here.'))
+    expect(h.text()).not.toContain('They come with the next sync')
+  })
   it('the empty box shows the Mac\'s sidebar tree (YAZ-5438): folders first, then pages, by name; the keyboard opens only here', async () => {
     h = await openSearch()
     expect(box(h).getAttribute('placeholder')).toBe('Search cards and pages')
