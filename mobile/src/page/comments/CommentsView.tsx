@@ -110,6 +110,9 @@ export function CommentsView({ path, comments, shape, port, signer, nameOf, vers
     const el = box.current
     const at = el !== null && document.activeElement === el ? el.selectionEnd : draft.length
     const next = withWords(draft, words, at)
+    // Sweep2 S-A (YAZ-5521): the box says the words already (a second tap): a no-op. The selection and the focus stay
+    // exactly; no caret is kept for later (no draw follows to use it, so the next typed letter put the caret back).
+    if (next.text === draft) return
     setDraft(next.text)
     caret.current = next.caret
     setProblem(null)
