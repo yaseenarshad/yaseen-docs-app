@@ -223,7 +223,8 @@ describe('YAZ-5535: no sticky foot; "Linked mentions" at the end of a panel\'s p
 
   it('panel_linkedMentions_collapsedOpensClosesAndRowsOpenPanels: in the page\'s scroll, never sticky; a row opens a panel on top', async () => {
     h = await openSearch()
-    await h.click(/^Trip plan/)
+    // YAZ-5472 Q4: a Search row opens a full page; a link (here its door) opens the panel.
+    await act(async () => openSheet({ kind: 'page', path: 'Trip plan.md' }))
     await waitFor(h, () => sheets().length === 1)
     await drawn(h, 'Madrid, May 3 to 10')
     // No foot of any kind under the body.
@@ -265,7 +266,8 @@ describe('YAZ-5535: no sticky foot; "Linked mentions" at the end of a panel\'s p
 
   it('panel_linkedMentions_pages: 46 linking pages draw 20, then "Show all 46"; closed and opened, 20 again', async () => {
     h = await openSearch({ ...EXPLORE, ...fans })
-    await h.click(/^Trip plan/)
+    // YAZ-5472 Q4: a Search row opens a full page; a link (here its door) opens the panel.
+    await act(async () => openSheet({ kind: 'page', path: 'Trip plan.md' }))
     await waitFor(h, () => sheets().length === 1)
     await drawn(h, 'Madrid, May 3 to 10')
     await waitFor(h, () => topSheet()?.querySelector('.linked-mentions__header')?.textContent === 'Linked mentions (46)')

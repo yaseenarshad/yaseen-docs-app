@@ -5,7 +5,6 @@ import { DRAWING_FILES } from '../dev/drawingVault'
 import { FOLDER_FILES } from '../dev/folderVault'
 import { READER_FILES, seedReaderVault } from '../dev/readerVault'
 import { forgetFolderTabs } from '../folders/FolderBody'
-import { HOLD_MS } from '../search/holdFolder'
 import { forgetSearch } from '../search/searchState'
 import { mount, newPhone, type Harness } from '../screens/testing'
 import { closeAll, openSheet, sheetStack, type SheetRoute } from './sheets'
@@ -67,11 +66,9 @@ const tab = (sheet: Element, name: string) => [...sheet.querySelectorAll<HTMLEle
 describe('a folder page in an Explore sheet (YAZ-5531)', () => {
   it('explorePanel_folderRoute_drawsFolderPageAndViews', async () => {
     h = await openSearch()
-    // Hold the folder in Search's tree, "Open folder page": the vault says "explore", so a sheet.
-    const row = [...h.host.querySelectorAll<HTMLElement>('.tree__row')].find((r) => r.querySelector('.tree__label')?.textContent === 'Projects')!
-    await act(async () => void row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 })))
-    await act(async () => void (await new Promise((r) => setTimeout(r, HOLD_MS + 30))))
-    await act(async () => [...document.querySelectorAll<HTMLButtonElement>('.hold-menu__item')].find((b) => b.textContent === 'Open folder page')!.click())
+    // YAZ-5472 Q4: the hold's "Open folder page" in Search's tree is a tab screen's first open, so a full page
+    // (`holdFolder.test.tsx`). A folder link inside a page is what makes a folder sheet: the vault says "explore".
+    await act(async () => openSheet({ kind: 'folder', path: 'Projects' }))
     await waitFor(h, () => sheets().length === 1)
     expect(sheetStack().map((s) => s.route)).toEqual([{ kind: 'folder', path: 'Projects' }])
     // Search stays under it; the page is in the sheet, not full screen.
