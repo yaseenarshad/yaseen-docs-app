@@ -112,6 +112,8 @@ export function SheetPage({ path, at, heading, onDrawn }: { path: string; at?: s
       if (!live) return
       await fillCardEmbeds(into, data, app.services.store, door, () => live)
       if (!live) return
+      // YAZ-5523: a sheet reads only. A page card's ⋯ (the card actions, YAZ-5504) has no menu here and no style.
+      for (const more of into.querySelectorAll('.card__more-box')) more.remove()
       el.replaceChildren(...into.childNodes)
       const head = el.firstElementChild
       // S2 (sweep1): the title hides before the card asked for is landed on (it leaves the flow; the page moves up).
@@ -184,7 +186,7 @@ export function SheetCard({ path, id, onDrawn, onText }: { path: string; id: str
   }, [data, path, head])
 
   return (
-    <article className="reader card-view explore-sheet__reader" aria-label={title === '' ? (card?.id ?? id) : title}>
+    <article className="reader explore-sheet__reader" aria-label={title === '' ? (card?.id ?? id) : title}>
       <h2 className="reader__title reader__title--same">
         {title === '' ? UNTITLED_CARD : title}
         <span className="card-view__id"> · {card?.id ?? id}</span>
