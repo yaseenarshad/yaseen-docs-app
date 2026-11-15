@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { onlyLocalMedia } from '@client/editor/card/cardSafety'
 import { App, NoStorage } from './App'
-import { startUpdates, swapWaitingVersion } from './pwa/browser'
+import { forgetUpdateMark, startUpdates } from './pwa/browser'
 import { lazySync } from './app/lazySync'
 import { lazyMedia } from './media/ui/lazyMedia'
 import { lazyFriends } from './friends/ui/lazy'
@@ -20,9 +20,11 @@ const root = createRoot(document.getElementById('root')!)
 if (import.meta.env.MODE === 'fixtures' && location.hash.startsWith('#fixture')) void import('./dev/fixtures').then((m) => m.mountFixture(root, location.hash))
 else void boot(root)
 
-// YAZ-5087: a new version that waits starts now, before the app runs (nothing is open; the answer list is stored).
+// YAZ-5555: a new version NEVER starts by itself, not even here at a cold start: the app starts the version the person
+// runs, and "A new version is ready" waits for a tap on Restart (`pwa/safeMoment.ts`). After that tap, the address
+// loses its update mark.
 async function boot(root: Root) {
-  if (await swapWaitingVersion()) return
+  forgetUpdateMark()
   await start(root)
 }
 

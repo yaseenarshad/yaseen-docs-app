@@ -1,30 +1,22 @@
 /**
- * THE SAFE MOMENT (YAZ-5087; YAZ-5555): when a new version may take over (the page loads again).
+ * THE UPDATE RULE (YAZ-5087; YAZ-5555): when a new version may take over (the page loads it).
  *
- * THE RULE (YAZ-5555; keep it, and keep the README's "Updates" paragraph in step with it):
- * - A cold start, before the app runs: always (`swapAtStart` in `main.tsx`). Nothing is open yet, and the answer list
- *   and the comment list are in IndexedDB, so they survive the reload (3C: "answers made with no signal, the app
- *   closed: at the next start they are still there").
- * - BY ITSELF when the app is idle: the first time it comes back to the foreground after `RESUME_AFTER_MS` (30 s) or
- *   more hidden, once the new version took over, and only with NOTHING held (below). Nothing unsaved is ever lost: the
- *   reload waits for the next return instead.
- * - A tap on "Restart" (the line stays for the active case): the person chose it, so the Review tab, a screen and the
- *   comments that wait (stored, each with its id, so a retry never posts one twice) do not hold it; waiting answers,
- *   the first download and a comment box with words in it still do.
- *
- * Held: answers that wait to be sent (a reload in the middle of a send is never done); comments, ticks and friends
- * removes that wait (`writes`: writes in flight or queued); words typed in a comment box and not sent (`typing`,
- * `page/comments/unsentDrafts.ts`); the Review tab, and a review in progress on ANY tab (YAZ-5269: the session lives on
- * behind Friends and Search; `review/inProgress.ts`); a screen over the tabs or the sign-in form (typed text would be
- * lost); the first download.
+ * ONLY WHEN THE PERSON TAPS RESTART (YAZ-5555, Yaseen's decision: "I'll always know when to restart and I'll be able to
+ * manually select it"). Keep this, and keep the README's "Updates" note in step with it:
+ * - NEVER by itself: not at a cold start (the worker keeps serving the version the person runs, even after the browser
+ *   activated a newer one: `swCore.ts`, `CHOSEN_KEY`), not when the app comes back from the background, not after a
+ *   while. There is no automatic restart, so nothing the person is doing can be lost to one.
+ * - Whenever a new version is there, "A new version is ready." shows over the tabs with Restart (`UpdateLine.tsx`). The
+ *   state is read at the start and at each return to the foreground, so the line shows on a cold start and on return.
+ * - Restart works on any tab (the Review tab too, and over a review in progress: the person chose it), and over
+ *   comments that wait (each is stored with its id, so a retry never posts one twice).
+ * - Restart is held, and the line says why instead of showing the button: answers that wait to be sent (a reload in
+ *   the middle of a send is never done); words in a comment box not sent (`page/comments/unsentDrafts.ts`); the first
+ *   download. A screen or form over the tabs hides the line (typed text would be lost); it shows again on the tabs.
  */
 
-/** YAZ-5555: hidden at least this long, a return to the foreground counts as idle (was 5 minutes in YAZ-5087). */
-export const RESUME_AFTER_MS = 30_000
-
-export type Hold = 'answers' | 'writes' | 'typing' | 'review' | 'screen' | 'download'
+export type Hold = 'answers' | 'typing' | 'review' | 'screen' | 'download'
 export type Holds = readonly Hold[]
-export type Trigger = 'start' | 'resume' | 'tap'
 
 export interface AppMoment {
   phase: 'loading' | 'sign-in' | 'sign-in-again' | 'ready'
@@ -36,8 +28,6 @@ export interface AppMoment {
   answersWaiting: number
   /** A Review session is in its middle, on any tab (YAZ-5269, `reviewInProgress()`). Absent: none. */
   reviewInProgress?: boolean
-  /** YAZ-5555: the open vault's comments and ticks, and the friends removes, that wait to be written. Absent: none. */
-  writesWaiting?: number
   /** YAZ-5555: a comment box holds words that are not sent (`hasAnyUnsentDraft`). Absent: none. */
   unsentText?: boolean
 }
@@ -45,7 +35,6 @@ export interface AppMoment {
 export function holdsOf(m: AppMoment): Hold[] {
   const holds: Hold[] = []
   if (m.answersWaiting > 0) holds.push('answers')
-  if ((m.writesWaiting ?? 0) > 0) holds.push('writes')
   if (m.unsentText === true) holds.push('typing')
   if (m.phase !== 'ready' || m.routeOpen) holds.push('screen')
   else if (m.downloading) holds.push('download')
@@ -53,18 +42,18 @@ export function holdsOf(m: AppMoment): Hold[] {
   return holds
 }
 
-const TAP_IGNORES: readonly Hold[] = ['review', 'screen', 'writes']
+/** What a tap on Restart does not wait for: the person chose it. */
+const TAP_IGNORES: readonly Hold[] = ['review', 'screen']
 
-export function swapNow(m: { ready: boolean; trigger: Trigger; holds: Holds; hiddenMs: number }): boolean {
-  if (!m.ready) return false
-  if (m.trigger === 'start') return true
-  if (m.trigger === 'tap') return m.holds.every((h) => TAP_IGNORES.includes(h))
-  return m.holds.length === 0 && m.hiddenMs >= RESUME_AFTER_MS
+/** The tap on Restart (the ONLY way a new version takes over): yes, unless something would be lost. */
+export function swapNow(m: { ready: boolean; holds: Holds }): boolean {
+  return m.ready && m.holds.every((h) => TAP_IGNORES.includes(h))
 }
 
-/** The line on the tabs (plain words; no version number). */
+/** The line on the tabs (plain words; no version number). Held: it says why, with no button. */
 export function lineFor(holds: Holds): { text: string; restart: boolean } {
-  if (holds.includes('answers')) return { text: 'A new version is ready. It starts after your answers are sent.', restart: false }
-  if (holds.includes('typing')) return { text: 'A new version is ready. It starts after you send or clear your comment.', restart: false }
+  if (holds.includes('answers')) return { text: 'A new version is ready. Restart after your answers are sent.', restart: false }
+  if (holds.includes('typing')) return { text: 'A new version is ready. Restart after you send or clear your comment.', restart: false }
+  if (holds.includes('download')) return { text: 'A new version is ready. Restart after the first download.', restart: false }
   return { text: 'A new version is ready.', restart: true }
 }

@@ -1,18 +1,19 @@
-import { PAGE_READY, SKIP_WAITING } from './swCore'
+import { PAGE_READY, SKIP_WAITING, UPDATE_MARK, type WorkerState } from './swCore'
 
 /**
- * The page side of an update (YAZ-5087). The browser downloads a new version in the background (the worker installs
- * it whole, or not at all). This file notices it and makes it take over ONLY when the page says so:
- * - `swapAtStart`: at the start, before the app runs, a version that waits takes over at once ("the next open uses it").
- * - `createUpdates`: while the app runs, `ready()` says a new version waits; `apply()` makes it take over, then the page
- *   loads again ONE time. The app is never half old and half new: the old page keeps its old files until the reload.
+ * The page side of an update (YAZ-5087; YAZ-5555). The browser downloads a new version in the background (the worker
+ * installs it whole, or not at all). This file notices it; the new version runs ONLY after the person taps Restart:
+ * - `ready()` says a new version is there: one waits (installed), or it is active but not chosen (the browser activated
+ *   it at a cold start; the worker still serves the chosen version: `swCore.ts`), or it took over this open page.
+ * - `apply()` (the tap): the new version takes over and the page loads it, ONE time, with `UPDATE_MARK` in its address,
+ *   which makes the worker choose it. The app is never half old and half new.
+ * - Nothing here switches by itself: not at a cold start, not when the app comes back (YAZ-5555, Yaseen: "I'll always
+ *   know when to restart"). At the start and at each return, the state is read again, so the line shows reliably.
  */
 
 export const SW_URL = '/sw.js'
 /** Ask the host for a new version at most this often (at the start, and when the app comes back from the background). */
 export const CHECK_EVERY_MS = 30 * 60_000
-/** At the start, wait at most this long for the waiting version to take over; then start the old one (never a blank screen). */
-export const START_SWAP_WAIT_MS = 3_000
 
 export interface SwWorkerLike {
   state: string
@@ -33,60 +34,57 @@ export interface SwContainerLike {
   addEventListener(type: 'controllerchange', fn: () => void): void
 }
 
-/** True when a new version took over and the page is loading again: do not start the app. */
-export async function swapAtStart(container: SwContainerLike | undefined, reload: () => void, waitMs = START_SWAP_WAIT_MS): Promise<boolean> {
-  if (!container) return false
-  let reg: SwRegistrationLike | undefined
-  try {
-    reg = await container.getRegistration()
-  } catch {
-    return false
-  }
-  const waiting = reg?.waiting
-  if (!waiting || container.controller === null) return false
-  const took = new Promise<boolean>((resolve) => {
-    container.addEventListener('controllerchange', () => resolve(true))
-    setTimeout(() => resolve(false), waitMs)
-  })
-  waiting.postMessage({ type: SKIP_WAITING })
-  if (!(await took)) return false
-  reload()
-  return true
-}
-
 export interface Updates {
   /** Registers the worker and starts to watch for a new version. Never throws. */
   start(): Promise<void>
-  /** A new version is whole and waits, or it already took over and this page still runs the old one. */
+  /** A new version is whole and waits, is active but not chosen, or took over and this page still runs the old one. */
   ready(): boolean
   /** The new version runs the page's requests; this page still runs the old files (kept by the worker). */
   tookOver(): boolean
   subscribe(fn: () => void): () => void
-  /** The new version takes over; the page then loads again, one time. Call it at a safe moment only (`safeMoment.ts`). */
+  /** The tap on Restart: the new version takes over; the page loads it, one time. Only when `swapNow` says so. */
   apply(): void
-  /**
-   * The waiting version takes over, but the page is NOT loaded again (the app goes to the background). Safe at any
-   * time: the open page keeps its old files, and the worker keeps the version before, so its lazy chunks still load.
-   * Chrome activates a new worker only some seconds after the old one is idle, so this makes the later swap instant.
-   */
-  prepare(): void
-  /** Ask the host for a new version (at most each `CHECK_EVERY_MS`). */
+  /** Read the worker's state again (each time), and ask the host for a new version (at most each `CHECK_EVERY_MS`). */
   check(): Promise<void>
 }
 
-export function createUpdates(deps: { container: SwContainerLike | undefined; reload: () => void; now: () => number }): Updates {
-  const { container, reload, now } = deps
+/** The address that loads the new version (the worker chooses it): this address with `UPDATE_MARK`. */
+export function updateAddress(href: string): string {
+  const url = new URL(href)
+  url.searchParams.set(UPDATE_MARK, '1')
+  return url.href
+}
+
+/** The address without `UPDATE_MARK` (the app removes it from the address bar at its start), or null when it has none. */
+export function withoutUpdateMark(href: string): string | null {
+  const url = new URL(href)
+  if (!url.searchParams.has(UPDATE_MARK)) return null
+  url.searchParams.delete(UPDATE_MARK)
+  return url.href
+}
+
+export function createUpdates(deps: {
+  container: SwContainerLike | undefined
+  /** Loads the new version (`updateAddress`), one time. */
+  reload: () => void
+  now: () => number
+  /** YAZ-5555: the worker's { active, chosen } (`STATE_ASK`); null when it does not say (an older worker, no worker). */
+  readState?: () => Promise<WorkerState | null>
+}): Updates {
+  const { container, reload, now, readState } = deps
   let reg: SwRegistrationLike | null = null
   let lastCheck = -Infinity
   let reloadOnTakeover = false
   let reloaded = false
   let took = false
   let hadController = false
+  /** YAZ-5555: the active version is not the chosen one (the browser activated it; the page runs the chosen one). */
+  let pinned = false
   const fns = new Set<() => void>()
   const tell = () => fns.forEach((fn) => fn())
   // A new version is ready when it is installed while an old one runs the page. With no old one (the first open),
   // it simply takes over: no line.
-  const ready = () => took || (reg !== null && container?.controller != null && reg.waiting !== null && reg.waiting.state === 'installed')
+  const ready = () => took || pinned || (reg !== null && container?.controller != null && reg.waiting !== null && reg.waiting.state === 'installed')
   const reloadOnce = () => {
     if (reloaded) return
     reloaded = true
@@ -94,6 +92,15 @@ export function createUpdates(deps: { container: SwContainerLike | undefined; re
   }
 
   const follow = (worker: SwWorkerLike | null) => worker?.addEventListener('statechange', tell)
+  const readPinned = async () => {
+    if (readState === undefined || container?.controller == null) return
+    const state = await readState().catch(() => null)
+    const next = state !== null && typeof state.active === 'string' && typeof state.chosen === 'string' && state.active !== state.chosen
+    if (next !== pinned) {
+      pinned = next
+      tell()
+    }
+  }
 
   return {
     async start() {
@@ -128,6 +135,7 @@ export function createUpdates(deps: { container: SwContainerLike | undefined; re
       follow(reg.installing)
       follow(reg.waiting)
       tell()
+      await readPinned()
     },
     ready,
     tookOver: () => took,
@@ -136,16 +144,14 @@ export function createUpdates(deps: { container: SwContainerLike | undefined; re
       return () => fns.delete(fn)
     },
     apply() {
-      if (took) return reloadOnce()
+      if (took || pinned) return reloadOnce()
       const waiting = reg?.waiting
       if (!waiting) return
       reloadOnTakeover = true
       waiting.postMessage({ type: SKIP_WAITING })
     },
-    prepare() {
-      if (!took) reg?.waiting?.postMessage({ type: SKIP_WAITING })
-    },
     async check() {
+      await readPinned()
       if (reg === null || now() - lastCheck < CHECK_EVERY_MS) return
       lastCheck = now()
       try {

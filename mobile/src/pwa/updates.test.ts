@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PAGE_READY, SKIP_WAITING } from './swCore'
-import { CHECK_EVERY_MS, SW_URL, createUpdates, swapAtStart, type SwContainerLike, type SwRegistrationLike, type SwWorkerLike } from './updates'
+import { CHECK_EVERY_MS, SW_URL, createUpdates, updateAddress, withoutUpdateMark, type SwContainerLike, type SwRegistrationLike, type SwWorkerLike } from './updates'
 
 /** The page side of the update (YAZ-5087): the worker is registered, a new version is noticed, and it takes over only when the page says so. */
 
@@ -55,33 +55,48 @@ function container(opts: { controller?: boolean; waiting?: SwWorkerLike | null }
   return c
 }
 
-describe('at the start: a version that waits starts now, before the app runs', () => {
-  it('a waiting worker: it is told to take over, and the page loads again once (nothing of the app ran yet)', async () => {
+describe('YAZ-5555: nothing takes over at the start', () => {
+  it('a waiting worker at the start: no message to it, no reload; the line is ready', async () => {
     const waiting = worker()
     const c = container({ waiting })
     let reloads = 0
-    const swapping = swapAtStart(c, () => reloads++, 3000)
-    await Promise.resolve()
-    expect(waiting.sent).toEqual([{ type: SKIP_WAITING }])
-    c.change()
-    expect(await swapping).toBe(true)
+    const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0 })
+    await u.start()
+    expect(waiting.sent).toEqual([])
+    expect(reloads).toBe(0)
+    expect(u.ready()).toBe(true)
+  })
+
+  it('the browser activated the new version at a cold start (the worker still serves the chosen one): ready; apply loads it, once', async () => {
+    const c = container()
+    let reloads = 0
+    const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0, readState: async () => ({ active: 'v2', chosen: 'v1' }) })
+    await u.start()
+    expect(reloads).toBe(0)
+    expect(u.ready()).toBe(true)
+    u.apply()
+    u.apply()
     expect(reloads).toBe(1)
   })
 
-  it('nothing waits: the app starts at once, no reload', async () => {
-    let reloads = 0
-    expect(await swapAtStart(container(), () => reloads++, 3000)).toBe(false)
-    expect(reloads).toBe(0)
+  it('the state is read again at each check (a return): a version chosen meanwhile, or an older worker that says nothing, is not ready', async () => {
+    let state: { active: string; chosen: string } | null = { active: 'v2', chosen: 'v1' }
+    const u = createUpdates({ container: container(), reload: () => {}, now: () => 0, readState: async () => state })
+    await u.start()
+    expect(u.ready()).toBe(true)
+    state = { active: 'v2', chosen: 'v2' }
+    await u.check()
+    expect(u.ready()).toBe(false)
+    state = null
+    await u.check()
+    expect(u.ready()).toBe(false)
   })
 
-  it('the worker does not take over in time: the app starts with the old version (never a blank screen)', async () => {
-    let reloads = 0
-    expect(await swapAtStart(container({ waiting: worker() }), () => reloads++, 5)).toBe(false)
-    expect(reloads).toBe(0)
-  })
-
-  it('no service worker in this browser: the app starts', async () => {
-    expect(await swapAtStart(undefined, () => {}, 5)).toBe(false)
+  it('the Restart address carries the update mark; the app removes it at its start', () => {
+    const to = updateAddress('https://notecards.test/some/route?x=1#top')
+    expect(to).toBe('https://notecards.test/some/route?x=1&notecards-update=1#top')
+    expect(withoutUpdateMark(to)).toBe('https://notecards.test/some/route?x=1#top')
+    expect(withoutUpdateMark('https://notecards.test/')).toBeNull()
   })
 })
 
@@ -170,25 +185,7 @@ describe('while the app runs', () => {
     expect(u.ready()).toBe(false)
   })
 
-  it('prepare (the app goes to the background): the new worker takes over, the page is NOT loaded again; it is ready, and apply loads it at once', async () => {
-    let reloads = 0
-    const waiting = worker()
-    const c = container({ waiting })
-    const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0 })
-    await u.start()
-    u.prepare()
-    expect(waiting.sent).toEqual([{ type: SKIP_WAITING }])
-    c.reg.waiting = null
-    c.change()
-    expect(reloads).toBe(0)
-    expect(u.tookOver()).toBe(true)
-    expect(u.ready()).toBe(true)
-    u.apply()
-    u.apply()
-    expect(reloads).toBe(1)
-  })
-
-  it('a takeover the page did not ask for (the start swap that came late, another tab): ready, no reload', async () => {
+  it('a takeover the page did not ask for (another tab): ready, no reload', async () => {
     let reloads = 0
     const c = container()
     const u = createUpdates({ container: c, reload: () => reloads++, now: () => 0 })
