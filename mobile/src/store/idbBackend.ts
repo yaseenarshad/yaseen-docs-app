@@ -26,6 +26,9 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
   })
 }
 
+/** YAZ-5596 (15): told of each call's time in ms, and whether it hit the time limit (the wake log). */
+export type CallWatcher = (ms: number, timedOut: boolean) => void
+
 /**
  * The phone's backend: one IndexedDB database. It opens on the first call. When the connection is lost, the
  * next call opens a new one, and a call that finds it lost is tried one more time on the new one.
@@ -34,8 +37,9 @@ function request<T>(req: IDBRequest<T>): Promise<T> {
  * fires) fails with `StorageTimeoutError`; its connection is dropped (closed and forgotten), so the next call opens a
  * new one. A write is aborted first, so it cannot land later. An open with no answer fails the same way.
  */
-export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRange?: typeof IDBKeyRange; timeoutMs?: number } = {}): Backend {
+export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRange?: typeof IDBKeyRange; timeoutMs?: number; onCall?: CallWatcher } = {}): Backend {
   const timeoutMs = options.timeoutMs ?? STORAGE_TIMEOUT_MS
+  const onCall = options.onCall
   const name = options.name ?? DB_NAME
   // Both from the same IndexedDB: the browser's, or a test's fake-indexeddb.
   const factory = options.factory ?? indexedDB
@@ -100,6 +104,7 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
       const timer = setTimeout(() => {
         late = true
         if (opening === attempt) opening = null
+        onCall?.(timeoutMs, true)
         reject(new StorageTimeoutError('open'))
       }, timeoutMs)
       open().then(
@@ -137,9 +142,11 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
     return new Promise<T>((resolve, reject) => {
       const undos: (() => void)[] = []
       let done = false
+      const started = onCall === undefined ? 0 : performance.now()
       const timer = setTimeout(() => {
         if (done) return
         done = true
+        onCall?.(performance.now() - started, true)
         for (const undo of undos) {
           try {
             undo()
@@ -154,6 +161,7 @@ export function idbBackend(options: { name?: string; factory?: IDBFactory; keyRa
         if (done) return
         done = true
         clearTimeout(timer)
+        onCall?.(performance.now() - started, false)
         fn()
       }
       let call: Promise<T>

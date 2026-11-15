@@ -62,3 +62,9 @@
     transition: none;
   }
 }
+
+/* YAZ-5596 (15): the wake log's lines are small and wrap. */
+.vault-health__wake {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}

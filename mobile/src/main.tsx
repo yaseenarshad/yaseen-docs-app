@@ -12,6 +12,7 @@ import { openPhoneStorage } from './store'
 import { browserFacts } from './pwa/homeScreen'
 import { asInstalled, gateOf } from './pwa/installGate'
 import { InstallGate } from './screens/InstallGate'
+import { noteStorageCall, noteSyncStatus, startWakeLog } from './store/wakeLog'
 import './styles.css'
 
 // Light or dark as Settings › Appearance says, on the page before anything draws (no flash).
@@ -39,9 +40,11 @@ async function boot(root: Root) {
 }
 
 async function start(root: Root) {
+  // YAZ-5596 (15): the wake log (Settings › Vault health): this start, each return, the first pass and storage calls.
+  startWakeLog()
   let storage: Awaited<ReturnType<typeof openPhoneStorage>>
   try {
-    storage = await openPhoneStorage()
+    storage = await openPhoneStorage(noteStorageCall)
   } catch {
     root.render(<NoStorage />)
     return
@@ -51,6 +54,7 @@ async function start(root: Root) {
   // chunk of its own (`lazyMedia`): the reader and Review show pictures, sounds and files through it.
   // Friends (4E): the list gist, the sender (on the engine's passes), Cheer and Nudge, in a chunk of their own.
   const sync = lazySync(store, tokens)
+  sync.subscribe((event) => event.type === 'state' && noteSyncStatus(event.state.status))
   const friends = lazyFriends(store, tokens, sync.loaded())
   const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends, scanner: cameraScanner() }
   root.render(
