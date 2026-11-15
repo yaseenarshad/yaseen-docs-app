@@ -524,3 +524,43 @@ describe('YAZ-5302 (4D5): the phone\'s store never opens (IndexedDB blocked, ful
     expect(shown(h)).toMatchObject({ colour: 'off', words: "Can't sync now" })
   })
 })
+
+describe('YAZ-5524 (sweep3 S-2): one change not sent never hides the rest', () => {
+  const orphan = { id: 'a1b2c3d4', path: 'notes/Old plan.md', body: 'Made-up words', at: '2026-11-15T09:00:00Z', madeAt: 0, notBefore: 0, refused: 'gone' as const }
+
+  it('dot_notSent_plusWaitingOffline_saysBoth_andSheetListsWaiting', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ notSent: [orphan], comments: 3 }))
+    await answersDo(h, () => setOnline(false))
+    expect(shown(h)).toMatchObject({ colour: 'pending', words: '1 not sent · 3 waiting', inBar: true })
+    expect(status(h).getAttribute('aria-label')).toBe("Sync status: 1 comment couldn't be sent: its page is gone · 3 comments waiting · no signal")
+    await h.click(/^Sync status: 1 comment couldn't be sent/)
+    const sheet = h.host.querySelector('[role="dialog"]')!.textContent!
+    // Every group: what was not sent (with its words), what waits and why, and GitHub's state.
+    expect(sheet).toContain('Made-up words')
+    expect(sheet).toContain('3 comments waiting · no signal')
+    expect(sheet).toContain('They go to GitHub when the signal is back.')
+  })
+
+  it('GitHub is down: the sheet says so beside what was not sent', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ notSent: [orphan], comments: 1 }))
+    await h.syncSet({ status: 'off', problem: 'GITHUB_DOWN' })
+    expect(shown(h).words).toBe('1 not sent · 1 waiting')
+    await h.click(/^Sync status: 1 comment couldn't be sent/)
+    expect(h.host.querySelector('[role="dialog"]')!.textContent).toContain('GitHub is down.')
+  })
+
+  it('statusSheet_loud_hasSyncNow: the loud sheet can ask for a sync (and a send) now', async () => {
+    let answers: FakeAnswers
+    ;({ h, answers } = await signedIn())
+    await answersDo(h, () => answers.set({ notSent: [orphan] }))
+    await h.click(/^Sync status: 1 comment couldn't be sent/)
+    const [syncs, sends] = [h.sync.syncNowCalls, answers.sendNowCalls]
+    await h.click('Sync now')
+    expect(h.sync.syncNowCalls).toBe(syncs + 1)
+    expect(answers.sendNowCalls).toBe(sends + 1)
+  })
+})

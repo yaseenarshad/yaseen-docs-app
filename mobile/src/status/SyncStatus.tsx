@@ -44,7 +44,7 @@ export function SyncStatus() {
   const stuck = useStuck(app.services.store, app.vaultKey, answers.state !== null || answers.noList)
   const said = syncDot({ sync: app.sync, answers: answersPart(answers.state, answers.waiting, answers.noList, stuck), online, token })
   const loud = dotIsLoud(said)
-  const dot: Dot = busy && !loud ? { ...said, state: 'syncing', words: 'Syncing…', short: 'Syncing…', bar: 'Syncing…', count: null, reason: 'syncing' } : said
+  const dot: Dot = busy && !loud ? { ...said, state: 'syncing', words: 'Syncing…', short: 'Syncing…', bar: 'Syncing…', count: null, reason: 'syncing', then: null } : said
   useFitWords(button, loud, dot)
   const lastAt = useLastSync(app.services.store, app.vaultKey, app.sync.lastSyncedAt, answers.state?.lastSentAt)
   const tap = () => {
@@ -67,7 +67,7 @@ export function SyncStatus() {
         ref={button}
         type="button"
         className={loud ? 'sync-status' : 'sync-status sync-status--dot'}
-        aria-label={`Sync status: ${dot.words}${loud || dot.state === 'syncing' ? '' : '. Sync now'}`}
+        aria-label={`Sync status: ${dot.words}${dot.then === null ? '' : ` · ${dot.then.words}`}${loud || dot.state === 'syncing' ? '' : '. Sync now'}`}
         aria-haspopup={loud ? 'dialog' : undefined}
         aria-expanded={loud ? open : undefined}
         onClick={tap}
