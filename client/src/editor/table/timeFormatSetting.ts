@@ -4,7 +4,7 @@
  * `code/languageHelpers.ts` is, so no editor rebuilds for a change.
  */
 import { DEFAULT_CALENDAR_DAY, DEFAULT_TIME_FORMAT, isCalendarDayTime, isValidTimeFormat } from '@shared/timeFormat'
-import { DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, type HeaderRow, type TableTextInCells } from '@shared/types'
+import { DEFAULT_HEADER_ROW, DEFAULT_SUBHEADER_ROW, type HeaderRow, type TableSlotTime, type TableTextInCells } from '@shared/types'
 
 let current = DEFAULT_TIME_FORMAT
 
@@ -114,3 +114,26 @@ export function setCellNoteButtonSetting(on: boolean): void {
 }
 
 export const cellNoteButtonSetting = (): boolean => noteButton
+
+let slotTime: { mode: TableSlotTime; seconds: boolean } = { mode: 'off', seconds: true }
+const slotTimeListeners = new Set<() => void>()
+
+/**
+ * Settings › Tables › Calendar tables › Time in slot and Show seconds (YAZ-5602), App's door: each note editor's
+ * calendar clock (`tableCalendar.ts`) draws the pill on the now line, or none, and ticks each second or each minute.
+ * A change tells each clock, which draws its marks again at once.
+ */
+export function setSlotTimeSetting(mode: TableSlotTime, seconds: boolean): void {
+  const next = { mode: mode === 'down' || mode === 'up' ? mode : 'off', seconds: seconds !== false } as const
+  if (next.mode === slotTime.mode && next.seconds === slotTime.seconds) return
+  slotTime = next
+  for (const listener of slotTimeListeners) listener()
+}
+
+/** Calls `listener` on each change of Time in slot or Show seconds; returns the unsubscribe. */
+export function onSlotTimeSetting(listener: () => void): () => void {
+  slotTimeListeners.add(listener)
+  return () => slotTimeListeners.delete(listener)
+}
+
+export const slotTimeSetting = (): { mode: TableSlotTime; seconds: boolean } => slotTime

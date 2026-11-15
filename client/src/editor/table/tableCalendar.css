@@ -59,3 +59,67 @@
 .milkdown .ProseMirror:is([contenteditable='false'], [data-read-only]) .table-now-chip-anchor {
   display: none;
 }
+
+/* Time in slot (YAZ-5602, Option A; `slotPill` in `tableCalendar.ts`): a pill at the right end of the now line, the Now
+   chip's shape in the line's red. Its anchor fills the now row's last cell (that cell's containing block: a frozen cell
+   is one already, as sticky); its track rides the line (`--table-now`) and stays inside the row, under the line at the
+   row's top edge, above the row's bottom edge at its end. The pill sticks to the right end of the table's visible part
+   (a table wider than the window): its own file, as the chip's, since `table.css` holds one sticky rule. Out of the flow, tabular digits: its text never moves the table. A last cell with
+   text keeps a right padding as wide as the slot's widest text (`--table-slot-chars`), so its text wraps before the pill. */
+.milkdown .ProseMirror .milkdown-table-block .table-slot-host:not(.table-frozen-col, .table-frozen-row > *) {
+  position: relative;
+}
+
+.milkdown .ProseMirror .milkdown-table-block :is(th, td).table-slot-pad {
+  --table-clip-pad: calc(var(--table-slot-chars, 10) * 7px + 26px);
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-slot-pad > p {
+  padding-right: var(--table-clip-pad);
+}
+
+/* The anchor runs from the cell's right edge leftwards across the row (`100vw`, more than any row on the screen), so
+   on a table wider than the window the pill can stick to the visible right edge even when only a sliver of the last
+   column shows (the phone). */
+.milkdown .ProseMirror .milkdown-table-block .table-slot-anchor {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: -100vw;
+  z-index: 2;
+  pointer-events: none;
+  user-select: none;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-slot-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: clamp(0px, calc(var(--table-now, 0) * 100% - 10px), calc(100% - 20px));
+  display: flex;
+  justify-content: flex-end;
+  height: 20px;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-slot-pill {
+  position: sticky;
+  right: 6px;
+  margin-right: 6px;
+  box-sizing: border-box;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--table-text-red);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--table-text-red);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.milkdown .ProseMirror .milkdown-table-block .table-slot-pill:empty {
+  display: none;
+}

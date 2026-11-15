@@ -3415,3 +3415,12 @@ describe('Settings › Tables › Header row (YAZ-4794): text colour and align',
   })
 })
 
+
+describe('Settings › Calendar tables › Time in slot and Show seconds (YAZ-5602)', () => {
+  it('Off and seconds On by default; a saved value reads back; a value this build cannot read is the default, the other settings kept', () => {
+    expect(sanitizeSettings({})).toMatchObject({ tableSlotTime: 'off', tableSlotSeconds: true })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).toMatchObject({ tableSlotTime: 'down', tableSlotSeconds: false })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'up' })).toMatchObject({ tableSlotTime: 'up', tableSlotSeconds: true })
+    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableNowMark: 'both', tableSlotTime: 'both', tableSlotSeconds: 'yes' })).toMatchObject({ tableNowMark: 'both', tableSlotTime: 'off', tableSlotSeconds: true })
+  })
+})
