@@ -1445,7 +1445,12 @@ describe('calendar Rolling scale (YAZ-5588; round 3: it scrolls with the page)',
     vi.restoreAllMocks()
     page.remove()
   })
-  const open = (text = ROLLING) => mount(text, {}, page)
+  /**
+   * Rolling has ends (YAZ-5609): 3 months before the first dated card and after the last. Two far cards put them at
+   * 23 Feb 2025 and 27 Feb 2028, far from this week, so the loads at each end show here; the ends' own tests are below.
+   */
+  const FAR = [...RECORDS, rec('Far past', { due: '2025-06-01' }), rec('Far future', { due: '2027-12-01' })]
+  const open = (text = ROLLING, records: IndexRecord[] = FAR) => mount(text, { records }, page)
   /** The page scrolls (not the calendar): its scroll event is what Rolling hears. */
   const scrollTo = (top: number) => {
     page.scrollTop = top
@@ -1487,8 +1492,9 @@ describe('calendar Rolling scale (YAZ-5588; round 3: it scrolls with the page)',
     const { el } = open()
     const bar = q(el, '.view-cal__nav')
     const names = grid(el).firstElementChild!
-    expect([cssOf(bar, 'position'), cssOf(bar, 'top'), cssOf(bar, 'height')]).toEqual(['sticky', '0', 'var(--cal-bar-height)'])
-    expect([cssOf(names, 'position'), cssOf(names, 'top')]).toEqual(['sticky', 'var(--cal-bar-height)'])
+    // Under the view's toolbar, which sticks too (YAZ-5609): `--cal-top` is its height, 0 without one.
+    expect([cssOf(bar, 'position'), cssOf(bar, 'top'), cssOf(bar, 'height')]).toEqual(['sticky', 'var(--cal-top, 0px)', 'var(--cal-bar-height)'])
+    expect([cssOf(names, 'position'), cssOf(names, 'top')]).toEqual(['sticky', 'calc(var(--cal-top, 0px) + var(--cal-bar-height))'])
     expect(cssOf(q(el, '.view-cal'), '--cal-bar-height')).toBe('36px')
   })
 
@@ -1534,24 +1540,105 @@ describe('calendar Rolling scale (YAZ-5588; round 3: it scrolls with the page)',
     expect(weeksIn(again.el)[0]).toBe('2026-12-06')
   })
 
-  it('the DOM stays bounded: as many week rows as the window shows and a step at each end, however far the page scrolls up or down', () => {
+  it('the DOM stays bounded: as many week rows as the window shows and a step at each end, however far the page scrolls up or down (to its ends)', () => {
     const { el } = open()
-    for (let i = 0; i < 30; i++) scrollTo(150)
+    for (let i = 0; i < 40; i++) scrollTo(150)
     expect(weeksIn(el)).toHaveLength(14)
-    expect(weeksIn(el)[0]).toBe('2024-08-18')
+    expect(weeksIn(el)[0]).toBe('2025-02-23')
     expect(el.querySelectorAll('.view-cal__day')).toHaveLength(98)
-    for (let i = 0; i < 40; i++) toBottom(el)
+    for (let i = 0; i < 60; i++) toBottom(el)
     expect(weeksIn(el)).toHaveLength(14)
-    expect(weeksIn(el)[0]).toBe('2027-09-12')
+    expect(weeksIn(el).at(-1)).toBe('2028-02-27')
     expect(el.querySelectorAll('.view-cal__day')).toHaveLength(98)
   })
 
-  it('the month label follows the page scroll: January once its first week is the top row under the day names', () => {
+  it('YAZ-5608: the title names the month that fills most of the window, not the week at the top', () => {
     const { el } = open()
-    scrollTo(500)
+    scrollTo(100)
     expect(title(el)).toBe('December 2026')
-    scrollTo(510)
+    // 400 px down: 8 px of the 20 Dec row under the day names, then 27 Dec – 2 Jan, then four weeks of January.
+    scrollTo(400)
+    expect(weeksIn(el).find((w) => rowTop(el, w!) + 100 > 66)).toBe('2026-12-20')
     expect(title(el)).toBe('January 2027')
+  })
+
+  describe('YAZ-5609: Rolling has ends, and the view toolbar stays in view', () => {
+    it('it loads from 3 months before the first dated card to 3 months after the last, and no further either way', () => {
+      // The cards are on 3 to 15 Dec 2026: from 3 Sep (its week, 30 Aug) to 15 Mar 2027 (its week, 14 Mar).
+      const { el } = open(ROLLING, RECORDS)
+      for (let i = 0; i < 20; i++) scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2026-08-30')
+      // At the first week nothing more loads: the page scrolls on to the title and the tabs above.
+      const at = page.scrollTop
+      scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2026-08-30')
+      expect(page.scrollTop).toBe(150)
+      expect(at).toBeGreaterThan(0)
+      for (let i = 0; i < 20; i++) toBottom(el)
+      expect(weeksIn(el).at(-1)).toBe('2027-03-14')
+      const rows = weeksIn(el)
+      toBottom(el)
+      expect(weeksIn(el)).toEqual(rows)
+    })
+
+    it('with no dated card shown (a filter hides them): 12 months either side of today', () => {
+      const { el } = open(`${ROLLING}    filters:\n      and:\n        - file.name == "Nothing"\n`, RECORDS)
+      expect(titlesIn(q(el, '.view-cal__grid'))).toEqual([])
+      for (let i = 0; i < 40; i++) scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2025-12-07')
+      for (let i = 0; i < 40; i++) toBottom(el)
+      expect(weeksIn(el).at(-1)).toBe('2027-12-05')
+    })
+
+    it('today is always in: cards only long ago still reach this week; Today and ‹ › never go past an end', () => {
+      // 3 months before 3 Jun 2025 is Mon 3 Mar (its week, 2 Mar); 3 months after is long before today.
+      const { el } = open(ROLLING, [rec('Old', { due: '2025-06-03' })])
+      for (let i = 0; i < 40; i++) toBottom(el)
+      expect(weeksIn(el).at(-1)).toBe('2026-12-06')
+      click(q(el, '[aria-label="Today"]'))
+      expect(weeksIn(el)).toContain('2026-12-06')
+      click(q(el, '[aria-label="Next week"]'))
+      click(q(el, '[aria-label="Next week"]'))
+      expect(weeksIn(el).at(-1)).toBe('2026-12-06')
+      expect(title(el)).toBe('December 2026')
+      for (let i = 0; i < 30; i++) scrollTo(150)
+      expect(weeksIn(el)[0]).toBe('2025-03-02')
+    })
+
+    it('Month and Week open at the month in view, never a far-off one', () => {
+      const { el } = open()
+      scrollTo(400)
+      expect(title(el)).toBe('January 2027')
+      click(q(el, '[aria-label="Calendar scale"] [data-scale="month"]'))
+      expect(title(el)).toBe('January 2027')
+      expect(el.querySelector('[data-day="2027-01-15"]')).not.toBeNull()
+      click(q(el, '[aria-label="Calendar scale"] [data-scale="week"]'))
+      expect(el.querySelector('[data-day="2027-01-01"]')).not.toBeNull()
+    })
+
+    it('the view toolbar (view tabs, sort, filter, settings, + New, count) sticks at the top with the month bar and day names; not in Month', () => {
+      const { el } = open()
+      const bar = q(el, '.views-pane > .view-toolbar')
+      expect([cssOf(bar, 'position'), cssOf(bar, 'top')]).toEqual(['sticky', '0'])
+      expect(Number(cssOf(bar, 'z-index'))).toBeGreaterThan(Number(cssOf(q(el, '.view-cal__nav'), 'z-index')))
+      expect(cssOf(bar, 'background')).toBe('var(--bg)')
+      act(() => root?.unmount())
+      container?.remove()
+      const month = mount(CALENDAR)
+      expect(cssOf(q(month.el, '.views-pane > .view-toolbar'), 'position')).toBeUndefined()
+    })
+
+    it('a jump puts its week under the toolbar too: the bar sticks at the toolbar\'s height, and Today scrolls the week under the toolbar, the bar and the day names', () => {
+      const laid = vi.mocked(HTMLElement.prototype.getBoundingClientRect).getMockImplementation()!
+      vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockImplementation(function (this: HTMLElement) {
+        return this.classList.contains('view-toolbar') ? box(0, 40) : laid.call(this)
+      })
+      const { el } = open()
+      expect(q<HTMLElement>(el, '.view-cal').style.getPropertyValue('--cal-top')).toBe('40px')
+      for (let i = 0; i < 10; i++) scrollTo(150)
+      click(q(el, '[aria-label="Today"]'))
+      expect(rowTop(el, '2026-12-06')).toBe(40 + 36 + 30)
+    })
   })
 
   it('Hide weekends: five days a row, still this week first', () => {
@@ -1652,7 +1739,8 @@ describe('a week row is the same in Month and Rolling, and grows to its tallest 
   it('one week-row renderer: the same week draws the same row in Month and Rolling, fold On or Off, clip or wrap', () => {
     for (const extra of ['', '    foldDays: false\n', '    cardTitles: wrap\n', '    foldDays: false\n    cardTitles: wrap\n']) {
       const month = rows(`${CALENDAR}${extra}`)
-      const rolling = rows(`${ROLLING}${extra}`)
+      // Rolling's own month shade (YAZ-5608) off: the row is otherwise the same.
+      const rolling = rows(`${ROLLING}    monthShade: false\n${extra}`)
       expect(rolling).toEqual(month)
     }
   })
@@ -1838,5 +1926,117 @@ describe('the calendar audit (YAZ-5604)', () => {
       at.mockRestore()
       expect(write).toHaveBeenCalledExactlyOnceWith('/vault/Thu job.md', 'end', '2026-12-16')
     })
+  })
+})
+
+describe('tell months apart (YAZ-5608): Shade every other month, and a line Between months', () => {
+  const ROLLING = `${CALENDAR}    calendarScale: rolling\n`
+  const shaded = (el: ParentNode) => [...el.querySelectorAll<HTMLElement>('.view-cal__day--shade')].map((d) => d.dataset.day)
+  const edges = (el: ParentNode, key: string) => {
+    const c = day(el, key).classList
+    return [c.contains('view-cal__day--month-top') && 'top', c.contains('view-cal__day--month-left') && 'left'].filter(Boolean)
+  }
+  const openView = (el: ParentNode) => {
+    click(q(el, '.view-toolbar [aria-label="Columns and view"]'))
+    click(q(el, '.view-popover--properties .view-menu__tab[data-tab="view"]'))
+  }
+  const seg = (el: ParentNode, label: string) => [...el.querySelectorAll<HTMLButtonElement>(`.view-popover--properties [role="group"][aria-label="${label}"] button`)]
+  const trigger = (el: ParentNode, label: string) => q<HTMLButtonElement>(el, `.view-popover--properties [aria-label="${label}"]`)
+  const pickIn = (el: ParentNode, label: string, text: string) => {
+    if (trigger(el, label).getAttribute('aria-expanded') !== 'true') click(trigger(el, label))
+    const panel = q<HTMLElement>(document.body, `.cal-line__panel[aria-label="${label}"]`)
+    click(panel.querySelector(`button[aria-label="${text}"]`) ?? byText(panel, 'button', text))
+  }
+
+  it('Rolling shades every other month by default: December, not January; the 1st says its month in the accent colour', () => {
+    const { el } = mount(ROLLING)
+    const days = shaded(el)
+    expect(days.length).toBeGreaterThan(0)
+    expect(days.every((d) => d!.startsWith('2026-12') || d!.startsWith('2027-02'))).toBe(true)
+    expect(days).toContain('2026-12-31')
+    expect(days).not.toContain('2027-01-01')
+    expect(q(day(el, '2027-01-01'), '.view-cal__date-month').textContent).toBe('Jan')
+    expect(q(day(el, '2027-01-01'), '.view-cal__date').textContent).toBe('Jan 1')
+  })
+
+  it('Off shades nothing; Month and Week never shade (Month keeps its grey other-month days)', () => {
+    expect(shaded(mount(`${ROLLING}    monthShade: false\n`).el)).toEqual([])
+    act(() => root?.unmount())
+    container?.remove()
+    const month = mount(CALENDAR)
+    expect(shaded(month.el)).toEqual([])
+    expect(month.el.querySelectorAll('.view-cal__day--other').length).toBeGreaterThan(0)
+    // Every scale says a month's 1st: Month's own "Dec 1" and the next month's "Jan 1".
+    expect(q(day(month.el, '2026-12-01'), '.view-cal__date').textContent).toBe('Dec 1')
+    expect(q(day(month.el, '2027-01-01'), '.view-cal__date-month').textContent).toBe('Jan')
+  })
+
+  it('Between months is Off by default: no edge and no width on the grid', () => {
+    const { el } = mount(ROLLING)
+    expect(el.querySelector('.view-cal__day--month-top, .view-cal__day--month-left')).toBeNull()
+    expect(q<HTMLElement>(el, '.view-cal__grid').style.getPropertyValue('--cal-month-line')).toBe('')
+  })
+
+  it('Rolling: a stepped line round January (Fri 1 Jan 2027): the top of 1–2 Jan, the left of 1 Jan, the top of 3–7 Jan', () => {
+    const { el } = mount(`${ROLLING}    monthLine: 3\n    monthLineColor: red\n`)
+    const g = q<HTMLElement>(el, '.view-cal__grid')
+    expect(g.style.getPropertyValue('--cal-month-line')).toBe('3px')
+    expect(g.style.getPropertyValue('--cal-month-line-color')).toContain('--table-fill-solid-red')
+    expect(edges(el, '2026-12-31')).toEqual([])
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    expect(edges(el, '2027-01-02')).toEqual(['top'])
+    for (const d of ['2027-01-03', '2027-01-04', '2027-01-05', '2027-01-06', '2027-01-07']) expect(edges(el, d)).toEqual(['top'])
+    expect(edges(el, '2027-01-08')).toEqual([])
+    expect(edges(el, '2027-01-15')).toEqual([])
+  })
+
+  it('Month: the edge between the month and the greyed days of the months either side; none on the first row (no week above it there); Week: none', () => {
+    const { el } = mount(`${CALENDAR}    monthLine: 2\n`)
+    // December 2026 starts on a Tuesday: 29 and 30 Nov before it on the first row.
+    expect(edges(el, '2026-11-30')).toEqual([])
+    expect(edges(el, '2026-12-01')).toEqual(['left'])
+    expect(edges(el, '2026-12-02')).toEqual([])
+    expect(edges(el, '2026-12-06')).toEqual(['top'])
+    expect(edges(el, '2026-12-07')).toEqual(['top'])
+    expect(edges(el, '2026-12-08')).toEqual([])
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    act(() => root?.unmount())
+    container?.remove()
+    const week = mount(`${CALENDAR}    calendarScale: week\n    monthLine: 2\n`)
+    expect(week.el.querySelector('.view-cal__day--month-top, .view-cal__day--month-left')).toBeNull()
+  })
+
+  it('Hide weekends: the left neighbour is the shown day before (Mon 1 Feb 2027 is the first column: no left line)', () => {
+    const { el } = mount(`${ROLLING}    hideWeekends: true\n    monthLine: 2\n`)
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    expect(edges(el, '2027-02-01')).toEqual(['top'])
+  })
+
+  it('the line draws over the grid lines, so nothing moves: an absolute pseudo-element on the day, no border or margin', () => {
+    const rules = [...viewsCss.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}@]+)\{([^{}]*)\}/g)].filter(([, sel]) => sel.includes('--month-'))
+    expect(rules.length).toBeGreaterThan(0)
+    for (const [, , body] of rules) expect(body).not.toMatch(/(^|[;\s])(border|margin|padding)[\w-]*:/)
+    expect(rules.some(([, , body]) => /position:\s*absolute/.test(body))).toBe(true)
+  })
+
+  it('the View tab › Lines: Shade every other month On · Off writes monthShade: false; Between months Off · px · colour writes monthLine and monthLineColor, Off removes both', () => {
+    const { el, yaml } = mount(ROLLING)
+    openView(el)
+    expect(seg(el, 'Shade every other month').map((b) => b.textContent)).toEqual(['On', 'Off'])
+    click(seg(el, 'Shade every other month').find((b) => b.textContent === 'Off')!)
+    expect(yaml()).toContain('monthShade: false')
+    expect(shaded(el)).toEqual([])
+    click(seg(el, 'Shade every other month').find((b) => b.textContent === 'On')!)
+    expect(yaml()).not.toContain('monthShade')
+    expect(trigger(el, 'Between months thickness').textContent).toBe('Off')
+    expect(el.querySelector('.view-popover--properties [aria-label="Between months colour"]')).toBeNull()
+    pickIn(el, 'Between months thickness', '2 px')
+    expect(yaml()).toContain('monthLine: 2')
+    expect(edges(el, '2027-01-01')).toEqual(['top', 'left'])
+    pickIn(el, 'Between months colour', 'Green')
+    expect(yaml()).toContain('monthLineColor: green')
+    pickIn(el, 'Between months thickness', 'Off')
+    expect(yaml()).not.toContain('monthLine')
+    expect(el.querySelector('.view-cal__day--month-top')).toBeNull()
   })
 })

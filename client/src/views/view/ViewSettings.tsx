@@ -4,7 +4,7 @@ import { GROUP_INDENTS, type Mutate, type ViewDef, type ViewSet, groupIndentOf, 
 import { TextField } from './TextField'
 import { cardWidth } from './cardWidth'
 import { type ColorStrengthValue, calLine, writeColorStrength } from '@shared/types'
-import { CALENDAR_SCALES, calLineColor, calendarScaleOf, hideWeekendsDefault, hidesWeekends } from '../calendar'
+import { CALENDAR_SCALES, calLineColor, calendarScaleOf, hideWeekendsDefault, hidesWeekends, monthLineColorOf, monthLineOf } from '../calendar'
 import { CalLineControls } from './CalendarLineControls'
 import { markerStyleOf } from './ListView'
 import { SubfoldersSwitch } from './SubfoldersSwitch'
@@ -269,6 +269,22 @@ export function ViewSettings({ def, view, own, viewIndex, onUpdate, dateColumns,
           <p className="view-menu__label">Lines</p>
           <CalendarLineRow label="Between weeks" widthKey="weekLine" colorKey="weekLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
           <CalendarLineRow label="Between days" widthKey="dayLine" colorKey="dayLineColor" view={view} own={own} viewIndex={viewIndex} onUpdate={onUpdate} />
+          {/* Tell months apart (YAZ-5608): Rolling shades every other month (On by default), and a stepped line can go round each month. */}
+          <div className="view-settings-row">
+            <RowLabel icon="monthShade">Shade every other month</RowLabel>
+            <ChoiceSeg
+              label="Shade every other month"
+              value={view.monthShade === false ? 'off' : 'on'}
+              options={[['on', 'On'], ['off', 'Off']] as const}
+              onChange={(next) =>
+                onUpdate((d) => {
+                  if (next === 'off') d.views[viewIndex].monthShade = false
+                  else delete d.views[viewIndex].monthShade
+                })
+              }
+            />
+          </div>
+          <MonthLineRow view={view} viewIndex={viewIndex} onUpdate={onUpdate} />
           {/* Cross out when (YAZ-4864): a card whose page matches these rows is crossed out whole. */}
           {crossOut !== undefined && (
             <>
@@ -353,6 +369,38 @@ function CalendarLineRow({ label, widthKey, colorKey, view, own, viewIndex, onUp
         onColor={(next: ColorStrengthValue) => onUpdate((d) => chooseOwn(d.views[viewIndex], colorKey, writeColorStrength(next), defaults))}
       />
       <FromSettings own={own} viewKey={widthKey} also={colorKey} viewIndex={viewIndex} onUpdate={onUpdate} />
+    </div>
+  )
+}
+
+/**
+ * "Between months" (YAZ-5608): Off (no key), or a width and a colour with the "Between weeks" controls. Saved with the
+ * view alone: Settings › Folder pages has no default for it.
+ */
+function MonthLineRow({ view, viewIndex, onUpdate }: { view: ViewDef; viewIndex: number; onUpdate: Mutate }) {
+  return (
+    <div className="view-settings-row">
+      <RowLabel icon="lineWidth">Between months</RowLabel>
+      <CalLineControls
+        label="Between months"
+        offable
+        width={monthLineOf(view)}
+        color={monthLineColorOf(view)}
+        onWidth={(px) =>
+          onUpdate((d) => {
+            if (px === 0) {
+              delete d.views[viewIndex].monthLine
+              delete d.views[viewIndex].monthLineColor
+            } else d.views[viewIndex].monthLine = px
+          })
+        }
+        onColor={(next: ColorStrengthValue) =>
+          onUpdate((d) => {
+            d.views[viewIndex].monthLineColor = writeColorStrength(next)
+          })
+        }
+      />
+      <span className="view-from-settings" aria-hidden="true" />
     </div>
   )
 }

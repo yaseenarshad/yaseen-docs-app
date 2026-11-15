@@ -112,6 +112,12 @@ export interface ViewDef {
   /** The lines' colours (YAZ-4878): `gray` / `blue light` (`readColorStrength`). Absent = the Settings › Folder pages default (Gray, Medium). */
   weekLineColor?: string
   dayLineColor?: string
+  /** A calendar's "Shade every other month" (YAZ-5608): `false` = Off. Absent = On (Rolling shades every second month). */
+  monthShade?: boolean
+  /** A calendar's line "Between months" (YAZ-5608): whole px, 1–12, a stepped line round each month. Absent = Off. */
+  monthLine?: number
+  /** Its colour (`readColorStrength`, as `weekLineColor`). Absent = Blue, Medium. */
+  monthLineColor?: string
   /** A calendar's "Cross out when" (YAZ-4864): the Filter menu's conditions; a card whose page matches is crossed out whole, its columns too. Absent = none. */
   crossOut?: FilterNode
   /**
