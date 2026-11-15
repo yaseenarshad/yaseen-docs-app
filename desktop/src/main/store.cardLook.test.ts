@@ -8,8 +8,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { CARD_SPACING_CLEAN, CARD_SPACINGS, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SIZES, DEFAULT_SETTINGS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, SHOWN_HIDDEN_WORDS, INBOX_OPEN_AT, type SettingsState } from '@shared/types'
-import { createStore, isSettings } from './store'
+import { CARD_SPACING_CLEAN, CARD_SPACINGS, CARD_WIDTH_CLEAN, CARD_WIDTH_MAX, CARD_WIDTH_MIN, CARD_WIDTH_START, CARD_TEXT_SIZE_MAX, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TITLE_SIZE_MAX, CARD_TITLE_SIZE_MIN, cardTitleSizeStart, DEFAULT_SETTINGS, PAGE_BULLET_GAP_MAX, PAGE_BULLET_GAP_MIN, PAGE_BULLET_INDENT_MAX, PAGE_BULLET_INDENT_MIN, SHOWN_HIDDEN_WORDS, INBOX_OPEN_AT, type SettingsState } from '@shared/types'
+import { createStore, isSettings, sanitizeSettings } from './store'
 
 let dir: string
 let file: string
@@ -32,9 +32,9 @@ const CARD_LOOK: { [K in keyof SettingsState]?: readonly SettingsState[K][] } = 
   cardTablePosition: ['pages', 'left', 'center'],
   // YAZ-5144 round 2: Same as pages (null), or Custom px: its ends, its start (Reset) and Clean's.
   cardWidth: [null, CARD_WIDTH_MIN, CARD_WIDTH_CLEAN, CARD_WIDTH_START, CARD_WIDTH_MAX],
-  // YAZ-5387: Card text size, Same as pages (null) or Custom px: its ends and its start (Reset); Card title size's steps.
+  // YAZ-5387: Card text size and Card title size, Default (null) or Custom px: their ends and their start (Reset).
   cardTextSize: [null, CARD_TEXT_SIZE_MIN, CARD_TEXT_SIZE_START, CARD_TEXT_SIZE_MAX],
-  cardTitleSize: CARD_TITLE_SIZES,
+  cardTitleSize: [null, CARD_TITLE_SIZE_MIN, cardTitleSizeStart(null), CARD_TITLE_SIZE_MAX],
   cardLineSpacing: [1, 1.15, 1.5, 2],
   cardBlockGap: [2, 4, 8, 12],
   // The px rows: their ends, and Reset's value.
@@ -63,11 +63,17 @@ describe('YAZ-5053 round 4: each Card look setting is saved and reads back', () 
       expect(isSettings({ ...DEFAULT_SETTINGS, cardWidth }), String(cardWidth)).toBe(false)
   })
 
-  it('YAZ-5387: a Card text size out of range or not whole, or a Card title size not a step, does not pass the door; an old file reads the defaults', () => {
+  it('YAZ-5387: a Card text size out of range or not whole, does not pass the door; an old file reads the defaults', () => {
     for (const cardTextSize of [CARD_TEXT_SIZE_MIN - 1, CARD_TEXT_SIZE_MAX + 1, 16.5, '16', '16px', 'pages'])
       expect(isSettings({ ...DEFAULT_SETTINGS, cardTextSize }), String(cardTextSize)).toBe(false)
-    for (const cardTitleSize of ['huge', 1.125, null, 'Medium']) expect(isSettings({ ...DEFAULT_SETTINGS, cardTitleSize }), String(cardTitleSize)).toBe(false)
-    expect([DEFAULT_SETTINGS.cardTextSize, DEFAULT_SETTINGS.cardTitleSize]).toEqual([null, 'medium'])
+    for (const cardTitleSize of [CARD_TITLE_SIZE_MIN - 1, CARD_TITLE_SIZE_MAX + 1, 18.5, '18', 'medium', 'large'])
+      expect(isSettings({ ...DEFAULT_SETTINGS, cardTitleSize }), String(cardTitleSize)).toBe(false)
+    expect([DEFAULT_SETTINGS.cardTextSize, DEFAULT_SETTINGS.cardTitleSize]).toEqual([null, null])
+  })
+
+  it('YAZ-5387 round 2: a file saved with round 1\'s Small · Medium · Large reads Default; Custom starts at Default\'s px', () => {
+    for (const cardTitleSize of ['small', 'medium', 'large']) expect(sanitizeSettings({ ...DEFAULT_SETTINGS, cardTitleSize, cardTextSize: 20 }), cardTitleSize).toMatchObject({ cardTitleSize: null, cardTextSize: 20 })
+    expect([cardTitleSizeStart(null), cardTitleSizeStart(20), cardTitleSizeStart(32)]).toEqual([18, 23, 36])
   })
 
   it.each(CASES)('%s = %j passes the door, is saved, and reads back after a restart', async (key, value) => {
