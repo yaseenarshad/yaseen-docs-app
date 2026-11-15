@@ -53,16 +53,17 @@ export async function mountReview(t: Awaited<ReturnType<typeof answersSetup>>, o
   await settle()
   const buttons = () => [...host.querySelectorAll<HTMLButtonElement>('button')]
   const button = (name: string | RegExp) => buttons().find((b) => (typeof name === 'string' ? named(b) === name : name.test(named(b)))) ?? null
-  /** A new card takes taps after a short time on the screen (YAZ-5226): wait for it, as a person does. */
+  /** A new card (YAZ-5226), and the screen after the last card (S5), take taps after a short time: wait, as a person does. */
   const seen = async () => {
-    for (let i = 0; i < 100 && host.querySelector('[data-guard]') !== null; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 20))))
+    for (let i = 0; i < 100 && host.querySelector('[data-guard], [data-settling]') !== null; i++) await act(async () => void (await new Promise((r) => setTimeout(r, 20))))
   }
   /**
    * A tap on the button named `name`. The ⋯'s card actions (YAZ-5505) are a lazy chunk: it waits for them to draw.
    * A card action needs two taps (`data-two-tap`): `click` gives both, as a person who means it does; `once` only the first.
    */
   const click = async (name: string | RegExp, options: { once?: boolean } = {}) => {
-    if (host.querySelector('[data-guard]') !== null && (button(name)?.closest('.review__answers') != null)) await seen()
+    // The answer buttons of a new card, and the screen after the last card (S5), take no tap for 400 ms.
+    if (button(name)?.closest('.review__answers[data-guard], .review__stage--done[data-settling]') != null) await seen()
     for (let i = 0; i < 100 && button(name) === null && host.querySelector('[role="menu"] [aria-busy="true"]') !== null; i++) await settle()
     const b = button(name)
     if (b === null) throw new Error(`No button "${name}" on: ${host.textContent}`)
