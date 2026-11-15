@@ -100,7 +100,10 @@ export default function StatusSheet({ dot, token, answers, now, lastAt, onClose 
                   <span className="row__main">
                     {row.title}
                     <br />
-                    <span className="muted">{row.answer}</span>
+                    <span className="muted">
+                      {row.answer}
+                      {row.note !== undefined && ` · ${row.note}`}
+                    </span>
                   </span>
                   <DiscardAnswer title={row.title} answer={row.answer} label={`Discard the answer to ${row.title}`} onDiscard={() => Promise.all(row.seqs.map((seq) => answers.list?.discard(seq)))} />
                 </li>

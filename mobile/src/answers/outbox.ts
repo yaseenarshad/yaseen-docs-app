@@ -37,7 +37,12 @@ export interface LostAnswer {
   title: string
   /** When the send found the card gone. */
   lostAt: number
+  /** Why, when the card is not simply gone (YAZ-5514): `two-files`, two other files hold its ID, so the send cannot tell which. */
+  why?: LostWhy
 }
+
+/** Why a send refused an action whose card it still finds. */
+export type LostWhy = 'two-files'
 
 /** The stored shape. Raise `v` when it changes. */
 export interface AnswerBook {
@@ -63,8 +68,8 @@ export interface Outbox {
    * meanwhile is not there, and the send must plan again (YAZ-5180).
    */
   markTried(seqs: readonly number[]): Promise<number[]>
-  /** After a send: the actions `done` (GitHub has them) leave; the actions `lost` move to the lost list. */
-  settle(done: readonly number[], lost: readonly number[], now: number): Promise<void>
+  /** After a send: the actions `done` (GitHub has them) leave; the actions `lost` move to the lost list (with `why`, when given). */
+  settle(done: readonly number[], lost: readonly number[], now: number, why?: ReadonlyMap<number, LostWhy>): Promise<void>
   /** The person tapped Discard on a lost action. False when it was not there. */
   discard(seq: number): Promise<boolean>
   /** Reads the stored list again (another tab of the app may have changed it, row P4). */
@@ -135,12 +140,12 @@ export async function openOutbox(store: VaultStore, vault: string): Promise<Outb
         return { next: { ...b, waiting: b.waiting.map((w) => (want.has(w.seq) ? { ...w, tried: true as const } : w)) }, out: marked }
       }, [] as number[])
     },
-    settle(done, lost, now) {
+    settle(done, lost, now, why) {
       return change((b) => {
         const leave = new Set([...done, ...lost])
         const isLost = new Set(lost)
         if (!b.waiting.some((w) => leave.has(w.seq))) return null
-        const newlyLost = b.waiting.filter((w) => isLost.has(w.seq)).map((w): LostAnswer => ({ seq: w.seq, op: w.op, path: w.path, title: w.title, lostAt: now }))
+        const newlyLost = b.waiting.filter((w) => isLost.has(w.seq)).map((w): LostAnswer => ({ seq: w.seq, op: w.op, path: w.path, title: w.title, lostAt: now, ...(why?.has(w.seq) && { why: why.get(w.seq) }) }))
         return { next: { ...b, waiting: b.waiting.filter((w) => !leave.has(w.seq)), lost: [...b.lost, ...newlyLost] }, out: undefined }
       }, undefined)
     },

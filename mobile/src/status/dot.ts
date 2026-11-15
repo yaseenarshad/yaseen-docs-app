@@ -141,7 +141,12 @@ export interface LostRow {
   /** The answer in the words of the Review screen. */
   answer: string
   seqs: number[]
+  /** YAZ-5514: why the send refused it, when the card is not simply gone. */
+  note?: string
 }
+
+/** YAZ-5514 (W2): the words for a refused action whose card is on two other pages. */
+export const TWO_FILES_NOTE = 'The card is on two pages now'
 
 const ANSWER_WORDS: Record<CardOp['kind'], (op: CardOp) => string> = {
   review: (op) => (op.kind === 'review' && op.review.rating === 'again' ? 'Forgot' : 'Remembered'),
@@ -159,8 +164,9 @@ export function lostRows(lost: readonly LostAnswer[]): LostRow[] {
     const rank = l.op.kind === 'review' ? 2 : l.op.kind === 'next' && !l.op.on ? 0 : 1
     const row = rows.get(l.op.id)
     // YAZ-5245: a card with no title is named by its ID, as Review's lost line names it.
-    if (row === undefined) rows.set(l.op.id, { id: l.op.id, title: l.title.trim() === '' ? l.op.id : l.title, answer: ANSWER_WORDS[l.op.kind](l.op), seqs: [l.seq], rank })
+    if (row === undefined) rows.set(l.op.id, { id: l.op.id, title: l.title.trim() === '' ? l.op.id : l.title, answer: ANSWER_WORDS[l.op.kind](l.op), seqs: [l.seq], rank, ...(l.why === 'two-files' && { note: TWO_FILES_NOTE }) })
     else {
+      if (l.why === 'two-files') row.note = TWO_FILES_NOTE
       row.seqs.push(l.seq)
       if (rank > row.rank) Object.assign(row, { answer: ANSWER_WORDS[l.op.kind](l.op), rank })
     }

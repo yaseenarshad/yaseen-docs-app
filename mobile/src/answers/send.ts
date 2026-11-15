@@ -1,11 +1,11 @@
-import { cardsById } from '@shared/cardLinks'
 import { GithubError } from '../github/client'
 import type { VaultStore } from '../store'
 import type { Change, GithubRemote } from '../sync/githubRemote'
 import { syncPass } from '../sync/pass'
 import { INDEX_STATE, type PhoneIndex } from '../sync/phoneIndex'
 import { applyOps, type CardOp } from './ops'
-import type { Outbox, WaitingAnswer } from './outbox'
+import type { LostWhy, Outbox, WaitingAnswer } from './outbox'
+import { cardHolders, cardTarget } from './target'
 
 /** A send reads again and repeats at most this often when GitHub says the branch moved (`STALE_HEAD`). */
 export const MAX_STALE_HEADS = 5
@@ -56,8 +56,10 @@ export interface SendReport {
  * ONE SEND of the answer list (decision 2): read the head, apply the waiting actions to the newest text, make ONE commit,
  * move the branch. Each round:
  *  1. A sync pass brings the stored copy and its index to the newest head (only changed files download).
- *  2. Each action finds its card's file by card ID in the index of THAT head (`cardsById`): the Mac can move a card to
- *     another page, or into its own card file, after the answer. A page that only embeds the card is never written.
+ *  2. Each action finds its card's file in the index of THAT head (`cardTarget`, YAZ-5514): the file the person acted
+ *     in while it still holds the card ID; else the one file that holds it now (the Mac can move a card to another
+ *     page, or into its own card file, after the answer). Two files that hold it and neither is the person's: the
+ *     action is refused (lost, `two-files`). A page that only embeds the card is never written.
  *  3. `applyOps` on each file's stored text. A card that the newest head does not hold: the action is lost (it moves to
  *     the lost list and never blocks the others).
  *  4. No file changed: GitHub already holds every action (a send that reached GitHub but whose answer was lost). They
@@ -105,7 +107,7 @@ export async function sendOutbox(options: SendOptions): Promise<SendReport> {
           report.stored = false
         }
       } else report.stored = true
-      await outbox.settle(plan.done.map((w) => w.seq), plan.lost.map((w) => w.seq), now())
+      await outbox.settle(plan.done.map((w) => w.seq), plan.lost.map((w) => w.seq), now(), plan.why)
       report.sent = plan.done.length
       report.lost = plan.lost.length
       report.result = plan.done.length > 0 ? 'sent' : 'nothing'
@@ -123,6 +125,8 @@ interface SendPlan {
   /** Actions that the commit holds, or that GitHub already holds. */
   done: WaitingAnswer[]
   lost: WaitingAnswer[]
+  /** Why an action of `lost` was refused, when its card is not simply gone. */
+  why: Map<number, LostWhy>
 }
 
 /** Steps 2 and 3 on the stored copy, which the pass just brought to the head. */
@@ -130,13 +134,17 @@ async function planSend(store: VaultStore, vault: string, waiting: readonly Wait
   const checkpoint = await store.checkpoint(vault)
   const index = await store.getState<PhoneIndex>(vault, INDEX_STATE)
   if (checkpoint === null || index === undefined || index.commit !== checkpoint.commit) throw new Error('The phone has no full copy of the vault yet')
-  const byId = cardsById(Object.values(index.records))
+  const holders = cardHolders(Object.values(index.records))
   const files = new Map<string, WaitingAnswer[]>()
   const lost: WaitingAnswer[] = []
+  const why = new Map<number, LostWhy>()
   for (const w of waiting) {
-    const link = byId.get(w.op.id.toLowerCase())
-    if (link === undefined) lost.push(w)
-    else files.set(link.path, [...(files.get(link.path) ?? []), w])
+    const target = cardTarget(holders, w.op.id, w.path)
+    if ('path' in target) files.set(target.path, [...(files.get(target.path) ?? []), w])
+    else {
+      lost.push(w)
+      if ('twoFiles' in target) why.set(w.seq, 'two-files')
+    }
   }
   const changes: Change[] = []
   const done: WaitingAnswer[] = []
@@ -149,5 +157,5 @@ async function planSend(store: VaultStore, vault: string, waiting: readonly Wait
     for (const w of list) (missing.has(w.op) ? lost : done).push(w)
     if (out.content !== file.content) changes.push({ path, content: out.content })
   }
-  return { parent: checkpoint.commit, changes, done, lost }
+  return { parent: checkpoint.commit, changes, done, lost, why }
 }

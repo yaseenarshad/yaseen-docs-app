@@ -360,3 +360,36 @@ describe('YAZ-5073 checker gap 6: an action the file does not hold after all', (
   })
 })
 
+describe('YAZ-5514 W2: two files share a card ID (a copied page the Mac has not renumbered yet)', () => {
+  const SHARED = { 'a copy.md': pageText('Copy', 'NC-1', ['NC-2']), 'b.md': pageText('B', 'NC-1', ['NC-2']), 'c.md': pageText('C', 'NC-7', []) }
+  const made = (p: Awaited<ReturnType<typeof phone>>, path: string, ...ops: CardOp[]) => p.box.add(ops.map((op) => ({ op, path, title: `Title ${op.id}` })), 0)
+
+  it('an answer goes to the file it was made in while that file still holds the card', async () => {
+    const t = await setup(SHARED)
+    const p = await phone(t.s)
+    await made(p, 'b.md', answer('NC-2', 1), { kind: 'off', id: 'NC-2', on: true })
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 2, lost: 0, files: ['b.md'] })
+    expect(await t.reviewsOf('b.md', 'NC-2')).toEqual([at(1)])
+    expect(await t.reviewsOf('a copy.md', 'NC-2')).toEqual([])
+    expect((await t.remoteFiles())['a copy.md']).toBe(SHARED['a copy.md'])
+  })
+
+  it('its file no longer holds the card and ONE other file does: it follows the card there', async () => {
+    const t = await setup(SHARED)
+    const p = await phone(t.s)
+    await made(p, 'c.md', answer('NC-2', 1))
+    await t.s.git.push({ 'a copy.md': pageText('Copy', 'NC-1', ['NC-8']) }) // the Mac renumbered the copy
+    expect(await p.send()).toMatchObject({ result: 'sent', sent: 1, lost: 0 })
+    expect(await t.reviewsOf('b.md', 'NC-2')).toEqual([at(1)])
+  })
+
+  it('its file no longer holds the card and TWO others do: refused (lost, with why), nothing written', async () => {
+    const t = await setup(SHARED)
+    const p = await phone(t.s)
+    await made(p, 'c.md', answer('NC-2', 1))
+    const before = t.head()
+    expect(await p.send()).toMatchObject({ result: 'nothing', sent: 0, lost: 1, commit: null })
+    expect(t.head()).toBe(before)
+    expect(p.box.lost()).toMatchObject([{ op: answer('NC-2', 1), why: 'two-files' }])
+  })
+})

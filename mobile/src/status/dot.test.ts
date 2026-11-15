@@ -228,6 +228,11 @@ describe('1 vs N: what counts as one answer', () => {
       { id: 'NC-6', title: 'Undone', answer: 'Undo', seqs: [10] },
     ])
   })
+
+  it('YAZ-5514: an answer refused because its card is on two pages says so', () => {
+    const op = { kind: 'review' as const, id: 'NC-2', review: { at: '2026-11-14T06:01Z', rating: 'good' as const } }
+    expect(lostRows([{ seq: 1, op, path: 'c.md', title: 'Ohm', lostAt: 0, why: 'two-files' }])).toEqual([{ id: 'NC-2', title: 'Ohm', answer: 'Remembered', seqs: [1], note: 'The card is on two pages now' }])
+  })
 })
 
 describe('the time of the last sync (a tap on the dot)', () => {
