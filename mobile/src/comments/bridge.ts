@@ -1,7 +1,7 @@
 import type { Answers, AnswersEvent, AnswersOptions, AnswersState } from '../answers/answers'
 import type { CommentSender, CommentsState, NewCommentInput } from './sender'
 import type { WaitingComment } from './outbox'
-import { waitingComments } from './outbox'
+import { keptComments } from './outbox'
 
 /**
  * What a page needs from the comment list (YAZ-5461): the comments of the open vault that GitHub does not hold yet,
@@ -28,7 +28,8 @@ const loadSender = (): Promise<SenderModule> => import('./sender')
  * as "Sign in again"), and every trigger of the answer list ("Try now", hidden, online) sends both.
  *
  * The comment writer and its send are a chunk of their own: they load the first time a comment is written, or at the
- * start when the stored list has comments waiting (`waitingComments` reads only the stored list). A vault with no
+ * start when the stored list keeps comments (`keptComments` reads only the stored list; YAZ-5517: refused ones too, so
+ * the dot counts them after a restart). A vault with no
  * waiting comment loads nothing more.
  */
 export function withComments(answers: Answers, options: AnswersOptions, load: () => Promise<SenderModule> = loadSender): Answers {
@@ -40,9 +41,10 @@ export function withComments(answers: Answers, options: AnswersOptions, load: ()
   const portListeners = new Set<() => void>()
 
   const merged = (inner: AnswersState): AnswersState => {
-    if (comments === null || comments.vault !== inner.vault) return { ...inner, comments: 0, ticks: 0 }
+    if (comments === null || comments.vault !== inner.vault) return { ...inner, comments: 0, ticks: 0, notSent: undefined }
     const personal = inner.problem ?? (comments.problem !== null && ['UNAUTHORIZED', 'READ_ONLY', 'NOT_FOUND', 'NO_ACCESS'].includes(comments.problem) ? (comments.problem as AnswersState['problem']) : null)
-    return { ...inner, comments: comments.waiting, ticks: comments.ticks, sending: inner.sending || comments.sending, problem: personal }
+    const notSent = comments.refused === 0 ? undefined : { n: comments.refused, ticks: comments.refusedTicks, gone: comments.refusedGone }
+    return { ...inner, comments: comments.waiting, ticks: comments.ticks, notSent, sending: inner.sending || comments.sending, problem: personal }
   }
   const emit = (event: AnswersEvent) => {
     for (const l of [...listeners]) l(event)
@@ -67,7 +69,7 @@ export function withComments(answers: Answers, options: AnswersOptions, load: ()
   const ask = (vault: string | null) => {
     if (vault === null || vault === asked || loading !== null) return
     asked = vault
-    void waitingComments(store, vault).then((n) => {
+    void keptComments(store, vault).then((n) => {
       if (n > 0) void ensure()
     }, () => {})
   }

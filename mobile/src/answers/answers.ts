@@ -34,6 +34,8 @@ export interface AnswersState {
   comments?: number
   /** YAZ-5494: of `comments`, the check box ticks (the dot names them). */
   ticks?: number
+  /** YAZ-5517: comments and ticks the phone could not send (refused, kept with their words): the dot counts them. */
+  notSent?: { n: number; ticks: number; gone: number }
 }
 
 export type AnswersEvent =

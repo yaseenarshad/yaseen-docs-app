@@ -15,7 +15,7 @@ export interface DotInput {
    * 3C's answer list, counted as the person counts (`answersPart`). `loaded`: the list has read its stored answers for
    * the open vault (YAZ-5297). Before that, the counts are not known, so the dot cannot say green.
    */
-  answers: { loaded: boolean; waiting: number; lost: number; sending: boolean; problem: string | null; stuck?: 'store' | 'list' | null; comments?: number; ticks?: number }
+  answers: { loaded: boolean; waiting: number; lost: number; sending: boolean; problem: string | null; stuck?: 'store' | 'list' | null; comments?: number; ticks?: number; notSent?: { n: number; ticks: number; gone: number } }
   /** The phone's own signal (`navigator.onLine`). The engine learns it only at its next poll. */
   online: boolean
   /** The token's end date (3E, round 10 item 18). */
@@ -30,6 +30,7 @@ export type DotReason =
   | 'waiting-offline'
   | 'slowed'
   | 'lost'
+  | 'not-sent'
   | 'offline'
   | 'token-soon'
   | 'sign-in'
@@ -72,6 +73,7 @@ const RED: Record<string, { reason: DotReason; words: string }> = {
  * 1. red: the person must act. A 401 or a token that ended ("Sign in again"), a vault that is gone, a vault too large,
  *    a full phone. Never for no signal, GitHub down, "slow down" or a failed read: those pass by themselves.
  * 2. amber "N answers could not be saved": a lost answer needs a tap (Discard). It stays until then.
+ *    YAZ-5517: so does a comment or a tick the phone could not send ("1 comment couldn't be sent: its page is gone").
  * 3. no signal (the phone's or the engine's): amber "N answers waiting · no signal" when answers wait, else grey.
  * 4. blue "Syncing…": a pass or a send runs.
  * 5. amber "N answers waiting" (also while GitHub asked to wait); "1 comment waiting" for a page's comment (YAZ-5461).
@@ -88,6 +90,7 @@ export function syncDot(input: DotInput): Dot {
 /** YAZ-5216: the short form keeps each fact of the words; only the long words of two states change. */
 function shortWords(dot: Omit<Dot, 'short'>, { answers }: DotInput): string {
   if (dot.reason === 'waiting-offline') return `${answers.waiting} waiting · offline`
+  if (dot.reason === 'not-sent') return `${answers.notSent!.n} not sent`
   if (dot.reason === 'lost') return `${plural(answers.lost, 'answer', 'answers')} not saved`
   return dot.words
 }
@@ -110,6 +113,11 @@ function dotWords({ sync, answers, online, token }: DotInput): Omit<Dot, 'short'
     return { state: 'off', words: 'Checking…', reason: 'checking' }
   }
   if (answers.lost > 0) return { state: 'pending', words: `${plural(answers.lost, 'answer', 'answers')} could not be saved`, reason: 'lost' }
+  const no = answers.notSent
+  if (no !== undefined && no.n > 0) {
+    const what = no.ticks === no.n ? plural(no.n, 'check box', 'check boxes') : no.ticks === 0 ? plural(no.n, 'comment', 'comments') : plural(no.n, 'change', 'changes')
+    return { state: 'pending', words: `${what} couldn't be sent${no.gone === no.n ? `: ${no.n === 1 ? 'its' : 'their'} page is gone` : ''}`, reason: 'not-sent' }
+  }
   // YAZ-5461: `waiting` counts the comments too (`comments` of them), and those the check box ticks (`ticks`, YAZ-5494);
   // the words name what waits when it is one kind.
   const comments = answers.comments ?? 0
@@ -175,7 +183,7 @@ export function lostRows(lost: readonly LostAnswer[]): LostRow[] {
 export function answersPart(state: AnswersState | null, waiting: readonly WaitingAnswer[], noList = false, stuck: 'store' | 'list' | null = null): DotInput['answers'] {
   if (state === null) return { loaded: noList, stuck, waiting: 0, lost: 0, sending: false, problem: null }
   const comments = state.comments ?? 0
-  return { loaded: true, waiting: waitingCount(waiting) + comments, lost: lostRows(state.lost).length, sending: state.sending, problem: state.problem, comments, ticks: state.ticks ?? 0 }
+  return { loaded: true, waiting: waitingCount(waiting) + comments, lost: lostRows(state.lost).length, sending: state.sending, problem: state.problem, comments, ticks: state.ticks ?? 0, notSent: state.notSent }
 }
 
 const MIN = 60_000
