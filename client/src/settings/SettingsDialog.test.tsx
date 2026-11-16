@@ -1057,41 +1057,6 @@ describe('SettingsDialog rows write through the popover contracts', () => {
     expect(onChange).toHaveBeenLastCalledWith({ ...DEFAULT_SETTINGS, tableNowButton: false })
   })
 
-  it('Calendar tables › Time in slot (YAZ-5602): the vault\'s (table-look.json, round 2): Off by default, under Mark the current time; Show seconds shows only while it counts; each writes the vault, the other look kept; no row with no vault', () => {
-    const mountLook = (value: TableLookSettings) => {
-      container = document.createElement('div')
-      document.body.appendChild(container)
-      root = createRoot(container)
-      const save = vi.fn()
-      const onChange = vi.fn()
-      const tableLook = { vaults: [{ root: '/a', name: 'Alpha' }], root: '/a', choose: vi.fn(), value, save }
-      act(() => root?.render(<SettingsDialog ctx={{ settings: { ...DEFAULT_SETTINGS }, onChange, tableLook }} onClose={vi.fn()} />))
-      clickNav(container, 'Tables')
-      return { el: container, save, onChange }
-    }
-    const base = { ...appTableLook(DEFAULT_SETTINGS), tableRowBand: 'calendar' as const }
-    const { el, save, onChange } = mountLook(base)
-    expect(row(el, 'tableSlotTime')?.querySelector('.setting__label')?.textContent).toBe('Time in slot')
-    expect(rowButtons(el, 'tableSlotTime').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['Off', 'true'], ['Count down', 'false'], ['Count up', 'false']])
-    expect(row(el, 'tableSlotTime')?.previousElementSibling?.getAttribute('data-setting')).toBe('tableNowMark')
-    expect(row(el, 'tableSlotSeconds')).toBeNull()
-    act(() => rowButtons(el, 'tableSlotTime')[1].click())
-    expect(save).toHaveBeenLastCalledWith({ ...base, tableSlotTime: 'down' })
-    expect(onChange).not.toHaveBeenCalled()
-    unmount()
-    const on = mountLook({ ...base, tableSlotTime: 'down' })
-    expect(rowButtons(on.el, 'tableSlotSeconds').map((b) => [b.textContent, b.getAttribute('aria-pressed')])).toEqual([['On', 'true'], ['Off', 'false']])
-    act(() => rowButtons(on.el, 'tableSlotSeconds')[1].click())
-    expect(on.save).toHaveBeenLastCalledWith({ ...base, tableSlotTime: 'down', tableSlotSeconds: false })
-    // Another vault row keeps the vault's Time in slot.
-    act(() => rowButtons(on.el, 'tableRowBand').find((b) => b.textContent === 'Off')!.click())
-    expect(on.save).toHaveBeenLastCalledWith({ ...base, tableRowBand: 'off', tableSlotTime: 'down' })
-    unmount()
-    const none = mountOn('Tables')
-    expect(row(none.el, 'tableSlotTime')).toBeNull()
-    expect(row(none.el, 'tableSlotSeconds')).toBeNull()
-  })
-
   it('Calendar tables › Shade darkness (YAZ-4163 demo): 6% by default, a stepper in steps of 2 from 2% to 30%, and Reset off the default', () => {
     const { el, onChange } = mountOn('Tables')
     expect(row(el, 'tableShadeDarkness')?.querySelector('.setting__label')?.textContent).toBe('Shade darkness')

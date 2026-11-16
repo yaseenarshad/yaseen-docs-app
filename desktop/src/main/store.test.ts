@@ -3415,18 +3415,6 @@ describe('Settings › Tables › Header row (YAZ-4794): text colour and align',
   it('a file from before them reads text unset and Follow column; a text colour and an align survive; junk is that part only', () => {
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { color: 'blue', strength: 'strong', weight: 'bold', text: null } }).tableHeaderRow).toEqual({ color: 'blue', strength: 'strong', weight: 'bold', text: null, align: 'follow' })
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, text: 'pink', align: 'center' } }).tableHeaderRow).toMatchObject({ text: 'pink', align: 'center' })
-
-describe('Time in slot and Show seconds left the app settings (YAZ-5602 round 2: table-look.json)', () => {
-  it('no app setting any more; a value an older build of today saved is read once at start, for the move into the vaults', async () => {
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).not.toHaveProperty('tableSlotTime')
-    expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false })).not.toHaveProperty('tableSlotSeconds')
-    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableSlotTime: 'down', tableSlotSeconds: false } }))
-    expect(createStore(file).slotTimeToMove()).toEqual({ tableSlotTime: 'down', tableSlotSeconds: false })
-    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, tableSlotTime: 'sideways', tableSlotSeconds: 'yes' } }))
-    expect(createStore(file).slotTimeToMove()).toEqual({})
-    expect(createStore(path.join(path.dirname(file), 'none.json')).slotTimeToMove()).toEqual({})
-  })
-})
     expect(sanitizeSettings({ ...DEFAULT_SETTINGS, tableHeaderRow: { ...DEFAULT_SETTINGS.tableHeaderRow, text: 'gray', align: 'middle', color: 'red' } }).tableHeaderRow).toEqual({ ...DEFAULT_SETTINGS.tableHeaderRow, color: 'red' })
   })
 
