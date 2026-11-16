@@ -120,12 +120,12 @@ describe('YAZ-5659: Settings starts with the vaults; each row a number, a name a
     expect(h.button('Open Vault, yaseen/vault')).not.toBeNull()
   })
 
-  it('the numbers follow the list; opening a vault keeps them; the top bar shows the open one\'s', async () => {
+  it('the numbers follow the list; opening a vault keeps them; YAZ-5663: never a number in the top bar', async () => {
     h = await twoVaults()
-    expect(topBadge(h)).toBe('2')
+    expect(topBadge(h)).toBeNull()
     await h.click('Settings')
     await h.click('Open Vault, yaseen/vault')
-    expect(topBadge(h)).toBe('1')
+    expect(topBadge(h)).toBeNull()
     await h.click('Settings')
     expect(rows(h).map((r) => [r.n, r.name, r.open])).toEqual([
       ['1', 'Vault', 'Open'],
@@ -133,7 +133,7 @@ describe('YAZ-5659: Settings starts with the vaults; each row a number, a name a
     ])
   })
 
-  it('removing a vault renumbers the rest (remove 1: the old 2 becomes 1); one vault left, no badge in the top bar', async () => {
+  it('removing a vault renumbers the rest (remove 1: the old 2 becomes 1)', async () => {
     h = await twoVaults()
     await h.click('Settings')
     await h.click('More for yaseen/vault')
@@ -142,7 +142,6 @@ describe('YAZ-5659: Settings starts with the vaults; each row a number, a name a
     expect(rows(h).map((r) => [r.n, r.hue, r.name])).toEqual([['1', 'blue', 'Second']])
     await h.click('Back')
     expect(h.host.querySelector('.topbar__title')?.textContent).toBe('second')
-    expect(topBadge(h)).toBeNull()
   })
 
   it('the badge: 34 px rounded square, medium weight, a soft colour per number (1 blue, 2 amber, 3 green, 4 pink, again)', () => {
@@ -156,6 +155,8 @@ describe('YAZ-5659: Settings starts with the vaults; each row a number, a name a
       expect(css).toContain(`.vault-badge[data-hue='${hue}'] {`)
       expect(css).toContain(`:where([data-scheme='dark']) .vault-badge[data-hue='${hue}'] {`)
     }
+    // YAZ-5663: the top bar has no badge, so no top-bar size of it either.
+    expect(css).not.toContain('vault-badge--top')
   })
 
   it('a long name and a long path each stay on one line, cut with "…", never wrapped into the other', async () => {

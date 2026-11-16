@@ -99,6 +99,27 @@ describe('Settings › Appearance (YAZ-5565)', () => {
     expect([scheme(), colorScheme(), ...metas()]).toEqual(['dark', 'light dark', '#ffffff', '#1e1e1e'])
   })
 
+  it('YAZ-5661: back on screen (from GitHub, the iPhone\'s Settings, the app switcher), the page paints again', async () => {
+    const system = fakeSystem(false)
+    const a = await load()
+    a.startAppearance()
+    // The iPhone turned dark while the app slept, and no change came.
+    ;(matchMedia('') as { matches: boolean }).matches = true
+    window.dispatchEvent(new Event('pageshow'))
+    expect([scheme(), ...metas()]).toEqual(['dark', '#ffffff', '#1e1e1e'])
+    system.turn(false)
+    // Dark chosen; the bar tags as the page first had them (a page shown again from the cache).
+    a.setAppearance('dark')
+    for (const m of document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]')) m.content = '#ffffff'
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect([scheme(), colorScheme(), ...metas()]).toEqual(['dark', 'dark', '#1e1e1e', '#1e1e1e'])
+  })
+
+  it("YAZ-5661: the page's own background is the theme's (iOS colours the strip behind the clock from it)", () => {
+    const css = readFileSync(`${import.meta.dirname}/../styles.css`, 'utf8')
+    expect(css).toMatch(/\nhtml \{[^}]*background: var\(--bg\);/)
+  })
+
   it('the drawings draw in the chosen theme, and again when it changes', async () => {
     fakeSystem(false)
     const a = await load()

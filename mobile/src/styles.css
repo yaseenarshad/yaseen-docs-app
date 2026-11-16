@@ -60,6 +60,8 @@ html:root:where([data-scheme='dark']) {
 }
 
 html {
+  /* YAZ-5661: iOS colours the strip behind the clock and battery from the page's own background: the theme's. */
+  background: var(--bg);
   /* iOS must not grow the text on a turn, nor zoom on a double tap. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
@@ -662,12 +664,6 @@ button,
 :where([data-scheme='dark']) .vault-badge[data-hue='amber'] { --badge-bg: #4a3a17; --badge-fg: #f2cf87; }
 :where([data-scheme='dark']) .vault-badge[data-hue='green'] { --badge-bg: #1f3f2b; --badge-fg: #a2dcb5; }
 :where([data-scheme='dark']) .vault-badge[data-hue='pink'] { --badge-bg: #4d2236; --badge-fg: #f5aecd; }
-.vault-badge--top {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  font-size: 13px;
-}
 .vault-row__words {
   display: flex;
   flex-direction: column;

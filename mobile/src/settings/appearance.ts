@@ -7,6 +7,10 @@ import { readAppearance, saveAppearance, type Appearance } from '../store/appear
  * iPhone live (the media query's change). `main.tsx` and the `/friend` page call `startAppearance()` first, before
  * anything draws. The address bar and status bar colour (`theme-color`) and the browser's own controls (`color-scheme`)
  * follow too; the drawings and diagrams draw in it (`schemeWatch`, for `drawing/watchDrawings.ts`).
+ * YAZ-5661: the page paints again each time it is back on screen (from GitHub's pages, the iPhone's Settings, the app
+ * switcher, a page kept by the browser): iOS can give the strip behind the clock its own colour while the app is away,
+ * and a turn of the iPhone while the app slept may send no change. The manifest has no bar colour (one colour for
+ * light and dark: iOS showed its white in the dark app).
  */
 export type Scheme = 'light' | 'dark'
 
@@ -58,6 +62,8 @@ export function startAppearance(): void {
     started = true
     systemDark()
     media?.addEventListener?.('change', () => chosen === 'system' && paint())
+    addEventListener('pageshow', () => paint())
+    document.addEventListener('visibilitychange', () => document.visibilityState !== 'hidden' && paint())
   }
   paint()
 }

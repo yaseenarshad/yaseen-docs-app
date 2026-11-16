@@ -140,7 +140,9 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   const tokens = tokenStoreOn(backend)
   await tokens.write(VAULT, 'github_pat_11FIXTURE0' + 'f'.repeat(72))
   const vault = { repo: REPO, branch: BRANCH, addedAt: 1 }
-  await saveVaultList(store, { vaults: [vault], open: VAULT })
+  // YAZ-5663: a second vault on the phone, added first (the open one is number 2): the top bar shows no number.
+  const others = name === 'review-two-vaults' ? [{ repo: 'demo/notecards-scratch-vault', branch: 'main', addedAt: 0 }] : []
+  await saveVaultList(store, { vaults: [...others, vault], open: VAULT })
   const sync = fakeSync()
   sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
   const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, media, friends: fakeFriends(store, false), fetch: async () => new Response('{}', { status: 401 }) }

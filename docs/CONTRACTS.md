@@ -786,6 +786,32 @@ Files: `shared/cardFileFormat.ts`, `shared/cardConvert.ts`, `shared/syncConflict
 **The format hint** (🔒 decision 8, suggestion 18; YAZ-5114; `client/src/editor/card/cardFormatHint.ts`): in Edit card, under the key row, `CardBlockView` puts ONE quiet line (`.card__formats`) when the card's text is empty or only `CARD_TITLE_PLACEHOLDER` ("Title") as Edit card opens: `/card`, and New card's empty card file. The line is "Formats in your card skill: a · b · c · N more." (`cardFormatHintText`: the first three names, then the count of the rest) and a "Learn the formats" button. The first text in the card removes it for the rest of that edit (the page editor's `changed`, the raw-text editor's `update`); a card with text when Edit card opens never shows it. The card window and a card file tab use the same view. It is UI only: nothing reaches the file. The names: main's door `app.cardFormats(vault)` (`desktop/src/main/ipc/cardFormats.ts`, read only) uses `cardSkillFolder` and answers `{ folder, formats }` for the skill's `formats` folder (`CARD_SKILL_FORMATS`), the names by `cardFormatNames` (each `.md` page without `.md`, a dot file skipped, A to Z), or null with no `formats` folder; no folder or no name → no line. App reads it for each vault of the window, again on window focus, and hands it over with Card tips through `setCardFormatHints`; a card takes the vault that holds its page (`cardFormatsFor`). "Learn the formats" sends ONE bubbling DOM event `CARD_FORMATS_OPEN` (`mdapp:card-formats-open`, detail `{ folder }`), as `CARD_OPEN`; App's listener opens the course at its chapter on good cards and formats (`requestCourseChapter(FORMATS_CHAPTER_TITLE, fallback)`, `client/src/course/openCourse.ts`: the id of the chapter titled "What makes a good card" in `COURSE`, read with `import()` so the script stays in the lazy course chunk). Only when the course cannot open (the script does not load, or has no such chapter) it shows the folder in Files when it is in a vault of the window, else (the app's copy) in Finder (`cardFormatsOpenIn`). Settings › Cards › **Card tips** (`cardTips`, an app setting, default On, shown with Review off too) Off: no line. Proof: `client/src/editor/card/cardFormatHint.test.ts`, `client/src/editor/CardFileView.test.tsx` (YAZ-5114), `desktop/src/main/ipc/cardFormats.test.ts`, `desktop/src/main/store.test.ts` (Card tips).
 
 Files: `desktop/src/main/cardSkill.ts`, `desktop/src/main/index.ts`, `desktop/package.json`, `skills/card-skill/.yaseendocs/`, `tools/perf/measureBudget.mjs` (`cardSkillFails`), `shared/cardSkillFolder.ts`, `desktop/src/cli/cli.ts`.
+## Review rules v1 (YAZ-5655 — the comment "## LOCKED — Review rules v1", 2026-11-16, LOCKED; built in YAZ-5657)
+
+The rules of the Review on the Mac and the phone. FSRS only sets a card's next due date from its reviews; everything here is the app's own logic. One code path: `shared/cardSchedule.ts` (`cardPlan`, the replay) and `client/src/review/useCardReview.ts`, which the phone's Review uses too. A change needs a new "## Decision (Yaseen)" on YAZ-5655. Each rule has a test that cites its number (`client/src/review/reviewRulesV1.test.tsx`).
+
+1. Two lists, **New cards** and **Due today**. No Learning list or count.
+2. A New card has no ✓ yet (`isNewCard`). A ✕ keeps it New until its first ✓. It counts once against New cards a day, on the day it was begun.
+3. After its first ✓, a new card shows once more the same day, under Due today.
+4. Due today holds the cards due by today. A ✕ keeps the card there; it comes back in the session until ✓.
+5. Inside Due today: the most overdue day first, then one random order for the day.
+6. Start anywhere: All cards, Due today or New cards, in any order.
+7. All cards = Up next + Due today + New cards. Each card is in one list only.
+8. The % screen counts the first answer of every card in the pass, an Up next card too.
+9. In "N of M", N is the card's place among the cards seen; M never grows.
+10. Up next puts a card at the front. It never takes a New cards place or a Due today place. An Up next answer that begins a new card writes `<ID> new` in today's Up next list, so that card holds no New cards place.
+11. After an action that is not an answer (Archive, Up next on or off, Reset, a freed New cards place), the lists rebuild at once. A freed place takes the next new card. Reset never shows a card that is not in today's list.
+12. A card begun on the other device joins the open session after a sync, as a Due today card for its second ✓.
+13. The day starts at local midnight.
+14. "The same day" for the schedule is the local day, not UTC: the replay gives FSRS each time in the local day.
+15. An answer saves the time the button was pressed.
+16. A review is at least 1 ms after the card's last review.
+17. Recent (sidebar) uses the shared day timer (`useLocalDay`).
+
+Kept: the names "Due today" and "New cards"; two buttons (four as a setting); learning steps 1m, 1m; relearning 1m; Archive only (no bury, no suspend); the reviews on the card line. Later, not now: leeches, cram, the optimizer, stats, load balancing, reverse cards, a top number of reviews a day, a "Review day starts at" setting.
+
+**Fix later** (YAZ-5097, YAZ-5430; Q59 of YAZ-5647) is outside these rules: the line's `fix` changes no count and no queue, the Inbox never shows or sets it, and only a hand clears it (Edit card's Done keeps it).
+
 ## The phone: Notecard (YAZ-5055 — decisions on the working log YAZ-5057; `mobile/README.md` has the app's layout)
 
 The phone app (`mobile/`) keeps a copy of each vault in the browser and talks only to `api.github.com`. This section is what it reads and writes in a vault and in the friends gists. The code is the spec: each item names its file.
@@ -802,7 +828,7 @@ The phone app (`mobile/`) keeps a copy of each vault in the browser and talks on
 
 **The older-app rule** (round 10, addition 17): the phone never writes what an older Mac cannot read. The card line keeps a part it does not know as its text, in its place (`shared/cardLine.ts`), so an older Mac keeps `fix` byte for byte. A build from before YAZ-5308 reads `title "…"` the same way, and keeps it on each of its writes (its own marks then go before it, after the ID); a comma in the title splits it there into unknown parts, written back with `, ` (`desktop/src/main/cardTitleLine.test.ts`, with a frozen copy of that build's parser). A friends file keeps its unknown fields on a write, and a file with a newer `v` is not written (below).
 
-**The friends gists** (decisions 14 to 25 and round 16; `shared/friendStats.ts`, `shared/friendGists.ts`, `shared/friendGroups.ts`). Each is ONE JSON file in a secret gist, with `v: 1`. The file name finds it:
+**The friends gists** — off for now: `FRIENDS_ENABLED = false` in `shared/features.ts` (YAZ-5652) turns Friends off on the Mac and the phone, and nothing below runs or writes while it is off. The code and this contract stay for the day it comes back. (Decisions 14 to 25 and round 16; `shared/friendStats.ts`, `shared/friendGists.ts`, `shared/friendGroups.ts`). Each is ONE JSON file in a secret gist, with `v: 1`. The file name finds it:
 
 | Shape | File | Holds |
 | -- | -- | -- |
@@ -813,7 +839,14 @@ The phone app (`mobile/`) keeps a copy of each vault in the browser and talks on
 
 A reader takes a whole-number `v` above 1 as `newer` ("needs a newer app") and writes nothing to that file; a file that is not a JSON object with `v: 1` is unreadable, and the app does not write the friends list then (`LIST_NEEDS_REPAIR`). GitHub allows 100 gist updates an hour for the account (`GIST_UPDATES_PER_HOUR`, `shared/friendSend.ts`), shared by the phone, the Mac, cheers and nudges. A send keeps a reserve of one update for each pointer plus `MARK_HEADROOM` (5) (`reserveFor`), so a remove can always rewrite the pointers. The numbers go at most every `PUBLISH_EVERY_MS` (5 minutes) while the person reviews; the Friends tab reads friends every `FRIENDS_POLL_MS` (1 minute).
 
-**No QR code** (YAZ-5098, YAZ-5650): the Mac shows the phone no code and the phone has no "Scan a code"; the phone signs in with its own GitHub token (Sign in, `mobile/src/screens/SignIn.tsx`).
+**No QR code** (YAZ-5098, YAZ-5650): the Mac shows the phone no code and the phone has no "Scan a code". The phone signs in on its own (`mobile/src/screens/SignIn.tsx`), with GitHub (below) or with a pasted token ("Use a token instead").
+
+**Sign in with GitHub** (YAZ-5645, decisions D1–D8 on the issue). One GitHub App, `yaseen-docs`: Contents read and write, Metadata read, no Gists. Its two callback addresses are `https://docs.yaseenarshad.com/auth/callback` and `http://localhost:5173/auth/callback`.
+- **The flow** (`mobile/src/auth/githubApp.ts`): a random state and a PKCE (S256) verifier, kept for 10 minutes and used once (`PENDING_MS`, `mobile/src/store/tokenStore.ts`). The app goes to GitHub in the same window. On `/auth/callback` it checks the state first, then removes the code from the address bar. "Add another GitHub account" adds `prompt=select_account`.
+- **The Worker** (`mobile/worker/index.ts`, the site's own Worker): `POST /api/github/token`, `/api/github/refresh` and `/api/github/revoke`. It runs first only for `/api/github/*`; every other path is the static files. It accepts only this site's Origin, only POST and only the callback address above. It adds the client secret (`GITHUB_CLIENT_SECRET`, a Worker secret), answers `no-store`, and stores nothing. The app's CSP has `'self'` in `connect-src` for these calls; the service worker never keeps `/api/github/*`.
+- **Tokens:** one token pair for each GitHub account, on the device, shared by that account's vaults. The app renews 5 minutes before the 8 hours end (`RENEW_EARLY_MS`), one tab at a time (a Web Lock). After a 401 the sync renews once and tries once more. A dead refresh token signs the account out, and its vaults show Sign in again. Sign out (Settings › GitHub, or Sign out and erase this phone) also revokes the sign-in on GitHub (D7).
+- **Repos** come from the app's installations (`GET /user/installations`, then `/user/installations/{id}/repositories`), never `/user/repos`. A repo that answers 404 and is not on the list shows "Yaseen Docs can no longer see …" (`mobile/src/app/help.ts`).
+- A vault on a pasted token keeps working beside a GitHub vault. Each vault keeps the account it was added with.
 
 Files: `mobile/src/sync/` (`plan.ts`, `pass.ts`, `githubRemote.ts`, `cadence.ts`), `mobile/src/answers/` (`ops.ts`, `send.ts`, `answers.ts`, `reviewHost.ts`), `mobile/src/auth/check.ts`, `mobile/src/media/ahead.ts`, `shared/cardLine.ts`, `shared/friendStats.ts`, `shared/friendGists.ts`, `shared/friendGroups.ts`, `shared/friendSend.ts`.
 
