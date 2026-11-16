@@ -150,6 +150,53 @@ describe('Settings › Appearance (YAZ-5565)', () => {
     expect([scheme(), ...metas()]).toEqual(['dark', '#ffffff', '#1e1e1e'])
   })
 
+  it('YAZ-5661 round 3: the head script (public/appearance-boot.js) gives the first paint the same scheme as the app, for each choice and iPhone mode', async () => {
+    const boot = readFileSync(`${import.meta.dirname}/../../public/appearance-boot.js`, 'utf8')
+    for (const saved of [null, 'system', 'light', 'dark', 'purple'])
+      for (const dark of [false, true]) {
+        localStorage.clear()
+        if (saved !== null) localStorage.setItem(APPEARANCE_KEY, saved)
+        fakeSystem(dark)
+        delete document.documentElement.dataset.scheme
+        new Function(boot)()
+        const first = scheme()
+        const a = await load()
+        a.startAppearance()
+        expect([saved, dark, first]).toEqual([saved, dark, a.schemeNow()])
+      }
+    // A storage that throws: the iPhone's mode, no error.
+    vi.stubGlobal('localStorage', { getItem: () => { throw new Error('blocked') } })
+    fakeSystem(true)
+    delete document.documentElement.dataset.scheme
+    expect(() => new Function(boot)()).not.toThrow()
+    expect(scheme()).toBe('dark')
+  })
+
+  it('YAZ-5661 round 3: a switch puts a NEW strip at the top (iOS reads a bar that appears); leaving the app paints first', async () => {
+    const frames: FrameRequestCallback[] = []
+    vi.stubGlobal('requestAnimationFrame', (f: FrameRequestCallback) => frames.push(f))
+    document.body.innerHTML = '<div class="status-strip" aria-hidden="true"></div><div id="root"></div>'
+    const system = fakeSystem(false)
+    const a = await load()
+    a.startAppearance()
+    frames.splice(0).forEach((f) => f(0))
+    const before = document.querySelector('.status-strip')
+    a.setAppearance('dark')
+    frames.splice(0).forEach((f) => f(0))
+    const after = document.querySelectorAll('.status-strip')
+    expect(after.length).toBe(1)
+    expect(after[0]).not.toBe(before)
+    expect(after[0].getAttribute('aria-hidden')).toBe('true')
+    expect(document.body.firstElementChild).toBe(after[0])
+    // The iPhone turned while the app showed, with no change event: leaving the app (its snapshot) paints first.
+    a.setAppearance('system')
+    ;(matchMedia('') as { matches: boolean }).matches = true
+    window.dispatchEvent(new Event('pagehide'))
+    expect(scheme()).toBe('dark')
+    system.turn(false)
+    expect(scheme()).toBe('light')
+  })
+
   it('the drawings draw in the chosen theme, and again when it changes', async () => {
     fakeSystem(false)
     const a = await load()

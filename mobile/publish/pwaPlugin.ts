@@ -27,7 +27,7 @@ export const WORKER_SOURCES = ['../src/pwa/sw.ts', '../src/pwa/swCore.ts', '../s
 
 /**
  * What the worker keeps: every build file (ALL chunks, the lazy ones too, so the sync engine and the QR reader work
- * offline), the two pages, the manifest and the icons. Not: the splash pictures (iOS reads them at "Add to Home
+ * offline), the two pages, the manifest, the icons and the head's Appearance script (YAZ-5661). Not: the splash pictures (iOS reads them at "Add to Home
  * Screen"), `_headers`, the worker itself, source maps, anything else in `public/`, and NO draw.io file (YAZ-5533:
  * `drawio/<hash>/…` is fetched the first time a diagram is opened, then kept by the worker's draw.io cache; so is
  * the app's own small diagram chunk, `notInstalled`).
@@ -39,7 +39,7 @@ export function shellFiles(bundleFiles: string[], publicFiles: string[], notInst
     if (file in SERVED) out.add(SERVED[file])
     else if (file.startsWith('assets/')) out.add(`/${file}`)
   }
-  for (const file of publicFiles) if (file === 'manifest.webmanifest' || file.startsWith('icons/')) out.add(`/${file}`)
+  for (const file of publicFiles) if (file === 'manifest.webmanifest' || file === 'appearance-boot.js' || file.startsWith('icons/')) out.add(`/${file}`)
   return [...out].sort()
 }
 

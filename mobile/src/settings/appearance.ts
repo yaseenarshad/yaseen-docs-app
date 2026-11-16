@@ -15,6 +15,9 @@ import { readAppearance, saveAppearance, type Appearance } from '../store/appear
  * opaque bar across the top of the page: it takes that bar's background. `index.html` has one (`.status-strip`, the
  * safe area's height, `--bg`), so the strip is the theme's. Each paint nudges the bar tags for one frame (the colour
  * with an `fe` alpha, then back): a tag change makes iOS read the strip again at once.
+ * YAZ-5661 round 3: the first paint is already right (`public/appearance-boot.js`, the same rule, in the head). A
+ * change of the scheme puts a NEW strip in place of the old (iOS reads a fixed bar that appears, as when a menu
+ * opens). Leaving the app (`pagehide`, hidden) paints first, so the snapshot iOS keeps has the right colours.
  */
 export type Scheme = 'light' | 'dark'
 
@@ -56,6 +59,7 @@ function paint(): void {
   nudge(metas)
   const was = shown
   shown = scheme
+  if (was !== null && was !== scheme) renewStrip()
   if (was !== null && was !== scheme) for (const f of [...changes]) f()
 }
 
@@ -74,6 +78,17 @@ function nudge(metas: HTMLMetaElement[]): void {
   })
 }
 
+/** The next frame: a fresh `.status-strip` in place of the old one (the same element, new to iOS). */
+function renewStrip(): void {
+  if (typeof requestAnimationFrame !== 'function') return
+  requestAnimationFrame(() => {
+    const old = document.querySelector('.status-strip')
+    if (old === null) return
+    const fresh = old.cloneNode(false)
+    old.replaceWith(fresh)
+  })
+}
+
 let started = false
 /** Reads the saved choice and paints it; from then on System follows the iPhone. */
 export function startAppearance(): void {
@@ -83,7 +98,8 @@ export function startAppearance(): void {
     systemDark()
     media?.addEventListener?.('change', () => chosen === 'system' && paint())
     addEventListener('pageshow', () => paint())
-    document.addEventListener('visibilitychange', () => document.visibilityState !== 'hidden' && paint())
+    addEventListener('pagehide', () => paint())
+    document.addEventListener('visibilitychange', () => paint())
   }
   paint()
 }

@@ -103,6 +103,13 @@ describe('the page head for iOS', () => {
     expect(html).toMatch(/<body>\s*(?:<!--[^>]*-->\s*)?<div class="status-strip" aria-hidden="true"><\/div>\s*<div id="root"><\/div>/)
   })
 
+  it('YAZ-5661 round 3: the saved Appearance is on the page before its first paint: a classic script in the head, before the stylesheet', () => {
+    const head = html.slice(0, html.indexOf('</head>'))
+    expect(head).toContain('<script src="/appearance-boot.js"></script>')
+    expect(head).not.toMatch(/<script(?![^>]*src=)/)
+    expect(existsSync(join(here, 'public/appearance-boot.js'))).toBe(true)
+  })
+
   it('YAZ-5287: the supported iPhone sizes, each with a splash (points and scale)', () => {
     const sizes = SPLASH_SCREENS.map((s) => `${s.width}x${s.height}@${s.ratio}`).sort()
     for (const want of ['440x956@3', '420x912@3', '402x874@3', '430x932@3', '393x852@3', '428x926@3', '390x844@3', '414x896@3', '375x812@3', '414x896@2', '375x667@2']) {
@@ -127,10 +134,11 @@ describe('the shell list the worker keeps', () => {
   it('the hashed build files, the pages under their served address, the manifest and icons; not the splash, the headers or the worker', () => {
     const list = shellFiles(
       ['index.html', 'friend.html', 'group.html', 'join.html', 'assets/index-a1.js', 'assets/engine-b2.js', 'assets/index-d4.css', 'assets/friend-e5.js', 'assets/x.js.map'],
-      ['_headers', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png', 'splash/dark-1179x2556.png', 'sw.js', 'robots.txt'],
+      ['_headers', 'manifest.webmanifest', 'appearance-boot.js', 'icons/icon-192.png', 'icons/apple-touch-icon.png', 'splash/dark-1179x2556.png', 'sw.js', 'robots.txt'],
     )
     expect(list).toEqual([
       '/',
+      '/appearance-boot.js',
       '/assets/engine-b2.js',
       '/assets/friend-e5.js',
       '/assets/index-a1.js',
