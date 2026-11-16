@@ -1,0 +1,11 @@
+/* Settings › GitHub (YAZ-5645 slice 2): the account's @login, and under it one muted line that may wrap. */
+.github-account .row__main {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 6px 0;
+}
+
+.github-account__note {
+  display: block;
+  font-size: 14px;
+}

@@ -20,6 +20,8 @@ const WhatsNewList = lazyScreen(() => import('../settings/WhatsNewList'), { wait
 const VaultHealth = lazyScreen(() => import('../settings/VaultHealth'), { waiting: <p className="muted" aria-busy="true">Vault health…</p> })
 /** YAZ-5592: "This vault on mobile" (Folding, Sticky headings), the vault's `.yaseendocs/mobile.json`, its own chunk. */
 const MobileVaultPart = lazyScreen(() => import('../settings/MobileVaultPart'))
+/** YAZ-5645 slice 2: Settings › GitHub (the accounts signed in with GitHub), its own chunk. */
+const GithubPart = lazyScreen(() => import('../settings/GithubPart'))
 
 /**
  * Settings (decisions 7, 22; round 13, item 4; round 10, item 19): the vaults (switch, add, replace the token, reset the
@@ -58,6 +60,7 @@ export function Settings() {
       {/* YAZ-5593: the address the app runs from, and Check for updates. */}
       <UpdateCheck />
       <InstallHint />
+      <GithubPart />
       <h2 className="section">Vaults</h2>
       <ul className="rows" aria-label="Vaults">
         {app.list.vaults.map((v) => (

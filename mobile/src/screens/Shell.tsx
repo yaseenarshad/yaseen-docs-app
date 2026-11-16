@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useApp } from '../app/AppState'
 import { useReaderAhead } from '../explore/openReady'
-import { syncHelp } from '../app/help'
+import { repoRemovedHelp, syncHelp } from '../app/help'
 import { topRoute, type Route, type Tab } from '../app/nav'
 import { FirstDownload } from './FirstDownload'
 import { ForwardButton, Frame, vaultName } from './Frame'
@@ -10,6 +10,7 @@ import { Friends } from './Friends'
 import { lazyScreen } from './LazyScreen'
 import { CardView, PageView, routeWaiting } from './PageScreen'
 import { Review } from './Review'
+import { useRepoGone } from './repoGone'
 import './reviewSlot.css'
 import { Search } from './Search'
 import { SignIn } from './SignIn'
@@ -55,6 +56,8 @@ export function Shell() {
   const app = useApp()
   // YAZ-5589: the reader read ahead once the app is idle, so any page opens drawn, at once.
   useReaderAhead(app)
+  // YAZ-5645 slice 2: a repo taken off the app's list on GitHub is named (edge case 5).
+  const repoGone = useRepoGone(app)
   const route = topRoute(app.nav)
   const reviewHost = useMemo(() => Object.assign(document.createElement('div'), { className: 'review-host' }), [])
   const [reviewKept, setReviewKept] = useState(false)
@@ -95,7 +98,7 @@ export function Shell() {
     )
 
   const downloading = app.sync.vault === app.vaultKey && !app.sync.ready
-  const help = syncHelp(app.sync, app.vault, app.unit, downloading)
+  const help = repoGone ? repoRemovedHelp(app.vault, app.unit) : syncHelp(app.sync, app.vault, app.unit, downloading)
   if (downloading) return <FirstDownload help={help} />
 
   const TabScreen = app.nav.tab === 'review' ? null : TAB_SCREENS[app.nav.tab]

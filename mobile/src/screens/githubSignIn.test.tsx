@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { GITHUB_CHOOSE_REPOS } from '../auth/githubAppConfig'
 import { fakeOauth, type FakeOauth } from '../auth/githubApp.testing'
+import type { FetchLike } from '../github/client'
 import { loadVaultList } from '../store'
 import { GH_ACCESS, GH_NONE, GH_OTHER, GOOD, mount, newPhone, signInWithForm, type Harness } from './testing'
 
@@ -23,12 +24,14 @@ afterEach(() => {
 async function phoneWithGithub(phone?: Awaited<ReturnType<typeof newPhone>>) {
   const went: string[] = []
   let oauth!: FakeOauth
+  // Each start has its own fake GitHub (`h.github`); the one Worker and its sign-in fake stay, in front of the latest.
+  let api!: FetchLike
   const p = phone ?? (await newPhone())
   const open = () =>
     mount({
       phone: p,
       services: { goToGithub: (url) => void went.push(url), origin: SITE },
-      wrapFetch: (api) => (oauth ??= fakeOauth(SITE, api)).fetch,
+      wrapFetch: (fetch) => ((api = fetch), (oauth ??= fakeOauth(SITE, (url, init) => api(url, init))).fetch),
     })
   return { went, phone: p, open, oauth: () => oauth }
 }
@@ -168,5 +171,113 @@ describe('Sign in with GitHub (YAZ-5645 slice 1)', () => {
     await h.click('Erase this phone')
     expect(t.oauth().revoked).toEqual([GH_ACCESS])
     expect(await h.tokens.githubAccounts()).toEqual([])
+  })
+})
+
+/** Signs in with GitHub and adds yaseen/vault, as a person does; the app is open on the vault. */
+async function vaultOnGithub(t: Awaited<ReturnType<typeof phoneWithGithub>>, code: string) {
+  h = await t.open()
+  await tapGithub(t)
+  t.oauth().codes.set(code, { access: GH_ACCESS, refresh: `ghr_${code}` })
+  await comeBack(t, { code, state: stateOf(t.went.at(-1)!) })
+  await h.waitText('Signed in as @yaseen.')
+  await h.click(/^yaseen\/vault/)
+  await h.waitText('vault')
+}
+
+/** GitHub's Setup URL sends the person back after "Manage repos": the app starts again at /auth/installed. */
+async function backFromRepoPage(t: Awaited<ReturnType<typeof phoneWithGithub>>) {
+  h!.unmount()
+  history.replaceState(null, '', '/auth/installed?installation_id=1&setup_action=update')
+  h = await t.open()
+  await h.settle()
+}
+
+describe('Settings › GitHub (YAZ-5645 slice 2)', () => {
+  it('shows the account and its vaults; "Manage repos on GitHub" goes to GitHub\'s repo page and comes back to Settings', async () => {
+    const t = await phoneWithGithub()
+    await vaultOnGithub(t, 'code-s1')
+    await h!.click('Settings')
+    await h!.waitText('@yaseen')
+    expect(h!.text()).toContain('Signed in with GitHub. Access renews by itself. Vaults: yaseen/vault.')
+    await h!.click('Manage repos on GitHub')
+    expect(t.went.at(-1)).toBe(GITHUB_CHOOSE_REPOS)
+    await backFromRepoPage(t)
+    await h!.waitText('Manage repos on GitHub')
+    expect(h!.host.querySelector('.topbar__title')?.textContent).toBe('Settings')
+    // The way back was used once: the next start is an ordinary one.
+    expect(await h!.tokens.takeManaging()).toBeNull()
+  })
+
+  it('a phone with pasted tokens only shows no GitHub part', async () => {
+    const t = await phoneWithGithub()
+    h = await t.open()
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    await h.click('Settings')
+    await h.waitText('Vaults')
+    expect(h.button('Manage repos on GitHub')).toBeNull()
+  })
+
+  it('"Sign out of this account" asks first, ends the sign-in on GitHub, and the vault stays and asks to sign in again', async () => {
+    const t = await phoneWithGithub()
+    await vaultOnGithub(t, 'code-s2')
+    await h!.click('Settings')
+    await h!.waitText('@yaseen')
+    await h!.click('Sign out of @yaseen')
+    expect(h!.text()).toContain('Sign out of @yaseen on this phone? yaseen/vault stops syncing until you sign in again.')
+    expect(t.oauth().revoked).toEqual([])
+    await h!.click('Sign out')
+    await h!.waitText('GitHub needs you to sign in again for yaseen/vault.')
+    expect(t.oauth().revoked).toEqual([GH_ACCESS])
+    expect(await h!.tokens.githubAccounts()).toEqual([])
+    expect((await loadVaultList(h!.store)).vaults.map((v) => v.repo)).toEqual(['yaseen/vault'])
+  })
+
+  it('"Add another GitHub account" opens GitHub\'s account picker', async () => {
+    const t = await phoneWithGithub()
+    await vaultOnGithub(t, 'code-s3')
+    await h!.click('Settings')
+    await h!.waitText('@yaseen')
+    const before = t.went.length
+    await h!.click('Add another GitHub account')
+    for (let i = 0; i < 200 && t.went.length === before; i++) await h!.settle()
+    expect(new URL(t.went.at(-1)!).searchParams.get('prompt')).toBe('select_account')
+  })
+})
+
+describe('a repo taken off the app\'s list on GitHub (YAZ-5645 slice 2, edge case 5)', () => {
+  const lost = { status: 'attention' as const, vault: 'yaseen/vault@main', problem: 'NOT_FOUND', ready: true }
+
+  it('names the repo, and "Add it again on GitHub" goes to the repo page and back to the vault', async () => {
+    const t = await phoneWithGithub()
+    await vaultOnGithub(t, 'code-r1')
+    h!.github.takeOff(GH_ACCESS, 'yaseen/vault')
+    await h!.syncSet(lost)
+    await h!.waitText('Yaseen Docs can no longer see yaseen/vault. It was taken off the list on GitHub. The pages on this phone stay readable.')
+    expect(h!.text()).not.toContain('token')
+    await h!.click('Add it again on GitHub')
+    expect(t.went.at(-1)).toBe(GITHUB_CHOOSE_REPOS)
+    await backFromRepoPage(t)
+    await h!.waitText('vault')
+    expect(h!.host.querySelector('.topbar__title')?.textContent).toBe('vault')
+  })
+
+  it('still on the list (renamed or deleted): row R12\'s words stay', async () => {
+    const t = await phoneWithGithub()
+    await vaultOnGithub(t, 'code-r2')
+    await h!.syncSet(lost)
+    await h!.waitText("Can't find yaseen/vault (branch main) on GitHub.")
+    expect(h!.github.calls.some((c) => c.url.includes('/user/installations'))).toBe(true)
+    expect(h!.text()).not.toContain('taken off the list')
+  })
+
+  it('a pasted-token vault: row R12\'s words, and no installation call', async () => {
+    const t = await phoneWithGithub()
+    h = await t.open()
+    await signInWithForm(h, 'yaseen/vault', GOOD)
+    await h.syncSet(lost)
+    await h.waitText("Can't find yaseen/vault (branch main) on GitHub.")
+    await h.settle()
+    expect(h.github.calls.some((c) => c.url.includes('/user/installations'))).toBe(false)
   })
 })

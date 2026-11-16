@@ -11,7 +11,7 @@ import { browserBack, useBrowserHistory } from './browserHistory'
 import { PLAIN_VAULT, navigate, openingTab, tabIn, type NavAction, type NavState, type VaultTabs } from './nav'
 import { IDLE, type ShellSync, type ShellSyncState } from './syncPort'
 import { SAVE_FAILED, type Help } from './help'
-import { CALLBACK_PATH, INSTALLED_PATH } from '../auth/githubAppConfig'
+import { CALLBACK_PATH, GITHUB_CHOOSE_REPOS, INSTALLED_PATH } from '../auth/githubAppConfig'
 import type { SignInMode } from '../screens/SignIn'
 import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
 import { readVaultTabs, sameTabs } from './vaultTabs'
@@ -108,6 +108,16 @@ export interface AppModel {
   githubAccess(login: string): Promise<string | null>
   /** The sign-in screen leaves the GitHub step (back to the first choice). */
   endGithub(): void
+  /**
+   * YAZ-5645 slice 2, "Manage repos on GitHub": keeps where it was tapped (`from`; `login`: the account, else the open
+   * vault's), then goes to GitHub's repo page. GitHub sends the person back to `/auth/installed` (the Setup URL).
+   */
+  manageRepos(from: 'settings' | 'vault', login?: string): Promise<void>
+  /**
+   * YAZ-5645 slice 2, "Sign out of this account": ends the sign-in on GitHub (decision D7, through the Worker, at most
+   * `STOP_WAIT_MS`), then the account's tokens leave the phone. Its vaults and their pages stay; they show Sign in again.
+   */
+  signOutGithub(login: string): Promise<void>
 }
 
 const AppContext = createContext<AppModel | null>(null)
@@ -140,9 +150,9 @@ async function stopSync(sync: ShellSync): Promise<void> {
   clearTimeout(timer)
 }
 
-/** Ends every GitHub sign-in of this phone on GitHub (best effort, at most `STOP_WAIT_MS`). */
-async function revokeGithub(tokens: TokenStore, fetch: FetchLike | undefined, origin: string | undefined): Promise<void> {
-  const logins = await tokens.githubAccounts().catch(() => [])
+/** Ends every GitHub sign-in of this phone (or `only` that account's) on GitHub (best effort, at most `STOP_WAIT_MS`). */
+async function revokeGithub(tokens: TokenStore, fetch: FetchLike | undefined, origin: string | undefined, only?: string): Promise<void> {
+  const logins = only !== undefined ? [only] : await tokens.githubAccounts().catch(() => [])
   if (logins.length === 0) return
   const { revokeAtWorker } = await import('../auth/githubWorker')
   const all = Promise.all(logins.map(async (login) => {
@@ -273,6 +283,13 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         setNav((n) => ({ ...n, stack: [mode.kind === 'add' ? { kind: 'add-vault' } : { kind: 'replace-token', vault: mode.vault }] }))
       }
       if (githubReturn.pathname === INSTALLED_PATH) {
+        // Slice 2: back from "Manage repos on GitHub". From Settings: Settings again. From the vault's notice: the vault,
+        // which this start already syncs again.
+        const managing = await tokens.takeManaging().catch(() => null)
+        if (managing !== null && ready) {
+          if (managing.from === 'settings') setNav((n) => ({ ...n, stack: [{ kind: 'settings' }] }))
+          return
+        }
         // Back from "choose repos" (the Setup URL): the account signed in last lists its repos again.
         const login = (await tokens.githubAccounts()).at(-1)
         if (login === undefined) return
@@ -457,6 +474,26 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   )
   const githubAccess = useCallback((login: string) => tokens.accessFor(login), [tokens])
   const endGithub = useCallback(() => setGithub({ kind: 'none' }), [])
+  const manageRepos = useCallback(
+    async (from: 'settings' | 'vault', login?: string) => {
+      const who = login ?? (openKey.current === null ? null : await tokens.githubOf(openKey.current).catch(() => null))
+      await tokens.saveManaging({ login: who, from, startedAt: (services.now ?? Date.now)() })
+      ;(services.goToGithub ?? ((to: string) => location.assign(to)))(GITHUB_CHOOSE_REPOS)
+    },
+    [tokens, services.now, services.goToGithub],
+  )
+  const signOutGithub = useCallback(
+    async (login: string) => {
+      const open = openKey.current
+      const wasOpen = open !== null && (await tokens.githubOf(open))?.toLowerCase() === login.toLowerCase()
+      if (wasOpen) await stopSync(sync)
+      await revokeGithub(tokens, services.fetch, services.origin, login)
+      await tokens.forgetAccount(login)
+      const next = await load(wasOpen)
+      if (next.phase !== 'ready') setNav({ tab: 'review', stack: [] })
+    },
+    [tokens, sync, load, services.fetch, services.origin],
+  )
 
   // A tab the open vault does not have shows Search (`keepTab` makes it stay Search when the tabs change).
   const tab = tabIn(nav.tab, loaded.tabs)
@@ -483,6 +520,8 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     signInWithGithub,
     githubAccess,
     endGithub,
+    manageRepos,
+    signOutGithub,
   }
   return <AppContext.Provider value={model}>{children}</AppContext.Provider>
 }

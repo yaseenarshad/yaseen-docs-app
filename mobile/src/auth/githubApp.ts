@@ -248,3 +248,21 @@ export function githubHelp(error: SignInError): Help {
   }
   return signInHelp(error)
 }
+
+/**
+ * YAZ-5645 slice 2 (edge case 5): the open vault's repo answers 404. Was it taken off the app's list on GitHub (Manage
+ * repos, or the app removed from the account)? Only a vault on "Sign in with GitHub" can say: its account lists the
+ * installations' repos again. `removed`: not on the list (or no list at all). `listed`: still on it, so the repo was
+ * renamed or deleted (row R12 keeps its words). `unknown`: a pasted token, signed out, or GitHub did not answer.
+ */
+export async function repoStanding(vault: string, repo: string, deps: { tokens: TokenStore; fetch?: FetchLike; now?: () => number }): Promise<'removed' | 'listed' | 'unknown'> {
+  const login = await deps.tokens.githubOf(vault)
+  if (login === null) return 'unknown'
+  const token = await deps.tokens.accessFor(login)
+  if (token === null) return 'unknown'
+  const listed = await listInstalledRepos(token, deps)
+  if (!listed.ok) return listed.error.kind === 'no-installed-repos' ? 'removed' : 'unknown'
+  if (listed.repos.some((r) => r.fullName.toLowerCase() === repo.toLowerCase())) return 'listed'
+  // A list cut short may hold it further on.
+  return listed.capped ? 'unknown' : 'removed'
+}
