@@ -124,6 +124,7 @@ import { freePort } from './freePort'
  *  - Settings (`#fixture=settings`, YAZ-5555), light and dark, at 320 and 375 px: the build's line at the top, one line.
  *    YAZ-5593 (`settings-check-*`): the address under it, Check for updates (44 px) and each answer, light and dark.
  *    YAZ-5559 (`settings-health`): Vault health's line a 44 px tap, its list open, inside the screen.
+ *    YAZ-5667 (`settings-light`, `settings-dark`, at 390 px too): Appearance one row of three icon parts, 44 px taps, the chosen one filled.
  *  - YAZ-5658 Wide tables (`page-wide-scroll`, `page-wide-fit`, `page-wide-own`, `page-wide-menu`), light and dark at
  *    390 px: the columns' widths in each mode, the now row's Lookback never one letter per line, the pill covers no text.
  * It writes a picture of each case. Run after `npm run build:fixtures -w mobile`:
@@ -2035,6 +2036,45 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
+}
+// YAZ-5667: Settings › Appearance (`#fixture=settings-light`, `settings-dark`: chosen against the iPhone's setting) at
+// 320, 375 and 390 px: one row, a radio group "Theme" of three parts System, Light, Dark (the Mac's order), each an
+// icon over its word, 44 px or more, inside the screen, side by side; the row about 56 px; the chosen one filled (its
+// background not the row's); a picture of the part. `LAYOUT_APPEARANCE` (YAZ-5565) checks the look each choice gives.
+const APPEARANCE_PART = `(() => {
+  const r = (el) => el.getBoundingClientRect()
+  const group = document.querySelector('[role="radiogroup"][aria-label="Theme"]')
+  if (group === null) return { error: 'no Theme group' }
+  group.scrollIntoView({ block: 'center' })
+  const head = group.previousElementSibling
+  const parts = [...group.querySelectorAll('.segmented__option')]
+  const g = r(group)
+  return {
+    head: head?.textContent, h: Math.round(g.height),
+    parts: parts.map((p) => { const b = r(p), i = r(p.querySelector('svg')), w = r(p.querySelector('span')); return { text: p.textContent, checked: p.querySelector('input').checked, h: Math.round(b.height), top: Math.round(b.top), inside: b.left >= 0 && b.right <= innerWidth + 0.5, iconOver: i.bottom <= w.top + 0.5 && Math.abs((i.left + i.right) / 2 - (w.left + w.right) / 2) < 2, fill: getComputedStyle(p).backgroundColor } }),
+    row: getComputedStyle(group).backgroundColor,
+    clip: { x: Math.max(0, g.left - 8), y: Math.max(0, r(head).top - 8), width: Math.min(innerWidth, g.width + 16), height: g.bottom - r(head).top + 16, scale: 1 },
+    wide: document.scrollingElement.scrollWidth > innerWidth + 1,
+  }
+})()`
+if (process.env.LAYOUT_SETTINGS !== 'no') {
+  for (const scheme of ['light', 'dark'] as const)
+    for (const [w, hgt] of [[320, 568], [375, 667], [390, 844]] as const) {
+      const file = await open(`settings-${scheme}`, w, hgt)
+      const m = await evaluate(APPEARANCE_PART)
+      // The fixture saved the choice in this profile's localStorage: the next cases start from System again.
+      await evaluate(`localStorage.removeItem('notecard.appearance')`)
+      const shot = file.replace('.png', '-appearance.png')
+      if (!m.error) writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png', clip: m.clip }, page)).data, 'base64'))
+      type Part = { text: string; checked: boolean; h: number; top: number; inside: boolean; iconOver: boolean; fill: string }
+      const parts = (m.parts ?? []) as Part[]
+      const chosen = scheme === 'light' ? 'Light' : 'Dark'
+      const ok =
+        !m.error && m.head === 'Appearance' && m.h >= 50 && m.h <= 62 && parts.map((p) => p.text).join() === 'System,Light,Dark' && parts.every((p) => p.h >= 44 && p.inside && p.iconOver && p.top === parts[0].top) &&
+        parts.map((p) => p.checked).join() === parts.map((p) => p.text === chosen).join() && parts.every((p) => (p.fill !== m.row && p.fill !== 'rgba(0, 0, 0, 0)') === p.checked) && !m.wide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  settings appearance (YAZ-5667) ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.head}", one row ${m.h}px: ${parts.map((p) => `${p.text}${p.checked ? ' (chosen, filled ' + p.fill + ')' : ''} ${p.h}px${p.inside ? '' : ' OUTSIDE'}${p.iconOver ? '' : ' ICON NOT OVER THE WORD'}`).join(', ')}; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+    }
 }
 // YAZ-5559: Settings › Vault health (`#fixture=settings-health`, its list open), light and dark, at 320 and 375 px: the
 // line a 44 px tap inside the screen, its words; each row of the list inside the screen; the page never sideways.
