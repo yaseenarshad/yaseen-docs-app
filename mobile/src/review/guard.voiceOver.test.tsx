@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 
 // Checker round 2 probes for YAZ-5078 (4B): the 400 ms guard and VoiceOver. Made-up data only.
 
@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 const OLD = '2026-10-04T09:00:00.000Z good'
-const dueCards = (n: number) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n{{w${i + 1}}}`, `DC-${i + 1}, ${OLD}`))
+const dueCards = (n: number) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n{{w${i + 1}}}`, `DC-${i + 1}, ${inOrder(OLD, i)}`))
 const ids = (hh: ReviewHarness) => hh.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 const raw = async (hh: ReviewHarness, name: string) => {
@@ -148,7 +148,8 @@ describe('the stuck guard, ways out', () => {
     if (due) { await act(async () => due.click()); await h.settle() }
     await real(600)
     tries.push(`filter Due today: guard ${guarded(h)} head ${h.head()}`)
-    expect(tries).toEqual(['Up next: guard false head DC-1', 'filter Due today: guard false head DC-1'])
+    // Review rules v1, rule 7: DC-1, now Up next, is not under Due today: DC-2 heads it (before: DC-1).
+    expect(tries).toEqual(['Up next: guard false head DC-1', 'filter Due today: guard false head DC-2'])
   })
 })
 

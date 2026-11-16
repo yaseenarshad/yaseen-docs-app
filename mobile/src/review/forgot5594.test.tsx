@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BACK_LINE } from './ReviewView'
-import { cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { cardBlock, inOrder, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
  * YAZ-5594 (Urgent; Yaseen: "im hitting the X and its not removing NC205... but the progress bar is contining to go
@@ -109,8 +109,8 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
   })
 
   it('YAZ-5594 reopened, YAZ-5610: 3 cards, the last forgotten 3 times then remembered — "3 / 3", 3 steps, the list says 1', async () => {
-    const known = (x: string, id: string) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `${id}, 2026-10-04T09:00:00.000Z good, 2026-10-04T09:01:00.000Z good`)
-    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', known('A', 'PB-1'), known('B', 'PB-2'), known('C', 'PB-3')) })
+    const known = (x: string, id: string, i: number) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `${id}, ${inOrder('2026-10-04T09:00:00.000Z good, 2026-10-04T09:01:00.000Z good', i)}`)
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', known('A', 'PB-1', 0), known('B', 'PB-2', 1), known('C', 'PB-3', 2)) })
     const steps = () => [...h!.host.querySelectorAll('.review__progress .review__step')].map((s) => ({ remembered: 'g', forgot: 'r' })[(s as HTMLElement).dataset.answer ?? ''] ?? '.').join('')
     const bar = () => [steps(), q('.review__progress')?.getAttribute('aria-valuenow'), q('.review__progress')?.getAttribute('aria-valuemax')]
     const dueRow = async () => {

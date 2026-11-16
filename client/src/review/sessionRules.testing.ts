@@ -13,7 +13,7 @@
  *  3. Counts never grow from an answer or from a card shown again: All cards, New cards, Up next and the Inbox
  *     row's count never go up; Due today goes up by one only for a new card's first Remembered (New one less);
  *     "N / M" keeps M (same filter). ← →, the filter, the clock in the day and a stop's button change no count.
- *  4. The numbers agree: Due today + New cards = All cards; the bar's whole is M; the bar's done part plus the
+ *  4. The numbers agree: Up next + Due today + New cards = All cards (Review rules v1, rule 7); the bar's whole is M; the bar's done part plus the
  *     cards left under the filter is M; 1 ≤ N ≤ M while a card shows; the stop "Review missed cards K" comes only
  *     after a Forgot (K ≥ 1, never 100%).
  *  5. Undo of an answer puts the counts back as they were before that answer.
@@ -23,7 +23,7 @@
  */
 import { act } from 'react'
 import { vi } from 'vitest'
-import { cardIdOf, cardReviewsOf, pageCards, type CardRating, type CardReview } from '@shared/cardLine'
+import { cardIdOf, cardReviewsOf, cardTime, pageCards, type CardRating, type CardReview } from '@shared/cardLine'
 import { answerRatings, cardDueAt, type CardAnswer, type DueCard } from '@shared/cardSchedule'
 import type { ReviewSettings } from '@shared/reviews'
 import type { IndexRecord } from '@shared/types'
@@ -239,7 +239,8 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
   const checkNumbers = (s: Snap | null, tap: string) => {
     if (s === null) return
     const { counts, total, position, filter, progress } = s
-    if (counts.due + counts.new !== counts.all) fail('4. Due today + New cards = All cards', { tap, counts })
+    // Review rules v1, rule 7 (YAZ-5655): each card in one list only. Before: Due today + New cards = All cards.
+    if (counts.next + counts.due + counts.new !== counts.all) fail('4. rule 7: Up next + Due today + New cards = All cards', { tap, counts })
     if (counts.next > counts.all || Object.values(counts).some((c) => c < 0)) fail('4. counts in range', { tap, counts })
     if (progress.size !== total) fail('4. the bar`s whole is M', { tap, progress, total })
     if (progress.done + counts[filter] !== total) fail('4. done + left = M', { tap, progress, counts, filter, total })
@@ -247,11 +248,17 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
     // The % stop of Due today (spec 15): only after a miss, so never 100% and always one missed card or more.
     if (s.end === 'missed' && (s.stop === null || s.stop.missed < 1 || s.stop.percent >= 100)) fail('4. "Review missed cards" only after a Forgot', { tap, stop: s.stop })
   }
-  /** Rule 3: nothing grew. `due` may grow by `dueGrows`; `sameTotal`: M stays (same filter). */
-  const noGrowth = (a: Snap | null, b: Snap | null, tap: string, dueGrows = 0, rowMayGrow = false) => {
+  /**
+   * Rule 3: nothing grew. `due` may grow by `dueGrows`, `new` by `newGrows` (Review rules v1, rule 7: an answered card
+   * that comes back moves to its own list — an Up next card to Due today, or to New cards while it has no ✓ yet);
+   * `sameTotal`: M stays (same filter).
+   */
+  const noGrowth = (a: Snap | null, b: Snap | null, tap: string, dueGrows = 0, rowMayGrow = false, newGrows = 0) => {
     if (a === null || b === null) return
     const grew = (k: CardFilter, by = 0) => b.counts[k] > a.counts[k] + by
-    if (grew('all') || grew('new') || grew('next') || grew('due', dueGrows)) fail('3. counts never grow', { tap, before: a.counts, after: b.counts })
+    // Rule 7: a card that leaves Up next (its mark gone, or past the day's places) is in its own list now.
+    const moved = Math.max(0, a.counts.next - b.counts.next)
+    if (grew('all') || grew('new', newGrows + moved) || grew('next') || grew('due', dueGrows + moved)) fail('3. counts never grow', { tap, before: a.counts, after: b.counts })
     if (b.dueCount > a.dueCount + (rowMayGrow ? 1 : 0)) fail('3. the Inbox row`s count never grows', { tap, before: a.dueCount, after: b.dueCount })
     if (a.filter === b.filter && b.total > a.total) fail('3. "N / M" keeps M', { tap, before: `${a.position}/${a.total}`, after: `${b.position}/${b.total}` })
   }
@@ -289,7 +296,7 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
         })
         const fixed = shown?.review
         if (tap === 'showWait') {
-          // The buttons showed, then the person waits before the tap (D13: the time is when they showed).
+          // The buttons showed, then the person waits before the tap (Review rules v1, rule 15: the time is the press).
           clock += 30_000 + Math.floor(rnd() * 300_000)
           vi.setSystemTime(clock)
         }
@@ -304,24 +311,25 @@ export async function fuzzSession(driver: FuzzDriver, seed: number, taps: number
         if (wrote > 1) fail('1. a second tap while the first writes writes nothing', { results })
         if (wrote === 1) {
           if (card === null || fixed === undefined) fail('1. an answer with no card or no buttons', { card, fixed })
-          const review = { ...fixed!, seconds }
           const prior = files0.get(card!.id)?.at(-1)
+          // Rule 15: written at the press time; rule 16: at least 1 ms after the card's last review.
+          const review = { ...fixed!, at: cardTime(Math.max(clock, prior === undefined ? Number.NEGATIVE_INFINITY : Date.parse(prior.at) + 1)), seconds }
           if (prior !== undefined && review.at <= prior.at) fail('2. a new review is after the card`s last one (never the same time: a time names one review)', { prior, review })
           if (Date.parse(review.at) > Date.now()) fail('2. a review is never after now', { review })
           ledger.set(card!.id, [...(ledger.get(card!.id) ?? []), review])
-          // Open item 1: the new card it pushed out does not come back with its Undo.
-          stack.push({ id: card!.id, review, before: before!, clean: !planChanged && !(card!.isNew && card!.next && driver.settings.newPerDay !== null) })
+          stack.push({ id: card!.id, review, before: before!, clean: !planChanged })
           answers++
           const after = snap(r())
           // A card kept on show after its mark went off (or held after a mark change, open item 4) is not in the Inbox
           // row's count: its answer may bring it in.
-          noGrowth(before, after, line, card!.isNew && rating !== 'again' ? 1 : 0, kept.has(card!.id) || planChanged)
+          // Rule 7: a card back in its steps moves to its own list: a new card's first ✓ to Due today, an Up next card to
+          // Due today (it has a ✓) or New cards (only ✕).
+          const backTo = card!.isNew && rating !== 'again' ? 'due' : shown!.inSteps && card!.next ? (card!.isNew ? 'new' : 'due') : null
+          noGrowth(before, after, line, backTo === 'due' ? 1 : 0, kept.has(card!.id) || planChanged, backTo === 'new' ? 1 : 0)
           // An answer that leaves the card in its steps (a Forgot, a new card's first Remembered) keeps it in the session.
-          // OPEN ITEM 1 (YAZ-5614 result, for Yaseen): the first answer to a NEW card of Up next takes a New cards place
-          // too, so the last new card of today may leave the session with it (All cards one less): allowed here until
-          // Yaseen picks the rule; the `it.fails` "open item 1" in `sessionRules.fuzz.test.tsx` shows it.
-          // The same for a new card kept on show past today's new cards (its mark went off on show, YAZ-5031).
-          const pushedOut = card!.isNew && (card!.next || kept.has(card!.id)) && driver.settings.newPerDay !== null ? 1 : 0
+          // Rule 10 (Review rules v1): an Up next card takes no New cards place, so its answer pushes no new card out.
+          // A new card kept on show past today's new cards (its mark went off on show, YAZ-5031) still may.
+          const pushedOut = card!.isNew && kept.has(card!.id) && driver.settings.newPerDay !== null ? 1 : 0
           // Its Undo does not bring the pushed-out card back; a reopen does (rule 7 waits).
           if (pushedOut === 1) {
             planChanged = true

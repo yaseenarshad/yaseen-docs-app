@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { answersSetup } from '../answers/testing'
-import { NOW, cardBlock, mountReview, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, mountReview, page, reviewSetup, type ReviewHarness } from './testing'
 
 /**
  * YAZ-5622 (audit item 6): a card answered on the Mac while the phone's session is open leaves the phone's session as
@@ -12,7 +12,7 @@ import { NOW, cardBlock, mountReview, page, reviewSetup, type ReviewHarness } fr
  */
 /** Known cards, out of their steps, due today. */
 const OLD = '2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'
-const card = (n: number, more = '') => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `OD-${n}, ${OLD}${more}`)
+const card = (n: number, more = '') => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `OD-${n}, ${inOrder(OLD, n - 1)}${more}`)
 const files = (two = '') => ({ '.yaseendocs/review.json': '{}', 'a.md': page('A', card(1), card(2, two), card(3)) })
 /** The Mac's ✓ on OD-2, a minute ago. */
 const MAC = `, ${new Date(NOW - 60_000).toISOString()} good`

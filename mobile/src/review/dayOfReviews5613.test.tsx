@@ -88,7 +88,8 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
   it('morning: Up next, Due today with misses, the two stops, Undo, the new cards (two ✓ each, New → Due today)', async () => {
     h = await reviewSetup(FILES)
     const steps: [string, () => Promise<void>, ReturnType<typeof row>][] = [
-      ['start', async () => undefined, row('UP-1', '1 / 6', '0/6', 6, 4, 2, 1)],
+      // Review rules v1, rule 7: UP-1 is under Up next only (before: Due today 4, with UP-1 in it too).
+      ['start', async () => undefined, row('UP-1', '1 / 6', '0/6', 6, 3, 2, 1)],
       ['UP-1 ✓', () => answer('Remembered'), row('DUE-1', '2 / 6', '1/6', 5, 3, 2)],
       ['DUE-1 ✕', () => answer('Forgot'), row('DUE-2', '3 / 6', '1/6', 5, 3, 2)],
       ['DUE-2 ✓', () => answer('Remembered'), row('DUE-3', '4 / 6', '2/6', 4, 2, 2)],
@@ -137,10 +138,9 @@ describe('YAZ-5613: a full day of reviews on the phone, step by step (YAZ-5611 r
     expect(Number(next.all)).toBe(Number(next.due) + Number(next.new))
   })
 
-  // OPEN ITEM (YAZ-5613 result, item 1): the same as on the Mac: a new card's ✕ keeps it under New cards in the session,
-  // but the tab opened again reads it as a Due today card: New −1, Due today +1 with no ✓. `it.fails` holds the bug in
-  // view; when it is fixed, this turns red and becomes a plain `it`.
-  it.fails('a new card ✕ once, then the tab opened again: it stays in its list, and no count jumps', async () => {
+  // Open item 1 of YAZ-5613, settled by Review rules v1, rule 2 (as on the Mac): a new card's ✕ keeps it a New card,
+  // also after the tab opens again (it was `it.fails`).
+  it('rule 2: a new card ✕ once, then the tab opened again: it stays in its list, and no count jumps', async () => {
     h = await reviewSetup(FILES)
     for (let i = 0; i < 4; i++) await answer('Remembered')
     await h.click('Learn new cards 2')

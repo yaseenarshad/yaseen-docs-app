@@ -59,15 +59,16 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     await h.click(/Choose what to review/)
     // YAZ-5415: the review sheet's rows: the glyph, the name, (New cards: "from All folders ›"), the count.
     const rows = [...h.host.querySelectorAll('.review__sheet-row')].map((r) => r.textContent)
-    expect(rows).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›2'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434) */)
+    // Review rules v1, rule 7: DU-3 (new, Up next) is under Up next only; before, New cards said 2.
+    expect(rows).toEqual(['▣All cards3', '⤒Up next1', '◷Due today1', '◌New cardsfrom All folders ›1'] /* YAZ-5624: the count alone, as the Mac (YAZ-5434) */)
     await h.click(/^Due today/)
     expect(h.text()).toContain('Due today ▾')
     expect(h.head()).toBe('DU-1')
     expect(h.text()).toContain('1 / 1')
     await h.click('Remembered')
-    // YAZ-5495 (the Mac's YAZ-5043): "Due today is done." with "Learn new cards 2" in place of "No due cards left.".
+    // YAZ-5495 (the Mac's YAZ-5043): "Due today is done." with "Learn new cards 1" in place of "No due cards left." (rule 7: DU-3 is Up next's).
     expect(h.text()).toContain('Due today is done.')
-    await h.click('Learn new cards 2')
+    await h.click('Learn new cards 1')
     expect(h.text()).toContain('New cards ▾')
     expect(h.button('Remembered')).not.toBeNull()
   })
@@ -80,7 +81,8 @@ describe('Review: the filter menu (round 10, addition 1)', () => {
     await h.click(/Choose what to review/)
     await h.click(/^New cards/)
     expect(h.text()).toContain('New cards ▾')
-    expect(h.text()).toMatch(/1 \/ 2/)
+    // Rule 7: DU-2 alone (DU-3 is under Up next).
+    expect(h.text()).toMatch(/1 \/ 1/)
   })
 })
 

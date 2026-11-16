@@ -213,6 +213,18 @@ describe('RecentList (YAZ-3235 D3 to D7)', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  // Review rules v1, rule 17 (YAZ-5655): Recent uses the ONE shared day timer (`useLocalDay`), so it wakes on
+  // `visibilitychange` too (a phone app or a window back from the background), not only on focus or its timer.
+  it('rule 17: Recent uses the one shared day timer: back from the background after midnight, "Today" is "Yesterday" at once', async () => {
+    vi.setSystemTime(at(2026, 10, 23, 23, 58))
+    await mount(stateWith({ '/v': { '/v/a.md': at(2026, 10, 23, 23, 57) } }))
+    expect(dayLabels()).toEqual(['Today'])
+    // The Mac slept: the clock is past midnight and no timer fired.
+    vi.setSystemTime(at(2026, 10, 24, 7, 0))
+    act(() => void document.dispatchEvent(new Event('visibilitychange')))
+    expect(dayLabels()).toEqual(['Yesterday'])
+  })
+
   it('a broadcast with the same save logs does not draw the list again; a new save does', async () => {
     const logs = { '/v': { '/v/a.md': at(2026, 10, 23, 9) }, '/w': { '/w/d.md': at(2026, 10, 23, 10) } }
     await mount(stateWith(logs))

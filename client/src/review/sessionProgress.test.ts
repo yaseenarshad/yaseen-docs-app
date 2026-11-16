@@ -37,10 +37,12 @@ describe('YAZ-5432: the progress bar counts only the tab on show', () => {
     })
   })
 
-  it('an Up next card counts under Up next and under its own kind', () => {
+  // Review rules v1, rule 7 (YAZ-5655): each card is in one list only. Before, an Up next card counted under its own kind too.
+  it('rule 7: an Up next card counts under Up next and All cards only, never under its own kind', () => {
     const marked: SessionAnswer = { ...fresh('m', 'good'), next: true }
     expect(filterProgress([marked], [card('o', true, true)], 'next')).toMatchObject({ done: 1, size: 2 })
-    expect(filterProgress([marked], [], 'new')).toMatchObject({ done: 1, size: 1 })
+    expect(filterProgress([marked], [card('o', true, true)], 'all')).toMatchObject({ done: 1, size: 2 })
+    expect(filterProgress([marked], [card('o', true, true)], 'new')).toMatchObject({ done: 0, size: 0 })
     expect(filterProgress([marked], [], 'due')).toMatchObject({ done: 0, size: 0 })
   })
 

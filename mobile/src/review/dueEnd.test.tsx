@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DueTodayEnd } from '@client/review/useCardReview'
-import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
+import { NOW, inOrder, cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 import { DueEnd, ringTurns } from './DueEnd'
 import { SEEN_MS } from './tapGuard'
 
@@ -22,7 +22,7 @@ const DUE = ['VRB-1', 'VRB-2', 'VRB-3', 'VRB-4', 'VRB-5']
 const NEW = ['PLC-1', 'PLC-2', 'PLC-3']
 const FILES = {
   '.yaseendocs/review.json': '{"newPerDay": 3}',
-  'verbs.md': page('Verbs', ...DUE.map((id, i) => cardBlock(`Verb ${i + 1}?\n---\n{{answer}}`, `${id}, ${OLD}`))),
+  'verbs.md': page('Verbs', ...DUE.map((id, i) => cardBlock(`Verb ${i + 1}?\n---\n{{answer}}`, `${id}, ${inOrder(OLD, i)}`))),
   'places.md': page('Places', ...NEW.map((id, i) => cardBlock(`Place ${i + 1}?\n---\n{{answer}}`, id))),
 }
 

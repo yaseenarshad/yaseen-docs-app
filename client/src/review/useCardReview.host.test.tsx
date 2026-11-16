@@ -193,13 +193,15 @@ describe('useCardReview with a host of its own (YAZ-5067)', () => {
  */
 describe('a card answered on the other device (YAZ-5622)', () => {
   const KNOWN = '2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'
+  // Rule 5 (Review rules v1): the most overdue day first, then random. WIKI-7 and WIKI-8 are months more overdue than WIKI-5, a month apart.
+  const OLDER = (month: number) => `2026-0${month}-01T09:00:00.000Z good, 2026-0${month}-01T09:01:00.000Z good`
   /** The other device's answer: the file changes on disk, then the index has it (AutoSync, the phone's pull). */
   const elsewhere = async (path: string, id: string, rating: CardRating) => {
     await host.writeCardAnswer(`${ROOT}/${path}`, id, { at: cardTime(Date.now()), rating })
     await act(async () => reindex())
   }
   const ids = () => review.session?.counts
-  beforeEach(() => page('D.md', ['Due {{c}}?', `WIKI-7, ${KNOWN}`], ['Due {{d}}?', `WIKI-8, ${KNOWN}`]))
+  beforeEach(() => page('D.md', ['Due {{c}}?', `WIKI-7, ${OLDER(5)}`], ['Due {{d}}?', `WIKI-8, ${OLDER(6)}`]))
 
   it('mid-session, a card further on: out of the counts and N / M at once, and → passes it by', async () => {
     await mount()

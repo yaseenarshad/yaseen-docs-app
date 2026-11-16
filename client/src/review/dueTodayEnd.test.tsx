@@ -77,7 +77,8 @@ const LATER = 'LATER-1'
 const NEW = ['NEW-1', 'NEW-2', 'NEW-3']
 function seed(): void {
   const block = (id: string, review: string) => cardBlock(`Card ${id} {{answer}}`, parseCardLine(`<!-- card: ${id}${review} -->`)!)
-  vault.set(`${ROOT}/Known.md`, `# Known\n\n${DUE.map((id) => block(id, ', 2026-09-01T09:00:00.000Z good, 2026-09-02T09:00:00.000Z good')).join('\n')}`)
+  // Each a month more overdue than the next (Review rules v1, rule 5: the most overdue day first, then random): DUE-1 first.
+  vault.set(`${ROOT}/Known.md`, `# Known\n\n${DUE.map((id, i) => block(id, `, 2026-0${3 + i}-01T09:00:00.000Z good, 2026-0${3 + i}-02T09:00:00.000Z good`)).join('\n')}`)
   vault.set(`${ROOT}/Fresh.md`, `# Fresh\n\n${NEW.map((id) => block(id, '')).join('\n')}`)
   vault.set(`${ROOT}/Later.md`, `# Later\n\n${block(LATER, ', 2026-11-01T09:00:00.000Z good, 2026-11-11T09:00:00.000Z good')}`)
 }
@@ -296,13 +297,18 @@ describe('YAZ-5043: the end of Due today', () => {
     for (const r of ['again', 'good', 'good', 'good', 'good'] as const) await answer(r)
     await press(/^Review missed cards/)
     expect(showing()).toBe('DUE-1')
-    // Marked Up next elsewhere (the page's ⋯): a card with reviews joins Due today now.
+    // Marked Up next elsewhere (the page's ⋯): a card with reviews joins the session under Up next only (Review rules
+    // v1, rule 7: one list per card; before, it joined Due today too and showed here).
     await step(() => review.setNext(`${ROOT}/Later.md`, LATER, true))
+    expect(review.session?.counts).toMatchObject({ next: 1, due: 1 })
     expect(await answer('good')).toBe('DUE-1')
-    expect(review.session?.end).toBeNull()
+    expect(review.session?.end).toMatchObject({ kind: 'done' })
+    // Under Up next it shows; its answer never brings the % screen back.
+    await step(() => review.setFilter('next'))
     expect(showing()).toBe(LATER)
     await answer('good')
-    expect(review.session?.end).toMatchObject({ kind: 'done' })
+    expect(review.session?.end).toBeNull()
+    expect(showing()).toBeNull()
   })
 
   it('8. Item 16: hidden (behind a page tab) the ring waits; it plays once when the tab shows, and stays still after', async () => {

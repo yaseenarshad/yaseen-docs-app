@@ -9,7 +9,7 @@ import { VAULT } from '../sync/testing'
 import { reviewInProgress } from './inProgress'
 import type { ReviewLink } from './link'
 import { ReviewView } from './ReviewView'
-import { NOW, cardBlock, page } from './testing'
+import { NOW, inOrder, cardBlock, page } from './testing'
 
 // Checker round 3 (YAZ-5078): each cell of the tap guard's state table on the REAL Review screen (real engine and
 // answer list on the fake GitHub), with real timers. Made-up data only.
@@ -17,7 +17,7 @@ import { NOW, cardBlock, page } from './testing'
 vi.setConfig({ testTimeout: 30_000 })
 
 const OLD = '2026-10-04T09:00:00.000Z good'
-const cards = (n: number, p = 'KC') => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n{{w${i + 1}}}`, `${p}-${i + 1}, ${OLD}`))
+const cards = (n: number, p = 'KC') => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n{{w${i + 1}}}`, `${p}-${i + 1}, ${inOrder(OLD, i)}`))
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 
 async function screen(files: Record<string, string>) {
