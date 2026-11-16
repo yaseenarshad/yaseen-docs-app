@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { fakeGithub, type FakeRepo } from '../github/testing'
 import { memoryBackend, tokenStoreOn } from '../store'
 import { PENDING_MS } from '../store/tokenStore'
-import { finishGithubSignIn, listInstalledRepos, pkceChallenge, startGithubSignIn } from './githubApp'
+import { finishGithubSignIn, githubSignInMessage, listInstalledRepos, pkceChallenge, startGithubSignIn } from './githubApp'
+import type { FetchLike } from '../github/client'
 import { GITHUB_APP_CLIENT_ID } from './githubAppConfig'
 import { fakeOauth } from './githubApp.testing'
 import { renewAtWorker } from './githubWorker'
@@ -107,14 +108,68 @@ describe('finishGithubSignIn', () => {
     expect(oauth.workerCalls).toEqual([])
   })
 
-  it('GitHub refuses the code (used, old): "too long"; the Worker unreachable: offline', async () => {
+  it('GitHub refuses the code (used, old): "refused the sign-in code"; the Worker unreachable: offline', async () => {
     const { deps, oauth } = setup()
     let url = new URL(await startGithubSignIn({ kind: 'first' }, deps))
-    expect(await finishGithubSignIn(back({ code: 'unknown', state: url.searchParams.get('state')! }), deps)).toMatchObject({ ok: false, error: { kind: 'too-late' } })
+    expect(await finishGithubSignIn(back({ code: 'unknown', state: url.searchParams.get('state')! }), deps)).toMatchObject({ ok: false, error: { kind: 'bad-code' } })
     url = new URL(await startGithubSignIn({ kind: 'first' }, deps))
     const offline = { ...deps, fetch: async () => Promise.reject(new TypeError('Load failed')) }
     expect(await finishGithubSignIn(back({ code: 'the-code', state: url.searchParams.get('state')! }), offline)).toMatchObject({ ok: false, error: { kind: 'offline' } })
     expect(oauth.workerCalls).toEqual(['/api/github/token'])
+  })
+})
+
+describe('finishGithubSignIn says WHAT failed (YAZ-5645 GHF: "GitHub did not finish the sign-in" hid a Worker with no secret)', () => {
+  const run = async (opts: { secret?: string } | null, code = 'the-code', worker?: FetchLike) => {
+    const { api, deps } = setup()
+    const oauth = opts === null ? null : fakeOauth(SITE, api.fetch, opts)
+    oauth?.codes.set('the-code', { access: ACCESS, refresh: 'ghr_one' })
+    const fetch = worker ?? oauth!.fetch
+    const url = new URL(await startGithubSignIn({ kind: 'first' }, { ...deps, fetch }))
+    const back = await finishGithubSignIn(new URL(`${SITE}/auth/callback?${new URLSearchParams({ code, state: url.searchParams.get('state')! })}`), { ...deps, fetch })
+    if (back.ok) throw new Error('signed in')
+    return { kind: back.error.kind, message: githubSignInMessage(back.error) }
+  }
+  const answer = (status: number, body: unknown): FetchLike => async () => new Response(JSON.stringify(body), { status })
+
+  it("the Worker has no client secret: \"not set up\", and the way out is a token", async () => {
+    const got = await run({ secret: undefined })
+    expect(got.kind).toBe('not-set-up')
+    expect(got.message).toMatch(/sign-in server is not set up/)
+    expect(got.message).toMatch(/Use a token instead/)
+  })
+
+  it('GitHub does not know the Worker\'s key: "GitHub refused the app\'s key"', async () => {
+    const got = await run({ secret: 'not-the-key' })
+    expect(got.kind).toBe('bad-key')
+    expect(got.message).toMatch(/GitHub refused the app's key/)
+  })
+
+  it('a used or unknown code: "GitHub refused the sign-in code"', async () => {
+    const got = await run({}, 'unknown')
+    expect(got.kind).toBe('bad-code')
+    expect(got.message).toMatch(/GitHub refused the sign-in code/)
+  })
+
+  it('the return address: "GitHub refused the return address"; GitHub down: "could not reach GitHub"', async () => {
+    expect((await run(null, 'x', answer(400, { error: 'redirect_uri_mismatch' }))).kind).toBe('bad-return')
+    expect((await run(null, 'x', answer(400, { error: 'bad_redirect' }))).message).toMatch(/GitHub refused the return address/)
+    const down = await run(null, 'x', answer(502, { error: 'github_unreachable' }))
+    expect(down.kind).toBe('github-unreachable')
+    expect(down.message).toMatch(/could not reach GitHub/)
+  })
+
+  it('the sign-in server not reachable: says so; a page that is not the Worker: says so', async () => {
+    const off = await run(null, 'x', async () => Promise.reject(new TypeError('Load failed')))
+    expect(off.kind).toBe('offline')
+    expect(off.message).toMatch(/could not reach the sign-in server/i)
+    const html: FetchLike = async () => new Response('<html>', { status: 404 })
+    expect((await run(null, 'x', html)).message).toMatch(/sign-in server gave an answer Yaseen Docs does not know/)
+  })
+
+  it('no message is the vague "Try again in a few minutes" of before', async () => {
+    for (const kind of ['denied', 'no-sign-in', 'too-late', 'offline', 'not-set-up', 'github-unreachable', 'bad-key', 'bad-return', 'bad-code', 'no-account', 'refused'] as const)
+      expect([kind, githubSignInMessage({ kind })]).not.toEqual([kind, expect.stringMatching(/did not finish/)])
   })
 })
 

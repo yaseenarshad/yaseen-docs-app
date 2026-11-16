@@ -22,7 +22,12 @@ export interface FakeOauth {
 
 export const TEST_SECRET = 'test-secret-only-0000'
 
-export function fakeOauth(site: string, api: FetchLike): FakeOauth {
+/**
+ * `secret`: the Worker's `GITHUB_CLIENT_SECRET`. Leave it out for the right one; `undefined` in `{ secret }` is a Worker
+ * whose secret is not set (YAZ-5645 GHF: the live Worker lost it); another text is a key GitHub does not know.
+ */
+export function fakeOauth(site: string, api: FetchLike, opts: { secret?: string } = {}): FakeOauth {
+  const secret = 'secret' in opts ? opts.secret : TEST_SECRET
   const oauth: FakeOauth = {
     codes: new Map(),
     refreshes: new Map(),
@@ -33,7 +38,7 @@ export function fakeOauth(site: string, api: FetchLike): FakeOauth {
       if (!url.startsWith(`${site}/api/github/`)) return api(url, init)
       oauth.workerCalls.push(new URL(url).pathname)
       const request = new Request(url, { method: init.method, headers: { ...Object.fromEntries(new Headers(init.headers)), origin: site }, body: init.body as BodyInit })
-      return handle(request, { GITHUB_CLIENT_SECRET: TEST_SECRET }, async (to, sent) => {
+      return handle(request, { GITHUB_CLIENT_SECRET: secret }, async (to, sent) => {
         if (to.startsWith('https://api.github.com/applications/')) {
           oauth.revoked.push((JSON.parse(String(sent.body)) as { access_token: string }).access_token)
           return new Response(null, { status: 204 })
