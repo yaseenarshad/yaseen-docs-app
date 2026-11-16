@@ -144,7 +144,7 @@ export default function PageView({ path: opened, at, heading }: { path: string; 
   // YAZ-5591: sticky headings, the page's own `sticky-headings: true | false` (the phone's own key), else the vault's.
   const sticky = usePageSettingRow(commentsPort, path, STICKY_HEADINGS_KEY, effectiveSwitch(own('sticky-headings'), vaultMobile?.stickyHeadings ?? true), 'Sticky headings', setNotice)
   const stickyOn = sticky.on
-  // YAZ-5658: Wide tables, the page's own `fit-tables: true | false` (none: Same as the vault), else the vault's.
+  // YAZ-5658: Wide tables, the page's own `fit-tables: true | false` (none: Mobile Vault Default), else the vault's.
   const wide = usePageSettingRow(commentsPort, path, FIT_TABLES_KEY, own('fit-tables') ?? null, 'Wide tables', setNotice)
   const fitTables = effectiveSwitch(wide.on ?? undefined, vaultMobile?.fitTables ?? false)
   const folds = useRef<PageFolds | null>(null)

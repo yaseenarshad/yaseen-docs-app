@@ -85,7 +85,7 @@ describe('column widths from the text (YAZ-5471)', () => {
     expect(table.style.getPropertyValue('--table-fixed')).toBe(`${name.max}em`)
     // Two columns: nothing sticks.
     expect(table.hasAttribute('data-sticky')).toBe(false)
-    // The CSS shares the box's width by weight, between the min and the max; YAZ-5658 Scroll sideways: at least a
+    // The CSS shares the box's width by weight, between the min and the max; YAZ-5658 Same as Desktop: at least a
     // readable line (13.5em) where the box has it (`tableWide.test.tsx`).
     expect(sheet('./tables.css')).toContain('width: clamp(var(--col-min), max(min(13.5em, calc(100cqw - var(--table-fixed, 0em) - 2px)), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1))), var(--col-max));')
   })

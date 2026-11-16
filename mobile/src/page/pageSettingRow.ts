@@ -8,7 +8,7 @@ import type { PageSettingKey } from '../comments/settingWrite'
  * the change at once, and follows the file again when the file says it (or the write was refused, which it says).
  * `fileOn`: what the page shows from its file now (its own key, else the vault's mobile setting). `name`: the row's
  * name in the notice ("Folding"). YAZ-5658: a row of three choices (Wide tables on this page) passes the page's own value,
- * `null` for none ("Same as the vault", which takes the key away).
+ * `null` for none ("Mobile Vault Default", which takes the key away).
  */
 export function usePageSettingRow<V extends boolean | null>(port: CommentsPort | null, path: string, key: PageSettingKey, fileOn: V, name: string, say: (words: string) => void): { on: V; set(on: V): void } {
   const [wanted, setWanted] = useState<{ path: string; on: V; id: string | null } | null>(null)

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { READER_FILES, READER_ID, seedReaderVault } from '../dev/readerVault'
-import { TWO_LONG, WIDE_NOW, WIDE_PAGE } from '../dev/tableFixtures'
+import { TWO_LONG, WIDE_DESK_PAGE, WIDE_NOW, WIDE_PAGE } from '../dev/tableFixtures'
 import { forgetSearch } from '../search/searchState'
 import { mount, newPhone, type Harness } from '../screens/testing'
 import { writeFolds } from '../store/foldPref'
@@ -17,13 +17,13 @@ import { calendarLook } from './calendarLook'
 import { forgetMobileSettings } from './mobileSettings'
 import { renderPage, type PageLook } from './pageRender'
 import { markCalendar, placeSlotRoom, setCalendarClock, slotRoomAt } from './tableCalendar'
-import { FIT_MIN, PAD, READ_WIDTH, columnWidths, columnsOf } from './tableLayout'
+import { FIT_MIN, MAC_TEXT_PX, PAD, READ_WIDTH, columnWidths, columnsOf, deskWidths } from './tableLayout'
 
 /**
  * YAZ-5658: wide tables on the phone. The cause of the one-letter Lookback: the Time in slot pill's room was a right
  * padding down the whole now-row cell (96 px of a 119 px column). Now the room is on the pill's own line only (two
- * floats), and the vault's Wide tables (`mobile.json` `fitTables`; a page's own `fit-tables` wins) picks Scroll sideways
- * (the default: each text column a readable width, Time in place) or Fit the screen (the text columns share the screen
+ * floats), and the vault's Wide tables (`mobile.json` `fitTables`; a page's own `fit-tables` wins) picks Same as Desktop
+ * (the default: each text column a readable width, Time in place) or Fit Screen (the text columns share the screen
  * by their text). jsdom has no layout: the widths are `columnWidths` (the CSS's rule in px) at the designer's 390 px
  * phone (a 356 px box); headless Chrome measures the drawn page (`publish/proveLayout.ts`, `page-wide-*`). Made-up day.
  */
@@ -51,7 +51,7 @@ afterEach(() => {
 })
 
 describe('YAZ-5658: the widths at a 390 px phone (Time · Plan · Lookback)', () => {
-  it('Scroll sideways: Time its text\'s width, Plan and Lookback each a readable line (13.5em, about 190 px); the table scrolls', async () => {
+  it('Same as Desktop: Time its text\'s width, Plan and Lookback each a readable line (13.5em, about 190 px); the table scrolls', async () => {
     const t = (await draw(WIDE_PAGE)).querySelector('table')!
     const cols = columnsOf(t)
     expect(cols.map((c) => c.kind)).toEqual(['fit', 'grow', 'grow'])
@@ -61,7 +61,7 @@ describe('YAZ-5658: the widths at a 390 px phone (Time · Plan · Lookback)', ()
     expect(w.reduce((a, b) => a + b, 0)).toBeGreaterThan(BOX_390)
   })
 
-  it('Fit the screen: Time its text\'s width, Plan and Lookback share the rest by their text, each at least 9em (126 px); no side scroll', async () => {
+  it('Fit Screen: Time its text\'s width, Plan and Lookback share the rest by their text, each at least 9em (126 px); no side scroll', async () => {
     const t = (await draw(WIDE_PAGE)).querySelector('table')!
     const cols = columnsOf(t)
     const w = columnWidths(cols, BOX_390, 'fit')
@@ -72,14 +72,14 @@ describe('YAZ-5658: the widths at a 390 px phone (Time · Plan · Lookback)', ()
     expect(w.map((px) => Math.round(px))).toEqual([expect.closeTo(74, -1.2), expect.closeTo(142, -1.2), expect.closeTo(138, -1.2)])
   })
 
-  it('Scroll sideways keeps a table of one long column inside a 320 px phone (the floor is never wider than the box)', async () => {
+  it('Same as Desktop keeps a table of one long column inside a 320 px phone (the floor is never wider than the box)', async () => {
     const t = (await draw(TWO_LONG)).querySelector('table')!
     const cols = columnsOf(t)
     expect(cols.map((c) => c.kind)).toEqual(['fit', 'grow'])
     expect(columnWidths(cols, 286, 'scroll').reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(286)
   })
 
-  it('no column under its min at 320 to 430 px: Scroll sideways its own min, Fit the screen its longest word and 9em', async () => {
+  it('no column under its min at 320 to 430 px: Same as Desktop its own min, Fit Screen its longest word and 9em', async () => {
     const t = (await draw(WIDE_PAGE)).querySelector('table')!
     const cols = columnsOf(t)
     for (const box of [286, 341, BOX_390, 396]) {
@@ -88,11 +88,62 @@ describe('YAZ-5658: the widths at a 390 px phone (Time · Plan · Lookback)', ()
     }
   })
 
-  it('the CSS says the same rule (tables.css): Scroll sideways at 13.5em, Fit the screen at 9em by `--col-share`', () => {
+  it('the CSS says the same rule (tables.css): Same as Desktop at 13.5em, Fit Screen at 9em by `--col-share`', () => {
     expect(css).toContain('clamp(var(--col-min), max(min(13.5em, calc(100cqw - var(--table-fixed, 0em) - 2px)), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1))), var(--col-max))')
     expect(css).toContain("[data-wide-tables='fit'] .page-table-box col.page-table__grow {\n  width: max(9em, var(--col-hold, 0em), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-share, 1)));")
     expect(READ_WIDTH).toBe(13.5)
     expect(FIT_MIN).toBe(9)
+  })
+})
+
+describe('YAZ-5658 round 2: Same as Desktop takes the widths saved in the file', () => {
+  it('a table the Mac widened (Lookback 320 px) shows those widths on a 390 px phone, every column, scaled to the phone\'s text; it scrolls', async () => {
+    const t = (await draw(WIDE_DESK_PAGE)).querySelector('table')!
+    const cols = columnsOf(t)
+    // Time stays a short column (it never wraps), Plan and Lookback long ones: the kinds are the text's.
+    expect(cols.map((c) => c.kind)).toEqual(['fit', 'grow', 'grow'])
+    const w = columnWidths(cols, BOX_390, 'scroll')
+    // The Mac's 16 px text, the phone's 14 px: 96 · 176 · 320 px on the Mac are 84 · 154 · 280 px on the phone.
+    expect(w).toEqual([96, 176, 320].map((mac) => (mac / MAC_TEXT_PX) * TABLE_PX))
+    expect(w).toEqual([84, 154, 280])
+    // Never squeezed to fit: wider than the box, it scrolls (Time pinned: `freeze 1 col`).
+    expect(w.reduce((a, b) => a + b, 0)).toBeGreaterThan(BOX_390)
+    expect(t.getAttribute('data-freeze-cols')).toBe('1')
+    // The CSS draws it so: each col its saved width, the short column too.
+    const col = [...t.querySelectorAll<HTMLElement>('col')]
+    expect(col.map((c) => [c.hasAttribute('data-desk'), c.style.getPropertyValue('--col-desk')])).toEqual([[true, '6em'], [true, '11em'], [true, '20em']])
+    expect(css).toContain('.page-table-box col[data-desk] {\n  width: var(--col-desk);\n}')
+  })
+
+  it('no saved widths: today\'s widths (a short column its text, a long one a readable line)', async () => {
+    const cols = columnsOf((await draw(WIDE_PAGE)).querySelector('table')!)
+    expect(cols.every((c) => c.desk === null)).toBe(true)
+    const w = columnWidths(cols, BOX_390, 'scroll')
+    expect(w).toEqual([cols[0]!.max * TABLE_PX, READ_WIDTH * TABLE_PX, READ_WIDTH * TABLE_PX])
+  })
+
+  it('one saved width: that column takes it, the others keep today\'s rule beside it', async () => {
+    const t = (await draw(WIDE_DESK_PAGE.replace('widths 96 176 320', 'widths auto auto 320'))).querySelector('table')!
+    const cols = columnsOf(t)
+    const w = columnWidths(cols, BOX_390, 'scroll')
+    expect(w[0]).toBe(cols[0]!.max * TABLE_PX)
+    expect(w[1]).toBe(READ_WIDTH * TABLE_PX)
+    expect(w[2]).toBe(280)
+  })
+
+  it('only a table comment\'s widths are drawn as is: a folder view\'s (no `data-desk`) stay hints', async () => {
+    const t = (await draw(WIDE_DESK_PAGE)).querySelector('table')!
+    expect(t.hasAttribute('data-desk')).toBe(true)
+    expect(deskWidths(t)).toEqual([6, 11, 20])
+    t.removeAttribute('data-desk')
+    expect(deskWidths(t)).toEqual([])
+  })
+
+  it('Fit Screen leaves the saved widths: the same widths as a table with none', async () => {
+    const saved = columnsOf((await draw(WIDE_DESK_PAGE)).querySelector('table')!)
+    const none = columnsOf((await draw(WIDE_PAGE)).querySelector('table')!)
+    expect(columnWidths(saved, BOX_390, 'fit')).toEqual(columnWidths(none, BOX_390, 'fit'))
+    expect(css).toContain("[data-wide-tables='fit'] .page-table-box col[data-desk]:not(.page-table__grow) {\n  width: auto;\n}")
   })
 })
 
@@ -106,7 +157,7 @@ describe('YAZ-5658: the pill takes room on its own line only', () => {
     expect([...cell.children].slice(0, 3).map((c) => c.className)).toEqual(['table-slot-anchor', 'table-slot-gap', 'table-slot-room'])
     expect(cell.textContent).toContain('Wrote the outline')
     expect(css).not.toMatch(/\.table-slot-pad\s*\{[^}]*padding-right/)
-    // The narrowest Lookback (Fit the screen at 390 px) still reads at least 7 letters a line off the pill's line.
+    // The narrowest Lookback (Fit Screen at 390 px) still reads at least 7 letters a line off the pill's line.
     const cols = columnsOf(t)
     const narrow = Math.min(columnWidths(cols, BOX_390, 'fit')[2]!, columnWidths(cols, BOX_390, 'scroll')[2]!)
     expect(narrow - PAD * TABLE_PX).toBeGreaterThanOrEqual(7 * 0.62 * TABLE_PX)
@@ -214,7 +265,7 @@ describe('YAZ-5658: Wide tables, the vault\'s (Settings) and the page\'s own (�
   const mode = (x: Harness) => x.host.querySelector('.reader__body')!.getAttribute('data-wide-tables')
   const choice = (x: Harness) => [...x.host.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].map((r) => `${r.textContent?.trim()}${r.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`)
 
-  it('the vault\'s default: Scroll sideways; mobile.json says Fit the screen: fit', async () => {
+  it('the vault\'s default: Same as Desktop; mobile.json says Fit Screen: fit', async () => {
     h = await open('Day one', fakePort())
     await waitFor(h, () => mode(h!) === 'scroll')
     h.unmount()
@@ -222,38 +273,38 @@ describe('YAZ-5658: Wide tables, the vault\'s (Settings) and the page\'s own (�
     await waitFor(h, () => mode(h!) === 'fit')
   })
 
-  it("a page's own `fit-tables: false` wins over the vault's Fit the screen", async () => {
+  it("a page's own `fit-tables: false` wins over the vault's Fit Screen", async () => {
     h = await open('Day own', fakePort(), '{"version":1,"fitTables":true}')
     await waitFor(h, () => mode(h!) === 'scroll')
     await h.click('Page tools')
-    expect(choice(h)).toEqual(['Same as the vault', '✓ Scroll sideways ✓', 'Fit the screen'])
+    expect(choice(h)).toEqual(['Mobile Vault Default', '✓ Same as Desktop ✓', 'Fit Screen'])
   })
 
-  it('⋯ Wide tables on this page: Fit the screen writes `fit-tables: true` on the safe path and shows at once; Same as the vault takes it away', async () => {
+  it('⋯ Wide tables on this page: Fit Screen writes `fit-tables: true` on the safe path and shows at once; Mobile Vault Default takes it away', async () => {
     const port = fakePort()
     h = await open('Day one', port)
     await waitFor(h, () => mode(h!) === 'scroll')
     await h.click('Page tools')
-    expect(choice(h)).toEqual(['✓ Same as the vault ✓', 'Scroll sideways', 'Fit the screen'])
-    await h.click(/Fit the screen/)
+    expect(choice(h)).toEqual(['✓ Mobile Vault Default ✓', 'Same as Desktop', 'Fit Screen'])
+    await h.click(/Fit Screen/)
     expect(port.add).toHaveBeenCalledWith({ path: 'Day one.md', body: '', setting: { key: 'fit-tables', on: true } })
     await waitFor(h, () => mode(h!) === 'fit')
     await h.click('Page tools')
-    await h.click(/Same as the vault/)
+    await h.click(/Mobile Vault Default/)
     expect(port.add).toHaveBeenLastCalledWith({ path: 'Day one.md', body: '', setting: { key: 'fit-tables', on: null } })
     await waitFor(h, () => mode(h!) === 'scroll')
   })
 
-  it('Settings › This vault on mobile › Wide tables: Scroll sideways chosen; Fit the screen goes the safe path', async () => {
+  it('Settings › This vault on mobile › Wide tables: Same as Desktop chosen; Fit Screen goes the safe path', async () => {
     const port = fakePort()
     h = await open('Day one', port)
     await h.click('Settings')
     await waitFor(h, () => h!.host.querySelector('[aria-label="Wide tables"] input:not([disabled])') !== null)
     const radio = (label: string) => [...h!.host.querySelectorAll('[aria-label="Wide tables"] label.row')].find((l) => l.textContent === label)!.querySelector<HTMLInputElement>('input')!
-    expect([radio('Scroll sideways').checked, radio('Fit the screen').checked]).toEqual([true, false])
-    await act(async () => radio('Fit the screen').click())
+    expect([radio('Same as Desktop').checked, radio('Fit Screen').checked]).toEqual([true, false])
+    await act(async () => radio('Fit Screen').click())
     await h.settle()
     expect(port.add).toHaveBeenCalledWith({ path: MOBILE_SETTINGS_PATH, body: '', setting: { file: 'mobile', key: 'fitTables', on: true } })
-    expect(radio('Fit the screen').checked).toBe(true)
+    expect(radio('Fit Screen').checked).toBe(true)
   })
 })

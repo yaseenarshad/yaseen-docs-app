@@ -202,3 +202,6 @@ export const WIDE_TABLE = [
   '<!-- table: freeze 1 row 1 col, calendar 30m -->',
 ].join('\n')
 export const WIDE_PAGE = ['# Day plan', WIDE_TABLE, 'Notes after the table.'].join('\n\n')
+/** YAZ-5658 round 2: the same table with the widths the Mac saved (Lookback widened to 320 px): Same as Desktop draws them. */
+export const WIDE_DESK_TABLE = WIDE_TABLE.replace('<!-- table: freeze 1 row 1 col, calendar 30m -->', '<!-- table: widths 96 176 320, freeze 1 row 1 col, calendar 30m -->')
+export const WIDE_DESK_PAGE = ['# Day plan', WIDE_DESK_TABLE, 'Notes after the table.'].join('\n\n')

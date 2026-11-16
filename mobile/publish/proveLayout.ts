@@ -498,10 +498,10 @@ if (process.env.LAYOUT_PAGES !== 'no') {
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 // YAZ-5658: Wide tables at the designer's 390 px phone (a made-up Time · Plan · Lookback day, the clock at 7:23, Time in
-// slot counting down), light and dark. Scroll sideways (the vault's default; `page-wide-own`: the page's own
-// `fit-tables: false` over the vault's Fit the screen): Plan and Lookback each at least 188 px, the table wider than its
+// slot counting down), light and dark. Same as Desktop (the vault's default; `page-wide-own`: the page's own
+// `fit-tables: false` over the vault's Fit Screen): Plan and Lookback each at least 188 px, the table wider than its
 // box, Time in place; swiped to the end the pill stays at the box's right and covers no text (at rest it lies over
-// the cut Lookback: the issue's option B). Fit the screen (`page-wide-fit`): each at
+// the cut Lookback: the issue's option B). Fit Screen (`page-wide-fit`): each at
 // least 125 px, the table inside its box. Both: the now row's Lookback never reads one letter per line (no line but its
 // last holds 2 letters or fewer), the pill on the line covers no text, the page never scrolls sideways.
 const WIDE_CHECK = `(() => {
@@ -531,8 +531,8 @@ const WIDE_CHECK = `(() => {
   box.scrollLeft = box.scrollWidth
   const end = pill ? at() : null
   box.scrollLeft = 0
-  // Scroll sideways at rest: the pill at the visible edge lies over the cut Lookback (the issue's option B); swiped to
-  // its end, the pill is at its room. Fit the screen: at rest.
+  // Same as Desktop at rest: the pill at the visible edge lies over the cut Lookback (the issue's option B); swiped to
+  // its end, the pill is at its room. Fit Screen: at rest.
   const covered = document.querySelector('.reader__body').dataset.wideTables === 'fit' ? rest && rest.covered : end && end.covered
   return { mode: document.querySelector('.reader__body').dataset.wideTables, cols, table: Math.round(r(table).width), box: box.clientWidth, perLine, covered, rest, end, pinned: table.rows[1].cells[0].hasAttribute('data-pin-col'), pill: pill && pill.textContent, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
 })()`
@@ -552,11 +552,23 @@ if (process.env.LAYOUT_WIDE !== 'no') {
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  ${name} at 390x844, ${scheme}: ${m.none ? 'NO CALENDAR' : `${m.mode}; columns ${m.cols.join(' · ')} in a ${m.box} px box (table ${m.table}); Time ${m.pinned ? 'in place' : 'scrolls'}; the now row's Lookback ${lines.join('/')} letters a line (${towers} short); pill "${m.pill}" ${m.covered ? 'COVERS TEXT' : 'covers no text'}${fit ? '' : ' swiped to the end'}, ${m.rest?.right}px from the right at rest, ${m.end?.right}px swiped; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
+    {
+      // YAZ-5658 round 2: Same as Desktop with the widths the Mac saved (96 · 176 · 320 px at the Mac's 16 px text): each
+      // column those widths at the phone's 14 px (84 · 154 · 280, within 2 px), the table wider than its box, Time in place.
+      const desk = await open('page-wide-desk', 390, 844)
+      const deskShot = desk.replace('.png', `-${scheme}.png`)
+      writeFileSync(deskShot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
+      const m = await evaluate(WIDE_CHECK)
+      const want = [84, 154, 280]
+      const ok = !m.none && m.mode === 'scroll' && want.every((w, i) => Math.abs(m.cols[i] - w) <= 2) && m.table > m.box && m.pinned && !m.covered && m.end?.inside && !m.pageWide
+      if (!ok) failed++
+      console.log(`${ok ? 'PASS' : 'FAIL'}  page-wide-desk at 390x844, ${scheme}: ${m.none ? 'NO CALENDAR' : `${m.mode}; columns ${m.cols.join(' · ')} (saved ${want.join(' · ')}) in a ${m.box} px box (table ${m.table}); Time ${m.pinned ? 'in place' : 'scrolls'}; pill ${m.covered ? 'COVERS TEXT' : 'covers no text'} swiped to the end; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${deskShot}`)
+    }
     const file = await open('page-wide-menu', 390, 844)
     const shot = file.replace('.png', `-${scheme}.png`)
     writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
     const menu = await evaluate(`[...document.querySelectorAll('.page-tools__menu [role=menuitemradio]')].map((b) => b.textContent.trim() + (b.getAttribute('aria-checked') === 'true' ? ' (chosen)' : ''))`)
-    const ok = JSON.stringify(menu) === JSON.stringify(['Same as the vault', '✓ Scroll sideways (chosen)', 'Fit the screen'])
+    const ok = JSON.stringify(menu) === JSON.stringify(['Mobile Vault Default', '✓ Same as Desktop (chosen)', 'Fit Screen'])
     if (!ok) failed++
     console.log(`${ok ? 'PASS' : 'FAIL'}  page-wide-menu at 390x844, ${scheme}: ${menu.join(' | ')}  ${shot}`)
   }
@@ -2336,8 +2348,8 @@ if (process.env.LAYOUT_STICKY_HEADINGS !== 'no') {
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
 }
 // YAZ-5592: Settings › "This vault on mobile" (`settings-mobile`: the vault's mobile.json says Folding off), light and
-// dark, at 375 and 320 px: its heading, Folding (off) and Sticky headings (on), YAZ-5658 Wide tables (Scroll sideways
-// chosen, Fit the screen not), each a 44 px row that can be changed, inside the screen; never sideways.
+// dark, at 375 and 320 px: its heading, Folding (off) and Sticky headings (on), YAZ-5658 Wide tables (Same as Desktop
+// chosen, Fit Screen not), each a 44 px row that can be changed, inside the screen; never sideways.
 const MOBILE_PART = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const part = document.querySelector('.settings-mobile')
@@ -2359,7 +2371,7 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
       const m = await evaluate(MOBILE_PART)
       type Row = { label: string; on: boolean; enabled: boolean; h: number; inside: boolean }
       const rows = (m.rows ?? []) as Row[]
-      const ok = m.title === 'This vault on mobile' && rows.length === 4 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows[2]!.label === 'Scroll sideways' && rows[2]!.on === true && rows[3]!.label === 'Fit the screen' && rows[3]!.on === false && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
+      const ok = m.title === 'This vault on mobile' && rows.length === 4 && rows[0]!.label === 'Folding' && rows[0]!.on === false && rows[1]!.label === 'Sticky headings' && rows[1]!.on === true && rows[2]!.label === 'Same as Desktop' && rows[2]!.on === true && rows[3]!.label === 'Fit Screen' && rows[3]!.on === false && rows.every((x) => x.enabled && x.h >= 44 && x.inside) && !m.wide
       if (!ok) failed++
       console.log(`${ok ? 'PASS' : 'FAIL'}  settings-mobile ${scheme} at ${w}x${hgt}: ${m.error ?? `"${m.title}": ${rows.map((x) => `${x.label} ${x.on ? 'on' : 'off'}${x.enabled ? '' : ' DISABLED'} ${x.h}px${x.inside ? '' : ' OUTSIDE'}`).join(', ')}; page ${m.wide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }

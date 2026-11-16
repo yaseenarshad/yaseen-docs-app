@@ -89,7 +89,8 @@ export const BORDER_PX_PHONE = 2
  * The table's marks from its comment's body (`table: freeze 2 rows 1 col`, the comment without `<!--` and `-->`). A
  * body that is no table comment changes nothing. YAZ-5480: the frozen rows and columns. YAZ-5482: what the comment says
  * of the table's look, translated for a phone (`tables.css` draws it; `tableLayout.ts` sizes the columns):
- *  - `widths`: the Mac's column widths, as `data-widths`; `tableLayout.ts` takes them as proportions and minimums;
+ *  - `widths`: the Mac's column widths, as `data-widths` and `data-desk`; `tableLayout.ts` draws them as is (Same as
+ *    Desktop) or leaves them (Fit Screen);
  *  - `fill` and `color`: each cell's `data-fill` and `data-color`, the Mac's ten names (light and dark shades, as the
  *    Mac's `table.css`) or a custom colour: a fill as the Mac's wash, a text colour made readable in each theme
  *    (`readableInk`);
@@ -116,7 +117,11 @@ export function applyTableFile(table: HTMLTableElement, body: string, look: Phon
     for (const r of style.nodim ?? []) table.rows[r]?.setAttribute('data-nodim', '')
   }
 
-  if (style.widths.some((w) => w !== null)) table.setAttribute('data-widths', style.widths.map((w) => w ?? 'auto').join(' '))
+  if (style.widths.some((w) => w !== null)) {
+    table.setAttribute('data-widths', style.widths.map((w) => w ?? 'auto').join(' '))
+    // YAZ-5658: Same as Desktop draws these widths as is (`deskWidths`).
+    table.setAttribute('data-desk', '')
+  }
   if (style.stripes) table.setAttribute('data-stripes', '')
   if (style.height !== undefined) table.setAttribute('data-height', style.height)
   if (style.valignTable !== undefined) table.setAttribute('data-valign', style.valignTable)
