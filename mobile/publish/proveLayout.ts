@@ -130,7 +130,8 @@ import { freePort } from './freePort'
  * LAYOUT_ASKS=no, LAYOUT_PAGES=no, LAYOUT_LOOK=no, LAYOUT_SHEETS=no, LAYOUT_FOLDERS=no, LAYOUT_STICKY=no, LAYOUT_LINES=no, LAYOUT_STRIP=no, LAYOUT_COUNT=no, LAYOUT_HEADING=no, LAYOUT_TOPBAR=no, LAYOUT_CARD_MENU=no, LAYOUT_DISCARD=no, LAYOUT_TODAY=no, LAYOUT_OPEN=no, LAYOUT_PROPS=no, LAYOUT_TYPES=no, LAYOUT_MENTIONS=no, LAYOUT_BAND=no, LAYOUT_DIAGRAMS=no, LAYOUT_PANEL_TOP=no, LAYOUT_MENUS=no, LAYOUT_SETTINGS=no, LAYOUT_STICKY_HEADINGS=no, LAYOUT_CELL_TASKS=no, LAYOUT_WIDE=no skip a part).
  *  - a computer's browser tab (YAZ-5644), light and dark at 1280 x 800: the phone layout in a centred column of 640 px,
  *    every bar and the full-screen table inside it, no install hint; a phone (upright and on its side) keeps the full
- *    width. The install hint of a phone's tab at 320 and 375 px: one block above the form, How and ✕ 44 px taps.
+ *    width. The install hint of a phone's tab at 320 and 375 px: one block above the sign-in (its first button: Sign in
+ *    with GitHub, YAZ-5645; the token form has the same), How and ✕ 44 px taps.
  */
 
 const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
@@ -1970,15 +1971,17 @@ if (process.env.LAYOUT_MENUS !== 'no') {
     console.log(`${ok ? 'PASS' : 'FAIL'}  menu toggle (YAZ-5552): ${m.name} (#fixture=${m.fixture}) at 375x667, real touch: taps on its button -> ${button === null ? 'NO BUTTON' : seen.map((o) => (o ? 'open' : 'closed')).join(', ')} (drawn ${shown.map((ms) => `${ms} ms`).join(', ')} after the lift${shown.every((ms) => ms < 100) ? '' : ', TOO SLOW'}); a tap outside -> ${closedOutside ? 'closed' : 'STILL OPEN'}, ${before === after ? 'nothing else changed' : `CHANGED ${JSON.stringify(before)} -> ${JSON.stringify(after)}`}  ${file}`)
   }
 }
-// YAZ-5555: the build's line at the top of Settings (`#fixture=settings`), light and dark, at 320 and 375 px: it shows
-// without opening anything, one line, muted, under the top bar and above the first section, inside the screen.
+// YAZ-5555, YAZ-5659: the build's line in Settings (`#fixture=settings`), light and dark, at 320 and 375 px: in About,
+// under What's new and above Check for updates (YAZ-5659 moved it there from the top), one line, muted, inside the screen.
 const BUILD_LINE = `(() => {
   const r = (el) => el.getBoundingClientRect()
   const line = document.querySelector('.settings__build')
   if (!line) return { error: 'no build line' }
-  const first = document.querySelector('.screen h2.section')
+  line.scrollIntoView({ block: 'center' })
+  const whatsNew = document.querySelector('.whats-new__toggle')
+  const check = document.querySelector('.settings__check-button')
   const lh = parseFloat(getComputedStyle(line).lineHeight) || parseFloat(getComputedStyle(line).fontSize) * 1.4
-  return { text: line.textContent, oneLine: r(line).height <= lh * 1.5, below: r(line).top >= r(document.querySelector('.topbar')).bottom - 0.5, above: !first || r(line).bottom <= r(first).top, inside: r(line).left >= 0 && r(line).right <= innerWidth + 0.5, colour: getComputedStyle(line).color, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
+  return { text: line.textContent, oneLine: r(line).height <= lh * 1.5, below: whatsNew !== null && r(line).top >= r(whatsNew).bottom - 0.5, above: check === null || r(line).bottom <= r(check).top, inside: r(line).left >= 0 && r(line).right <= innerWidth + 0.5, colour: getComputedStyle(line).color, pageWide: document.scrollingElement.scrollWidth > innerWidth + 1 }
 })()`
 if (process.env.LAYOUT_SETTINGS !== 'no') {
   for (const scheme of ['light', 'dark'] as const) {
@@ -1986,11 +1989,11 @@ if (process.env.LAYOUT_SETTINGS !== 'no') {
     for (const [w, h] of [[320, 568], [375, 667]] as const) {
       const file = await open('settings', w, h)
       const shot = file.replace('.png', `-build-${scheme}.png`)
-      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       const m = await evaluate(BUILD_LINE)
+      writeFileSync(shot, Buffer.from((await send('Page.captureScreenshot', { format: 'png' }, page)).data, 'base64'))
       const ok = !m.error && /^Build \S+ · \d{1,2} [A-Z][a-z]{2}, \d{2}:\d{2}$/.test(m.text) && m.oneLine && m.below && m.above && m.inside && !m.pageWide
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  settings build line at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.text}", ${m.oneLine ? 'one line' : 'WRAPS'}, ${m.below && m.above ? 'at the top' : 'NOT AT THE TOP'}, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.colour}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  settings build line at ${w}x${h}, ${scheme}: ${m.error ?? `"${m.text}", ${m.oneLine ? 'one line' : 'WRAPS'}, ${m.below && m.above ? 'under What\'s new' : 'NOT UNDER WHAT\'S NEW'}, ${m.inside ? 'inside' : 'OUTSIDE'}, ${m.colour}; page ${m.pageWide ? 'SCROLLS SIDEWAYS' : 'stays'}`}  ${shot}`)
     }
   }
   await send('Emulation.setEmulatedMedia', { features: [] }, page)
@@ -2103,7 +2106,7 @@ if (process.env.LAYOUT_DESKTOP !== 'no') {
     const how = [...hint.querySelectorAll('button')].find((b) => b.textContent.trim() === 'How')
     const close = hint.querySelector('button[aria-label="Not now"]')
     const tap = (b) => r(b).width >= 43.5 && r(b).height >= 43.5 && r(b).left >= 0 && r(b).right <= innerWidth + 0.5
-    const first = r(hint).top < r(document.querySelector('form')).top
+    const first = r(hint).top < r(document.querySelector('.btn--primary')).top
     const closed = Math.round(r(hint).height)
     const taps = tap(how) && tap(close)
     how.click()
@@ -2124,7 +2127,7 @@ if (process.env.LAYOUT_DESKTOP !== 'no') {
       const m = await evaluate(HINT)
       const ok = !m.none && m.first && m.closed <= 92 && m.taps && m.steps === 4 && m.expanded === 'true' && m.gone && m.kept === 'hidden' && !m.wide
       if (!ok) failed++
-      console.log(`${ok ? 'PASS' : 'FAIL'}  the install hint ${scheme} at ${w}x${h}: ${m.none ? 'NO HINT' : `${m.first ? 'above the form' : 'NOT FIRST'}, ${m.closed} px tall; How and ✕ ${m.taps ? '44 px taps' : 'SMALL or OUT'}; How shows ${m.steps} steps (${m.expanded}); ✕ ${m.gone ? 'hides it' : 'LEAVES IT'}, kept ${m.kept}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'nothing sideways'}`}  ${shot}`)
+      console.log(`${ok ? 'PASS' : 'FAIL'}  the install hint ${scheme} at ${w}x${h}: ${m.none ? 'NO HINT' : `${m.first ? 'above the sign-in' : 'NOT FIRST'}, ${m.closed} px tall; How and ✕ ${m.taps ? '44 px taps' : 'SMALL or OUT'}; How shows ${m.steps} steps (${m.expanded}); ✕ ${m.gone ? 'hides it' : 'LEAVES IT'}, kept ${m.kept}; ${m.wide ? 'SCROLLS SIDEWAYS' : 'nothing sideways'}`}  ${shot}`)
     }
   }
   await evaluate(`(() => { try { localStorage.removeItem('notecard.homeScreenHint') } catch {} })()`)
