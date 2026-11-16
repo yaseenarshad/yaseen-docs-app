@@ -49,8 +49,6 @@ export type Route =
   | { kind: 'add-vault' }
   /** "Set up your phone" (round 11, item 9), opened from "How to make a token". */
   | { kind: 'guide' }
-  /** "Scan a code" (round 11, item 23). `vault` set: the code must be for that vault (a new token for it). */
-  | { kind: 'scan'; vault?: string }
   /** A new token for a vault: "Replace token" in Settings, or "Sign in again" (row N6). */
   | { kind: 'replace-token'; vault: string }
   /**

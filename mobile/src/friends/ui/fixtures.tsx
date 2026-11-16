@@ -3,7 +3,7 @@ import type { Root } from 'react-dom/client'
 import { App } from '../../App'
 import type { AppServices } from '../../app/AppState'
 import { saveAccount } from '../../auth/account'
-import { fakeScanner, fakeSync, reviewOnTabs } from '../../dev/fakes'
+import { fakeSync, reviewOnTabs } from '../../dev/fakes'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../../store'
 import { gistText } from './board'
 import type { Board } from './service'
@@ -106,7 +106,7 @@ export async function mountFriendsFixture(root: Root, name: string): Promise<voi
   const service = fakeService(boardOf(name))
   if (name === 'friends-cheer-wait')
     service.markAnswer = async (_m, kind) => ({ kind: 'waiting', mark: { kind, at: '' }, why: 'marks-limit', retryAt: NOW + 12 * 60_000 })
-  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync: fakeSync(), friends: fakeServices(store, service), scanner: fakeScanner(), now: () => NOW }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync: fakeSync(), friends: fakeServices(store, service), now: () => NOW }
   root.render(<App services={services} />)
   await until('section[aria-label="Friends"]:not([aria-busy])')
   await wait(50)

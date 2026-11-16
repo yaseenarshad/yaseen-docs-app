@@ -23,8 +23,6 @@ const FolderView = lazyScreen(() => import('../folders/FolderView'), { waiting: 
 const VsScreen = lazyScreen(() => import('../friends/ui/VsScreen'), { waiting: routeWaiting })
 /** "Set up your phone": a chunk of its own (YAZ-5446 keeps the first load under its ceiling). */
 const SetupGuide = lazyScreen(() => import('./SetupGuide'), { waiting: routeWaiting })
-/** "Scan a code": a chunk of its own too (YAZ-5461 makes room in the first load for the waiting comments of the dot). */
-const ScanCode = lazyScreen(() => import('./ScanCode'), { waiting: routeWaiting })
 /** Settings (the gear): a chunk of its own, after a tap (makes room in the first load under its ceiling). */
 const Settings = lazyScreen<object>(() => import('./Settings').then((m) => ({ default: m.Settings })), { waiting: routeWaiting })
 
@@ -131,8 +129,6 @@ function RouteScreen({ route }: { route: Route }) {
       return <SignIn mode={{ kind: 'again', vault: route.vault }} />
     case 'guide':
       return <SetupGuide onBack={back} />
-    case 'scan':
-      return <ScanCode vault={route.vault} />
     case 'page':
       return <PageView key={route.path} path={route.path} at={route.at} heading={route.heading} onBack={back} />
     case 'friend':

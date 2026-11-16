@@ -3,7 +3,7 @@ import { App } from '../App'
 import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
-import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
+import { fakeFriends, fakeSync, reviewOnTabs } from './fakes'
 import { READER_FILES, READER_ID, READER_NOT_STORED, STICKY_FILES, cardBlock, seedReaderVault } from './readerVault'
 import { DRAWING_FILES, FLOW_DRAWIO_SVG, GARDEN_SCENE } from './drawingVault'
 import { DIAGRAM_FILES } from './diagramVault'
@@ -400,7 +400,7 @@ export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Pr
     const answers = { state: () => state, subscribe: () => () => {}, waiting: () => [], comments }
     sync.review = async () => ({ answers }) as unknown as Awaited<ReturnType<NonNullable<typeof sync.review>>>
   }
-  const services: AppServices = { store, tokens, vaultTabs: name === 'page-headings-alone' ? undefined : reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
+  const services: AppServices = { store, tokens, vaultTabs: name === 'page-headings-alone' ? undefined : reviewOnTabs, sync, friends: fakeFriends(store, false), fetch: refuseAll, ...(name === 'page-online' && { media: online }), ...(name === 'page-drawing' && { media: typedMedia }) }
   root.render(<App services={services} />)
   await until(() => document.querySelector('[role="tab"]') !== null || (name === 'page-headings-alone' && document.querySelector('input[name="search"]') !== null))
   press('Search')

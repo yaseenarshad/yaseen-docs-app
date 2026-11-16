@@ -3,12 +3,12 @@
 #
 # The page may call GitHub's API only (decision 8). Pictures: this site, blob:, data: and GitHub's avatar host
 # (round 12, item 13). No inline script, no eval, no third-party script, font or analytics. No referrer ever: a friend
-# link and the token never leak. The camera for this site only ("Scan a code").
+# link and the token never leak. No camera (YAZ-5650: "Scan a code" is gone).
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src https://api.github.com; img-src 'self' blob: data: https://avatars.githubusercontent.com; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
-  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
   Cross-Origin-Opener-Policy: same-origin
   # YAZ-5284: HTTPS only, for one year (no preload, no subdomains). Browsers obey it only on an HTTPS answer. Plain
   # http:// is NOT sent to https:// yet: the site answers 200 there until the zone's "Always Use HTTPS" is on (Yaseen).

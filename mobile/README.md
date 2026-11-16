@@ -89,7 +89,7 @@ mobile/
     app/                4A: the app state and actions (`AppState.tsx`, `useApp()`), the tabs and routes (`nav.ts`),
                         the words and ways forward (`help.ts`), the sync port and the lazy 3B engine (`syncPort.ts`,
                         `lazySync.ts`), Friends' port (`friendsPort.ts`), the vault's word for page (`unitWord.ts`)
-    screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `ScanCode`, `Settings`, `FirstDownload`; `Search` is 4C's;
+    screens/            4A: `Shell`, `SignIn`, `SetupGuide`, `Settings`, `FirstDownload`; `Search` is 4C's;
                         `Friends`, `Review` and `SyncStatus` load the tabs of `friends/ui/`, `review/` and `status/`
     sync/               3B: the engine (`engine.ts`: the poll, the passes, one tab at a time), a pass (`pass.ts`), what
                         downloads first (`plan.ts`), the commit (`githubRemote.ts`), the cadence (`cadence.ts`)
@@ -106,7 +106,6 @@ mobile/
     page/               4C: a page and a card, read only, with no editor (a lazy chunk): `pageRender.ts` (`marked`
                         and DOMPurify), the vault's look-ups (`pageLook.ts`), pictures, embeds and taps (`pageDom.ts`),
                         `PageView`, `CardView`; one file's bytes come from `media/ui/`
-    scan/               "Scan a code": the camera (`camera.ts`) and the reader (`qrDecode.ts`, the `qr` library, a lazy chunk)
     pwa/                YAZ-5087: the service worker, the update and its safe moment, the friend landing page
     dev/                fakes for tests, and the screen fixtures of the `--mode fixtures` build (not in the real build)
     store/              ALL browser storage. Nothing else touches IndexedDB, localStorage or navigator.storage.
@@ -129,7 +128,6 @@ mobile/
       account.ts        what the check learned (login, name, avatar, Gists, end date), kept with the vault
       friends.ts        which account acts for friends, and its two alerts
       expiry.ts         the token's end date and the warning before it
-      scanCode.ts       "Scan a code": what the Mac's QR code holds (the camera is 4A's)
       input.ts          the typed repo, token and branch, cleaned
 ```
 
@@ -205,7 +203,7 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
   `friendLink`, `groupLinkFor`, `joinLinkFor`, `landingCodeFrom`). The code is after `#`, so no server sees it. One landing
   page for Safari (`friend.html`, also built as `group.html` and `join.html`): "Copy this code. Open the app. Tap Paste.",
   with words for each kind. Every link uses the site the app runs on (`location.origin`), never a fixed host.
-* **Headers:** `public/_headers` (the CSP, `Referrer-Policy: no-referrer`, `nosniff`, the camera for this site only,
+* **Headers:** `public/_headers` (the CSP, `Referrer-Policy: no-referrer`, `nosniff`, no camera,
   `Strict-Transport-Security: max-age=31536000`, the cache rules; no long cache under `/assets/`, because Cloudflare
   answers a missing chunk with the app page). `publish/headers.test.ts` fails when the code calls an origin that the CSP does not name, or the CSP
   names more.

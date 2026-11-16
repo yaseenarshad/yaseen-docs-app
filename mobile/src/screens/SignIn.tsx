@@ -29,7 +29,7 @@ export type SignInMode = { kind: 'first' } | { kind: 'add' } | { kind: 'again'; 
 
 /**
  * The sign-in screen (decision 13): the token first, then the repo from the token's list. One link
- * "How to make a token" opens "Set up your phone". "Scan a code" reads the Mac's code (round 11, item 23).
+ * "How to make a token" opens "Set up your phone".
  * YAZ-5644: THE ONE SIGN-IN SCREEN, in a browser tab and in the Home Screen app alike: the first sign-in, Add vault and
  * Sign in again all open it (`Shell.tsx`). "Sign in with GitHub" (YAZ-5645) replaces its token form here, and only here.
  */
@@ -164,11 +164,6 @@ export function SignIn({ mode }: { mode: SignInMode }) {
         </div>
       </form>
       )}
-      <p className="section">Or</p>
-      <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'open', route: { kind: 'scan', vault: mode.kind === 'again' ? mode.vault : undefined } })}>
-        Scan a code
-      </button>
-      <p className="muted">On your Mac: Settings › Cards › Connect your phone.</p>
       {mode.kind === 'again' && !ready && again !== null && (
         <div>
           {asking ? (

@@ -3,14 +3,14 @@ import { createRoot } from 'react-dom/client'
 import { App } from '../App'
 import type { AppServices } from '../app/AppState'
 import type { FriendsPort } from '../app/friendsPort'
-import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs, type FakeScanner, type FakeSync } from '../dev/fakes'
+import { fakeFriends, fakeSync, reviewOnTabs, type FakeSync } from '../dev/fakes'
 import { fakeGithub, type FakeGithub, type FakeRepo, type FakeToken } from '../github/testing'
 import { memoryBackend, openVaultStore, tokenStoreOn, type TokenStore, type VaultStore } from '../store'
 import type { Updates } from '../pwa/updates'
 
 /**
  * Test help for the screens (jsdom): the real app with the real store (in memory) and the real sign-in logic, and fakes
- * for GitHub, the sync, Friends and the camera. A test file that uses it says `// @vitest-environment jsdom`.
+ * for GitHub, the sync and Friends. A test file that uses it says `// @vitest-environment jsdom`.
  */
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -45,7 +45,6 @@ export interface Harness {
   tokens: TokenStore
   github: FakeGithub
   sync: FakeSync
-  scanner: FakeScanner
   services: AppServices
   /** The text on screen, spaces collapsed. */
   text(): string
@@ -56,8 +55,6 @@ export interface Harness {
   /** The fake sync changes its state (as 3B's engine does), and the screens follow. */
   syncSet(next: Parameters<FakeSync['set']>[0]): Promise<void>
   syncEmit(event: Parameters<FakeSync['emit']>[0]): Promise<void>
-  /** The fake camera reads a code with this text. */
-  scan(text: string): Promise<void>
   /** Waits (at most 3 s) until the screen's text holds `text`: for a lazy chunk. */
   waitText(text: string): Promise<void>
   /** Lets the app's promises and renders finish. */
@@ -80,12 +77,10 @@ export async function mount(
   const { store, tokens } = options.phone ?? (await newPhone())
   const github = fakeGithub({ tokens: TOKENS, repos: REPOS })
   const sync = fakeSync({ download: options.download })
-  const scanner = fakeScanner()
   const services: AppServices = {
     store,
     tokens,
     sync,
-    scanner,
     friends: options.friends?.(store) ?? fakeFriends(store, options.hasFriends ?? false),
     fetch: github.fetch,
     now: () => NOW,
@@ -107,7 +102,6 @@ export async function mount(
     tokens,
     github,
     sync,
-    scanner,
     services,
     settle,
     button,
@@ -117,7 +111,7 @@ export async function mount(
       if (el === null) throw new Error(`No button "${name}" on: ${host.textContent}`)
       await act(async () => el.click())
       await settle()
-      // A lazy screen (Settings, a page, Scan a code) may still load its chunk: wait (a bounded number of rounds, as a
+      // A lazy screen (Settings, a page) may still load its chunk: wait (a bounded number of rounds, as a
       // test may freeze Date) for it to draw.
       for (let i = 0; i < 150 && host.querySelector('.app[aria-busy="true"], .lazy-screen') !== null; i++) await settle()
     },
@@ -134,12 +128,6 @@ export async function mount(
     },
     async syncEmit(event) {
       await act(async () => sync.emit(event))
-      await settle()
-    },
-    async scan(text) {
-      // "Scan a code" is a lazy screen (YAZ-5461): its chunk may still load when the test scans.
-      for (const end = Date.now() + 3000; !scanner.on && Date.now() < end; ) await settle()
-      await act(async () => scanner.read(text))
       await settle()
     },
     async type(label, value) {

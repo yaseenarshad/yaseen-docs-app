@@ -5,7 +5,6 @@ import { chooseFriendsVault, loadFriendsAccount, type FriendsAccount } from '../
 import { forgetVaultAndToken, signIn, signInAgain, signOutAndErase, startState, type SignInOutcome } from '../auth/signIn'
 import type { FetchLike } from '../github/client'
 import type { VaultMedia } from '../media/ui/vaultMedia'
-import type { Scanner } from '../scan/scanner'
 import { loadVaultList, openVault, openVaultOf, saveVaultList, vaultId, type KeepStorage, type PhoneVault, type TokenStore, type VaultList, type VaultStore } from '../store'
 import type { FriendsPort, FriendsSettings } from './friendsPort'
 import { browserBack, useBrowserHistory } from './browserHistory'
@@ -16,8 +15,8 @@ import { readVaultTabs, sameTabs } from './vaultTabs'
 
 /**
  * The app's state and its actions: the one layer the screens (4A–4E) plug into. Every service is passed in, so
- * tests run the real sign-in logic (3E) and store (3A) with fakes for GitHub, the sync (3B), Friends (4E) and the
- * camera; `main.tsx` passes the real ones.
+ * tests run the real sign-in logic (3E) and store (3A) with fakes for GitHub, the sync (3B) and Friends (4E);
+ * `main.tsx` passes the real ones.
  */
 export interface AppServices {
   store: VaultStore
@@ -26,7 +25,6 @@ export interface AppServices {
   sync: ShellSync
   /** 4E's Friends: the friends list (`lazyFriends`, `main.tsx`), or a fake in tests. */
   friends: FriendsPort
-  scanner: Scanner
   /**
    * 4C: one file's bytes for the reader and Review (a picture, a sound, a PDF): 3D's `MediaAhead`, made when
    * the engine loads (`lazyMedia`, `main.tsx`). Absent (tests): the screens read the store only (`storedMedia`).
@@ -71,10 +69,10 @@ export interface AppModel {
   /** Its `tab` is always one the open vault has (`tabIn`): a tab that went away shows Search. */
   nav: NavState
   go(action: NavAction): void
-  /** The sign-in form (decision 13), typed or scanned. On success, the new vault opens. */
+  /** The sign-in form (decision 13). On success, the new vault opens. */
   addVault(input: SignInInput): Promise<SignInOutcome>
   /** A new token for a vault on the phone (row N6, "Replace token"). Its files and waiting answers stay. */
-  replaceToken(vault: string, token: string, expiresAt?: string | null): Promise<SignInOutcome>
+  replaceToken(vault: string, token: string): Promise<SignInOutcome>
   /** Decision 7: a tap switches the open vault. Only the open vault polls. */
   switchVault(vault: string): Promise<void>
   /** The vault, its token and its stored files leave the phone. */
@@ -260,8 +258,8 @@ export function AppProvider({ services, children }: { services: AppServices; chi
   )
 
   const replaceToken = useCallback(
-    async (vault: string, token: string, expiresAt?: string | null) => {
-      const outcome = await signInAgain(vault, token, deps, expiresAt)
+    async (vault: string, token: string) => {
+      const outcome = await signInAgain(vault, token, deps)
       if (outcome.ok) {
         const wasWaiting = loaded.phase === 'sign-in-again'
         const next = await load(true)

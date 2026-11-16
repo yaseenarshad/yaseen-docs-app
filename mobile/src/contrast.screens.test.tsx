@@ -65,7 +65,6 @@ const FIXTURES = [
   'repo-pick-many',
   'repo-none',
   'guide',
-  'scan',
   'download',
   'token-ended',
   'settings',

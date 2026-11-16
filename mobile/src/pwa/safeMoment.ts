@@ -20,7 +20,7 @@ export type Holds = readonly Hold[]
 
 export interface AppMoment {
   phase: 'loading' | 'sign-in' | 'sign-in-again' | 'ready'
-  /** A screen over the tabs is open (Settings, a form, Scan a code, the guide). */
+  /** A screen over the tabs is open (Settings, a form, the guide). */
   routeOpen: boolean
   tab: 'friends' | 'review' | 'search'
   downloading: boolean

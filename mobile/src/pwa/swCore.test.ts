@@ -22,7 +22,7 @@ function site(v: string, extra: Record<string, FakeFile> = {}) {
     [landing]: { body: 'landing()' },
     [entry]: { body: `console.log('${v}')` },
     [`/assets/engine-${v}.js`]: { body: `export const engine = '${v}'` },
-    '/assets/qrDecode-same.js': { body: 'export const qr = 1' },
+    '/assets/guide-same.js': { body: 'export const qr = 1' },
     [`/assets/index-${v}.css`]: { body: 'body{}' },
     '/manifest.webmanifest': { body: '{"name":"Notecard"}' },
     '/icons/icon-192.png': { body: 'png' },
@@ -210,7 +210,7 @@ describe('a new version', () => {
   it('only new files are downloaded: a hashed file the phone already has is taken from the old cache', async () => {
     const { sw, server } = await update(() => {})
     await sw.install()
-    expect(server.calls).not.toContain('/assets/qrDecode-same.js')
+    expect(server.calls).not.toContain('/assets/guide-same.js')
     expect(server.calls).toContain('/assets/engine-v2.js')
     expect(server.calls).toContain('/') // never kept across versions: the page and the manifest are fetched again
   })

@@ -3,13 +3,12 @@
  *
  * GitHub sends the end date of a token that ends in the header `github-authentication-token-expiration`.
  * GOTCHA: GitHub's CORS answer does not list this header in `Access-Control-Expose-Headers`, so a web page
- * cannot read it (checked 2026-11-13). In the phone's browser `readTokenEnd` gives null. The end date then comes
- * from the Mac's code (`scanCode.ts`, `expires`), which reads the header with no CORS. A native app later reads it.
+ * cannot read it (checked 2026-11-13). In the phone's browser `readTokenEnd` gives null. A native app later reads it.
  */
 
 import { parseEndDate } from '@shared/tokenEnd'
 
-/** In `shared/` since YAZ-5098: the Mac's code (`shared/scanCode.ts`) reads the same end date. */
+/** In `shared/` since YAZ-5098. */
 export { parseEndDate }
 
 export const EXPIRY_HEADER = 'github-authentication-token-expiration'

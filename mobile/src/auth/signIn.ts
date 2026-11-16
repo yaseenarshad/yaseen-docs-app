@@ -33,7 +33,7 @@ export async function startState(store: VaultStore, tokens: TokenStore): Promise
 
 /**
  * Adds a vault: the check on save, then the token, the account and the vault list (the list last). When the check
- * fails, nothing is stored (row F3). Typed in, or from "Scan a code" (`parseScanCode` gives the same input).
+ * fails, nothing is stored (row F3).
  */
 export async function signIn(input: SignInInput, deps: SignInDeps): Promise<SignInOutcome> {
   const checked = await checkSignIn(input, deps)
@@ -64,15 +64,14 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
 /**
  * Row N6: the vault's token stopped working (`UNAUTHORIZED`, red status). A new token is checked against the same
  * repo and branch, then replaces the old one. The local copy, the checkpoint and the waiting answers stay. When the
- * check fails, nothing changes. `expiresAt`: the token's end date, from the Mac's code ("Scan a code").
+ * check fails, nothing changes.
  * A token of another GitHub account than the one the vault was signed in with is refused, and nothing changes
  * (YAZ-5092 D5). GitHub logins ignore case. A vault with no stored account takes any account.
  */
-export async function signInAgain(vault: string, token: string, deps: SignInDeps, expiresAt?: string | null): Promise<SignInOutcome> {
+export async function signInAgain(vault: string, token: string, deps: SignInDeps): Promise<SignInOutcome> {
   const known = (await loadVaultList(deps.store)).vaults.find((v) => vaultId(v) === vault)
   if (known === undefined) throw new Error(`${vault} is not on this phone`)
-  // The end date that a scanned code holds is kept with the new token, as at a first sign-in.
-  const checked = await checkSignIn({ repo: known.repo, branch: known.branch, token, expiresAt }, deps)
+  const checked = await checkSignIn({ repo: known.repo, branch: known.branch, token }, deps)
   if (!checked.ok) return checked
   const before = await loadAccount(deps.store, vault)
   const login = checked.vault.account.login

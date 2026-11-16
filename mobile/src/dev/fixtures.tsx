@@ -5,7 +5,7 @@ import { saveAccount, type VaultAccount } from '../auth/account'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, saveVaultList, tokenStoreOn, vaultId, type PhoneVault } from '../store'
 import { fakeGithub } from '../github/testing'
-import { fakeFriends, fakeScanner, fakeSync, reviewOnTabs } from './fakes'
+import { fakeFriends, fakeSync, reviewOnTabs } from './fakes'
 import { isReaderFixture, mountReaderFixture } from './readerFixtures'
 import { setAppearance } from '../settings/appearance'
 import type { CheckResult, Updates } from '../pwa/updates'
@@ -108,7 +108,7 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   // The install hint as Safari on an iPhone shows it (the steps, the ☰ picture, the data note).
   if (name === 'sign-in-iphone')
     Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1' })
-  const signedIn = !['sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'scan', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
+  const signedIn = !['sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
   if (signedIn) {
     for (const v of name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1)) {
       await tokens.write(vaultId(v), FAKE_TOKEN)
@@ -122,7 +122,7 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     for (const { file, label } of (await import('@shared/vaultSettingsFiles')).VAULT_SETTINGS_FILES)
       if (label !== 'table look' && label !== 'icons') await store.write(vaultId(VAULTS[0]), `.yaseendocs/${file}`, label === 'link clicks' ? '{ not json' : '{"version":1}')
   const sync = fakeSync({ download: name === 'download' })
-  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
   const check = /^settings-check-(newest|ready|unreachable|busy)$/.exec(name)?.[1] as CheckResult | 'busy' | undefined
   root.render(<App services={services} updates={name.startsWith('settings') ? fixtureUpdates(check ?? null) : null} />)
   await wait(50)
@@ -151,11 +151,6 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       press('How to make a token')
       // Its own chunk (YAZ-5446): wait until it draws.
       for (let i = 0; i < 100 && document.querySelector('.guide-steps') === null; i++) await wait(20)
-      break
-    case 'scan':
-      press('Scan a code')
-      // Its own chunk (YAZ-5461): wait until it draws.
-      for (let i = 0; i < 100 && document.querySelector('.camera') === null; i++) await wait(20)
       break
     case 'download':
       sync.set({ progress: { done: 240, total: 611 } })

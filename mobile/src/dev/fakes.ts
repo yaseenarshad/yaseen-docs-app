@@ -1,13 +1,12 @@
 import type { FriendsPort } from '../app/friendsPort'
 import { localFriends } from '../app/friendsPort'
 import { IDLE, type ShellSync, type ShellSyncEvent, type ShellSyncState } from '../app/syncPort'
-import { ScanError, type ScanProblem, type Scanner } from '../scan/scanner'
 import { vaultId, type PhoneVault, type VaultStore } from '../store'
 import { readVaultTabs } from '../app/vaultTabs'
 
 /**
- * Fakes of the shell's services, for the tests and the screen fixtures (`fixtures.tsx`). They never touch the network,
- * the camera or the clock. Only tests and the `--mode fixtures` build reach this file.
+ * Fakes of the shell's services, for the tests and the screen fixtures (`fixtures.tsx`). They never touch the network
+ * or the clock. Only tests and the `--mode fixtures` build reach this file.
  */
 
 export interface FakeSync extends ShellSync {
@@ -56,38 +55,6 @@ export function fakeSync(options: { download?: boolean } = {}): FakeSync {
     },
   }
   return sync
-}
-
-export interface FakeScanner extends Scanner {
-  /** The camera is on (started, not stopped). */
-  on: boolean
-  /** The camera "reads" a code with this text. */
-  read(text: string): void
-  /** The next start fails with this problem. */
-  failWith: ScanProblem | null
-}
-
-export function fakeScanner(): FakeScanner {
-  let onText: ((text: string) => void) | null = null
-  const scanner: FakeScanner = {
-    on: false,
-    failWith: null,
-    async start(_video, listener) {
-      if (scanner.failWith !== null) throw new ScanError(scanner.failWith)
-      onText = listener
-      scanner.on = true
-      return {
-        stop() {
-          scanner.on = false
-          onText = null
-        },
-      }
-    },
-    read(text) {
-      onText?.(text)
-    },
-  }
-  return scanner
 }
 
 /** Friends with the settings on the phone, and `hasFriends` as given (decision 21's two cases). */

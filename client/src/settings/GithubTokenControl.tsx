@@ -1,6 +1,6 @@
 /**
- * "GitHub token" (YAZ-5098; round 12, item 8: Settings › Review › "Phone and friends"): the one place the token is
- * pasted on the Mac. One token for "Connect your phone" and for friends (4E5, YAZ-5086). The field is not React state:
+ * "GitHub token" (YAZ-5098; Settings › Cards › "Friends"): the one place the token is pasted on the Mac, for
+ * friends (4E5, YAZ-5086). The field is not React state:
  * the token is read from the field on Save, sent to main once (`secrets:set`), and the field is emptied. The row's
  * whole read-back is `secrets:has`. With no token, the row tells how to make one (decisions 13 and 17).
  */
@@ -83,7 +83,7 @@ export function GithubTokenControl() {
           text={
             <>
               <span className="confirm__title">Remove the GitHub token from this Mac?</span>
-              A phone that is already connected keeps working. This Mac stops sending your numbers to friends. To show a phone code again, you must paste a token again.
+              This Mac stops sending your numbers to friends. To send them again, you must paste a token again.
             </>
           }
           confirmLabel="Remove"

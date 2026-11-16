@@ -37,7 +37,6 @@ export function SetupGuide() {
         <li>Account permissions › Gists: Read and write. Friends needs it. Review works without it.</li>
         <li>Generate the token and copy it. Paste it in Yaseen Docs, then choose your vault repo.</li>
       </ol>
-      <p className="muted">Or, on your Mac, open Settings › Cards › Connect your phone, and tap Scan a code here.</p>
 
       <h2 className="section">3. The Home Screen (if you want it)</h2>
       <p className="muted">Yaseen Docs also works in a browser tab, on a phone or a computer.</p>

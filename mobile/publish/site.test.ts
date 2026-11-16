@@ -120,7 +120,7 @@ describe('the page head for iOS', () => {
 describe('the shell list the worker keeps', () => {
   it('the hashed build files, the pages under their served address, the manifest and icons; not the splash, the headers or the worker', () => {
     const list = shellFiles(
-      ['index.html', 'friend.html', 'group.html', 'join.html', 'assets/index-a1.js', 'assets/engine-b2.js', 'assets/qrDecode-c3.js', 'assets/index-d4.css', 'assets/friend-e5.js', 'assets/x.js.map'],
+      ['index.html', 'friend.html', 'group.html', 'join.html', 'assets/index-a1.js', 'assets/engine-b2.js', 'assets/index-d4.css', 'assets/friend-e5.js', 'assets/x.js.map'],
       ['_headers', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png', 'splash/dark-1179x2556.png', 'sw.js', 'robots.txt'],
     )
     expect(list).toEqual([
@@ -129,7 +129,6 @@ describe('the shell list the worker keeps', () => {
       '/assets/friend-e5.js',
       '/assets/index-a1.js',
       '/assets/index-d4.css',
-      '/assets/qrDecode-c3.js',
       '/friend',
       '/group',
       '/icons/apple-touch-icon.png',
