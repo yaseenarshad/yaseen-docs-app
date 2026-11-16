@@ -28,6 +28,8 @@ URL.revokeObjectURL ??= () => {}
  * YAZ-5533: jsdom loads no frame, so draw.io's viewer is faked here: each diagram is a made-up picture of two pages
  * with a shape library still to come. The rest of the diagram chunk is real (its figure and its stylesheet).
  */
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); its screens are still audited, with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 vi.mock('./drawing/diagram/drawDiagram', async () => {
   const real = await vi.importActual<typeof import('./drawing/diagram/figure')>('./drawing/diagram/figure')
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#dae8fc"/></svg>'

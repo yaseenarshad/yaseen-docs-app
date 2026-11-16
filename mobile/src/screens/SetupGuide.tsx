@@ -1,3 +1,4 @@
+import { FRIENDS_ENABLED } from '@shared/features'
 import { useApp } from '../app/AppState'
 import { Fragment } from 'react'
 import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from '../pwa/homeScreen'
@@ -15,7 +16,12 @@ export function SetupGuide() {
   const app = useApp()
   return (
     <Frame title="Set up your phone" back={() => app.go({ type: 'back' })}>
-      <p className="lead">Yaseen Docs works with one GitHub account and one token. Give the token two permissions: Contents and Gists.</p>
+      <p className="lead">
+        {/* YAZ-5652: Gists is for Friends alone; with Friends off, the token needs Contents only. */}
+        {FRIENDS_ENABLED
+          ? 'Yaseen Docs works with one GitHub account and one token. Give the token two permissions: Contents and Gists.'
+          : 'Yaseen Docs works with one GitHub account and one token. Give the token one permission: Contents.'}
+      </p>
 
       <h2 className="section">1. The repo</h2>
       <ol className="guide-steps">
@@ -34,7 +40,7 @@ export function SetupGuide() {
         <li>Name: Yaseen Docs. Expiration: your choice.</li>
         <li>Repository access: Only select repositories, then your vault repo.</li>
         <li>Repository permissions › Contents: Read and write.</li>
-        <li>Account permissions › Gists: Read and write. Friends needs it. Review works without it.</li>
+        {FRIENDS_ENABLED && <li>Account permissions › Gists: Read and write. Friends needs it. Review works without it.</li>}
         <li>Generate the token and copy it. Paste it in Yaseen Docs, then choose your vault repo.</li>
       </ol>
 

@@ -13,6 +13,9 @@ import { resetGithubTokenStatus } from './githubToken'
 
 ;(globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); these tests turn it on: today's row, as it was.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   api: {

@@ -9,6 +9,9 @@ import { ICONS_FILE } from '@shared/vaultIcons'
 import { GOOD, mount, newPhone, signInWithForm, type Harness } from '../screens/testing'
 import { healthLine, readVaultHealth, type HealthRow } from './healthRows'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /** YAZ-5559: Settings › Vault health, read only, from the shared list of the vault's settings files. Made-up vault. */
 const VAULT = 'yaseen/vault@main'
 const HERE = import.meta.dirname

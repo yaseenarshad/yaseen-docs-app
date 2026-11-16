@@ -7,6 +7,9 @@ import { UNIT_WORD_PATH } from '../app/unitWord'
 import { REMOVE_QUEUE } from '../friends/removeQueue'
 import { GOOD, mount, newPhone, NO_CONTENTS, READ_ONLY, SECOND, signInWithForm, WRONG, type Harness } from './testing'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 let h: Harness | null = null
 afterEach(() => {
   h?.unmount()

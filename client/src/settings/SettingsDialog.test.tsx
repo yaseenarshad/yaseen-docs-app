@@ -182,8 +182,11 @@ const FILES_ROWS = ['newPageLocation', 'newPageTitleTemplate', 'confirmDelete', 
 const FOLDER_PAGES_ROWS = ['folderPages.weekStartsOn', 'hoverPreviewIn.folderViews', 'hoverPreviewIn.folderLinks', 'folderPages.rowBand', 'folderPages.keepWindowPinned', 'folderPages.askBeforeDelete', 'folderPages.confirmChanges', ...['rowHeight', 'rowNumbers', 'columnTypeIcons', 'showNewButtons', 'textInCells', 'groupIndent', 'stickyGroups', 'groupLines', 'groupLineStyle', 'showEmptyGroups', 'showEmptyColumns', 'subfolders', 'foldersFirst', 'folderIcons', 'folderCounts', 'cardClickOpens', 'calendarScale', 'cardTitles', 'hideWeekends', 'weekLine', 'dayLine', 'showFolderPageFiles', 'showOtherFiles', 'inheritColumns', 'columnMarks'].map((part) => `folderPages.${part}`)]
 // YAZ-5050 round 2: in groups — Daily limits, Answers, Scheduling, Card look (with its preview).
 const REVIEW_ROWS = ['enabled', 'whatThisAdds', 'cardSkillInSidebar', 'cardCourse', 'cardTips', 'newPerDay', 'upNextPerDay', 'newOrder', 'buttons', 'pauseAfter', 'timeSoFar', 'inboxOpenAt', 'retention', 'maxDays', 'fuzz', 'weights', 'shownHiddenWords', 'markNextHidden', 'nextHiddenColour', 'cardWidth', 'cardTextSize', 'cardTitleSize', 'cardTablePosition', 'cardSpacing', 'cardSpacingPreview', 'howCardsComeBack']
-/** Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row, and the Mac's send of the numbers (YAZ-5086). */
-const FRIENDS_ROWS = ['githubToken', 'friendsSend']
+/**
+ * Settings › Cards › GitHub (YAZ-5098, YAZ-5652): the token row. The Mac's send of the numbers (YAZ-5086, `friendsSend`)
+ * shows only with Friends on (`shared/features.ts`, off for now; `friendsSend.test.tsx` turns it on).
+ */
+const FRIENDS_ROWS = ['githubToken']
 /**
  * Settings › Hotkeys (YAZ-3397 D5, D8): one row per key. With no bridge main never answers for the Mac's own keys,
  * so the "Used by macOS" rows are not there; with no key changed, neither is "Reset all hotkeys".

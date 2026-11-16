@@ -1,3 +1,4 @@
+import { FRIENDS_ENABLED } from '@shared/features'
 import { startAppearance } from '../settings/appearance'
 import { landingCodeFrom, landingCopy, type LandingKind } from './friendLink'
 import { HOME_SCREEN, THREE_LINES, safariLine, splitThreeLines } from './homeScreen'
@@ -33,49 +34,80 @@ const WORDS: Record<LandingKind, { title: string; lead: string; label: string; m
   },
 }
 
+/** YAZ-5652: with Friends off (`shared/features.ts`), every shared link opens this short note in place of the code. */
+export const FRIENDS_OFF = {
+  title: 'Friends is off for now',
+  lead: 'Yaseen Docs has Friends turned off for now, so this link does nothing yet. Your notes and your cards work as before.',
+  open: 'Open Yaseen Docs',
+} as const
+
 // YAZ-5565: the app's stylesheet hangs dark on `data-scheme`: this page takes the same choice.
 startAppearance()
 
-const landing = landingCodeFrom(location.pathname, location.hash)
-const words = WORDS[landing.kind]
-const byId = (id: string) => document.getElementById(id)!
-const show = (id: string) => byId(id).removeAttribute('hidden')
+if (FRIENDS_ENABLED) showLanding()
+else showFriendsOff()
 
-document.title = words.title
-byId('title').textContent = words.title
-byId('lead').textContent = words.lead
-byId('label').textContent = words.label
-for (const el of document.querySelectorAll('.paste-name')) el.textContent = words.paste
-// The Home Screen steps: the app's own words (`homeScreen.ts`, one source). YAZ-5443: the ☰ has a spoken name.
-byId('add-steps').replaceChildren(
-  ...splitThreeLines(`${safariLine()} ${HOME_SCREEN.olderSafari}`).flatMap((part, i) => {
-    if (i === 0) return [part]
-    const glyph = document.createElement('span')
-    glyph.setAttribute('role', 'img')
-    glyph.setAttribute('aria-label', THREE_LINES.name)
-    glyph.textContent = THREE_LINES.glyph
-    return [glyph, part]
-  }),
-)
+/** The page with no code, no steps and no paste: the title, one line, and the way into the app. */
+function showFriendsOff(): void {
+  document.title = FRIENDS_OFF.title
+  const main = document.querySelector('main')!
+  const icon = main.querySelector('.landing__icon')
+  const title = document.createElement('h1')
+  title.className = 'title'
+  title.textContent = FRIENDS_OFF.title
+  const lead = document.createElement('p')
+  lead.className = 'lead'
+  lead.textContent = FRIENDS_OFF.lead
+  const open = document.createElement('a')
+  open.className = 'btn btn--primary'
+  open.href = '/'
+  open.textContent = FRIENDS_OFF.open
+  main.replaceChildren(...(icon ? [icon] : []), title, lead, open)
+}
 
-if (landing.code === null) {
-  byId('no-code-text').textContent = words.missing
-  show('no-code')
-} else {
-  show('has-code')
-  const copy = landingCopy({ kind: landing.kind, code: landing.code }, location.origin)
-  const field = byId('code') as HTMLInputElement
-  const said = byId('copied')
-  field.value = copy
-  byId('copy').addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(copy)
-      said.textContent = 'Copied. Now open Yaseen Docs and tap Paste.'
-    } catch {
-      // No clipboard access: select the code, so one tap on "Copy" in the iOS menu copies it.
-      field.focus()
-      field.select()
-      said.textContent = 'Tap Copy in the menu above the code.'
-    }
-  })
+/** Friends on: the code of the link, its Copy, and the steps. */
+function showLanding(): void {
+  const landing = landingCodeFrom(location.pathname, location.hash)
+  const words = WORDS[landing.kind]
+  const byId = (id: string) => document.getElementById(id)!
+  const show = (id: string) => byId(id).removeAttribute('hidden')
+
+  document.title = words.title
+  byId('title').textContent = words.title
+  byId('lead').textContent = words.lead
+  byId('label').textContent = words.label
+  for (const el of document.querySelectorAll('.paste-name')) el.textContent = words.paste
+  // The Home Screen steps: the app's own words (`homeScreen.ts`, one source). YAZ-5443: the ☰ has a spoken name.
+  byId('add-steps').replaceChildren(
+    ...splitThreeLines(`${safariLine()} ${HOME_SCREEN.olderSafari}`).flatMap((part, i) => {
+      if (i === 0) return [part]
+      const glyph = document.createElement('span')
+      glyph.setAttribute('role', 'img')
+      glyph.setAttribute('aria-label', THREE_LINES.name)
+      glyph.textContent = THREE_LINES.glyph
+      return [glyph, part]
+    }),
+  )
+
+  if (landing.code === null) {
+    byId('no-code-text').textContent = words.missing
+    show('no-code')
+  } else {
+    show('has-code')
+    const copy = landingCopy({ kind: landing.kind, code: landing.code }, location.origin)
+    const field = byId('code') as HTMLInputElement
+    const said = byId('copied')
+    field.value = copy
+    byId('copy').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(copy)
+        said.textContent = 'Copied. Now open Yaseen Docs and tap Paste.'
+      } catch {
+        // No clipboard access: select the code, so one tap on "Copy" in the iOS menu copies it.
+        field.focus()
+        field.select()
+        said.textContent = 'Tap Copy in the menu above the code.'
+      }
+    })
+  }
 }

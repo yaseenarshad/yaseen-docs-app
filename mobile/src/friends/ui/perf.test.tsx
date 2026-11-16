@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { saveAccount } from '../../auth/account'
 import { mount, newPhone, NOW, type Harness } from '../../screens/testing'
 import { saveVaultList, vaultId } from '../../store'
 import { boardRows, PERIODS, vsBoard, type BoardEntry } from './board'
 import { demoBoard, demoFriend, demoGroup, demoMe, fakeService, fakeServices } from './demo'
+
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
 /**
  * YAZ-5085: 30 friends and 5 groups, each friend with 90 days. The screens' own work (the rules of `board.ts` for each

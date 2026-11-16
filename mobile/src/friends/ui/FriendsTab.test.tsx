@@ -9,6 +9,9 @@ import { saveVaultList, vaultId, type PhoneVault } from '../../store'
 import type { Board } from './service'
 import { demoBoard, demoFriend, demoGroup, fakeService, fakeServices, DEMO_AVATAR, type FakeService } from './demo'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * YAZ-5085 (4E4): the Friends tab and "You vs <friend>" in the real app (4A's shell, store and navigation), with a fake
  * friends service (no network). The rules are `board.ts`'s (its own tests); this file checks what the screens draw.

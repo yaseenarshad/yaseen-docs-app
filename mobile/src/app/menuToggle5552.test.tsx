@@ -17,6 +17,9 @@ import { forgetLists } from '../search/lists'
 import { forgetSearch } from '../search/searchState'
 import { saveVaultList, vaultId, type PhoneVault } from '../store'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * YAZ-5552: ONE RULE FOR EVERY MENU (`menuToggle.ts`, after YAZ-5539): a tap on its button opens it, a tap on it again
  * closes it, a tap outside closes it and does nothing else, Escape or Back closes it. A disclosure (Linked mentions,

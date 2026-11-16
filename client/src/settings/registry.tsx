@@ -23,6 +23,7 @@
  */
 import { lazy, Suspense, useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { spacingVars, type PageSpacing } from '@shared/textFormatting'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { COURSE_SETTINGS_GROUP } from '../course/courseSettings'
 import { HeaderStyleControl } from '../views/view/StylePanel'
 import { plainHeaderRow } from '../views/view/TableLookSettings'
@@ -553,8 +554,8 @@ const REVIEW_KEYWORDS = ['cards', 'review', 'reviews', 'flashcards', 'inbox', 's
 const GithubTokenControl = lazy(() => import('./GithubTokenControl').then((m) => ({ default: m.GithubTokenControl })))
 /** "Friends" (YAZ-5086): the Mac's send of the numbers, under the token; it loads only when Settings shows it. */
 const FriendsSendControl = lazy(() => import('./FriendsSendControl').then((m) => ({ default: m.FriendsSendControl })))
-/** "GitHub" (YAZ-5098, YAZ-5652): the Mac's GitHub token; the Cards words find this row too. */
-const GITHUB_KEYWORDS = [...REVIEW_KEYWORDS, 'github', 'token', 'friends', 'secret']
+/** "GitHub" (YAZ-5098, YAZ-5652): the Mac's GitHub token; the Cards words find this row too ("friends" only with Friends on). */
+const githubKeywords = () => [...REVIEW_KEYWORDS, 'github', 'token', ...(FRIENDS_ENABLED ? ['friends'] : []), 'secret']
 /** Card spacing's rows (YAZ-5050). */
 const CARD_SPACING_KEYWORDS = [...REVIEW_KEYWORDS, 'spacing', 'line spacing', 'line height', 'paragraph', 'space between blocks', 'gap', 'bullet', 'indent', 'view mode']
 
@@ -2605,7 +2606,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             id: 'githubToken',
             label: 'GitHub token',
             hint: 'This Mac reaches GitHub with it. One token for all your vaults. It stays on this Mac, readable only by your user, and is never shown again.',
-            keywords: GITHUB_KEYWORDS,
+            keywords: githubKeywords(),
             wide: true,
             available: reviewOn,
             render: () => (
@@ -2616,12 +2617,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
           },
           {
             // YAZ-5086 (decision 16): the Mac sends the numbers too, with the token above. No switch (decision 22).
+            // YAZ-5652: only with Friends on (`shared/features.ts`); the token row above stays either way.
             id: 'friendsSend',
             label: 'Friends',
             hint: 'This Mac sends your numbers to your friends too, when your cards change. Add friends in the phone app.',
-            keywords: GITHUB_KEYWORDS,
+            keywords: githubKeywords(),
             wide: true,
-            available: reviewOn,
+            available: (ctx) => FRIENDS_ENABLED && reviewOn(ctx),
             render: () => (
               <Suspense fallback={null}>
                 <FriendsSendControl />

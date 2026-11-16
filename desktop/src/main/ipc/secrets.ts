@@ -16,8 +16,8 @@ import { handle } from './envelope'
 
 /**
  * The only names a renderer may WRITE. A secret that main stores itself (Draw's sharing token, YAZ-3040)
- * must not be one a renderer can overwrite. The GitHub token (YAZ-5098, Settings › Cards › "Friends") is
- * pasted in Settings; main reads it for the friends sender (4E5, YAZ-5086).
+ * must not be one a renderer can overwrite. The GitHub token (YAZ-5098, Settings › Cards › "GitHub") is
+ * pasted in Settings; main reads it for the friends sender (4E5, YAZ-5086; only with Friends on, YAZ-5652).
  */
 export const RENDERER_WRITABLE_SECRETS: readonly string[] = [PIXABAY_SECRET, GITHUB_TOKEN_SECRET]
 
