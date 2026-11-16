@@ -170,31 +170,45 @@ function slotPill(start: number, end: number, at?: TableLookPlace): () => HTMLEl
  * no box of its own (`display: contents`). The clock puts them on the now line after each draw (`CalendarClock`).
  * Before, a right padding ran down the whole cell, and a narrow column read one letter per line.
  */
-function slotRoom(): HTMLElement {
-  const box = document.createElement('span')
-  box.className = 'table-slot-floats'
-  box.contentEditable = 'false'
-  for (const name of ['table-slot-gap', 'table-slot-room']) {
-    const el = document.createElement('span')
-    el.className = name
-    box.appendChild(el)
+function slotRoom(chars: number): () => HTMLElement {
+  return () => {
+    const box = document.createElement('span')
+    box.className = 'table-slot-floats'
+    box.contentEditable = 'false'
+    box.style.display = 'contents'
+    // Styled here, not in the eager CSS: the gap (no width), then the room, as wide as the slot's widest text; with
+    // less than 4em beside it, the whole line. Their heights come from `placeSlotRooms`.
+    const room = `${chars * 7 + 26}px`
+    for (const [name, width] of [['table-slot-gap', '0'], ['table-slot-room', `max(${room}, min(100%, calc((${room} + 4em - 100%) * 1000)))`]] as const) {
+      const el = document.createElement('span')
+      el.className = name
+      el.style.cssText = `float: right; clear: right; height: 0; width: ${width}`
+      box.appendChild(el)
+    }
+    return box
   }
-  return box
 }
 
-/** Each pill's room in `root` on its now line: reads its cell's height (one cell a table), writes only what changed. */
+/**
+ * Each pill's room in `root` on its now line: reads its cell's height (one cell a table), writes only what changed. A
+ * clipped cell (one line, `white-space: nowrap`) has the padding instead: its floats hide.
+ */
 export function placeSlotRooms(root: ParentNode): void {
   for (const box of root.querySelectorAll<HTMLElement>('.table-slot-floats')) {
     const cell = box.closest<HTMLElement>('th, td')
     const gap = box.querySelector<HTMLElement>('.table-slot-gap')
     const room = box.querySelector<HTMLElement>('.table-slot-room')
-    if (cell === null || gap === null || room === null || getComputedStyle(box).display === 'none') continue
+    const para = box.parentElement
+    if (cell === null || gap === null || room === null || para === null) continue
+    const p = getComputedStyle(para)
+    const display = p.whiteSpace === 'nowrap' ? 'none' : 'contents'
+    if (box.style.display !== display) box.style.display = display
+    if (display === 'none') continue
     const now = Number(cell.parentElement?.style.getPropertyValue('--table-now') || 0)
     // The cell's paragraph has its own padding above its first line (`table.css`): the lines start under both.
     const c = getComputedStyle(cell)
-    const p = box.parentElement === null ? null : getComputedStyle(box.parentElement)
-    const sum = (a: string, b: string | undefined) => String((parseFloat(a) || 0) + (parseFloat(b ?? '') || 0))
-    const look = { paddingTop: sum(c.paddingTop, p?.paddingTop), paddingBottom: sum(c.paddingBottom, p?.paddingBottom), lineHeight: p?.lineHeight ?? c.lineHeight, fontSize: p?.fontSize ?? c.fontSize }
+    const sum = (a: string, b: string) => String((parseFloat(a) || 0) + (parseFloat(b) || 0))
+    const look = { paddingTop: sum(c.paddingTop, p.paddingTop), paddingBottom: sum(c.paddingBottom, p.paddingBottom), lineHeight: p.lineHeight, fontSize: p.fontSize }
     placeSlotRoom(now, { height: () => cell.clientHeight, look, gap, room })
   }
 }
@@ -236,10 +250,11 @@ function calendarDecorations(table: ProseNode, pos: number, minutes: number, chi
       if (chars > 0) {
         const cellFrom = from + 1 + row.content.size - row.lastChild!.nodeSize
         const pad = filled(row.lastChild!) ? ' table-slot-pad' : ''
-        out.push(Decoration.node(cellFrom, cellFrom + row.lastChild!.nodeSize, { class: `table-slot-host${pad}`, style: `--table-slot-chars: ${chars}` }, { calendar: true }))
+        // A clipped cell's padding (`--table-clip-pad`: `table.css`, `tableCalendar.css`) as wide as the slot's widest text.
+        out.push(Decoration.node(cellFrom, cellFrom + row.lastChild!.nodeSize, { class: `table-slot-host${pad}`, style: `--table-slot-chars: ${chars}${pad === '' ? '' : `; --table-clip-pad: ${chars * 7 + 26}px`}` }, { calendar: true }))
         out.push(Decoration.widget(cellFrom + 1, slotPill(place.start, place.end, at), { calendar: true, slotPill: true, key: `table-slot-${place.start}-${place.end}-${chars}`, side: -1, ignoreSelection: true }))
         // YAZ-5658: the pill's room, at the start of the cell's first paragraph (its text wraps around it).
-        if (pad !== '' && row.lastChild!.firstChild?.isTextblock === true) out.push(Decoration.widget(cellFrom + 2, slotRoom, { calendar: true, key: 'table-slot-room', side: -1, ignoreSelection: true }))
+        if (pad !== '' && row.lastChild!.firstChild?.isTextblock === true) out.push(Decoration.widget(cellFrom + 2, slotRoom(chars), { calendar: true, key: `table-slot-room-${chars}`, side: -1, ignoreSelection: true }))
       }
     }
     if (r === nextRow) out.push(Decoration.node(from, from + row.nodeSize, { class: 'table-next-row' }, { calendar: true }))
