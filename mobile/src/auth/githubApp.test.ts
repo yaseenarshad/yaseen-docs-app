@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { fakeGithub, type FakeRepo } from '../github/testing'
 import { memoryBackend, tokenStoreOn } from '../store'
 import { PENDING_MS } from '../store/tokenStore'
-import { finishGithubSignIn, githubSignInMessage, listInstalledRepos, pkceChallenge, startGithubSignIn } from './githubApp'
+import { finishGithubSignIn, githubSignInMessage, listInstalledRepos, pkceChallenge, repoStanding, startGithubSignIn } from './githubApp'
 import type { FetchLike } from '../github/client'
 import { GITHUB_APP_CLIENT_ID } from './githubAppConfig'
 import { fakeOauth } from './githubApp.testing'
@@ -192,5 +192,30 @@ describe('listInstalledRepos (edge cases 4, 17)', () => {
       const { api } = setup([{ fullName: 'yaseen/vault' }], installations)
       expect(await listInstalledRepos(ACCESS, { fetch: api.fetch })).toEqual({ ok: false, error: { kind: 'no-installed-repos' } })
     }
+  })
+})
+
+describe('repoStanding (YAZ-5645 slice 2, edge case 5)', () => {
+  const VAULT = 'yaseen/vault@main'
+  it('removed: the account no longer lists the repo, or has no installation left; listed: still chosen', async () => {
+    const { api, tokens, deps } = setup([{ fullName: 'yaseen/vault' }, { fullName: 'yaseen/other' }])
+    await tokens.savePair({ login: 'yaseen', access: ACCESS, accessEndsAt: null, refresh: null, refreshEndsAt: null })
+    await tokens.link(VAULT, 'yaseen')
+    expect(await repoStanding(VAULT, 'Yaseen/Vault', deps)).toBe('listed')
+    api.takeOff(ACCESS, 'yaseen/vault')
+    expect(await repoStanding(VAULT, 'yaseen/vault', deps)).toBe('removed')
+    api.takeOff(ACCESS, 'yaseen/other')
+    expect(await repoStanding(VAULT, 'yaseen/vault', deps)).toBe('removed')
+  })
+
+  it('unknown: a pasted token, a signed-out account, or GitHub not answering', async () => {
+    const { api, tokens, deps } = setup()
+    await tokens.write(VAULT, 'github_pat_11' + 'x'.repeat(80))
+    expect(await repoStanding(VAULT, 'yaseen/vault', deps)).toBe('unknown')
+    await tokens.link(VAULT, 'yaseen')
+    expect(await repoStanding(VAULT, 'yaseen/vault', deps)).toBe('unknown')
+    await tokens.savePair({ login: 'yaseen', access: ACCESS, accessEndsAt: null, refresh: null, refreshEndsAt: null })
+    api.offline = true
+    expect(await repoStanding(VAULT, 'yaseen/vault', deps)).toBe('unknown')
   })
 })

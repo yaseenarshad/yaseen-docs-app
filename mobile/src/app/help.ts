@@ -26,6 +26,8 @@ export type Forward =
   | 'choose-repos'
   /** YAZ-5645: "Sign in with GitHub" again (another account, or the sign-in stopped). */
   | 'sign-in-github'
+  /** YAZ-5645 slice 2: the open vault's repo was taken off the app's list on GitHub; opens GitHub's repo page. */
+  | 'add-again'
 
 export interface Help {
   message: string
@@ -45,6 +47,18 @@ export const FORWARD_LABEL: Record<Forward, string> = {
   settings: 'Open Settings',
   'choose-repos': 'Choose repos on GitHub',
   'sign-in-github': 'Sign in with GitHub',
+  'add-again': 'Add it again on GitHub',
+}
+
+/**
+ * YAZ-5645 slice 2 (edge case 5, mockup 2): the open vault's repo answers 404 and its GitHub account no longer lists it
+ * (`repoStanding`). Named, with one tap to fix, and no token words.
+ */
+export function repoRemovedHelp(vault: PhoneVault, unit: UnitText): Help {
+  return {
+    message: `Yaseen Docs can no longer see ${vault.repo}. It was taken off the list on GitHub.${unit(' The pages on this phone stay readable.')}`,
+    forward: 'add-again',
+  }
 }
 
 /**

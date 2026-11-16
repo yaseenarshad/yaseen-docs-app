@@ -41,6 +41,20 @@ export interface TokenStore {
   /** The sign-in that went to GitHub, kept for 10 minutes and taken once (`auth/githubApp.ts`). */
   savePending(pending: PendingSignIn): Promise<void>
   takePending(): Promise<PendingSignIn | null>
+  /**
+   * YAZ-5645 slice 2: "Manage repos on GitHub" went to GitHub's repo page from `from` for `login`. GitHub's way back
+   * (`/auth/installed`, the Setup URL) carries nothing the app can trust (edge case 17), so the app keeps where it was.
+   * Taken once; older than `MANAGING_MS` counts as none.
+   */
+  saveManaging(managing: Managing): Promise<void>
+  takeManaging(): Promise<Managing | null>
+}
+
+/** Where "Manage repos on GitHub" was tapped: Settings, or the open vault's "repo taken off" notice. */
+export interface Managing {
+  login: string | null
+  from: 'settings' | 'vault'
+  startedAt: number
 }
 
 /** A GitHub account's tokens (GitHub App user tokens). Times are this phone's clock when the answer came. */
@@ -84,6 +98,9 @@ export const TOKEN_STATE = '#github-token'
 /** The scope of a GitHub account's pair (logins ignore case). `clearAll` and `eraseAll` remove it with the tokens. */
 export const accountScope = (login: string) => `#github:${login.toLowerCase()}`
 const PENDING: [string, string] = ['#github-sign-in', TOKEN_STATE]
+const MANAGING: [string, string] = ['#github-manage', TOKEN_STATE]
+/** A trip to GitHub's repo page counts for this long. */
+export const MANAGING_MS = 30 * 60_000
 /** Refresh this long before the token ends (the scope: 5 minutes). */
 export const RENEW_EARLY_MS = 5 * 60_000
 /** A sign-in that went to GitHub counts for this long (GitHub's code lasts 10 minutes). */
@@ -194,6 +211,14 @@ export function tokenStoreOn(backend: Backend, options: TokenStoreOptions = {}):
       if (v === undefined || v === null) return null
       await backend.apply([{ del: 'state', key: PENDING }])
       return typeof v.state === 'string' && typeof v.verifier === 'string' ? v : null
+    },
+    saveManaging: (managing) => backend.apply([{ put: 'state', key: MANAGING, value: managing }]),
+    async takeManaging() {
+      const v = (await backend.get('state', MANAGING)) as Managing | undefined | null
+      if (v === undefined || v === null) return null
+      await backend.apply([{ del: 'state', key: MANAGING }])
+      const fresh = typeof v.startedAt === 'number' && now() - v.startedAt <= MANAGING_MS && v.startedAt <= now()
+      return fresh && (v.from === 'settings' || v.from === 'vault') ? v : null
     },
   }
 }

@@ -137,7 +137,8 @@ export const vaultName = (repo: string): string => repo.split('/')[1] ?? repo
 export function ForwardButton({ forward }: { forward: Forward }) {
   const app = useApp()
   const act = () => {
-    if (forward === 'sign-in-again' && app.vaultKey !== null) app.go({ type: 'open', route: { kind: 'replace-token', vault: app.vaultKey } })
+    if ((forward === 'sign-in-again' || forward === 'sign-in-github') && app.vaultKey !== null) app.go({ type: 'open', route: { kind: 'replace-token', vault: app.vaultKey } })
+    else if (forward === 'add-again' || forward === 'choose-repos') void app.manageRepos('vault')
     else if (forward === 'settings') app.go({ type: 'open', route: { kind: 'settings' } })
     else if (forward === 'token-guide' || forward === 'repo-guide') app.go({ type: 'open', route: { kind: 'guide' } })
     else void app.services.sync.syncNow()
