@@ -374,18 +374,24 @@ describe('YAZ-5591 / YAZ-5592: the page view, its ⋯ row, the vault\'s mobile s
     expect(await stuckAt(h, BODY_TOP + 410)).toEqual([])
   })
 
-  it('Settings › "This vault on mobile": Folding and Sticky headings, on; a change shows at once and goes the safe path', async () => {
+  it('Settings › "This vault on mobile" (YAZ-5666): Folding and Sticky headings, On; one tap opens a row and writes nothing, the second (a choice) shows at once and goes the safe path', async () => {
     const port = fakePort()
     h = await open('Garden', port)
     await h.click('Settings')
-    await waitFor(h, () => /This vault on mobile/.test(h!.text()) && h!.host.querySelector('input[type="checkbox"]:not([disabled])') !== null)
-    const box = (label: string) => [...h!.host.querySelectorAll('label.row')].find((l) => l.textContent === label)!.querySelector<HTMLInputElement>('input')!
-    expect(box('Folding').checked).toBe(true)
-    expect(box('Sticky headings').checked).toBe(true)
-    await act(async () => box('Sticky headings').click())
+    await waitFor(h, () => /This vault on mobile/.test(h!.text()) && h!.host.querySelector('.settings-mobile button[aria-expanded]:not([disabled])') !== null)
+    const row = (name: string) => [...h!.host.querySelectorAll<HTMLButtonElement>('.settings-mobile button[aria-expanded]')].find((b) => b.getAttribute('aria-label')!.startsWith(`${name},`))!
+    expect(['Folding', 'Sticky headings', 'Wide tables'].map((n) => row(n).getAttribute('aria-label'))).toEqual(['Folding, On', 'Sticky headings, On', 'Wide tables, Same as Desktop'])
+    // No switch is left in Settings but Appearance's.
+    expect(h.host.querySelectorAll('.settings-mobile input')).toHaveLength(0)
+    await act(async () => row('Sticky headings').click())
     await h.settle()
-    expect(port.add).toHaveBeenCalledWith({ path: MOBILE_SETTINGS_PATH, body: '', setting: { file: 'mobile', key: 'stickyHeadings', on: false } })
-    expect(box('Sticky headings').checked).toBe(false)
-    expect(box('Folding').checked).toBe(true)
+    expect(port.add).not.toHaveBeenCalled()
+    const off = [...h.host.querySelectorAll<HTMLButtonElement>('.settings-mobile [role="radio"]')].find((b) => b.textContent === 'Off')!
+    await act(async () => off.click())
+    await h.settle()
+    expect(port.add).toHaveBeenCalledExactlyOnceWith({ path: MOBILE_SETTINGS_PATH, body: '', setting: { file: 'mobile', key: 'stickyHeadings', on: false } })
+    expect(row('Sticky headings').getAttribute('aria-label')).toBe('Sticky headings, Off')
+    expect(row('Sticky headings').getAttribute('aria-expanded')).toBe('false')
+    expect(row('Folding').getAttribute('aria-label')).toBe('Folding, On')
   })
 })
