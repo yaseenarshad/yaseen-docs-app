@@ -16,10 +16,10 @@ import { cardBlock, page, reviewSetup, type ReviewHarness } from './testing'
 const NOW = Date.UTC(2026, 10, 15, 19, 10)
 const NC205 = cardBlock(
   'What is a pastel de nata?\n---\nA custard tart.',
-  'NC-205, 2026-09-20T08:00Z good 8s, 2026-09-24T08:00Z good 6s, 2026-10-05T08:00Z good 5s, 2026-11-15T15:39Z again 4s',
+  'NC-205, 2026-09-20T08:00:00.000Z good 8s, 2026-09-24T08:00:00.000Z good 6s, 2026-10-05T08:00:00.000Z good 5s, 2026-11-15T15:39:00.000Z again 4s',
 )
 const NC207 = cardBlock('"Good night" in Portuguese is {{boa noite}}.', 'NC-207')
-const NC206 = cardBlock('"Good morning" in Portuguese is {{bom dia}}.', 'NC-206, title "Good morning", 2026-11-12T07:30Z good 5s')
+const NC206 = cardBlock('"Good morning" in Portuguese is {{bom dia}}.', 'NC-206, title "Good morning", 2026-11-12T07:30:00.000Z good 5s')
 
 let h: ReviewHarness | undefined
 beforeEach(() => {
@@ -109,7 +109,7 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
   })
 
   it('YAZ-5594 reopened, YAZ-5610: 3 cards, the last forgotten 3 times then remembered — "3 / 3", 3 steps, the list says 1', async () => {
-    const known = (x: string, id: string) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `${id}, 2026-10-04T09:00Z good, 2026-10-04T09:01Z good`)
+    const known = (x: string, id: string) => cardBlock(`${x}?\n---\n{{${x.toLowerCase()}}}`, `${id}, 2026-10-04T09:00:00.000Z good, 2026-10-04T09:01:00.000Z good`)
     h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', known('A', 'PB-1'), known('B', 'PB-2'), known('C', 'PB-3')) })
     const steps = () => [...h!.host.querySelectorAll('.review__progress .review__step')].map((s) => ({ remembered: 'g', forgot: 'r' })[(s as HTMLElement).dataset.answer ?? ''] ?? '.').join('')
     const bar = () => [steps(), q('.review__progress')?.getAttribute('aria-valuenow'), q('.review__progress')?.getAttribute('aria-valuemax')]

@@ -12,7 +12,7 @@ import type { CardOp } from './ops'
  * and the answer list on top. No test calls the real API.
  */
 export const VAULT_ROW: PhoneVault = { repo: REPO, branch: BRANCH, addedAt: 0 }
-export const at = (minute: number) => `2026-11-14T06:${String(minute).padStart(2, '0')}Z`
+export const at = (minute: number) => `2026-11-14T06:${String(minute).padStart(2, '0')}:00.000Z`
 export const answer = (id: string, minute: number): CardOp => ({ kind: 'review', id, review: { at: at(minute), rating: 'good' } })
 export const FILES = { 'a.md': pageText('A', 'NC-1', ['NC-2', 'NC-3']), 'cards/light-nc-17.md': cardFileText('Speed of light', 'NC-17') }
 

@@ -16,19 +16,19 @@ const cardOf = (id: string | null, title?: string, notitle = false) => ({ id, of
 
 describe('the title on the front: the card line part `notitle` (YAZ-5030)', () => {
   it('reads and writes `notitle` byte for byte; absent (every old card) the title shows', () => {
-    const text = '<!-- card: DEMO-127, off, notitle, 2026-11-12T14:05Z good -->'
+    const text = '<!-- card: DEMO-127, off, notitle, 2026-11-12T14:05:00.000Z good -->'
     const line = parseCardLine(text)!
     expect(isCardNoTitle(line)).toBe(true)
     expect(formatCardLine(line)).toBe(text)
-    expect(isCardNoTitle(parseCardLine('<!-- card: DEMO-127, 2026-11-12T14:05Z good -->')!)).toBe(false)
+    expect(isCardNoTitle(parseCardLine('<!-- card: DEMO-127, 2026-11-12T14:05:00.000Z good -->')!)).toBe(false)
   })
 
   it('Hide puts `notitle` after the ID and any `off` / `next`; Show removes it; the same state writes nothing new', () => {
-    const plain = parseCardLine('<!-- card: DEMO-1, off, next, 2026-11-12T14:05Z good -->')!
+    const plain = parseCardLine('<!-- card: DEMO-1, off, next, 2026-11-12T14:05:00.000Z good -->')!
     const hidden = withCardNoTitle(plain, true)
-    expect(formatCardLine(hidden)).toBe('<!-- card: DEMO-1, off, next, notitle, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(hidden)).toBe('<!-- card: DEMO-1, off, next, notitle, 2026-11-12T14:05:00.000Z good -->')
     expect(withCardNoTitle(hidden, true)).toBe(hidden)
-    expect(formatCardLine(withCardNoTitle(hidden, false))).toBe('<!-- card: DEMO-1, off, next, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(withCardNoTitle(hidden, false))).toBe('<!-- card: DEMO-1, off, next, 2026-11-12T14:05:00.000Z good -->')
     expect(formatCardLine(withCardNoTitle(EMPTY_CARD_LINE, true))).toBe('<!-- card: notitle -->')
   })
 
@@ -44,7 +44,7 @@ describe('the title on the front: the card line part `notitle` (YAZ-5030)', () =
 
 describe('YAZ-5308 decision D: the title is a part of the card line', () => {
   it('reads and writes `title "…"` byte for byte, right after the ID', () => {
-    const text = '<!-- card: DEMO-196, title "Capital of France", 2026-11-12T14:05Z good -->'
+    const text = '<!-- card: DEMO-196, title "Capital of France", 2026-11-12T14:05:00.000Z good -->'
     const line = parseCardLine(text)!
     expect(cardTitleOf(line)).toBe('Capital of France')
     expect(formatCardLine(line)).toBe(text)
@@ -52,10 +52,10 @@ describe('YAZ-5308 decision D: the title is a part of the card line', () => {
   })
 
   it('a comma in a title is no part break: written `&#44;` (YAZ-5393), and a raw one (an older line) reads too', () => {
-    const line = withCardTitle(parseCardLine('<!-- card: DEMO-1, 2026-11-12T14:05Z good -->')!, 'Paris, France')
+    const line = withCardTitle(parseCardLine('<!-- card: DEMO-1, 2026-11-12T14:05:00.000Z good -->')!, 'Paris, France')
     const text = formatCardLine(line)!
-    expect(text).toBe('<!-- card: DEMO-1, title "Paris&#44; France", 2026-11-12T14:05Z good -->')
-    expect(cardTitleOf(parseCardLine('<!-- card: DEMO-1, title "Paris, France", 2026-11-12T14:05Z good -->')!)).toBe('Paris, France')
+    expect(text).toBe('<!-- card: DEMO-1, title "Paris&#44; France", 2026-11-12T14:05:00.000Z good -->')
+    expect(cardTitleOf(parseCardLine('<!-- card: DEMO-1, title "Paris, France", 2026-11-12T14:05:00.000Z good -->')!)).toBe('Paris, France')
     expect(cardTitleOf(parseCardLine(text)!)).toBe('Paris, France')
     expect(parseCardLine(text)!.parts.map((p) => p.kind)).toEqual(['id', 'title', 'review'])
   })
@@ -76,23 +76,23 @@ describe('YAZ-5308 decision D: the title is a part of the card line', () => {
   })
 
   it('a title is plain text on one line; an empty one removes the part; the same one gives the same line', () => {
-    const line = parseCardLine('<!-- card: DEMO-1, off, 2026-11-12T14:05Z good -->')!
+    const line = parseCardLine('<!-- card: DEMO-1, off, 2026-11-12T14:05:00.000Z good -->')!
     const titled = withCardTitle(line, '  Capital\n of   France ')
-    expect(formatCardLine(titled)).toBe('<!-- card: DEMO-1, title "Capital of France", off, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(titled)).toBe('<!-- card: DEMO-1, title "Capital of France", off, 2026-11-12T14:05:00.000Z good -->')
     expect(withCardTitle(titled, 'Capital of France')).toBe(titled)
-    expect(formatCardLine(withCardTitle(titled, 'City'))).toBe('<!-- card: DEMO-1, title "City", off, 2026-11-12T14:05Z good -->')
-    expect(formatCardLine(withCardTitle(titled, '  '))).toBe('<!-- card: DEMO-1, off, 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(withCardTitle(titled, 'City'))).toBe('<!-- card: DEMO-1, title "City", off, 2026-11-12T14:05:00.000Z good -->')
+    expect(formatCardLine(withCardTitle(titled, '  '))).toBe('<!-- card: DEMO-1, off, 2026-11-12T14:05:00.000Z good -->')
     // An empty title in a line is no title.
     expect(cardTitleOf(parseCardLine('<!-- card: DEMO-1, title "" -->')!)).toBe('')
   })
 
   it('`off`, `next` and `notitle` go after the ID and the title', () => {
-    const line = parseCardLine('<!-- card: DEMO-1, title "Ser", 2026-11-12T14:05Z good -->')!
-    expect(formatCardLine(withCardNoTitle(withCardNext(withCardOff(line, true), true), true))).toBe('<!-- card: DEMO-1, title "Ser", off, next, notitle, 2026-11-12T14:05Z good -->')
+    const line = parseCardLine('<!-- card: DEMO-1, title "Ser", 2026-11-12T14:05:00.000Z good -->')!
+    expect(formatCardLine(withCardNoTitle(withCardNext(withCardOff(line, true), true), true))).toBe('<!-- card: DEMO-1, title "Ser", off, next, notitle, 2026-11-12T14:05:00.000Z good -->')
   })
 
   it('a quote never closed: no title, the review after it reads (YAZ-5394), and the line is written back as it was', () => {
-    const text = '<!-- card: DEMO-1, title "open, 2026-11-12T14:05Z good -->'
+    const text = '<!-- card: DEMO-1, title "open, 2026-11-12T14:05:00.000Z good -->'
     const line = parseCardLine(text)!
     expect(cardTitleOf(line)).toBe('')
     expect(line.parts.map((p) => p.kind)).toEqual(['id', 'other', 'review'])
@@ -112,17 +112,17 @@ describe('YAZ-5308: the one-time move of each card title onto its card line', ()
   })
 
   it('moves each card of a page; a card with a title on its line is left; the rest stays byte for byte', () => {
-    const page = '---\ntags: [geo]\n---\nIntro\n\n```card\nLongest river\n\nWhich is it?\n---\nThe {{Nile}}.\n```\n<!-- card: DEMO-1, 2026-11-12T14:05Z good -->\n\n  ```card\n  Capital\n  Of {{France}}?\n  ```\n\n```card\nKept\nfront\n```\n<!-- card: DEMO-3, title "Own" -->\n'
+    const page = '---\ntags: [geo]\n---\nIntro\n\n```card\nLongest river\n\nWhich is it?\n---\nThe {{Nile}}.\n```\n<!-- card: DEMO-1, 2026-11-12T14:05:00.000Z good -->\n\n  ```card\n  Capital\n  Of {{France}}?\n  ```\n\n```card\nKept\nfront\n```\n<!-- card: DEMO-3, title "Own" -->\n'
     expect(cardTitlesMoved(page)).toBe(
-      '---\ntags: [geo]\n---\nIntro\n\n```card\nWhich is it?\n---\nThe {{Nile}}.\n```\n<!-- card: DEMO-1, title "Longest river", 2026-11-12T14:05Z good -->\n\n  ```card\n  Of {{France}}?\n  ```\n  <!-- card: title "Capital" -->\n\n```card\nKept\nfront\n```\n<!-- card: DEMO-3, title "Own" -->\n',
+      '---\ntags: [geo]\n---\nIntro\n\n```card\nWhich is it?\n---\nThe {{Nile}}.\n```\n<!-- card: DEMO-1, title "Longest river", 2026-11-12T14:05:00.000Z good -->\n\n  ```card\n  Of {{France}}?\n  ```\n  <!-- card: title "Capital" -->\n\n```card\nKept\nfront\n```\n<!-- card: DEMO-3, title "Own" -->\n',
     )
     // Done: nothing moves twice.
     expect(cardTitlesMoved(cardTitlesMoved(page)!)).toBeNull()
   })
 
   it('a card file: its `title` property goes onto its card line and leaves its properties', () => {
-    const file = '---\nkind: card\ntitle: Capital of France\ntags: [geo]\n---\n```card\nThe capital is {{Paris}}.\n```\n<!-- card: DEMO-196, 2026-11-12T14:05Z good -->\n'
-    expect(cardTitlesMoved(file)).toBe('---\nkind: card\ntags: [geo]\n---\n```card\nThe capital is {{Paris}}.\n```\n<!-- card: DEMO-196, title "Capital of France", 2026-11-12T14:05Z good -->\n')
+    const file = '---\nkind: card\ntitle: Capital of France\ntags: [geo]\n---\n```card\nThe capital is {{Paris}}.\n```\n<!-- card: DEMO-196, 2026-11-12T14:05:00.000Z good -->\n'
+    expect(cardTitlesMoved(file)).toBe('---\nkind: card\ntags: [geo]\n---\n```card\nThe capital is {{Paris}}.\n```\n<!-- card: DEMO-196, title "Capital of France", 2026-11-12T14:05:00.000Z good -->\n')
   })
 
   it('keeps the file`s own line end (YAZ-5146)', () => {

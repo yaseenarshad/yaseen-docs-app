@@ -183,7 +183,7 @@ const COMMENTED_CARD = [
   '  - {id: demo0013, n: 2, at: "2026-11-13T08:00:00Z", by: demo, resolved: "2026-11-13T09:00:00Z", body: "Add a picture."}',
   '---',
   '',
-  cardBlock('DEMO-45', 'Which river runs through Seville?\n---\nThe Guadalquivir.', ['title "River of Seville"', '2026-11-01T08:00Z good']),
+  cardBlock('DEMO-45', 'Which river runs through Seville?\n---\nThe Guadalquivir.', ['title "River of Seville"', '2026-11-01T08:00:00.000Z good']),
   '',
 ].join('\n')
 
@@ -198,7 +198,7 @@ const MENU_CARDS = [
 /** YAZ-5508: the commented card with its own properties and four reviews, for `card-strip`. */
 const STRIP_CARD = COMMENTED_CARD.replace(
   /<!-- card: DEMO-45, [^>]*-->/,
-  '<!-- card: DEMO-45, title "River of Seville", tags "spain" "rivers", level "B1", 2026-09-08T08:00Z good, 2026-09-12T08:00Z good, 2026-09-25T08:00Z good, 2026-11-13T08:00Z good -->',
+  '<!-- card: DEMO-45, title "River of Seville", tags "spain" "rivers", level "B1", 2026-09-08T08:00:00.000Z good, 2026-09-12T08:00:00.000Z good, 2026-09-25T08:00:00.000Z good, 2026-11-13T08:00:00.000Z good -->',
 )
 
 export async function mountReaderFixture(root: Root, fixture: ReaderFixture): Promise<void> {

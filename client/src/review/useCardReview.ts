@@ -18,7 +18,7 @@ import { tourEvent } from '../course/tourBus'
  * checked against the live index only when its turn comes, and read from its page when it shows (the index holds no
  * text, D4). A card whose page or ID is gone is passed over.
  *
- * The hover is the truth (D13): `showAnswers` fixes each button's review — its time to the minute, so its fuzz — and
+ * The hover is the truth (D13): `showAnswers` fixes each button's review — its time (`cardTime`), so its fuzz — and
  * `answer` writes exactly that review, so "Remembered · 9 days" is what the file gets. `undo` (⌘Z, idea 5) removes
  * the last answer's review and shows that card again. The first answer to an up-next card removes its `next` in the
  * same write (YAZ-4999 D3), and its undo puts it back.

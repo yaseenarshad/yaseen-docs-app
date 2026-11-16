@@ -72,7 +72,7 @@ vi.mock('../api', async (importOriginal) => {
 const IDS = ['ARC-1', 'ARC-2', 'ARC-3']
 const PAGE = `${ROOT}/Archive.md`
 function seed(): void {
-  const block = (id: string) => cardBlock(`Card ${id} {{answer}}`, parseCardLine(`<!-- card: ${id}, 2026-09-01T09:00Z good, 2026-09-02T09:00Z good -->`)!)
+  const block = (id: string) => cardBlock(`Card ${id} {{answer}}`, parseCardLine(`<!-- card: ${id}, 2026-09-01T09:00:00.000Z good, 2026-09-02T09:00:00.000Z good -->`)!)
   vault.set(PAGE, `# Archive\n\n${IDS.map(block).join('\n')}`)
 }
 

@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { cardRecords, formatCardLine, isCardFix, parseCardLine, withCardFix } from '@shared/cardLine'
 
-const R0 = '2026-11-01T09:00Z good'
+const R0 = '2026-11-01T09:00:00.000Z good'
 const line = (body: string) => parseCardLine(`<!-- card: ${body} -->`)!
 const write = (l: ReturnType<typeof line>) => formatCardLine(l)!.replace(/^<!-- card: | -->$/g, '')
 

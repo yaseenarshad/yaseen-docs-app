@@ -12,7 +12,7 @@ afterEach(() => {
 })
 const profile = { login: 'ali', name: 'Ali', avatar: '', nickname: null }
 const at = (iso: string, n: number, gapMin = 1): CardRecord[] =>
-  Array.from({ length: n }, (_, i) => ({ id: `K${iso}${i}`, off: false, next: false, reviews: [{ at: new Date(Date.parse(iso) + i * gapMin * 60_000).toISOString().slice(0, 16) + 'Z', rating: 'good' as const }] }))
+  Array.from({ length: n }, (_, i) => ({ id: `K${iso}${i}`, off: false, next: false, reviews: [{ at: new Date(Date.parse(iso) + i * gapMin * 60_000).toISOString().slice(0, 16) + ':00.000Z', rating: 'good' as const }] }))
 const vault = (cards: CardRecord[]): FriendVault => ({ pages: [{ cards }], settings: DEFAULT_REVIEW_SETTINGS })
 const sum = (s: Pick<FriendStats, 'days'>) => s.days.reduce((n, d) => n + d.cards, 0)
 const withCards = (s: Pick<FriendStats, 'days'>) => s.days.filter((d) => d.cards > 0).map((d) => [d.day, d.cards])
@@ -80,7 +80,7 @@ describe('B8: a new member counts in the group streak from the next day, by thei
   })
   it('a member in Tokyo, the reader in Los Angeles: the member\'s own join day must not break the streak', () => {
     process.env.TZ = 'America/Los_Angeles' // the reader
-    // The admin adds Kenji at 2026-11-14T20:00Z: 12:00 on 14 November in LA, 05:00 on 15 November in Tokyo (his join day).
+    // The admin adds Kenji at 2026-11-14T20:00:00.000Z: 12:00 on 14 November in LA, 05:00 on 15 November in Tokyo (his join day).
     const since = '2026-11-14T20:00:00Z'
     const admin = { days: span('2026-11-07', '2026-11-17') } // the admin (LA) finished every day
     // Kenji's own days (Tokyo): his join day 15 November not finished; 16 and 17 November finished.

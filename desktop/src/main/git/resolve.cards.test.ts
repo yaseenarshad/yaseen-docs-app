@@ -19,9 +19,9 @@ afterEach(async () => {
 
 const card = (text: string, line: string) => `\`\`\`card\n${text}\n\`\`\`\n<!-- card: ${line} -->\n`
 const PAGE = (cards: string, intro = 'Some words to learn.') => `---\nid: YAZ-1\ntitle: Spanish words\n---\n# Spanish words\n\n${intro}\n\n${cards}\nThe end.\n`
-const OLD = '2026-11-01T09:00Z good'
-const SAM = '2026-11-13T10:00Z good 4s'
-const ME = '2026-11-13T10:05Z again 7s'
+const OLD = '2026-11-01T09:00:00.000Z good'
+const SAM = '2026-11-13T10:00:00.000Z good 4s'
+const ME = '2026-11-13T10:05:00.000Z again 7s'
 const cardsIn = (text: string) => cardRecords(splitFrontmatter(text).body).map(({ title: _t, ...rest }) => rest)
 const copies = (m: Machine) => readdirSync(m.root).filter((f) => f.includes('(conflict'))
 
@@ -86,14 +86,14 @@ describe('sync unites card lines before the line merge (YAZ-5089)', { timeout: R
       { 'words.md': PAGE(card('Hola', `YAZ-7, ${OLD}, ${ME}`) + '\n' + card('Gato', `YAZ-8, ${ME}`)) },
     )
     expect(cardsIn(a.read('words.md'))).toEqual([
-      { id: 'YAZ-7', off: true, next: false, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }, { at: '2026-11-13T10:05Z', rating: 'again', seconds: 7 }] },
-      { id: 'YAZ-8', off: false, next: true, reviews: [{ at: '2026-11-13T10:05Z', rating: 'again', seconds: 7 }] },
+      { id: 'YAZ-7', off: true, next: false, reviews: [{ at: '2026-11-01T09:00:00.000Z', rating: 'good' }, { at: '2026-11-13T10:05:00.000Z', rating: 'again', seconds: 7 }] },
+      { id: 'YAZ-8', off: false, next: true, reviews: [{ at: '2026-11-13T10:05:00.000Z', rating: 'again', seconds: 7 }] },
     ])
     expect(copies(a)).toEqual([])
   })
 
   it('YAZ-5155: a review I removed (undo) stays removed while Sam answered the same card: one page, no copy', async () => {
-    const R2 = '2026-11-05T09:00Z again'
+    const R2 = '2026-11-05T09:00:00.000Z again'
     const { a } = await meet({ 'words.md': PAGE(card('Hola', `YAZ-7, ${OLD}, ${R2}`)) }, { 'words.md': PAGE(card('Hola', `YAZ-7, ${OLD}, ${R2}, ${SAM}`)) }, { 'words.md': PAGE(card('Hola', `YAZ-7, ${OLD}`)) })
     expect(a.read('words.md')).toBe(PAGE(card('Hola', `YAZ-7, ${OLD}, ${SAM}`)))
     expect(copies(a)).toEqual([])
@@ -116,7 +116,7 @@ describe('sync unites card lines before the line merge (YAZ-5089)', { timeout: R
     expect(a.read('words.md')).toBe(PAGE('![[YAZ-7]]\n'))
     const copy = status.merged?.[0]?.copy ?? ''
     expect(isSyncConflictCopy(copy)).toBe(true)
-    expect(cardsIn(a.read(copy))).toEqual([{ id: 'YAZ-7', off: false, next: false, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }, { at: '2026-11-13T10:05Z', rating: 'again', seconds: 7 }] }])
+    expect(cardsIn(a.read(copy))).toEqual([{ id: 'YAZ-7', off: false, next: false, reviews: [{ at: '2026-11-01T09:00:00.000Z', rating: 'good' }, { at: '2026-11-13T10:05:00.000Z', rating: 'again', seconds: 7 }] }])
   })
 
   it('a real text clash elsewhere in the page: keep both as today; the page at its path holds both answers; the copy is a YAZ-5056 copy', async () => {

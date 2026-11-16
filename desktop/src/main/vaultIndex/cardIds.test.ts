@@ -31,7 +31,7 @@ const read = (rel: string) => readFile(at(rel), 'utf8')
 /** The cards' IDs and histories (the sweep's business): each card's title (YAZ-5030) left out. */
 const cardsIn = async (rel: string) => cardRecords(splitFrontmatter(await read(rel)).body).map(({ title: _title, ...rest }) => rest)
 const card = (text: string, line?: string) => `\`\`\`card\n${text}\n\`\`\`\n${line === undefined ? '' : `<!-- card: ${line} -->\n`}`
-const HISTORY = '2026-11-01T09:00Z good, 2026-11-05T09:00Z again'
+const HISTORY = '2026-11-01T09:00:00.000Z good, 2026-11-05T09:00:00.000Z again'
 
 /** Writes the files, scans them, and returns the map the live index would hold. */
 async function vault(files: Record<string, string>): Promise<Map<string, IndexRecord>> {
@@ -59,8 +59,8 @@ describe('the sweep gives cards their IDs (YAZ-4960 D2)', () => {
     })
     await sweepIds(root, records, [...records.values()], () => undefined)
     const reviews = [
-      { at: '2026-11-01T09:00Z', rating: 'good' },
-      { at: '2026-11-05T09:00Z', rating: 'again' },
+      { at: '2026-11-01T09:00:00.000Z', rating: 'good' },
+      { at: '2026-11-05T09:00:00.000Z', rating: 'again' },
     ]
     expect(await cardsIn('deck.md')).toEqual([
       { id: 'YAZ-52', off: false, next: false, reviews: [] },
@@ -202,12 +202,12 @@ describe('the one-time move of each card`s title onto its card line (YAZ-5308, d
 describe('a sync conflict copy never keeps a card (YAZ-5056)', () => {
   // GitHub AutoSync keeps both sides of a conflict: `P.md` and `P (conflict <host>, <day>).md`. A space sorts before a
   // dot, so the copy is FIRST in path order.
-  const mine = '2026-11-01T09:00Z good, 2026-11-05T09:00Z again'
-  const theirs = '2026-11-01T09:00Z good, 2026-11-06T09:00Z good'
+  const mine = '2026-11-01T09:00:00.000Z good, 2026-11-05T09:00:00.000Z again'
+  const theirs = '2026-11-01T09:00:00.000Z good, 2026-11-06T09:00:00.000Z good'
   const union = [
-    { at: '2026-11-01T09:00Z', rating: 'good' },
-    { at: '2026-11-05T09:00Z', rating: 'again' },
-    { at: '2026-11-06T09:00Z', rating: 'good' },
+    { at: '2026-11-01T09:00:00.000Z', rating: 'good' },
+    { at: '2026-11-05T09:00:00.000Z', rating: 'again' },
+    { at: '2026-11-06T09:00:00.000Z', rating: 'good' },
   ]
 
   it('`P.md` keeps the ID and the union of reviews; the copy\'s card takes a new ID, no reviews, and `off`', async () => {
@@ -282,7 +282,7 @@ describe('one card ID on two pages (YAZ-4960): a cut and paste keeps the card, a
     await writeFile(at('a.md'), '---\nid: YAZ-1\n---\n# A\n\nCut.\n')
     await sweepIds(root, records, [b], () => undefined, [], { cardWaits: waits, cardOver: new Set(waits.keys()) })
     expect(await read('b.md')).toBe(B)
-    expect(await cardsIn('b.md')).toEqual([{ id: 'YAZ-7', off: false, next: false, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }, { at: '2026-11-05T09:00Z', rating: 'again' }] }])
+    expect(await cardsIn('b.md')).toEqual([{ id: 'YAZ-7', off: false, next: false, reviews: [{ at: '2026-11-01T09:00:00.000Z', rating: 'good' }, { at: '2026-11-05T09:00:00.000Z', rating: 'again' }] }])
   })
 
   it('still on both pages after the wait: a copy — the page that took it last gets a new ID and an empty history; of two swept together, the second in path order', async () => {
@@ -327,7 +327,7 @@ describe('one card ID on two pages (YAZ-4960): a cut and paste keeps the card, a
 })
 
 describe('two or more cards with one ID: the sweep never drops a review (YAZ-4993)', () => {
-  const r = (day: number) => `2026-11-${String(day).padStart(2, '0')}T09:00Z good`
+  const r = (day: number) => `2026-11-${String(day).padStart(2, '0')}T09:00:00.000Z good`
   const page = (n: number, ...cards: string[]) => `---\nid: YAZ-${n}\n---\n# P${n}\n\n${cards.join('\n')}`
   /** Each review of each page, as `<time> <rating>`, and each card's line, for the checks every case makes. */
   const look = async (rels: string[]) => {

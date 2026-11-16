@@ -18,6 +18,16 @@ import { listenTour } from '../course/tourBus'
 
 const S: ReviewSettings = { ...DEFAULT_REVIEW_SETTINGS }
 const NOW = new Date(2026, 10, 12, 9, 0).getTime()
+/**
+ * `text` as a pattern where the answer time `cardTime(NOW)` may have moved on by some milliseconds (YAZ-5642: the time is
+ * to the millisecond, and `vi.waitFor` moves the fake clock while the Inbox shows the card); the minute stays.
+ */
+const nowish = (text: string): RegExp => {
+  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(esc(text).split(esc(cardTime(NOW))).join(`${esc(cardTime(NOW).slice(0, 17))}\\d\\d\\.\\d{3}Z`))
+}
+/** The answer time alone, as `nowish` reads it. */
+const atNow = () => expect.stringMatching(new RegExp(`^${nowish(cardTime(NOW)).source}$`))
 const ROOT = '/vault'
 
 let vault = new Map<string, string>()
@@ -130,7 +140,7 @@ beforeEach(() => {
   vi.mocked(api.state.setFolder).mockClear()
   // Due: answered "good" 30 days ago (still in its steps). Not due: two "good" an hour ago (out of its steps, YAZ-5020:
   // a new card needs two). New: no review. Off: never.
-  page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
+  page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good'])
   page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-3'], ['Off card', 'WIKI-4, title "Off card", off'])
 })
 
@@ -189,13 +199,13 @@ describe('useCardReview', () => {
     await step(() => review.undo())
     expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
     expect(review.session).toMatchObject({ position: 1, canUndo: false })
-    expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { reviews: [{ at: '2026-10-13T09:00Z', rating: 'good' }] } })
+    expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { reviews: [{ at: '2026-10-13T09:00:00.000Z', rating: 'good' }] } })
     expect(review.session?.answers).toBeNull()
   })
 
   it('YAZ-4999: an up-next card comes first, though not due; its answer removes `next` in the same write, and undo puts the file back byte for byte', async () => {
     // WIKI-2 is not due (answered an hour ago): up next makes it due now. `next` sits after an unknown part, so a re-insert elsewhere would show.
-    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, mochi x1, next, 2026-11-12T07:00Z good'])
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, mochi x1, next, 2026-11-12T07:00:00.000Z good'])
     const before = vault.get(`${ROOT}/Geo.md`)!
     await mount()
     expect(review.dueCount).toBe(3)
@@ -206,7 +216,7 @@ describe('useCardReview', () => {
     // ONE write: the review in, `next` out.
     expect(vi.mocked((await import('../views/writeProperty')).transformFile).mock.calls.length).toBe(writes + 1)
     const after = vault.get(`${ROOT}/Geo.md`)!
-    expect(after).toContain(`<!-- card: WIKI-2, mochi x1, 2026-11-12T07:00Z good, ${cardTime(NOW)} good -->`)
+    expect(after).toMatch(nowish(`<!-- card: WIKI-2, mochi x1, 2026-11-12T07:00:00.000Z good, ${cardTime(NOW)} good -->`))
     expect(review.dueCount).toBe(2)
     await step(() => review.undo())
     expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
@@ -214,7 +224,7 @@ describe('useCardReview', () => {
   })
 
   it('YAZ-5321: `upNext` says whether any card of the vault is marked Up next (an archived one does not count): off when its last mark goes, on again with one', async () => {
-    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good'], ['Capital of {{Chad}}?', 'WIKI-3, off, next'])
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00:00.000Z good'], ['Capital of {{Chad}}?', 'WIKI-3, off, next'])
     await mount()
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2' }))
@@ -261,7 +271,7 @@ describe('useCardReview', () => {
   })
 
   it('YAZ-5017: the filter — counts per filter (Due today = reviewed and due, New cards = never reviewed), the queue and "n of m" follow it, ← → stay inside it; the path says where the cards come from', async () => {
-    page('Bio/More.md', ['A {{second}} new card', 'WIKI-5'], ['Old {{one}}', 'WIKI-6, 2026-10-01T09:00Z good'])
+    page('Bio/More.md', ['A {{second}} new card', 'WIKI-5'], ['Old {{one}}', 'WIKI-6, 2026-10-01T09:00:00.000Z good'])
     await mount()
     await act(async () => review.start())
     // Due: WIKI-6 (most overdue first), WIKI-1; new: WIKI-3, WIKI-5.
@@ -334,7 +344,7 @@ describe('useCardReview', () => {
 
   it('YAZ-5028: Up next — only the cards marked `next`, new or reviewed, never `off`; "n of m" follows it; an answer takes the card out', async () => {
     // WIKI-2 (reviewed, not due) and WIKI-5 (new) are up next; WIKI-7 is `off` and `next`: off wins.
-    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good'])
     page('Bio/More.md', ['A {{second}} new card', 'WIKI-5, next'], ['Off {{one}}', 'WIKI-7, off, next'])
     await mount()
     await act(async () => review.start())
@@ -357,7 +367,7 @@ describe('useCardReview', () => {
 
   it('YAZ-5028, changed by YAZ-5042 Decision 1: Up next a day — only that many marked cards are Up next today, first; the others keep the mark and wait for another day; an answer uses a place for the day', async () => {
     // WIKI-1 due, WIKI-3 new (beforeEach); marked: WIKI-5 and WIKI-6 new, WIKI-2 reviewed and not due.
-    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, next, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good'])
     page('Bio/More.md', ['A {{fifth}} card', 'WIKI-5, next'], ['A {{sixth}} card', 'WIKI-6, next'])
     await mount({ ...S, upNextPerDay: 1 })
     // The queue, card by card with → (each read before the next: a card not read yet leaves the one before on show).
@@ -437,7 +447,7 @@ describe('useCardReview', () => {
     const read = () => vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     const ids = () => review.session?.counts
     // No new card begun today (beforeEach's WIKI-2 was first answered today: it takes one of the day's new cards).
-    beforeEach(() => page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good']))
+    beforeEach(() => page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good']))
 
     it('the counts: the cards that wait past today\'s number, and the add (one more day of the number); the add joins the session, grows the count, and keeps the Settings number', async () => {
       fiveNew()
@@ -485,7 +495,7 @@ describe('useCardReview', () => {
     })
 
     it('the done screen: an add shows the first added card at once, also under a filter that would hide it (then All cards)', async () => {
-      page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'])
+      page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'])
       page('Bio/Cells.md', ['What is a {{cell}}?', 'WIKI-3'], ['A {{second}} one', 'WIKI-6'])
       page('Up.md', ['A {{one}}', 'WIKI-8, next'], ['A {{two}}', 'WIKI-9, next'])
       await mount({ ...S, newPerDay: 0, upNextPerDay: 0 })
@@ -618,7 +628,7 @@ describe('useCardReview', () => {
     // minute ago: a new card needs two). `marked` puts `next` on all four, or on none.
     const lines = (marked: boolean) => {
       const n = marked ? ', next' : ''
-      page('Geo.md', ['Capital of {{France}}?', `WIKI-1${n}, 2026-10-13T09:00Z good`], ['Capital of {{Peru}}?', `WIKI-2${n}, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good`])
+      page('Geo.md', ['Capital of {{France}}?', `WIKI-1${n}, 2026-10-13T09:00:00.000Z good`], ['Capital of {{Peru}}?', `WIKI-2${n}, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good`])
       page('Bio/Cells.md', ['What is a {{cell}}?', `WIKI-3${n}`], ['Off card', 'WIKI-4, title "Off card", off'])
       page('Bio/Learn.md', ['A {{step}} card', `WIKI-8${n}, ${cardTime(NOW - 60_000)} good`])
     }
@@ -666,7 +676,7 @@ describe('useCardReview', () => {
       await mount()
       await act(async () => review.start())
       await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { reviews: [{ rating: 'good' }] } }))
-      page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, next, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
+      page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, next, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good'])
       const before = vault.get(`${ROOT}/Geo.md`)!
       await act(async () => reindex())
       // The fake index keeps mtime 0, so the card's text is not read again: the mark comes from the index.
@@ -674,7 +684,7 @@ describe('useCardReview', () => {
       const writes = vi.mocked((await import('../views/writeProperty')).transformFile).mock.calls.length
       await step(() => review.answer('good'))
       expect(vi.mocked((await import('../views/writeProperty')).transformFile).mock.calls.length).toBe(writes + 1)
-      expect(vault.get(`${ROOT}/Geo.md`)).toContain(`<!-- card: WIKI-1, 2026-10-13T09:00Z good, ${cardTime(NOW)} good -->`)
+      expect(vault.get(`${ROOT}/Geo.md`)).toMatch(nowish(`<!-- card: WIKI-1, 2026-10-13T09:00:00.000Z good, ${cardTime(NOW)} good -->`))
       expect(review.session?.counts.next).toBe(0)
       await step(() => review.undo())
       expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
@@ -682,7 +692,7 @@ describe('useCardReview', () => {
     })
 
     it('an index that has not caught up with an answer yet does not bring the answered card back as up next', async () => {
-      page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, next, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00Z good, 2026-11-12T07:01Z good'])
+      page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, next, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', 'WIKI-2, 2026-11-12T07:00:00.000Z good, 2026-11-12T07:01:00.000Z good'])
       await mount()
       await act(async () => review.start())
       await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-1', page: { next: true } }))
@@ -757,8 +767,8 @@ describe('useCardReview', () => {
   it('deleteReview works on any card, in a session or not; its notice`s Undo writes the review back', async () => {
     await mount()
     const before = reviewsOn('Geo.md', 'WIKI-2')
-    await act(async () => review.deleteReview(`${ROOT}/Geo.md`, 'WIKI-2', { at: '2026-11-12T07:00Z', rating: 'good' }))
-    expect(reviewsOn('Geo.md', 'WIKI-2')).toEqual([{ at: '2026-11-12T07:01Z', rating: 'good' }])
+    await act(async () => review.deleteReview(`${ROOT}/Geo.md`, 'WIKI-2', { at: '2026-11-12T07:00:00.000Z', rating: 'good' }))
+    expect(reviewsOn('Geo.md', 'WIKI-2')).toEqual([{ at: '2026-11-12T07:01:00.000Z', rating: 'good' }])
     expect([notices.at(-1), noticeAction?.label]).toEqual(['Review deleted', 'Undo'])
     await act(async () => noticeAction?.run())
     await vi.waitFor(() => expect(reviewsOn('Geo.md', 'WIKI-2')).toEqual(before))
@@ -766,10 +776,10 @@ describe('useCardReview', () => {
 
   it('the delete`s Undo puts the review back in its own place: the file is the same bytes (first, middle and last review; `off` and an unknown part)', async () => {
     // Not in time order, so a re-insert by time or at the end would show in the bytes.
-    page('Mixed.md', ['Q {{a}}', 'WIKI-9, off, 2026-09-01T08:00Z good, mochi x1, 2026-10-02T09:30Z hard, 2026-08-03T10:00Z again'])
+    page('Mixed.md', ['Q {{a}}', 'WIKI-9, off, 2026-09-01T08:00:00.000Z good, mochi x1, 2026-10-02T09:30:00.000Z hard, 2026-08-03T10:00:00.000Z again'])
     const original = vault.get(`${ROOT}/Mixed.md`)!
     await mount()
-    for (const [at, rating] of [['2026-09-01T08:00Z', 'good'], ['2026-10-02T09:30Z', 'hard'], ['2026-08-03T10:00Z', 'again']] as const) {
+    for (const [at, rating] of [['2026-09-01T08:00:00.000Z', 'good'], ['2026-10-02T09:30:00.000Z', 'hard'], ['2026-08-03T10:00:00.000Z', 'again']] as const) {
       await act(async () => review.deleteReview(`${ROOT}/Mixed.md`, 'WIKI-9', { at, rating }))
       expect(vault.get(`${ROOT}/Mixed.md`)).not.toBe(original)
       await act(async () => noticeAction?.run())
@@ -805,7 +815,7 @@ describe('useCardReview', () => {
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
     await step(() => review.turnOff())
-    expect(vault.get(`${ROOT}/Geo.md`)).toContain('<!-- card: WIKI-1, off, 2026-10-13T09:00Z good -->')
+    expect(vault.get(`${ROOT}/Geo.md`)).toContain('<!-- card: WIKI-1, off, 2026-10-13T09:00:00.000Z good -->')
     await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-3'))
     expect(review.dueCount).toBe(1)
   })
@@ -830,7 +840,7 @@ describe('useCardReview: same-day steps (YAZ-5020)', () => {
   /** A known card (out of its steps, due) and a new card. */
   beforeEach(() => {
     vault = new Map()
-    page('K.md', ['Known {{a}}?', 'WIKI-5, 2026-09-01T09:00Z good, 2026-09-01T09:01Z good'], ['New {{b}}?', 'WIKI-6'])
+    page('K.md', ['Known {{a}}?', 'WIKI-5, 2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good'], ['New {{b}}?', 'WIKI-6'])
   })
   const shown = async (id: string): Promise<void> => vi.waitFor(() => expect(review.session?.card).toMatchObject({ id, page: { id } }))
   /** Answers the card showing once it is read, `seconds` later than the last answer. */
@@ -878,7 +888,7 @@ describe('useCardReview: same-day steps (YAZ-5020)', () => {
       await answer('WIKI-6', rating, 0)
     }
     expect(review.session?.card).toBeNull()
-    expect(new Set(reviewsOn('N.md', 'WIKI-6').map((r) => r.at)).size).toBe(1) // all four in one minute
+    expect(new Set(reviewsOn('N.md', 'WIKI-6').map((r) => r.at)).size).toBe(4) // YAZ-5642: four answers in one minute, four times
     expect(review.dueCount).toBe(0)
   })
 
@@ -999,14 +1009,14 @@ describe('useCardReview: fast ← → (YAZ-5029)', () => {
 
 describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
   it('answer(rating, seconds) writes `<time> good 13s`, and its undo puts the file back byte for byte (with `next` and an older timed review)', async () => {
-    page('Geo.md', ['Capital of {{Peru}}?', 'WIKI-2, mochi x1, next, 2026-11-12T07:00Z good 40s'])
+    page('Geo.md', ['Capital of {{Peru}}?', 'WIKI-2, mochi x1, next, 2026-11-12T07:00:00.000Z good 40s'])
     const before = vault.get(`${ROOT}/Geo.md`)!
     await mount()
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card).toMatchObject({ id: 'WIKI-2', page: { next: true } }))
     await step(() => review.answer('good', 13))
-    expect(vault.get(`${ROOT}/Geo.md`)).toContain(`<!-- card: WIKI-2, mochi x1, 2026-11-12T07:00Z good 40s, ${cardTime(NOW)} good 13s -->`)
-    expect(reviewsOn('Geo.md', 'WIKI-2').at(-1)).toEqual({ at: cardTime(NOW), rating: 'good', seconds: 13 })
+    expect(vault.get(`${ROOT}/Geo.md`)).toMatch(nowish(`<!-- card: WIKI-2, mochi x1, 2026-11-12T07:00:00.000Z good 40s, ${cardTime(NOW)} good 13s -->`))
+    expect(reviewsOn('Geo.md', 'WIKI-2').at(-1)).toEqual({ at: atNow(), rating: 'good', seconds: 13 })
     await step(() => review.undo())
     expect(vault.get(`${ROOT}/Geo.md`)).toBe(before)
   })
@@ -1016,7 +1026,7 @@ describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.id).toBe('WIKI-1'))
     await step(() => review.answer('again', 1.5))
-    expect(vault.get(`${ROOT}/Geo.md`)).toContain(`<!-- card: WIKI-1, 2026-10-13T09:00Z good, ${cardTime(NOW)} again -->`)
+    expect(vault.get(`${ROOT}/Geo.md`)).toMatch(nowish(`<!-- card: WIKI-1, 2026-10-13T09:00:00.000Z good, ${cardTime(NOW)} again -->`))
     // YAZ-5043: past the % screen, the missed card, and "Due today is done.".
     await act(async () => review.goOn())
     for (let i = 0; i < 4 && review.session?.card?.id !== 'WIKI-3'; i++) {
@@ -1026,12 +1036,12 @@ describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
     }
     await vi.waitFor(() => expect(review.session?.card?.page?.id).toBe('WIKI-3'))
     await step(() => review.answer('good'))
-    expect(reviewsOn('Bio/Cells.md', 'WIKI-3')).toEqual([{ at: cardTime(NOW), rating: 'good' }])
+    expect(reviewsOn('Bio/Cells.md', 'WIKI-3')).toEqual([{ at: atNow(), rating: 'good' }])
   })
 
   it('session.today: the cards answered today across the vault, from the index, with their seconds; it follows each answer', async () => {
     // WIKI-2 was answered twice today, an hour ago, with no seconds: one card, 0 s. (Local times: any time zone.)
-    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00Z good'], ['Capital of {{Peru}}?', `WIKI-2, ${cardTime(NOW - 3_600_000)} good, ${cardTime(NOW - 3_540_000)} good`])
+    page('Geo.md', ['Capital of {{France}}?', 'WIKI-1, 2026-10-13T09:00:00.000Z good'], ['Capital of {{Peru}}?', `WIKI-2, ${cardTime(NOW - 3_600_000)} good, ${cardTime(NOW - 3_540_000)} good`])
     await mount()
     await act(async () => review.start())
     expect(review.session?.today).toEqual({ cards: 1, reviews: 2, seconds: 0 })
@@ -1048,7 +1058,7 @@ describe('YAZ-5033: the answer saves how long it took; today`s total', () => {
 
 describe('YAZ-5046: an archived card is never reviewed', () => {
   it('the review\'s counts and queue leave archived cards out (YAZ-5319: the Inbox lists none; a folder page\'s table finds them)', async () => {
-    page('Old.md', ['Old fact', 'WIKI-8, title "Old fact", off, 2025-01-01T09:00Z good'], ['Kept', 'WIKI-9'])
+    page('Old.md', ['Old fact', 'WIKI-8, title "Old fact", off, 2025-01-01T09:00:00.000Z good'], ['Kept', 'WIKI-9'])
     await mount()
     await act(async () => review.start())
     await vi.waitFor(() => expect(review.session?.card?.page).not.toBeNull())
@@ -1102,7 +1112,7 @@ describe('YAZ-5097: Fix later', () => {
 
 describe('YAZ-5594, YAZ-5610: the bar and every list`s count are per card; a card that comes back adds nothing', () => {
   /** Three known due cards (out of their steps): one Forgot keeps a card, one Remembered lets it go. Made-up cards. */
-  const known = (id: string) => `${id}, 2026-09-01T09:00Z good, 2026-09-01T09:01Z good`
+  const known = (id: string) => `${id}, 2026-09-01T09:00:00.000Z good, 2026-09-01T09:01:00.000Z good`
   beforeEach(() => {
     vault = new Map()
     page('T.md', ['One {{a}}?', known('WIKI-11')], ['Two {{b}}?', known('WIKI-12')], ['Three {{c}}?', known('WIKI-13')])

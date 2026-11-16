@@ -42,12 +42,12 @@ describe('the rows: the Mac\'s card menu, its order and words', () => {
     expect(cardActions(NONE, { upNext: false }).map((r) => r.kind)).toEqual(['off', 'fix', 'notitle'])
   })
   it('each row changes ONLY its own word on the line', () => {
-    const line = parseCardLine('<!-- card: NC-1, title "T", 2026-11-01T09:00Z good -->')!
+    const line = parseCardLine('<!-- card: NC-1, title "T", 2026-11-01T09:00:00.000Z good -->')!
     const want: Record<string, string> = {
-      next: '<!-- card: NC-1, title "T", next, 2026-11-01T09:00Z good -->',
-      off: '<!-- card: NC-1, title "T", off, 2026-11-01T09:00Z good -->',
-      fix: '<!-- card: NC-1, title "T", fix, 2026-11-01T09:00Z good -->',
-      notitle: '<!-- card: NC-1, title "T", notitle, 2026-11-01T09:00Z good -->',
+      next: '<!-- card: NC-1, title "T", next, 2026-11-01T09:00:00.000Z good -->',
+      off: '<!-- card: NC-1, title "T", off, 2026-11-01T09:00:00.000Z good -->',
+      fix: '<!-- card: NC-1, title "T", fix, 2026-11-01T09:00:00.000Z good -->',
+      notitle: '<!-- card: NC-1, title "T", notitle, 2026-11-01T09:00:00.000Z good -->',
     }
     for (const row of cardActions(NONE, { upNext: true })) {
       expect(formatCardLine(row.change(line))).toBe(want[row.kind])

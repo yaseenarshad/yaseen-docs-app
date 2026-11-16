@@ -12,7 +12,7 @@ import { answersSetup } from './testing'
  * card-line write (the `CardOp` list, as Fix later and Up next): queued, idempotent, applied by card ID to the newest
  * text at the send (the commit is compare-and-swap), and nothing else on the page changes, byte for byte.
  */
-const R0 = '2026-11-01T09:00Z good'
+const R0 = '2026-11-01T09:00:00.000Z good'
 const PAGE = pageText('Plants', 'PL-0', ['PL-1', 'PL-2'], 'Some text before the cards.\n\n').replace('<!-- card: PL-1 -->', `<!-- card: PL-1, title "Fern", ${R0} -->`)
 const hide = (id: string): CardOp => ({ kind: 'notitle', id, on: true })
 const show = (id: string): CardOp => ({ kind: 'notitle', id, on: false })

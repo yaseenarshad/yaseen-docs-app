@@ -51,7 +51,7 @@ vi.mock('@client/api', async (importOriginal) => {
 })
 
 const DAY = 86_400_000
-const iso = (t: number) => new Date(t).toISOString().slice(0, 16) + 'Z'
+const iso = (t: number) => new Date(t).toISOString().slice(0, 16) + ':00.000Z'
 const ago = (days: number, hours = 0) => iso(NOW - days * DAY - hours * 3_600_000)
 
 // ── Vault 1: a language vault. New cards over the day limit, due, answered today, archived, Up next, Fix later,
@@ -252,10 +252,10 @@ afterEach(() => vi.useRealTimers())
 const R3 = (id: string, front: string, extra = '') => `\`\`\`card\n${front}\n---\nR3 back of ${id}: {{x ${id}}}\n---\nlast side {{y ${id}}} and {{z ${id}}}\n\`\`\`\n<!-- card: ${id}${extra} -->`
 const VR3: Record<string, string> = {
   '.yaseendocs/review.json': '{"newPerDay": 2, "upNextPerDay": 1, "fuzz": false}',
-  'garden/plants.md': `---\ntitle: Plant notes (round 3)\n---\n\n# Plants\n\nSome text before the cards.\n\n${R3('PL-1', 'What is a fern?', ', 2026-09-20T08:00Z good, 2026-10-10T08:00Z good')}\n\n${R3('PL-2', 'Moss or lichen?')}\n\n${R3('PL-3', 'Which tree loses leaves?', ', next')}\n\n${R3('PL-4', 'Cactus water?', ', 2026-11-12T09:00Z again, 2026-11-13T07:00Z hard')}\n\n${R3('PL-5', 'Secret title\nWhat is a {{bulb}}?', ', notitle, 2026-10-25T08:00Z good')}\n`,
-  'cards/pl-6.md': `---\nkind: card\n---\n\n${R3('PL-6', 'How old can an oak get?', ', title "Oak", 2026-08-01T08:00Z easy, 2026-09-15T08:00Z good')}\n`,
+  'garden/plants.md': `---\ntitle: Plant notes (round 3)\n---\n\n# Plants\n\nSome text before the cards.\n\n${R3('PL-1', 'What is a fern?', ', 2026-09-20T08:00:00.000Z good, 2026-10-10T08:00:00.000Z good')}\n\n${R3('PL-2', 'Moss or lichen?')}\n\n${R3('PL-3', 'Which tree loses leaves?', ', next')}\n\n${R3('PL-4', 'Cactus water?', ', 2026-11-12T09:00:00.000Z again, 2026-11-13T07:00:00.000Z hard')}\n\n${R3('PL-5', 'Secret title\nWhat is a {{bulb}}?', ', notitle, 2026-10-25T08:00:00.000Z good')}\n`,
+  'cards/pl-6.md': `---\nkind: card\n---\n\n${R3('PL-6', 'How old can an oak get?', ', title "Oak", 2026-08-01T08:00:00.000Z easy, 2026-09-15T08:00:00.000Z good')}\n`,
   'cards/pl-7.md': `---\nkind: card\n---\n\n${R3('PL-7', 'Does ivy climb?', ', title "Ivy", next')}\n`,
-  'garden/more.md': `---\ntitle: More\n---\n\n${R3('PL-8', 'Archived one?', ', off, 2026-10-01T08:00Z good')}\n\n${R3('PL-9', 'Rose thorns?', ', fix')}\n\n${R3('PL-10', 'Tulip from?')}\n\n${R3('PL-11', 'Daisy?', ', 2026-11-01T08:00Z good')}\n\n![[cards/pl-6]]\n\n![[PL-7]]\n`,
+  'garden/more.md': `---\ntitle: More\n---\n\n${R3('PL-8', 'Archived one?', ', off, 2026-10-01T08:00:00.000Z good')}\n\n${R3('PL-9', 'Rose thorns?', ', fix')}\n\n${R3('PL-10', 'Tulip from?')}\n\n${R3('PL-11', 'Daisy?', ', 2026-11-01T08:00:00.000Z good')}\n\n![[cards/pl-6]]\n\n![[PL-7]]\n`,
 }
 // (builder, YAZ-5336) The REAL Mac host, on the actions both apps have. An Undo right after Archive card is the one
 // designed difference (the phone takes back the archive; the Mac, the answer before): it is not in this script. The

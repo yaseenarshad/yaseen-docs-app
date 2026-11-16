@@ -12,7 +12,7 @@ import { NOW, cardBlock, page, reviewSetup, type ReviewHarness } from './testing
  * colour cue; one line cut with "…"; a tap on its words never steps the card. The real engine and answer list
  * (`testing.ts`). Made-up data only.
  */
-const OLD = '2026-10-02T09:00Z good, 2026-10-12T09:00Z good'
+const OLD = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
 const FILES = {
   '.yaseendocs/review.json': '{}',
   'capitals.md': page(

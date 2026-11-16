@@ -94,7 +94,7 @@ describe('the answer list keeps the title part byte for byte (decision 2 with YA
   // A comma in the title is `&#44;`, as the Mac writes it (YAZ-5393): a raw comma is encoded on the first write.
   const TITLE = 'title "Ünï \\"q\\"&#44; a --\\> b \\\\ 🙂"'
   it('an answer, Undo, Up next, Archive card and Fix later, each with its Undo: the title part never moves or changes', async () => {
-    h = await reviewSetup(vault(cardBlock('Q?\n---\n{{A}}', `TI-9, ${TITLE}, 2026-11-01T09:00Z good`)))
+    h = await reviewSetup(vault(cardBlock('Q?\n---\n{{A}}', `TI-9, ${TITLE}, 2026-11-01T09:00:00.000Z good`)))
     const line = async () => (await h!.answers.text('p.md'))!.split('\n').find((l) => l.startsWith('<!-- card: TI-9'))!
     const before = await line()
     for (const name of ['Up next', 'Fix later']) {
@@ -106,11 +106,11 @@ describe('the answer list keeps the title part byte for byte (decision 2 with YA
     }
     await h.click('More card actions')
     await h.click('Archive card')
-    expect(await line()).toBe(`<!-- card: TI-9, ${TITLE}, off, 2026-11-01T09:00Z good -->`)
+    expect(await line()).toBe(`<!-- card: TI-9, ${TITLE}, off, 2026-11-01T09:00:00.000Z good -->`)
     await h.click('Undo')
     expect(await line()).toBe(before)
     await h.click('Remembered')
-    expect((await line()).startsWith(`<!-- card: TI-9, ${TITLE}, 2026-11-01T09:00Z good, 2026-11-13T`)).toBe(true)
+    expect((await line()).startsWith(`<!-- card: TI-9, ${TITLE}, 2026-11-01T09:00:00.000Z good, 2026-11-13T`)).toBe(true)
     await h.click('Undo')
     expect(await line()).toBe(before)
   })

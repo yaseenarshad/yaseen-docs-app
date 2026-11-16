@@ -26,7 +26,7 @@ afterEach(async () => {
   }
 })
 
-const CARD = 'Intro\n\n```card\ntest one\ntest two\n---\nA\n```\n<!-- card: WIKI-9, 2026-11-01T09:00Z good -->\n\n```js\ntest\ntest\n```\n'
+const CARD = 'Intro\n\n```card\ntest one\ntest two\n---\nA\n```\n<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good -->\n\n```js\ntest\ntest\n```\n'
 
 async function mount(markdown = CARD): Promise<{ crepe: Crepe; root: HTMLElement; view: EditorView; pos: number }> {
   const root = document.createElement('div')

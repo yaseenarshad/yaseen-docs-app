@@ -13,6 +13,7 @@
 import { readFileSync } from 'node:fs'
 import { INDEX_FILE, NUMBERS_FILE, POINTER_FILE, ensureFriendsFiles, makePointer, writeFriendsIndex, type WriteOptions } from '@shared/friendGists'
 import { DEFAULT_REVIEW_SETTINGS } from '@shared/reviews'
+import { cardTime } from '@shared/cardLine'
 import type { FriendVault } from '@shared/friendStats'
 import { macGistsApi, readProfile } from '../src/main/friends/gistsHttp'
 import { createMacSender, type MacSendSaved } from '../src/main/friends/macSender'
@@ -63,7 +64,7 @@ try {
 
   let saved: MacSendSaved | null = null
   let now = Date.now()
-  const at = new Date(now - 60_000).toISOString().slice(0, 16) + ':00Z'
+  const at = cardTime(now - 60_000)
   const vault = { pages: [{ cards: [{ id: 'TEST-1', off: false, next: false, reviews: [{ at, rating: 'good', seconds: 7 }] }] }], settings: DEFAULT_REVIEW_SETTINGS } as unknown as FriendVault
   const sender = createMacSender({
     readToken: async () => token,

@@ -9,8 +9,8 @@ import { applyOps, opsBetween, UnsentChangeError, type CardOp } from './ops'
  * part. An answer, an Undo, Up next, Archive card, Fix later and their Undos never change, move or rewrite one. The
  * phone never sets a property: such a change cannot be sent (`UnsentChangeError`), so nothing is half saved.
  */
-const R: CardReview = { at: '2026-11-14T06:01Z', rating: 'good', seconds: 9 }
-const R0 = '2026-11-01T09:00Z good'
+const R: CardReview = { at: '2026-11-14T06:01:00.000Z', rating: 'good', seconds: 9 }
+const R0 = '2026-11-01T09:00:00.000Z good'
 const pageWith = (line: string) => `---\ntitle: P\n---\n\n# P\n\n\`\`\`card\nWhat is it?\n---\n{{It}}\n\`\`\`\n<!-- card: ${line} -->\n\nThe end.\n`
 const lineOf = (content: string) => formatCardLine(pageCards(content)[0].line)!
 /** Each part's own text on the line, as the writer puts it. */
@@ -71,7 +71,7 @@ describe('applyOps keeps every card-line part byte for byte: title, properties, 
   it('the order the base defines: ID, title, properties, then off, next, notitle, fix, then the reviews', () => {
     const page = pageWith(`NC-1, title "Capital of Spain", tags "europe" "capitals", level "A2", ${R0}`)
     const ops: CardOp[] = [{ kind: 'fix', id: 'NC-1', on: true }, { kind: 'next', id: 'NC-1', on: true }, { kind: 'off', id: 'NC-1', on: true }, { kind: 'review', id: 'NC-1', review: R }]
-    expect(lineOf(applyOps(page, ops).content)).toBe(`<!-- card: NC-1, title "Capital of Spain", tags "europe" "capitals", level "A2", off, next, fix, ${R0}, 2026-11-14T06:01Z good 9s -->`)
+    expect(lineOf(applyOps(page, ops).content)).toBe(`<!-- card: NC-1, title "Capital of Spain", tags "europe" "capitals", level "A2", off, next, fix, ${R0}, 2026-11-14T06:01:00.000Z good 9s -->`)
     const hidden = pageWith(`NC-1, title "T", tags ["x"], notitle, ${R0}`)
     expect(lineOf(applyOps(hidden, [{ kind: 'fix', id: 'NC-1', on: true }]).content)).toBe(`<!-- card: NC-1, title "T", tags ["x"], notitle, fix, ${R0} -->`)
   })
@@ -79,14 +79,14 @@ describe('applyOps keeps every card-line part byte for byte: title, properties, 
   it('a hand-written property keeps its bytes on a write (`tags  "a"   "b"`, `ratio 2.50`, `[ "a" ]`): the phone never rewrites a part it did not change', () => {
     for (const part of ['tags  "a"   "b"', 'ratio 2.50', 'n -0', 'list [ "a" ]', 'done  true', 'x 1.0']) {
       const page = pageWith(`NC-1, ${part}, ${R0}`)
-      expect(lineOf(applyOps(page, [{ kind: 'review', id: 'NC-1', review: R }]).content), part).toBe(`<!-- card: NC-1, ${part}, ${R0}, 2026-11-14T06:01Z good 9s -->`)
+      expect(lineOf(applyOps(page, [{ kind: 'review', id: 'NC-1', review: R }]).content), part).toBe(`<!-- card: NC-1, ${part}, ${R0}, 2026-11-14T06:01:00.000Z good 9s -->`)
     }
   })
 
   it('a title an older build wrote with a raw comma: a write encodes the comma, as the Mac does (YAZ-5393); a write that changes nothing keeps it', () => {
     const page = pageWith(`NC-1, title "1,000 islands", ${R0}`)
     expect(applyOps(page, [{ kind: 'next', id: 'NC-1', on: false }]).content).toBe(page)
-    expect(lineOf(applyOps(page, [{ kind: 'review', id: 'NC-1', review: R }]).content)).toBe(`<!-- card: NC-1, title "1&#44;000 islands", ${R0}, 2026-11-14T06:01Z good 9s -->`)
+    expect(lineOf(applyOps(page, [{ kind: 'review', id: 'NC-1', review: R }]).content)).toBe(`<!-- card: NC-1, title "1&#44;000 islands", ${R0}, 2026-11-14T06:01:00.000Z good 9s -->`)
   })
 })
 
@@ -123,7 +123,7 @@ describe('an unswept vault (no property move yet, YAZ-5384; no title move, YAZ-5
   const file = `---\nkind: card\ntitle: Old title\ntags: [europe, capitals]\nlevel: A2\n---\n\n\`\`\`card\nCapital of Spain\n\nWhat is it?\n---\nMadrid\n\`\`\`\n<!-- card: NC-1, ${R0} -->\n`
   it('an answer, Fix later and Up next change only the card line: the front matter and the first line stay byte for byte, no property or title part is written', () => {
     const out = applyOps(file, [{ kind: 'review', id: 'NC-1', review: R }, { kind: 'fix', id: 'NC-1', on: true }, { kind: 'next', id: 'NC-1', on: true }]).content
-    expect(out).toBe(file.replace(`<!-- card: NC-1, ${R0} -->`, `<!-- card: NC-1, next, fix, ${R0}, 2026-11-14T06:01Z good 9s -->`))
+    expect(out).toBe(file.replace(`<!-- card: NC-1, ${R0} -->`, `<!-- card: NC-1, next, fix, ${R0}, 2026-11-14T06:01:00.000Z good 9s -->`))
     expect(cardPropertiesOf(pageCards(out)[0].line)).toEqual({})
     expect(applyOps(out, [{ kind: 'unreview', id: 'NC-1', at: R.at, rating: R.rating }, { kind: 'fix', id: 'NC-1', on: false }, { kind: 'next', id: 'NC-1', on: false }]).content).toBe(file)
   })

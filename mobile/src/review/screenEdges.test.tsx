@@ -25,7 +25,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const dueCards = (n: number, words = 1) => Array.from({ length: n }, (_, i) => cardBlock(`Q${i + 1}?\n---\n${Array.from({ length: words }, (_, w) => `{{w${i + 1}.${w + 1}}}`).join(' ')}`, `DC-${i + 1}, ${OLD}`))
 const ids = (hh: ReviewHarness) => hh.answers.waiting().filter((w) => w.op.kind === 'review').map((w) => w.op.id)
 

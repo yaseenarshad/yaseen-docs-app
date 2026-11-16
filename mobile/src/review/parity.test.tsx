@@ -64,12 +64,12 @@ const FILES: Record<string, string> = {
   '.yaseendocs/review.json': JSON.stringify({ newPerDay: 3, fuzz: false }),
   'spanish.md': page(
     'Spanish words',
-    cardBlock('Old one?\n---\n{{viejo}}', 'PA-1, title "Viejo", tags "europe" "capitals", level "A2", 2026-10-01T09:00Z good, 2026-10-05T09:00Z good'),
+    cardBlock('Old one?\n---\n{{viejo}}', 'PA-1, title "Viejo", tags "europe" "capitals", level "A2", 2026-10-01T09:00:00.000Z good, 2026-10-05T09:00:00.000Z good'),
     cardBlock('Hola?\n---\n{{hello}}', 'PA-2, title "Hola&#44; \\"mundo\\" --\\> \\\\ ñandú 🙂", source "Atlas, chapter 3", say "\\"hi\\""'),
     cardBlock('Adios?\n---\n{{bye}}', `PA-3, tags ["x"], none [], ${TWENTY}, next`),
   ),
   'cards/speed-of-light-pa-4.md': cardFile('Speed of light', cardBlock('How fast?\n---\n{{300,000 km/s}}', 'PA-4, note "x&#44;y", ratio 2.50')),
-  'git.md': page('Git', cardBlock('git pull?\n---\nIt {{fetches}} and {{merges}}.', 'PA-5, title "a > b, by hand", tags  "a"   "b", 2026-11-10T09:00Z again'), cardBlock('git push?\n---\n{{uploads}}', 'PA-6, title ""'), '![[PA-4]]'),
+  'git.md': page('Git', cardBlock('git pull?\n---\nIt {{fetches}} and {{merges}}.', 'PA-5, title "a > b, by hand", tags  "a"   "b", 2026-11-10T09:00:00.000Z again'), cardBlock('git push?\n---\n{{uploads}}', 'PA-6, title ""'), '![[PA-4]]'),
 }
 
 /** One run: the hook with a host, and the steps. Returns what showed after each step, and the card lines. */
@@ -237,7 +237,9 @@ describe('one review logic (decision 3): the Mac host and the phone host give th
     const files = { '.yaseendocs/review.json': '{}', 'one.md': page('One', cardBlock('Only?\n---\n{{one}}', 'PA-9')) }
     const tap = async (run: Run) => {
       const seen: string[] = []
+      vi.setSystemTime(NOW)
       for (const fn of [() => run.review().start(), () => run.review().answer('good', 2), () => run.review().answer('good', 3)]) {
+        vi.setSystemTime(Date.now() + 1_000) // YAZ-5642: each answer has its own time, in the same minute
         await act(async () => void (await fn()))
         await run.settle()
         seen.push(run.review().session?.card?.id ?? 'done')

@@ -37,7 +37,7 @@ let seed = 11
 const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
 /** One card line with 0 to 10 answers in the last 90 days. */
 function cardLine(id: string): string {
-  const answers = Array.from({ length: Math.floor(rnd() * 11) }, () => `${new Date(NOW - Math.floor(rnd() * 90 * 86_400_000)).toISOString().slice(0, 16)}Z ${RATINGS[Math.floor(rnd() * 4)]} 5s`)
+  const answers = Array.from({ length: Math.floor(rnd() * 11) }, () => `${new Date(NOW - Math.floor(rnd() * 90 * 86_400_000)).toISOString().slice(0, 16)}:00.000Z ${RATINGS[Math.floor(rnd() * 4)]} 5s`)
   return `<!-- card: ${[id, ...answers].join(', ')} -->`
 }
 
@@ -84,7 +84,7 @@ describe('a closed vault of 100,000 files (YAZ-5390)', () => {
     const coldScan = count.timing()
     expect(first.totals.cards).toBe(100_000)
     expect(count.read()).toBe(100_000)
-    for (let i = 0; i < 10; i++) await writeFile(path.join(root, `Folder ${i * 7}`, `Page ${i * 700}.md`), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-${i * 700 + 1}, 2026-11-14T14:00Z good 3s -->\n`)
+    for (let i = 0; i < 10; i++) await writeFile(path.join(root, `Folder ${i * 7}`, `Page ${i * 700}.md`), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-${i * 700 + 1}, 2026-11-14T14:00:00.000Z good 3s -->\n`)
     const [second, warm] = await time(() => count(countPayload([]), NOW, [{ root, key: 'b' }]))
     const warmScan = count.timing()
     expect(count.read()).toBe(10)
@@ -127,7 +127,7 @@ describe('the main thread, the whole path of one try (YAZ-5252)', () => {
     // The open vault: 20,000 cards from the live index (in main's memory in the app).
     const open: FriendVault = {
       pages: Array.from({ length: 5000 }, (_, p) => ({
-        cards: Array.from({ length: 4 }, (_, c): CardRecord => ({ id: `OPEN-${p * 4 + c + 1}`, off: false, next: false, reviews: Array.from({ length: Math.floor(rnd() * 11) }, () => ({ at: `${new Date(NOW - Math.floor(rnd() * 90 * 86_400_000)).toISOString().slice(0, 16)}Z`, rating: RATINGS[Math.floor(rnd() * 4)], seconds: 5 })) }) as unknown as CardRecord),
+        cards: Array.from({ length: 4 }, (_, c): CardRecord => ({ id: `OPEN-${p * 4 + c + 1}`, off: false, next: false, reviews: Array.from({ length: Math.floor(rnd() * 11) }, () => ({ at: `${new Date(NOW - Math.floor(rnd() * 90 * 86_400_000)).toISOString().slice(0, 16)}:00.000Z`, rating: RATINGS[Math.floor(rnd() * 4)], seconds: 5 })) }) as unknown as CardRecord),
       })),
       settings: DEFAULT_REVIEW_SETTINGS,
     } as unknown as FriendVault
@@ -160,7 +160,7 @@ describe('the main thread, the whole path of one try (YAZ-5252)', () => {
     const wall: number[] = []
     for (let i = 0; i < 3; i++) {
       // A new change in the closed vault each run (a new key: the worker scans it), and new numbers (a send).
-      await writeFile(path.join(closedRoot, 'Folder 0', `New ${i}.md`), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-${900_000 + i}, 2026-11-14T14:0${i}Z good 3s -->\n`)
+      await writeFile(path.join(closedRoot, 'Folder 0', `New ${i}.md`), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-${900_000 + i}, 2026-11-14T14:0${i}:00.000Z good 3s -->\n`)
       world.advance(PUBLISH_EVERY_MS + 1)
       const [view, block] = await longestBlock(() => sender.attempt('pass'))
       expect(view.status).toBe('sent')

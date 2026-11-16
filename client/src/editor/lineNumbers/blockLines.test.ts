@@ -284,7 +284,7 @@ describe('a table with settings (YAZ-3758, rule 41a)', () => {
 
 describe('blockLines: a card (YAZ-4960, idea 29)', () => {
   it('reads the card line as the card block\'s own comment: no block of its own, and every line number after it stays', () => {
-    const card = ['```card', 'Front {{word}}', '---', 'Back', '```', '<!-- card: WIKI-512, 2026-11-12T14:05Z good -->', '', 'After.']
+    const card = ['```card', 'Front {{word}}', '---', 'Back', '```', '<!-- card: WIKI-512, 2026-11-12T14:05:00.000Z good -->', '', 'After.']
     expect(ranges(...card)).toEqual(['1–6', '8'])
     expect(index(...card).kinds).toBe('cp')
     // In a bullet, as the editor writes it there.

@@ -17,7 +17,7 @@ afterEach(() => {
   h = undefined
   vi.useRealTimers()
 })
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2, 3].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `MK-${n}, ${OLD}`))) }
 type Mark = 'archive' | 'next' | 'fix'
 type Sent = 'unsent' | 'lost-reply' | 'sent'
@@ -125,7 +125,7 @@ describe('archive undo when the Mac changed the card meanwhile', () => {
       if (sent === 'sent') await h.wait(5_000)
       // The Mac changes MK-1: a new text and a new review, archived or not as GitHub holds it now.
       const now = (await h.s.git.filesAt(h.s.git.branches.get('main')!))['p.md'] as string
-      const mac = now.replace('Q1?\n---\n{{w1}}', 'Q1 changed on the Mac?\n---\n{{w1}}').replace(/(<!-- card: MK-1[^>]*?)( -->)/, '$1, 2026-11-13T08:00Z hard$2')
+      const mac = now.replace('Q1?\n---\n{{w1}}', 'Q1 changed on the Mac?\n---\n{{w1}}').replace(/(<!-- card: MK-1[^>]*?)( -->)/, '$1, 2026-11-13T08:00:00.000Z hard$2')
       await h.s.git.push({ 'p.md': mac })
       const macLine = /<!-- card: MK-1[^>]*-->/.exec(mac)![0]
       await h.click('Undo')

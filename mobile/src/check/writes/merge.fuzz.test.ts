@@ -35,7 +35,7 @@ function one(seed: number): Finding[] {
     const ids = pageCards(base).map((c) => cardIdOf(c.line)).filter((x): x is string => x !== null)
     if (ids.length === 0) return out
     const id = pick(r, ids)
-    const review = { at: '2026-11-14T09:59Z', rating: 'easy' as const }
+    const review = { at: '2026-11-14T09:59:00.000Z', rating: 'easy' as const }
     phone = applyOps(base, [{ kind: 'review', id, review }]).content
     check = (t) => pageCards(t).some((c) => cardIdOf(c.line)?.toUpperCase() === id.toUpperCase() && cardReviewsOf(c.line).some((x) => cardReviewKey(x) === cardReviewKey(review)))
     target = (t) => pageCards(t).some((c) => cardIdOf(c.line)?.toUpperCase() === id.toUpperCase())
@@ -76,7 +76,7 @@ function one(seed: number): Finding[] {
       return out
     }
   } else {
-    mac = rewritePageCards(base, (c) => (cardIdOf(c.line) !== null ? withCardReview(c.line, { at: '2026-11-13T01:00Z', rating: 'hard' }) : undefined))
+    mac = rewritePageCards(base, (c) => (cardIdOf(c.line) !== null ? withCardReview(c.line, { at: '2026-11-13T01:00:00.000Z', rating: 'hard' }) : undefined))
     if (mac === base) return out
   }
   let res: ReturnType<typeof macMerge>
@@ -86,7 +86,7 @@ function one(seed: number): Finding[] {
     f(`mac-merge-throws:${['answer', 'comment', 'tick'][k]}`, `${String(e).slice(0, 80)} base=${JSON.stringify(base.slice(0, 120))}`)
     return out
   }
-  const macThere = (t: string) => (m === 3 ? pageCards(t).some((c) => cardReviewsOf(c.line).some((x) => x.at === '2026-11-13T01:00Z')) : t.includes(marker))
+  const macThere = (t: string) => (m === 3 ? pageCards(t).some((c) => cardReviewsOf(c.line).some((x) => x.at === '2026-11-13T01:00:00.000Z')) : t.includes(marker))
   // The Mac's own edit can break the target itself (a card fence's info string, a task's marker): then the phone's
   // line is checked by its bytes instead, since no reader finds the card or the task in the Mac's page either.
   const phoneLine = phone.split('\n').find((l, i) => l !== base.split('\n')[i])

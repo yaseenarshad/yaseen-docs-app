@@ -22,8 +22,8 @@ import { splitFrontmatter } from '@shared/frontmatter'
 import { pageCards } from '@shared/cardLine'
 import * as older from './olderCardLine.fixture'
 
-const R1 = '2026-11-01T09:00Z good'
-const R2 = '2026-11-13T10:00Z again 7s'
+const R1 = '2026-11-01T09:00:00.000Z good'
+const R2 = '2026-11-13T10:00:00.000Z again 7s'
 const parse = (body: string): CardLine => parseCardLine(`<!-- card: ${body} -->`)!
 const write = (line: CardLine): string => formatCardLine(line)!.replace(/^<!-- card: | -->$/g, '')
 
@@ -59,8 +59,8 @@ describe('`fix` (YAZ-5097) with the title part: its place is after the ID, the t
 describe('every write the phone makes keeps the title part byte for byte', () => {
   /** The phone's writes, each with its undo where it has one (`ops.ts` applies these writers). */
   const writes: Array<[string, (l: CardLine) => CardLine]> = [
-    ['an answer, then its undo', (l) => withoutCardReview(withCardReview(l, { at: '2026-11-13T10:00Z', rating: 'again', seconds: 7 }), '2026-11-13T10:00Z')],
-    ['a review taken out and put back', (l) => withCardReviewAt(withoutCardReview(l, '2026-11-01T09:00Z'), { at: '2026-11-01T09:00Z', rating: 'good' }, 2)],
+    ['an answer, then its undo', (l) => withoutCardReview(withCardReview(l, { at: '2026-11-13T10:00:00.000Z', rating: 'again', seconds: 7 }), '2026-11-13T10:00:00.000Z')],
+    ['a review taken out and put back', (l) => withCardReviewAt(withoutCardReview(l, '2026-11-01T09:00:00.000Z'), { at: '2026-11-01T09:00:00.000Z', rating: 'good' }, 2)],
     ['Up next, and its undo', (l) => withCardNext(withCardNext(l, true), false)],
     ['Archive card, and its undo', (l) => withCardOff(withCardOff(l, true), false)],
     ['Fix later, and its undo', (l) => withCardFix(withCardFix(l, true), false)],
@@ -74,7 +74,7 @@ describe('every write the phone makes keeps the title part byte for byte', () =>
     expect(write(line)).toBe(body)
     for (const [name, change] of writes) expect(write(change(line)), name).toBe(body)
     // An answer, and each mark on: the title part is the same bytes, in the same place, right after the ID.
-    for (const on of [withCardReview(line, { at: '2026-11-13T10:00Z', rating: 'again', seconds: 7 }), withCardNext(line, true), withCardOff(line, true), withCardFix(line, true), withCardNoTitle(line, true)])
+    for (const on of [withCardReview(line, { at: '2026-11-13T10:00:00.000Z', rating: 'again', seconds: 7 }), withCardNext(line, true), withCardOff(line, true), withCardFix(line, true), withCardNoTitle(line, true)])
       expect(write(on).startsWith(`WIKI-5, ${part}, `)).toBe(true)
     expect(write(withCardFix(withCardNext(line, true), true))).toBe(`WIKI-5, ${part}, next, fix, ${R1}`)
   })
@@ -104,8 +104,8 @@ describe('every write the phone makes keeps the title part byte for byte', () =>
 describe('the merge rule of sync (decision 5, `uniteCardLines`) keeps the title part, three ways', () => {
   const page = (line: string) => `---\nid: YAZ-1\n---\n# Words\n\n\`\`\`card\nHola\n\`\`\`\n<!-- card: ${line} -->\n\nThe end.\n`
   const lineOf = (text: string) => splitFrontmatter(text).body.split('\n')[pageCards(text)[0].lineAt!]
-  const T = '2026-11-13T10:00Z good 4s'
-  const M = '2026-11-13T10:05Z again 7s'
+  const T = '2026-11-13T10:00:00.000Z good 4s'
+  const M = '2026-11-13T10:05:00.000Z again 7s'
 
   it('the Mac renames the card (mine), the phone answers it (theirs): the new title and both answers stay', () => {
     const [t, m] = uniteCardLines(page(`YAZ-7, title "Hola", ${R1}`), page(`YAZ-7, title "Hola", ${R1}, ${T}`), page(`YAZ-7, title "Hello&#44; world", ${R1}, ${M}`))
@@ -145,7 +145,7 @@ describe('a build from before YAZ-5308 (point 6: the phone never writes what an 
   /** What the older build writes after its own change of the line. */
   const olderWrite = (body: string, change: (l: older.CardLine) => older.CardLine): string => older.formatCardLine(change(older.parseCardLine(`<!-- card: ${body} -->`)!))!.replace(/^<!-- card: | -->$/g, '')
   const olderWrites: Array<[string, (l: older.CardLine) => older.CardLine]> = [
-    ['an answer', (l) => older.withCardReview(l, { at: '2026-11-13T10:00Z', rating: 'again', seconds: 7 })],
+    ['an answer', (l) => older.withCardReview(l, { at: '2026-11-13T10:00:00.000Z', rating: 'again', seconds: 7 })],
     ['Archive card', (l) => older.withCardOff(l, true)],
     ['Up next', (l) => older.withCardNext(l, true)],
     ['Title on the front: Hide', (l) => older.withCardNoTitle(l, true)],

@@ -17,7 +17,7 @@ import { SEEN_MS } from './tapGuard'
 const burst = vi.fn((_from: Element, _o?: unknown) => () => undefined)
 vi.mock('@client/review/confetti', () => ({ confettiBurst: (from: Element, o?: unknown) => burst(from, o) }))
 
-const OLD = '2026-10-02T09:00Z good, 2026-10-12T09:00Z good'
+const OLD = '2026-10-02T09:00:00.000Z good, 2026-10-12T09:00:00.000Z good'
 const DUE = ['VRB-1', 'VRB-2', 'VRB-3', 'VRB-4', 'VRB-5']
 const NEW = ['PLC-1', 'PLC-2', 'PLC-3']
 const FILES = {

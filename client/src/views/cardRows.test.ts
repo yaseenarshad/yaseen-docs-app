@@ -26,14 +26,14 @@ const card = (id: string | null, over: Partial<CardRecord> = {}): CardRecord => 
 const PAGES = [
   record('Europe trip', {
     cards: [
-      card('GEO-1', { title: 'Capital of Spain', off: true, reviews: [{ at: '2026-11-01T09:00Z', rating: 'good' }, { at: '2026-11-03T09:00Z', rating: 'again' }] }),
+      card('GEO-1', { title: 'Capital of Spain', off: true, reviews: [{ at: '2026-11-01T09:00:00.000Z', rating: 'good' }, { at: '2026-11-03T09:00:00.000Z', rating: 'again' }] }),
       card('GEO-2', { next: true }),
       // No ID yet (before the sweep), and a copy of an ID the page holds already: no row.
       card(null),
       card('GEO-1', { title: 'Copy' }),
     ],
   }),
-  record('GEO-3', { kind: 'card', title: 'Longest river', cards: [card('GEO-3', { title: 'Longest river', reviews: [{ at: '2026-11-10T09:00Z', rating: 'good' }] })] }),
+  record('GEO-3', { kind: 'card', title: 'Longest river', cards: [card('GEO-3', { title: 'Longest river', reviews: [{ at: '2026-11-10T09:00:00.000Z', rating: 'good' }] })] }),
   record('Plain'),
 ]
 const CARDS: ViewDef = { type: 'table', name: 'Cards', rows: 'cards' }
@@ -65,12 +65,12 @@ describe('YAZ-5319: card rows', () => {
     expect([spain['file.name'], spain['card.page'], spain['card.status'], spain['card.reviews'], spain['card.successRate'], spain['card.upNext'], spain['card.id']]).toEqual(['Capital of Spain', 'Europe trip', 'Archived', 2, 50, false, 'GEO-1'])
     // An archived card is out of review: no next review. Its last review is its latest.
     expect(spain['card.nextReview']).toBeNull()
-    expect((spain['card.lastReview'] as DateValue).ms).toBe(Date.parse('2026-11-03T09:00Z'))
+    expect((spain['card.lastReview'] as DateValue).ms).toBe(Date.parse('2026-11-03T09:00:00.000Z'))
     // A new card: nothing reviewed, nothing scheduled; it is Up next.
     expect([plain['card.status'], plain['card.nextReview'], plain['card.lastReview'], plain['card.reviews'], plain['card.successRate'], plain['card.upNext']]).toEqual(['Active', null, null, null, null, true])
     // A card file lives in itself: no Page. Its next review is the schedule's date, after its last.
     expect([river['card.page'], river['card.status'], river['card.reviews'], river['card.successRate'], river['card.id']]).toEqual([null, 'Active', 1, 100, 'GEO-3'])
-    expect((river['card.nextReview'] as DateValue).ms).toBeGreaterThan(Date.parse('2026-11-10T09:00Z'))
+    expect((river['card.nextReview'] as DateValue).ms).toBeGreaterThan(Date.parse('2026-11-10T09:00:00.000Z'))
   })
 
   it('"Card status is Archived" finds the archived card inside a page; the rule reads back as the Filter menu row', () => {
@@ -131,10 +131,10 @@ describe('YAZ-5319: card rows', () => {
   })
 
   it('YAZ-5385: a row`s writes are its card line`s: Card status, Card up next, and a property set or cleared', () => {
-    const line = parseCardLine('<!-- card: GEO-1, title "A", level "A2", 2026-11-12T14:05Z good -->')!
+    const line = parseCardLine('<!-- card: GEO-1, title "A", level "A2", 2026-11-12T14:05:00.000Z good -->')!
     const change = cardLineChange([{ key: 'level', value: 'B1' }, { key: 'tags', value: ['x'] }, { key: 'card.upNext', value: true }])
-    expect(formatCardLine(change(line))).toBe('<!-- card: GEO-1, title "A", level "B1", tags ["x"], next, 2026-11-12T14:05Z good -->')
-    expect(formatCardLine(cardLineChange([{ key: 'level', value: undefined }])(line))).toBe('<!-- card: GEO-1, title "A", 2026-11-12T14:05Z good -->')
+    expect(formatCardLine(change(line))).toBe('<!-- card: GEO-1, title "A", level "B1", tags ["x"], next, 2026-11-12T14:05:00.000Z good -->')
+    expect(formatCardLine(cardLineChange([{ key: 'level', value: undefined }])(line))).toBe('<!-- card: GEO-1, title "A", 2026-11-12T14:05:00.000Z good -->')
     expect(() => cardLineChange([{ key: 'next', value: 'x' }])(line)).toThrow()
   })
 
@@ -194,9 +194,9 @@ describe('YAZ-5430: Card fix status (Q53): "Needs fixing" or blank, next to Card
   })
 
   it('its cell writes `fix` on the card line: Needs fixing sets it in the phone`s place; blank (Clear) takes it off; other parts keep their bytes', () => {
-    const line = parseCardLine('<!-- card: GEO-1, title "Capital of Spain", level "A2", off, 2026-11-01T09:00Z good -->')!
+    const line = parseCardLine('<!-- card: GEO-1, title "Capital of Spain", level "A2", off, 2026-11-01T09:00:00.000Z good -->')!
     const on = cardLineChange([{ key: 'card.fix', value: 'Needs fixing' }])(line)
-    expect(formatCardLine(on)).toBe('<!-- card: GEO-1, title "Capital of Spain", level "A2", off, fix, 2026-11-01T09:00Z good -->')
+    expect(formatCardLine(on)).toBe('<!-- card: GEO-1, title "Capital of Spain", level "A2", off, fix, 2026-11-01T09:00:00.000Z good -->')
     for (const blank of [null, undefined, '']) expect(formatCardLine(cardLineChange([{ key: 'card.fix', value: blank }])(on))).toBe(formatCardLine(line))
     // Set twice: one mark.
     expect(cardLineChange([{ key: 'card.fix', value: 'Needs fixing' }])(on)).toBe(on)

@@ -51,7 +51,7 @@ vi.mock('@client/api', async (importOriginal) => {
 })
 
 const DAY = 86_400_000
-const iso = (t: number) => new Date(t).toISOString().slice(0, 16) + 'Z'
+const iso = (t: number) => new Date(t).toISOString().slice(0, 16) + ':00.000Z'
 const ago = (days: number, hours = 0) => iso(NOW - days * DAY - hours * 3_600_000)
 
 // ── Vault 1: a language vault. New cards over the day limit, due, answered today, archived, Up next, Fix later,
@@ -252,10 +252,10 @@ afterEach(() => vi.useRealTimers())
 const R2 = (id: string, extra = '') => `\`\`\`card\nR2 ${id} front {{a ${id}}} and {{b ${id}}}\n---\nback of ${id} {{c ${id}}}\n\`\`\`\n<!-- card: ${id}${extra} -->`
 const VR2: Record<string, string> = {
   '.yaseendocs/review.json': '{"newPerDay": 3, "upNextPerDay": 2}',
-  'zoo/animals.md': `---\ntitle: Animal facts\n---\n\n# Animals\n\n${R2('RT-1', ', 2026-10-01T08:00Z good, 2026-10-05T08:00Z good')}\n\n${R2('RT-2')}\n\n${R2('RT-3', ', next')}\n\n${R2('RT-4', ', 2026-11-12T09:00Z again')}\n`,
-  'cards/rt-5.md': `---\nkind: card\n---\n\n${R2('RT-5', ', title "Card five", 2026-09-01T08:00Z good')}\n`,
+  'zoo/animals.md': `---\ntitle: Animal facts\n---\n\n# Animals\n\n${R2('RT-1', ', 2026-10-01T08:00:00.000Z good, 2026-10-05T08:00:00.000Z good')}\n\n${R2('RT-2')}\n\n${R2('RT-3', ', next')}\n\n${R2('RT-4', ', 2026-11-12T09:00:00.000Z again')}\n`,
+  'cards/rt-5.md': `---\nkind: card\n---\n\n${R2('RT-5', ', title "Card five", 2026-09-01T08:00:00.000Z good')}\n`,
   'cards/rt-6.md': `---\nkind: card\n---\n\n${R2('RT-6', ', title "Card six"')}\n`,
-  'notes/mixed.md': `---\ntitle: Mixed\n---\n\n${R2('RT-7', ', off')}\n\n${R2('RT-8', ', 2026-10-20T08:00Z hard, 2026-11-01T08:00Z good')}\n\n${R2('RT-9')}\n\n![[cards/rt-5]]\n`,
+  'notes/mixed.md': `---\ntitle: Mixed\n---\n\n${R2('RT-7', ', off')}\n\n${R2('RT-8', ', 2026-10-20T08:00:00.000Z hard, 2026-11-01T08:00:00.000Z good')}\n\n${R2('RT-9')}\n\n![[cards/rt-5]]\n`,
 }
 const SCRIPT_R2: Action[] = ['good', 'again', 'good', 'undo', 'next', 'good', 'f-new', 'good', 'again', 'undo', 'undo', 'f-due', 'good', 'archive', 'f-all', 'fix', 'good', 'again', 'unnext', 'good', 'add-new', 'good', 'undo', 'add-next', 'f-next', 'good', 'f-all', 'again', 'again', 'good', 'next', 'archive', 'good', 'undo', 'good', 'f-new', 'good', 'add-new', 'good', 'good']
 const CASES: [string, Record<string, string>, Action[]][] = [

@@ -68,13 +68,13 @@ namespace older {
   }
 }
 
-const R1 = '2026-11-01T09:00Z good'
-const ANSWER = { at: '2026-11-14T06:01Z', rating: 'good' as const, seconds: 9 }
+const R1 = '2026-11-01T09:00:00.000Z good'
+const ANSWER = { at: '2026-11-14T06:01:00.000Z', rating: 'good' as const, seconds: 9 }
 /** The title part of a line: `title "…"`, as its bytes. */
 const titlePart = (text: string): string => /title "(?:[^"\\]|\\.)*"/.exec(text)![0]
 
 /** Every row of YAZ-5393's table: a title with a comma that an older build changed. */
-const TABLE = ['1,000 islands', 'Rome,Italy', 'a , b', 'a,,b', 'Ready, next, go', 'a, off, b', 'x, 2026-11-12T14:05Z good, y']
+const TABLE = ['1,000 islands', 'Rome,Italy', 'a , b', 'a,,b', 'Ready, next, go', 'a, off, b', 'x, 2026-11-12T14:05:00.000Z good, y']
 
 /** An older build's writes: an answer (it takes `next` off in the same write), Up next, Archive card and their undos, `notitle`. */
 const OLDER_WRITES: Array<[string, (l: older.Line) => older.Line]> = [
@@ -95,13 +95,14 @@ describe('YAZ-5393: the writer never puts a raw comma in a title, so an older bu
     // The new reader reads the title back.
     expect(cardTitleOf(parseCardLine(text)!)).toBe(cleanCardTitle(title))
 
-    // The older reader: the title is ONE unknown part; no word of it is `next`, `off` or a review.
+    // The older reader: the title is ONE unknown part; no word of it is `next`, `off` or a review. (YAZ-5642: an older
+    // build reads a millisecond review time as an unknown part too, kept byte for byte.)
     const old = older.parseCardLine(text)!
-    expect(old.parts.map((p) => p.kind)).toEqual(['id', 'other', 'review'])
+    expect(old.parts.map((p) => p.kind)).toEqual(['id', 'other', 'other'])
     expect(old.parts[1]).toEqual({ kind: 'other', text: part })
     expect(older.isCardOff(old)).toBe(false)
     expect(older.isCardNext(old)).toBe(false)
-    expect(older.reviewsOf(old)).toEqual([{ at: '2026-11-01T09:00Z', rating: 'good' }])
+    expect(older.reviewsOf(old)).toEqual([])
 
     // Each older write keeps the title part byte for byte, and the new reader still reads the title.
     for (const [name, write] of OLDER_WRITES) {
@@ -112,8 +113,8 @@ describe('YAZ-5393: the writer never puts a raw comma in a title, so an older bu
   })
 
   it('before the fix, the same older writes changed the raw-comma title (the bug, kept as proof)', () => {
-    const raw = '<!-- card: NC-1, title "1,000 islands", 2026-11-01T09:00Z good -->'
-    expect(older.formatCardLine(older.parseCardLine(raw)!)).toBe('<!-- card: NC-1, title "1, 000 islands", 2026-11-01T09:00Z good -->')
+    const raw = '<!-- card: NC-1, title "1,000 islands", 2026-11-01T09:00:00.000Z good -->'
+    expect(older.formatCardLine(older.parseCardLine(raw)!)).toBe('<!-- card: NC-1, title "1, 000 islands", 2026-11-01T09:00:00.000Z good -->')
   })
 
   it('the line as written: `&#44;` for a comma, and an `&` that starts `&#44;` or `&#38;` as `&#38;`; any other `&` as it is', () => {
@@ -128,16 +129,16 @@ describe('YAZ-5393: the writer never puts a raw comma in a title, so an older bu
   })
 
   it('a title with no comma and no `&#44;` / `&#38;` is written as before: byte for byte', () => {
-    for (const text of ['<!-- card: DEMO-1, title "Capital of France", 2026-11-12T14:05Z good -->', '<!-- card: DEMO-1, title "Q&A \\"x\\" --\\> \\\\ 🚀", off -->'])
+    for (const text of ['<!-- card: DEMO-1, title "Capital of France", 2026-11-12T14:05:00.000Z good -->', '<!-- card: DEMO-1, title "Q&A \\"x\\" --\\> \\\\ 🚀", off -->'])
       expect(formatCardLine(parseCardLine(text)!)).toBe(text)
   })
 
   it('a line an older build already split is read as it stands, and made no worse: the next write encodes its commas', () => {
     // `1,000 islands` after one older write; `Ready, next, go` after an older answer took `next` out of it.
     for (const [body, title] of [
-      ['NC-1, title "1, 000 islands", 2026-11-01T09:00Z good', '1, 000 islands'],
-      ['NC-1, title "Ready, go", 2026-11-01T09:00Z good', 'Ready, go'],
-      ['NC-1, title "a, b", 2026-11-01T09:00Z good', 'a, b'],
+      ['NC-1, title "1, 000 islands", 2026-11-01T09:00:00.000Z good', '1, 000 islands'],
+      ['NC-1, title "Ready, go", 2026-11-01T09:00:00.000Z good', 'Ready, go'],
+      ['NC-1, title "a, b", 2026-11-01T09:00:00.000Z good', 'a, b'],
     ]) {
       const line = parseCardLine(`<!-- card: ${body} -->`)!
       expect(cardTitleOf(line)).toBe(title)
@@ -151,9 +152,9 @@ describe('YAZ-5393: the writer never puts a raw comma in a title, so an older bu
   })
 
   it('a write that changes nothing leaves an older raw-comma line as it is; a write that changes it encodes the comma', () => {
-    const page = '```card\nFront\n```\n<!-- card: NC-1, title "1,000 islands", 2026-11-01T09:00Z good -->\n'
+    const page = '```card\nFront\n```\n<!-- card: NC-1, title "1,000 islands", 2026-11-01T09:00:00.000Z good -->\n'
     expect(changeCard(page, 'NC-1', (l) => l)).toBe(page)
-    expect(changeCard(page, 'NC-1', (l) => withCardReview(l, ANSWER))).toBe('```card\nFront\n```\n<!-- card: NC-1, title "1&#44;000 islands", 2026-11-01T09:00Z good, 2026-11-14T06:01Z good 9s -->\n')
+    expect(changeCard(page, 'NC-1', (l) => withCardReview(l, ANSWER))).toBe('```card\nFront\n```\n<!-- card: NC-1, title "1&#44;000 islands", 2026-11-01T09:00:00.000Z good, 2026-11-14T06:01:00.000Z good 9s -->\n')
   })
 
   it('a YAZ-5308 build from before this fix reads `&#44;` as letters and writes it back the same', () => {
@@ -170,18 +171,18 @@ describe('YAZ-5394: a quote that never closes never hides the parts after it', (
   const read = (body: string): CardLine => parseCardLine(`<!-- card: ${body} -->`)!
 
   it('the issue`s line: its review reads, the line is written back byte for byte, and an answer after it reads back', () => {
-    const text = '<!-- card: NC-1, title "x, 2026-11-01T09:00Z good -->'
+    const text = '<!-- card: NC-1, title "x, 2026-11-01T09:00:00.000Z good -->'
     const line = parseCardLine(text)!
-    expect(cardReviewsOf(line)).toEqual([{ at: '2026-11-01T09:00Z', rating: 'good' }])
+    expect(cardReviewsOf(line)).toEqual([{ at: '2026-11-01T09:00:00.000Z', rating: 'good' }])
     expect(cardTitleOf(line)).toBe('')
     expect(formatCardLine(line)).toBe(text)
     const answered = formatCardLine(withCardReview(line, ANSWER))!
-    expect(answered).toBe('<!-- card: NC-1, title "x, 2026-11-01T09:00Z good, 2026-11-14T06:01Z good 9s -->')
+    expect(answered).toBe('<!-- card: NC-1, title "x, 2026-11-01T09:00:00.000Z good, 2026-11-14T06:01:00.000Z good 9s -->')
     expect(cardReviewsOf(parseCardLine(answered)!)).toHaveLength(2)
   })
 
   it('a quote in any unknown part: the reviews and marks after it read', () => {
-    const line = read('NC-1, note 5" screen, 2026-11-01T09:00Z good, off, next')
+    const line = read('NC-1, note 5" screen, 2026-11-01T09:00:00.000Z good, off, next')
     expect(cardReviewsOf(line)).toHaveLength(1)
     expect(isCardOff(line)).toBe(true)
     expect(isCardNext(line)).toBe(true)
@@ -189,19 +190,19 @@ describe('YAZ-5394: a quote that never closes never hides the parts after it', (
   })
 
   it('the pieces that are no known part stay ONE part, with their own commas and spaces', () => {
-    const text = '<!-- card: NC-1, title "1,000 islands ,  more, 2026-11-01T09:00Z good, tail,x -->'
+    const text = '<!-- card: NC-1, title "1,000 islands ,  more, 2026-11-01T09:00:00.000Z good, tail,x -->'
     const line = parseCardLine(text)!
     expect(line.parts).toEqual([
       { kind: 'id', id: 'NC-1' },
       { kind: 'other', text: 'title "1,000 islands ,  more' },
-      { kind: 'review', review: { at: '2026-11-01T09:00Z', rating: 'good' } },
+      { kind: 'review', review: { at: '2026-11-01T09:00:00.000Z', rating: 'good' } },
       { kind: 'other', text: 'tail,x' },
     ])
     expect(formatCardLine(line)).toBe(text)
   })
 
   it('a closed quote after an unclosed one changes nothing: the rest is still split on its commas', () => {
-    const line = read('NC-1, a"b, title "c, d", 2026-11-01T09:00Z good')
+    const line = read('NC-1, a"b, title "c, d", 2026-11-01T09:00:00.000Z good')
     expect(cardReviewsOf(line)).toHaveLength(1)
   })
 })
@@ -212,9 +213,9 @@ describe('Card property values and names: the same comma escape as the title (on
 
   it('a comma in a value or a name is written `&#44;`, so an older build keeps each property ONE part, byte for byte', () => {
     const text = line({ level: 'A2, B1', tags: ['europe, west', 'capitals'], 'Due, soon': '2026-11-20' })
-    expect(text).toBe('<!-- card: NC-1, level "A2&#44; B1", tags "europe&#44; west" "capitals", "Due&#44; soon" "2026-11-20", 2026-11-01T09:00Z good -->')
+    expect(text).toBe('<!-- card: NC-1, level "A2&#44; B1", tags "europe&#44; west" "capitals", "Due&#44; soon" "2026-11-20", 2026-11-01T09:00:00.000Z good -->')
     const old = older.parseCardLine(text)!
-    expect(old.parts.map((p) => p.kind)).toEqual(['id', 'other', 'other', 'other', 'review'])
+    expect(old.parts.map((p) => p.kind)).toEqual(['id', 'other', 'other', 'other', 'other']) // YAZ-5642: the review too, for an older build
     for (const [name, write] of OLDER_WRITES) {
       const after = older.formatCardLine(write(old))!
       expect(cardPropertiesOf(parseCardLine(after)!), name).toEqual({ level: 'A2, B1', tags: ['europe, west', 'capitals'], 'Due, soon': '2026-11-20' })

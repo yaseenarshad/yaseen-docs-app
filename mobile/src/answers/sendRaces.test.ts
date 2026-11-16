@@ -120,7 +120,7 @@ describe('bytes the phone did not mean to change', () => {
       '```card',
       'Q {{x}}?',
       '```',
-      '<!--card:NC-2,zzz unknown,   2026-11-14T05:00Z good 3s,off-->',
+      '<!--card:NC-2,zzz unknown,   2026-11-14T05:00:00.000Z good 3s,off-->',
       '',
       '```card',
       'Q2?',
@@ -140,7 +140,7 @@ describe('bytes the phone did not mean to change', () => {
     expect(changed).toEqual([11])
     const line11 = new TextDecoder().decode(new Uint8Array(after[11].split(',').map(Number)))
     // YAZ-5409: the phone splices its review in; every other byte of the line stays (`<!--card:`, the spaces).
-    expect(line11).toBe(`<!--card:NC-2,zzz unknown,   2026-11-14T05:00Z good 3s, ${at(1)} good,off-->\r\n`)
+    expect(line11).toBe(`<!--card:NC-2,zzz unknown,   2026-11-14T05:00:00.000Z good 3s, ${at(1)} good,off-->\r\n`)
   })
 
   it('a card ID inside a code block, and two cards with one ID: what the send writes', async () => {

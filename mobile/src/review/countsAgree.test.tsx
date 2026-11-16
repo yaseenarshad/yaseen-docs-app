@@ -19,7 +19,7 @@ afterEach(() => {
   h?.unmount()
   vi.useRealTimers()
 })
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const cards = (ids: number[]) => ids.map((i) => cardBlock(`Q${i}?\n---\n{{w${i}}}`, `CT-${i}, ${OLD}${i === 3 ? ', next' : ''}`))
 const real = (ms: number) => act(async () => void (await new Promise((r) => setTimeout(r, ms))))
 

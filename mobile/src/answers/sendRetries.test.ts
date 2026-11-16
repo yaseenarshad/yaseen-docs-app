@@ -176,23 +176,24 @@ describe('"tried" marks', () => {
   })
 })
 
-describe('a review is named by its minute and its rating', () => {
-  // YAZ-5198: the phone writes both reviews, as the Mac does (`nth` on `review`, YAZ-5078), and Undo removes one.
-  it('3C-D: two "again" answers to one card in one minute, Undo of the second after its send: GitHub must keep the first', async () => {
+describe('a review is named by its full time and its rating (YAZ-5642)', () => {
+  // Two answers to one card in one minute have two times to the millisecond: Undo names exactly one of them.
+  const B = (a: string) => a.replace(':00.000Z', ':41.802Z')
+  it('3C-D: two "again" answers to one card in one minute, Undo of the second after its send: GitHub keeps the first', async () => {
     const t = await answersSetup()
     const host = await hostOf(t)
     const A = { at: at(1), rating: 'again' as const }
     // A Forgot puts the card back at the end of the session (YAZ-5020): in a short session it shows again at once.
     await host.writeCardAnswer('a.md', 'NC-2', A)
-    const n2 = await host.writeCardAnswer('a.md', 'NC-2', { ...A })
+    const n2 = await host.writeCardAnswer('a.md', 'NC-2', { ...A, at: B(A.at) })
     await t.tick(SEND_AFTER_MS) // sent
-    await host.undoCardAnswer('a.md', 'NC-2', A.at, n2) // Undo of the SECOND answer only
+    expect(await t.remoteReviews()).toEqual([at(1), B(at(1))])
+    await host.undoCardAnswer('a.md', 'NC-2', B(A.at), n2) // Undo of the SECOND answer only
     await t.tick(SEND_AFTER_MS)
-    // Expected: the first answer stays (the person undid one answer of two).
     expect({ github: await t.remoteReviews(), phone: (await host.readCard('a.md', 'NC-2'))!.reviews.length }).toEqual({ github: [at(1)], phone: 1 })
   })
 
-  it('YAZ-5198: two identical reviews; Undo of the second after its send; the reply of the unreview send is LOST; sent again: ONE entry is left, not zero', async () => {
+  it('Undo of the second after its send; the reply of the unreview send is LOST; sent again: the first is left, not zero', async () => {
     let loseNext = false
     const t = await answersSetup({
       fetch: (s) => async (url, init) => {
@@ -207,10 +208,10 @@ describe('a review is named by its minute and its rating', () => {
     const host = await hostOf(t)
     const A = { at: at(1), rating: 'again' as const }
     await host.writeCardAnswer('a.md', 'NC-2', { ...A, seconds: 3 })
-    const n2 = await host.writeCardAnswer('a.md', 'NC-2', { ...A, seconds: 4 })
+    const n2 = await host.writeCardAnswer('a.md', 'NC-2', { ...A, at: B(A.at), seconds: 4 })
     await t.tick(SEND_AFTER_MS)
-    expect(await t.remoteReviews()).toEqual([at(1), at(1)])
-    await host.undoCardAnswer('a.md', 'NC-2', A.at, n2)
+    expect(await t.remoteReviews()).toEqual([at(1), B(at(1))])
+    await host.undoCardAnswer('a.md', 'NC-2', B(A.at), n2)
     loseNext = true
     await t.tick(SEND_AFTER_MS) // the unreview reaches GitHub; its reply is lost
     expect(t.answers.state()).toMatchObject({ problem: 'OFFLINE', waiting: 1 })
@@ -218,19 +219,18 @@ describe('a review is named by its minute and its rating', () => {
     expect({ github: await t.remoteReviews(), phone: (await host.readCard('a.md', 'NC-2'))!.reviews.length }).toEqual({ github: [at(1)], phone: 1 })
   })
 
-  it('the Mac wrote the same review twice in one minute: one unreview takes ONE; applied a second time it takes the other (so the send path, not applyOps, keeps a resend to one: the test above)', () => {
-    const page = withLine(`<!-- card: NC-2, ${at(1)} again 3s, ${at(1)} again 4s -->`)['a.md']
-    const op: CardOp = { kind: 'unreview', id: 'NC-2', at: at(1), rating: 'again' }
+  it('an unreview applied two times takes its ONE review only', () => {
+    const page = withLine(`<!-- card: NC-2, ${at(1)} again 3s, ${B(at(1))} again 4s -->`)['a.md']
+    const op: CardOp = { kind: 'unreview', id: 'NC-2', at: B(at(1)), rating: 'again' }
     const once = applyOps(page, [op]).content
-    const twice = applyOps(once, [op]).content
-    expect(cardRecords(once).find((c) => c.id === 'NC-2')!.reviews).toHaveLength(1)
-    expect(cardRecords(twice).find((c) => c.id === 'NC-2')!.reviews).toHaveLength(0)
+    expect(applyOps(once, [op]).content).toBe(once)
+    expect(cardRecords(once).find((c) => c.id === 'NC-2')!.reviews).toEqual([{ at: at(1), rating: 'again', seconds: 3 }])
   })
 
-  it('delete review uses the parsed line: the time with seconds (`12s`) and the rating name exactly that review', async () => {
-    const t = await answersSetup({ files: withLine(`<!-- card: NC-2, ${at(1)} hard 12s, ${at(1)} good 7s -->`) })
+  it('delete review uses the parsed line: the full time and the rating name exactly that review', async () => {
+    const t = await answersSetup({ files: withLine(`<!-- card: NC-2, ${at(1)} hard 12s, ${B(at(1))} good 7s -->`) })
     const host = await hostOf(t)
-    await host.deleteCardReview('a.md', 'NC-2', at(1)) // the last at 06:01: "good"
+    await host.deleteCardReview('a.md', 'NC-2', B(at(1)))
     await t.tick(SEND_AFTER_MS)
     await t.answers.sendNow()
     expect(await reviewsOf(t)).toEqual([{ at: at(1), rating: 'hard', seconds: 12 }])

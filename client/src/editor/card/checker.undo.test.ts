@@ -21,7 +21,7 @@ it('⋯ Archive card, Unarchive card, then an outside answer, then ⌘Z: the ans
   const root = document.createElement('div')
   document.body.appendChild(root)
   const base = 'Intro\n\n```card\nQ\n---\nA\n```\n'
-  const crepe = createCrepe({ root, defaultValue: `${base}<!-- card: WIKI-9, 2026-11-01T09:00Z good -->\n` })
+  const crepe = createCrepe({ root, defaultValue: `${base}<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good -->\n` })
   await crepe.create()
   mounted.push({ crepe, root })
   const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
@@ -35,10 +35,10 @@ it('⋯ Archive card, Unarchive card, then an outside answer, then ⌘Z: the ans
   await new Promise((r) => setTimeout(r, 600))
   view.dispatch(changeCardLineAt(view.state, pos, (l) => withCardOff(l, false))!)
   // The Inbox writes an answer to the file; the open page merges it (out of the undo history).
-  const answered = `${base}<!-- card: WIKI-9, 2026-11-01T09:00Z good, 2026-11-12T10:00Z good -->\n`
+  const answered = `${base}<!-- card: WIKI-9, 2026-11-01T09:00:00.000Z good, 2026-11-12T10:00:00.000Z good -->\n`
   expect(applyExternalMarkdown(crepe, answered)).toBe('applied')
-  expect(getMarkdownForSave(crepe)).toContain('2026-11-12T10:00Z good')
+  expect(getMarkdownForSave(crepe)).toContain('2026-11-12T10:00:00.000Z good')
   // ⌘Z in the page undoes the user's last step ("Unarchive card").
   undo(view.state, view.dispatch)
-  expect(getMarkdownForSave(crepe)).toContain('2026-11-12T10:00Z good')
+  expect(getMarkdownForSave(crepe)).toContain('2026-11-12T10:00:00.000Z good')
 })

@@ -34,15 +34,16 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
     expect(await t.stored()).toBe(FILES['a.md']) // the stored copy is GitHub's until the send
   })
 
-  it('YAZ-5078: a second answer in the same minute is a second review (a new card that comes back at once)', async () => {
+  it('YAZ-5642: a second answer in the same minute is a second review with its own time (a new card that comes back at once)', async () => {
     const t = await setup()
+    const R2 = { ...R, at: R.at.replace(':00.000Z', ':41.802Z') }
     await t.host.writeCardAnswer('a.md', 'NC-3', R)
-    await t.host.writeCardAnswer('a.md', 'NC-3', R)
+    await t.host.writeCardAnswer('a.md', 'NC-3', R2)
     expect(t.answers.waiting().map((w) => w.op)).toEqual([
       { kind: 'review', id: 'NC-3', review: R },
-      { kind: 'review', id: 'NC-3', review: R, nth: 2 },
+      { kind: 'review', id: 'NC-3', review: R2 },
     ])
-    expect((await t.host.readCard('a.md', 'NC-3'))!.reviews).toEqual([R, R])
+    expect((await t.host.readCard('a.md', 'NC-3'))!.reviews).toEqual([R, R2])
   })
 
   it('Undo of an UNSENT answer removes its actions: the card reads byte for byte as before', async () => {
@@ -122,7 +123,7 @@ describe('the phone\'s ReviewHost (2A interface): it writes ACTIONS, never files
  * order. Each step is SENT, and the line is read on GitHub.
  */
 describe('YAZ-5409: each action and its Undo change only their own part of the card line', () => {
-  const R0 = '2026-11-01T09:00Z good'
+  const R0 = '2026-11-01T09:00:00.000Z good'
   const page = (line: string) => `---\ntitle: P\n---\n\n# P\n\n\`\`\`card\nQ?\n---\nA\n\`\`\`\n${line}\n\nend\n`
   /** The parts of a card line as written (commas in quotes stay). */
   const pieces = (content: string): string[] => {

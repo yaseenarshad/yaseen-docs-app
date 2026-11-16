@@ -69,7 +69,7 @@ describe('Review: the day changes at local midnight during a session (decision 9
     const late = new Date(2026, 10, 13, 23, 59, 0).getTime()
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'], shouldAdvanceTime: true })
     vi.setSystemTime(late)
-    const due14 = '2026-11-10T09:00Z good, 2026-11-10T09:15Z good'
+    const due14 = '2026-11-10T09:00:00.000Z good, 2026-11-10T09:15:00.000Z good'
     h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 1, "fuzz": false}', 'p.md': page('P', cardBlock('Old?\n---\n{{old}}', `TM-1, ${due14}`), ...cards(2).slice(1)) })
     // Only the new card is due before midnight; two Remembered end it.
     expect(h.head()).toBe('TM-2')

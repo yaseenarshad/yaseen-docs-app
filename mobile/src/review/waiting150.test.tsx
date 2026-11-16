@@ -35,7 +35,7 @@ function vault(): Record<string, string> {
       `Deck ${p}`,
       ...Array.from({ length: 10 }, (_, i) => {
         const n = p * 10 + i + 1
-        return cardBlock(`Question ${n}?\n---\nThe answer is {{${n}}}.`, `PF-${n}, 2026-10-04T09:00Z good, 2026-10-14T09:00Z good`)
+        return cardBlock(`Question ${n}?\n---\nThe answer is {{${n}}}.`, `PF-${n}, 2026-10-04T09:00:00.000Z good, 2026-10-14T09:00:00.000Z good`)
       }),
     )
   return files

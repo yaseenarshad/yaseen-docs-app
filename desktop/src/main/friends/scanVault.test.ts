@@ -21,7 +21,7 @@ import { CACHE_VERSION, cacheFile } from '../vaultIndex/cache'
 import { idsOwnedBy, ownOnly, scanFile, walk } from '../vaultIndex/scan'
 
 const NOW = Date.parse('2026-11-14T15:00:00Z')
-const R1 = '2026-11-14T13:00Z good 7s'
+const R1 = '2026-11-14T13:00:00.000Z good 7s'
 let dir: string
 let worker: string
 beforeAll(async () => void (worker = await buildCountWorker()), 60_000)
@@ -116,7 +116,7 @@ describe('the cheap read gives the cards of the live index (YAZ-5390)', () => {
   it('pages, a card file, a nested vault, a folder settings file, a file over the size limit, a page with no card: the same cards as scanFile', async () => {
     const root = await vault('cards', 3)
     await writeFile(path.join(root, 'Card.md'), `---\nkind: card\ntitle: Capital\n---\n\`\`\`card\nParis\n\`\`\`\n<!-- card: WIKI-60, ${R1} -->\n`)
-    await writeFile(path.join(root, 'Front.md'), `---\nnote: "\`\`\`card"\n---\n\`\`\`card\nX\n\`\`\`\n<!-- card: WIKI-61, ${R1}, 2026-11-13T09:00Z again 4s -->\n`)
+    await writeFile(path.join(root, 'Front.md'), `---\nnote: "\`\`\`card"\n---\n\`\`\`card\nX\n\`\`\`\n<!-- card: WIKI-61, ${R1}, 2026-11-13T09:00:00.000Z again 4s -->\n`)
     await writeFile(path.join(root, 'Plain.md'), '# No card\n')
     await mkdir(path.join(root, 'deep', 'er'), { recursive: true })
     await writeFile(path.join(root, 'deep', 'er', 'Deep.md'), `\`\`\`card\nD\n\`\`\`\n<!-- card: WIKI-62, ${R1} -->\n`)
@@ -151,7 +151,7 @@ describe('the cheap read gives the cards of the live index (YAZ-5390)', () => {
     expect(count.read()).toBe(0)
     expect(first).toEqual(friendStats([await scanVaultForCount(root)], NOW))
     // A file changed after the vault was closed: its time moved, so it is read; the index cache of another version is not used.
-    await writeFile(path.join(root, 'Page 2.md'), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-3, ${R1}, 2026-11-14T14:00Z good 3s -->\n`)
+    await writeFile(path.join(root, 'Page 2.md'), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-3, ${R1}, 2026-11-14T14:00:00.000Z good 3s -->\n`)
     await utimes(path.join(root, 'Page 2.md'), new Date(), new Date(Date.now() + 5_000))
     const fresh = makeCounter(worker, { scanDir: path.join(dir, 'scan-cache-2'), indexDir })
     expect(await fresh(countPayload([]), NOW, [{ root, key: 'b' }])).toEqual(friendStats([await scanVaultForCount(root)], NOW))
@@ -167,7 +167,7 @@ describe('the cheap read gives the cards of the live index (YAZ-5390)', () => {
     const scanDir = path.join(dir, 'scan-cache')
     const count = makeCounter(worker, { scanDir })
     expect(cardsOf(await count(countPayload([]), NOW, [{ root, key: 'a' }]))).toBe(3)
-    await writeFile(path.join(root, 'Page 1.md'), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-2, ${R1}, 2026-11-14T14:00Z good 3s -->\n`)
+    await writeFile(path.join(root, 'Page 1.md'), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-2, ${R1}, 2026-11-14T14:00:00.000Z good 3s -->\n`)
     await writeFile(path.join(root, 'New.md'), `\`\`\`card\nQ\n\`\`\`\n<!-- card: WIKI-9, ${R1} -->\n`)
     const second = await count(countPayload([]), NOW, [{ root, key: 'b' }])
     expect(cardsOf(second)).toBe(4) // WIKI-1, 2, 3 and the new WIKI-9 (a card answered twice in a day counts once)

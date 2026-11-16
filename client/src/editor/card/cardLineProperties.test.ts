@@ -10,19 +10,19 @@ const rebase = (now: string, before: string, after: string) => formatCardLine(re
 describe('rebaseCardLine carries properties (YAZ-5383)', () => {
   it('a changed value, an added and a removed property land on the line as it is now; the rest of it stays', () => {
     // Between the change and its landing, a review came in: it stays.
-    const now = 'WIKI-7, tags "a" "b", level "A2", 2026-11-12T14:05Z good, 2026-11-13T10:00Z easy'
-    expect(rebase(now, 'WIKI-7, tags "a" "b", level "A2", 2026-11-12T14:05Z good', 'WIKI-7, tags "a" "b", level "B1", 2026-11-12T14:05Z good')).toBe(
-      '<!-- card: WIKI-7, tags "a" "b", level "B1", 2026-11-12T14:05Z good, 2026-11-13T10:00Z easy -->',
+    const now = 'WIKI-7, tags "a" "b", level "A2", 2026-11-12T14:05:00.000Z good, 2026-11-13T10:00:00.000Z easy'
+    expect(rebase(now, 'WIKI-7, tags "a" "b", level "A2", 2026-11-12T14:05:00.000Z good', 'WIKI-7, tags "a" "b", level "B1", 2026-11-12T14:05:00.000Z good')).toBe(
+      '<!-- card: WIKI-7, tags "a" "b", level "B1", 2026-11-12T14:05:00.000Z good, 2026-11-13T10:00:00.000Z easy -->',
     )
     expect(rebase(now, 'WIKI-7, tags "a" "b", level "A2"', 'WIKI-7, tags "a" "b", level "A2", source ""')).toBe(
-      '<!-- card: WIKI-7, tags "a" "b", level "A2", source "", 2026-11-12T14:05Z good, 2026-11-13T10:00Z easy -->',
+      '<!-- card: WIKI-7, tags "a" "b", level "A2", source "", 2026-11-12T14:05:00.000Z good, 2026-11-13T10:00:00.000Z easy -->',
     )
-    expect(rebase(now, 'WIKI-7, tags "a" "b", level "A2"', 'WIKI-7, level "A2"')).toBe('<!-- card: WIKI-7, level "A2", 2026-11-12T14:05Z good, 2026-11-13T10:00Z easy -->')
+    expect(rebase(now, 'WIKI-7, tags "a" "b", level "A2"', 'WIKI-7, level "A2"')).toBe('<!-- card: WIKI-7, level "A2", 2026-11-12T14:05:00.000Z good, 2026-11-13T10:00:00.000Z easy -->')
   })
 
   it('a rename keeps the place; the undo (the change back) puts the line back byte for byte', () => {
-    const before = 'WIKI-7, tags "a" "b", level "A2", 2026-11-12T14:05Z good'
-    const after = 'WIKI-7, topics "a" "b", level "A2", 2026-11-12T14:05Z good'
+    const before = 'WIKI-7, tags "a" "b", level "A2", 2026-11-12T14:05:00.000Z good'
+    const after = 'WIKI-7, topics "a" "b", level "A2", 2026-11-12T14:05:00.000Z good'
     expect(rebase(before, before, after)).toBe(`<!-- card: ${after} -->`)
     expect(rebase(after, after, before)).toBe(`<!-- card: ${before} -->`)
   })

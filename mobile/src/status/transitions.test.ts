@@ -137,7 +137,7 @@ describe('the dot follows the engine and the answer list (decision 12)', () => {
 
   it('a lost answer (round 12 item 9): amber "1 answer could not be saved" until it is discarded', async () => {
     const t = await watch()
-    await t.add({ kind: 'review', id: 'NC-404', review: { at: '2026-11-14T06:01Z', rating: 'good' } })
+    await t.add({ kind: 'review', id: 'NC-404', review: { at: '2026-11-14T06:01:00.000Z', rating: 'good' } })
     await t.tick(SEND_AFTER_MS)
     expect(t.seen.at(-1)).toBe('pending 1 answer could not be saved')
     await t.tick(POLL_MS * 3)

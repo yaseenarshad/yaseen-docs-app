@@ -41,7 +41,7 @@ describe('YAZ-5538: no flash on a tap on the card', () => {
   })
 
   it('the tap still works: the next hidden word, then (all shown) ✕ and ✓ ring', async () => {
-    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Q?\n---\n{{one}} {{two}}', 'NF-1, 2026-10-04T09:00Z good')) })
+    h = await reviewSetup({ '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Q?\n---\n{{one}} {{two}}', 'NF-1, 2026-10-04T09:00:00.000Z good')) })
     expect(h.cardText()).toBe('Q?')
     await h.tap()
     expect(h.cardText()).toBe('Q? _ _')

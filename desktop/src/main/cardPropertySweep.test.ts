@@ -18,8 +18,8 @@ describe('cardFilePropertiesMoved (YAZ-5384)', () => {
   })
 
   it('a one-value list stays a list; the reviews and the other parts of the line stay where they are', () => {
-    const after = cardFilePropertiesMoved(file('kind: card\ntags: [europe]\n', '<!-- card: GEO-204, title "T", off, 2026-11-12T14:05Z good -->'))!
-    expect(after).toContain('<!-- card: GEO-204, title "T", tags ["europe"], off, 2026-11-12T14:05Z good -->')
+    const after = cardFilePropertiesMoved(file('kind: card\ntags: [europe]\n', '<!-- card: GEO-204, title "T", off, 2026-11-12T14:05:00.000Z good -->'))!
+    expect(after).toContain('<!-- card: GEO-204, title "T", tags ["europe"], off, 2026-11-12T14:05:00.000Z good -->')
   })
 
   it('keeps in front matter what the line cannot or must not take: a map, a card line word, a key the line holds already, the app`s keys', () => {

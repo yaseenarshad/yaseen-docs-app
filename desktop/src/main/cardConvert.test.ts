@@ -17,7 +17,7 @@ import { _swept, sweepIds } from './vaultIndex/idSweep'
 import { _evictAll, getIndex, indexWrote } from './vaultIndex'
 import { scanFile } from './vaultIndex/scan'
 
-const LINE = '<!-- card: GEO-140, title "Capital of France", 2026-11-01T09:00Z good 12s, 2026-11-05T09:00Z again -->'
+const LINE = '<!-- card: GEO-140, title "Capital of France", 2026-11-01T09:00:00.000Z good 12s, 2026-11-05T09:00:00.000Z again -->'
 const BLOCK = ['```card', 'What is the capital of **France**?', '---', 'The capital is {{Paris}}.', '```', LINE].join('\n')
 const indented = (block: string, indent: string) => block.split('\n').map((l) => indent + l).join('\n')
 const TITLE = 'Capital of France'

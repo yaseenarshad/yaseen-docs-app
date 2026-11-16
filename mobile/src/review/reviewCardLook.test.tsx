@@ -18,7 +18,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const CARDS = { '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Capital of Peru?\n---\n{{Lima}}', 'LK-1, 2026-10-04T09:00Z good')) }
+const CARDS = { '.yaseendocs/review.json': '{}', 'p.md': page('P', cardBlock('Capital of Peru?\n---\n{{Lima}}', 'LK-1, 2026-10-04T09:00:00.000Z good')) }
 const vars = (el: HTMLElement | null) => ['--shown-hidden-words', '--mark-next-hidden', '--card-next-hidden', '--card-text-size', '--card-title-size', '--card-line-height', '--card-text-width'].map((name) => el?.style.getPropertyValue(name))
 
 describe('YAZ-5484: Review wears the vault\'s card look', () => {

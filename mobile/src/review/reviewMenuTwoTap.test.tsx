@@ -16,7 +16,7 @@ afterEach(() => {
   h?.unmount()
   vi.useRealTimers()
 })
-const OLD = '2026-10-04T09:00Z good'
+const OLD = '2026-10-04T09:00:00.000Z good'
 const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('P', ...[1, 2].map((n) => cardBlock(`Q${n}?\n---\n{{w${n}}}`, `TT-${n}, ${OLD}`))) }
 const rows = (hh: ReviewHarness) => [...hh.host.querySelectorAll('.review__menu--more [role="menuitem"]')].map((b) => (b.textContent ?? '').replace(/\s+/g, ' ').trim())
 

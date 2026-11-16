@@ -8,7 +8,7 @@ import { uniteCardLines } from '@shared/cardMerge'
 import { cardFilePropertiesMoved } from '@shared/cardPropertySweep'
 import { cardTitlesMoved } from '@shared/cardTitleSweep'
 
-const R0 = '2026-11-01T09:00Z good'
+const R0 = '2026-11-01T09:00:00.000Z good'
 const line = (text: string) => parseCardLine(`<!-- card: ${text} -->`)!
 const write = (l: ReturnType<typeof line>) => formatCardLine(l)!.replace(/^<!-- card: | -->$/g, '')
 

@@ -20,7 +20,7 @@ vi.mock('../views/writeProperty', () => ({ transformFile: writes.transformFile }
 
 const PATH = '/v/cards.md'
 const TEXT = 'Capital of {{France}}\n---\n{{Paris}} on the {{Seine}}'
-const REVIEWS = [{ at: '2026-11-01T09:00Z', rating: 'good' as const }, { at: '2026-11-06T09:00Z', rating: 'again' as const }]
+const REVIEWS = [{ at: '2026-11-01T09:00:00.000Z', rating: 'good' as const }, { at: '2026-11-06T09:00:00.000Z', rating: 'again' as const }]
 
 let root: Root | null = null
 let el: HTMLElement

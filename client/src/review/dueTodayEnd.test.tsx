@@ -77,9 +77,9 @@ const LATER = 'LATER-1'
 const NEW = ['NEW-1', 'NEW-2', 'NEW-3']
 function seed(): void {
   const block = (id: string, review: string) => cardBlock(`Card ${id} {{answer}}`, parseCardLine(`<!-- card: ${id}${review} -->`)!)
-  vault.set(`${ROOT}/Known.md`, `# Known\n\n${DUE.map((id) => block(id, ', 2026-09-01T09:00Z good, 2026-09-02T09:00Z good')).join('\n')}`)
+  vault.set(`${ROOT}/Known.md`, `# Known\n\n${DUE.map((id) => block(id, ', 2026-09-01T09:00:00.000Z good, 2026-09-02T09:00:00.000Z good')).join('\n')}`)
   vault.set(`${ROOT}/Fresh.md`, `# Fresh\n\n${NEW.map((id) => block(id, '')).join('\n')}`)
-  vault.set(`${ROOT}/Later.md`, `# Later\n\n${block(LATER, ', 2026-11-01T09:00Z good, 2026-11-11T09:00Z good')}`)
+  vault.set(`${ROOT}/Later.md`, `# Later\n\n${block(LATER, ', 2026-11-01T09:00:00.000Z good, 2026-11-11T09:00:00.000Z good')}`)
 }
 
 let root: Root | null = null

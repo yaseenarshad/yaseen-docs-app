@@ -118,8 +118,8 @@ describe('YAZ-5515 X2: a phone write next to a Mac edit makes no conflict copy',
     expect(await merge('# List\n\n- [ ] One\n- [ ] Two\n', '# List\n\n- [x] One\n- [ ] Two\n', '# List\n\n- [ ] One\n- [ ] Two edited\n')).toBe('# List\n\n- [x] One\n- [ ] Two edited\n')
     // M9: the phone answers the card; the Mac edits the line right below its card line.
     const card = '# Words\n\n```card\nQ\n```\n<!-- card: NC-1 -->\nNext para\n'
-    expect(await merge(card, card.replace('NC-1 -->', 'NC-1, 2026-11-14T06:01Z good -->'), card.replace('Next para', 'Next para edited'))).toBe(
-      '# Words\n\n```card\nQ\n```\n<!-- card: NC-1, 2026-11-14T06:01Z good -->\nNext para edited\n',
+    expect(await merge(card, card.replace('NC-1 -->', 'NC-1, 2026-11-14T06:01:00.000Z good -->'), card.replace('Next para', 'Next para edited'))).toBe(
+      '# Words\n\n```card\nQ\n```\n<!-- card: NC-1, 2026-11-14T06:01:00.000Z good -->\nNext para edited\n',
     )
   })
 
