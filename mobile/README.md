@@ -144,6 +144,20 @@ The names are in `src/dev/fixtures.tsx` and `src/dev/readerFixtures.tsx` (for ex
 * GitHub hides the header `github-authentication-token-expiration` from web pages (CORS). The phone learns a token's
   end date from the Mac's code only (`scanCode.ts`).
 
+## Sign in with GitHub (YAZ-5645)
+
+* The GitHub App `yaseen-docs` (client ID in `src/auth/githubAppConfig.ts`, public). The web flow with PKCE and state
+  (`src/auth/githubApp.ts`, its own chunk): the app goes to GitHub in the same window, GitHub sends it back to
+  `/auth/callback`, the app checks the state, and the Worker swaps the code for the token pair.
+* The Worker (`worker/index.ts`) runs first only for `POST /api/github/{token,refresh,revoke}` (`run_worker_first`); every
+  other path is the static files. It adds the client secret `GITHUB_CLIENT_SECRET`, a Worker secret
+  (`npx wrangler secret put GITHUB_CLIENT_SECRET --config mobile/wrangler.jsonc`). It stores and logs nothing.
+* The pair stays on the device (`TokenStore`, one pair for each GitHub account; a vault links to its account).
+  `tokens.read(vault)` refreshes 5 minutes before the 8 hours end, one tab at a time; the sync renews once after a 401.
+* On a computer: `npm run mobile:dev` answers the Worker's routes too, with the secret from `mobile/.dev.vars`
+  (`GITHUB_CLIENT_SECRET=…`, git-ignored). The app's localhost callback is `http://localhost:5173/auth/callback`.
+* "Use a token instead" keeps the pasted-token sign-in (decision D4).
+
 ## Storage, in short
 
 * A vault is a whole repo and branch. Its id is `owner/repo@branch` (`vaultId`). Its files, checkpoint and state are

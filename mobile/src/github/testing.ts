@@ -19,6 +19,11 @@ export interface FakeToken {
   gists?: boolean
   /** The value of `github-authentication-token-expiration`, as GitHub writes it. */
   expires?: string
+  /**
+   * YAZ-5645: a GitHub App user token (`ghu_…`) sees the repos of the app's installations it can reach: each
+   * installation (an account that installed the app) and the repos chosen there. `GET /user/installations` lists them.
+   */
+  installations?: { id: number; account: string; repos: string[] }[]
 }
 
 export interface FakeRepo {
@@ -141,6 +146,29 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
           pushed_at: r.pushedAt ?? '2026-01-01T00:00:00Z',
         }))
         return json(200, body, links.length > 0 ? { link: links.join(', ') } : {})
+      }
+
+      // YAZ-5645: the app's installations this user token reaches, and each one's chosen repos, paged as GitHub does.
+      if (method === 'GET' && path[1] === 'user' && path[2] === 'installations') {
+        const query = new URL(url).searchParams
+        const size = Math.min(100, Number(query.get('per_page') ?? 30))
+        const page = Math.max(1, Number(query.get('page') ?? 1))
+        const paged = <T,>(all: T[], key: string, base: string, map: (x: T) => unknown) => {
+          const last = Math.max(1, Math.ceil(all.length / size))
+          const link: Record<string, string> = page < last ? { link: `<${GITHUB_API}${base}?per_page=${size}&page=${page + 1}>; rel="next", <${GITHUB_API}${base}?per_page=${size}&page=${last}>; rel="last"` } : {}
+          return json(200, { total_count: all.length, [key]: all.slice((page - 1) * size, page * size).map(map) }, link)
+        }
+        const mine = who.installations ?? []
+        if (path.length === 3) return paged(mine, 'installations', '/user/installations', (i) => ({ id: i.id, account: { login: i.account }, app_slug: 'yaseen-docs' }))
+        const inst = mine.find((i) => String(i.id) === path[3])
+        if (inst === undefined || path[4] !== 'repositories' || path.length !== 5) return notFound()
+        const list = inst.repos.map((name) => repos.get(name.toLowerCase())).filter((r): r is FakeRepo => r !== undefined)
+        return paged(list, 'repositories', `/user/installations/${inst.id}/repositories`, (r) => ({
+          full_name: r.fullName,
+          private: r.private !== false,
+          default_branch: r.defaultBranch ?? 'main',
+          pushed_at: r.pushedAt ?? '2026-01-01T00:00:00Z',
+        }))
       }
 
       if (path[1] === 'gists' && path.length === 2 && method === 'POST') {

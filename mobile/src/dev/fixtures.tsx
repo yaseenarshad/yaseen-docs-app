@@ -33,9 +33,12 @@ const PICK_REPOS = [
   { fullName: 'demo/website', vault: false, private: false, pushedAt: '2026-11-11T00:00:00Z' },
   ...['budget', 'recipes', 'scripts', 'dotfiles', 'talks', 'thesis', 'photos', 'garden', 'letters', 'old-notes'].map((n, i) => ({ fullName: `demo/${n}`, vault: false, pushedAt: `2026-0${(i % 9) + 1}-01T00:00:00Z` })),
 ]
+/** YAZ-5645: the access token of a made-up "Sign in with GitHub" (a GitHub App user token). */
+const FAKE_GH = 'ghu_' + 'f'.repeat(36)
 const pickGithub = (name: string) =>
   fakeGithub({
     tokens: {
+      [FAKE_GH]: { login: 'demo', repos: Object.fromEntries(PICK_REPOS.slice(0, 3).map((r) => [r.fullName, 'write' as const])), installations: [{ id: 1, account: 'demo', repos: PICK_REPOS.slice(0, 3).map((r) => r.fullName) }] },
       [FAKE_TOKEN]: {
         login: 'demo',
         repos: Object.fromEntries((name === 'repo-none' ? [] : name === 'repo-pick-many' ? PICK_REPOS : PICK_REPOS.slice(0, 4)).map((r) => [r.fullName, 'write' as const])),
@@ -108,7 +111,12 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   // The install hint as Safari on an iPhone shows it (the steps, the ☰ picture, the data note).
   if (name === 'sign-in-iphone')
     Object.defineProperty(navigator, 'userAgent', { configurable: true, get: () => 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1' })
-  const signedIn = !['sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
+  // YAZ-5645: back from GitHub with "demo" signed in: the repos chosen for the app (the Setup URL's return).
+  if (name === 'repo-pick-github') {
+    await tokens.savePair({ login: 'demo', access: FAKE_GH, accessEndsAt: null, refresh: null, refreshEndsAt: null })
+    history.replaceState(null, '', `/auth/installed${location.hash}`)
+  }
+  const signedIn = !['repo-pick-github', 'sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
   if (signedIn) {
     for (const v of name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1)) {
       await tokens.write(vaultId(v), FAKE_TOKEN)
@@ -127,7 +135,15 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
   root.render(<App services={services} updates={name.startsWith('settings') ? fixtureUpdates(check ?? null) : null} />)
   await wait(50)
 
+  // YAZ-5645: the token steps are behind "Use a token instead" (the first step is "Sign in with GitHub").
+  if (['sign-in-typed', 'repo-pick', 'repo-pick-many', 'repo-none', 'sign-in-error', 'guide'].includes(name)) {
+    press('Use a token instead')
+    await wait(10)
+  }
   switch (name) {
+    case 'repo-pick-github':
+      for (let i = 0; i < 100 && document.querySelector('.repo-row, .problem') === null; i++) await wait(20)
+      break
     case 'sign-in-typed':
       press('Type the repo name')
       break

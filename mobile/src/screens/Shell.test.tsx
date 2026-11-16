@@ -5,7 +5,10 @@ import { loadAccount } from '../auth/account'
 import { loadVaultList, PHONE, type VaultStore } from '../store'
 import { UNIT_WORD_PATH } from '../app/unitWord'
 import { REMOVE_QUEUE } from '../friends/removeQueue'
-import { GOOD, mount, newPhone, NO_CONTENTS, READ_ONLY, SECOND, signInWithForm, WRONG, type Harness } from './testing'
+import { GOOD, mount, newPhone, NO_CONTENTS, READ_ONLY, SECOND, signInWithForm, useTokenInstead, WRONG, type Harness } from './testing'
+
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
 let h: Harness | null = null
 afterEach(() => {
@@ -22,9 +25,14 @@ const storedNothing = async (store: VaultStore, x: Harness) => {
 describe('first open (row F1) and the typed sign-in (decision 13)', () => {
   it('shows the sign-in: the token, one button, the typed fallback and the guide link; no tabs and no call to GitHub', async () => {
     h = await mount()
+    // YAZ-5645: "Sign in with GitHub" first; "Use a token instead" opens the token steps (decision D4).
+    expect(h.text()).toContain('Your vault is a repo on GitHub. Sign in, then choose it.')
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
+    await useTokenInstead(h)
     // YAZ-5408: the token first; the repo comes from the token's list. The typed repo is the fallback.
     expect(h.text()).toContain('Paste your GitHub token. Then choose the repo of your vault.')
     expect(h.button('Show my repos')).not.toBeNull()
+    expect(h.button('Sign in with GitHub instead')).not.toBeNull()
     await h.click('Type the repo name')
     expect(h.host.querySelector('input[name="repo"]')?.getAttribute('placeholder')).toBe('owner/repo')
     expect(h.host.querySelector('input[name="token"]')?.getAttribute('type')).toBe('password')
@@ -125,6 +133,7 @@ describe('each sign-in result has plain words and a way forward', () => {
 
   it('"How to make a token" opens "Set up your phone" with the two permissions and the supported setup; Back returns', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await h.click('How to make a token')
     await h.waitText('Set up your phone')
     const text = h.text()
@@ -140,7 +149,7 @@ describe('each sign-in result has plain words and a way forward', () => {
     expect([named.getAttribute('aria-label'), named.textContent]).toEqual(['the three lines', '☰'])
     expect([...glyphs[0].childNodes].filter((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.includes('☰'))).toEqual([])
     await h.click('Back')
-    expect(h.button('Show my repos')).not.toBeNull()
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
   })
 })
 
@@ -193,7 +202,7 @@ describe('Settings: vaults (decision 7)', () => {
     await h.click('More for yaseen/vault')
     await h.click('Remove from this phone')
     await h.click('Remove')
-    expect(h.button('Show my repos')).not.toBeNull()
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
     expect(h.sync.opened.at(-1)).toBeNull()
   })
 
@@ -203,6 +212,9 @@ describe('Settings: vaults (decision 7)', () => {
     await h.click('Settings')
     await h.click('More for yaseen/vault')
     await h.click('Replace token')
+    // YAZ-5645: Sign in with GitHub first; the token form is behind "Use a token instead".
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
+    await useTokenInstead(h)
     expect(h.text()).toContain('GitHub needs a new token for yaseen/vault.')
     await h.type('Token', WRONG)
     await h.click('Save token')
@@ -301,7 +313,7 @@ describe('Sign out and erase this phone (row N7)', () => {
     expect(await h.store.getState('yaseen/vault@main', 'answers')).toBeUndefined()
     expect(await h.store.getState(PHONE, 'friendsSettings')).toBeUndefined()
     expect((await loadVaultList(h.store)).vaults).toEqual([])
-    expect(h.button('Show my repos')).not.toBeNull()
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
     expect(h.sync.opened.at(-1)).toBeNull()
   })
 })
@@ -410,6 +422,9 @@ describe('a problem that needs the person, once the vault is ready', () => {
     expect(notice?.textContent).toContain('GitHub does not accept the token for yaseen/vault.')
     expect(notice?.textContent).toContain('The pages on this phone stay readable.')
     await h.click('Sign in again')
+    // YAZ-5645: Sign in with GitHub first; the token form is behind "Use a token instead".
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
+    await useTokenInstead(h)
     expect(h.text()).toContain('GitHub needs a new token for yaseen/vault.')
   })
 
@@ -427,6 +442,9 @@ describe('a problem that needs the person, once the vault is ready', () => {
     h.unmount()
     await phone.tokens.clear('yaseen/vault@main')
     h = await mount({ phone })
+    // YAZ-5645: Sign in with GitHub first; the token form is behind "Use a token instead".
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
+    await useTokenInstead(h)
     expect(h.text()).toContain('GitHub needs a new token for yaseen/vault.')
     await h.type('Token', GOOD)
     await h.click('Save token')
@@ -473,6 +491,7 @@ describe('checker round 1 (YAZ-5177, YAZ-5178)', () => {
 
   it('a double tap on Connect vault runs ONE check', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await h.click('Type the repo name')
     await h.type('Repo', 'yaseen/vault')
     await h.type('Token', GOOD)
@@ -501,7 +520,7 @@ describe('the erase waits for a running pass (YAZ-5175)', () => {
     await erasing
     await h.settle()
     expect(await h.tokens.read('yaseen/vault@main')).toBeNull()
-    expect(h.button('Show my repos')).not.toBeNull()
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
   })
 })
 
@@ -518,7 +537,7 @@ describe('another tab erased the phone (YAZ-5194)', () => {
     await new Promise((r) => setTimeout(r, 30))
     await h.settle()
     expect(h.sync.opened.at(-1)).toBeNull()
-    expect(h.button('Show my repos')).not.toBeNull()
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
   })
 })
 

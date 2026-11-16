@@ -9,6 +9,7 @@ import { dirname, resolve } from 'node:path'
 // Relative, not `@shared`: this file runs in Node before any alias exists.
 import { DRAWIO_TAG } from '../shared/drawio'
 import { EXCALIDRAW_ASSET_DIR, excalidrawPackageFonts } from '../shared/excalidrawFonts'
+import { FRIENDS_ENABLED } from '../shared/features'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const shared = resolve(here, '../shared')
@@ -108,6 +109,25 @@ export function renderSourcemapsAside(outDir: string, mapsDir: string): Plugin {
 export const MONACO_TS_WORKER_FILE = /monaco-editor\/esm\/vs\/languages\/features\/typescript\/workerManager\.js$/
 const MONACO_TS_WORKER_URL = /new Worker\(new URL\(['"]ts\.worker\.js['"], import\.meta\.url\), \{ type: "module" \}\)/
 
+/**
+ * YAZ-5652: with Friends off (`shared/features.ts`), main's `import('./friends')` is never reached, and the build
+ * drops that code. But Rollup still loads the module, and its count worker (`countWorker?modulePath`) is emitted as a
+ * file of its own (92 KB) that nothing runs. Off, `./friends` from main's `index.ts` is an empty module instead.
+ */
+export function friendsOffInMain(on: boolean = FRIENDS_ENABLED): Plugin {
+  const STUB = '\0friends-off'
+  return {
+    name: 'yaseen:friends-off-in-main',
+    // Before Vite's own resolve, which would find the real `./friends` first.
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (on || source !== './friends' || importer === undefined) return null
+      return /[\\/]src[\\/]main[\\/]index\.ts$/.test(importer) ? STUB : null
+    },
+    load: (id) => (id === STUB ? "export function startFriendsSend() { throw new Error('Friends is off (YAZ-5652)') }" : null),
+  }
+}
+
 export function dropMonacoTsWorkerUrl(): Plugin {
   return {
     name: 'yaseen-drop-monaco-ts-worker-url',
@@ -140,6 +160,7 @@ export default defineConfig({
     // `tools/mainBundle.test.mjs` fails if the bundle requires anything but Node built-ins and
     // electron (YAZ-2185).
     resolve: { alias: [{ find: '@shared', replacement: shared }, { find: /^yaml$/, replacement: yamlEsm }] },
+    plugins: [friendsOffInMain()],
     // Two entries (YAZ-1617): the app, and the `yaseendocs` command the packaged shim runs as plain Node.
     build: { externalizeDeps: false, rollupOptions: { input: { index: resolve(here, 'src/main/index.ts'), cli: resolve(here, 'src/cli/index.ts') } } },
   },

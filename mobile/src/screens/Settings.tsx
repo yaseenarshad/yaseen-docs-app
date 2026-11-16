@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { useApp } from '../app/AppState'
 import { deviceZone, isTimeZone } from '@shared/timeZone'
+import { FRIENDS_ENABLED } from '@shared/features'
 import { cleanNickname } from '../app/friendsPort'
 import { friendsMessage } from '../auth/friends'
 import { BUILD, buildLine, versionWords } from '../settings/buildInfo'
@@ -69,7 +70,8 @@ export function Settings() {
       {app.vaultKey !== null && <VaultHealth />}
       {app.vaultKey !== null && app.phase === 'ready' && <MobileVaultPart />}
 
-      <FriendsPart />
+      {/* YAZ-5652: only with Friends on (`shared/features.ts`). */}
+      {FRIENDS_ENABLED && <FriendsPart />}
 
       <AppearancePart />
 
@@ -87,7 +89,7 @@ export function Settings() {
             onNo={closeErase}
             extra={
               // YAZ-5343, the safe way: the Friends tab runs a waiting remove when it reads (with a signal).
-              erasing.removes > 0 && (
+              FRIENDS_ENABLED && erasing.removes > 0 && (
                 <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'tab', tab: 'friends' })}>
                   Finish it in Friends
                 </button>

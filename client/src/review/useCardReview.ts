@@ -6,6 +6,7 @@ import type { IndexRecord } from '@shared/types'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { folderTitle } from '../links/folderTitle'
 import { isCardGone, type CardOnPage } from './cardRead'
+import { useLocalDay } from './localDay'
 import type { ReviewHost } from './reviewHost'
 import { dueFirsts, filterPlace, filterProgress, matchesFilter, type FilterProgress, type SessionAnswer } from './sessionProgress'
 import { tourEvent } from '../course/tourBus'
@@ -675,13 +676,9 @@ export function useCardReview(
   // The card showing, read from its page, and its fixed answers: each for one turn (`turnKey`).
   const [loaded, setLoaded] = useState<{ key: string; page: CardOnPage } | null>(null)
   const [fixed, setFixed] = useState<{ key: string; answers: CardAnswer[] } | null>(null)
-  // "Due now" runs to local midnight, so the count moves at midnight with no file changing.
-  const [day, setDay] = useState(0)
-  useEffect(() => {
-    if (root === null) return // a slot with no vault (YAZ-2602) counts nothing: no timer
-    const timer = setTimeout(() => setDay((d) => d + 1), new Date().setHours(24, 0, 0, 0) - Date.now())
-    return () => clearTimeout(timer)
-  }, [day, root])
+  // "Due now" runs to local midnight, so the count moves at midnight with no file changing; also when the Mac wakes
+  // after midnight, or the phone app comes back (YAZ-5615). A slot with no vault (YAZ-2602) counts nothing: no timer.
+  const day = useLocalDay(root !== null)
   // A session ends with its vault, and when review is turned off.
   useEffect(() => setSession(null), [root, settings.enabled])
 

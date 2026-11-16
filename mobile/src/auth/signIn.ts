@@ -28,7 +28,7 @@ export async function startState(store: VaultStore, tokens: TokenStore): Promise
   const open = openVaultOf(await loadVaultList(store))
   if (open === null) return { kind: 'sign-in' }
   const id = vaultId(open)
-  return (await tokens.read(id)) === null ? { kind: 'sign-in-again', vault: id } : { kind: 'ready', vault: id }
+  return !(await tokens.has(id)) ? { kind: 'sign-in-again', vault: id } : { kind: 'ready', vault: id }
 }
 
 /**
@@ -47,7 +47,9 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
   const now = deps.now ?? Date.now
   // The vault may have left the phone earlier in this session; the store refuses its writes until now.
   deps.store.admit(id)
-  await deps.tokens.write(id, checked.token)
+  // A GitHub sign-in: the vault uses the account's pair (it refreshes by itself). A pasted token: the vault keeps it.
+  if (input.github !== undefined) await deps.tokens.link(id, input.github)
+  else await deps.tokens.write(id, checked.token)
   try {
     await saveAccount(deps.store, id, account)
     await saveVaultList(deps.store, addVault(list, { repo, branch, addedAt: now() }))
@@ -68,7 +70,7 @@ export async function signIn(input: SignInInput, deps: SignInDeps): Promise<Sign
  * A token of another GitHub account than the one the vault was signed in with is refused, and nothing changes
  * (YAZ-5092 D5). GitHub logins ignore case. A vault with no stored account takes any account.
  */
-export async function signInAgain(vault: string, token: string, deps: SignInDeps): Promise<SignInOutcome> {
+export async function signInAgain(vault: string, token: string, deps: SignInDeps, github?: string): Promise<SignInOutcome> {
   const known = (await loadVaultList(deps.store)).vaults.find((v) => vaultId(v) === vault)
   if (known === undefined) throw new Error(`${vault} is not on this phone`)
   const checked = await checkSignIn({ repo: known.repo, branch: known.branch, token }, deps)
@@ -77,7 +79,9 @@ export async function signInAgain(vault: string, token: string, deps: SignInDeps
   const login = checked.vault.account.login
   if (before !== undefined && before.login.toLowerCase() !== login.toLowerCase())
     return { ok: false, error: { kind: 'other-account', login, expected: before.login } }
-  await deps.tokens.write(vault, checked.token)
+  // YAZ-5645: with "Sign in with GitHub", the vault now uses the account's pair (a pasted-token vault moves to it).
+  if (github !== undefined) await deps.tokens.link(vault, github)
+  else await deps.tokens.write(vault, checked.token)
   await saveAccount(deps.store, vault, checked.vault.account)
   return { ok: true, vault, account: checked.vault.account }
 }

@@ -6,6 +6,8 @@ import { App, NoStorage } from './App'
 import { forgetUpdateMark, startUpdates } from './pwa/browser'
 import { lazySync } from './app/lazySync'
 import { lazyMedia } from './media/ui/lazyMedia'
+import { FRIENDS_ENABLED } from '@shared/features'
+import { localFriends } from './app/friendsPort'
 import { lazyFriends } from './friends/ui/lazy'
 import { openPhoneStorage } from './store'
 import { noteStorageCall, noteSyncStatus, startWakeLog } from './store/wakeLog'
@@ -38,7 +40,9 @@ async function start(root: Root) {
   startWakeLog()
   let storage: Awaited<ReturnType<typeof openPhoneStorage>>
   try {
-    storage = await openPhoneStorage(noteStorageCall)
+    // YAZ-5645: a GitHub sign-in's token renews by itself, through the site's Worker (`worker/index.ts`). The call's
+    // code loads only when a refresh is due (it is not in the first load).
+    storage = await openPhoneStorage(noteStorageCall, { renew: async (refresh) => (await import('./auth/githubWorker')).renewAtWorker()(refresh) })
   } catch {
     root.render(<NoStorage />)
     return
@@ -49,7 +53,9 @@ async function start(root: Root) {
   // Friends (4E): the list gist, the sender (on the engine's passes), Cheer and Nudge, in a chunk of their own.
   const sync = lazySync(store, tokens)
   sync.subscribe((event) => event.type === 'state' && noteSyncStatus(event.state.status))
-  const friends = lazyFriends(store, tokens, sync.loaded())
+  // YAZ-5652: with Friends off (`shared/features.ts`), no friends chunk, list, sender or gist call: the plain port
+  // (no friends, and the two settings kept on this phone) stands in.
+  const friends = FRIENDS_ENABLED ? lazyFriends(store, tokens, sync.loaded()) : localFriends(store)
   const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends }
   root.render(
     <StrictMode>

@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { localFriends } from '../../app/friendsPort'
 import { saveAccount } from '../../auth/account'
 import { mount, newPhone, type Harness } from '../../screens/testing'
 import { PHONE, saveVaultList, vaultId } from '../../store'
 import { HAS_FRIENDS_STATE, lazyFriends } from './lazy'
+
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
 /**
  * YAZ-5260 (decision 21): the app opens on Friends when the person has a friend, with no jump: Review never shows

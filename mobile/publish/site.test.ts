@@ -150,16 +150,17 @@ describe('the publish config (decision 8, round 12 item 14)', () => {
   const jsonc = (text: string) => JSON.parse(text.replace(/^\s*\/\/.*$/gm, ''))
   const config = jsonc(read('wrangler.jsonc'))
 
-  it('the phone Worker: static files, no script, no workers.dev, the real address only', () => {
+  it('the phone Worker: static files, no workers.dev, the real address only; YAZ-5645: the script runs first for /api/github/* only', () => {
     expect(config.name).toBe('yaseen-notecards-preview')
     expect(config.account_id).toBe('06ed69083fae875c626d37f9c05405a3')
     expect(config.workers_dev).toBe(false)
     expect(config.preview_urls).toBe(false)
     // YAZ-5579: one address, the real one; the preview addresses are detached.
     expect(config.routes).toEqual([{ pattern: 'docs.yaseenarshad.com', custom_domain: true }])
-    expect(config.assets).toEqual({ directory: './dist', not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
-    expect(config.main).toBeUndefined()
-    expect(config.assets.binding).toBeUndefined()
+    expect(config.assets).toEqual({ directory: './dist', binding: 'ASSETS', run_worker_first: ['/api/github/*'], not_found_handling: 'single-page-application', html_handling: 'auto-trailing-slash' })
+    expect(config.main).toBe('./worker/index.ts')
+    // No binding of any other kind: the script stores nothing (no KV, no D1, no R2, no Durable Object).
+    for (const kind of ['kv_namespaces', 'd1_databases', 'r2_buckets', 'durable_objects', 'vars']) expect([kind, config[kind]]).toEqual([kind, undefined])
     expect(JSON.stringify(config)).not.toMatch(/"notecards?\.yaseenarshad\.com"|yaseen-notecards"/)
   })
 

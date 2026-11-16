@@ -22,6 +22,10 @@ export type Forward =
   | 'sign-in-again'
   /** Opens Settings (remove or change the vault). */
   | 'settings'
+  /** YAZ-5645: opens GitHub's page to choose the repos the app may use. */
+  | 'choose-repos'
+  /** YAZ-5645: "Sign in with GitHub" again (another account, or the sign-in stopped). */
+  | 'sign-in-github'
 
 export interface Help {
   message: string
@@ -39,12 +43,19 @@ export const FORWARD_LABEL: Record<Forward, string> = {
   'open-vault': 'Open it',
   'sign-in-again': 'Sign in again',
   settings: 'Open Settings',
+  'choose-repos': 'Choose repos on GitHub',
+  'sign-in-github': 'Sign in with GitHub',
 }
 
-/** The words and the way forward for each typed result of the sign-in check (3E). */
+/**
+ * The words and the way forward for each typed result of the sign-in check (3E). For a "Sign in with GitHub" token,
+ * `githubHelp` (`auth/githubApp.ts`, in its own chunk) has other words for some results.
+ */
 export function signInHelp(error: SignInError): Help {
   const message = signInMessage(error)
   switch (error.kind) {
+    case 'no-installed-repos':
+      return { message, forward: 'choose-repos' }
     case 'bad-repo':
     case 'bad-branch':
       return { message, forward: 'edit-repo' }

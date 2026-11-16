@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GOOD, mount, signInWithForm, type Harness } from '../../screens/testing'
+
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
 /** B3 (YAZ-5251) in plain words: what the home time zone does, and when a change shows. */
 let h: Harness | null = null

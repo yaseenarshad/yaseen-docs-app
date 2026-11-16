@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PLAIN_VAULT, TABS, navigate, openingTab, showsTabBar, tabIn, tabsOf, topRoute, type NavState } from './nav'
+
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
 
 describe('the shell navigation (decision 21)', () => {
   it('has three tabs, Friends · Review · Search, and no Pages tab', () => {

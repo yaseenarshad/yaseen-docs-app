@@ -7,6 +7,9 @@ import { INDEX_STATE } from '../sync/phoneIndex'
 import { PLAIN_VAULT } from './nav'
 import { INDEX_NAME, readVaultTabs } from './vaultTabs'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * YAZ-5476: the tabs follow the OPEN vault's own settings, read as the Mac reads them. Search always; Review and Friends
  * with Review on (`review.json` and IDs); Today with Daily pages on (`daily-pages.json`). Made-up vaults only.

@@ -5,6 +5,9 @@ import { READER_ID, seedReaderVault, writeVaultFiles } from '../dev/readerVault'
 import { mount, newPhone, type Harness } from '../screens/testing'
 import { setCalendarClock } from '../page/tableCalendar'
 
+// YAZ-5652: Friends is off in the app (`shared/features.ts`); this file tests today's behaviour with it on.
+vi.mock('@shared/features', () => ({ FRIENDS_ENABLED: true }))
+
 /**
  * YAZ-5470: the Today button of the tab bar. Only in a vault with Daily pages on (`.yaseendocs/daily-pages.json`); a tap
  * opens today's daily page, else the latest before it; with none, a short line. Read only. Made-up vault; the phone's
