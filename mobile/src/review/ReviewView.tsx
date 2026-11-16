@@ -5,7 +5,7 @@ import { useAnswerTimer } from '@client/review/answerTimer'
 import { cardStateText } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
 import { newCardsFrom } from '@client/review/inboxMenu'
-import { addedLine, resetLine, waitingLine } from '@client/review/cardWords'
+import { addedLine, resetLine, reviewMoreCount, reviewMoreLabel, waitingLine } from '@client/review/cardWords'
 import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
@@ -957,10 +957,10 @@ function DoneBody({ review, session, addKinds, today, title }: { review: CardRev
           <p className="muted review__waits">{waitingLine(session.more, addKinds)}</p>
           {adds}
         </>
-      ) : review.dueCount > 0 ? (
-        // A new day began during the review (local midnight): today's cards are due now.
+      ) : reviewMoreCount(addKinds, review.dueCount) > 0 ? (
+        // A new day began during the review (local midnight): today's cards are due now. The Mac's rule too (YAZ-5623).
         <button type="button" className="btn review__add" onClick={() => review.start()}>
-          Review {review.dueCount} more
+          {reviewMoreLabel(reviewMoreCount(addKinds, review.dueCount))}
         </button>
       ) : (
         <p className="muted">Nothing else is due today.</p>

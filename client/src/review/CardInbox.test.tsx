@@ -469,6 +469,8 @@ describe('the Inbox screen (YAZ-4962)', () => {
 
   it('the done screen: "Inbox complete." and one quiet line; only ⌘Z (with an answer to undo) in the hint row', () => {
     mount(TWO_SIDES)
+    // Nothing due in the vault (YAZ-5623: cards still due get "Review K more").
+    review = { ...review, dueCount: 0 }
     session = { ...session, card: null, canUndo: true }
     render()
     expect(el.querySelector('.card-inbox__done-title')?.textContent).toBe('Inbox complete.')
@@ -1662,10 +1664,30 @@ describe('YAZ-5042: add more cards for today, from the Inbox (no trip to Setting
     session = { ...session, more: { new: 1, next: 0 }, adds: { new: 1, next: 0 } }
     render()
     expect(doneText()).toEqual(['Inbox complete.', '1 new card waits for another day.', 'Add[1]new cardfrom All folders'])
-    // Nothing waits (also: no limit): as now.
+    // Nothing waits (also: no limit), and nothing is due (YAZ-5623): as now.
+    review = { ...review, dueCount: 0 }
     session = { ...session, more: { new: 0, next: 0 }, adds: { new: 0, next: 0 } }
     render()
     expect(doneText()).toEqual(['Inbox complete.', 'Nothing else is due today. Enjoy your day!'])
+  })
+
+  it('YAZ-5623: the vault done while cards are still due (a new day began): "Review 3 more", the phone\'s words and rule', () => {
+    mount(TWO_SIDES)
+    session = { ...session, card: null, counts: { all: 0, next: 0, due: 0, new: 0 } }
+    // Nothing due in the vault: as before.
+    review = { ...review, dueCount: 0 }
+    render()
+    expect(doneText()).toEqual(['Inbox complete.', 'Nothing else is due today. Enjoy your day!'])
+    // Midnight passed during the review: 3 cards are due now. The screen offers them, and the click starts the vault again.
+    review = { ...review, dueCount: 3 }
+    render()
+    expect(doneText()).toEqual(['Inbox complete.', 'Review 3 more'])
+    act(() => el.querySelector<HTMLButtonElement>('.card-inbox__done-more')!.click())
+    expect(review.start).toHaveBeenCalledExactlyOnceWith({})
+    // Cards wait to be added: the adds, as on the phone (no "Review K more" beside them).
+    session = { ...session, more: { new: 5, next: 0 }, adds: { new: 5, next: 0 } }
+    render()
+    expect(doneText()).toEqual(['Inbox complete.', '5 new cards wait for another day.', 'Add[5]new cardsfrom All folders'])
   })
 
   it('a filter done: "No new cards left." then its add and, quiet, "12 more in All cards"; Due today has no add', () => {
