@@ -120,7 +120,7 @@ function AboutPart() {
     <>
       <h2 className="section">About Yaseen Docs</h2>
       <ul className="rows">
-        <li className="row">
+        <li className="row settings__version-row">
           <span className="row__main">Version</span>
           <span className="row__side settings__version">{versionWords(BUILD)}</span>
         </li>

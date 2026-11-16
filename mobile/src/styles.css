@@ -643,8 +643,16 @@ button,
 
 /* ---- Settings: the version, What's new, and the erase apart at the bottom (YAZ-5446) ---- */
 
+/* YAZ-4965: the Version row: the label, then its long value under it, muted, wrapping (at 390 px the value took the
+   line and cut the label to "V…"). */
+.settings__version-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 0;
+}
 .settings__version {
-  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 /* YAZ-5659: Settings › Vaults: a folder, the vault's name (big) over its repo and branch (small, grey), each cut with
