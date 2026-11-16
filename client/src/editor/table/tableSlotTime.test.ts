@@ -205,6 +205,11 @@ describe('the pill on the now line', () => {
     expect(cell.style.getPropertyValue('--table-clip-pad')).toBe('96px')
     const room = floats!.querySelector<HTMLElement>('.table-slot-room')!
     expect([room.style.float, room.style.clear]).toEqual(['right', 'right'])
+    // The clock places the gap and the room in the next frame, with `slotRooms.ts` loaded then (not in the first load).
+    // Made at 0 px; placed, the room takes the pill's line (one line in a cell this test's DOM gives no height).
+    expect(room.style.height).toBe('0px')
+    await vi.advanceTimersByTimeAsync(20)
+    await vi.waitFor(() => expect(parseFloat(room.style.height)).toBeGreaterThan(0))
     vi.setSystemTime(new Date(2026, 10, 2, 10, 40, 0))
     await vi.advanceTimersByTimeAsync(61_000)
     // An empty last cell: the pill, no room; the room left the cell it was in.

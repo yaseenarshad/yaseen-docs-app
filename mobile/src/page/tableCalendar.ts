@@ -1,4 +1,5 @@
-import { minutesOf, nowPlace, placeSlotRoom as placeRoom, rowTimes, secondsOf, slotPillChars, slotRoomAt, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
+import { placeSlotRoom as placeRoom, slotRoomAt } from '@shared/slotRoom'
+import { minutesOf, nowPlace, rowTimes, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
 import { calendarLook, type CalendarLook } from './calendarLook'
 import { gridColumns } from './tableLayout'
 
@@ -87,7 +88,7 @@ function slotRoom(): HTMLElement[] {
 
 /**
  * YAZ-5658: puts the pill's room of `cell` (a now row's last cell with text) on the now line: the one rule of
- * `shared/tableSlots.ts` (`placeSlotRoom`), on this cell's floats.
+ * `shared/slotRoom.ts` (`placeSlotRoom`), on this cell's floats.
  */
 export function placeSlotRoom(cell: HTMLElement): void {
   const gap = cell.querySelector<HTMLElement>(':scope > .table-slot-gap')

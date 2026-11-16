@@ -50,7 +50,7 @@ import type { Node as ProseNode, NodeType, Schema } from '@milkdown/kit/prose/mo
 import { Plugin, PluginKey, Selection, type Transaction } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { minutesOf, nowPlace as placeAmong, placeSlotRoom, rowTimes as timesOfTexts, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
+import { minutesOf, nowPlace as placeAmong, rowTimes as timesOfTexts, secondsOf, slotPillChars, slotTimeLabel, type NowPlace } from '@shared/tableSlots'
 import { detectTimeFormat, formatTime } from '@shared/timeFormat'
 import { cellTextAt, rowNoDim, tableHasMerge } from './cells'
 import { foldRuns, runOf, unfoldRun } from './tableFold'
@@ -165,7 +165,7 @@ function slotPill(start: number, end: number, at?: TableLookPlace): () => HTMLEl
 }
 
 /**
- * YAZ-5658: the pill's room in a last cell with text, on the pill's own lines only (`shared/tableSlots.ts`, the phone's
+ * YAZ-5658: the pill's room in a last cell with text, on the pill's own lines only (`shared/slotRoom.ts`, the phone's
  * rule too): a widget at the start of the cell's first paragraph, two floats (a gap, then the room) in a box that takes
  * no box of its own (`display: contents`). The clock puts them on the now line after each draw (`CalendarClock`).
  * Before, a right padding ran down the whole cell, and a narrow column read one letter per line.
@@ -177,7 +177,7 @@ function slotRoom(chars: number): () => HTMLElement {
     box.contentEditable = 'false'
     box.style.display = 'contents'
     // Styled here, not in the eager CSS: the gap (no width), then the room, as wide as the slot's widest text; with
-    // less than 4em beside it, the whole line. Their heights come from `placeSlotRooms`.
+    // less than 4em beside it, the whole line. Their heights come from `placeSlotRooms` (`slotRooms.ts`).
     const room = `${chars * 7 + 26}px`
     for (const [name, width] of [['table-slot-gap', '0'], ['table-slot-room', `max(${room}, min(100%, calc((${room} + 4em - 100%) * 1000)))`]] as const) {
       const el = document.createElement('span')
@@ -186,30 +186,6 @@ function slotRoom(chars: number): () => HTMLElement {
       box.appendChild(el)
     }
     return box
-  }
-}
-
-/**
- * Each pill's room in `root` on its now line: reads its cell's height (one cell a table), writes only what changed. A
- * clipped cell (one line, `white-space: nowrap`) has the padding instead: its floats hide.
- */
-export function placeSlotRooms(root: ParentNode): void {
-  for (const box of root.querySelectorAll<HTMLElement>('.table-slot-floats')) {
-    const cell = box.closest<HTMLElement>('th, td')
-    const gap = box.querySelector<HTMLElement>('.table-slot-gap')
-    const room = box.querySelector<HTMLElement>('.table-slot-room')
-    const para = box.parentElement
-    if (cell === null || gap === null || room === null || para === null) continue
-    const p = getComputedStyle(para)
-    const display = p.whiteSpace === 'nowrap' ? 'none' : 'contents'
-    if (box.style.display !== display) box.style.display = display
-    if (display === 'none') continue
-    const now = Number(cell.parentElement?.style.getPropertyValue('--table-now') || 0)
-    // The cell's paragraph has its own padding above its first line (`table.css`): the lines start under both.
-    const c = getComputedStyle(cell)
-    const sum = (a: string, b: string) => String((parseFloat(a) || 0) + (parseFloat(b) || 0))
-    const look = { paddingTop: sum(c.paddingTop, p.paddingTop), paddingBottom: sum(c.paddingBottom, p.paddingBottom), lineHeight: p.lineHeight, fontSize: p.fontSize }
-    placeSlotRoom(now, { height: () => cell.clientHeight, look, gap, room })
   }
 }
 
@@ -362,7 +338,8 @@ class CalendarClock {
     if (this.#roomFrame !== 0 || typeof requestAnimationFrame === 'undefined' || this.view.dom.querySelector('.table-slot-floats') === null) return
     this.#roomFrame = requestAnimationFrame(() => {
       this.#roomFrame = 0
-      if (!this.view.isDestroyed) placeSlotRooms(this.view.dom)
+      // Loaded on the first pill with room, not in the first load (YAZ-4965).
+      if (!this.view.isDestroyed) void import('./slotRooms').then(({ placeSlotRooms }) => this.view.isDestroyed || placeSlotRooms(this.view.dom))
     })
   }
 
