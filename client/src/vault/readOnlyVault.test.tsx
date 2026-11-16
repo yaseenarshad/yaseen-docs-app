@@ -217,4 +217,34 @@ describe('useReadOnlyVault', () => {
     await act(async () => state.save({ on: false }))
     expect([state.unlockedUntil, state.locked]).toEqual([null, false])
   })
+  // YAZ-5649 item 4: a page's timers stop while the Mac sleeps; Date.now() does not. Back from sleep (the window shows
+  // or takes focus), the vault relocks as the timer does: each surface's save step first, then the lock.
+  it('YAZ-5649: after a sleep past the end, the window showing or taking focus relocks (saves first); before the end it stays open', async () => {
+    vi.useFakeTimers()
+    read.mockResolvedValue({ on: true })
+    await mount('/vault')
+    const order: string[] = []
+    state.beforeLock(() => void order.push('page saved'))
+    act(() => state.unlock('ten'))
+    // Awake, inside the ten minutes: focus does nothing.
+    act(() => vi.setSystemTime(Date.now() + 5 * 60_000))
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect([state.locked, order]).toEqual([false, []])
+    // The lid closes for an hour: the clock moves, the timer does not fire.
+    act(() => vi.setSystemTime(Date.now() + 60 * 60_000))
+    expect([state.fileActionsAllowed(), state.locked]).toEqual([false, false])
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect([state.locked, state.unlockedUntil, order]).toEqual([true, null, ['page saved']])
+    // Focus after the lock: nothing more runs.
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect(order).toEqual(['page saved'])
+  })
+
+  it('YAZ-5649: "Until I lock it" never relocks on focus', async () => {
+    read.mockResolvedValue({ on: true })
+    await mount('/vault')
+    act(() => state.unlock('until'))
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect(state.locked).toBe(false)
+  })
 })

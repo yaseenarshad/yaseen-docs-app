@@ -1244,10 +1244,13 @@ export function sanitizeTabCanvas(raw: unknown, windows: readonly WindowEntry[])
 }
 
 /** The file's shape: each folder bucket minus its session field (YAZ-1642) — what a relaunch restores, nothing more. */
-function toDisk(state: AppState): unknown {
+function toDisk(state: AppState, slotTime: SlotTimeToMove = {}): unknown {
   const folders = Object.fromEntries(Object.entries(state.folders).map(([root, { expanded: _e, ...kept }]) => [root, kept]))
-  return { ...state, folders }
+  return { ...state, settings: { ...state.settings, ...slotTime }, folders }
 }
+
+/** The mark `tableLookMoves` sets on a vault once its Time in slot is in (or found in) its table-look.json. */
+export const SLOT_MARK = 'table-look.json#slot'
 
 function sanitizeState(raw: unknown): AppState | null {
   if (!isRecord(raw) || raw.version !== 1) return null
@@ -1383,6 +1386,17 @@ export function createStore(filePath: string): Store {
   let legacyHeadingStyles: HeadingStyles | null = loaded.legacyHeadingStyles
   /** YAZ-5602 round 2: the Time in slot this file held at start; the state omits it, so the next write drops it. */
   const slotTimeToMove: SlotTimeToMove = Object.freeze({ ...loaded.slotTimeToMove })
+  /**
+   * YAZ-5649 item 1: written back into the file's settings until every known vault (window and recent) has the
+   * `table-look.json#slot` mark, so a launch where the move did not run (offline, no pull yet, the vault not open)
+   * never loses it.
+   */
+  const slotTimeKept = (s: AppState): SlotTimeToMove => {
+    if (Object.keys(slotTimeToMove).length === 0) return slotTimeToMove
+    const known = new Set(placeVaults(s.folders, [...s.windows.flatMap((w) => w.roots), ...s.recents.map((r) => r.path)]))
+    const moved = known.size > 0 && [...known].every((root) => s.seededVaultConfig?.[root]?.includes(SLOT_MARK) === true)
+    return moved ? {} : slotTimeToMove
+  }
   const listeners = new Set<(state: AppState) => void>()
   let dirty = false
   let timer: ReturnType<typeof setTimeout> | null = null
@@ -1400,7 +1414,7 @@ export function createStore(filePath: string): Store {
     const snapshot = state
     chain = chain
       .then(async () => {
-        const text = `${JSON.stringify(toDisk(snapshot), null, 2)}\n`
+        const text = `${JSON.stringify(toDisk(snapshot, slotTimeKept(snapshot)), null, 2)}\n`
         if (text === lastWritten) return
         mkdirSync(dirname(filePath), { recursive: true })
         await atomicWrite(filePath, text)

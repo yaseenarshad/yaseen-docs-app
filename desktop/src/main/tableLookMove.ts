@@ -1,6 +1,6 @@
 import { TABLE_LOOK_FILE, TABLE_LOOK_KEYS, tableLookFile, tableLookOf } from '@shared/tableLook'
 import type { SettingsState } from '@shared/types'
-import type { SlotTimeToMove } from './store'
+import { SLOT_MARK, type SlotTimeToMove } from './store'
 import { seedVaultPart, type MoveStep } from './vaultSettingsMove'
 
 /**
@@ -46,7 +46,7 @@ export function tableLookMoves(slot: SlotTimeToMove): MoveStep[] {
       key: () => slotPart(),
       run: async (roots, _s, store, canSeed) => {
         const part = slotPart()
-        for (const root of roots) await seedVaultPart(root, TABLE_LOOK_FILE, part, ['look.slotTime', 'look.slotSeconds'], store, canSeed, `${TABLE_LOOK_FILE}#slot`)
+        for (const root of roots) await seedVaultPart(root, TABLE_LOOK_FILE, part, ['look.slotTime', 'look.slotSeconds'], store, canSeed, SLOT_MARK)
       },
     },
   ]
