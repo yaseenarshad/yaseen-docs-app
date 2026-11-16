@@ -4,7 +4,7 @@
  * the page in the same box (YAZ-3075 D1); a code or text row the top of the file with its colours
  * (YAZ-3508, `code/CodeHoverPreview.tsx`); an image or PDF row the picture or the first page (`MediaHoverPreview.tsx`;
  * D6 said never, Yaseen overturned it on 2026-11-08, YAZ-3746 13R; `hasHoverPreview`). The row is
- * pending until the dwell ends, then shown; only the row leaving the tree closes it. Every close
+ * pending until the dwell ends, then shown; the row leaving the tree, or a press, closes it. Every close
  * bumps `hoverRequest`, so an earlier row's dwell never fires late.
  *
  * Isolated (Draw's YAZ-2073 5D): the row lives in a tiny store the Sidebar writes and only the panel
@@ -81,6 +81,8 @@ export function useHoverPreview(blocked: boolean, activeFile: string | null) {
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverRequest = useRef(0)
   const blockedRef = useRef(blocked)
+  /** The row a press closed (YAZ-5648 #4), quiet until another row or none. */
+  const pressed = useRef<string | null>(null)
   blockedRef.current = blocked
   const closePreview = useCallback(() => {
     hoverRequest.current++
@@ -92,6 +94,9 @@ export function useHoverPreview(blocked: boolean, activeFile: string | null) {
     (node: { path: string } | null) => {
       // The same row again (focus after the pointer, or back) keeps its dwell or its panel.
       if (node !== null && hover.getState().path === node.path) return
+      // The row a press closed stays quiet (its focus comes right after the press) until the pointer or focus leaves it.
+      if (node !== null && pressed.current === node.path) return
+      pressed.current = null
       closePreview()
       // A board, a page, a code file, a picture or a PDF previews (YAZ-3075 D6, YAZ-3508, YAZ-3746 13R); a folder or any other file has none.
       if (node === null || blockedRef.current || !hasHoverPreview(node.path)) return
@@ -111,6 +116,18 @@ export function useHoverPreview(blocked: boolean, activeFile: string | null) {
     if (blocked) closePreview()
   }, [blocked, closePreview])
   useEffect(() => closePreview(), [activeFile, closePreview])
+  // A press anywhere ends it too (YAZ-5648 #4): a click on the row of the page already open changes no `activeFile`, so
+  // its dwell would open the preview over the page the click just showed. The pointer must leave the row to start again.
+  useEffect(() => {
+    const press = () => {
+      const { path } = hover.getState()
+      if (path === null) return
+      closePreview()
+      pressed.current = path
+    }
+    document.addEventListener('pointerdown', press, true)
+    return () => document.removeEventListener('pointerdown', press, true)
+  }, [hover, closePreview])
   useEffect(() => closePreview, [closePreview]) // unmount: no dwell timer outlives the sidebar
 
   return { hover, hoverFile, closePreview }
