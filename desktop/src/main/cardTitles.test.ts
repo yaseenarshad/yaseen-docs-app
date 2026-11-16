@@ -125,6 +125,13 @@ describe('YAZ-5308: the one-time move of each card title onto its card line', ()
     expect(cardTitlesMoved(file)).toBe('---\nkind: card\ntags: [geo]\n---\n```card\nThe capital is {{Paris}}.\n```\n<!-- card: DEMO-196, title "Capital of France", 2026-11-12T14:05Z good -->\n')
   })
 
+  it('YAZ-5647 item 3: a card file\'s `title` leaves its properties only when its card line holds it: a file with no card keeps it, and so does one whose card line has another title', () => {
+    expect(cardTitlesMoved('---\nkind: card\ntitle: Rivers of Spain\n---\nWhich river runs through Seville?\n')).toBeNull()
+    expect(cardTitlesMoved('---\nkind: card\ntitle: Old name\n---\n```card\nFront\n```\n<!-- card: DEMO-2, title "New name" -->\n')).toBeNull()
+    // The same title on the line: nothing is lost, so the property goes.
+    expect(cardTitlesMoved('---\nkind: card\ntitle: Same\n---\n```card\nFront\n```\n<!-- card: DEMO-2, title "Same" -->\n')).toBe('---\nkind: card\n---\n```card\nFront\n```\n<!-- card: DEMO-2, title "Same" -->\n')
+  })
+
   it('keeps the file`s own line end (YAZ-5146)', () => {
     const page = '```card\r\nRiver\r\nWhich?\r\n```\r\n<!-- card: DEMO-1 -->\r\n'
     expect(cardTitlesMoved(page)).toBe('```card\r\nWhich?\r\n```\r\n<!-- card: DEMO-1, title "River" -->\r\n')
