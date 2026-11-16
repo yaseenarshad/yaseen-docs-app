@@ -1,11 +1,12 @@
 # The headers of Yaseen Docs on Cloudflare static assets (YAZ-5087). The Worker serves these files and nothing else:
 # no script, no logs of addresses. `publish/headers.test.ts` checks this file against the calls the code makes.
 #
-# The page may call GitHub's API only (decision 8). Pictures: this site, blob:, data: and GitHub's avatar host
+# The page may call GitHub's API, and this site's Worker for "Sign in with GitHub" only (decision 8; YAZ-5645: `'self'`,
+# the three POST routes /api/github/*, which the script answers before the static files). Pictures: this site, blob:, data: and GitHub's avatar host
 # (round 12, item 13). No inline script, no eval, no third-party script, font or analytics. No referrer ever: a friend
 # link and the token never leak. No camera (YAZ-5650: "Scan a code" is gone).
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src https://api.github.com; img-src 'self' blob: data: https://avatars.githubusercontent.com; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self'; connect-src 'self' https://api.github.com; img-src 'self' blob: data: https://avatars.githubusercontent.com; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   Referrer-Policy: no-referrer
   X-Content-Type-Options: nosniff
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()

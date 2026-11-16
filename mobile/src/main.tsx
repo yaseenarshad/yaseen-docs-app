@@ -38,7 +38,9 @@ async function start(root: Root) {
   startWakeLog()
   let storage: Awaited<ReturnType<typeof openPhoneStorage>>
   try {
-    storage = await openPhoneStorage(noteStorageCall)
+    // YAZ-5645: a GitHub sign-in's token renews by itself, through the site's Worker (`worker/index.ts`). The call's
+    // code loads only when a refresh is due (it is not in the first load).
+    storage = await openPhoneStorage(noteStorageCall, { renew: async (refresh) => (await import('./auth/githubWorker')).renewAtWorker()(refresh) })
   } catch {
     root.render(<NoStorage />)
     return

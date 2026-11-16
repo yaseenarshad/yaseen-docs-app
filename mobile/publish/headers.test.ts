@@ -37,23 +37,31 @@ for (const file of appSources(join(here, 'src'))) {
  * - avatars.githubusercontent.com: the comment that names it; the address itself comes from GitHub's answer (`img-src`).
  */
 const NOT_CALLED: Record<string, string> = {
-  'https://github.com': 'a link the person opens, and text the sign-in parses',
+  'https://github.com': 'a link the person opens, text the sign-in parses, and the sign-in page the app goes to (YAZ-5645)',
   'https://avatars.githubusercontent.com': 'pictures only (img-src), round 12 item 13',
+  'https://docs.yaseenarshad.com': "this site's own callback address, which the Worker checks (YAZ-5645); calls use location.origin ('self')",
 }
 
 describe('the Content-Security-Policy of the app', () => {
-  it('connect-src: exactly the origins the code calls (GitHub\'s API), nothing more', () => {
+  it('connect-src: exactly the origins the code calls (GitHub\'s API; YAZ-5645: this site, for its Worker\'s /api/github/*), nothing more', () => {
     const called = [...originsInCode.keys()].filter((o) => !(o in NOT_CALLED)).sort()
     expect(called).toEqual(['https://api.github.com'])
-    expect(csp.get('connect-src')).toEqual(called)
+    expect(csp.get('connect-src')).toEqual(["'self'", ...called])
+  })
+
+  it("YAZ-5645: the only call to this site is the Worker's routes (never a page or a file by fetch)", () => {
+    const worker = readFileSync(join(here, 'src/auth/githubWorker.ts'), 'utf8')
+    expect(worker).toMatch(/new URL\(path, origin \?\? location\.origin\)/)
+    expect(worker).toMatch(/new URL\(WORKER_REVOKE, origin \?\? location\.origin\)/)
   })
 
   it('the follow-up of YAZ-5280: no app code fetches anything but GitHub (a fetch of a blob: or of this site would break connect-src); the viewer opens only blob: pictures, sounds, videos and PDFs, which the CSP lets through', () => {
     const fetching = appSources(join(here, 'src'))
       .filter((f) => /(^|[^.\w])fetch\(|globalThis\.fetch\(|XMLHttpRequest/.test(readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')))
       .map((f) => f.slice(here.length))
-    // The GitHub client and the friends guard (both send to api.github.com only); the worker, which has its own CSP.
-    expect(fetching.sort()).toEqual(['src/friends/guard.ts', 'src/github/client.ts', 'src/pwa/swCore.ts'])
+    // The GitHub client and the friends guard (both send to api.github.com only); the worker, which has its own CSP;
+    // YAZ-5645: the calls to this site's Worker (`/api/github/*`, connect-src 'self').
+    expect(fetching.sort()).toEqual(['src/auth/githubWorker.ts', 'src/friends/guard.ts', 'src/github/client.ts', 'src/pwa/swCore.ts'])
   })
 
   it('each origin in the code is either called (connect-src) or listed here with its reason', () => {

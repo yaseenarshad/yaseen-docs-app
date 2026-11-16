@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HINT_KEY } from '../store/hintPref'
-import { GOOD, mount, signInWithForm, type Harness } from './testing'
+import { GOOD, mount, signInWithForm, useTokenInstead, type Harness } from './testing'
 
 /**
  * YAZ-5644: the install hint, a light line on the sign-in and in Settings, only in a phone's or a tablet's browser tab.
@@ -36,7 +36,8 @@ describe('the install hint', () => {
     h = await mount()
     const c = card(h)!
     expect(c).not.toBeNull()
-    expect(c.compareDocumentPosition(h.host.querySelector('form')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // YAZ-5645: above the first step, "Sign in with GitHub".
+    expect(c.compareDocumentPosition(h.button('Sign in with GitHub')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(c.querySelector('.install__line')?.textContent).toBe('Add Yaseen Docs to your Home Screen. It opens like an app.')
     expect(c.querySelectorAll('ol li')).toHaveLength(0)
     expect(h.button('How')?.getAttribute('aria-expanded')).toBe('false')
@@ -79,7 +80,7 @@ describe('the install hint', () => {
     as(MAC_CHROME)
     h = await mount()
     expect(card(h)).toBeNull()
-    expect(h.host.querySelector('input[name="token"]')).not.toBeNull()
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
     await signInWithForm(h, 'yaseen/vault', GOOD)
     await h.click('Settings')
     expect(card(h)).toBeNull()
@@ -93,9 +94,11 @@ describe('the install hint', () => {
     expect(h.text()).not.toContain('Home Screen')
   })
 
-  it('only on the token step: after "Show my repos" the list has the room', async () => {
+  it('only on the first steps (GitHub, the token): after "Show my repos" the list has the room', async () => {
     as(SAFARI)
     h = await mount()
+    await useTokenInstead(h)
+    expect(card(h)).not.toBeNull()
     await h.type('Token', GOOD)
     await h.click('Show my repos')
     await h.waitText('Choose the repo of your vault')

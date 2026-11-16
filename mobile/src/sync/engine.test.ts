@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { githubClient } from '../github/client'
-import type { PhoneVault } from '../store'
+import { memoryBackend, tokenStoreOn, type PhoneVault } from '../store'
 import { POLL_MS, SEND_AFTER_MS } from './cadence'
 import { createSyncEngine, type SyncEvent, type SyncEngineOptions } from './engine'
 import { githubRemote } from './githubRemote'
@@ -197,6 +197,27 @@ describe('the sync engine: failures and the status for 4D', () => {
     expect(t.s.github.calls.length).toBe(calls)
     await t.tick(1)
     expect(t.engine.state().status).toBe('synced')
+  })
+
+  it('YAZ-5645: a GitHub sign-in\'s token that GitHub refuses (401) renews ONCE and the pass runs again; a dead sign-in is "attention"', async () => {
+    const renewed: string[] = []
+    let next: string | null = TOKEN
+    const tokens = tokenStoreOn(memoryBackend(), {
+      renew: async (r) => (renewed.push(r), next === null ? { ok: false, reason: 'ended' } : { ok: true, pair: { access: next, accessEndsAt: null, refresh: 'ghr_2', refreshEndsAt: null } }),
+    })
+    await tokens.savePair({ login: 'yaseen', access: 'ghu_' + 'x'.repeat(36), accessEndsAt: null, refresh: 'ghr_1', refreshEndsAt: null })
+    await tokens.link(VAULT, 'yaseen')
+    const t = await setup(undefined, { tokens })
+    await t.engine.open(VAULT_ROW)
+    await t.engine.idle()
+    expect(t.engine.state().status).toBe('synced')
+    expect(renewed).toEqual(['ghr_1'])
+    // GitHub ends the new token too, and the refresh token is dead: one try, then "attention" (sign in again).
+    t.s.github.revoke(TOKEN)
+    next = null
+    await t.tick(POLL_MS)
+    expect(t.engine.state()).toMatchObject({ status: 'attention' })
+    expect(renewed).toEqual(['ghr_1', 'ghr_2'])
   })
 
   it('N6: a cancelled token: red "attention", sync stops, the local copy stays readable', async () => {

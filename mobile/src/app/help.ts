@@ -22,6 +22,10 @@ export type Forward =
   | 'sign-in-again'
   /** Opens Settings (remove or change the vault). */
   | 'settings'
+  /** YAZ-5645: opens GitHub's page to choose the repos the app may use. */
+  | 'choose-repos'
+  /** YAZ-5645: "Sign in with GitHub" again (another account, or the sign-in stopped). */
+  | 'sign-in-github'
 
 export interface Help {
   message: string
@@ -39,12 +43,38 @@ export const FORWARD_LABEL: Record<Forward, string> = {
   'open-vault': 'Open it',
   'sign-in-again': 'Sign in again',
   settings: 'Open Settings',
+  'choose-repos': 'Choose repos on GitHub',
+  'sign-in-github': 'Sign in with GitHub',
 }
 
-/** The words and the way forward for each typed result of the sign-in check (3E). */
-export function signInHelp(error: SignInError): Help {
+/**
+ * The words and the way forward for each typed result of the sign-in check (3E).
+ * YAZ-5645 `github`: the check ran with a "Sign in with GitHub" token. There is no token to make or edit: a repo the
+ * app cannot read or change is chosen on GitHub, and another account means signing in as the right one.
+ */
+export function signInHelp(error: SignInError, github = false): Help {
+  if (github) {
+    switch (error.kind) {
+      case 'no-installed-repos':
+      case 'no-repos':
+        return { message: signInMessage({ kind: 'no-installed-repos' }), forward: 'choose-repos' }
+      case 'bad-token':
+      case 'unauthorized':
+        return { message: 'GitHub signed you out. Sign in again. Your vaults, unsent answers and settings stay.', forward: 'sign-in-github' }
+      case 'repo-not-found':
+      case 'no-access':
+      case 'no-contents':
+        return { message: `Yaseen Docs can't read ${error.repo}. On GitHub, choose it for Yaseen Docs.`, forward: 'choose-repos' }
+      case 'read-only':
+        return { message: `Yaseen Docs can read ${error.repo} but not change it. On GitHub, choose it for Yaseen Docs again, with Contents: Read and write.`, forward: 'choose-repos' }
+      case 'other-account':
+        return { message: `You signed in to GitHub as @${error.login}. This vault uses @${error.expected}. Sign in as @${error.expected}.`, forward: 'sign-in-github' }
+    }
+  }
   const message = signInMessage(error)
   switch (error.kind) {
+    case 'no-installed-repos':
+      return { message, forward: 'choose-repos' }
     case 'bad-repo':
     case 'bad-branch':
       return { message, forward: 'edit-repo' }

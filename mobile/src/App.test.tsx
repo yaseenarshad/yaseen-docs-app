@@ -6,7 +6,7 @@ describe('App', () => {
   it('starts on the sign-in when the phone has no vault (row F1)', async () => {
     const h = await mount()
     expect(h.host.querySelector('h1')?.textContent).toBe('Yaseen Docs')
-    expect(h.button('Show my repos')).not.toBeNull()
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
     h.unmount()
   })
 })

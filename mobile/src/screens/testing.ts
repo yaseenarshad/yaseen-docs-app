@@ -5,6 +5,7 @@ import type { AppServices } from '../app/AppState'
 import type { FriendsPort } from '../app/friendsPort'
 import { fakeFriends, fakeSync, reviewOnTabs, type FakeSync } from '../dev/fakes'
 import { fakeGithub, type FakeGithub, type FakeRepo, type FakeToken } from '../github/testing'
+import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn, type TokenStore, type VaultStore } from '../store'
 import type { Updates } from '../pwa/updates'
 
@@ -23,6 +24,10 @@ export const NO_CONTENTS = 'github_pat_11NOCONTENT0nocontentnocont_' + 'c'.repea
 export const NO_REPOS = 'github_pat_11NOREPOSXX0noreposnorepos_' + 'n'.repeat(59)
 export const MANY = 'github_pat_11MANYMANYX0manymanymanyma_' + 'm'.repeat(59)
 export const WRONG = 'github_pat_11WRONGWRONG0wrongwrongwron_' + 'x'.repeat(59)
+/** YAZ-5645: the access tokens of "Sign in with GitHub" (GitHub App user tokens): with chosen repos, with none, another account. */
+export const GH_ACCESS = 'ghu_' + 'h'.repeat(36)
+export const GH_NONE = 'ghu_' + 'n'.repeat(36)
+export const GH_OTHER = 'ghu_' + 'o'.repeat(36)
 
 export const TOKENS: Record<string, FakeToken> = {
   [GOOD]: { login: 'yaseen', name: 'Yaseen', repos: { 'yaseen/vault': 'write', 'yaseen/second': 'write', 'yaseen/code': 'write' }, gists: true },
@@ -30,6 +35,9 @@ export const TOKENS: Record<string, FakeToken> = {
   [READ_ONLY]: { login: 'yaseen', repos: { 'yaseen/vault': 'read' }, gists: true },
   [NO_CONTENTS]: { login: 'yaseen', repos: { 'yaseen/vault': 'none' }, gists: true },
   [NO_REPOS]: { login: 'yaseen', repos: {}, gists: true },
+  [GH_ACCESS]: { login: 'yaseen', name: 'Yaseen', repos: { 'yaseen/vault': 'write', 'yaseen/second': 'write' }, installations: [{ id: 1, account: 'yaseen', repos: ['yaseen/vault', 'yaseen/second'] }] },
+  [GH_NONE]: { login: 'yaseen', name: 'Yaseen', repos: {}, installations: [] },
+  [GH_OTHER]: { login: 'someone', repos: { 'yaseen/vault': 'write' }, installations: [{ id: 2, account: 'yaseen', repos: ['yaseen/vault'] }] },
   [MANY]: { login: 'yaseen', repos: Object.fromEntries([...Array.from({ length: 10 }, (_, i) => [`yaseen/project-${i + 1}`, 'write']), ['yaseen/vault', 'write'], ['yaseen/second', 'write']]), gists: true },
 }
 export const REPOS: FakeRepo[] = [
@@ -65,14 +73,14 @@ export interface Harness {
 
 export async function newPhone(): Promise<{ store: VaultStore; tokens: TokenStore }> {
   const backend = memoryBackend()
-  return { store: await openVaultStore(backend, { now: () => NOW }), tokens: tokenStoreOn(backend) }
+  return { store: await openVaultStore(backend, { now: () => NOW }), tokens: tokenStoreOn(backend, { now: () => NOW }) }
 }
 
 const named = (el: Element) => (el.getAttribute('aria-label') ?? el.textContent ?? '').replace(/\s+/g, ' ').trim()
 const matches = (el: Element, name: string | RegExp) => (typeof name === 'string' ? named(el) === name : name.test(named(el)))
 
 export async function mount(
-  options: { phone?: { store: VaultStore; tokens: TokenStore }; hasFriends?: boolean; download?: boolean; friends?: (store: VaultStore) => FriendsPort; /** YAZ-5476: 'files': the tabs follow the vault's files alone. Default: Review on (`reviewOnTabs`). */ vaultTabs?: 'files'; /** YAZ-5593: the service worker's update (Settings › Check for updates). */ updates?: Updates } = {},
+  options: { phone?: { store: VaultStore; tokens: TokenStore }; hasFriends?: boolean; download?: boolean; friends?: (store: VaultStore) => FriendsPort; /** YAZ-5476: 'files': the tabs follow the vault's files alone. Default: Review on (`reviewOnTabs`). */ vaultTabs?: 'files'; /** YAZ-5593: the service worker's update (Settings › Check for updates). */ updates?: Updates; /** YAZ-5645: more services (`goToGithub`, `origin`), and a `fetch` around the fake GitHub's (the Worker). */ services?: Partial<AppServices>; wrapFetch?: (fetch: FetchLike) => FetchLike } = {},
 ): Promise<Harness> {
   const { store, tokens } = options.phone ?? (await newPhone())
   const github = fakeGithub({ tokens: TOKENS, repos: REPOS })
@@ -82,10 +90,11 @@ export async function mount(
     tokens,
     sync,
     friends: options.friends?.(store) ?? fakeFriends(store, options.hasFriends ?? false),
-    fetch: github.fetch,
+    fetch: options.wrapFetch?.(github.fetch) ?? github.fetch,
     now: () => NOW,
     keepStorage: async () => 'kept',
     vaultTabs: options.vaultTabs === 'files' ? undefined : reviewOnTabs,
+    ...options.services,
   }
   const host = document.createElement('div')
   document.body.append(host)
@@ -147,9 +156,16 @@ export async function mount(
 
 /** Signs in a vault through the form, as a person does. */
 export async function signInWithForm(h: Harness, repo: string, token: string): Promise<void> {
+  // YAZ-5645: the first step is "Sign in with GitHub"; the token steps are behind "Use a token instead".
+  await useTokenInstead(h)
   // YAZ-5408: the typed repo is the fallback under the token; it opens with "Type the repo name".
   if (h.host.querySelector('input[name="repo"]') === null) await h.click('Type the repo name')
   await h.type('Repo', repo)
   await h.type('Token', token)
   await h.click('Connect vault')
+}
+
+/** YAZ-5645: from the sign-in's first step ("Sign in with GitHub") to the token steps, when it shows. */
+export async function useTokenInstead(h: Harness): Promise<void> {
+  if (h.button('Use a token instead') !== null) await h.click('Use a token instead')
 }

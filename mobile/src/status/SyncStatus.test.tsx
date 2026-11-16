@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, describe, expect, it, onTestFinished } from 'vitest'
 import { loadAccount, saveAccount } from '../auth/account'
-import { GOOD, mount, newPhone, NOW, signInWithForm, type Harness } from '../screens/testing'
+import { GOOD, mount, newPhone, NOW, signInWithForm, useTokenInstead, type Harness } from '../screens/testing'
 import { clockTime } from './dot'
 import { LAST_SYNC_STATE } from './lastSync'
 import { DOT_TIMES } from './storeCheck'
@@ -295,6 +295,9 @@ describe('a tap on an amber or red dot shows what is wrong (decision 12)', () =>
     expect(sheet.textContent).toContain('GitHub does not accept the token for yaseen/vault.')
     await act(async () => [...sheet.querySelectorAll('button')].find((b) => b.textContent === 'Sign in again')!.click())
     await h.settle()
+    // YAZ-5645: "Sign in with GitHub" first; the token form is one tap away.
+    expect(h.button('Sign in with GitHub')).not.toBeNull()
+    await useTokenInstead(h)
     expect(h.host.querySelector('input[name="token"]')).not.toBeNull()
     expect(h.host.querySelector('[role="dialog"]')).toBeNull()
     await h.syncSet({ status: 'synced', problem: null })
@@ -363,6 +366,7 @@ describe('the token end date (round 10 item 18; 3E)', () => {
     await h.click('Sync status: Token ends in 3 days')
     expect(h.text()).toContain('Your GitHub token ends on')
     await h.click('Replace token')
+    await useTokenInstead(h)
     expect(h.host.querySelector('input[name="token"]')).not.toBeNull()
   })
 

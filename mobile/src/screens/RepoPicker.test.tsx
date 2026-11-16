@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadVaultList } from '../store'
-import { GOOD, MANY, mount, NO_CONTENTS, NO_REPOS, signInWithForm, WRONG, type Harness } from './testing'
+import { GOOD, MANY, mount, NO_CONTENTS, NO_REPOS, signInWithForm, useTokenInstead, WRONG, type Harness } from './testing'
 
 /**
  * YAZ-5408: paste the token, then pick the repo from the token's list. The pick runs the existing check (3E) unchanged.
@@ -27,6 +27,7 @@ async function showRepos(x: Harness, token: string) {
 describe('the token comes first (YAZ-5408)', () => {
   it('the first screen has ONE field, the token; the typed repo is collapsed; no call to GitHub', async () => {
     h = await mount()
+    await useTokenInstead(h)
     expect(h.host.querySelectorAll('form input')).toHaveLength(1)
     expect(h.host.querySelector('input[name="token"]')?.getAttribute('type')).toBe('password')
     expect(h.host.querySelector('input[name="repo"]')).toBeNull()
@@ -37,6 +38,7 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it('the example text of the typed field is never sent as a value (the "owner/wiki" block)', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await h.click('Type the repo name')
     const field = h.host.querySelector<HTMLInputElement>('input[name="repo"]')!
     expect(field.value).toBe('')
@@ -49,6 +51,7 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it('lists the repos the token reaches: owner/name, private, the likely vaults first; then a tap signs in through the existing check', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, GOOD)
     await h.waitText('Choose the repo of your vault')
     // yaseen/code is pushed last but has no vault: the two vaults come first.
@@ -68,6 +71,7 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it("a pick that fails the check gives the check's own words: no vault at the top; Contents not readable", async () => {
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, GOOD)
     await h.waitText('Choose the repo of your vault')
     await h.click('yaseen/code, private')
@@ -76,6 +80,8 @@ describe('the token comes first (YAZ-5408)', () => {
     h.unmount()
 
     h = await mount()
+
+    await useTokenInstead(h)
     await showRepos(h, NO_CONTENTS)
     await h.waitText('Choose the repo of your vault')
     await h.click('yaseen/vault, private')
@@ -84,6 +90,7 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it('a token that reaches no repo: the plain words, and the way to fix the token', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, NO_REPOS)
     await h.waitText("This token can't see any repository.")
     const alert = h.host.querySelector('[role="alert"]')!
@@ -94,6 +101,7 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it('a wrong token, the rate limit, no signal: words and a way forward; "Try again" lists again', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, WRONG)
     await h.waitText('GitHub does not accept this token.')
     expect(h.host.querySelector('[role="alert"] button')?.textContent).toBe('How to make a token')
@@ -115,6 +123,7 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it('more than 8 repos: a search box narrows the list', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, MANY)
     await h.waitText('Choose the repo of your vault')
     expect(rows(h)).toHaveLength(12)
@@ -129,6 +138,7 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it('fewer than 9 repos: no search box', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, GOOD)
     await h.waitText('Choose the repo of your vault')
     expect(h.host.querySelector('input[type="search"]')).toBeNull()
@@ -136,9 +146,11 @@ describe('the token comes first (YAZ-5408)', () => {
 
   it('Settings › Add vault: the same list; a vault on the phone says "Added" and cannot be added again', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await signInWithForm(h, 'yaseen/vault', GOOD)
     await h.click('Settings')
     await h.click('Add vault')
+    await useTokenInstead(h)
     await showRepos(h, GOOD)
     await h.waitText('Choose the repo of your vault')
     const added = [...h.host.querySelectorAll<HTMLButtonElement>('.repo-row')].find((b) => b.getAttribute('aria-label')!.startsWith('yaseen/vault'))!
@@ -156,6 +168,7 @@ describe('the token comes first (YAZ-5408)', () => {
     const logs = (['log', 'info', 'warn', 'error', 'debug'] as const).map((m) => vi.spyOn(console, m))
     localStorage.clear()
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, GOOD)
     await h.waitText('Choose the repo of your vault')
     await h.click('Use another token')
@@ -169,6 +182,7 @@ describe('the token comes first (YAZ-5408)', () => {
 describe('the picker calls GitHub once for each thing (YAZ-5441, YAZ-5442)', () => {
   it('a double tap on a repo row runs the existing check ONE time', async () => {
     h = await mount()
+    await useTokenInstead(h)
     await showRepos(h, GOOD)
     await h.waitText('Choose the repo of your vault')
     const row = (label: string) => [...h!.host.querySelectorAll<HTMLButtonElement>('.repo-row')].find((b) => b.getAttribute('aria-label') === label)!
@@ -191,6 +205,7 @@ describe('the picker calls GitHub once for each thing (YAZ-5441, YAZ-5442)', () 
 
   it('the first 12 looks run at most 4 at a time', async () => {
     h = await mount()
+    await useTokenInstead(h)
     const inner = h.services.fetch!
     let open = 0
     let most = 0
