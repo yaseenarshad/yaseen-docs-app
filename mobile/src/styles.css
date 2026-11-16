@@ -60,6 +60,8 @@ html:root:where([data-scheme='dark']) {
 }
 
 html {
+  /* YAZ-5661: iOS colours the strip behind the clock and battery from the page's own background: the theme's. */
+  background: var(--bg);
   /* iOS must not grow the text on a turn, nor zoom on a double tap. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;

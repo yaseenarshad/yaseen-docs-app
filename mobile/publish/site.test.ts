@@ -38,9 +38,11 @@ describe('the web app manifest', () => {
     expect(manifest.id).toBe('/')
   })
 
-  it("its colours are the app's tokens: the dark background (no white flash in dark mode), the light bar", () => {
+  it("its colours are the app's tokens: the dark background (no white flash in dark mode); YAZ-5661: no bar colour of its own", () => {
     expect(manifest.background_color).toBe(token('dark', '--bg'))
-    expect(manifest.theme_color).toBe(token('light', '--bg'))
+    // A manifest colour is one colour for light and dark: iOS showed it (white) behind the clock in the dark app.
+    // The bar is the page's: the theme-color tags and the page's background, as Settings › Appearance says.
+    expect('theme_color' in manifest).toBe(false)
   })
 
   it('YAZ-5476: the icon is the Mac app\'s own logo (desktop/build/icon.png), full-bleed; the Y is inside the maskable safe circle', () => {
