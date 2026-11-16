@@ -1659,13 +1659,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
             ),
           },
           {
-            // The YAZ-3818 demo: the band's row shows its first cell in bold; off keeps the band alone.
+            // The YAZ-3818 demo: On shows the band's row's first cell in bold; Off (the default, YAZ-5668) keeps the band alone.
             id: 'tableBandBold',
             label: 'Bold first cell',
-            hint: 'The row band shows the row\'s first cell in bold.',
+            hint: 'The row band shows the row\'s first cell in bold. Off by default.',
             keywords: ['bold', 'row band', 'band', 'first cell', 'first column', 'highlight row', 'table'],
             render: ({ settings, onChange }) => (
-              <Segmented options={ON_OFF_OPTIONS} value={settings.tableBandBold ?? true} onChange={(tableBandBold) => onChange({ ...settings, tableBandBold })} ariaLabel="Bold first cell" />
+              <Segmented options={ON_OFF_OPTIONS} value={settings.tableBandBold ?? false} onChange={(tableBandBold) => onChange({ ...settings, tableBandBold })} ariaLabel="Bold first cell" />
             ),
           },
           {

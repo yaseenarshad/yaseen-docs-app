@@ -2336,7 +2336,7 @@ export interface SettingsState {
   tableBandStrength: number
   /** Settings › Editor › Tables › Rows it marks (the YAZ-3818 demo): the caret's row and the mouse's, or one of them. `data-table-band-rows` on `.app`. */
   tableBandRows: TableBandRows
-  /** Settings › Editor › Tables › Bold first cell (the YAZ-3818 demo): the band's row shows its first cell in bold. Off keeps the band. `data-table-band-bold` on `.app`. */
+  /** Settings › Editor › Tables › Bold first cell (the YAZ-3818 demo): On shows the band's row's first cell in bold. Off (the default, YAZ-5668) keeps the band alone. `--table-band-bold` (`tableLookVars`). */
   tableBandBold: boolean
   /** Settings › Tables › All tables › Header row (YAZ-4774): every table's header row, a page table's and a folder table's. A table's comment or a view can say otherwise. `data-table-header-*` on `.app`. */
   tableHeaderRow: HeaderRow
@@ -3079,7 +3079,7 @@ export const DEFAULT_SETTINGS: SettingsState = {
   tableBandColour: 'accent',
   tableBandStrength: 10,
   tableBandRows: 'both',
-  tableBandBold: true,
+  tableBandBold: false,
   tableHeaderRow: DEFAULT_HEADER_ROW,
   tableSubheaderRow: DEFAULT_SUBHEADER_ROW,
   tableStickySubheaders: true,

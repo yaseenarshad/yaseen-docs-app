@@ -8,6 +8,8 @@ import { TextSelection } from '@milkdown/kit/prose/state'
 import { CellSelection } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { DEFAULT_SETTINGS, TABLE_ROW_BANDS } from '@shared/types'
+import { TABLE_LOOK_DEFAULTS, tableLookOf, tableLookSettings } from '@shared/tableLook'
+import { tableLookVars } from './tableLook'
 import { rowBandKey } from './tableRowBand'
 import { cellPos, mountPage, unmountAll } from './tableTestKit'
 import tableCss from './table.css?inline'
@@ -74,6 +76,19 @@ describe('the setting', () => {
   it('Off, Calendar tables or All tables; All tables by default', () => {
     expect(TABLE_ROW_BANDS).toEqual(['off', 'calendar', 'all'])
     expect(DEFAULT_SETTINGS.tableRowBand).toBe('all')
+  })
+
+  it('Bold first cell is Off by default (YAZ-5668): a banded row\'s first cell is not bold; On makes it bold', () => {
+    expect(DEFAULT_SETTINGS.tableBandBold).toBe(false)
+    expect(TABLE_LOOK_DEFAULTS.tableBandBold).toBe(false)
+    // A vault whose table-look.json never set it reads Off; the bold rules need `--table-band-bold: on`.
+    expect(tableLookSettings({}).tableBandBold).toBe(false)
+    expect(tableLookVars(TABLE_LOOK_DEFAULTS)['--table-band-bold']).toBe('off')
+    expect(tableLookVars({ ...TABLE_LOOK_DEFAULTS, tableBandBold: true })['--table-band-bold']).toBe('on')
+    // On now differs from the default, so the file keeps it; Off is left out.
+    expect(tableLookOf({ tableBandBold: true }).look).toEqual({ bandBold: true })
+    expect(tableLookOf({ tableBandBold: false }).look ?? {}).toEqual({})
+    expect(tableLookSettings({ look: { bandBold: true } }).tableBandBold).toBe(true)
   })
 
   it('table.css: a band rule for `all` and one for `calendar` (calendar tables only), none for `off`; hover on body rows only', () => {

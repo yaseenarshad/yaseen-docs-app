@@ -115,7 +115,7 @@ export const TABLE_LOOK_DEFAULTS: Readonly<TableLookSettings> = /*#__PURE__*/ Ob
   tableRowBand: 'all',
   tableBandColour: 'accent',
   tableBandStrength: 10,
-  tableBandBold: true,
+  tableBandBold: false,
   tableTextInCells: 'wrap',
   tablePosition: 'left',
   tableWidth: null,

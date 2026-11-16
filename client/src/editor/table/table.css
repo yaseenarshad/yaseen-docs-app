@@ -453,7 +453,7 @@
   }
 }
 
-/* Bold first cell (the YAZ-3818 demo): off keeps the band, with no bold first cell. */
+/* Bold first cell (the YAZ-3818 demo): only `on` bolds the first cell; off (the default, YAZ-5668) or unset keeps the band alone. */
 @container style(--table-row-band: all) and style(--table-band-bold: on) {
   .app:not([data-table-band-rows='mouse']) .milkdown .ProseMirror .milkdown-table-block .table-band-row > :first-child,
   .app:not([data-table-band-rows='caret']) .milkdown .ProseMirror .milkdown-table-block tr:not(:first-child):hover > :first-child {

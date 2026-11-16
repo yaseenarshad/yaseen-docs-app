@@ -109,7 +109,7 @@ describe('the next time slot in table-look.json (YAZ-5541)', () => {
 describe('the table look as CSS variables (tableLook.ts)', () => {
   it('`.app` (the app\'s look): what were attributes are variables; only the set ones', () => {
     const vars = tableLookVars(TABLE_LOOK_DEFAULTS)
-    expect(vars).toMatchObject({ '--table-row-band': 'all', '--table-band-bold': 'on', '--table-now-mark': 'line', '--table-dim-past': 'shade', '--table-text': 'wrap', '--table-sticky-subheaders': 'on', '--table-width-set': 'off', '--table-header-aligned': 'off', '--cell-bullet-indent': '20px', '--table-past-shade': '6%' })
+    expect(vars).toMatchObject({ '--table-row-band': 'all', '--table-band-bold': 'off', '--table-now-mark': 'line', '--table-dim-past': 'shade', '--table-text': 'wrap', '--table-sticky-subheaders': 'on', '--table-width-set': 'off', '--table-header-aligned': 'off', '--cell-bullet-indent': '20px', '--table-past-shade': '6%' })
     expect(Object.values(vars)).not.toContain('initial')
     // A vault's surface: whole, `initial` where it sets none, so nothing of `.app`'s leaks in.
     const whole = tableLookVars({ ...TABLE_LOOK_DEFAULTS, tableWidth: 900, tablePosition: 'center' }, true)
