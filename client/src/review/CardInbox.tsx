@@ -476,7 +476,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
                     ) : addButtons === null ? (
                       <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
                     ) : (
-                      [waits, addButtons]
+                      <>
+                        {waits}
+                        {addButtons}
+                      </>
                     )}
                   </>
                 ) : (
