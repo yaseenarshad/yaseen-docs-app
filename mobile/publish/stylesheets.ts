@@ -49,7 +49,8 @@ export function stylesheetsFrom(entries: string[]): string[] {
 export function pageParts(html: string): { sheets: string[]; scripts: string[] } {
   const text = readFileSync(join(MOBILE, html), 'utf8')
   const sheets = [...text.matchAll(/<link\s+rel="stylesheet"\s+href="([^"]+)"/g)].map((m) => join(MOBILE, m[1]))
-  const scripts = [...text.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => join(MOBILE, m[1]))
+  // A script from `public/` (YAZ-5661: `/appearance-boot.js`) is served at the root, not built.
+  const scripts = [...text.matchAll(/<script\b[^>]*\bsrc="([^"]+)"/g)].map((m) => (existsSync(join(MOBILE, m[1])) ? join(MOBILE, m[1]) : join(MOBILE, 'public', m[1])))
   return { sheets, scripts }
 }
 

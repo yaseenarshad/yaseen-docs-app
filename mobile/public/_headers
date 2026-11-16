@@ -38,6 +38,8 @@
   Cache-Control: no-cache
 /manifest.webmanifest
   Cache-Control: no-cache
+/appearance-boot.js
+  Cache-Control: no-cache
 /version.txt
   Cache-Control: no-cache
 

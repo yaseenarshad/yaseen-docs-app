@@ -160,7 +160,7 @@ describe('the other headers', () => {
   })
 
   it('the pages, the worker, the manifest and the version: always asked again', () => {
-    for (const path of ['/', '/index.html', '/friend', '/friend.html', '/group', '/group.html', '/join', '/join.html', '/sw.js', '/manifest.webmanifest', '/version.txt']) {
+    for (const path of ['/', '/index.html', '/friend', '/friend.html', '/group', '/group.html', '/join', '/join.html', '/sw.js', '/manifest.webmanifest', '/version.txt', '/appearance-boot.js']) {
       expect([path, headersFor(rules, path)['cache-control']]).toEqual([path, 'no-cache'])
     }
   })

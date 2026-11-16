@@ -66,7 +66,7 @@ export const NOT_FIRST_LOAD: RegExp[] = [
 export const NEVER_BUNDLED: RegExp[] = [/^mobile\/src\/dev\//, /\.test\.[cm]?[jt]sx?$/, /(^|\/|\.)testing\.[cm]?[jt]sx?$/, /\.research\.[cm]?[jt]sx?$/, /fixture/i, /cssAudit/, /^mobile\/src\/friends\/check\d+\//]
 
 /** The files the publish needs. */
-export const PARTS = ['index.html', 'friend.html', 'group.html', 'join.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt']
+export const PARTS = ['index.html', 'friend.html', 'group.html', 'join.html', '_headers', 'sw.js', 'manifest.webmanifest', 'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'version.txt', 'appearance-boot.js']
 export const missingParts = (paths: string[]) => PARTS.filter((p) => !paths.includes(p))
 
 const TEXT = /\.(html|js|css|webmanifest|json|svg|txt)$|^_headers$/
