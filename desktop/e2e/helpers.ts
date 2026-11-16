@@ -167,7 +167,8 @@ export async function openFromBlankTab(w: Page, label: string): Promise<void> {
   await expect(tabsOf(w)).toHaveText(['New tab'])
   await expect(searchBar(w)).toBeFocused()
   await w.keyboard.type(label)
-  await expect(fileRow(w, label)).toBeVisible()
+  // In a vault with IDs the result row reads "DOC-1 — Hub": "Show IDs" in search is Always by default (YAZ-4940).
+  await expect(w.locator('.tree__row--file .tree__label').filter({ hasText: new RegExp(`(^|— )${label}$`) }).first()).toBeVisible()
   await searchBar(w).press('Enter')
   await expect(activeTab(w)).toContainText(label)
 }
@@ -327,12 +328,27 @@ export const titleOf = (content: string) => (/^title: (.*)$/m.exec(content)?.[1]
 const SEEDED_LENS = 'files' as const
 
 /**
+ * The app state every seed starts from: a fresh profile, as a person has it once two things of the card work are behind
+ * them. Both are their own choices in the real app, and a spec that tests one turns it back on:
+ *  - `course.offered`: the one notice "New to cards? Take the … course" (YAZ-5272) has shown on this Mac. On a fresh
+ *    profile it stands over the top of the first window of each spec whose vault has no card.
+ *  - `settings.cardSkillInSidebar` off (Settings › Cards › "Card skill in the sidebar": Hide, YAZ-5108): the card skill's
+ *    read-only row is not added under each window's vault, so a spec's tree is its own vault's.
+ */
+export function freshState(): AppState {
+  const state = defaultAppState()
+  state.course.offered = true
+  state.settings.cardSkillInSidebar = false
+  return state
+}
+
+/**
  * One-window seed on `vault`/`file` — the no-native-dialog "open folder" (schema: shared/types.ts AppState v1).
  * No `expanded` option since YAZ-1642: the tree expansion is a session list main reads back as
  * `[]`, so a spec that needs a nested row opens its dir the way a user does — `expandDirs`.
  */
 export function seededState(vault: string, file: string | null): AppState {
-  const state = defaultAppState()
+  const state = freshState()
   state.recents = [{ path: vault, lastOpened: Date.now() }]
   state.windows = [{ id: 'w1', root: vault, roots: [vault], file, tabs: file === null ? [] : [file], rightPanel: defaultRightPanelIdentity(), sidebarCollapsed: false, sidebarLens: SEEDED_LENS, bounds: { x: 60, y: 60, width: 1100, height: 750 } }]
   state.folders = { [vault]: { expanded: [], lastFile: file, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null } }
@@ -425,7 +441,7 @@ export interface SeedWindow {
  * "Last vault", brings back only the windows on `recentRoots[0]` (YAZ-2589 D2).
  */
 export function multiWindowState(wins: SeedWindow[], recentRoots: string[]): AppState {
-  const state = defaultAppState()
+  const state = freshState()
   state.settings.startupWindows = 'all'
   const now = Date.now()
   state.recents = recentRoots.map((p, i) => ({ path: p, lastOpened: now - i }))
@@ -583,7 +599,7 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
   }, winId)
 }
 
-// ---------- a folder's OUTLINE view editor (YAZ-903; harnessed in YAZ-904) ----------
+// ---------- a folder's PAGE tab editor (the Outline view of YAZ-903 until YAZ-4584 D38; harnessed in YAZ-904) ----------
 
 /**
  * THE OUTLINE IS A PROSEMIRROR NOW, and driving one from Playwright is its own small craft — so
@@ -607,8 +623,11 @@ export async function closeWindow(app: ElectronApplication, winId: string): Prom
  * own answer, and retry the whole thing until the two agree. Never a sleep.
  */
 
-/** The outline view's editor — a real contenteditable, the page editor's own Crepe (YAZ-901). */
-export const outlineEditor = (scope: Locator) => scope.locator('.view-outline .editor-instance .ProseMirror')
+/**
+ * The folder's Page tab editor (YAZ-4584 D38): the body of its `.folder.md` in the page editor's own Crepe. It replaced
+ * the Outline view, and a stored `type: outline` reads as this tab; the fixtures hold their documents as that body.
+ */
+export const outlineEditor = (scope: Locator) => scope.locator('.view-page .editor-instance .ProseMirror')
 
 /**
  * Its bullets, in document order — nested ones included, as siblings. Read with `textContent`
@@ -659,12 +678,12 @@ export interface OutlineCaret {
 export const outlineCaret = (w: Page): Promise<OutlineCaret | null> =>
   w.evaluate(() => {
     const active = document.activeElement
-    if (active === null || !active.classList.contains('ProseMirror') || active.closest('.view-outline') === null) return null
+    if (active === null || !active.classList.contains('ProseMirror') || active.closest('.view-page') === null) return null
     const sel = document.getSelection()
     const node = sel === null ? null : sel.anchorNode
     if (sel === null || node === null) return null
     const el = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement
-    const bullet = el === null ? null : el.closest('.view-outline .content-dom > p')
+    const bullet = el === null ? null : el.closest('.view-page .content-dom > p')
     if (bullet === null) return null
     const range = document.createRange()
     range.selectNodeContents(bullet)

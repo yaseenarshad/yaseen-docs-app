@@ -81,18 +81,34 @@ export function pageSelectionHolder(doc: Document = document): Element | null {
   return null
 }
 
+/** The page's title (`PageTitle`): text of the page like its body, which a read-only page focuses on a click (YAZ-5141). */
+const PAGE_TITLE = '.page-title'
+
+/**
+ * Whether the focus counts as the page's own "nowhere" (YAZ-3140): on `<body>`, or on the title of `page` (a read-only
+ * page's title takes the focus on a click, YAZ-5141; it is still the page's text). A focused control keeps its keys.
+ */
+export function focusIsPagesOwn(doc: Document, page: Element | null): boolean {
+  const active = doc.activeElement
+  if (active === null || active === doc.body || active === doc.documentElement) return true
+  return page !== null && page.contains(active) && active.closest(PAGE_TITLE) !== null
+}
+
 /**
  * A PAGE HOLDS THE KEYS (YAZ-3140): the rule of the window's file clipboard (⌘C / ⌘X / ⌘V) and the
  * sidebar's arrows "from nowhere". A key belongs to the page when the target is a read-only body
- * (`readOnlyPageHoldsKeys`), or the focus is nowhere (`<body>`) and the reader's selection is
- * anywhere in a visible page page — the title of a read-only page takes no focus, and neither does
- * the text of its properties, comments, backlinks or reviews. Only while that page has the reader's
- * last click (YAZ-3145): a press outside every page ends it. A focused control (a sidebar row)
- * keeps its own keys, and a real "nowhere" (no claimed selection in a page) stays the sidebar's.
+ * (`readOnlyPageHoldsKeys`), or the focus is nowhere (`<body>`) or on the page's title, and the
+ * reader's selection is anywhere in a visible page page. The text of its properties, comments,
+ * backlinks or reviews takes no focus; the title of a read-only page takes it on a click, so that
+ * the read-only card's Enter is heard (YAZ-5141), and is still the page's text. Only while that page
+ * has the reader's last click (YAZ-3145): a press outside every page ends it. A focused control (a
+ * sidebar row) keeps its own keys, and a real "nowhere" (no claimed selection in a page) stays the sidebar's.
  */
 export function pageHoldsKeys(target: EventTarget | null): boolean {
   if (readOnlyPageHoldsKeys(target)) return true
   if (!(target instanceof Element)) return false
   const doc = target.ownerDocument
-  return (target === doc.body || target === doc.documentElement) && pageSelectionHolder(doc) !== null
+  if (target !== doc.body && target !== doc.documentElement && target.closest(PAGE_TITLE) === null) return false
+  const holder = pageSelectionHolder(doc)
+  return holder !== null && (target.closest(PAGE_TITLE) === null || holder.contains(target))
 }

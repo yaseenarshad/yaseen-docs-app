@@ -1,5 +1,6 @@
 /**
- * Frozen Table axes (YAZ-742, YAZ-1151): the Properties menu persists one positional prefix count
+ * Frozen Table axes (YAZ-742, YAZ-1151): a header's right-click, "Freeze up to this column" (YAZ-4534; the only door
+ * since YAZ-4908), persists one positional prefix count
  * in the folder's settings (`KPIs/.folder.md`), the semantic table sticks that prefix across
  * header/body/footer, and its existing header stays pinned while the folder's tab scrolls
  * vertically.
@@ -12,8 +13,6 @@
  * and always sticky at `left: 0` — so the frozen prefix counts DATA columns and their sticky
  * offsets start at 44px, and every `nth` below skips that one cell. Headers wear LABELS, not keys.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -41,6 +40,16 @@ const headers = () => table().locator('thead th')
 const firstBodyRow = () => table().locator('tbody tr:not(.view-table__group):not(.view-table__spacer)').first().locator('td')
 const footer = () => table().locator('tfoot td')
 const propsMenu = () => contents(win).locator('.view-popover')
+/** A header's right-click, then its "Freeze up to this column" (YAZ-4534): the prefix up to that column. */
+async function freezeUpTo(label: string): Promise<void> {
+  // The right-click lands on the header itself: in a narrow window a column can stand partly under the frozen ones.
+  const header = headers().filter({ hasText: new RegExp(`^${label}$`) })
+  await header.scrollIntoViewIfNeeded()
+  const box = (await header.boundingBox())!
+  await header.dispatchEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: box.x + box.width - 8, clientY: box.y + box.height / 2 })
+  // The 760 × 520 window can put the menu's lower rows past its edge: the item is pressed where it stands.
+  await win.getByRole('menuitem', { name: 'Freeze up to this column', exact: true }).dispatchEvent('click')
+}
 const folderPath = () => path.join(vault, FOLDER)
 /** Where the folder's view settings live (YAZ-2290 D1). */
 const settingsFile = () => path.join(folderPath(), '.folder.md')
@@ -71,7 +80,7 @@ async function updateTableSettings(update: (view: OnDiskView) => void): Promise<
 }
 
 async function openProperties(): Promise<Locator> {
-  await contents(win).locator('[aria-label="Properties"]').click()
+  await contents(win).locator('[aria-label="Columns and view"]').click()
   await expect(propsMenu()).toBeVisible()
   return propsMenu()
 }
@@ -124,10 +133,8 @@ test('step 1 — the header and selected prefix hold while the two scroll axes m
   // The vertical freeze is unconditional — before and after any column choice.
   expect(await headers().first().evaluate((cell) => ({ position: getComputedStyle(cell).position, top: getComputedStyle(cell).top }))).toEqual({ position: 'sticky', top: '0px' })
 
-  const menu = await openProperties()
-  await menu.locator('[aria-label="Frozen columns"]').selectOption('2')
+  await freezeUpTo('Kpi category')
   await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(2)
-  await win.keyboard.press('Escape')
 
   // Two DATA columns frozen; the `#` gutter is its own always-sticky cell and wears no frozen class.
   await expect(table().locator('thead th.view-table__frozen')).toHaveCount(2)
@@ -230,9 +237,11 @@ test('step 2 — resize, reorder and hide update the positional prefix without a
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category', 'Funnel stages'])
   await expect(headers().nth(2)).toHaveClass(/view-table__frozen/)
 
-  await menu.locator('[aria-label="Frozen columns"]').selectOption('3')
+  await win.keyboard.press('Escape')
+  await freezeUpTo('Funnel stages')
   await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(3)
-  await menu.locator('[aria-label="Show Funnel stages"]').uncheck()
+  const again = await openProperties()
+  await again.locator('[aria-label="Show Funnel stages"]').uncheck()
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category'])
   await expect.poll(async () => (await tableSettings()).frozenColumns, { timeout: 10_000 }).toBe(2)
   expect((await tableSettings()).order).toEqual(['file.name', 'note.kpi_category'])
@@ -247,8 +256,10 @@ test('step 3 — the frozen prefix survives the real quit and relaunch path', as
 
   await expect(headers()).toHaveText(['#', 'Name', 'Kpi category'])
   await expect(table().locator('thead th.view-table__frozen')).toHaveCount(2)
-  const menu = await openProperties()
-  await expect(menu.locator('[aria-label="Frozen columns"]')).toHaveValue('2')
+  // The header's menu names the prefix it holds: up to Kpi category.
+  await headers().filter({ hasText: /^Kpi category$/ }).click({ button: 'right' })
+  await expect(win.getByRole('menuitem', { name: '✓ Frozen up to this column', exact: true })).toBeVisible()
+  await win.keyboard.press('Escape')
   expect((await tableSettings()).frozenColumns).toBe(2)
 
   await quitApp(app)

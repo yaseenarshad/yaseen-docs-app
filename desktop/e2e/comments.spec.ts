@@ -62,7 +62,7 @@ test('step 1 — a page with no comments starts collapsed; a titled comment land
   const box = composer(win, 'Leave a comment…')
   await box.locator('textarea').fill('line one\nline two')
   await box.locator('input[aria-label="Title (optional)"]').fill('Plan')
-  await box.locator('button', { hasText: /^Comment$/ }).click()
+  await box.locator('button', { hasText: /^Comment \(/ }).click() // "Comment (Cmd+Enter)": the action, then its keys (YAZ-5332)
 
   await expect(header(win)).toContainText('Comments (1)')
   await expect(itemByMark(win, '#1').locator('.comments__summary')).toHaveText('Plan')

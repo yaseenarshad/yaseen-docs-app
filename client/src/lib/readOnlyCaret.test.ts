@@ -42,6 +42,18 @@ describe('pageHoldsKeys (YAZ-3140): the page the reader is in holds its keys', (
     expect(pageHoldsKeys(document.body)).toBe(true)
   })
 
+  it('a click on a read-only TITLE gives the title the focus (YAZ-5141): the page still holds the keys, so ⌘C copies no file', () => {
+    const { host, title } = page(true)
+    const heading = title.parentElement!
+    heading.tabIndex = 0
+    pointAt(heading)
+    heading.focus()
+    document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+    expect(document.activeElement).toBe(heading)
+    expect(pageSelectionHolder()).toBe(host)
+    expect(pageHoldsKeys(heading)).toBe(true)
+  })
+
   it('a caret (a plain click) counts, and so does a selection that only ENDS in the page', () => {
     const { title } = page(true)
     pointAt(title.parentElement!)

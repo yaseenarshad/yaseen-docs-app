@@ -147,10 +147,10 @@ test('step 1 — YAZ-3477: the cog menu shows above the sticky scroll lines', as
   await expect(sticky.filter({ hasText: 'step1()' })).toBeVisible()
 
   await layer(win).locator('.page-settings__trigger').click()
-  const rows = layer(win).locator('.page-settings__menu button')
+  const rows = win.locator('.page-settings__menu button')
   await expect(rows).toHaveText(['Read only', 'Wrap long lines', 'Minimap', 'Table of contents'].map((label) => new RegExp(`^${label}`)))
   // The checker's nit (YAZ-3458): the first three sit under one heading, "All code files", and each row is one line.
-  await expect(layer(win).locator('.page-settings__menu [role="group"]')).toHaveAttribute('aria-label', 'All code files')
+  await expect(win.locator('.page-settings__menu [role="group"]')).toHaveAttribute('aria-label', 'All code files')
   for (const row of await rows.all()) expect((await row.boundingBox())!.height, await row.innerText()).toBeLessThan(30)
   await shoot(win, 'codeTab-01-cog-over-sticky')
   for (const row of await rows.all()) {
@@ -159,7 +159,7 @@ test('step 1 — YAZ-3477: the cog menu shows above the sticky scroll lines', as
     expect(await menuOnTopAt(win, box!), `"${await row.innerText()}" is on top`).toBe(true)
   }
   await win.keyboard.press('Escape')
-  await expect(layer(win).locator('.page-settings__menu')).toHaveCount(0)
+  await expect(win.locator('.page-settings__menu')).toHaveCount(0)
 
   // Monaco's own order inside its box does not change: its find box still draws over the sticky lines.
   await code(win).locator('.view-line', { hasText: 'value20 ' }).click()
@@ -354,7 +354,7 @@ test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse,
   await expect(outline(win).locator('.outline__filter')).toBeFocused()
   await shoot(win, 'codeTab-08-outline-card')
   // Pin: the names stay beside the code ("Pin default" On).
-  await outline(win).locator('.toc__pin').click()
+  await outline(win).locator('.toc__pin:not(.toc__pin--all):not(.toc__pin--zoom)').click() // Pin, not the fold-all button beside it (YAZ-3938 D8)
   await expect(outline(win)).toHaveAttribute('data-names', '')
 
   // S1: Pipeline, its 40 methods, each with its icon; LIMIT. YAZ-3507: the variable in each method is a name inside a function, so no row by default.
@@ -439,12 +439,12 @@ test('step 9 — YAZ-3486: the code Outline lists the symbols; filter, collapse,
   // YAZ-3506: the cog's "Table of contents" row hides the panel of this file only; on brings it back.
   await expect(outline(win)).toHaveAttribute('aria-label', 'Table of contents')
   await layer(win).locator('.page-settings__trigger').click()
-  await layer(win).locator('.page-settings__menu button', { hasText: /^Table of contents/ }).click()
+  await win.locator('.page-settings__menu button', { hasText: /^Table of contents/ }).click()
   await expect(outline(win)).toHaveCount(0)
   await win.keyboard.press('Escape')
   await shoot(win, 'codeTab-12b-toc-off-for-this-file')
   await layer(win).locator('.page-settings__trigger').click()
-  await layer(win).locator('.page-settings__menu button', { hasText: /^Table of contents/ }).click()
+  await win.locator('.page-settings__menu button', { hasText: /^Table of contents/ }).click()
   await win.keyboard.press('Escape')
   await expect(outline(win)).toHaveCount(1)
   await expect(outline(win).locator('.outline__row[aria-current="true"] .outline__name')).toHaveText('step25')

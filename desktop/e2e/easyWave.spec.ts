@@ -99,7 +99,8 @@ async function closeAllTabs(w: Page): Promise<void> {
   for (;;) {
     const n = await tabsOf(w).count()
     if (n === 0) break
-    await w.locator('.tabbar__close').first().click()
+    // The front tab's ✕: a tab behind shows its ✕ only under the pointer.
+    await w.locator('.tabbar__tab--active .tabbar__close').click()
     await expect(tabsOf(w)).toHaveCount(n - 1)
   }
   await expect(w.locator('.start')).toBeVisible() // the new tab page (YAZ-2663 D3)

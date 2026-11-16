@@ -192,10 +192,14 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   expect(first).toMatch(DRAWING_NAME)
   // On disk it is a valid EMPTY Excalidraw scene, not a placeholder.
   const scene = JSON.parse(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')) as Record<string, unknown>
-  expect(scene).toEqual({ type: 'excalidraw', version: 2, source: 'yaseen-docs', elements: [], appState: {}, files: {} })
+  // Its `yaseendraw` block holds its made and changed times (shared/types.ts), one moment for a new drawing.
+  const stamp = (scene.yaseendraw as { createdAt: number } | undefined)?.createdAt
+  expect(stamp).toEqual(expect.any(Number))
+  expect(scene).toEqual({ type: 'excalidraw', version: 2, source: 'yaseen-docs', elements: [], appState: {}, files: {}, yaseendraw: { createdAt: stamp, updatedAt: stamp } })
   // The page gained ONE line — the plain-markdown embed — and nothing else moved.
-  await expect.poll(readPageFile).toBe(`${PAGE_BODY}\n![[${first}]]\n`)
-  await expect(editorOf(win)).toContainText(`![[${first}]]`)
+  // A new embed's view starts locked (YAZ-2571 round 7): `![[x|locked]]`.
+  await expect.poll(readPageFile).toBe(`${PAGE_BODY}\n![[${first}|locked]]\n`)
+  await expect(editorOf(win)).toContainText(`![[${first}|locked]]`)
   await shoot(win, 'drawing-02-embed-inserted')
 
   // --- second drawing: create-only writes never overwrite (YAZ-876) ---
@@ -213,8 +217,13 @@ test('step 1 — "/" offers Drawing; each pick writes its own empty scene and le
   expect(new Set(both).size).toBe(2)
   second = both.find((n) => n !== first) as string
   // The first scene is still exactly where it was; the second is its own file.
-  await expect.poll(readPageFile).toBe(`${PAGE_BODY}\n![[${first}]]\n\n![[${second}]]\n`)
-  expect(await readFile(path.join(vault, DRAWINGS_DIR, first), 'utf8')).toBe(await readFile(path.join(vault, DRAWINGS_DIR, second), 'utf8'))
+  await expect.poll(readPageFile).toBe(`${PAGE_BODY}\n![[${first}|locked]]\n\n![[${second}|locked]]\n`)
+  // The same empty scene; only the made and changed times of its `yaseendraw` block are its own.
+  const sceneOf = async (name: string) => {
+    const { yaseendraw: _times, ...scene } = JSON.parse(await readFile(path.join(vault, DRAWINGS_DIR, name), 'utf8')) as Record<string, unknown>
+    return scene
+  }
+  expect(await sceneOf(first)).toEqual(await sceneOf(second))
   // Every write finished: no tmp sibling outlives it.
   await expect.poll(drawingsDir).toEqual([first, second].sort())
   await shoot(win, 'drawing-03-second-drawing')
@@ -228,13 +237,16 @@ test('step 2 — both embeds render as windows: the picture stands where the raw
   win = await appWindow(app, 'w1')
   await expect(editorOf(win)).toContainText('drawing-page-body')
 
+  // Both scenes are empty: each window says "Empty drawing" (YAZ-4834), and draws no picture.
   await expect(previews(win)).toHaveCount(2)
-  await expect(rendered(win)).toHaveCount(2)
+  await expect(previewOf(win, first)).toHaveClass(/board-window--empty/)
+  await expect(previewOf(win, second)).toHaveClass(/board-window--empty/)
+  await expect(rendered(win)).toHaveCount(0)
   // The embed text is still IN the document — decorations only — but NOT on screen: a window
   // standing next to its own `![[…]]` is exactly the duplication this rule forbids.
   await expect(editorOf(win)).not.toContainText('![[', { useInnerText: true })
-  await expect(editorOf(win)).toContainText(`![[${first}]]`)
-  await expect(editorOf(win)).toContainText(`![[${second}]]`)
+  await expect(editorOf(win)).toContainText(`![[${first}|locked]]`)
+  await expect(editorOf(win)).toContainText(`![[${second}|locked]]`)
   await shoot(win, 'drawing-04-previews')
 
   expect(await readPageFile()).toBe(before)
@@ -256,7 +268,9 @@ test('step 3 — a scene with real elements draws, TEXT INCLUDED, without a sing
   })
   await expect(editorOf(win)).toContainText('drawing-page-body')
 
-  await expect(rendered(win)).toHaveCount(2)
+  // The drawn scene draws its picture; the empty one beside it still says "Empty drawing".
+  await expect(rendered(win)).toHaveCount(1)
+  await expect(previewOf(win, second)).toHaveClass(/board-window--empty/)
   // The drawn scene has real extent — an empty one shows "Empty drawing", no picture.
   const box = await rendered(win).first().boundingBox()
   expect(box?.width ?? 0).toBeGreaterThan(80)
@@ -285,8 +299,8 @@ test('step 4 — a corrupted sidecar says "Can\'t show drawing"; nothing crashes
   await expect(brokenChips(win)).toHaveCount(1)
   // A4: the file is there, so it is not "Missing"; it would not draw.
   await expect(brokenChips(win)).toHaveText(`Can't show drawing: ${first.replace(/\.excalidraw$/, '')}`)
-  // Its healthy neighbour is unaffected.
-  await expect(rendered(win)).toHaveCount(1)
+  // Its healthy neighbour is unaffected: the empty scene still says so.
+  await expect(previewOf(win, second)).toHaveClass(/board-window--empty/)
   await shoot(win, 'drawing-06-broken-chip')
 
   // No repair, no rewrite: the page is the same bytes and the junk is still junk.

@@ -11,14 +11,12 @@
  *     byte-identical, proven after a real quit (the autosave flush point).
  *
  * Routing (locked in YAZ-967, visibility amendment YAZ-970): each editor has its own bar; CMD+F
- * belongs to an outline while focus stands inside it, and to the page editor otherwise — and a
- * folder's tab (YAZ-2290) has no page editor at all, so there the outline answers from anywhere.
+ * belongs to the page editor of the tab in front — on a folder's tab, its Page tab (YAZ-4584 D38),
+ * the folder's own document.
  *
  * Same harness as every spec here: temp `--user-data-dir`, a COPY of the fixture vault, nothing
  * sleeps — every wait is a locator assertion on the UI consequence.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -51,7 +49,7 @@ const matches = (w: Page) => w.locator('.find-match')
 const active = (w: Page) => w.locator('.find-match--active')
 const folded = (w: Page) => w.locator('[data-outline-folded="true"]')
 
-test.describe('page page: highlights, cycling, fold reveal, untouched disk', () => {
+test.describe('a page: highlights, cycling, fold reveal, untouched disk', () => {
   let userData: string
   let vault: string
   let app: ElectronApplication
@@ -82,22 +80,28 @@ test.describe('page page: highlights, cycling, fold reveal, untouched disk', () 
     await expect(bar(win)).toBeVisible()
     await expect(input(win)).toBeFocused()
 
+    // Find opens only the folds that hide the ACTIVE match (YAZ-4787 `current`, the default). Match 1 is the
+    // parent's own line, in sight: the fold stays.
     await input(win).fill('bullet')
     await expect(counter(win)).toHaveText('1 of 3')
-    // The reveal: the fold hiding matches 2 and 3 opened the moment the query matched inside it.
-    await expect(folded(win)).toHaveCount(0)
-    await expect(matches(win)).toHaveCount(3)
+    await expect(folded(win)).toHaveCount(1)
     await expect(active(win)).toHaveText('bullet')
-    await shoot(win, 'find-page-revealed')
 
+    // The reveal: a step onto a hidden match opens the fold hiding it, and a step out folds it again.
     await win.keyboard.press('Enter')
     await expect(counter(win)).toHaveText('2 of 3')
+    await expect(folded(win)).toHaveCount(0)
+    await expect(matches(win)).toHaveCount(3)
+    await shoot(win, 'find-page-revealed')
     await win.keyboard.press('Enter')
     await expect(counter(win)).toHaveText('3 of 3')
+    await expect(folded(win)).toHaveCount(0)
     await win.keyboard.press('Enter')
     await expect(counter(win)).toHaveText('1 of 3')
+    await expect(folded(win)).toHaveCount(1)
     await win.keyboard.press('Shift+Enter')
     await expect(counter(win)).toHaveText('3 of 3')
+    await expect(folded(win)).toHaveCount(0)
 
     // Esc with the active match INSIDE the revealed fold: the landing stays open.
     await win.keyboard.press('Escape')
@@ -106,9 +110,9 @@ test.describe('page page: highlights, cycling, fold reveal, untouched disk', () 
     await expect(folded(win)).toHaveCount(0)
     await shoot(win, 'find-page-landing-open')
 
-    // Same search again, but END on the top-level first hit: now Esc puts the fold back exactly
-    // as the reader had it. Collapse by hand first (Esc's landing left it open), then reopen —
-    // the channel kept the query, and the active match starts from the caret Esc landed (3 of 3).
+    // Same search again, but END on the top-level first hit: now Esc leaves the fold as the reader had it.
+    // Collapse by hand first (Esc's landing left it open), then reopen — the channel kept the query, and the
+    // active match starts from the caret Esc landed (3 of 3), so its fold opens again.
     await win.locator('.outline-toggle').first().click()
     await expect(folded(win)).toHaveCount(1)
     await win.keyboard.press('Meta+f')
@@ -116,6 +120,7 @@ test.describe('page page: highlights, cycling, fold reveal, untouched disk', () 
     await expect(folded(win)).toHaveCount(0)
     await win.keyboard.press('Enter')
     await expect(counter(win)).toHaveText('1 of 3')
+    await expect(folded(win)).toHaveCount(1)
     await win.keyboard.press('Escape')
     await expect(folded(win)).toHaveCount(1)
     await shoot(win, 'find-page-fold-restored')
@@ -182,9 +187,9 @@ test.describe('a paragraph taller than the window: the jump lands on the match',
   })
 })
 
-test.describe('folder tab: CMD+F belongs to the outline, the only editor it has', () => {
+test.describe('folder tab: CMD+F belongs to its Page tab, the folder\'s own document', () => {
   const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-  /** The folder whose settings file ships an outline document — three lines of prose (YAZ-2290). */
+  /** The folder whose `.folder.md` ships a document — three lines of prose — on its Page tab (YAZ-4584 D38). */
   const FOLDER = 'Funnel Stages'
   /** A word that document says exactly once. */
   const WORD = 'deal'
@@ -198,7 +203,7 @@ test.describe('folder tab: CMD+F belongs to the outline, the only editor it has'
     vault = await copyVault(FIXTURE)
     app = await launchApp({ userData, seedState: seededState(vault, null) })
     win = await appWindow(app, 'w1')
-    // The folder opens on its first view, the outline, showing the document its settings hold.
+    // The folder opens on its first view, the Page tab, showing the document its `.folder.md` holds.
     await openFolder(win, path.join(vault, FOLDER))
     await expect(outlineEditor(contents(win))).toBeVisible()
     await expect(outlineLines(contents(win))).toHaveCount(3)
@@ -210,31 +215,30 @@ test.describe('folder tab: CMD+F belongs to the outline, the only editor it has'
     await rm(vault, { recursive: true, force: true })
   })
 
-  test('focus in the outline view: CMD+F opens the outline bar and finds its text', async () => {
+  test('focus in the Page tab: CMD+F opens the bar and finds its text', async () => {
     await outlineEditor(contents(win)).click()
     await win.keyboard.press('Meta+f')
     await expect(bar(win)).toHaveCount(1)
-    await expect(win.locator('.view-outline-editor .find-bar')).toBeVisible()
+    await expect(bar(win)).toBeVisible()
     await input(win).fill(WORD)
     await expect(counter(win)).toHaveText('1 of 1')
-    await expect(win.locator('.view-outline-editor .find-match--active')).toHaveText(WORD)
-    await shoot(win, 'find-outline-active')
+    await expect(contents(win).locator('.view-page .find-match--active')).toHaveText(WORD)
+    await shoot(win, 'find-folder-page-active')
     await win.keyboard.press('Escape')
     await expect(bar(win)).toHaveCount(0)
   })
 
-  test('focus outside the editor: the outline still answers — a folder’s tab HAS no page editor', async () => {
-    // A folder's tab mounts no page editor at all (YAZ-2290 D9): the views stand where a page's
-    // body would be. So there is no page bar to claim the key, and the visibility amendment
-    // routes CMD+F to the outline even from the sidebar. The sidebar's search bar is on the
-    // Search tab only (YAZ-2638 D2), so the tab is shown first.
-    await expect(win.locator('.editor-mount')).toHaveCount(0)
+  test('focus outside the editor: the Page tab still answers — it is the one editor the folder\'s tab has', async () => {
+    // The sidebar's search bar is on the Search tab only (YAZ-2638 D2), so the tab is shown first. With focus there,
+    // CMD+F goes to the page editor of the tab in front: the folder's Page tab.
     await showSearchTab(win)
     await searchBar(win).click()
     await expect(searchBar(win)).toBeFocused()
     await win.keyboard.press('Meta+f')
     await expect(bar(win)).toHaveCount(1)
-    await expect(win.locator('.view-outline-editor .find-bar')).toBeVisible()
+    await input(win).fill(WORD)
+    await expect(counter(win)).toHaveText('1 of 1')
+    await expect(contents(win).locator('.view-page .find-match--active')).toHaveText(WORD)
     await win.keyboard.press('Escape')
     await expect(bar(win)).toHaveCount(0)
   })

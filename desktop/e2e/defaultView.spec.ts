@@ -1,7 +1,7 @@
 /**
  * The saved default view, end to end (YAZ-1109, over YAZ-1104's seam): a folder may remember
  * which of its views a fresh open STARTS on, as `folder_settings.defaultView` — one name, in
- * the folder's own `.folder.md`, through the Properties menu's own door.
+ * the folder's own `.folder.md`, through its own door: the view tab's "Make default view" (YAZ-4585 D41).
  *
  * The distinction the whole arc turns on: the START persists, while which view is ACTIVE stays
  * SESSION state (🔒 rule 4). So switching tabs still writes nothing at all, the saved name never
@@ -16,8 +16,6 @@
  * Same harness as folderColumns.spec.ts (temp `--user-data-dir`, a COPY of the fixture,
  * `defaultview-` step screenshots).
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -36,7 +34,6 @@ let win: Page
 
 /** The one tab the pane calls active — `aria-selected`, which is all a reader has to go on. */
 const activeViewTab = (scope: Locator) => scope.locator('.view-tab__btn[role="tab"][aria-selected="true"]')
-const propsMenu = (scope: Locator) => scope.locator('.view-popover')
 
 const folderPath = () => path.join(vault, FOLDER)
 const settingsFile = () => path.join(folderPath(), '.folder.md')
@@ -51,13 +48,6 @@ async function settingsOnDisk(): Promise<{ defaultView?: string }> {
   return (parseFrontmatter(frontmatter).properties.folder_settings ?? {}) as { defaultView?: string }
 }
 
-/** Opens the Properties menu on the folder's Table view; the outline is never offered one. */
-async function openProperties(): Promise<Locator> {
-  await contents(win).locator('[aria-label="Properties"]').click()
-  await expect(propsMenu(contents(win))).toBeVisible()
-  return propsMenu(contents(win))
-}
-
 test.beforeAll(async () => {
   userData = await mkdtemp(path.join(tmpdir(), 'defaultview-userdata-'))
   vault = await copyVault(FIXTURE)
@@ -68,7 +58,7 @@ test.afterAll(async () => {
   await Promise.all([userData, vault].filter(Boolean).map((dir) => rm(dir, { recursive: true, force: true })))
 })
 
-test('the saved START: picked in the Properties menu, kept in the settings file, honoured on the next open', async () => {
+test('the saved START: picked on the view tab, kept in the settings file, honoured on the next open', async () => {
   test.setTimeout(60_000) // two launches and a real quit inside the one arc
 
   app = await launchApp({ userData, seedState: seededState(vault, null) })
@@ -84,14 +74,13 @@ test('the saved START: picked in the Properties menu, kept in the settings file,
   await expect(contents(win).locator('.view-table')).toBeVisible()
   expect(await readFile(settingsFile(), 'utf8')).not.toContain('defaultView')
 
-  // The START goes through its OWN door instead — the Properties menu's Page section, one
+  // The START goes through its OWN door instead — the view tab's right-click "Make default view" (YAZ-4585 D41), one
   // `folder_settings` write (🔒 D3), never a views write.
-  const menu = await openProperties()
-  const select = menu.locator('[aria-label="Default view"]')
-  await expect(select).toHaveValue('') // "First view" — the settings name none yet
-  await select.selectOption('Table')
+  await viewTabs(contents(win)).filter({ hasText: 'Table' }).click({ button: 'right' })
+  const make = win.getByRole('menuitemcheckbox', { name: 'Make default view' })
+  await expect(make).toHaveAttribute('aria-checked', 'false') // the settings name none yet: the first view
+  await make.click()
   await expect.poll(async () => (await settingsOnDisk()).defaultView, { timeout: 10_000 }).toBe('Table')
-  await win.keyboard.press('Escape')
   await shoot(win, 'defaultview-01-picked')
 
   await quitApp(app) // the REAL quit path: pending autosaves and the state write are flushed

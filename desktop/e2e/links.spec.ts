@@ -17,6 +17,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { withCommentsHint } from '../../shared/frontmatter'
 import {
   activeTab,
   appWindow,
@@ -106,9 +107,10 @@ test('step 2 — ⌘⇧-click a resolved link (Links › Open in a background ta
   await expect(editorOf(win)).toContainText(HUB_BODY) // still the hub — focus never moved
   expect(await windowCount(app)).toBe(1)
 
-  // ⌘⇧-click a link to an ALREADY-OPEN file: the tabs dedupe — count and activation unchanged.
+  // A background tab is always a new tab, a copy when the page is open, as browsers do (YAZ-3943 5B): a second
+  // ⌘-click adds a second Ideas tab, and activation stays.
   await linkIn(win, 'Ideas').click({ modifiers: ['Meta'] })
-  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas'])
+  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas', 'Ideas'])
   await expect(activeTab(win)).toHaveText('Links hub')
   await shoot(win, 'links-02-background-tab')
 })
@@ -117,7 +119,7 @@ test('step 3 — ⌘-click (Links › Open in this tab) a link whose file is alr
   await linkIn(win, 'Ideas').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Ideas')
   await expect(editorOf(win)).toContainText(IDEAS_BODY)
-  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas']) // activated, never duplicated
+  await expect(tabsOf(win)).toHaveText(['Links hub', 'Ideas', 'Ideas']) // activated, never duplicated
   await shoot(win, 'links-03-activate-existing')
 })
 
@@ -127,7 +129,7 @@ test('step 4 — ⌘-click a resolved link: the target replaces the CURRENT tab 
   await linkIn(win, 'Roadmap').click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Roadmap')
   await expect(editorOf(win)).toContainText(ROADMAP_BODY)
-  await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas']) // the hub's slot, not a new tab
+  await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas', 'Ideas']) // the hub's slot, not a new tab
   await shoot(win, 'links-04-open-current')
 })
 
@@ -140,11 +142,12 @@ test('step 5 — click an UNRESOLVED link: the page is created beside the hub (a
 
   await linkIn(win, FRESH).click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText(FRESH) // opened in the CURRENT tab, the hub's…
-  await expect(tabsOf(win)).toHaveText(['Roadmap', 'Ideas', FRESH]) // …so the link added no tab: the hub's own was the third
-  // …and the file exists ON DISK at the vault root, empty: the default location is the SOURCE page's
+  await expect(tabsOf(win)).toHaveText(['Roadmap', FRESH, 'Ideas', 'Ideas']) // …so the link added no tab: the hub's own, next to the tab it was opened from
+  // …and the file exists ON DISK at the vault root: the default location is the SOURCE page's
   // folder (YAZ-1643), and the hub is seeded at the root, so 'current' == root here.
-  // Named as the link spells it, with nothing written inside: a plain vault (YAZ-2523 🔒 V3).
-  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8').catch(() => null)).toBe('')
+  // Named as the link spells it, with nothing about the page written inside (a plain vault, YAZ-2523 🔒 V3): only the
+  // comment hint every new page carries (YAZ-4615 D10, on by default).
+  await expect.poll(() => readFile(path.join(vault, `${FRESH}.md`), 'utf8').catch(() => null)).toBe(withCommentsHint(''))
   await shoot(win, 'links-05-create-on-click')
 })
 
@@ -219,7 +222,8 @@ test('step 8b — ⌘Z gives the path back; a pasted link opens its page, and Ba
 test('step 9 — a Markdown link to a vault page opens in this tab on ⌘-click, in a background tab on ⌘⇧-click (YAZ-3609 D8, YAZ-3936)', async () => {
   const mdLink = editorOf(win).locator('a', { hasText: MD_LINK })
   await mdLink.click({ modifiers: ['Meta'] })
-  await expect(tabsOf(win).filter({ hasText: 'Roadmap' })).toHaveCount(1)
+  // Roadmap is open already: the background tab is a copy, as browsers do (YAZ-3943 5B).
+  await expect(tabsOf(win).filter({ hasText: 'Roadmap' })).toHaveCount(2)
   await expect(activeTab(win)).toHaveText('Links hub') // a background tab: the hub stays in front
   await mdLink.click({ modifiers: LINK_HERE })
   await expect(activeTab(win)).toHaveText('Roadmap')

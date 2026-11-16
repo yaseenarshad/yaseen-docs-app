@@ -13,7 +13,8 @@ import { appWindow, editorOf, launchApp, layer, nextFrame, seededState, shoot } 
 
 const PAGE = 'Slash.md'
 const BODY = '* First bullet\n* Second bullet\n'
-const TIME = '\\d{1,2}:\\d{2}(am|pm) - '
+/** The default time format, `h:mm a` (YAZ-4163): `9:05 am - `. */
+const TIME = '\\d{1,2}:\\d{2} (am|pm) - '
 
 let userData: string
 let vault: string

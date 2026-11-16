@@ -285,6 +285,24 @@ describe('a read-only page answers its view-action keys (YAZ-3125)', () => {
     page.parentElement?.remove()
   })
 
+  it('YAZ-5141: a click on the read-only TITLE gives it the focus; ⌘⇧U / ⌘⇧I still fold and unfold the page', async () => {
+    const { page, title } = mountedPage()
+    const { crepe, root } = await mount(page)
+    crepe.setReadonly(true)
+    const heading = title.parentElement!
+    heading.tabIndex = 0
+    heading.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    heading.focus()
+    document.getSelection()!.setBaseAndExtent(title, 0, title, 2)
+    expect(document.activeElement).toBe(heading)
+    expect(press('u', { shift: true }).defaultPrevented).toBe(true)
+    expect(folded(root)).toBe(3)
+    press('i', { shift: true })
+    expect(folded(root)).toBe(0)
+    expect(getMarkdownForSave(crepe)).toBe(PAGE)
+    page.parentElement?.remove()
+  })
+
   it('YAZ-3140: ⌘A from the title selects the page’s text only, never the page around it', async () => {
     const { page, title } = mountedPage()
     const { crepe, root } = await mount(page)
@@ -292,6 +310,24 @@ describe('a read-only page answers its view-action keys (YAZ-3125)', () => {
     title.parentElement!.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     document.getSelection()!.collapse(title, 1)
     ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(press('a').defaultPrevented).toBe(true)
+    const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
+    expect(view.state.selection.from).toBe(0)
+    expect(view.state.selection.to).toBe(view.state.doc.content.size)
+    const sel = document.getSelection()!
+    expect(root.contains(sel.anchorNode) && root.contains(sel.focusNode)).toBe(true)
+    page.parentElement?.remove()
+  })
+
+  it('YAZ-5141: ⌘A from the FOCUSED title selects the page’s text only, as from a title with no focus', async () => {
+    const { page, title } = mountedPage()
+    const { crepe, root } = await mount(page)
+    crepe.setReadonly(true)
+    const heading = title.parentElement!
+    heading.tabIndex = 0
+    heading.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    heading.focus()
+    document.getSelection()!.collapse(title, 1)
     expect(press('a').defaultPrevented).toBe(true)
     const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
     expect(view.state.selection.from).toBe(0)

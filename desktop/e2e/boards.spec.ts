@@ -199,8 +199,9 @@ test('step 4 — the create rows: hover New drawing → New draw.io diagram → 
   // The three rows, in order (D3), and the drawing list behind a hover — with its separator (two groups).
   await dirRow(win, 'Projects').click({ button: 'right' })
   await expect(menuParent(win, 'New page')).toBeVisible()
+  // The parent rows also hold "Add to focus ▸" above them (YAZ-4460 F4): the three create rows stand together.
   const rows = await menuParent(win).allTextContents()
-  expect(rows.slice(0, 3)).toEqual(['New page', 'New drawing', 'New folder'])
+  expect(rows.slice(rows.indexOf('New page'), rows.indexOf('New page') + 3)).toEqual(['New page', 'New drawing', 'New folder'])
   await menuParent(win, 'New drawing').hover()
   const list = win.locator('.ctx-overlay .ctx-menu__sub')
   await expect(list.locator('[role="menuitem"]')).toHaveText(['New Excalidraw drawing', 'New dated Excalidraw drawing', 'New draw.io diagram'])
@@ -263,7 +264,9 @@ test('step 5 — on a drawing tab the board menu items are on, and the rail and 
   await win.keyboard.press('Meta+c')
   await expect(panel).toBeVisible()
   await expect(panel.getByRole('tab', { name: 'Add shapes, icons, and components', selected: true })).toBeVisible()
-  await expect(panel.getByRole('button', { name: 'Components', pressed: true })).toBeVisible()
+  // The Add tab starts on one kind, Components: its Filter button counts it, and its group shows.
+  await expect(panel.getByRole('button', { name: 'Filter, 1 on' })).toBeVisible()
+  await expect(panel.getByRole('region', { name: 'Components' })).toBeVisible()
 })
 
 test('step 6 — every draw.io panel opens closed, and an outside change keeps the page and the zoom (YAZ-3420 D1, D2)', async () => {

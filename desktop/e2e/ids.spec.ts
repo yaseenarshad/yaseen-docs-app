@@ -252,9 +252,9 @@ test('step 6 — the search box finds the page by its bare number, and the row s
   // An ID matches whole: a longer number is another page's, and no page has it.
   await searchBar(win).fill(`yaz-${bare}0`)
   await expect(results(win)).toHaveCount(0)
-  // Found by its title, the row reads as the title alone.
+  // Found by its title, the row shows its ID too: "Show IDs" in search is Always by default (YAZ-4940).
   await searchBar(win).fill('fresh')
-  await expect(results(win)).toHaveText(['Fresh idea'])
+  await expect(results(win)).toHaveText([`${freshId} — Fresh idea`])
   // Esc goes back to the lens the window last showed, Files. The text would stay in the Search tab, so it is emptied first.
   await searchBar(win).fill('')
   await searchBar(win).press('Escape')

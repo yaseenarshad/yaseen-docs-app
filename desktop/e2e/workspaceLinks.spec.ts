@@ -96,12 +96,12 @@ test('step 1c — words typed right after a pill stay and save (YAZ-3655)', asyn
   await editorOf(win).getByText('Ends with').click()
   await win.keyboard.press('End')
   await win.keyboard.type(' and more', { delay: 15 })
-  // The words stay and save. A link mark grows at its end as it always has (the commonmark link is inclusive),
-  // so they join the link: what YAZ-3655 lost was the words themselves.
+  // The words stay and save (what YAZ-3655 lost was the words themselves). A pill is one unit (YAZ-3935): the caret
+  // after it is outside the link, so the words follow the link and do not join its text.
   await expect
-    .poll(async () => (await readFile(path.join(work, TODAY), 'utf8')).includes(`Ends with [the plan and more](../${PERSONAL}/${PLAN})`), { timeout: 10_000 })
+    .poll(async () => (await readFile(path.join(work, TODAY), 'utf8')).includes(`Ends with [the plan](../${PERSONAL}/${PLAN}) and more`), { timeout: 10_000 })
     .toBe(true)
-  await expect(editorOf(win)).toContainText('the plan and more')
+  await expect(editorOf(win).locator('p', { hasText: 'Ends with' })).toContainText('and more')
 })
 
 test('step 1d — find inside a pill shows the find colour, and a cut pill keeps one icon (YAZ-3657, YAZ-3663)', async () => {
@@ -142,17 +142,20 @@ test('step 1f — a pill into the other vault names it (D22); a pill and a [[lin
   // The vault's name is a piece of the pill (YAZ-3738 D4): the `link-pill__vault` widget inside the link, not a `::after`.
   const vault = editorOf(win).locator('a', { hasText: 'the gym plan' }).locator('.link-pill__vault')
   await expect(vault).toHaveCount(1)
-  expect(await vault.textContent()).toBe(` (${PERSONAL})`)
+  // The name is its own piece; the brackets around it are the tail's other pieces (`linkPillLook.ts`).
+  expect(await vault.textContent()).toBe(PERSONAL)
+  await expect(vault.locator('..')).toContainText(`(${PERSONAL})`)
   expect(await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).evaluate((el) => getComputedStyle(el, '::after').content)).toBe('none')
   const rows = () => win.locator('.ctx-menu--editor .ctx-menu__item').allTextContents()
   // The one link menu of a page that is there (YAZ-3740): no "Copy link"; "Open in" is the parent of its flyout.
-  const LINK_ROWS = ['Open', 'Open in new tab', 'Show in sidebar', 'Copy name', 'Copy path', 'Add to favorites', 'Add to focus', 'Open in', 'Edit link', 'Remove link']
+  // The pill's own menu also has "Open in Explore" and "Pill style"; its head names no page.
+  const LINK_ROWS = ['Open', 'Open in new tab', 'Open in Explore', 'Show in sidebar', 'Copy name', 'Copy path', 'Add to favorites', 'Add to focus', 'Open in', 'Pill style', 'Edit link', 'Remove link']
   await editorOf(win).locator('.link-pill--first', { hasText: 'the gym plan' }).click({ button: 'right' })
-  await expect.poll(rows).toEqual([`Plan (${PERSONAL})`, ...LINK_ROWS])
+  await expect.poll(rows).toEqual(LINK_ROWS)
   await shoot(win, 'workspace-links-01f-menu')
   await win.keyboard.press('Escape')
   await editorOf(win).locator('.wikilink', { hasText: 'Ideas' }).click({ button: 'right' })
-  await expect.poll(rows).toEqual(['Ideas', ...LINK_ROWS])
+  await expect.poll(rows).toEqual(LINK_ROWS) // a [[link]] gives the same menu (D23)
   await win.keyboard.press('Escape')
   await expect(win.locator('.ctx-menu--editor')).toHaveCount(0)
   // D17: words selected in the page, right-click › Add link… (the page menu, YAZ-3653) opens the link box on them.

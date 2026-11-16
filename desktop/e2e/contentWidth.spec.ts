@@ -3,12 +3,11 @@
  * mapping, aligned page/folder surfaces, live switching, persistence, and narrow-window
  * fallback. The app runs against a copied vault and isolated `--user-data-dir` throughout.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { CONTENT_TEXT_WIDTHS } from '../../shared/types'
 import { appWindow, contents, copyVault, launchApp, layer, openFolder, quitApp, readState, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -17,6 +16,9 @@ test.setTimeout(60_000)
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
 const PAGE = path.join('Funnel Stages', 'Lead Gen.md')
 const FOLDER = 'KPIs'
+/** A step's column at most (YAZ-5144): its text's widest and the column's two 48 px sides — Narrow 736, Medium 996. */
+const NARROW = CONTENT_TEXT_WIDTHS.narrow! + 96
+const MEDIUM = CONTENT_TEXT_WIDTHS.medium! + 96
 
 async function pickContentWidth(win: Page, label: 'Narrow' | 'Medium' | 'Full'): Promise<void> {
   await win.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -30,6 +32,15 @@ async function pickContentWidth(win: Page, label: 'Narrow' | 'Medium' | 'Full'):
 async function computedMaxWidths(win: Page, selectors: readonly string[]): Promise<string[]> {
   return layer(win).locator('.editor-host').evaluate((host, requested) =>
     requested.map((selector) => getComputedStyle(host.querySelector(selector)!).maxWidth), selectors)
+}
+
+/** Full is the window (YAZ-5144: `100vw`, wider than any column): each surface's cap is none, or wider than its host. */
+async function capsWiderThanHost(win: Page, selectors: readonly string[]): Promise<boolean> {
+  return layer(win).locator('.editor-host').evaluate((host, requested) =>
+    requested.every((selector) => {
+      const max = getComputedStyle(host.querySelector(selector)!).maxWidth
+      return max === 'none' || parseFloat(max) >= host.clientWidth
+    }), selectors)
 }
 
 async function alignedWithinHost(win: Page, selectors: readonly string[], cap: number | null): Promise<boolean> {
@@ -69,15 +80,15 @@ test('Narrow → Medium → Full changes the real page surfaces live and persist
 
   const pageSurfaces = ['.page-header', '.editor-instance', '.backlinks'] as const
   await expect(layer(win).locator('.editor-instance')).toBeVisible()
-  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual(['1040px', '1040px', '1040px'])
-  await expect.poll(() => alignedWithinHost(win, pageSurfaces, 1040)).toBe(true)
+  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual([`${NARROW}px`, `${NARROW}px`, `${NARROW}px`])
+  await expect.poll(() => alignedWithinHost(win, pageSurfaces, NARROW)).toBe(true)
 
   await pickContentWidth(win, 'Medium')
-  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual(['1440px', '1440px', '1440px'])
-  await expect.poll(() => alignedWithinHost(win, pageSurfaces, 1440)).toBe(true)
+  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual([`${MEDIUM}px`, `${MEDIUM}px`, `${MEDIUM}px`])
+  await expect.poll(() => alignedWithinHost(win, pageSurfaces, MEDIUM)).toBe(true)
 
   await pickContentWidth(win, 'Full')
-  await expect.poll(() => computedMaxWidths(win, pageSurfaces)).toEqual(['none', 'none', 'none'])
+  await expect.poll(() => capsWiderThanHost(win, pageSurfaces)).toBe(true)
   await expect.poll(() => alignedWithinHost(win, pageSurfaces, null)).toBe(true)
   await expect.poll(async () => (await readState(userData)).settings.contentWidth).toBe('full')
   await shoot(win, 'content-width-01-full-page')
@@ -91,6 +102,8 @@ test('Full aligns the folder view and Board, survives relaunch, and stays fluid 
   await boardTab.click()
   await expect(layer(win).locator('.view-board__hint')).toBeVisible()
   await layer(win).locator('[aria-label="Sort"]').click()
+  // "Add group level" makes the first level (YAZ-3746 D60); its "Group by" picker then takes the column.
+  await layer(win).getByRole('button', { name: '+ Add group level', exact: true }).click()
   await layer(win).locator('[aria-label="Group by"]').click()
   await layer(win).locator('[role="option"][data-value="note.kpi_category"]').click()
   await win.keyboard.press('Escape')
@@ -99,7 +112,7 @@ test('Full aligns the folder view and Board, survives relaunch, and stays fluid 
   // page body, and "Linked mentions" renders nothing for a folder no page links to.
   const folderSurfaces = ['.page-header', '.folder-view', '.comments'] as const
   await expect(layer(win).locator('.comments')).toBeVisible()
-  await expect.poll(() => computedMaxWidths(win, folderSurfaces)).toEqual(['none', 'none', 'none'])
+  await expect.poll(() => capsWiderThanHost(win, folderSurfaces)).toBe(true)
   await expect.poll(() => alignedWithinHost(win, folderSurfaces, null)).toBe(true)
   await shoot(win, 'content-width-02-full-folder-view')
 

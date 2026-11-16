@@ -46,7 +46,7 @@ import { goToNextCell } from '@milkdown/kit/prose/tables'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import type { Ctx } from '@milkdown/kit/ctx'
 import { $prose } from '@milkdown/kit/utils'
-import { PAGE_SURFACE, claimPage, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
+import { PAGE_SURFACE, claimPage, focusIsPagesOwn, isShown, pageSelectionHolder } from '../lib/readOnlyCaret'
 import { pageKeys, pageOverrides } from './pageKeys'
 import { VIEW_ONLY_CHANGE, tellReadOnlyEdit } from './readOnlyEdit'
 
@@ -159,14 +159,14 @@ function holdsReader(view: EditorView): boolean {
 }
 
 /**
- * The focus is nowhere and the reader's selection is elsewhere in THIS page's visible page — its
- * title, properties, comments, backlinks or reviews (YAZ-3140, "a page holds the keys"): the
+ * The focus is nowhere, or on this page's title (YAZ-5141), and the reader's selection is elsewhere in THIS page's
+ * visible page — its title, properties, comments, backlinks or reviews (YAZ-3140, "a page holds the keys"): the
  * page's view keys are still this page's.
  */
 function inOwnPage(view: EditorView): boolean {
   const doc = view.dom.ownerDocument
-  if (doc.activeElement !== null && doc.activeElement !== doc.body) return false
   const page = view.dom.closest(PAGE_SURFACE)
+  if (!focusIsPagesOwn(doc, page)) return false
   return page !== null && pageSelectionHolder(doc) === page
 }
 

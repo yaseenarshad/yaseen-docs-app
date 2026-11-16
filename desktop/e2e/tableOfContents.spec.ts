@@ -124,7 +124,9 @@ const lines = (w: Page) => toc(w).locator('.toc__line')
 const rail = (w: Page) => toc(w).locator('.toc__rail')
 const card = (w: Page) => toc(w).locator('.toc__card')
 const cog = (w: Page) => layer(w).locator('.page-settings__trigger')
-const menu = (w: Page) => layer(w).locator('.page-settings__menu')
+/** The Pin button: a `.toc__pin` that is neither the fold-all button (YAZ-3938 D8) nor the zoom button, which share its look. */
+const PIN = '.toc__pin:not(.toc__pin--all):not(.toc__pin--zoom)'
+const menu = (w: Page) => w.locator('.page-settings__menu')
 /** A switch of the cog's menu by its label: "Table of contents", "Heading levels". */
 const pageSwitch = (w: Page, label: string) => menu(w).locator('button[aria-pressed]', { hasText: label })
 /** A choice of "TOC made from:": Auto, Headings, Bullets. */
@@ -286,7 +288,7 @@ test('step 1 — a wide window shows the names of the headings beside the text',
   await expect(rail(win)).toHaveCount(0)
   await expect(card(win)).toHaveCount(0)
   // "Pin default" Off on a wide window: no button, the names would show in each case.
-  await expect(toc(win).locator('.toc__pin')).toHaveCount(0)
+  await expect(toc(win).locator(PIN)).toHaveCount(0)
   await shoot(win, 'toc-01-names')
 })
 
@@ -316,7 +318,7 @@ test('step 2 — a narrow window shows the lines; the mouse on them opens the ca
   await expect(card(win).locator('.toc__title')).toHaveText('Table of contents')
   await expect(card(win).locator('.toc__name')).toHaveText(HEADING_ROWS)
   // The page area is 700px wide or more, and the setting is "Pin default" Off: "Pin" is offered.
-  await expect(card(win).locator('.toc__pin')).toHaveText('Pin')
+  await expect(card(win).locator(PIN)).toHaveText('Pin')
   await shoot(win, 'toc-03-card')
 })
 
@@ -368,7 +370,7 @@ test('step 4 — ⌘J puts the keyboard on the current name; the arrows move, �
 
 test('step 5 — "Pin" and "Unpin" write the one app-wide setting', async () => {
   await openCardByMouse(win)
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
 
   // Pinned: the names show in this narrow window too, and "Unpin" is offered because it changes what shows here.
   await expect(toc(win)).toHaveAttribute('data-names', '')
@@ -386,7 +388,7 @@ test('step 5 — "Pin" and "Unpin" write the one app-wide setting', async () => 
 test('step 5b — the edge of the names: a drag changes the width, stops at the limits, and the app saves it (YAZ-2752)', async () => {
   // Pinned in the 1100px window, the names may take what leaves the text 500px (`TEXT_FLOOR`).
   await openCardByMouse(win)
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
   await expect(toc(win)).toHaveAttribute('data-names', '')
   await expect(host(win)).toHaveCSS('padding-right', `${TOC_DEFAULT_W}px`)
   const pageWidth = await layer(win).locator('section.editor').evaluate((section) => section.clientWidth)
@@ -448,7 +450,7 @@ test('step 5c — the hierarchy of the names: a tone for each level, the level l
   await shoot(win, 'toc-05c-card-lines')
 
   // The names column, for the other parts of this step.
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
   await expect(toc(win)).toHaveAttribute('data-names', '')
 
   // A click makes "Install" the current row: Guide › Setup › Install. The mouse is on the list, so
@@ -578,7 +580,8 @@ test('step 7 — "TOC made from:" selects the source of one page, and the choice
   await expect(lines(win)).toHaveCount(HEADING_ROWS.length)
 
   await cog(win).click()
-  await expect(menu(win).locator('.page-settings__label')).toContainText('TOC made from:')
+  // The cog's labelled rows (TOC made from, Outside changes glow, the block widths): this one is there.
+  await expect(menu(win).locator('.page-settings__label', { hasText: 'TOC made from:' })).toBeVisible()
   await expect(sourceChoice(win, 'Auto')).toHaveAttribute('aria-pressed', 'true')
   await sourceChoice(win, 'Bullets').click()
   // A change of the source scans at once: the rows are the bullets of the page now.
@@ -633,7 +636,7 @@ test('step 8 — the page switches: "Table of contents" hides it on this page an
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
   // Off for this page: no lines, no names, and no "TOC made from:" (there is nothing to build).
   await expect(toc(win)).toHaveCount(0)
-  await expect(menu(win).locator('.page-settings__label')).toHaveCount(0)
+  await expect(menu(win).locator('.page-settings__label', { hasText: 'TOC made from:' })).toHaveCount(0)
   await win.keyboard.press('Escape')
   await shoot(win, 'toc-08-off-for-this-page')
   // Saved IN the page (YAZ-4094 G4): `toc: false` in its frontmatter.
@@ -759,13 +762,13 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
   await expect(toc(win)).toHaveCount(0)
   await cog(win).click()
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'false')
-  await expect(menu(win).locator('.page-settings__choices')).toHaveCount(0)
+  await expect(sourceChoice(win, 'Auto')).toHaveCount(0) // no "TOC made from:" (the block widths keep their own choices)
   await shoot(win, 'toc-08c-default-off-cog')
 
   // S3: the row turns THIS page on, with "TOC made from:", and the page stores `true`.
   await pageSwitch(win, 'Table of contents').click()
   await expect(pageSwitch(win, 'Table of contents')).toHaveAttribute('aria-pressed', 'true')
-  await expect(menu(win).locator('.page-settings__choices')).toHaveCount(1)
+  await expect(sourceChoice(win, 'Auto')).toHaveCount(1)
   await win.keyboard.press('Escape')
   await expect(toc(win)).toHaveCount(1)
   await expect.poll(async () => readPageSwitches(await readFile(bulletsPath, 'utf8')).toc, { timeout: 10_000 }).toBe(true)
@@ -773,7 +776,7 @@ test('step 8c — "Table of contents default" Off: a page with no choice shows n
 
   // S11: "Pin" in the card writes "Pin default" for all pages, and the default stays Off.
   await openCardByMouse(win)
-  await card(win).locator('.toc__pin').click()
+  await card(win).locator(PIN).click()
   await expect(toc(win)).toHaveAttribute('data-names', '')
   await expect.poll(async () => (await readState(userData)).settings.tableOfContents).toBe('pinned')
   expect((await readState(userData)).settings.tocOnByDefault).toBe(false)

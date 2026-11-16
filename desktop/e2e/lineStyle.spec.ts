@@ -26,6 +26,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { TEXT_FORMATTING_VERSION } from '../../shared/textFormatting'
 import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -46,6 +47,13 @@ const lineHr = (w: Page) => lineView(w).locator('hr')
 const menu = (w: Page) => w.locator('.ctx-menu--editor')
 const pickers = (w: Page) => menu(w).locator('.block-menu-picker')
 const valueButton = (w: Page, i: number) => pickers(w).nth(i).locator('.block-menu-picker__value')
+/** A pick sets the value and the menu stays open on it; Esc closes it (once for an open panel, once for the menu). */
+async function closeMenu(w: Page): Promise<void> {
+  await expect(async () => {
+    await w.keyboard.press('Escape')
+    await expect(menu(w)).toBeHidden({ timeout: 1000 })
+  }).toPass()
+}
 const box = (w: Page) => menu(w).locator('.document-zoom__custom input:visible')
 const preset = (w: Page, text: string) => menu(w).locator('.document-zoom__presets button:visible', { hasText: text })
 /** The `hr`'s laid-out box: what the eye sees. */
@@ -105,8 +113,8 @@ test('step 1 — a plain line draws 15px tall and as wide as the row', async () 
 
 test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on disk', async () => {
   await openLineMenu(win)
-  await expect(menu(win).locator('.ctx-menu__item')).toHaveText(['Number children'])
-  await expect(menu(win).locator('.ctx-menu__item')).toBeDisabled()
+  // A line has no children to number: its menu is its three pickers, and no row before them.
+  await expect(menu(win).locator('.ctx-menu__item')).toHaveCount(0)
   await expect(pickers(win).locator('.block-menu-picker__label')).toHaveText(['Line darkness', 'Line thickness', 'Line style'])
   await expect(pickers(win).locator('.block-menu-picker__value')).toHaveText(['Default (50%) ▾', 'Default (3px) ▾', 'Default (Solid) ▾'])
   await expect(menu(win).locator('.block-menu-picker__panel:visible')).toHaveCount(0)
@@ -119,8 +127,10 @@ test('step 2 — the 6-dot menu of a line: type 80 + Enter sets the darkness on 
   // The box's text is selected, so typing replaces it.
   await win.keyboard.type('80')
   await win.keyboard.press('Enter')
-  await expect(menu(win)).toBeHidden()
+  // Enter sets it, and the menu stays open on the new value; Esc closes it.
+  await expect(valueButton(win, 0)).toHaveText('80% ▾')
   await expect.poll(readPageFile, { timeout: 10_000 }).toBe(`${PAGE_BODY}\n\n***\n\n<!-- line: darkness 80% -->\n\nafter the line\n`)
+  await closeMenu(win)
 })
 
 test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk', async () => {
@@ -129,8 +139,8 @@ test('step 3 — the 6px preset makes the line 6px thick, on screen and on disk'
   await valueButton(win, 1).click()
   await expect(box(win)).toHaveValue('3px')
   await preset(win, '6px').click()
-  await expect(menu(win)).toBeHidden()
   await expect.poll(readPageFile, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px -->\n')
+  await closeMenu(win)
   await expect.poll(async () => Math.round((await hrBox(win)).height)).toBe(18)
   await shoot(win, 'lineStyle-03-thick')
 })
@@ -142,8 +152,8 @@ test('step 4 — the style picker makes the line dashed, in the darkness colour,
   await expect(menu(win).locator('.line-sample:visible')).toHaveCount(4)
   await shoot(win, 'lineStyle-04-style-open')
   await preset(win, 'Dashed').click()
-  await expect(menu(win)).toBeHidden()
   await expect.poll(readPageFile, { timeout: 10_000 }).toContain('***\n\n<!-- line: darkness 80%, thickness 6px, style dashed -->\n')
+  await closeMenu(win)
   await expect(lineView(win)).toHaveAttribute('data-line-pattern', 'dashed')
   const look = () => lineHr(win).evaluate((el) => {
     const style = getComputedStyle(el)
@@ -196,7 +206,7 @@ test('step 6 — ⌘Z takes the length back out in one step', async () => {
 
 test('step 7 — line numbers (S22, YAZ-3204): the thick styled line shows 3–5 at its middle, and the paragraph after it 7', async () => {
   await layer(win).locator('.page-settings__trigger').click()
-  const lineSwitch = layer(win).locator('.page-settings__menu button[aria-pressed]', { hasText: 'Line numbers' })
+  const lineSwitch = win.locator('.page-settings__menu button[aria-pressed]', { hasText: 'Line numbers' })
   await lineSwitch.click()
   await expect(lineSwitch).toHaveAttribute('aria-pressed', 'true')
   await win.keyboard.press('Escape')
@@ -281,7 +291,7 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   await shoot(win, 'lineStyle-09-settings-line')
 
   // Only the changed fields are in the vault's file (D8); the page's bytes do not change (D9).
-  await expect.poll(async () => JSON.parse(await readFile(path.join(vault, '.yaseendocs', 'text-formatting.json'), 'utf8'))).toEqual({ version: 1, line: { thickness: 4, pattern: 'dashed' } })
+  await expect.poll(async () => JSON.parse(await readFile(path.join(vault, '.yaseendocs', 'text-formatting.json'), 'utf8'))).toEqual({ version: TEXT_FORMATTING_VERSION, line: { thickness: 4, pattern: 'dashed' } })
   // The plain line follows the default at once, under the open dialog (S91); the solid one keeps its own (S92, S100).
   await expect.poll(async () => (await look(0)).image).toMatch(/^linear-gradient/)
   expect((await look(0)).height).toBeCloseTo(16, 0)

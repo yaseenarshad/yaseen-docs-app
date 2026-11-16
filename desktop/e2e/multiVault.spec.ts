@@ -71,7 +71,7 @@ const vaultRowLabels = (w: Page) => vaultRows(w).locator('.tree__label')
 const vaultTags = (w: Page) => w.locator('.sidebar__body ul[role="tree"] > li > .tree__row .tree__vault')
 const focusTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Focus"]')
 const heartTab = (w: Page) => w.locator('.sidebar__lenses [role="tab"][aria-label="Favorites"]')
-const countLine = (w: Page) => w.locator('.sidebar__body .sidebar__focus-bar span')
+const countLine = (w: Page) => w.locator('.sidebar__body .sidebar__focus-bar > span:first-child')
 /** A search result is a tree row (YAZ-2620): a MATCH, or — dim — a row that only gives a match its place. */
 const matchRows = (w: Page) => w.locator('.sidebar__body .tree__row:not(.tree__row--context)')
 /** The labels of the search's two groups (YAZ-2662 D2): "Favorites and focus", then "Everything else". */
@@ -127,6 +127,9 @@ function oneVaultState(): AppState {
     { path: vaultB, lastOpened: now - 60_000 },
   ]
   state.folders[vaultB] = { expanded: [], lastFile: null, folds: {}, baseGroups: {}, opens: {}, edits: {}, closed: {}, tocSources: {}, tocFolds: {}, sectionIndents: {}, tocSwitches: {}, name: null, key: null }
+  // Each vault's OWN lists (YAZ-2702), which this spec is about: "Separate list for workspaces" Off on both tabs. On (the
+  // default since YAZ-4450 D4), a window of two vaults shows each vault's workspace list, another file.
+  state.settings.workspaceLists = { focus: false, favorites: false }
   return state
 }
 
@@ -222,18 +225,21 @@ test('step 3 — "Add to focus" on a folder of each vault: each goes to the focu
   const projectsB = path.join(vaultB, 'Projects')
   await pickFromRowMenu(dirAt(win, projectsA), 'Add to focus')
   await expect(toast(win)).toHaveText('Added to focus')
-  await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true') // an add shows the Focus tab
+  // An add stays on its tab (YAZ-4460 demo); the Focus tab shows the list.
+  await expect(focusTab(win)).toHaveAttribute('aria-selected', 'false')
+  await focusTab(win).click()
   await expect(topLabels(win)).toHaveText(['Projects'])
   await expect(vaultTags(win)).toHaveText([ALPHA]) // said only with two or more vaults (A4)
 
   await lensTab(win, 'Files').click()
   await pickFromRowMenu(dirAt(win, projectsB), 'Add to focus')
+  await focusTab(win).click()
   await expect(focusTab(win)).toHaveAttribute('aria-selected', 'true')
   // ONE flat list on the tab, across the vaults (A1): no drag gave an order across vaults, so the rows
   // follow the vaults (YAZ-2702 Decision 3), and each top row says whose it is.
   await expect(topLabels(win)).toHaveText(['Projects', 'Projects'])
   await expect(vaultTags(win)).toHaveText([ALPHA, BETA])
-  await expect(countLine(win)).toHaveText('2 in focus')
+  await expect(countLine(win)).toHaveText('Vault list') // the vaults' own lists: workspace lists are Off here
   // Each vault holds its own list, in the vault (YAZ-2702 S1, S2); the window's state entry holds none.
   await expect.poll(() => focusOnDisk(vaultA)).toEqual(['Projects'])
   await expect.poll(() => focusOnDisk(vaultB)).toEqual(['Projects'])

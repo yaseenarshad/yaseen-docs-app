@@ -3,8 +3,8 @@
  * or ⌘W must be on disk once the app is gone. Main holds each window for its renderer's flush
  * handshake (GRO-2160, 5 s cap) and then DESTROYS it, which runs no React unmount — so a writer that
  * only saves on unmount loses its last edit. The page editor always joined the handshake; a folder's
- * OUTLINE view (its own 500 ms debounce on top of Crepe's 200 ms listener) joins it since YAZ-2174,
- * and before that lost the edit 5 of 5 times.
+ * own document — its OUTLINE view since YAZ-2174 (which before that lost the edit 5 of 5 times), its
+ * Page tab since YAZ-4584 D38, the body of its `.folder.md` — must too.
  *
  * No wait between the last keystroke and the quit/close: that is the case under test. The acceptance
  * bar is 5 of 5 per case, so run it with `--repeat-each=5`.
@@ -17,8 +17,6 @@
  *
  * Same harness as the rest of the suite: a temp `--user-data-dir`, a COPY of the fixture.
  */
-// Rewritten for YAZ-2290 (folders are the pages). Not yet run: Playwright was off limits when this was written,
-// so every selector here was read from the source, not observed. Run it once and fix what it finds.
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -42,7 +40,7 @@ import {
 } from './helpers'
 
 const FIXTURE = path.join(__dirname, 'fixtures', 'bible-vault')
-/** The folder whose settings file ships a three-line outline document (YAZ-2290). */
+/** The folder whose `.folder.md` ships a three-line document, its Page tab (YAZ-4584 D38). */
 const OUTLINE_FOLDER = 'Funnel Stages'
 
 let app: ElectronApplication | null = null
@@ -95,10 +93,10 @@ test('page editor: an edit typed right before ⌘Q, while 230 files land in the 
 })
 
 for (const how of ['⌘Q', '⌘W'] as const) {
-  test(`folder outline: an edit typed right before ${how} is on disk`, async () => {
+  test(`folder Page tab: an edit typed right before ${how} is on disk`, async () => {
     const vault = await copyVault(FIXTURE)
     dirs.push(vault)
-    // The outline is a string inside the folder's hidden settings file — that is where the edit lands.
+    // The document is the body of the folder's hidden `.folder.md` — that is where the edit lands.
     const file = path.join(vault, OUTLINE_FOLDER, '.folder.md')
     app = await launchApp({ userData: await tempDir('quitflush-outline-'), seedState: seededState(vault, null) })
     const win = await appWindow(app, 'w1')

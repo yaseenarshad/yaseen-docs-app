@@ -63,7 +63,7 @@ test('step 2 — collapsing Section A hides exactly its body and lands an h: key
   await win.locator('.ProseMirror h2', { hasText: 'Section A' }).hover() // reveal (opacity)
   await win.locator('.heading-toggle[aria-label="Collapse Section A"]').click()
 
-  await expect(win.locator('[data-heading-folded="true"]').first()).toBeAttached()
+  await expect(win.locator('.heading-toggle[aria-expanded="false"]').first()).toBeAttached()
   await expect(win.locator('.ProseMirror').getByText(ALPHA)).toBeHidden()
   await expect(win.locator('.ProseMirror').getByText(BETA)).toBeVisible()
 
@@ -92,7 +92,7 @@ test('step 3 — quit flushes; relaunch restores both folds from the shared buck
 
   app = await launchApp({ userData }) // NO re-seed: whatever quit wrote is what restores
   win = await appWindow(app, flushed.windows[0].id)
-  await expect(win.locator('[data-heading-folded="true"]').first()).toBeAttached()
+  await expect(win.locator('.heading-toggle[aria-expanded="false"]').first()).toBeAttached()
   await expect(win.locator('.ProseMirror').getByText(ALPHA)).toBeHidden()
   await expect(win.locator('.ProseMirror').getByText(BETA)).toBeVisible()
   await expect(win.locator('.ProseMirror').getByText(CHILD)).toBeHidden()
