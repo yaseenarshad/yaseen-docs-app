@@ -3,7 +3,7 @@ import { useApp } from '../app/AppState'
 import { FORWARD_LABEL, SAVE_FAILED, signInHelp, type Help } from '../app/help'
 import type { SignInError } from '../auth/check'
 import { REPO_LIST_CAP, listTokenRepos, lookForVault, orderRepos, type RepoList, type TokenRepo, type VaultLook } from '../auth/repos'
-import { listInstalledRepos } from '../auth/githubApp'
+import { githubHelp, listInstalledRepos } from '../auth/githubApp'
 import type { SignInOutcome } from '../auth/signIn'
 import { vaultId } from '../store'
 import { Problem } from './Frame'
@@ -153,7 +153,7 @@ export default function RepoPicker({ source, onOtherToken, onTyped, onChooseRepo
     if (!alive.current) return
     setPicking(null)
     if (outcome.ok) return
-    setHelp(signInHelp(outcome.error, github !== null))
+    setHelp(github !== null ? githubHelp(outcome.error) : signInHelp(outcome.error))
     setOpenId(outcome.error.kind === 'already-added' ? vaultId(outcome.error) : null)
   }
 
@@ -215,7 +215,7 @@ export default function RepoPicker({ source, onOtherToken, onTyped, onChooseRepo
     )
 
   if (listed.state === 'failed') {
-    const h = signInHelp(listed.error, github !== null)
+    const h = github !== null ? githubHelp(listed.error) : signInHelp(listed.error)
     return (
       <div className="stack">
         <Problem message={h.message} action={FORWARD_LABEL[h.forward]} onAction={() => forward(h, true)} />

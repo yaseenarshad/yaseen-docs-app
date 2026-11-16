@@ -1,7 +1,8 @@
 import { GITHUB_API, GithubError, githubClient, type FetchLike } from '../github/client'
 import type { PendingSignIn, TokenStore } from '../store/tokenStore'
 import { PENDING_MS } from '../store/tokenStore'
-import { fromGithub, type SignInError } from './check'
+import { fromGithub, signInMessage, type SignInError } from './check'
+import { signInHelp, type Help } from '../app/help'
 import { CALLBACK_PATH, GITHUB_APP_CLIENT_ID, GITHUB_AUTHORIZE } from './githubAppConfig'
 import { exchangeCode } from './githubWorker'
 import { REPO_LIST_CAP, REPO_PAGE_SIZE, orderRepos, type RepoList, type TokenRepo } from './repos'
@@ -171,4 +172,29 @@ export function githubSignInMessage(error: GithubSignInError): string {
     case 'refused':
       return 'GitHub did not finish the sign-in. Try again in a few minutes.'
   }
+}
+
+/**
+ * YAZ-5645: the words and the way forward of a sign-in check that ran with a "Sign in with GitHub" token. There is no
+ * token to make or edit: a repo the app cannot read or change is chosen on GitHub, and another account means signing
+ * in as the right one. Any other result: `signInHelp`.
+ */
+export function githubHelp(error: SignInError): Help {
+  switch (error.kind) {
+    case 'no-installed-repos':
+    case 'no-repos':
+      return { message: signInMessage({ kind: 'no-installed-repos' }), forward: 'choose-repos' }
+    case 'bad-token':
+    case 'unauthorized':
+      return { message: 'GitHub signed you out. Sign in again. Your vaults, unsent answers and settings stay.', forward: 'sign-in-github' }
+    case 'repo-not-found':
+    case 'no-access':
+    case 'no-contents':
+      return { message: `Yaseen Docs can't read ${error.repo}. On GitHub, choose it for Yaseen Docs.`, forward: 'choose-repos' }
+    case 'read-only':
+      return { message: `Yaseen Docs can read ${error.repo} but not change it. On GitHub, choose it for Yaseen Docs again, with Contents: Read and write.`, forward: 'choose-repos' }
+    case 'other-account':
+      return { message: `You signed in to GitHub as @${error.login}. This vault uses @${error.expected}. Sign in as @${error.expected}.`, forward: 'sign-in-github' }
+  }
+  return signInHelp(error)
 }

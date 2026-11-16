@@ -10,7 +10,7 @@ import type { FriendsPort, FriendsSettings } from './friendsPort'
 import { browserBack, useBrowserHistory } from './browserHistory'
 import { PLAIN_VAULT, navigate, openingTab, tabIn, type NavAction, type NavState, type VaultTabs } from './nav'
 import { IDLE, type ShellSync, type ShellSyncState } from './syncPort'
-import { SAVE_FAILED, signInHelp, type Help } from './help'
+import { SAVE_FAILED, type Help } from './help'
 import { CALLBACK_PATH, INSTALLED_PATH } from '../auth/githubAppConfig'
 import type { SignInMode } from '../screens/SignIn'
 import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
@@ -265,7 +265,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     if (githubReturn === null || loaded.phase === 'loading' || githubDone.current) return
     githubDone.current = true
     void (async () => {
-      const { finishGithubSignIn, githubSignInMessage } = await import('../auth/githubApp')
+      const { finishGithubSignIn, githubHelp, githubSignInMessage } = await import('../auth/githubApp')
       const ready = loaded.phase === 'ready'
       // A screen over the tabs: the one the sign-in started from (Add a vault, Sign in again).
       const show = (mode: SignInMode | null) => {
@@ -297,7 +297,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
         if (!ready) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
         return
       }
-      setGithub({ kind: 'failed', help: outcome === null ? SAVE_FAILED : signInHelp(outcome.error, true) })
+      setGithub({ kind: 'failed', help: outcome === null ? SAVE_FAILED : githubHelp(outcome.error) })
       show(mode)
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps

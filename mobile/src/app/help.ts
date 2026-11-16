@@ -48,29 +48,10 @@ export const FORWARD_LABEL: Record<Forward, string> = {
 }
 
 /**
- * The words and the way forward for each typed result of the sign-in check (3E).
- * YAZ-5645 `github`: the check ran with a "Sign in with GitHub" token. There is no token to make or edit: a repo the
- * app cannot read or change is chosen on GitHub, and another account means signing in as the right one.
+ * The words and the way forward for each typed result of the sign-in check (3E). For a "Sign in with GitHub" token,
+ * `githubHelp` (`auth/githubApp.ts`, in its own chunk) has other words for some results.
  */
-export function signInHelp(error: SignInError, github = false): Help {
-  if (github) {
-    switch (error.kind) {
-      case 'no-installed-repos':
-      case 'no-repos':
-        return { message: signInMessage({ kind: 'no-installed-repos' }), forward: 'choose-repos' }
-      case 'bad-token':
-      case 'unauthorized':
-        return { message: 'GitHub signed you out. Sign in again. Your vaults, unsent answers and settings stay.', forward: 'sign-in-github' }
-      case 'repo-not-found':
-      case 'no-access':
-      case 'no-contents':
-        return { message: `Yaseen Docs can't read ${error.repo}. On GitHub, choose it for Yaseen Docs.`, forward: 'choose-repos' }
-      case 'read-only':
-        return { message: `Yaseen Docs can read ${error.repo} but not change it. On GitHub, choose it for Yaseen Docs again, with Contents: Read and write.`, forward: 'choose-repos' }
-      case 'other-account':
-        return { message: `You signed in to GitHub as @${error.login}. This vault uses @${error.expected}. Sign in as @${error.expected}.`, forward: 'sign-in-github' }
-    }
-  }
+export function signInHelp(error: SignInError): Help {
   const message = signInMessage(error)
   switch (error.kind) {
     case 'no-installed-repos':
