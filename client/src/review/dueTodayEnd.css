@@ -174,9 +174,10 @@
   line-height: 20px;
 }
 
-/* The confetti's canvas (`confetti.ts`): over the Inbox only, never the whole window, and never in the way. */
+/* The confetti's canvas (`confetti.ts`): over the Inbox only, never the whole window, and never in the way. Above the
+   Inbox's own layer (`.card-inbox`, z-index 30, cardScreens.css; YAZ-5662): at 20 it drew under it, unseen. */
 .due-end-confetti {
   position: fixed;
   pointer-events: none;
-  z-index: 20;
+  z-index: 31;
 }

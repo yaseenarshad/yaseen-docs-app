@@ -183,6 +183,11 @@ export interface CardReviewSession {
   newFrom: Pick<NewCardFolder, 'folder' | 'label'>[]
   /** A stop at the end of Due today (YAZ-5043): the screen in place of the card; null while cards show. */
   end: DueTodayEnd | null
+  /**
+   * This landing on the done screen after an answer of this session (YAZ-5662): its cheer plays once for it, not when
+   * the tab opens again. Null while a card shows, and on a session with no answer yet (opened done).
+   */
+  landing: string | null
   /** The picked folders have no new card left in the scope, so new cards come from All folders (YAZ-5322). */
   newFallback: boolean
 }
@@ -1320,6 +1325,7 @@ export function useCardReview(
       newFrom: settings.newFrom.map((folder) => ({ folder, label: folderLabelOf(folder) })),
       newFallback: scopePlan.newFallback,
       end: endOf(session),
+      landing: shownCard === null && session.answered.length > 0 ? `${session.id}:${session.answered.length}` : null,
     }
     // `records`: a cached page is good only at its page's mtime.
   }, [session, loaded, fixed, turnKey, root, vaultName, host, cached, records, folders, today, scopePlan, settings, added, upNext, folderLabelOf])

@@ -131,6 +131,7 @@ import { ChevronIcon } from './cardInboxIcons'
 import { useAnswerTimer } from './answerTimer'
 import { TodayWork } from './TodayWork'
 import { DueTodayEnd } from './DueTodayEnd'
+import { DoneCheer } from './DoneCheer'
 import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
@@ -466,7 +467,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
                   </>
                 ) : session.scope === 'vault' ? (
                   <>
-                    {withTitle && <p className="card-inbox__done-title">Inbox complete.</p>}
+                    {withTitle && (
+                      <DoneCheer className="card-inbox__done-title" landing={session.landing} shown={shown}>
+                        Inbox complete.
+                      </DoneCheer>
+                    )}
                     {courseOffer !== undefined ? (
                       <CourseOffer {...courseOffer} />
                     ) : again > 0 ? (
@@ -484,7 +489,11 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
                   </>
                 ) : (
                   <>
-                    {withTitle && <p className="card-inbox__done-title">{session.scope === 'page' ? unit('This page is done.') : 'This folder is done.'}</p>}
+                    {withTitle && (
+                      <DoneCheer className="card-inbox__done-title" landing={session.landing} shown={shown}>
+                        {session.scope === 'page' ? unit('This page is done.') : 'This folder is done.'}
+                      </DoneCheer>
+                    )}
                     {waits}
                     {addButtons}
                     {more > 0 ? (

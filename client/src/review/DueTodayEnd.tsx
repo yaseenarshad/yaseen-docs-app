@@ -14,23 +14,11 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { DueTodayEnd as End } from './useCardReview'
+import { reducedMotion, useInFront } from './DoneCheer'
 import './dueTodayEnd.css'
 
 /** The stops whose animation played (by `End.id`): each plays once, also when the Inbox draws again. */
 const played = new Set<string>()
-
-const reducedMotion = (): boolean => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-
-/** Whether the screen is in front: its tab shows and the window is not hidden. */
-function useInFront(shown: boolean): boolean {
-  const [visible, setVisible] = useState(() => document.visibilityState !== 'hidden')
-  useEffect(() => {
-    const on = () => setVisible(document.visibilityState !== 'hidden')
-    document.addEventListener('visibilitychange', on)
-    return () => document.removeEventListener('visibilitychange', on)
-  }, [])
-  return shown && visible
-}
 
 const cards = (n: number): string => `${n} card${n === 1 ? '' : 's'}`
 

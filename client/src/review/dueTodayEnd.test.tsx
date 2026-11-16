@@ -9,6 +9,8 @@
  * approved items have their checks (1, 2, 3, 5, 6, 8, 14–17).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { cardBlock, cardRecords, parseCardLine, type CardRating } from '@shared/cardLine'
@@ -45,6 +47,10 @@ function reindex(): void {
   records = [...vault].map(([path, content]) => scan(path, content))
   listeners.forEach((l) => l())
 }
+
+/** The confetti (YAZ-5662): who asked for a burst, and from where. */
+const confetti = vi.hoisted(() => ({ burst: vi.fn((_from: Element, _options?: unknown) => () => undefined) }))
+vi.mock('./confetti', () => ({ confettiBurst: confetti.burst }))
 
 vi.mock('../views/writeProperty', () => ({
   transformFile: vi.fn(async (path: string, transform: (content: string) => string) => {
@@ -128,7 +134,8 @@ const answer = async (rating: CardRating): Promise<string> => {
   await step(() => review.answer(rating))
   return id
 }
-const doneText = (): string[] => [...el.querySelectorAll('.card-inbox__done > *')].map((p) => p.textContent ?? '')
+/** The done screen's lines, under its 🎉 (YAZ-5662). */
+const doneText = (): string[] => [...el.querySelectorAll('.card-inbox__done > :not(.done-cheer__party)')].map((p) => p.textContent ?? '')
 const pct = (answered: readonly CardRating[]): number => Math.round((100 * answered.filter((r) => r !== 'again').length) / answered.length)
 const endText = (): string => el.querySelector('.due-end')?.textContent ?? ''
 const button = (name: RegExp): HTMLButtonElement | undefined => [...el.querySelectorAll<HTMLButtonElement>('button')].find((b) => name.test(b.textContent ?? ''))
@@ -349,5 +356,86 @@ describe('YAZ-5043: the end of Due today', () => {
     await step(() => reindex())
     for (let i = 0; i < 3; i++) await answer('good')
     expect(review.session?.end).toMatchObject({ kind: 'missed', count: 5, remembered: 4, percent: 80 })
+  })
+})
+
+describe('YAZ-5662: Inbox complete with a 🎉, a green ✓ and one burst of confetti', () => {
+  const cheerCss = readFileSync(path.join(__dirname, 'doneCheer.css'), 'utf8')
+  const dueCss = readFileSync(path.join(__dirname, 'dueTodayEnd.css'), 'utf8')
+  /** The bursts from the done screen's 🎉 (the Due today ring has its own). */
+  const cheers = (): number => confetti.burst.mock.calls.filter(([from]) => from.classList.contains('done-cheer__party')).length
+  /** The burst waits for the 🎉 to land, then loads its code. */
+  const settle = (): Promise<void> => act(async () => void (await new Promise((r) => setTimeout(r, 400))))
+  /** The page of new cards alone: no Due today stop, so the done screen says its own title. */
+  const freshPage = async (): Promise<void> => {
+    await mount()
+    await act(async () => review.start({ page: `${ROOT}/Fresh.md` }))
+    await act(async () => reindex())
+  }
+  beforeEach(() => confetti.burst.mockClear())
+
+  it('the screen shows the 🎉 above the title and a ✓ in front of it, and one burst after the last answer', async () => {
+    await freshPage()
+    while (showing() !== null) await answer('good')
+    expect(review.session?.end).toBeNull()
+    const party = el.querySelector('.card-inbox__done .done-cheer__party')
+    expect(party?.textContent).toBe('🎉')
+    const title = party?.nextElementSibling
+    expect(title?.classList.contains('card-inbox__done-title')).toBe(true)
+    // The ✓ is its `::before`, green (`--ok`, the Due today ring's), and the title still says only its words.
+    expect(title?.classList.contains('done-cheer__title')).toBe(true)
+    expect(title?.textContent).toBe('This page is done.')
+    expect(cheerCss).toMatch(/\.done-cheer__title::before\s*\{[^}]*content:\s*'✓'[^}]*color:\s*var\(--ok\)/)
+    expect(dueCss).toMatch(/\.due-end__arc--ok\s*\{[^}]*stroke:\s*var\(--ok\)/)
+    // The confetti's canvas draws above the Inbox's own layer, not under it.
+    const z = (css: string, sel: string) => Number(new RegExp(`\\${sel}\\s*\\{[^}]*z-index:\\s*(\\d+)`).exec(css)?.[1])
+    expect(z(dueCss, '.due-end-confetti')).toBeGreaterThan(z(readFileSync(path.join(__dirname, 'cardScreens.css'), 'utf8'), '.card-inbox'))
+    await settle()
+    expect(cheers()).toBe(1)
+  })
+
+  it('once per landing: not again when the tab is opened again, nor for a session opened already done', async () => {
+    await freshPage()
+    while (showing() !== null) await answer('good')
+    await settle()
+    expect(cheers()).toBe(1)
+    // Behind a page tab and back: the screen shows again, the confetti does not.
+    shown = false
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    shown = true
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await settle()
+    expect(cheers()).toBe(1)
+    // The same page opened again, nothing left in it: the 🎉 shows, with no answer this session no burst.
+    await act(async () => review.start({ page: `${ROOT}/Fresh.md` }))
+    await act(async () => reindex())
+    expect(el.querySelector('.done-cheer__party')).not.toBeNull()
+    await settle()
+    expect(cheers()).toBe(1)
+  })
+
+  it('hidden at the last answer, it waits and plays when the tab shows', async () => {
+    await freshPage()
+    while (review.session!.counts.all > 1) await answer('good')
+    shown = false
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await answer('good')
+    expect(showing()).toBeNull()
+    await settle()
+    expect(cheers()).toBe(0)
+    shown = true
+    await act(async () => root?.render(<Screen settings={{ ...DEFAULT_REVIEW_SETTINGS }} />))
+    await settle()
+    expect(cheers()).toBe(1)
+  })
+
+  it('with Reduce motion: the 🎉 and the ✓ still, no confetti', async () => {
+    reduce = true
+    await freshPage()
+    while (showing() !== null) await answer('good')
+    expect(el.querySelector('.done-cheer__party')?.getAttribute('data-motion')).toBe('still')
+    expect(el.querySelector('.done-cheer__title')).not.toBeNull()
+    await settle()
+    expect(cheers()).toBe(0)
   })
 })

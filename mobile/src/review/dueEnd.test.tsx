@@ -247,6 +247,60 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
   })
 })
 
+describe('YAZ-5662: "Inbox complete." with a 🎉, a green ✓ and one burst of confetti (the Mac\'s `DoneCheer`)', () => {
+  const cheers = () => burst.mock.calls.filter(([from]) => from.classList.contains('done-cheer__party'))
+  const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 400))))
+  /** All of today, as in 4: the five due cards, then the new cards, to "Inbox complete.". */
+  const allDone = async () => {
+    h = await reviewSetup(FILES)
+    for (let i = 0; i < 5; i++) await answer('Remembered')
+    await h.click('Learn new cards 3')
+    for (let i = 0; i < 20 && showing() !== null; i++) await answer('Remembered')
+    expect(title()).toBe('Inbox complete.')
+  }
+
+  it('the 🎉 above the title, the ✓ its `::before`, today\'s line unchanged, and one lighter burst over the Review screen', async () => {
+    await allDone()
+    const party = q('.review__done .done-cheer__party')
+    expect(party?.textContent).toBe('🎉')
+    expect(party?.nextElementSibling?.className).toBe('review__done-title done-cheer__title')
+    expect(q('.review__done-today')).not.toBeNull()
+    await settle()
+    expect(cheers()).toHaveLength(1)
+    const options = cheers()[0]![1] as { within: Element; maxDpr: number; pieces: number }
+    expect(options.within === q('.review')).toBe(true)
+    expect([options.maxDpr, options.pieces]).toEqual([2, 80])
+  })
+
+  it('once: the app to the background and back plays no second burst', async () => {
+    await allDone()
+    await settle()
+    const visible = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+    const away = async (state: 'hidden' | 'visible') => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+      await act(async () => void document.dispatchEvent(new Event('visibilitychange')))
+    }
+    try {
+      await away('hidden')
+      await away('visible')
+      await settle()
+      expect(q('.done-cheer__party')).not.toBeNull()
+      expect(cheers()).toHaveLength(1)
+    } finally {
+      if (visible !== undefined) Object.defineProperty(document, 'visibilityState', visible)
+      else delete (document as { visibilityState?: unknown }).visibilityState
+    }
+  })
+
+  it('Reduce Motion: the 🎉 still, no confetti', async () => {
+    reduce = true
+    await allDone()
+    expect(q('.done-cheer__party')?.dataset.motion).toBe('still')
+    await settle()
+    expect(cheers()).toHaveLength(0)
+  })
+})
+
 describe('the end screen (DueEnd): waits while hidden, plays once, lazy confetti', () => {
   let root: Root | null = null
   let el: HTMLElement
