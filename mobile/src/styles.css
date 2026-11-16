@@ -662,12 +662,6 @@ button,
 :where([data-scheme='dark']) .vault-badge[data-hue='amber'] { --badge-bg: #4a3a17; --badge-fg: #f2cf87; }
 :where([data-scheme='dark']) .vault-badge[data-hue='green'] { --badge-bg: #1f3f2b; --badge-fg: #a2dcb5; }
 :where([data-scheme='dark']) .vault-badge[data-hue='pink'] { --badge-bg: #4d2236; --badge-fg: #f5aecd; }
-.vault-badge--top {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  font-size: 13px;
-}
 .vault-row__words {
   display: flex;
   flex-direction: column;

@@ -6,7 +6,6 @@ import { TodayTab } from '../daily/TodayTab'
 import { setReviewTop } from './reviewTop'
 import { SyncStatus } from './SyncStatus'
 import { useEdgeBack } from './useEdgeBack'
-import { VaultBadge, vaultNumber } from './VaultBadge'
 
 /**
  * The frame of every screen: the top bar, the screen, and (when a vault is open) the tab bar. The bars keep clear of
@@ -23,7 +22,6 @@ export function Frame({
   reader = false,
   chip,
   kind,
-  badge,
   tools,
   foot,
   children,
@@ -46,8 +44,6 @@ export function Frame({
   reader?: boolean
   /** The kind of the open file, a small glyph just before the title (the Mac sidebar's; VoiceOver says it). */
   kind?: FileKind
-  /** YAZ-5659: before the title, the open vault's number badge (`VaultBadge`). */
-  badge?: ReactNode
   /** The page's tools (its "⋯"), before the dot. */
   tools?: ReactNode
   /** After the title: the page's ID chip. */
@@ -70,7 +66,6 @@ export function Frame({
           </button>
         )}
         {kind !== undefined && <KindIcon kind={kind} className="topbar__kind" />}
-        {badge}
         <h1 className={review ? 'topbar__title sr-only' : 'topbar__title'}>{title}</h1>
         {chip}
         {tools}
@@ -137,16 +132,6 @@ export function Problem({ message, action, onAction, quiet = false }: { message:
 
 /** The vault's name in the top bar: the repo's name, as the Mac names a vault by its folder. */
 export const vaultName = (repo: string): string => repo.split('/')[1] ?? repo
-
-/**
- * YAZ-5659: the open vault's number badge for the top bar, with two vaults or more on the phone (one vault needs no
- * spotting). Null otherwise.
- */
-export function OpenVaultBadge() {
-  const app = useApp()
-  const n = app.vaultKey === null || app.list.vaults.length < 2 ? null : vaultNumber(app.list.vaults, app.vaultKey)
-  return n === null ? null : <VaultBadge n={n} className="vault-badge--top" />
-}
 
 /** The way forward of a sync problem. */
 export function ForwardButton({ forward }: { forward: Forward }) {
