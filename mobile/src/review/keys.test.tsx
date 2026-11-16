@@ -59,7 +59,7 @@ describe('the keys on the Review screen (the real engine and answer list)', () =
     h = undefined
     vi.useRealTimers()
   })
-  const OLD = '2026-10-04T09:00Z good'
+  const OLD = '2026-10-04T09:00:00.000Z good'
   const FILES = { '.yaseendocs/review.json': '{}', 'p.md': page('Memory', cardBlock('{{Spaced}} repetition.', `MC-1, ${OLD}`), cardBlock('Two?', `MC-2, ${OLD}`)) }
   const press = async (key: string, target: EventTarget = document.body) => {
     await h!.seen()
