@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { READER_ID, READER_TOKEN, READER_VAULT, seedReaderVault, writeVaultFiles } from '../dev/readerVault'
 import { mount, newPhone, type Harness } from '../screens/testing'
+import { vaultTitle } from '../settings/vaultTitle'
 import { saveVaultList, vaultId, type PhoneVault } from '../store'
 import { INDEX_STATE } from '../sync/phoneIndex'
 import { PLAIN_VAULT } from './nav'
@@ -131,16 +132,19 @@ describe('the tab bar follows the open vault (YAZ-5476)', () => {
     expect(selected(h)).toBe('Search')
   })
 
+  /** YAZ-5659: a vault row's button says the vault's name in words and its repo, so a screen reader hears which one it opens. */
+  const openName = (v: { repo: string }) => `Open ${vaultTitle(v.repo)}, ${v.repo}`
+
   it('a switch to another vault changes the tabs at once; the open tab it lacks becomes Search', async () => {
     h = await open({ ...WITH_ID, ...IDS_ON }, { ...PLAIN, ...DAILY_ON })
     expect(selected(h)).toBe('Review')
     await h.click('Settings')
-    await h.click(`Open ${SECOND.repo}`)
+    await h.click(openName(SECOND))
     await until(h, () => tabs(h!).join() === 'Search,Today')
     expect(selected(h)).toBe('Search')
     // And back: Review and Friends come back; the tab stays Search.
     await h.click('Settings')
-    await h.click(`Open ${READER_VAULT.repo}`)
+    await h.click(openName(READER_VAULT))
     await until(h, () => tabs(h!).join() === 'Friends,Review,Search')
     expect(selected(h)).toBe('Search')
   })
