@@ -296,8 +296,9 @@ function WalkRow({ beat, row, lit = 0, rec = 0, p = 1 }: { beat: Beat; row: SetR
 
 /**
  * c12-17 to c12-21, one span (YAZ-5331): a walk through Settings › Cards, in the app's labels. c12-17: the whole
- * section, its groups, and room for the settings to come. c12-18: Card look, row by row. c12-19: Daily limits; the
- * folder for new cards is an IDEA, not a row (it is not in the app yet): a dashed "Coming soon" line. c12-20: each
+ * section, its groups, and room for the settings to come. c12-18: Card look, row by row. c12-19: Daily limits; then
+ * where the folder new cards come from is chosen: in the Inbox, the "from All folders ›" picker beside Learn new cards
+ * (YAZ-5322; YAZ-4965 took away the "Coming soon" idea line: the app has it). c12-20: each
  * default with its "Recommended" mark. c12-21: Scheduling, with a quiet amber edge: be careful.
  */
 function SettingsWalk(props: SceneProps) {
@@ -343,15 +344,17 @@ function SettingsWalk(props: SceneProps) {
     const fresh = cue(b, 0, 0.112)
     const oldest = cue(b, 1, 0.357)
     const folder = cue(b, 3, 0.711)
-    label = 'Daily limits: new cards a day, and the oldest or the newest first. A folder for new cards is an idea, coming later'
+    label = 'Daily limits: new cards a day, and the oldest or the newest first. In the Inbox, "from All folders" beside Learn new cards picks the folder new cards come from'
     body = (
       <>
         <p className="later-walk__group">Daily limits</p>
         <WalkRow beat={b} row={DAILY[0]} lit={showFor(since(b, fresh, 0.3), since(b, oldest - 0.03, 0.3))} />
         <WalkRow beat={b} row={DAILY[1]} lit={showFor(since(b, oldest, 0.3), since(b, folder - 0.03, 0.3))} />
-        <p className="later-walk__idea" style={rise(b, since(b, folder, 0.5), 6)}>
-          <span className="later-walk__soon-tag">Coming soon</span> An idea: choose the folder new cards come from
-        </p>
+        <p className="later-walk__group">In the Inbox</p>
+        <div className="later-settings__row later-walk__inbox kit-glowable" style={{ ...rise(b, since(b, folder, 0.5), 6), boxShadow: `0 0 0 ${(2 * showFor(since(b, folder + 0.05, 0.3), 0)).toFixed(2)}px var(--accent)` }}>
+          <span>Learn new cards</span>
+          <span className="later-walk__from">from All folders ›</span>
+        </div>
       </>
     )
   } else if (at('c12-20')) {

@@ -122,6 +122,22 @@ describe('chapters 9 to 12 (YAZ-5121)', () => {
     }
   })
 
+  it('show where to choose the folder new cards come from, as the Inbox has it (YAZ-4965): no "Coming soon"', () => {
+    const { clock, at } = testClock(11)
+    const scene = mountScene(courseScenes('c12-19'), chapter('where-things-are'), { clock, done: () => undefined, host: memoryHost() })
+    scene.render(chapter('where-things-are').clips.find((c) => c.id === 'c12-19')!)
+    at(0.95, true)
+    const text = scene.el.textContent ?? ''
+    expect(text).not.toMatch(/coming soon|an idea/i)
+    expect(scene.el.querySelector('[role=img]')?.getAttribute('aria-label')).not.toMatch(/idea|coming later/i)
+    // Under "In the Inbox", the Inbox's own row: "Learn new cards", then its picker "from All folders ›".
+    const inbox = scene.el.querySelector('.later-walk__inbox')
+    expect(inbox?.previousElementSibling?.textContent).toBe('In the Inbox')
+    expect(inbox?.firstElementChild?.textContent).toBe('Learn new cards')
+    expect(inbox?.querySelector('.later-walk__from')?.textContent).toBe('from All folders ›')
+    scene.unmount()
+  })
+
   it('make "Folders ask … Links ask …" the big frame of chapter 10', () => {
     const { clock, at } = testClock(6)
     const scene = mountScene(courseScenes('c10-13'), chapter('links'), { clock, done: () => undefined, host: memoryHost() })
