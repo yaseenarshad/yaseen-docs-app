@@ -32,8 +32,6 @@ export interface SignInInput {
   /** The default branch of the repo when not given (the sign-in form has no branch field). */
   branch?: string
   token: string
-  /** An end date from the Mac's code, used when GitHub's header cannot be read. */
-  expiresAt?: string | null
 }
 
 export type SignInError =
@@ -141,7 +139,7 @@ export async function checkSignIn(input: SignInInput, deps: CheckDeps = {}): Pro
       name: u.name ?? null,
       avatarUrl: u.avatar_url,
       gists: await gistsAccess(client, user.headers),
-      expiresAt: readTokenEnd(user.headers) ?? input.expiresAt ?? null,
+      expiresAt: readTokenEnd(user.headers),
       checkedAt: now(),
     }
     return { ok: true, token, vault: { repo, branch, account } }

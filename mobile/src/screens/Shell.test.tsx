@@ -2,7 +2,6 @@
 import { act } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { loadAccount } from '../auth/account'
-import { formatScanCode } from '../auth/scanCode'
 import { loadVaultList, PHONE, type VaultStore } from '../store'
 import { UNIT_WORD_PATH } from '../app/unitWord'
 import { REMOVE_QUEUE } from '../friends/removeQueue'
@@ -21,7 +20,7 @@ const storedNothing = async (store: VaultStore, x: Harness) => {
 }
 
 describe('first open (row F1) and the typed sign-in (decision 13)', () => {
-  it('shows the sign-in: the token, one button, the typed fallback, the guide link and Scan a code; no tabs and no call to GitHub', async () => {
+  it('shows the sign-in: the token, one button, the typed fallback and the guide link; no tabs and no call to GitHub', async () => {
     h = await mount()
     // YAZ-5408: the token first; the repo comes from the token's list. The typed repo is the fallback.
     expect(h.text()).toContain('Paste your GitHub token. Then choose the repo of your vault.')
@@ -31,7 +30,7 @@ describe('first open (row F1) and the typed sign-in (decision 13)', () => {
     expect(h.host.querySelector('input[name="token"]')?.getAttribute('type')).toBe('password')
     expect(h.button('Connect vault')).not.toBeNull()
     expect(h.button('How to make a token')).not.toBeNull()
-    expect(h.button('Scan a code')).not.toBeNull()
+    expect(h.button('Scan a code')).toBeNull()
     expect(tabs(h)).toEqual([])
     expect(h.github.calls).toEqual([])
   })
@@ -141,56 +140,6 @@ describe('each sign-in result has plain words and a way forward', () => {
     expect([named.getAttribute('aria-label'), named.textContent]).toEqual(['the three lines', '☰'])
     expect([...glyphs[0].childNodes].filter((n) => n.nodeType === Node.TEXT_NODE && n.textContent!.includes('☰'))).toEqual([])
     await h.click('Back')
-    expect(h.button('Show my repos')).not.toBeNull()
-  })
-})
-
-describe('Scan a code (round 11, item 23), with a fake camera', () => {
-  const code = (over: Partial<{ repo: string; branch: string; token: string; expiresAt: string | null }> = {}) =>
-    formatScanCode({ repo: 'yaseen/vault', branch: 'phone', token: GOOD, expiresAt: '2026-11-20T00:00:00.000Z', ...over })
-
-  it('a code from the Mac signs in with its repo, branch and end date, and never shows the token', async () => {
-    h = await mount()
-    await h.click('Scan a code')
-    // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
-    await vi.waitFor(() => expect(h!.scanner.on).toBe(true), { timeout: 5000 })
-    await h.scan(code())
-    expect(h.scanner.on).toBe(false)
-    expect(tabs(h)).toEqual(['Friends', 'Review*', 'Search'])
-    expect(await h.tokens.read('yaseen/vault@phone')).toBe(GOOD)
-    expect((await loadAccount(h.store, 'yaseen/vault@phone'))?.expiresAt).toBe('2026-11-20T00:00:00.000Z')
-    expect(h.host.innerHTML).not.toContain(GOOD)
-  })
-
-  it('a code that is not ours: plain words, and the camera keeps reading', async () => {
-    h = await mount()
-    await h.click('Scan a code')
-    await h.scan('https://example.com/menu')
-    expect(h.text()).toContain('This is not a Yaseen Docs code.')
-    // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
-    await vi.waitFor(() => expect(h!.scanner.on).toBe(true), { timeout: 5000 })
-    await h.scan(code())
-    expect(tabs(h)).toEqual(['Friends', 'Review*', 'Search'])
-  })
-
-  it('a code whose token GitHub refuses: the sign-in words and a way forward, then "Scan again"', async () => {
-    h = await mount()
-    await h.click('Scan a code')
-    await h.scan(code({ token: WRONG }))
-    expect(h.host.querySelector('[role="alert"]')?.textContent).toContain('GitHub does not accept this token.')
-    expect(h.button('How to make a token')).not.toBeNull()
-    await h.click('Scan again')
-    // "Scan a code" is a lazy screen: wait for its chunk, by time (a loaded machine is slow).
-    await vi.waitFor(() => expect(h!.scanner.on).toBe(true), { timeout: 5000 })
-    await storedNothing(h.store, h)
-  })
-
-  it('no camera permission: plain words, and the typed form is the way forward', async () => {
-    h = await mount()
-    h.scanner.failWith = 'denied'
-    await h.click('Scan a code')
-    expect(h.text()).toContain('Yaseen Docs may not use the camera.')
-    await h.click('Paste a token')
     expect(h.button('Show my repos')).not.toBeNull()
   })
 })

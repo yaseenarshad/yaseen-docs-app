@@ -7,7 +7,6 @@ import { forgetUpdateMark, startUpdates } from './pwa/browser'
 import { lazySync } from './app/lazySync'
 import { lazyMedia } from './media/ui/lazyMedia'
 import { lazyFriends } from './friends/ui/lazy'
-import { cameraScanner } from './scan/camera'
 import { openPhoneStorage } from './store'
 import { browserFacts } from './pwa/homeScreen'
 import { asInstalled, gateOf } from './pwa/installGate'
@@ -56,7 +55,7 @@ async function start(root: Root) {
   const sync = lazySync(store, tokens)
   sync.subscribe((event) => event.type === 'state' && noteSyncStatus(event.state.status))
   const friends = lazyFriends(store, tokens, sync.loaded())
-  const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends, scanner: cameraScanner() }
+  const services = { store, tokens, sync, media: lazyMedia(sync.loaded, store), friends }
   root.render(
     <StrictMode>
       <App services={services} updates={startUpdates()} />

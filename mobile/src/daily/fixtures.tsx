@@ -2,7 +2,7 @@ import type { Root } from 'react-dom/client'
 import { dailyPageName } from '@shared/dailyPage'
 import { App } from '../App'
 import type { AppServices } from '../app/AppState'
-import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
+import { fakeFriends, fakeSync } from '../dev/fakes'
 import { READER_FILES, READER_NOT_STORED, seedReaderVault } from '../dev/readerVault'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
 
@@ -35,7 +35,7 @@ export async function mountTodayFixture(root: Root, name: string): Promise<void>
   const store = await openVaultStore(backend)
   const tokens = tokenStoreOn(backend)
   await seedReaderVault(store, tokens, files, READER_NOT_STORED)
-  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: async () => new Response('{}', { status: 401 }) }
+  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), fetch: async () => new Response('{}', { status: 401 }) }
   root.render(<App services={services} />)
   await until(() => document.querySelector('.tabbar__today') !== null)
   if (name !== 'today') {

@@ -153,11 +153,6 @@ describe('a good token', () => {
     expect(result).toMatchObject({ ok: true, account: { gists: 'yes', expiresAt: null } })
     expect(github.calls.some((c) => c.url.endsWith('/gists'))).toBe(false)
   })
-
-  it('an end date from the Mac\'s code is kept when GitHub\'s header cannot be read (a browser hides it)', async () => {
-    const result = await signIn({ repo: 'yaseen/vault', token: NO_GISTS, expiresAt: '2027-01-15T00:00:00.000Z' }, deps)
-    expect(result).toMatchObject({ ok: true, account: { expiresAt: '2027-01-15T00:00:00.000Z' } })
-  })
 })
 
 describe('F3: the token is wrong, expired or cancelled', () => {

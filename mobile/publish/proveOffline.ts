@@ -51,12 +51,13 @@ const deploy = (from: string, name: string, change: (dir: string) => void) => {
   change(dir)
   return dir
 }
-// The QR reader's chunk of v1 is NOT in v2 (as a deploy whose chunk names changed): an old page must still load it.
-const qrChunk = readdirSync(join(mobile, 'dist', 'assets')).find((f) => f.startsWith('qrDecode-'))!
+// A lazy screen's chunk of v1 (the guide's) is NOT in v2 (as a deploy whose chunk names changed): an old page must
+// still load it. (It was the QR reader's until "Scan a code" went, YAZ-5650.)
+const guideChunk = readdirSync(join(mobile, 'dist', 'assets')).find((f) => f.startsWith('SetupGuide-'))!
 const v2 = LIVE ? '' : deploy(v1, 'v2', (dir) => {
   const sw = join(dir, 'sw.js')
-  writeFileSync(sw, readFileSync(sw, 'utf8').replace(`"/assets/${qrChunk}",`, ''))
-  unlinkSync(join(dir, 'assets', qrChunk))
+  writeFileSync(sw, readFileSync(sw, 'utf8').replace(`"/assets/${guideChunk}",`, ''))
+  unlinkSync(join(dir, 'assets', guideChunk))
   const html = join(dir, 'index.html')
   writeFileSync(html, readFileSync(html, 'utf8').replace('<title>', '<meta name="proof" content="v2" /><title>'))
 })
@@ -277,7 +278,7 @@ try {
   await open(`${ORIGIN}/`)
   record('1a the app shows (sign-in)', (await until(`!!document.querySelector('input[name="token"]')`)), '')
   const h = docHeaders.at(-1) ?? {}
-  record('1b the page has the CSP, no-referrer, nosniff, the camera rule', Boolean(h['content-security-policy']?.includes('connect-src https://api.github.com') && h['referrer-policy'] === 'no-referrer' && h['x-content-type-options'] === 'nosniff' && h['permissions-policy']?.includes('camera=(self)')))
+  record('1b the page has the CSP, no-referrer, nosniff, no camera', Boolean(h['content-security-policy']?.includes('connect-src https://api.github.com') && h['referrer-policy'] === 'no-referrer' && h['x-content-type-options'] === 'nosniff' && h['permissions-policy']?.includes('camera=()')))
   const active = await until(`navigator.serviceWorker.ready.then(r => r.active && r.active.state === 'activated')`)
   const controlled = await until(`navigator.serviceWorker.controller !== null`)
   const swVer = /version:"([0-9a-z-]+)"/.exec(swText)![1]

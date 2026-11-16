@@ -128,11 +128,11 @@ describe('the Content-Security-Policy of the app', () => {
 })
 
 describe('the other headers', () => {
-  it('no referrer ever (the friend link and the token never leak), no type sniffing, the camera for this site only', () => {
+  it('no referrer ever (the friend link and the token never leak), no type sniffing, no camera', () => {
     for (const path of ['/', '/friend', '/assets/index-abc.js', '/sw.js']) {
       const h = headersFor(rules, path)
       expect([path, h['referrer-policy'], h['x-content-type-options']]).toEqual([path, 'no-referrer', 'nosniff'])
-      expect(h['permissions-policy']).toMatch(/(^|, )camera=\(self\)(,|$)/)
+      expect(h['permissions-policy']).toMatch(/(^|, )camera=\(\)(,|$)/)
       expect(h['permissions-policy']).toMatch(/microphone=\(\)/)
       expect(h['permissions-policy']).toMatch(/geolocation=\(\)/)
     }

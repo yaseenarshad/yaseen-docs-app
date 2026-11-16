@@ -29,7 +29,7 @@ export type SignInMode = { kind: 'first' } | { kind: 'add' } | { kind: 'again'; 
 
 /**
  * The sign-in screen (decision 13): the token first, then the repo from the token's list. One link
- * "How to make a token" opens "Set up your phone". "Scan a code" reads the Mac's code (round 11, item 23). The token is
+ * "How to make a token" opens "Set up your phone". The token is
  * pasted here, inside the installed app: Safari and the app do not share storage.
  */
 export function SignIn({ mode }: { mode: SignInMode }) {
@@ -164,11 +164,6 @@ export function SignIn({ mode }: { mode: SignInMode }) {
         </div>
       </form>
       )}
-      <p className="section">Or</p>
-      <button type="button" className="btn btn--wide" onClick={() => app.go({ type: 'open', route: { kind: 'scan', vault: mode.kind === 'again' ? mode.vault : undefined } })}>
-        Scan a code
-      </button>
-      <p className="muted">On your Mac: Settings › Cards › Connect your phone.</p>
       {mode.kind === 'again' && !ready && again !== null && (
         <div>
           {asking ? (

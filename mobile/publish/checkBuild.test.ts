@@ -13,7 +13,7 @@ describe('checkDist', () => {
   it('a clean build has no problem', () => expect(checkDist(ok)).toEqual([]))
 
   it('the screen fixtures (the dev-only route and its fakes)', () => {
-    for (const text of ['mountFixture(root)', 'location.hash.startsWith("#fixture")', 'fakeSync()', 'fakeScanner()']) {
+    for (const text of ['mountFixture(root)', 'location.hash.startsWith("#fixture")', 'fakeSync()']) {
       expect(checkDist([...ok, { path: 'assets/x.js', text }])).toHaveLength(1)
     }
   })

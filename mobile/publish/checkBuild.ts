@@ -14,7 +14,7 @@ export interface DistFile {
 
 const NEVER: { what: string; test: RegExp }[] = [
   // The screen fixtures (the dev-only route of 4A and its fakes): only a `--mode fixtures` build has them.
-  { what: 'the screen fixtures (dev only)', test: /mountFixture|#fixture|fakeSync\(|fakeScanner\(|fakeFriends\(/ },
+  { what: 'the screen fixtures (dev only)', test: /mountFixture|#fixture|fakeSync\(|fakeFriends\(/ },
   { what: 'a localhost address', test: /\b(localhost|127\.0\.0\.1|0\.0\.0\.0)\b|\[::1\]/ },
   { what: 'a GitHub token', test: /\b(github_pat_[A-Za-z0-9_]{40,}|gh[pousr]_[A-Za-z0-9]{30,})/ },
   { what: 'a source map link', test: /sourceMappingURL=/ },
@@ -51,8 +51,7 @@ export const NOT_FIRST_LOAD: RegExp[] = [
   /^node_modules\/ts-fsrs\//, // the review schedule
   /^node_modules\/yaml\//, // the YAML parser (the card line, the front matter)
   /^node_modules\/(marked|dompurify)\//, // the reader's Markdown
-  /^mobile\/src\/(page\/pageRender|media\/(ahead|plan|refs)|scan\/qrDecode)\.ts$/,
-  /^node_modules\/qr\//, // the QR reader
+  /^mobile\/src\/(page\/pageRender|media\/(ahead|plan|refs))\.ts$/,
   /^mobile\/src\/settings\/(whatsNew\.ts|WhatsNewList\.tsx)$/, // Settings › What's new, loaded when opened (YAZ-5446)
   /^mobile\/src\/status\/passWords\.ts$/, // the words of the dot's toast, after a tap (YAZ-5469)
   /^mobile\/src\/daily\/today\.ts$/, /^shared\/dailyPagesFile\.ts$/, // the Today button's page, after a tap (YAZ-5470)

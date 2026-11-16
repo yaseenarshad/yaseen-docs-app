@@ -3,7 +3,7 @@ import { App } from '../App'
 import type { AppServices } from '../app/AppState'
 import type { FetchLike } from '../github/client'
 import { memoryBackend, openVaultStore, tokenStoreOn } from '../store'
-import { fakeFriends, fakeScanner, fakeSync } from '../dev/fakes'
+import { fakeFriends, fakeSync } from '../dev/fakes'
 import { READER_FILES, seedReaderVault } from '../dev/readerVault'
 import { openSheet } from './sheets'
 
@@ -43,7 +43,7 @@ export async function mountExploreFixture(root: Root, name: string): Promise<voi
   }
   const explore = { ...READER_FILES, '.yaseendocs/link-click.json': '{"click":"explore"}', ...(name === 'explore-today' && daily), ...(name === 'explore-mentions' && mentions) }
   await seedReaderVault(store, tokens, name === 'explore-one' ? READER_FILES : explore)
-  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), scanner: fakeScanner(), fetch: refuseAll }
+  const services: AppServices = { store, tokens, sync: fakeSync(), friends: fakeFriends(store, false), fetch: refuseAll }
   root.render(<App services={services} />)
   await until(() => document.querySelector('[role="tab"]') !== null)
   if (name === 'explore-review') {
