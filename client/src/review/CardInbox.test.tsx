@@ -180,14 +180,18 @@ describe('the Inbox screen (YAZ-4962)', () => {
     mount(TWO_SIDES)
     const again = () => el.querySelector('.card-inbox__above .card-inbox__again')
     expect(again()).toBeNull()
-    session = { ...session, card: { ...session.card!, isNew: false, repeat: true } }
+    // A new card back for its second ✓ (YAZ-5610): in its steps, but not forgotten, so no label (YAZ-5626, Yaseen).
+    session = { ...session, card: { ...session.card!, isNew: false, repeat: true, forgot: false } }
+    render()
+    expect(again()).toBeNull()
+    session = { ...session, card: { ...session.card!, isNew: false, repeat: true, forgot: true } }
     render()
     expect(again()?.textContent).toBe('Again')
     expect(again()?.getAttribute('title')).toBe('You forgot it: it comes back until you remember it')
     // Right after the state chip, before the ID.
     expect(again()?.previousElementSibling?.classList.contains('card-inbox__state')).toBe(true)
     // Remembered: the card leaves; the next one has no label. The done screen has none.
-    session = { ...session, card: { ...session.card!, id: 'WIKI-10', repeat: undefined } }
+    session = { ...session, card: { ...session.card!, id: 'WIKI-10', repeat: undefined, forgot: undefined } }
     render()
     expect(again()).toBeNull()
   })

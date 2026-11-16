@@ -142,3 +142,26 @@ describe('YAZ-5594: ✕ on the last missed card', () => {
     expect(bar()).toEqual(['ggg', '3', '3'])
   })
 })
+
+describe('YAZ-5626: "Again" only on a card back after a ✕ (Yaseen)', () => {
+  it('a new card back for its second ✓ wears no "Again"; a ✕ on it, or on a new card, brings it back with "Again"', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 10}', 'Try/Cards in a page.md': page('Cards in a page', NC207) })
+    expect(showing()).toBe('NC-207')
+    expect(q('.review__again')).toBeNull()
+    // The first ✓: the new card comes back for its second round (YAZ-5610), with no "Again".
+    await h.click('Remembered')
+    expect(showing()).toBe('NC-207')
+    expect(q('.review__again')).toBeNull()
+    // A ✕ on its second round: back, with "Again".
+    await h.click('Forgot')
+    expect(showing()).toBe('NC-207')
+    expect(q('.review__again')?.textContent).toBe('Again')
+  })
+
+  it('a ✕ on a new card: it comes back with "Again"', async () => {
+    h = await reviewSetup({ '.yaseendocs/review.json': '{"newPerDay": 10}', 'Try/Cards in a page.md': page('Cards in a page', NC207) })
+    await h.click('Forgot')
+    expect(showing()).toBe('NC-207')
+    expect(q('.review__again')?.textContent).toBe('Again')
+  })
+})

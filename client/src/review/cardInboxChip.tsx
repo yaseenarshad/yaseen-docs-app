@@ -26,10 +26,11 @@ export function CardStateChip({ card, now = Date.now() }: { card: Pick<DueCard, 
 }
 
 /**
- * The "Again" label beside the state chip (YAZ-5594 on the phone, YAZ-5626 on the Mac): the card is back because an
- * answer left it in its steps (`repeat`, YAZ-5020); it comes back until you remember it. One rule and one text for both.
+ * The "Again" label beside the state chip (YAZ-5594 on the phone, YAZ-5626 on the Mac): the card is back because a
+ * Forgot (✕) left it in its steps (`repeat` and `forgot`, YAZ-5020); it comes back until you remember it. A new card
+ * back for its second ✓ (YAZ-5610) wears none (YAZ-5626, Yaseen). One rule and one text for both.
  */
-export const showsAgain = (card: { repeat?: boolean }): boolean => card.repeat === true
+export const showsAgain = (card: { repeat?: boolean; forgot?: boolean }): boolean => card.repeat === true && card.forgot === true
 export const AGAIN_LABEL = 'Again'
 export const AGAIN_TITLE = 'You forgot it: it comes back until you remember it'
 

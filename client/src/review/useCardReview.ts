@@ -121,6 +121,8 @@ export interface ShownCard extends DueCard {
   page: CardOnPage | null
   /** Put back by an answer that left it in its steps (YAZ-5020): a Forgot, a new card's first Remembered. */
   repeat?: boolean
+  /** Put back by a Forgot (✕, YAZ-5626): the one card that wears "Again"; a new card back for its second ✓ does not. */
+  forgot?: boolean
 }
 
 export interface CardReviewSession {
@@ -354,8 +356,10 @@ type UndoStep = AnswerStep | AddStep | ResetStep | ArchiveStep
  * A card of a session's queue; `repeat` (YAZ-5020): put back at the end by an answer that left it in its steps.
  * `fromNew` (YAZ-5610, Yaseen's rule from Mochi): a new card past its first Remembered, back the same day as a Due today
  * card; it is no missed card (the % screen's "Review missed cards" leaves it out) and waits at the end of the session.
+ * `forgot` (YAZ-5626): put back by a Forgot (✕), so it wears "Again"; the last answer decides, so a ✓ that leaves it in
+ * its steps takes it off.
  */
-type QueueCard = DueCard & { repeat?: boolean; fromNew?: boolean }
+type QueueCard = DueCard & { repeat?: boolean; fromNew?: boolean; forgot?: boolean }
 
 interface IndexSource {
   readonly records: readonly IndexRecord[]
@@ -870,7 +874,7 @@ export function useCardReview(
         const rest: QueueCard[] = [...s.queue.slice(0, s.at), ...after]
         const place = repeatPlace(rest, s.at, card)
         const learned = card.isNew && rating !== 'again'
-        const back: QueueCard = { ...card, due: chosen.due, next: false, repeat: true, ...(learned ? { isNew: false, fromNew: true } : {}) }
+        const back: QueueCard = { ...card, due: chosen.due, next: false, repeat: true, forgot: rating === 'again', ...(learned ? { isNew: false, fromNew: true } : {}) }
         const queue = repeat ? [...rest.slice(0, place), back, ...rest.slice(place)] : rest
         // YAZ-5432: with what the card was, so each filter's bar reads its own answers.
         const answered = written !== 'gone' ? [...s.answered, { key, rating, isNew: card.isNew, next: card.next, first }] : s.answered
