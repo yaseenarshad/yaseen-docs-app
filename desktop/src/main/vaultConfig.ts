@@ -3,7 +3,6 @@ import { mkdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { keepUnknownKeys } from '@shared/configMerge'
 import { VAULT_CONFIG_DIR, type VaultConfigChange } from '@shared/types'
-import { keepUnknownKeys } from '@shared/configMerge'
 import { atomicWrite, BridgeFailure, createDurable, fsCall, requireAbsPath, toBridgeFailure } from './fs/fsUtils'
 import { watchTree, type TreeWatcher } from './fs/treeWatcher'
 
