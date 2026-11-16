@@ -314,15 +314,24 @@
   font-variant-numeric: tabular-nums;
 }
 /* A longer column: its width from its text, between its min and max, sharing the box by weight. YAZ-5658 Wide tables
-   (`tableLayout.ts` `columnWidths`, the same rule in px): Scroll sideways (the default), never under a readable line
+   (`tableLayout.ts` `columnWidths`, the same rule in px): Same as Desktop (the default), never under a readable line
    (`READ_WIDTH`, 13.5em) unless its widest is less, or the box has less beside the short columns (a table of one long
    column still fits a narrow phone); a wider table scrolls, its first column in place. */
 .page-table-box col.page-table__grow {
   width: var(--col-max);
   width: clamp(var(--col-min), max(min(13.5em, calc(100cqw - var(--table-fixed, 0em) - 2px)), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-weight, 1))), var(--col-max));
 }
-/* Fit the screen: the longer columns share what the short ones leave by how much text each holds (`--col-share`), each
-   at least `FIT_MIN` (9em) and its longest word (`--col-hold`): no side scroll unless those do not fit. */
+/* Same as Desktop: a column the file saved a width for (short ones too) takes it, scaled to the phone's text size
+   (`--col-desk`); never squeezed to fit. */
+.page-table-box col[data-desk] {
+  width: var(--col-desk);
+}
+/* Fit Screen: the saved widths do not count; the longer columns share what the short ones leave by how much text each
+   holds (`--col-share`), each at least `FIT_MIN` (9em) and its longest word (`--col-hold`): no side scroll unless those
+   do not fit. */
+[data-wide-tables='fit'] .page-table-box col[data-desk]:not(.page-table__grow) {
+  width: auto;
+}
 [data-wide-tables='fit'] .page-table-box col.page-table__grow {
   width: max(9em, var(--col-hold, 0em), calc((100cqw - var(--table-fixed, 0em) - 2px) * var(--col-share, 1)));
 }
@@ -570,6 +579,9 @@
 }
 .table-view .page-table-box col.page-table__grow {
   width: var(--col-max);
+}
+.table-view .page-table-box col[data-desk]:not(.page-table__grow) {
+  width: auto;
 }
 /* In the view, the frozen rows and columns stay too, each moved by the pane's own scroll (a scroll-driven
    animation on the pane's timelines; the table is scaled, so `tableView.ts` sets the ranges and runs for the scale:

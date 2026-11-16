@@ -25,7 +25,7 @@ import { isMap, isScalar, parseDocument } from 'yaml'
  */
 export interface PageSetting {
   key: PageSettingKey
-  /** YAZ-5658: `null` takes the page's own key away (the row's "Same as the vault"). */
+  /** YAZ-5658: `null` takes the page's own key away (the row's "Mobile Vault Default"). */
   on: boolean | null
 }
 
@@ -36,8 +36,8 @@ export interface PageSetting {
  */
 export const STICKY_HEADINGS_KEY = 'sticky-headings'
 /**
- * YAZ-5658: the phone's own page key for Wide tables, `fit-tables: true | false` (Fit the screen | Scroll sideways); none:
- * Same as the vault (`mobile.json`'s `fitTables`). The Mac keeps it byte for byte, as `sticky-headings`.
+ * YAZ-5658: the phone's own page key for Wide tables, `fit-tables: true | false` (Fit Screen | Same as Desktop); none:
+ * Mobile Vault Default (`mobile.json`'s `fitTables`). The Mac keeps it byte for byte, as `sticky-headings`.
  */
 export const FIT_TABLES_KEY = 'fit-tables'
 export type PageSettingKey = PageSwitchKey | typeof STICKY_HEADINGS_KEY | typeof FIT_TABLES_KEY

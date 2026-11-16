@@ -53,7 +53,7 @@ export function pageOwnSwitch(content: string, key: 'folding' | 'sticky-headings
 }
 
 /**
- * YAZ-5658: the page body's `data-wide-tables` (`tables.css`): `fit` (Fit the screen) or `scroll` (Scroll sideways), from
+ * YAZ-5658: the page body's `data-wide-tables` (`tables.css`): `fit` (Fit Screen) or `scroll` (Same as Desktop), from
  * the page's own `fit-tables` (`pageOwnSwitch`), else the vault's `fitTables` (`mobile.json`).
  */
 export const wideTablesAttr = (fit: boolean): 'fit' | 'scroll' => (fit ? 'fit' : 'scroll')

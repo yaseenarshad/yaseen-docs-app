@@ -11,11 +11,14 @@ import './tables.css'
  *    (`GROW_MIN` .. `GROW_MAX`, a comfortable line), sharing the screen by weight (`tables.css`, a container query unit).
  *    The min follows the column's longest word and its length, so a column of paragraphs never turns into a tower.
  *  - YAZ-5658 Wide tables (the page body's `data-wide-tables`: the vault's `mobile.json`, a page's own `fit-tables`):
- *    Scroll sideways (the default): each GROW column at least `READ_WIDTH` em (a readable line, about 190 px), up to
- *    its widest, and never wider by itself than the box beside the FIT columns; a wider table scrolls, its first column
- *    in place. Fit the screen: the GROW columns share what the FIT
- *    columns leave by how much text each holds (`--col-share`), each at least `FIT_MIN` em (about 126 px) and its
- *    longest word (`--col-hold`): no side scroll unless those do not fit. `columnWidths` is the same rule in px (the tests' 390 px phone).
+ *    Same as Desktop (the default, `scroll`): each column the file saved a width for (the table comment's `widths`,
+ *    set on the Mac) takes that width, short columns too, scaled to the phone's text size (`macWidths`, `--col-desk`);
+ *    never squeezed to fit. A column with no saved width: a FIT one its text, a GROW one at least `READ_WIDTH` em (a
+ *    readable line, about 190 px), up to its widest, and never wider by itself than the box beside the FIT columns (today's rule). A wider
+ *    table scrolls, its first column in place. Fit Screen (`fit`): the saved widths do not count; the GROW columns share
+ *    what the FIT columns leave by how much text each holds (`--col-share`), each at least `FIT_MIN` em (about 126 px)
+ *    and its longest word (`--col-hold`): no side scroll unless those do not fit. `columnWidths` is the same rule in px
+ *    (the tests' 390 px phone).
  *  - The first column of a table of three columns or more stays in place while it scrolls sideways (`data-sticky`),
  *    at most `STICKY_MAX` em wide. A table whose file freezes columns (`freeze 2 cols`, YAZ-5480, `tableFile.ts`)
  *    keeps THOSE in place instead, each at most `STICKY_MAX` em wide (`frozenColumns`).
@@ -36,9 +39,9 @@ export const FIT_MAX = 10
 /** The narrowest and widest a GROW column gets. */
 export const GROW_MIN = 7
 export const GROW_MAX = 22
-/** YAZ-5658 Scroll sideways: the narrowest a GROW column gets, unless its widest is less (a readable line). */
+/** YAZ-5658 Same as Desktop: the narrowest a GROW column with no saved width gets, unless its widest is less (a readable line). */
 export const READ_WIDTH = 13.5
-/** YAZ-5658 Fit the screen: the narrowest a GROW column gets. */
+/** YAZ-5658 Fit Screen: the narrowest a GROW column gets. */
 export const FIT_MIN = 9
 /** The longest min of a GROW column (a column of paragraphs). */
 export const GROW_MIN_LONG = 12
@@ -106,9 +109,11 @@ export interface Column {
   min: number
   /** GROW: its share of the screen against the other long columns (the Mac's width); else its widest. */
   weight?: number
+  /** YAZ-5658 Same as Desktop: the width the table comment saved for it (`deskWidths`), em; `null` for none. */
+  desk: number | null
   /** GROW: how much text it holds (each body cell's text counts as its square root, so one long cell does not take all), em. */
   text: number
-  /** The narrowest it gets without breaking a word or a whole code (Fit the screen's floor beside `FIT_MIN`), em. */
+  /** The narrowest it gets without breaking a word or a whole code (Fit Screen's floor beside `FIT_MIN`), em. */
   hold: number
 }
 
@@ -122,6 +127,7 @@ export function columnsOf(table: HTMLTableElement): Column[] {
   for (const [cell, c] of grid) if (cell.colSpan <= 1) (byColumn[c] ??= []).push(cell)
   const count = Math.max(0, ...[...grid].map(([cell, c]) => c + Math.max(1, cell.colSpan)))
   const widths = macWidths(table)
+  const desks = deskWidths(table)
   const cols: Column[] = []
   for (let c = 0; c < count; c++) {
     let body = 0
@@ -157,10 +163,13 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     const num = filled > 0 && numbers >= filled * NUM_SHARE
     // The Mac's width for the column, in em on a phone (`macWidths`), or null (`auto`).
     const mac = widths[c] ?? null
+    // YAZ-5658 Same as Desktop: the width the table comment saved, as is (`deskWidths`), or null.
+    const desk = desks[c] ?? null
     if (natural <= FIT_MAX) {
-      // A short column stays as wide as its text, whatever the Mac's width: on a phone its room goes to the long ones
-      // (in the headless pictures, the Mac's extra room on short columns squeezed the long column into a tower).
-      cols.push({ kind: 'fit', num, max: round(natural), min: round(natural), text: round(amount), hold: round(natural) })
+      // A short column stays as wide as its text, whatever the Mac's width (Same as Desktop: but a saved width): on a
+      // phone its room goes to the long ones (in the headless pictures, the Mac's extra room on short columns squeezed
+      // the long column into a tower).
+      cols.push({ kind: 'fit', num, max: round(natural), min: round(natural), text: round(amount), hold: round(natural), desk })
       continue
     }
     // A clipped column (one line, cut with "…") has no word that holds it open: its min is GROW_MIN.
@@ -169,14 +178,14 @@ export function columnsOf(table: HTMLTableElement): Column[] {
     const max = Math.min(GROW_MAX, natural)
     // A whole code (it never wraps) sets the min too, past the long-text cap.
     if (mac === null) {
-      cols.push({ kind: 'grow', num: false, max: round(max), min: round(Math.min(max, min0)), text: round(amount), hold })
+      cols.push({ kind: 'grow', num: false, max: round(max), min: round(Math.min(max, min0)), text: round(amount), hold, desk })
       continue
     }
-    // A longer column the Mac sized shares the screen in the Mac's proportions (its weight), and the Mac's
-    // width is a floor up to GROW_MIN_LONG (a phone has no room for more); never under the column's own min, so its
-    // words stay whole, and never past its widest (a comfortable line).
+    // A longer column the Mac sized (a folder view's width; a page table's when Same as Desktop has none to draw) shares
+    // the screen in the Mac's proportions (its weight), and the Mac's width is a floor up to GROW_MIN_LONG (a phone has
+    // no room for more); never under the column's own min, so its words stay whole, and never past its widest.
     const min = Math.min(max, Math.max(min0, Math.min(mac, GROW_MIN_LONG)))
-    cols.push({ kind: 'grow', num: false, max: round(max), min: round(min), weight: mac, text: round(amount), hold })
+    cols.push({ kind: 'grow', num: false, max: round(max), min: round(min), weight: mac, text: round(amount), hold, desk })
   }
   // The columns that stay in place (the first of a wide table, or the file's frozen ones): each at most STICKY_MAX wide.
   for (const col of cols.slice(0, frozenColumns(table, cols.length))) {
@@ -187,7 +196,7 @@ export function columnsOf(table: HTMLTableElement): Column[] {
   return cols
 }
 
-/** Each GROW column's share of what the FIT columns leave (0..1; a FIT column 0): by its weight (Scroll sideways) and by its text (Fit the screen). */
+/** Each GROW column's share of what the FIT columns leave (0..1; a FIT column 0): by its weight (Same as Desktop, a column with no saved width) and by its text (Fit Screen). */
 export function columnShares(cols: readonly Column[]): { weight: number[]; share: number[] } {
   const grow = cols.filter((c) => c.kind === 'grow')
   const weights = grow.reduce((n, c) => n + (c.weight ?? c.max), 0)
@@ -199,6 +208,7 @@ export function columnShares(cols: readonly Column[]): { weight: number[]; share
   }
 }
 
+/** YAZ-5658 Wide tables: `scroll` is Same as Desktop (the saved value of `fitTables: false`), `fit` is Fit Screen. */
 export type WideTables = 'scroll' | 'fit'
 
 /**
@@ -210,6 +220,7 @@ export function columnWidths(cols: readonly Column[], box: number, mode: WideTab
   const fixed = cols.reduce((n, c) => n + (c.kind === 'fit' ? c.max : 0), 0)
   const rest = (box - fixed * TABLE_PX - 2) / TABLE_PX
   return cols.map((c, i) => {
+    if (mode === 'scroll' && c.desk !== null) return c.desk * TABLE_PX
     if (c.kind === 'fit') return c.max * TABLE_PX
     const em = mode === 'fit' ? Math.max(FIT_MIN, c.hold, rest * share[i]!) : Math.min(c.max, Math.max(c.min, Math.max(Math.min(READ_WIDTH, rest), rest * weight[i]!)))
     return em * TABLE_PX
@@ -218,19 +229,36 @@ export function columnWidths(cols: readonly Column[], box: number, mode: WideTab
 
 /** The phone's share of a Mac column's width: a phone shows a table smaller than the Mac's page does. */
 export const MAC_WIDTH_SCALE = 0.7
+/** The px of the Mac's text in a table cell (the editor's 16 px): a saved width holds as many of its em on the phone. */
+export const MAC_TEXT_PX = 16
 /** The px of one em of the phone's table font (14 px: `tables.css`, 0.875em of the reader's 16). */
 const TABLE_PX = 14
 
-/**
- * The Mac's column widths (the table comment's `widths`, as `tableFile.ts` puts them on the table,
- * `data-widths="140 240 auto"`), in em of the phone's table font, scaled by `MAC_WIDTH_SCALE`; `null` for `auto`.
- * Translated, not copied (`columnsOf`): a short column keeps its text's width; a longer one takes the Mac's width as
- * its share of the screen and as a floor up to `GROW_MIN_LONG`; no column is ever under its words (readable).
- */
-export function macWidths(table: HTMLTableElement): Array<number | null> {
+/** A table's `data-widths` (`"140 240 auto"`) in px, `null` for `auto`. */
+function savedPx(table: HTMLTableElement): Array<number | null> {
   const own = table.getAttribute('data-widths')
   if (own === null) return []
-  return own.split(' ').map((w) => (w === 'auto' || !(Number(w) > 0) ? null : (Number(w) * MAC_WIDTH_SCALE) / TABLE_PX))
+  return own.split(' ').map((w) => (w === 'auto' || !(Number(w) > 0) ? null : Number(w)))
+}
+
+/**
+ * The Mac's column widths (the table comment's `widths`, as `tableFile.ts` puts them on the table, or a folder view's,
+ * `FolderTable.tsx`: `data-widths="140 240 auto"`), in em of the phone's table font, scaled by `MAC_WIDTH_SCALE`;
+ * `null` for `auto`. Translated, not copied (`columnsOf`): a short column keeps its text's width; a longer one takes the
+ * Mac's width as its share of the screen and as a floor up to `GROW_MIN_LONG`; no column is ever under its words.
+ */
+export function macWidths(table: HTMLTableElement): Array<number | null> {
+  return savedPx(table).map((px) => (px === null ? null : (px * MAC_WIDTH_SCALE) / TABLE_PX))
+}
+
+/**
+ * YAZ-5658 Same as Desktop: the widths a page table's comment saved (`data-widths` with `data-desk`, `tableFile.ts`), as
+ * is: scaled to the phone's text size, so a column holds the same words a line as on the Mac (`MAC_TEXT_PX`), in em of
+ * the phone's table font; `null` for `auto`. A folder view's widths (no `data-desk`) stay `macWidths`' hints.
+ */
+export function deskWidths(table: HTMLTableElement): Array<number | null> {
+  if (!table.hasAttribute('data-desk')) return []
+  return savedPx(table).map((px) => (px === null ? null : px / MAC_TEXT_PX))
 }
 
 /**
@@ -319,6 +347,11 @@ export function layoutTable(table: HTMLTableElement): void {
   const group = document.createElement('colgroup')
   cols.forEach((col, i) => {
     const el = document.createElement('col')
+    // YAZ-5658 Same as Desktop: the saved width (`tables.css`); Fit Screen leaves it.
+    if (col.desk !== null) {
+      el.setAttribute('data-desk', '')
+      el.style.setProperty('--col-desk', `${col.desk}em`)
+    }
     if (col.kind === 'grow') {
       el.className = 'page-table__grow'
       el.style.setProperty('--col-min', `${col.min}em`)

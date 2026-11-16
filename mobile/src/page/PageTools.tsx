@@ -56,16 +56,16 @@ export interface ToolsFor {
   sticky?: { on: boolean; set(on: boolean): void } | null
   /**
    * YAZ-5658: the page's own Wide tables (`fit-tables: true | false`, the phone's own key; `null`: none): "Wide tables on
-   * this page", three choices: Same as the vault, Scroll sideways, Fit the screen; none: the phone cannot write this page.
+   * this page", three choices: Mobile Vault Default, Same as Desktop, Fit Screen; none: the phone cannot write this page.
    */
   wide?: { on: boolean | null; set(on: boolean | null): void } | null
 }
 
 /** YAZ-5658: the page's Wide tables choices, the page's own value each sets. */
 const WIDE_CHOICES: { on: boolean | null; label: string }[] = [
-  { on: null, label: 'Same as the vault' },
-  { on: false, label: 'Scroll sideways' },
-  { on: true, label: 'Fit the screen' },
+  { on: null, label: 'Mobile Vault Default' },
+  { on: false, label: 'Same as Desktop' },
+  { on: true, label: 'Fit Screen' },
 ]
 
 /** The Mac's fold-all icons (`FoldAllButton.tsx`'s shape): two chevrons up to collapse, down to expand. */

@@ -38,7 +38,7 @@ describe('YAZ-5592: the schema (shared/mobileSettings.ts)', () => {
     expect(Object.keys(JSON.parse(out))).toEqual(['version', 'tablet', 'folding', 'stickyHeadings'])
   })
 
-  it('YAZ-5658: Wide tables, Scroll sideways by default (`fitTables` off); Fit the screen is written, the other keys stay', () => {
+  it('YAZ-5658: Wide tables, Same as Desktop by default (`fitTables` off); Fit Screen is written, the other keys stay', () => {
     expect(DEFAULT_MOBILE_SETTINGS.fitTables).toBe(false)
     expect(sanitizeMobileSettings({ fitTables: true })).toEqual({ folding: true, stickyHeadings: true, fitTables: true })
     expect(sanitizeMobileSettings({ fitTables: 'yes' }).fitTables).toBe(false)
@@ -74,7 +74,7 @@ describe('YAZ-5592: the write (mobileWrite.ts), pure and idempotent', () => {
     expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false }, [w(off('stickyHeadings')), w(on('stickyHeadings'))])).toEqual({ folding: true, stickyHeadings: true, fitTables: false })
     expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false }, [w(off('folding'), 'invalid')])).toEqual({ folding: true, stickyHeadings: true, fitTables: false })
     expect(notSentWords(w(off('stickyHeadings')))).toBe('This vault on mobile, Sticky headings: Off')
-    expect(notSentWords(w(on('fitTables')))).toBe('This vault on mobile, Wide tables: Fit the screen')
+    expect(notSentWords(w(on('fitTables')))).toBe('This vault on mobile, Wide tables: Fit Screen')
     expect(withWaiting({ folding: true, stickyHeadings: true, fitTables: false }, [w(on('fitTables'))]).fitTables).toBe(true)
   })
 })

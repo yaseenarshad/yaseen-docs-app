@@ -10,9 +10,9 @@ import { isRecord } from './guards'
  *  - `folding` (default on): the pages fold (YAZ-5568). A page's own `folding: true | false` wins.
  *  - `stickyHeadings` (default on): the heading of the section being read sticks at the top (YAZ-5591). A page's own
  *    `sticky-headings: true | false` wins.
- *  - `fitTables` (default off, YAZ-5658): Wide tables. Off: Scroll sideways, each text column a readable width and the
- *    first column in place; on: Fit the screen, the text columns share the screen by how much text each holds. A page's
- *    own `fit-tables: true | false` wins (none: Same as the vault).
+ *  - `fitTables` (default off, YAZ-5658): Wide tables. Off: Same as Desktop, each column the width saved in the file
+ *    (else a readable width) and the first column in place; on: Fit Screen, the text columns share the screen by how much text each holds. A page's
+ *    own `fit-tables: true | false` wins (none: Mobile Vault Default).
  *
  * The file holds only what differs from the defaults, beside a version: `{ "version": 1, "stickyHeadings": false }`. A
  * key left out is the default; a value that is not a boolean is the default too. Every other top-level key of the file

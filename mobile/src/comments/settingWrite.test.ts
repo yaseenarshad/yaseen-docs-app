@@ -69,7 +69,7 @@ describe('YAZ-5568: the page setting write (folding)', () => {
 
 describe('YAZ-5658: Wide tables on this page (`fit-tables`), three choices', () => {
   const page = '---\r\ntitle:   "Day plan"\r\ntags: [day]\r\n---\r\n| Time | Plan |\r\n'
-  it('Fit the screen and Scroll sideways write the one line; Same as the vault takes it away, every other byte as it was', () => {
+  it('Fit Screen and Same as Desktop write the one line; Mobile Vault Default takes it away, every other byte as it was', () => {
     const fit = applySetting(page, { key: FIT_TABLES_KEY, on: true })
     if (fit.kind !== 'set') throw new Error(JSON.stringify(fit))
     expect(fit.content).toBe('---\r\ntitle:   "Day plan"\r\ntags: [day]\r\nfit-tables: true\r\n---\r\n| Time | Plan |\r\n')
@@ -78,7 +78,7 @@ describe('YAZ-5658: Wide tables on this page (`fit-tables`), three choices', () 
     expect(switchOf(scroll.content, FIT_TABLES_KEY)).toBe(false)
     const same = applySetting(scroll.content, { key: FIT_TABLES_KEY, on: null })
     expect(same).toEqual({ kind: 'set', content: page })
-    // Already Same as the vault: nothing to write (a retry).
+    // Already Mobile Vault Default: nothing to write (a retry).
     expect(applySetting(page, { key: FIT_TABLES_KEY, on: null })).toEqual({ kind: 'already' })
     // The key in the middle of the block, with a YAML comment after it on its line.
     const mid = '---\ntitle: A\nfit-tables: true # phone\nwhen: 2026-11-16\n---\nx\n'
@@ -87,7 +87,7 @@ describe('YAZ-5658: Wide tables on this page (`fit-tables`), three choices', () 
 
   it('the not-sent row names the choice', () => {
     const w = (on: boolean | null): WaitingComment => ({ id: 'x', path: 'Day.md', body: '', at: '', madeAt: 0, notBefore: 0, setting: { key: FIT_TABLES_KEY, on } })
-    expect([true, false, null].map((on) => notSentWords(w(on)))).toEqual(['Wide tables on this page: Fit the screen', 'Wide tables on this page: Scroll sideways', 'Wide tables on this page: Same as the vault'])
+    expect([true, false, null].map((on) => notSentWords(w(on)))).toEqual(['Wide tables on this page: Fit Screen', 'Wide tables on this page: Same as Desktop', 'Wide tables on this page: Mobile Vault Default'])
   })
 })
 

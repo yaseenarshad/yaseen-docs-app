@@ -10,16 +10,16 @@ const ROWS: { key: MobileSettingKey; label: string }[] = [
   { key: 'stickyHeadings', label: 'Sticky headings' },
 ]
 
-/** YAZ-5658: Wide tables, a choice (`fitTables`): Scroll sideways (the default) or Fit the screen. */
+/** YAZ-5658: Wide tables, a choice (`fitTables`): Same as Desktop (the default) or Fit Screen. */
 export const WIDE_TABLE_CHOICES: { fit: boolean; label: string }[] = [
-  { fit: false, label: 'Scroll sideways' },
-  { fit: true, label: 'Fit the screen' },
+  { fit: false, label: 'Same as Desktop' },
+  { fit: true, label: 'Fit Screen' },
 ]
 
 /**
  * Settings › "This vault on mobile" (YAZ-5592), its own chunk: the vault's mobile settings (`.yaseendocs/mobile.json`,
  * `shared/mobileSettings.ts`), the same on every phone that opens the vault: Folding and Sticky headings, on by default;
- * YAZ-5658 Wide tables, Scroll sideways by default.
+ * YAZ-5658 Wide tables, Same as Desktop by default.
  * A page's own setting (its ⋯) wins. A change shows at once and goes the comments' safe path (`mobileWrite.ts`); the
  * dot counts it until GitHub holds it. With no write path, the rows show the setting and are not changed here.
  */
