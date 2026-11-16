@@ -555,15 +555,19 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
   }
   // Rule 5: the most overdue DAY first; inside one day, one random order for the day (a hash of the ID and today).
   const day = new Date(now).toDateString()
-  const dueKey = new Map(due.map((c) => [c, { day: new Date(c.due).setHours(0, 0, 0, 0), rank: dayHash(`${day}\n${c.id}`) }]))
-  due.sort((a, b) => dueKey.get(a)!.day - dueKey.get(b)!.day || dueKey.get(a)!.rank - dueKey.get(b)!.rank || place(a, b))
+  // The hash of the day's part (`${day}\n`), once: each card's rank goes on from it with its ID.
+  const dayStart = dayHash(`${day}\n`)
+  // Each card's keys are worked out once and sorted with it: the Inbox count runs this on every index change (YAZ-4967).
+  const dueOrder = due.map((c) => ({ c, day: new Date(c.due).setHours(0, 0, 0, 0), rank: dayHash(c.id, dayStart) }))
+  dueOrder.sort((a, b) => a.day - b.day || a.rank - b.rank || place(a.c, b.c))
+  for (let i = 0; i < dueOrder.length; i++) due[i] = dueOrder[i].c
   // YAZ-5322: only the new cards follow the pick; none left in the picked folders, they come from All folders. A card
   // begun already stays (rule 2).
   const newFallback = picking && picked.size === 0 && fresh.length > 0
   if (picking && !newFallback) fresh = fresh.filter((c) => picked.has(c) || begun.has(c))
   if (s.newOrder === 'random') {
     // One order for the day: each card's place is a hash of its ID and today's date, so a redraw keeps it.
-    const rank = new Map(fresh.map((c) => [c, dayHash(`${day}\n${c.id}`)]))
+    const rank = new Map(fresh.map((c) => [c, dayHash(c.id, dayStart)]))
     fresh.sort((a, b) => rank.get(a)! - rank.get(b)! || place(a, b))
   } else fresh.sort(byAge(s.newOrder === 'newest' ? -1 : 1))
   const newBase = s.newPerDay === null ? Number.POSITIVE_INFINITY : s.newPerDay + added.newCards - startedToday
@@ -587,9 +591,12 @@ export function cardPlan(records: readonly CardPage[], s: ReviewSettings, now: n
   }
 }
 
-/** FNV-1a of `text`: a stable number per card and day for the Random order (YAZ-5322). */
-function dayHash(text: string): number {
-  let h = 0x811c9dc5
+/**
+ * FNV-1a of `text`: a stable number per card and day for the Random order (YAZ-5322). `from` goes on from the hash of a
+ * text before it, so `dayHash(id, dayHash(day))` is `dayHash(day + id)` with no new string per card.
+ */
+function dayHash(text: string, from = 0x811c9dc5): number {
+  let h = from
   for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193)
   return h >>> 0
 }

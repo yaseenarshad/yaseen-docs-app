@@ -23,8 +23,10 @@ const records = (mtime = 1): IndexRecord[] => Array.from({ length: 10_000 }, (_,
 
 describe('card files perf (YAZ-5037)', () => {
   it('the set of 5,000 card files in 10,000 records is under 20 ms cold; a save (a new snapshot, the same card files) keeps the same set, under 3 ms', () => {
+    // The snapshot is built before the clock starts: the walk is timed, not the test's 10,000 records (YAZ-4965 CI).
+    const snapshot = records()
     const t0 = performance.now()
-    const cards = cardFilePaths([{ records: records() }])
+    const cards = cardFilePaths([{ records: snapshot }])
     const cold = performance.now() - t0
     expect(cards.size).toBe(5_000)
     expect(cold).toBeLessThan(budgetMs(20))
