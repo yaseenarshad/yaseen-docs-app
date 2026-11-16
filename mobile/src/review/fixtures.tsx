@@ -92,6 +92,19 @@ const LAST: Record<string, string> = {
   'geography/capitals.md': page('Capitals', block('What is the capital of Spain?\n---\n{{Madrid}}', `CAP-1, title "Capital of Spain", ${DUE}`), block('What is the capital of Portugal?\n---\n{{Lisbon}}', `CAP-2, title "Capital of Portugal", ${DUE}`)),
 }
 
+/**
+ * YAZ-5616 (Review check d): `#fixture=review-taps`, for the real-touch proof (`publish/proveReviewTaps.ts`). One card
+ * marked Up next, four due cards, five new cards in two folders (three a day), one archived card. Nothing is tapped
+ * here: the proof taps. `window.__reviewTaps` lets it send the answers (the fake clock's 5 s) and read the fake GitHub.
+ */
+const TAPS: Record<string, string> = {
+  '.yaseendocs/review.json': '{"newPerDay": 3}',
+  'review/up.md': page('Up', block('Which card goes first?\n---\nThe {{Up next}} card.', `UP-1, ${DUE}, next`)),
+  'review/due.md': page('Due', ...[1, 2, 3, 4].map((i) => block(`Due question ${i}?\n---\nDue answer {{${i}}}.`, `DUE-${i}, ${DUE}`)), block('Archived?\n---\n{{Gone}}.', `OFF-1, ${DUE}, off`)),
+  'words/a.md': page('Words A', ...[1, 2, 3].map((i) => block(`New word ${i}?\n---\nNew answer {{${i}}}.`, `NEW-${i}`))),
+  'words/b.md': page('Words B', ...[4, 5].map((i) => block(`New word ${i}?\n---\nNew answer {{${i}}}.`, `NEW-${i}`))),
+}
+
 /** A made-up robin: a small picture drawn as a data URL. */
 const ROBIN = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140"><rect width="240" height="140" fill="#e9eef5"/><circle cx="120" cy="78" r="38" fill="#7a5a43"/><circle cx="106" cy="86" r="22" fill="#d8642b"/><circle cx="134" cy="62" r="5" fill="#222"/></svg>')}`
 
@@ -106,7 +119,7 @@ const press = (name: string | RegExp) => {
 const tap = () => document.querySelector<HTMLElement>('.review__card')?.click()
 
 export async function mountReviewFixture(root: Root, name: string): Promise<void> {
-  const files = name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
+  const files = name === 'review-taps' ? TAPS : name === 'review-last' ? LAST : name.startsWith('review-due-') ? DUE_END(name !== 'review-due-clear') : name.startsWith('review-mochi') ? MOCHI : name === 'review-done' ? { '.yaseendocs/review.json': '{"newPerDay": 2}', 'p.md': page('Spanish words', ...Array.from({ length: 5 }, (_, i) => block(`Card ${i + 1}?\n---\n{{answer}}`, `DEMO-${i + 1}`))) } : FILES
   const step = (n: string) => void (document.body.dataset.fixtureStep = n)
   step('setup')
   // The fake GitHub runs in this one tab: no Web Lock, as in the tests (Node has none).
@@ -131,6 +144,17 @@ export async function mountReviewFixture(root: Root, name: string): Promise<void
   const sync = fakeSync()
   sync.review = async () => ({ engine: t.engine, answers: t.answers, store: t.store })
   const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, media, friends: fakeFriends(store, false), fetch: async () => new Response('{}', { status: 401 }) }
+  if (name === 'review-taps')
+    Object.assign(window, {
+      __reviewTaps: {
+        /** Sends the answers (the 5 s after the last one) and answers the vault's files on the fake GitHub. */
+        send: async () => {
+          await t.tick(5_000)
+          return t.s.git.filesAt(t.head())
+        },
+        waiting: () => t.answers.state().waiting,
+      },
+    })
   root.render(<App services={services} />)
   step('render')
   await wait(400)

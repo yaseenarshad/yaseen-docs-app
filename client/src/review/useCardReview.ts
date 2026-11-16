@@ -197,7 +197,7 @@ export interface DueTodayEnd {
   percent: number
   /** The missed cards waiting (the "Review missed cards 5" button). */
   missed: number
-  /** The new cards left in the session (the "Learn new cards 11" button). */
+  /** The new cards left in the session, with those begun today that wait for their second ✓ (the "Learn new cards 11" button). */
   fresh: number
 }
 
@@ -631,7 +631,8 @@ const endOf = (s: Session): DueTodayEnd | null => {
     id: `${s.id}:${s.answered.length}:${s.pause}`,
     ...dueFirsts(s.answered),
     missed: s.queue.filter((c) => !c.isNew && c.repeat === true && c.fromNew !== true).length,
-    fresh: s.queue.filter((c) => c.isNew).length,
+    // YAZ-5616: a new card begun today (its first ✓, `fromNew`) still waits for its second ✓ in this session: it counts.
+    fresh: s.queue.filter((c) => c.isNew || c.fromNew === true).length,
   }
 }
 
@@ -1103,7 +1104,8 @@ export function useCardReview(
     setSession((s) => {
       if (s === null || s.pause === null) return s
       // Learn new cards from Due today: the New cards filter. Under All cards the new cards are next already.
-      if (s.pause === 'done' && s.filter === 'due') return fitted({ ...s, filter: 'new', at: 0, turn: s.turn + 1, pause: null })
+      // YAZ-5616: with no plain new card left, the begun ones (Due today cards now) come next under Due today itself.
+      if (s.pause === 'done' && s.filter === 'due') return s.queue.some((c) => c.isNew) ? fitted({ ...s, filter: 'new', at: 0, turn: s.turn + 1, pause: null }) : fitted({ ...s, turn: s.turn + 1, pause: null })
       return { ...s, pause: null }
     })
   }, [])
