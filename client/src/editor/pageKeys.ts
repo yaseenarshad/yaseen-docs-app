@@ -4,7 +4,7 @@
  * The rows are `PAGE_KEYS` (`shared/keys/page.ts`); `settings.hotkeys` holds only the changes. `createCrepe` takes
  * them once, before create (`CreateCrepeOptions.hotkeys`), so an open page keeps the keys it opened with. Three paths:
  *  - Milkdown's keymaps (and the app's highlight): each is a ctx slice Milkdown reads once, when the editor starts.
- *    `applyPageKeys` rewrites the slices in `createCrepe`'s config, from `SLICE_ROWS` below. Crepe's toolbar labels its
+ *    `applyPageKeys` rewrites the slices in `createCrepe`'s config, from `SLICE_ROWS()` below. Crepe's toolbar labels its
  *    buttons from the same slices, so a tooltip shows the key as it is now (K12).
  *  - The app's own keymaps (`$shortcut`): `rowShortcuts` gives one entry per key a row has now (none with "No key"),
  *    read from `pageHotkeysCtx`.
@@ -67,8 +67,14 @@ export function rowShortcuts(ctx: Ctx, id: string, name: string, item: Omit<Keym
 type Slice = SliceType<KeymapConfig<string>, string>
 const slice = <K extends string>(s: SliceType<KeymapConfig<K>, string>): Slice => s as unknown as Slice
 
-/** Each Milkdown keymap entry with a changeable key, and its row. One row may own entries of several keymaps (⌘] indents a bullet and moves to the next cell). */
-const SLICE_ROWS: readonly (readonly [Slice, string, string])[] = [
+/**
+ * Each Milkdown keymap entry with a changeable key, and its row. One row may own entries of several keymaps (⌘] indents
+ * a bullet and moves to the next cell). Built at the first `applyPageKeys`, not when this module loads: the `$shortcut`
+ * modules that import `rowShortcuts` are reached from the keymap modules themselves (`marks/highlight.ts` →
+ * `lineSelection.ts` → `outline/zoom.ts` → here), so at load time a slice such as `highlightKeymap` can still be undefined.
+ */
+let sliceRows: readonly (readonly [Slice, string, string])[] | undefined
+const SLICE_ROWS = (): readonly (readonly [Slice, string, string])[] => (sliceRows ??= [
   [slice(strongKeymap.key), 'ToggleBold', 'page.bold'],
   [slice(emphasisKeymap.key), 'ToggleEmphasis', 'page.italic'],
   [slice(inlineCodeKeymap.key), 'ToggleInlineCode', 'page.inlineCode'],
@@ -86,7 +92,7 @@ const SLICE_ROWS: readonly (readonly [Slice, string, string])[] = [
   [slice(tableKeymap.key), 'ExitTable', 'page.cycleTask'],
   [slice(historyKeymap.key), 'Undo', 'page.undo'],
   [slice(historyKeymap.key), 'Redo', 'page.redo'],
-]
+])
 
 /** A ProseMirror key name with ⌘, ⌃ or ⌥: a key of a row. Without one it is typing (Tab, Enter, Backspace), built in. */
 const isChord = (name: string): boolean => /(^|-)(Mod|Ctrl|Control|Alt|Meta|Cmd)-/.test(name)
@@ -98,7 +104,7 @@ const isChord = (name: string): boolean => /(^|-)(Mod|Ctrl|Control|Alt|Meta|Cmd)
  */
 export function applyPageKeys(ctx: Ctx): void {
   const overrides = pageOverrides(ctx)
-  for (const [keymap, entry, id] of SLICE_ROWS) {
+  for (const [keymap, entry, id] of SLICE_ROWS()) {
     if (!ctx.isInjected(keymap)) continue
     ctx.update(keymap, (prev) => {
       const old = prev[entry]
