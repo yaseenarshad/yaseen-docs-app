@@ -265,6 +265,18 @@ export function weekendOf(day: DayKey): 'Sat' | 'Sun' | null {
   return weekday === 6 ? 'Sat' : weekday === 0 ? 'Sun' : null
 }
 
+/**
+ * Whether `day` is the first SHOWN day of its month, the day that says the month (YAZ-5608): the 1st, or with Hide
+ * weekends the first workday when the month starts on a Saturday or Sunday (YAZ-5648 #3).
+ */
+export function firstShownOfMonth(day: DayKey, hideWeekends: boolean): boolean {
+  const date = Number(day.slice(8))
+  if (date === 1) return true
+  if (!hideWeekends || weekendOf(day) !== null) return false
+  for (let d = 1; d < date; d++) if (weekendOf(`${day.slice(0, 8)}${String(d).padStart(2, '0')}`) === null) return false
+  return true
+}
+
 /** "Hide weekends" (YAZ-4595 S33): the days of a week row without its Saturday and Sunday, by the weekday, not the column. */
 export const withoutWeekends = (days: readonly DayKey[]): DayKey[] => days.filter((day) => weekendOf(day) === null)
 

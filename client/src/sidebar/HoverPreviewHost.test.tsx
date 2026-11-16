@@ -98,6 +98,25 @@ describe('useHoverPreview', () => {
       expect(state()).toEqual({ path: null, shown: false })
     }
   })
+
+  it('a press ends the glance (YAZ-5648 #4): a click on the row of the page already open, mid-dwell or shown, leaves no preview over the page', () => {
+    const page = { path: '/v/Long page.md' }
+    render({ activeFile: page.path })
+    act(() => hook.hoverFile(page))
+    wait(HOVER_PREVIEW_DWELL_MS - 100)
+    act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+    // The row's focus comes right after the press: it starts no dwell.
+    act(() => hook.hoverFile(page))
+    wait(HOVER_PREVIEW_DWELL_MS)
+    expect(state()).toEqual({ path: null, shown: false })
+    // Once the pointer leaves the row and comes back, it previews again.
+    act(() => hook.hoverFile(null))
+    act(() => hook.hoverFile(page))
+    wait(HOVER_PREVIEW_DWELL_MS)
+    expect(state().shown).toBe(true)
+    act(() => void document.body.dispatchEvent(new Event('pointerdown', { bubbles: true })))
+    expect(state()).toEqual({ path: null, shown: false })
+  })
 })
 
 describe('a board or a page row opens a preview (YAZ-3028 D11, YAZ-3075 D6)', () => {
