@@ -47,7 +47,8 @@ async function freezeUpTo(label: string): Promise<void> {
   await header.scrollIntoViewIfNeeded()
   const box = (await header.boundingBox())!
   await header.dispatchEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: box.x + box.width - 8, clientY: box.y + box.height / 2 })
-  await win.getByRole('menuitem', { name: 'Freeze up to this column', exact: true }).click()
+  // The 760 × 520 window can put the menu's lower rows past its edge: the item is pressed where it stands.
+  await win.getByRole('menuitem', { name: 'Freeze up to this column', exact: true }).dispatchEvent('click')
 }
 const folderPath = () => path.join(vault, FOLDER)
 /** Where the folder's view settings live (YAZ-2290 D1). */

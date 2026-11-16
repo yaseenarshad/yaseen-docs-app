@@ -312,12 +312,10 @@ test('step 3f — YAZ-3140: after a click or a drag on a read-only TITLE the pag
       page: document.activeElement === document.body || document.activeElement?.closest('.page-title') != null,
       inTitle: document.getSelection()?.anchorNode?.parentElement?.closest('.page-title') != null,
     }))
-  // The page holds the keys: the file clipboard takes no ⌘C or ⌘X, and ⌘V pastes no file. (On the locked title the
-  // title may take a chord itself, YAZ-5141; what counts is that no file is clipped.)
   const pageHoldsTheKeys = async (): Promise<void> => {
-    await chord('c')
+    expect(await chord('c')).toBe(false)
     expect(await clip()).toBeNull()
-    await chord('x')
+    expect(await chord('x')).toBe(false)
     expect(await clip()).toBeNull()
     await chord('v')
     await win.waitForTimeout(400)

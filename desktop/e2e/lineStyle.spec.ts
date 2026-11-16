@@ -26,6 +26,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { TEXT_FORMATTING_VERSION } from '../../shared/textFormatting'
 import { appWindow, buildFixtureVault, copyVault, editorOf, launchApp, layer, seededState, shoot } from './helpers'
 
 test.describe.configure({ mode: 'serial' })
@@ -290,7 +291,7 @@ test('step 9 — the vault\'s default line in Settings (YAZ-3208): a plain line 
   await shoot(win, 'lineStyle-09-settings-line')
 
   // Only the changed fields are in the vault's file (D8); the page's bytes do not change (D9).
-  await expect.poll(async () => JSON.parse(await readFile(path.join(vault, '.yaseendocs', 'text-formatting.json'), 'utf8'))).toEqual({ version: 1, line: { thickness: 4, pattern: 'dashed' } })
+  await expect.poll(async () => JSON.parse(await readFile(path.join(vault, '.yaseendocs', 'text-formatting.json'), 'utf8'))).toEqual({ version: TEXT_FORMATTING_VERSION, line: { thickness: 4, pattern: 'dashed' } })
   // The plain line follows the default at once, under the open dialog (S91); the solid one keeps its own (S92, S100).
   await expect.poll(async () => (await look(0)).image).toMatch(/^linear-gradient/)
   expect((await look(0)).height).toBeCloseTo(16, 0)

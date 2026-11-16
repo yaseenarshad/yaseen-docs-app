@@ -188,15 +188,14 @@ test('step 5 — re-number, then the row reads "Bullet children" and flips back'
   await expect.poll(diskHasNumbers, { timeout: 10_000 }).toBe(false)
 })
 
-test('step 6 — a leaf ("deep") still shows the row, disabled', async () => {
+test('step 6 — a leaf ("deep") has no numbering row: it has no children to number', async () => {
   test.setTimeout(60_000) // room for openHandleMenu's documented retry budget (YAZ-904)
   await openHandleMenu(win, 'deep')
-  // A leaf is a bullet too: "Open in new tab" stays first and works; only "Number children" is grey.
+  // A leaf is a bullet too: "Open in new tab" stays first and works; the numbering row is only where there are children.
   await expect(menuRows(win).first()).toHaveText('Open in new tab')
-  await expect(menuRow(win)).toHaveText('Number children')
   await expect(menuRows(win).first()).toBeEnabled()
-  await expect(menuRow(win)).toBeDisabled()
-  await shoot(win, 'numbered-leaf-disabled')
+  await expect(menuRow(win)).toHaveCount(0)
+  await shoot(win, 'numbered-leaf-no-row')
   await win.keyboard.press('Escape')
   await expect(menu(win)).toBeHidden()
 })
