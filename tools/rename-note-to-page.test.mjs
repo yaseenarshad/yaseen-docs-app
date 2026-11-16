@@ -23,7 +23,7 @@ describe('the rename', () => {
   })
 
   it('keeps what means something else', () => {
-    for (const text of ['cellNoteCard, a cell note, CELL_NOTE, cell-note', 'footnote, ReleaseNotes, release notes, update:notes', 'Note: a remark', 'role="note"', 'settings-section__note', 'notebook, noted, isNotEmpty', "'Note shape'", 'tableAllNotesOpensAt'])
+    for (const text of ['cellNoteCard, a cell note, CELL_NOTE, cell-note', 'footnote, ReleaseNotes, release notes, update:notes', 'Note: a remark', 'role="note"', 'settings-section__note', 'notebook, noted, isNotEmpty', "'Note shape'", 'tableAllNotesOpensAt', 'UNIT_WORDS.note', "'Remove from this note…'", "withCardProperty(EMPTY_CARD_LINE, 'note', 'one\\ntwo')", 'NC-1, note 5" screen', 'comments: my own notes'])
       expect(renameText(text, at('a.ts'))).toBe(text)
   })
 

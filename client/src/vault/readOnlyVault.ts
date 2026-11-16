@@ -162,6 +162,19 @@ export function useReadOnlyVault(root: string | null): ReadOnlyVaultState {
     }
   }, [root, show, relock, open])
   useEffect(() => () => clearTimeout(timer.current), [])
+  // YAZ-5649 item 4: a page's timers stop while the Mac sleeps, the clock does not. Back from sleep (the window shows
+  // or takes focus) an unlock past its end relocks as the timer does: each surface's save step, then the lock.
+  useEffect(() => {
+    const check = (): void => {
+      if (unlockedUntil.current !== 0 && Date.now() >= unlockedUntil.current) void relock()
+    }
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('focus', check)
+    return () => {
+      document.removeEventListener('visibilitychange', check)
+      window.removeEventListener('focus', check)
+    }
+  }, [relock])
   const save = useCallback(
     (next: ReadOnlyVaultSettings) => {
       if (root === null) return

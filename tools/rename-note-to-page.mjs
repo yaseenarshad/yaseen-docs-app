@@ -142,6 +142,21 @@ const KEEP = [
   /\b(?:musical|bank|sticky|post-it) notes?\b/gi,
   /\bworking notes\b/g,
   /\bnoteLicense\b/g,
+  // YAZ-5649 item 2: real uses that came after the rename. The vault's word choice "Note" (`UNIT_WORDS.note`, a test
+  // that picks it and reads its words, a remark that lists it); a card property or a card title with the word "note";
+  // text of a person's own (a comment, a front matter value); a remark that is no page.
+  /\bUNIT_WORDS\.note\b/g,
+  /(?<=from this )note(?=…|\?)/g,
+  /(?<=\("page", )"note"/g,
+  /(?<=withCardProperty\([A-Z_]+, )'note'/g,
+  /(?<=\{ )note(?=: (?:'one\\ntwo'|value) \})/g,
+  /(?<=, )note(?= "Q&A)/g,
+  /\bnote 5" screen\b/g,
+  /\bmy own notes\b/g,
+  /\bPage note\b/g,
+  /\bcoordinator note\b/g,
+  /\bthe note-cards session's note\b/g,
+  /(?<=All\n\s*\*\s)notes(?= opens at)/g,
 ]
 
 /**

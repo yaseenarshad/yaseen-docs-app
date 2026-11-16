@@ -3426,4 +3426,30 @@ describe('Time in slot and Show seconds left the app settings (YAZ-5602 round 2:
     expect(createStore(file).slotTimeToMove()).toEqual({})
     expect(createStore(path.join(path.dirname(file), 'none.json')).slotTimeToMove()).toEqual({})
   })
+
+  // YAZ-5649 item 1: the first write of the state file dropped the value, so a launch where the move did not run
+  // (offline, no pull yet, the vault not open) lost it for ever.
+  it('a write keeps the value in the state file until every known vault has the slot mark, then drops it', async () => {
+    const old = { tableSlotTime: 'down', tableSlotSeconds: false } as const
+    await writeFile(file, JSON.stringify({ ...defaultAppState(), settings: { ...DEFAULT_SETTINGS, ...old } }))
+    const first = createStore(file)
+    first.setSettings({ ...first.get().settings, lineSpacing: 1.6 })
+    await first.flush()
+    const second = createStore(file)
+    expect(second.slotTimeToMove()).toEqual(old)
+    second.pushRecent('/v1')
+    second.pushRecent('/v2')
+    second.markSeededConfig('/v1', 'table-look.json#slot')
+    await second.flush()
+    const third = createStore(file)
+    expect(third.slotTimeToMove()).toEqual(old)
+    third.markSeededConfig('/v2', 'table-look.json')
+    await third.flush()
+    expect(createStore(file).slotTimeToMove()).toEqual(old)
+    const fourth = createStore(file)
+    fourth.markSeededConfig('/v2', 'table-look.json#slot')
+    await fourth.flush()
+    expect(createStore(file).slotTimeToMove()).toEqual({})
+    expect(JSON.parse(await readFile(file, 'utf8')).settings).not.toHaveProperty('tableSlotTime')
+  })
 })
