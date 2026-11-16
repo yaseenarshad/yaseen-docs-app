@@ -59,9 +59,15 @@ export async function inChrome<T>(html: string, expression: string, { width = 37
     return out.result.value as T
   } finally {
     // Chrome writes its profile until it has gone: wait for that, then remove it.
-    const gone = new Promise((r) => chrome.once('exit', r))
+    const gone = chrome.exitCode !== null || chrome.signalCode !== null ? Promise.resolve() : new Promise((r) => chrome.once('exit', r))
     chrome.kill()
     await Promise.race([gone, new Promise((r) => setTimeout(r, 3000))])
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    // Its helper processes can still write a file or two after it exits (CI's macOS: ENOTEMPTY, YAZ-4965). The profile
+    // is in the temp folder: a removal that still fails after the retries leaves it there; it never fails the check.
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 })
+    } catch (err) {
+      console.warn(`[chrome] the temp profile stays: ${String(err)}`)
+    }
   }
 }
