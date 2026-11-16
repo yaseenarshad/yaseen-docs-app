@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { idbBackend } from './idbBackend'
 import { memoryBackend, newMemoryDisk } from './memoryBackend'
 import type { Backend } from './backend'
-import { RENEW_EARLY_MS, TOKEN_STATE, tokenStoreOn, type Renewed } from './tokenStore'
+import { MANAGING_MS, RENEW_EARLY_MS, TOKEN_STATE, tokenStoreOn, type Renewed } from './tokenStore'
 import { PHONE, openVaultStore } from './vaultStore'
 
 const TOKEN_A = 'github_pat_11AAAAAAA0aaaaaaaaaaaa_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
@@ -227,5 +227,20 @@ describe.each(backends)('YAZ-5645: GitHub sign-ins in the TokenStore on %s (one 
     await tokens.savePending(pending)
     expect(await tokens.takePending()).toEqual(pending)
     expect(await tokens.takePending()).toBeNull()
+  })
+
+  it('YAZ-5645 slice 2: the trip to "Manage repos" is taken once, counts 30 minutes, and leaves with the erase', async () => {
+    const { tokens, clock } = setup()
+    const managing = { login: 'yaseen', from: 'settings' as const, startedAt: clock.t }
+    await tokens.saveManaging(managing)
+    expect(await tokens.takeManaging()).toEqual(managing)
+    expect(await tokens.takeManaging()).toBeNull()
+    await tokens.saveManaging(managing)
+    clock.t += MANAGING_MS + 1
+    expect(await tokens.takeManaging()).toBeNull()
+    await tokens.saveManaging({ ...managing, startedAt: clock.t })
+    await tokens.clearAll()
+    expect(await tokens.takeManaging()).toBeNull()
+    expect(await tokens.githubAccounts()).toEqual([])
   })
 })

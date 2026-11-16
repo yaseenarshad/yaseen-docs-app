@@ -47,6 +47,13 @@ const pickGithub = (name: string) =>
     repos: PICK_REPOS,
   })
 
+/** `repo-gone`: @demo took demo/work-wiki off the app's list on GitHub. */
+function repoFetch(name: string): FetchLike {
+  const github = pickGithub(name)
+  if (name === 'repo-gone') github.takeOff(FAKE_GH, 'demo/work-wiki')
+  return github.fetch
+}
+
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
@@ -117,12 +124,16 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     history.replaceState(null, '', `/auth/installed${location.hash}`)
   }
   const signedIn = !['repo-pick-github', 'sign-in', 'sign-in-iphone', 'sign-in-error', 'sign-in-typed', 'guide', 'repo-pick', 'repo-pick-many', 'repo-none'].includes(name)
+  // YAZ-5645 slice 2: vaults on "Sign in with GitHub" (@demo): Settings › GitHub, and a repo taken off the app's list.
+  const onGithub = name === 'settings-github' || name === 'repo-gone'
+  if (onGithub) await tokens.savePair({ login: 'demo', access: FAKE_GH, accessEndsAt: null, refresh: null, refreshEndsAt: null })
   if (signedIn) {
-    for (const v of name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1)) {
-      await tokens.write(vaultId(v), FAKE_TOKEN)
+    for (const v of name === 'settings' || name === 'erase' || onGithub ? VAULTS : VAULTS.slice(0, 1)) {
+      if (onGithub) await tokens.link(vaultId(v), 'demo')
+      else await tokens.write(vaultId(v), FAKE_TOKEN)
       await saveAccount(store, vaultId(v), ACCOUNT)
     }
-    await saveVaultList(store, { vaults: name === 'settings' || name === 'erase' ? VAULTS : VAULTS.slice(0, 1), open: vaultId(VAULTS[0]) })
+    await saveVaultList(store, { vaults: name === 'settings' || name === 'erase' || onGithub ? VAULTS : VAULTS.slice(0, 1), open: vaultId(VAULTS[name === 'repo-gone' ? 1 : 0]) })
   }
   // YAZ-5559: the open vault's settings files, made up: all but the table look and the icons, and a link clicks file
   // that is not JSON (Vault health then says "Using defaults: link clicks, table look, icons").
@@ -130,7 +141,7 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
     for (const { file, label } of (await import('@shared/vaultSettingsFiles')).VAULT_SETTINGS_FILES)
       if (label !== 'table look' && label !== 'icons') await store.write(vaultId(VAULTS[0]), `.yaseendocs/${file}`, label === 'link clicks' ? '{ not json' : '{"version":1}')
   const sync = fakeSync({ download: name === 'download' })
-  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), fetch: name.startsWith('repo-') ? pickGithub(name).fetch : refuseAll }
+  const services: AppServices = { store, tokens, vaultTabs: reviewOnTabs, sync, friends: fakeFriends(store, false), fetch: name.startsWith('repo-') ? repoFetch(name) : refuseAll }
   const check = /^settings-check-(newest|ready|unreachable|busy)$/.exec(name)?.[1] as CheckResult | 'busy' | undefined
   root.render(<App services={services} updates={name.startsWith('settings') ? fixtureUpdates(check ?? null) : null} />)
   await wait(50)
@@ -173,6 +184,15 @@ export async function mountFixture(root: Root, hash: string): Promise<void> {
       break
     case 'token-ended':
       sync.set({ status: 'attention', problem: 'UNAUTHORIZED' })
+      break
+    case 'repo-gone':
+      // YAZ-5645 slice 2: the repo answers 404; the app asks the installations, then names it.
+      sync.set({ status: 'attention', problem: 'NOT_FOUND', vault: vaultId(VAULTS[1]), ready: true })
+      for (let i = 0; i < 100 && !(document.body.textContent ?? '').includes('taken off the list'); i++) await wait(20)
+      break
+    case 'settings-github':
+      press('Settings')
+      for (let i = 0; i < 100 && document.querySelector('.github-account') === null; i++) await wait(20)
       break
     case 'settings-dark':
     case 'settings-light':

@@ -63,6 +63,11 @@ export interface FakeGithub {
   interrupt: ((call: FakeCall) => Response | undefined) | null
   revoke(token: string): void
   /**
+   * YAZ-5645 slice 2: the person takes `repo` off the app's list on GitHub ("Manage repos", or the app removed). The
+   * user token no longer reaches it (404) and no installation lists it. This fake's copy only: the shared setup stays.
+   */
+  takeOff(token: string, repo: string): void
+  /**
    * GitHub's order of checks for a write is not proven: the permission first (403), or the body first (422). With
    * true, the fake checks the body first, so a token with too little access gets 422 for a wrong body.
    */
@@ -95,6 +100,16 @@ export function fakeGithub(setup: { tokens: Record<string, FakeToken>; repos: Fa
     slowDown: null,
     blobs: new Set(),
     revoke: (token) => void tokens.delete(token),
+    takeOff(token, repo) {
+      const who = tokens.get(token)
+      if (who === undefined) return
+      const off = (r: string) => r.toLowerCase() !== repo.toLowerCase()
+      tokens.set(token, {
+        ...who,
+        repos: Object.fromEntries(Object.entries(who.repos ?? {}).filter(([r]) => off(r))),
+        installations: (who.installations ?? []).map((i) => ({ ...i, repos: i.repos.filter(off) })),
+      })
+    },
     async fetch(url, init) {
       const method = (init.method ?? 'GET').toUpperCase()
       const auth = new Headers(init.headers).get('authorization')

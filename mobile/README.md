@@ -260,12 +260,17 @@ npm run mobile:publish:preview
 
 It builds `mobile/dist/` (with the build check), copies the live build's chunks that the new build does not have into
 `mobile/dist/assets/` (`npm run mobile:keep-previous`, read-only GETs of the live site; YAZ-5303: an open page of the old
-version can still ask the host for them during a swap), then runs `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc`.
+version can still ask the host for them during a swap), checks that the Worker has the secret `GITHUB_CLIENT_SECRET`
+(`npm run mobile:check-secret -- before`; names only, never a value: with no secret it stops and nothing is published),
+then runs `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc`, then checks the secret again
+(`-- after`). YAZ-5645: the secret was once put while the Worker had no script, and the next deploys dropped it, so
+"Sign in with GitHub" failed after the round trip. To put it: `npx --yes wrangler@4.162.0 secret put GITHUB_CLIENT_SECRET
+--config mobile/wrangler.jsonc` and paste the GitHub App's client secret at the prompt (never in chat or Linear).
 Wrangler is not a dependency of the repo; `npx` fetches that exact version. To see what it would send without
 sending it: `npx --yes wrangler@4.162.0 deploy --config mobile/wrangler.jsonc --dry-run`.
 
-The Worker has no script: Cloudflare serves the files of `dist/` and applies `_headers`. No request reaches code of
-ours, so nothing logs an address. The real address `docs.yaseenarshad.com` is a custom domain of the same Worker
+Cloudflare serves the files of `dist/` and applies `_headers`. Only `/api/github/*` reaches code of ours
+(`worker/index.ts`, YAZ-5645), and it logs nothing. The real address `docs.yaseenarshad.com` is a custom domain of the same Worker
 (YAZ-5579).
 
 ## If a bad version ships

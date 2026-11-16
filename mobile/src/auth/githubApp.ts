@@ -19,16 +19,32 @@ import { REPO_LIST_CAP, REPO_PAGE_SIZE, orderRepos, type RepoList, type TokenRep
 
 export type PendingPurpose = PendingSignIn['purpose']
 
-/** What went wrong on the way back from GitHub (scope 3/3, edge cases 1–3). */
+/**
+ * What went wrong on the way back from GitHub (scope 3/3, edge cases 1–3). Each step that can fail has its own kind, so
+ * the screen says which one (YAZ-5645 GHF: one vague "refused" hid a Worker that had lost its client secret).
+ */
 export type GithubSignInError =
   /** The person said no on GitHub. Nothing changed. */
   | { kind: 'denied' }
   /** No sign-in was started here, or the state does not match (an old tab, Safari instead of the app, a forged link). */
   | { kind: 'no-sign-in' }
-  /** More than 10 minutes, or GitHub refused the code (it lasts 10 minutes, once). */
+  /** More than 10 minutes between the tap and the way back (checked here, before any call). */
   | { kind: 'too-late' }
+  /** The sign-in server (this site's Worker) did not answer: no internet, or the site is down. */
   | { kind: 'offline' }
-  /** The Worker or GitHub refused for another reason. */
+  /** The Worker has no client secret (`not_set_up`): it was never put, or a deploy dropped it. */
+  | { kind: 'not-set-up' }
+  /** The Worker could not reach GitHub. */
+  | { kind: 'github-unreachable' }
+  /** GitHub does not know the Worker's client secret, or the client ID (`incorrect_client_credentials`). */
+  | { kind: 'bad-key' }
+  /** The return address is not the app's callback (`bad_redirect` from the Worker, `redirect_uri_mismatch` from GitHub). */
+  | { kind: 'bad-return' }
+  /** GitHub refused the code: used, wrong, older than 10 minutes, or a PKCE verifier that does not match. */
+  | { kind: 'bad-code' }
+  /** GitHub gave a token but `/user` did not name the account. */
+  | { kind: 'no-account' }
+  /** Any other answer (a page that is not the Worker's, a word the app does not know). */
   | { kind: 'refused' }
 
 export type GithubReturn = { ok: true; login: string; purpose: PendingPurpose } | { ok: false; error: GithubSignInError; purpose: PendingPurpose | null }
@@ -86,17 +102,39 @@ export async function finishGithubSignIn(callback: URL, deps: GithubDeps): Promi
   if (now() - pending.startedAt > PENDING_MS) return fail('too-late')
 
   const got = await exchangeCode(code, pending.verifier, pending.redirectUri, deps.fetch, now)
-  if (!got.ok) return fail(got.error === 'offline' || got.error === 'github_unreachable' ? 'offline' : got.error === 'bad_verification_code' ? 'too-late' : 'refused')
+  if (!got.ok) return fail(workerFailure(got.error))
   let login: string
   try {
     const user = (await githubClient(got.pair.access, { fetch: deps.fetch, now }).request('/user')).data as { login?: unknown }
-    if (typeof user.login !== 'string') return fail('refused')
+    if (typeof user.login !== 'string') return fail('no-account')
     login = user.login
   } catch (error) {
-    return fail(error instanceof GithubError && error.code === 'OFFLINE' ? 'offline' : 'refused')
+    return fail(error instanceof GithubError && error.code === 'OFFLINE' ? 'offline' : 'no-account')
   }
   await deps.tokens.savePair({ ...got.pair, login })
   return { ok: true, login, purpose: pending.purpose }
+}
+
+/** The Worker's one word (`worker/index.ts`, `refuse`) or GitHub's `error` it passes on, as the step that failed. */
+function workerFailure(error: string): GithubSignInError['kind'] {
+  switch (error) {
+    case 'offline':
+      return 'offline'
+    case 'not_set_up':
+      return 'not-set-up'
+    case 'github_unreachable':
+      return 'github-unreachable'
+    case 'incorrect_client_credentials':
+      return 'bad-key'
+    case 'bad_redirect':
+    case 'redirect_uri_mismatch':
+      return 'bad-return'
+    case 'bad_verification_code':
+    case 'incorrect_verification_code':
+    case 'invalid_grant':
+      return 'bad-code'
+  }
+  return 'refused'
 }
 
 /** The page of a `rel="next"` link, only when it points to `path` on api.github.com. */
@@ -166,11 +204,23 @@ export function githubSignInMessage(error: GithubSignInError): string {
     case 'no-sign-in':
       return 'This sign-in did not start here. If you started it in the Home Screen app, go back to the app and try again there.'
     case 'too-late':
-      return 'Sign-in took too long. Try again.'
+      return 'Sign-in took more than 10 minutes, so GitHub no longer takes it. Sign in again.'
     case 'offline':
-      return 'No internet connection. Connect, then try again.'
+      return 'Yaseen Docs could not reach the sign-in server. Check the internet connection, then sign in again.'
+    case 'not-set-up':
+      return 'The sign-in server is not set up: it is missing the GitHub app key. Use a token instead for now.'
+    case 'github-unreachable':
+      return 'The sign-in server could not reach GitHub. GitHub may be down. Sign in again later, or use a token instead.'
+    case 'bad-key':
+      return "GitHub refused the app's key, so the sign-in server cannot sign you in. Use a token instead for now."
+    case 'bad-return':
+      return 'GitHub refused the return address of this sign-in. Use a token instead for now.'
+    case 'bad-code':
+      return 'GitHub refused the sign-in code: it was used already or is too old. Sign in again.'
+    case 'no-account':
+      return 'GitHub signed you in but did not say which account. Sign in again.'
     case 'refused':
-      return 'GitHub did not finish the sign-in. Try again in a few minutes.'
+      return 'The sign-in server gave an answer Yaseen Docs does not know. Sign in again, or use a token instead.'
   }
 }
 
@@ -197,4 +247,22 @@ export function githubHelp(error: SignInError): Help {
       return { message: `You signed in to GitHub as @${error.login}. This vault uses @${error.expected}. Sign in as @${error.expected}.`, forward: 'sign-in-github' }
   }
   return signInHelp(error)
+}
+
+/**
+ * YAZ-5645 slice 2 (edge case 5): the open vault's repo answers 404. Was it taken off the app's list on GitHub (Manage
+ * repos, or the app removed from the account)? Only a vault on "Sign in with GitHub" can say: its account lists the
+ * installations' repos again. `removed`: not on the list (or no list at all). `listed`: still on it, so the repo was
+ * renamed or deleted (row R12 keeps its words). `unknown`: a pasted token, signed out, or GitHub did not answer.
+ */
+export async function repoStanding(vault: string, repo: string, deps: { tokens: TokenStore; fetch?: FetchLike; now?: () => number }): Promise<'removed' | 'listed' | 'unknown'> {
+  const login = await deps.tokens.githubOf(vault)
+  if (login === null) return 'unknown'
+  const token = await deps.tokens.accessFor(login)
+  if (token === null) return 'unknown'
+  const listed = await listInstalledRepos(token, deps)
+  if (!listed.ok) return listed.error.kind === 'no-installed-repos' ? 'removed' : 'unknown'
+  if (listed.repos.some((r) => r.fullName.toLowerCase() === repo.toLowerCase())) return 'listed'
+  // A list cut short may hold it further on.
+  return listed.capped ? 'unknown' : 'removed'
 }
