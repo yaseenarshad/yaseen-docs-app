@@ -17,3 +17,5 @@ docs/superpowers/
 desktop/build/bin/speller
 # The share viewer build (YAZ-3040, `tools/buildShareViewer.mjs`): made by `npm run build`, shipped as the `share-viewer` extraResource.
 share/dist/
+# YAZ-5645: the Worker secret for the dev server (mobile/.dev.vars, GITHUB_CLIENT_SECRET=...). Never committed.
+.dev.vars

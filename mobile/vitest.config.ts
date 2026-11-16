@@ -44,7 +44,7 @@ export default defineConfig({
     name: 'mobile',
     // Store tests run in plain Node with fake-indexeddb; a file that draws React says `@vitest-environment jsdom`.
     environment: 'node',
-    include: ['src/**/*.test.{ts,tsx}', 'publish/**/*.test.ts', '*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'publish/**/*.test.ts', 'worker/**/*.test.ts', '*.test.ts'],
     // The friends model checkers' full runs take minutes: only with CHECK3_FULL=1 (src/friends/check3/run.ts,
     // src/friends/check4/run4.ts, src/friends/check5/run5.testing.ts: the stale-read attack, YAZ-5398; src/friends/check6/run6.testing.ts: the list file gone, YAZ-5444).
     // The checkers' research tools (one seed, shrink, replay, attack runners) are not tests: `*.research.ts`, run by

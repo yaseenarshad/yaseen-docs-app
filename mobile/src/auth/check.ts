@@ -33,6 +33,11 @@ export interface SignInInput {
   /** The default branch of the repo when not given (the sign-in form has no branch field). */
   branch?: string
   token: string
+  /**
+   * YAZ-5645: the token is the access token of this GitHub account's sign-in ("Sign in with GitHub"): the vault USES
+   * the account's pair (refreshed by itself) instead of keeping this token.
+   */
+  github?: string
 }
 
 export type SignInError =
@@ -63,6 +68,8 @@ export type SignInError =
   | { kind: 'other-account'; login: string; expected: string }
   /** The token's list of repos (`GET /user/repos`) is empty. The token was given no repo. */
   | { kind: 'no-repos' }
+  /** YAZ-5645: signed in with GitHub, but no repo is chosen for the app (no installation, or 0 repos). */
+  | { kind: 'no-installed-repos' }
   | { kind: 'offline' }
   | { kind: 'github-down' }
   | { kind: 'rate-limited'; resetAt: number | null }
@@ -207,6 +214,8 @@ export function signInMessage(error: SignInError): string {
       return `This token is for @${error.login}. This vault uses @${error.expected}. Make a token while signed in as @${error.expected}.`
     case 'no-repos':
       return "This token can't see any repository. On GitHub, edit the token and choose the repository of your vault."
+    case 'no-installed-repos':
+      return "Yaseen Docs can't see any repo yet. On GitHub, choose the repo of your vault."
     case 'offline':
       return 'No internet connection. Connect, then try again.'
     case 'github-down':

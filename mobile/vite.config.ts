@@ -146,13 +146,56 @@ export function buildDefine(now: Date = new Date()): Record<string, string> {
   }
 }
 
+/**
+ * YAZ-5645 (decision D8): on a computer, the dev server (http://localhost:5173) answers the Worker's routes
+ * (`/api/github/*`) with the Worker's own code (`worker/index.ts`), so "Sign in with GitHub" works there too. The client
+ * secret comes from `mobile/.dev.vars` (`GITHUB_CLIENT_SECRET=…`, git-ignored), read at each call, never logged.
+ * Without the file the routes answer 503 `not_set_up`. Dev only: the build has no such route.
+ */
+export function githubWorkerDev(): Plugin {
+  const readVars = (): Record<string, string> => {
+    const file = join(here, '.dev.vars')
+    if (!existsSync(file)) return {}
+    const vars: Record<string, string> = {}
+    for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const m = /^\s*([A-Z_][A-Z0-9_]*)\s*=\s*"?(.*?)"?\s*$/.exec(line)
+      if (m) vars[m[1]] = m[2]
+    }
+    return vars
+  }
+  return {
+    name: 'notecards-github-worker-dev',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use('/api/github/', (req, res) => {
+        void (async () => {
+          const chunks: Buffer[] = []
+          for await (const chunk of req) chunks.push(chunk as Buffer)
+          const url = `http://${req.headers.host ?? 'localhost:5173'}${req.originalUrl ?? req.url ?? '/'}`
+          const headers = new Headers()
+          for (const [name, value] of Object.entries(req.headers)) if (typeof value === 'string') headers.set(name, value)
+          const request = new Request(url, { method: req.method, headers, body: req.method === 'GET' || req.method === 'HEAD' ? undefined : Buffer.concat(chunks) })
+          const worker = (await server.ssrLoadModule('/worker/index.ts')) as typeof import('./worker/index')
+          const answer = await worker.handle(request, { GITHUB_CLIENT_SECRET: readVars().GITHUB_CLIENT_SECRET })
+          res.statusCode = answer.status
+          answer.headers.forEach((value, name) => res.setHeader(name, value))
+          res.end(Buffer.from(await answer.arrayBuffer()))
+        })().catch(() => {
+          res.statusCode = 500
+          res.end()
+        })
+      })
+    },
+  }
+}
+
 export default defineConfig({
   root: here,
   define: buildDefine(),
   // The guard is for what the phone bundles. `vitest.config.ts` leaves it out on purpose (YAZ-5160).
   // YAZ-5087: `notecardsPwa` writes the service worker (`dist/sw.js`) with this build's shell list.
   // YAZ-5533: `drawioPhone` puts draw.io's viewer and its files in `dist/drawio/<hash>/`, outside that list.
-  plugins: [drawingChunkTrim(), phoneImportGuard(), react(), notecardsPwa(), materialIconFiles(), drawioPhone()],
+  plugins: [drawingChunkTrim(), phoneImportGuard(), react(), notecardsPwa(), materialIconFiles(), drawioPhone(), githubWorkerDev()],
   resolve: phoneResolve,
   // YAZ-5440: the dev server serves the engine's font files to the drawing chunk.
   server: { fs: { allow: [here, shared, clientSrc, engineFonts] } },

@@ -48,6 +48,12 @@ describe('which requests the worker takes', () => {
   const { build } = site('v1')
   const at = (url: string, method = 'GET', mode = 'cors') => route({ url, method, mode }, ORIGIN, build)
 
+  it("YAZ-5645: the Worker's /api/github/* is never kept (POST, the network answers); /auth/callback and /auth/installed are the app, with any query", () => {
+    for (const path of ['/api/github/token', '/api/github/refresh', '/api/github/revoke']) expect([path, at(`${ORIGIN}${path}`, 'POST').kind]).toEqual([path, 'pass'])
+    for (const path of ['/auth/callback?code=abc&state=xyz', '/auth/callback?error=access_denied&state=x', '/auth/installed?installation_id=1&setup_action=install'])
+      expect([path, at(`${ORIGIN}${path}`, 'GET', 'navigate')]).toEqual([path, { kind: 'shell', key: '/', navigate: true }])
+  })
+
   it('never another origin: GitHub (the API, a raw file, a gist), the avatar host, anything', () => {
     for (const url of [
       'https://api.github.com/repos/a/b/git/blobs/1',

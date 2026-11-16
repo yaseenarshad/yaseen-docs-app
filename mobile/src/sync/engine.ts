@@ -137,6 +137,8 @@ interface Pass {
   gen: number
   promise: Promise<void>
   dropped: boolean
+  /** YAZ-5645: this pass already renewed a GitHub sign-in's token after a 401 (once only). */
+  renewed?: true
 }
 
 /**
@@ -366,6 +368,12 @@ export function createSyncEngine(options: SyncEngineOptions): SyncEngine {
       plan()
     } catch (error) {
       if (gone()) return
+      // YAZ-5645: a 401 with a GitHub sign-in's token: refresh once, then the same pass once more (a pasted token: no).
+      if (error instanceof GithubError && error.code === 'UNAUTHORIZED' && me.renewed !== true && (await tokens.renew(id).catch(() => false))) {
+        if (gone()) return
+        me.renewed = true
+        return runPass(me)
+      }
       const problem: SyncProblem = error instanceof GithubError ? error.code : error instanceof StorageFullError ? 'STORAGE_FULL' : 'FAILED'
       if (problem === 'RATE_LIMITED') {
         // GitHub's time (the client holds it between 1 minute and 1 hour), or more: each "slow down" in a row doubles

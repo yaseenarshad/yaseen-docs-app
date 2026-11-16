@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { SAME_WORD, unitTextOf } from '@client/vault/unitWordText'
 import type { SignInError } from '../auth/check'
 import { FORWARD_LABEL, signInHelp, syncHelp } from './help'
+import { githubHelp } from '../auth/githubApp'
 import { IDLE } from './syncPort'
 
 /** One of each typed result of the sign-in logic (3E). The `Record` makes a new kind fail the typecheck here. */
@@ -19,6 +20,7 @@ const EACH: Record<SignInError['kind'], SignInError> = {
   'already-added': { kind: 'already-added', repo: 'yaseen/vault', branch: 'main' },
   'other-account': { kind: 'other-account', login: 'other', expected: 'yaseen' },
   'no-repos': { kind: 'no-repos' },
+  'no-installed-repos': { kind: 'no-installed-repos' },
   offline: { kind: 'offline' },
   'github-down': { kind: 'github-down' },
   'rate-limited': { kind: 'rate-limited', resetAt: Date.UTC(2026, 10, 13, 13) },
@@ -31,7 +33,19 @@ describe('signInHelp: every sign-in result has words and a way forward', () => {
       const help = signInHelp(error)
       expect(help.message.length).toBeGreaterThan(10)
       expect(FORWARD_LABEL[help.forward]).toBeTruthy()
+      // YAZ-5645: the same with "Sign in with GitHub", which never talks of a token to make or edit.
+      const github = githubHelp(error)
+      expect(FORWARD_LABEL[github.forward]).toBeTruthy()
+      expect([error.kind, github.forward === 'token-guide' || /make a token|edit the token|your token/i.test(github.message)]).toEqual([error.kind, false])
     })
+
+  it('YAZ-5645: with GitHub, a repo the app cannot read goes to "Choose repos on GitHub", a signed-out account to "Sign in with GitHub"', () => {
+    expect(githubHelp(EACH['no-installed-repos']).forward).toBe('choose-repos')
+    expect(githubHelp(EACH['repo-not-found']).forward).toBe('choose-repos')
+    expect(githubHelp(EACH['read-only']).forward).toBe('choose-repos')
+    expect(githubHelp(EACH.unauthorized).forward).toBe('sign-in-github')
+    expect(githubHelp(EACH['other-account']).message).toContain('@yaseen')
+  })
 
   it('sends a token problem to the guide, a missing vault to the repo steps, a passing problem to "Try again"', () => {
     expect(signInHelp(EACH.unauthorized).forward).toBe('token-guide')

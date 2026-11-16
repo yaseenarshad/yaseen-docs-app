@@ -10,6 +10,9 @@ import type { FriendsPort, FriendsSettings } from './friendsPort'
 import { browserBack, useBrowserHistory } from './browserHistory'
 import { PLAIN_VAULT, navigate, openingTab, tabIn, type NavAction, type NavState, type VaultTabs } from './nav'
 import { IDLE, type ShellSync, type ShellSyncState } from './syncPort'
+import { SAVE_FAILED, type Help } from './help'
+import { CALLBACK_PATH, INSTALLED_PATH } from '../auth/githubAppConfig'
+import type { SignInMode } from '../screens/SignIn'
 import { SAME_WORD, UNIT_WORD_PATH, readUnitWord, type UnitText } from './unitWord'
 import { readVaultTabs, sameTabs } from './vaultTabs'
 
@@ -39,7 +42,21 @@ export interface AppServices {
    * pass one that keeps Review on (`screens/testing.ts`), as their made-up vaults have no IDs.
    */
   vaultTabs?: typeof readVaultTabs
+  /**
+   * YAZ-5645: the app leaves for GitHub's sign-in page in the same window (`location.assign`). Tests pass a fake, and
+   * the address (`location.href` on return) is read once at start: `/auth/callback` and `/auth/installed`.
+   */
+  goToGithub?: (url: string) => void
+  /** The site's origin for the callback address. Default: `location.origin`. */
+  origin?: string
 }
+
+/**
+ * YAZ-5645, "Sign in with GitHub" after the trip to GitHub:
+ * - `picking`: signed in as `login`; the sign-in screen shows the repos chosen for the app (`listInstalledRepos`).
+ * - `failed`: the words of what went wrong, shown on the sign-in screen with one way forward.
+ */
+export type GithubFlow = { kind: 'none' } | { kind: 'picking'; login: string } | { kind: 'failed'; help: Help }
 
 /**
  * - `loading`: reading the phone's storage. No network call.
@@ -83,6 +100,14 @@ export interface AppModel {
   eraseAll(): Promise<void>
   chooseFriendsVault(vault: string): Promise<void>
   saveFriendsSettings(settings: FriendsSettings): Promise<void>
+  /** YAZ-5645: where "Sign in with GitHub" stands after the trip to GitHub. */
+  github: GithubFlow
+  /** "Sign in with GitHub": keeps the pending sign-in, then goes to GitHub. `another`: GitHub's account picker. */
+  signInWithGithub(mode: SignInMode, another?: boolean): Promise<void>
+  /** A GitHub account's access token (refreshed first when it ends soon), for the repo list; null: signed out. */
+  githubAccess(login: string): Promise<string | null>
+  /** The sign-in screen leaves the GitHub step (back to the first choice). */
+  endGithub(): void
 }
 
 const AppContext = createContext<AppModel | null>(null)
@@ -115,6 +140,20 @@ async function stopSync(sync: ShellSync): Promise<void> {
   clearTimeout(timer)
 }
 
+/** Ends every GitHub sign-in of this phone on GitHub (best effort, at most `STOP_WAIT_MS`). */
+async function revokeGithub(tokens: TokenStore, fetch: FetchLike | undefined, origin: string | undefined): Promise<void> {
+  const logins = await tokens.githubAccounts().catch(() => [])
+  if (logins.length === 0) return
+  const { revokeAtWorker } = await import('../auth/githubWorker')
+  const all = Promise.all(logins.map(async (login) => {
+    const access = await tokens.accessFor(login).catch(() => null)
+    if (access !== null) await revokeAtWorker(access, fetch, origin)
+  }))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([all, new Promise<void>((r) => (timer = setTimeout(r, STOP_WAIT_MS)))])
+  clearTimeout(timer)
+}
+
 /** The app's state, for any screen under `AppProvider`. */
 export function useApp(): AppModel {
   const app = useContext(AppContext)
@@ -142,8 +181,22 @@ const EMPTY: Loaded = {
   tabs: PLAIN_VAULT,
 }
 
+/**
+ * YAZ-5645: the address GitHub sent the person back to, read ONCE at start, and taken out of the address bar at once
+ * (the code must not stay in the history). Null: an ordinary start.
+ */
+function takeGithubReturn(): URL | null {
+  if (typeof location === 'undefined') return null
+  const url = new URL(location.href)
+  if (url.pathname !== CALLBACK_PATH && url.pathname !== INSTALLED_PATH) return null
+  history.replaceState(history.state, '', '/')
+  return url
+}
+
 export function AppProvider({ services, children }: { services: AppServices; children: ReactNode }) {
   const { store, tokens, sync, friends } = services
+  const [githubReturn] = useState(takeGithubReturn)
+  const [github, setGithub] = useState<GithubFlow>({ kind: 'none' })
   const tabsOfVault = services.vaultTabs ?? readVaultTabs
   const [loaded, setLoaded] = useState<Loaded>(EMPTY)
   const [nav, setNav] = useState<NavState>({ tab: 'review', stack: [] })
@@ -206,6 +259,50 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     }
   }, [load, friends])
 
+  // YAZ-5645: back from GitHub. Runs once, after the first load (the screens need the phase).
+  const githubDone = useRef(false)
+  useEffect(() => {
+    if (githubReturn === null || loaded.phase === 'loading' || githubDone.current) return
+    githubDone.current = true
+    void (async () => {
+      const { finishGithubSignIn, githubHelp, githubSignInMessage } = await import('../auth/githubApp')
+      const ready = loaded.phase === 'ready'
+      // A screen over the tabs: the one the sign-in started from (Add a vault, Sign in again).
+      const show = (mode: SignInMode | null) => {
+        if (!ready || mode === null || mode.kind === 'first') return
+        setNav((n) => ({ ...n, stack: [mode.kind === 'add' ? { kind: 'add-vault' } : { kind: 'replace-token', vault: mode.vault }] }))
+      }
+      if (githubReturn.pathname === INSTALLED_PATH) {
+        // Back from "choose repos" (the Setup URL): the account signed in last lists its repos again.
+        const login = (await tokens.githubAccounts()).at(-1)
+        if (login === undefined) return
+        setGithub({ kind: 'picking', login })
+        return show({ kind: 'add' })
+      }
+      const back = await finishGithubSignIn(githubReturn, { tokens, fetch: services.fetch, now: services.now, origin: services.origin })
+      if (!back.ok) {
+        setGithub({ kind: 'failed', help: { message: githubSignInMessage(back.error), forward: 'sign-in-github' } })
+        return show(back.purpose)
+      }
+      const mode = back.purpose
+      if (mode.kind !== 'again') {
+        setGithub({ kind: 'picking', login: back.login })
+        return show(mode)
+      }
+      // Sign in again: the same vault, now with the GitHub sign-in.
+      const token = await tokens.accessFor(back.login)
+      const outcome = token === null ? null : await signInAgain(mode.vault, token, deps, back.login).catch(() => null)
+      if (outcome?.ok) {
+        const next = await load(true)
+        if (!ready) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
+        return
+      }
+      setGithub({ kind: 'failed', help: outcome === null ? SAVE_FAILED : githubHelp(outcome.error) })
+      show(mode)
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [githubReturn, loaded.phase])
+
   useEffect(
     () =>
       sync.subscribe((event) => {
@@ -245,6 +342,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     async (input: SignInInput) => {
       const outcome = await signIn(input, deps)
       if (outcome.ok) {
+        setGithub({ kind: 'none' })
         const first = loaded.list.vaults.length === 0
         await saveVaultList(store, openVault(await loadVaultList(store), outcome.vault))
         const next = await load(true)
@@ -261,6 +359,7 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     async (vault: string, token: string) => {
       const outcome = await signInAgain(vault, token, deps)
       if (outcome.ok) {
+        setGithub({ kind: 'none' })
         const wasWaiting = loaded.phase === 'sign-in-again'
         const next = await load(true)
         if (wasWaiting) setNav({ tab: openingTab(await friends.hasFriends(), next.tabs), stack: [] })
@@ -306,13 +405,16 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     // The friends sender, list and marks stop first; nothing of theirs is stored after the erase.
     await friends.stop?.()
     await stopSync(sync)
+    // YAZ-5645 (decision D7): each GitHub sign-in ends on GitHub too, through the Worker (at most 3 s; offline: the
+    // phone forgets it anyway).
+    await revokeGithub(tokens, services.fetch, services.origin)
     await signOutAndErase(store, tokens)
     // The other tabs of the app stop too and show the first-run screen. The store already refuses their
     // writes (the erase count is in the database); this makes their screens follow.
     tellOtherTabs({ type: 'erased' })
     await load(false)
     setNav({ tab: 'review', stack: [] })
-  }, [store, tokens, sync, load, friends])
+  }, [store, tokens, sync, load, friends, services.fetch, services.origin])
 
   // Another tab erased the phone: stop the sync here and show the sign-in.
   useEffect(
@@ -344,6 +446,18 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     [friends],
   )
 
+  const signInWithGithub = useCallback(
+    async (mode: SignInMode, another = false) => {
+      const { startGithubSignIn } = await import('../auth/githubApp')
+      const purpose = mode.kind === 'again' ? { kind: 'again' as const, vault: mode.vault } : { kind: mode.kind }
+      const url = await startGithubSignIn(purpose, { tokens, now: services.now, origin: services.origin }, another)
+      ;(services.goToGithub ?? ((to: string) => location.assign(to)))(url)
+    },
+    [tokens, services.now, services.origin, services.goToGithub],
+  )
+  const githubAccess = useCallback((login: string) => tokens.accessFor(login), [tokens])
+  const endGithub = useCallback(() => setGithub({ kind: 'none' }), [])
+
   // A tab the open vault does not have shows Search (`keepTab` makes it stay Search when the tabs change).
   const tab = tabIn(nav.tab, loaded.tabs)
   const shownNav = useMemo(() => (tab === nav.tab ? nav : { ...nav, tab }), [nav, tab])
@@ -365,6 +479,10 @@ export function AppProvider({ services, children }: { services: AppServices; chi
     eraseAll,
     chooseFriendsVault: chooseFriends,
     saveFriendsSettings,
+    github,
+    signInWithGithub,
+    githubAccess,
+    endGithub,
   }
   return <AppContext.Provider value={model}>{children}</AppContext.Provider>
 }
