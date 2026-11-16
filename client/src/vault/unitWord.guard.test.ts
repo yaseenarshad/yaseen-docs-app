@@ -10,7 +10,7 @@
  * menu's `plain(label)` rows; a string inside a JSX expression that IS an element's text, `<strong>{a ? 'This page…' : …}</strong>`
  * (the literal stands between `>{` and `}<` on its line, with no tag in between; YAZ-4939's chip card was missed this way). The sidebar menu's `create(id, label)` and Settings › Folder pages' `row(id, label)` route
  * every label through the helper themselves. Help prose (a `hint`, an `about` line, a sheet's long text) keeps the plain
- * word, as the help docs do, and is not scanned.
+ * word, as the help docs do, and is not scanned. Tests and their `*.testing.ts` helpers (fixtures only tests import) are not scanned either.
  */
 import { describe, expect, it } from 'vitest'
 import fs from 'node:fs'
@@ -44,7 +44,7 @@ function* sourceFiles(dir: string): Generator<string> {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name)
     if (entry.isDirectory()) yield* sourceFiles(file)
-    else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$|\.d\.ts$/.test(entry.name)) yield file
+    else if (/\.(ts|tsx)$/.test(entry.name) && !/\.test\.tsx?$|\.testing\.tsx?$|\.d\.ts$/.test(entry.name)) yield file
   }
 }
 
@@ -89,6 +89,14 @@ export function unguardedPageStrings(): string[] {
 describe('the vault word guard (YAZ-4938)', () => {
   it('every user-facing "page" string goes through the helper or names a feature on the allow-list', () => {
     expect(unguardedPageStrings()).toEqual([])
+  })
+
+  it('no app file imports a `*.testing.ts` helper, so skipping them hides no UI string', () => {
+    const imports: string[] = []
+    for (const file of sourceFiles(ROOT)) {
+      if (/from\s+['"][^'"]*\.testing['"]/.test(fs.readFileSync(file, 'utf8'))) imports.push(path.relative(ROOT, file))
+    }
+    expect(imports).toEqual([])
   })
 
   it('the allow-list is short, and each entry still matches something', () => {
