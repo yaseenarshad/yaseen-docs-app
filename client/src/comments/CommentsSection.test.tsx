@@ -1000,6 +1000,38 @@ describe('CommentsSection — YAZ-4615 resolve, writers, signing', () => {
     expect(q(el, '.comments__resolved-toggle--group')?.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('D5: the header link brings the group into view a frame later; with no scrollIntoView (jsdom, YAZ-4965 CI) or after an unmount nothing throws', async () => {
+    const errors: unknown[] = []
+    const onError = (e: ErrorEvent): void => {
+      errors.push(e.error)
+      e.preventDefault()
+    }
+    window.addEventListener('error', onError)
+    const frame = (): Promise<void> => new Promise((done) => requestAnimationFrame(() => done()))
+    try {
+      const el = mountWith(RESOLVABLE.replace('    body: Lone comment', '    resolved: 2026-09-13T00:00:00Z\n    body: Lone comment'))
+      // No scrollIntoView on the element (jsdom has none): the frame runs with no error.
+      click(button(el, '· 1 resolved'))
+      await frame()
+      expect(errors).toEqual([])
+      // Where the method exists, the group is brought to the top of the view.
+      const group = must(q(el, '.comments__resolved'), 'group')
+      const scroll = vi.fn()
+      Object.assign(group, { scrollIntoView: scroll })
+      click(button(el, '· 1 resolved'))
+      await frame()
+      expect(scroll).toHaveBeenCalledWith({ block: 'start', behavior: 'smooth' })
+      // A click, then the section goes before its frame: the frame does nothing.
+      click(button(el, '· 1 resolved'))
+      unmount()
+      await frame()
+      expect(scroll).toHaveBeenCalledTimes(1)
+      expect(errors).toEqual([])
+    } finally {
+      window.removeEventListener('error', onError)
+    }
+  })
+
   it('D5 In place: a resolved thread stays in time order, dimmed, with "Resolved" and Reopen', () => {
     const el = mountWith(RESOLVABLE.replace('    body: Parent comment', '    resolved: 2026-09-13T00:00:00Z\n    body: Parent comment'), { resolvedPlace: 'inPlace' })
     expect(threads(el)[0].classList.contains('comments__thread--resolved')).toBe(true)

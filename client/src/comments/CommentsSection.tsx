@@ -191,6 +191,8 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const [justResolved, setJustResolved] = useState<{ id: string; label: string | null } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const groupRef = useRef<HTMLDivElement>(null)
+  /** The frame that brings the Resolved group into view; cancelled on unmount (YAZ-4965 CI). */
+  const scrollFrame = useRef<number | null>(null)
   const [inline, setInline] = useState<Inline>(null)
   const [confirming, setConfirming] = useState<PendingDelete | null>(null)
   const [saving, setSaving] = useState(false)
@@ -198,6 +200,7 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const now = useClock()
   useEffect(() => () => {
     if (undoTimer.current !== null) clearTimeout(undoTimer.current)
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)
   }, [])
 
   // Item 12: the comment list is read ONCE for each content, not on every render (a fold, the clock).
@@ -277,7 +280,12 @@ export function CommentsSection({ file, order, onChangeOrder, root = null }: Com
   const showResolved = (): void => {
     setExpanded(true)
     setResolvedOpen(true)
-    requestAnimationFrame(() => groupRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }))
+    // jsdom has no scrollIntoView — hence the `?.()` (the TabBar idiom); one frame at a time.
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current)
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null
+      groupRef.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
+    })
   }
 
   const closeInline = (): void => {
