@@ -151,6 +151,20 @@ a {
   color: var(--accent);
 }
 
+/* YAZ-5661 round 2: the strip behind the clock and battery. iOS 26 colours it from a fixed, opaque bar across the top of
+   the page, not from `theme-color` or the manifest: this bar, the safe area's height, in the theme's background. It
+   is above everything (a sheet's dimmer never greys the clock) and takes no tap. Without a safe area it has no height. */
+.status-strip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top, 0px);
+  background: var(--bg);
+  pointer-events: none;
+  z-index: 1000;
+}
+
 /* ---- The frame: top bar, the screen, the tab bar. The bars keep out of the notch and the home bar. ---- */
 
 .app {

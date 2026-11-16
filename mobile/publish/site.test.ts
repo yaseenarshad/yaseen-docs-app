@@ -99,6 +99,10 @@ describe('the page head for iOS', () => {
     expect(html).toContain('<meta name="referrer" content="no-referrer" />')
   })
 
+  it('YAZ-5661 round 2: the strip behind the clock is in the page from the start, before the app (aria-hidden, no tap)', () => {
+    expect(html).toMatch(/<body>\s*(?:<!--[^>]*-->\s*)?<div class="status-strip" aria-hidden="true"><\/div>\s*<div id="root"><\/div>/)
+  })
+
   it('YAZ-5287: the supported iPhone sizes, each with a splash (points and scale)', () => {
     const sizes = SPLASH_SCREENS.map((s) => `${s.width}x${s.height}@${s.ratio}`).sort()
     for (const want of ['440x956@3', '420x912@3', '402x874@3', '430x932@3', '393x852@3', '428x926@3', '390x844@3', '414x896@3', '375x812@3', '414x896@2', '375x667@2']) {
