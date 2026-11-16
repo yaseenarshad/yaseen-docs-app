@@ -35,9 +35,11 @@ export interface CardAction {
 
 /**
  * The rows for a card with these marks. `upNext`: the Up next row (the vault reviews; the Mac shows "Put at top of
- * Inbox" only then).
+ * Inbox" only then). `fix` (default true): the Fix later row. Review's ⋯ has none (YAZ-5625, Yaseen: "remove it, make
+ * the mac match so they are the same"): the Mac's Inbox has no Fix later either (YAZ-5430); a card's ⋯ in a page and
+ * the card view keep it.
  */
-export function cardActions(marks: CardActionMarks, options: { upNext: boolean }): CardAction[] {
+export function cardActions(marks: CardActionMarks, options: { upNext: boolean; fix?: boolean }): CardAction[] {
   const rows: CardAction[] = []
   if (options.upNext) {
     const on = !marks.next
@@ -60,14 +62,15 @@ export function cardActions(marks: CardActionMarks, options: { upNext: boolean }
     change: (l) => withCardOff(l, off),
   })
   const fix = !marks.fix
-  rows.push({
-    kind: 'fix',
-    on: fix,
-    label: fix ? 'Fix later' : 'Remove Fix later',
-    confirm: fix ? 'Tap again to mark Fix later' : 'Tap again to remove Fix later',
-    done: fix ? 'Marked: Fix later' : 'Removed: Fix later',
-    change: (l) => withCardFix(l, fix),
-  })
+  if (options.fix !== false)
+    rows.push({
+      kind: 'fix',
+      on: fix,
+      label: fix ? 'Fix later' : 'Remove Fix later',
+      confirm: fix ? 'Tap again to mark Fix later' : 'Tap again to remove Fix later',
+      done: fix ? 'Marked: Fix later' : 'Removed: Fix later',
+      change: (l) => withCardFix(l, fix),
+    })
   // ONE toggle row (the Mac's YAZ-5030): the hint is the state now; the action turns it to the other.
   const hide = !marks.notitle
   rows.push({

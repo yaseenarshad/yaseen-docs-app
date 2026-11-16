@@ -104,6 +104,16 @@ export function waitingLine(more: Record<AddKind, number>, kinds: readonly AddKi
   return `${parts.join(' and ')} ${one ? 'waits' : 'wait'} for another day.`
 }
 
+/**
+ * YAZ-5623: the vault's done screen when nothing waits to be added but cards are still due (a new day began at local
+ * midnight during the review, a card came back): how many it offers, "Review 12 more", which starts the vault's review
+ * again; 0 offers nothing ("Nothing else is due today."). The phone's rule, now the Mac's too: one rule, one text.
+ */
+export const reviewMoreCount = (addKinds: readonly AddKind[], dueCount: number): number => (addKinds.length === 0 ? dueCount : 0)
+
+/** The done screen's way on (YAZ-5623): "Review 12 more". */
+export const reviewMoreLabel = (n: number): string => `Review ${n} more`
+
 /** The add's line (YAZ-5042), after its "+": "Added 10 new cards for today". */
 export const addedLine = (kind: AddKind, n: number): string => `Added ${n} ${kind === 'new' ? 'new' : 'Up next'} card${n === 1 ? '' : 's'} for today`
 

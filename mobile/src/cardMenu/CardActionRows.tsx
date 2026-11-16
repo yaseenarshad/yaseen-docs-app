@@ -8,6 +8,8 @@ export interface CardActionRowsProps {
   marks: CardActionMarks | null
   /** The Up next row (the vault reviews). */
   upNext: boolean
+  /** The Fix later row (default true); Review's ⋯ has none, as the Mac's Inbox (YAZ-5625). */
+  fix?: boolean
   /** The second tap, in time: the host writes it (and closes its menu, says what was done). */
   onAction: (action: CardAction) => void
   /** Every row waits (no card line to change). */
@@ -25,10 +27,10 @@ export interface CardActionRowsProps {
  * No wrapper: the rows are the host menu's own `menuitem`s; the live line (VoiceOver) goes first, so a host's
  * `:last-child` rule still finds its last row.
  */
-export default function CardActionRows({ marks, upNext, onAction, disabled = false, rowClassName = 'card-actions__row', ms }: CardActionRowsProps) {
+export default function CardActionRows({ marks, upNext, fix = true, onAction, disabled = false, rowClassName = 'card-actions__row', ms }: CardActionRowsProps) {
   const group = useId()
   const { armed, tap, cancel } = useTwoTap({ ms })
-  const rows = marks === null ? cardActions({ off: false, next: false, fix: false, notitle: false }, { upNext }) : cardActions(marks, { upNext })
+  const rows = cardActions(marks ?? { off: false, next: false, fix: false, notitle: false }, { upNext, fix })
   const wait = disabled || marks === null
   // Anything else cancels: a tap outside these rows, or Escape.
   useEffect(() => {

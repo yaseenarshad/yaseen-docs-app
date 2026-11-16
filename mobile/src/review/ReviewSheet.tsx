@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { kindCount, newCardsFrom, pickLabel, showsFilter, toggledPick, underFolder } from '@client/review/inboxMenu'
+import { kindCount, kindCountText, newCardsFrom, pickLabel, showsFilter, toggledPick, underFolder } from '@client/review/inboxMenu'
 import type { CardReviewApi, CardReviewSession, NewCardFolder } from '@client/review/useCardReview'
 import type { AddKind } from '@shared/cardSchedule'
 import { FILTERS, FILTER_ICON } from './words'
@@ -9,7 +9,7 @@ import { FILTERS, FILTER_ICON } from './words'
  * the count at the top opens it. The same shared session and rules as the Mac (`inboxMenu.ts`):
  *
  *  - All cards (count) · Up next "today / total" with Reset (only while some card is marked Up next) ·
- *    Due today (count) · New cards "from All folders ›" "today / total" with Reset.
+ *    Due today (count) · New cards "from All folders ›" and its count alone, "10" (the Mac's YAZ-5434, YAZ-5624), with Reset.
  *  - Reset sets today's number of that kind back to the Settings number, never below today's work (`resetCards`); the
  *    hint line's Undo takes it back, as on the Mac.
  *  - "from … ›" opens the folder page: All folders, then each folder with new cards, a tick box each; more than one
@@ -39,8 +39,10 @@ export function ReviewSheet({
       <div role="menu" aria-label="Which cards">
         {FILTERS.filter((f) => showsFilter(f.id, session)).map((f) => {
           const kind: AddKind | null = f.id === 'new' ? 'new' : f.id === 'next' ? 'next' : null
-          const { count, total } = kind === null ? { count: session.counts[f.id], total: null } : kindCount(session, kind)
-          const countText = total === null ? String(count) : `${count} / ${total}`
+          // The Mac's rule (YAZ-5624, YAZ-5434): New cards "10" alone, Up next "2 / 5".
+          const counted = kind === null ? { count: session.counts[f.id], total: null } : kindCount(session, kind)
+          const { count } = counted
+          const countText = kindCountText(counted)
           const reset = kind !== null && session.canReset[kind]
           const on = session.filter === f.id
           return (

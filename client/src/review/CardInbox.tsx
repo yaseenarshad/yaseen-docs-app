@@ -81,7 +81,8 @@
  *    hidden). Never on the front or an earlier side. It is no Space step, and the scroll never goes to it; the buttons' band
  *    stays at the bottom of the view over it.
  *  - Nothing left: "Inbox complete." for the vault; for one page or folder "This page is done." and, quiet, "21 more in
- *    the Inbox", which starts the vault's review.
+ *    the Inbox", which starts the vault's review. The vault done while cards are still due (a new day began during the
+ *    review; YAZ-5623, the phone's rule, `reviewMoreCount`): "Review 12 more", which starts it again.
  *  - ADD MORE FOR TODAY (YAZ-5042, Yaseen: "instead of having to go settings"): the done screen says what waits past
  *    today's number, "38 new cards and 3 Up next cards wait for another day.", with one button for each kind, "Add 10
  *    new cards" and "Add 2 Up next" (the first added card shows at once); a filter's done screen has its own kind's
@@ -118,7 +119,7 @@ import { textHasAudio, toggleCardAudio } from '../editor/card/cardMedia'
 import { HoverTip } from '../components/HoverTip'
 import type { NoticeAction, NoticeKind, NoticeType } from '../lib/notice'
 import { CARD_FILTERS, CardInboxBar } from './CardInboxBar'
-import { CardStateChip, answerIcon, answerLine } from './cardInboxChip'
+import { CardAgainChip, CardStateChip, answerIcon, answerLine, showsAgain } from './cardInboxChip'
 import { FocusIcon } from './cardInboxIcons'
 import { cardColumnStyle, useInboxCardWidth } from './inboxCardWidth'
 import { CardInboxHints } from './CardInboxHints'
@@ -134,7 +135,7 @@ import { todayCards } from './reviewTime'
 import '../explore/explore.css'
 import { useUnit } from '../vault/unitWord'
 import { tourEvent } from '../course/tourBus'
-import { addedLine, resetLine, waitingLine } from './cardWords'
+import { addedLine, resetLine, reviewMoreCount, reviewMoreLabel, waitingLine } from './cardWords'
 import type { CardPlace } from '../editor/card/cardOpen'
 
 /** How long "Archived · Undo" stays under the buttons (YAZ-5621): the phone's `UNDO_SHOWN_MS`. */
@@ -450,6 +451,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
   )
   // The rest of the vault, after a review of one page or one folder: the way on.
   const more = session.scope === 'vault' ? 0 : review.dueCount
+  // YAZ-5623 (the phone's rule): the vault done while cards are still due (a new day began, a card came back): "Review 12 more".
+  const again = session.scope === 'vault' ? reviewMoreCount(addKinds, review.dueCount) : 0
   /** What the done screen says (YAZ-5017, YAZ-5042); `title` false under the Due today end (YAZ-5043), which has its own. */
   const doneRest = (withTitle: boolean) =>
                 session.filter !== 'all' && session.counts.all > 0 ? (
@@ -466,6 +469,10 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
                     {withTitle && <p className="card-inbox__done-title">Inbox complete.</p>}
                     {courseOffer !== undefined ? (
                       <CourseOffer {...courseOffer} />
+                    ) : again > 0 ? (
+                      <button type="button" className="card-inbox__done-more" onMouseDown={(e) => e.preventDefault()} onClick={() => review.start({})}>
+                        {reviewMoreLabel(again)}
+                      </button>
                     ) : addButtons === null ? (
                       <p className="card-inbox__done-line">Nothing else is due today. Enjoy your day!</p>
                     ) : (
@@ -541,6 +548,8 @@ export function CardInbox({ shown = true, review, session, vaultOf, cardVarsOf, 
           {card !== null && (
             <>
               <CardStateChip card={card} />
+              {/* YAZ-5626 (the phone's YAZ-5594): a card back after a Forgot says so, "Again", beside its state. */}
+              {showsAgain(card) && <CardAgainChip />}
               <span className="card-inbox__head">
                 <CardId id={card.id} onNotice={onNotice} />
                 {card.page?.next === true && <CardNextChip onRemove={() => void review.setNext(card.path, card.id, false)} />}

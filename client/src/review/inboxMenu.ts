@@ -27,10 +27,14 @@ export function toggledPick(picked: readonly string[], folder: string): string[]
 }
 
 /**
- * A kind's menu count (YAZ-5042 round 2): "today / total" while the kind has a number a day ("10 / 48"), else the
- * count alone. `total` is null with no limit.
+ * A kind's menu count, the Mac's cards menu and the phone's sheet alike (YAZ-5624): Up next reads "today / total"
+ * while it has a number a day ("2 / 5", YAZ-5042 round 2), else the count alone. New cards' count stands alone ("10",
+ * never "10 / 15": YAZ-5434, Yaseen's pick, the total made the row long). `total` is null when the count stands alone.
  */
 export function kindCount(session: Pick<CardReviewSession, 'counts' | 'limited' | 'more'>, kind: 'new' | 'next'): { count: number; total: number | null } {
   const count = session.counts[kind]
-  return { count, total: session.limited[kind] ? count + session.more[kind] : null }
+  return { count, total: kind === 'next' && session.limited.next ? count + session.more.next : null }
 }
+
+/** A kind's count as its row says it: "2 / 5", or "10" alone (`kindCount`). */
+export const kindCountText = ({ count, total }: { count: number; total: number | null }): string => (total === null ? String(count) : `${count} / ${total}`)

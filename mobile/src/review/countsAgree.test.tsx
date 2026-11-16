@@ -77,7 +77,7 @@ describe('the Review tab, the dot and the sheet: counts agree (YAZ-5227)', () =>
       ['delete a.md on GitHub', async () => void (await t.s.git.push({ 'a.md': page('A') }))],
       ['send', send],
       ['Remembered', () => press('Remembered')],
-      ['⋯ Fix later', async () => (await press('More card actions')) + (await press(/^(Fix later|Remove Fix later)$/))],
+      ['⋯ Up next', async () => (await press('More card actions')) + (await press(/^(Up next|Remove from Up next)$/))],
       ['send', send],
       ['Undo', () => press('Undo')],
       ['delete b.md on GitHub', async () => void (await t.s.git.push({ 'b.md': page('B', cards([6])[0]) }))],

@@ -929,6 +929,21 @@ body.card-inbox--sizing {
   text-transform: uppercase;
   white-space: nowrap;
 }
+/* YAZ-5626 (the phone's YAZ-5594 "Again"): beside the state chip, the same quiet pill with no glyph, for a card put back
+   by a Forgot (it comes back until you remember it). */
+.card-inbox__again {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 16px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
 .card-inbox__place {
   flex: none;
   font-size: 12px;

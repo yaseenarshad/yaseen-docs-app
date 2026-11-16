@@ -133,7 +133,7 @@ describe('YAZ-5495: the end of Due today, walked (the Mac\'s YAZ-5043 flow)', ()
     while (showing() !== null && seen.length < 20) seen.push(await answer('Remembered'))
     expect(seen.slice(5)).toHaveLength(6)
     expect(seen.slice(5).every((id) => NEW.includes(id))).toBe(true)
-    expect(title()).toBe('Inbox complete')
+    expect(title()).toBe('Inbox complete.')
   })
 
   it('5. Undo in the hint line on the % screen takes the stop back with the last answer: the card shows again', async () => {

@@ -2,15 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import { createPortal } from 'react-dom'
 import { useMenuToggle } from '../app/menuToggle'
 import { useAnswerTimer } from '@client/review/answerTimer'
-import { cardStateText } from '@client/review/cardInboxChip'
+import { AGAIN_LABEL, AGAIN_TITLE, cardStateText, showsAgain } from '@client/review/cardInboxChip'
 import { START, markOf, reveal, shownParts, type Reveal } from '@client/review/cardSteps'
 import { newCardsFrom } from '@client/review/inboxMenu'
-import { addedLine, resetLine, waitingLine } from '@client/review/cardWords'
+import { addedLine, resetLine, reviewMoreCount, reviewMoreLabel, waitingLine } from '@client/review/cardWords'
 import { reviewDuration, todayCards, todayDuration } from '@client/review/reviewTime'
 import { useCardReview, type CardReviewApi, type CardReviewSession } from '@client/review/useCardReview'
 import type { UnitText } from '@client/vault/unitWordText'
 import { cardFileShape } from '@shared/cardFileFormat'
-import { cardIdOf, isCardFix, pageCards, withCardFix, withCardNoTitle, type CardRating } from '@shared/cardLine'
+import { withCardNoTitle, type CardRating } from '@shared/cardLine'
 import { answerLabel, answerRatings, type AddKind } from '@shared/cardSchedule'
 import { cardPieces, cardSides, hiddenCount } from '@shared/cardText'
 import { splitFrontmatter } from '@shared/frontmatter'
@@ -52,9 +52,10 @@ import './review.css'
  *    15, item 3).
  *  - A TAP ON THE CARD shows the next hidden word, else the next side: what Space does on the Mac. No swipes.
  *  - At the bottom, in reach of the thumb: ✕ Forgot and ✓ Remembered (or four by the setting), then ⋯: Archive card,
- *    Up next, Fix later, Open page (a card file: Open card). The answer buttons work at any step, as on the Mac.
+ *    Up next, Title on the front, Open page (a card file: Open card); no Fix later, as the Mac's Inbox (YAZ-5625,
+ *    YAZ-5430). The answer buttons work at any step, as on the Mac.
  *  - "Answered · Undo" under the buttons: Undo takes back the last answer (or the last "Add more").
- *  - Done: "Inbox complete", today's work, and "Add more for today" (round 10, addition 2) when cards wait.
+ *  - Done: "Inbox complete." (the Mac's words, YAZ-5624), today's work, and "Add more for today" (round 10, addition 2) when cards wait.
  *  - The end of Due today (the Mac's YAZ-5043, from the shared hook's `end`): after the first pass "You
  *    remembered 93% of 73 cards." with "Review missed cards 5"; then "Due today is done." with "Learn new cards 11"
  *    and its "from All folders ›" (the sheet's folder page). The ring and the confetti: `DueEnd.tsx`.
@@ -378,22 +379,17 @@ function SessionScreen({
 
   // A card file that is not valid (round 15, item 3): its first card shows, with one line.
   const [needsFix, setNeedsFix] = useState<string | null>(null)
-  // The Fix later mark of the card on show (the hook's card has no `fix`): read from the phone's view of its file.
-  const [fixOn, setFixOn] = useState<{ key: string; on: boolean } | null>(null)
   useEffect(() => {
     if (card === null || page === null) return
     let live = true
     void link.answers.text(card.path).then((content) => {
       if (!live || content === null) return
-      const line = pageCards(content).find((c) => cardIdOf(c.line) === card.id)?.line
-      setFixOn({ key: `${card.path}\n${card.id}`, on: line !== undefined && isCardFix(line) })
       setNeedsFix(cardFile && cardFileShape(splitFrontmatter(content).body).problem !== 'ok' ? card.path : null)
     })
     return () => {
       live = false
     }
   }, [card, page, cardFile, link])
-  const fixed = card !== null && fixOn?.key === `${card.path}\n${card.id}` && fixOn.on
 
   // 'from': the sheet open at its folder page (the "from All folders ›" of "Learn new cards").
   const [menu, setMenu] = useState<'filter' | 'from' | 'more' | null>(null)
@@ -458,7 +454,7 @@ function SessionScreen({
     // sweep2 M-A: from the screen after the last card, the card that comes back takes no tap for 400 ms (its ✓ sits
     // under the finger that tapped Undo).
     guard.undo(card === null)
-    // Undo of Up next or Fix later: the inverse, through the host (an unsent mark leaves the list).
+    // Undo of Up next or Title on the front: the inverse, through the host (an unsent mark leaves the list).
     if (line?.kind === 'mark' && line.undo !== undefined) {
       const run = line.undo
       setLine(null)
@@ -490,15 +486,6 @@ function SessionScreen({
     setNotice(null)
     setLine({ kind: 'archive' })
     void review.turnOff()
-  }
-  const toggleFix = () => {
-    if (card === null) return
-    const on = !fixed
-    const set = (to: boolean) => async () => {
-      await host.changeCardLine(card.path, card.id, (l) => withCardFix(l, to))
-      setFixOn({ key: `${card.path}\n${card.id}`, on: to })
-    }
-    act(on ? 'Marked: Fix later' : 'Removed: Fix later', set(on), set(!on))
   }
 
   // The line (an answer, an add or Reset, a mark, Archive card) shows while what it names is still the last thing done.
@@ -609,9 +596,9 @@ function SessionScreen({
                   <i aria-hidden="true" />
                   {card.isNew ? 'New' : 'Due'}
                 </span>
-                {card.repeat === true && (
-                  <span className="review__again" title="You forgot it: it comes back until you remember it">
-                    Again
+                {showsAgain(card) && (
+                  <span className="review__again" title={AGAIN_TITLE}>
+                    {AGAIN_LABEL}
                   </span>
                 )}
                 {crumb.length > 0 && (
@@ -732,14 +719,15 @@ function SessionScreen({
               <button type="button" role="menuitem" className="review__menu-row" disabled={!canUndo} onClick={undo}>
                 Undo last answer
               </button>
-              {/* YAZ-5503/5505: the shared card actions (Up next, Archive card, Fix later, Title on the front), two taps each. */}
+              {/* YAZ-5503/5505: the shared card actions (Up next, Archive card, Title on the front), two taps each. No Fix
+                  later (YAZ-5625, Yaseen: "remove it, make the mac match so they are the same"): the Mac's Inbox has none. */}
               <CardActions
-                marks={page === null ? null : { off: false, next: page.next === true, fix: fixed, notitle: page.notitle === true }}
+                marks={page === null ? null : { off: false, next: page.next === true, fix: false, notitle: page.notitle === true }}
                 upNext
+                fix={false}
                 rowClassName="review__menu-row"
                 onAction={(a) => {
                   if (a.kind === 'off') return archive()
-                  if (a.kind === 'fix') return toggleFix()
                   if (a.kind === 'next') return act(a.done, () => review.setNext(card.path, card.id, a.on), () => review.setNext(card.path, card.id, !a.on))
                   act(a.done, () => host.changeCardLine(card.path, card.id, a.change), () => host.changeCardLine(card.path, card.id, (l) => withCardNoTitle(l, !a.on)))
                 }}
@@ -950,17 +938,17 @@ function DoneBody({ review, session, addKinds, today, title }: { review: CardRev
     )
   return (
     <>
-      {title && <p className="review__done-title">Inbox complete</p>}
+      {title && <p className="review__done-title">Inbox complete.</p>}
       <p className="muted review__done-today">{today}</p>
       {addKinds.length > 0 ? (
         <>
           <p className="muted review__waits">{waitingLine(session.more, addKinds)}</p>
           {adds}
         </>
-      ) : review.dueCount > 0 ? (
-        // A new day began during the review (local midnight): today's cards are due now.
+      ) : reviewMoreCount(addKinds, review.dueCount) > 0 ? (
+        // A new day began during the review (local midnight): today's cards are due now. The Mac's rule too (YAZ-5623).
         <button type="button" className="btn review__add" onClick={() => review.start()}>
-          Review {review.dueCount} more
+          {reviewMoreLabel(reviewMoreCount(addKinds, review.dueCount))}
         </button>
       ) : (
         <p className="muted">Nothing else is due today.</p>
